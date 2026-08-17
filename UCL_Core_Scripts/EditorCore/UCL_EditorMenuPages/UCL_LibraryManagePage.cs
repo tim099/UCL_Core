@@ -1,9 +1,10 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using UCL.Core.EditorLib.AgentCommands.ReadingLibrary;
 using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
@@ -13,11 +14,12 @@ using Debug = UnityEngine.Debug;
 
 namespace UCL.Core.EditorLib.Page
 {
-    // 區塊職責：圖書館管理 UI — 列出共享圖書館的所有書籍 + 捐贈者 + 推薦書單，並提供新增/捐贈/書籤等操作
+    // 區塊職責：圖書館管理 UI — 列出共享圖書館的所有書籍 + 外部漫畫庫 + 捐贈者 + 推薦書單，並提供新增/捐贈/書籤等操作
     // 物理意義：閱讀資料落各專案 repo root（per-project）：
     //          - AgentCommands/BookNotes/<slug>/book.json   每本書 metadata + 進度 + 人物/卷/標籤/書評
     //          - AgentCommands/BookNotes/_recommended/<slug>.json  推薦書單（T-split：一 rec 一檔；舊單檔 _recommended.json 自動 migrate 成本資料夾）
     //          - AgentCommands/Books/_donations.json         捐贈索引（誰付 token 認領了哪本書）
+    //          - 外部漫畫庫（D:\commic 等）：透過 UCL_ProjectEditorPrefs 儲存路徑，支援本機漫畫探索
     //          工具 library.py 在 UCL_Core（跨專案共用），Page 直讀 JSON 顯示，變更操作走 process spawn 跑 library.py
     // 數值影響：UI 顯示純 read。Add/Donate/Bookmark 按鈕觸發外部 python process，改 book.json / _donations.json
     //
@@ -104,6 +106,17 @@ namespace UCL.Core.EditorLib.Page
         List<BookEntry> m_Books = new List<BookEntry>();
         List<DonationEntry> m_Donations = new List<DonationEntry>();
         List<RecommendEntry> m_Recommends = new List<RecommendEntry>();
+
+        // 區塊職責：外部漫畫庫（External Comics）state
+        // 物理意義：m_ComicRootPath = 當前設定的漫畫根目錄；
+        //          m_ExternalComics = 掃描到的外部漫畫系列清單；
+        //          m_SelectedComicSeriesSlug = 當前選中的漫畫系列 slug；
+        //          m_ComicDisplayOptions = 下拉選單顯示字串清單
+        string m_ComicRootPath = "";
+        string m_ComicRootPathInput = "";
+        List<UCL_ReadingLibraryIO.ExternalComicSeries> m_ExternalComics = new List<UCL_ReadingLibraryIO.ExternalComicSeries>();
+        string m_SelectedComicSeriesSlug = "";
+        List<string> m_ComicDisplayOptions = new List<string>();
 
         // 區塊職責：捐贈表單 state
         // 物理意義：Tim 輸入要捐的書 slug + 捐贈者 bank id + token 數，按「捐贈」後 spawn library.py donate
@@ -416,13 +429,33 @@ namespace UCL.Core.EditorLib.Page
                     m_SelectedFullBook = m_FullBooks[0].Slug;
                 }
             }
+
+            // 區塊：外部漫畫庫掃描（唯讀快取，不每幀走目錄樹）
+            m_ComicRootPath = UCL_ReadingLibraryIO.GetComicRoot();
+            m_ComicRootPathInput = m_ComicRootPath;
+            m_ExternalComics = UCL_ReadingLibraryIO.ScanExternalComics(m_ComicRootPath);
+            m_ComicDisplayOptions.Clear();
+            foreach (var c in m_ExternalComics)
+            {
+                string statusIcon = c.Status == UCL_ReadingLibraryIO.ComicMatchStatus.Synced ? "🟢"
+                    : (c.Status == UCL_ReadingLibraryIO.ComicMatchStatus.MissingSource ? "🟡" : "⚪");
+                string volInfo = c.Volumes.Count > 0 ? $" ‧ {c.Volumes.Count}卷 {c.TotalChapters}話" : " ‧ 0話";
+                m_ComicDisplayOptions.Add($"{statusIcon} {c.SeriesName}{volInfo} ({c.MediaId})");
+            }
+            if ((string.IsNullOrEmpty(m_SelectedComicSeriesSlug) || m_ExternalComics.FindIndex(x => x.Slug == m_SelectedComicSeriesSlug) < 0)
+                && m_ExternalComics.Count > 0)
+            {
+                m_SelectedComicSeriesSlug = m_ExternalComics[0].Slug;
+            }
         }
 
         // 區塊職責：頁面主體 — 各項目分類為可折疊 section（Tim 2026-08-07 要求，比照 UCL_ControlPanelPage）
         // 物理意義：**關鍵操作一律畫在折疊外層 header**，收合後仍可一鍵操作；折疊內只放清單與低頻明細。
-        //          預設開合依使用頻率：書籍索引與全文書庫預設展開，捐贈/表單/推薦預設收合。
+        //          預設開合依使用頻率：外部漫畫庫/書籍索引/全文書庫預設展開，捐贈/表單/推薦預設收合。
         protected override void ContentOnGUI()
         {
+            DrawExternalComicsSection();
+            GUILayout.Space(8);
             DrawBookNotesSection();
             GUILayout.Space(8);
             DrawBooksFullSection();
@@ -433,6 +466,203 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawRecommendations();
         }
+
+        // 區塊職責：外部漫畫庫區塊 — 設定本機漫畫根目錄（例如 D:\commic）+ 探索漫畫作品 + 挑選閱讀
+        // 物理意義：路徑儲存於 UCL_ProjectEditorPrefs（不上 git、per-project 隔離），
+        //          同步輸出 .comic_root.local 快照給 Python 唯讀消費。
+        //          掃描快取只在 LoadData() / 重新整理時執行，OnGUI 零開銷。
+        void DrawExternalComicsSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "ExternalComicsFold", 21, iDefaultValue: true);
+                    GUILayout.Label(string.Format("<b>🎨 外部漫畫庫 (External Comics)</b>  ({0})", m_ExternalComics.Count),
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("🔄 重新掃描", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        LoadData();
+                    }
+                    if (!string.IsNullOrEmpty(m_ComicRootPath) && Directory.Exists(m_ComicRootPath))
+                    {
+                        if (GUILayout.Button("📂 開啟漫畫根目錄", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            OpenInExplorer(m_ComicRootPath);
+                        }
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
+                // ── 路徑設定列 ──
+                using (new GUILayout.HorizontalScope("box"))
+                {
+                    GUILayout.Label("漫畫庫路徑:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    m_ComicRootPathInput = GUILayout.TextField(m_ComicRootPathInput, UCL_GUIStyle.TextFieldStyle);
+
+                    if (GUILayout.Button("📁 瀏覽", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+#if UNITY_EDITOR
+                        string defaultDir = Directory.Exists(m_ComicRootPathInput) ? m_ComicRootPathInput : "";
+                        string selected = UnityEditor.EditorUtility.OpenFolderPanel("選擇外部漫畫庫目錄", defaultDir, "");
+                        if (!string.IsNullOrEmpty(selected))
+                        {
+                            m_ComicRootPathInput = selected;
+                            UCL_ReadingLibraryIO.SetComicRoot(selected);
+                            LoadData();
+                        }
+#endif
+                    }
+
+                    if (m_ComicRootPathInput != m_ComicRootPath)
+                    {
+                        if (GUILayout.Button("💾 套用", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 1f, 0.7f)), GUILayout.ExpandWidth(false)))
+                        {
+                            UCL_ReadingLibraryIO.SetComicRoot(m_ComicRootPathInput);
+                            LoadData();
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(m_ComicRootPath))
+                    {
+                        if (GUILayout.Button("❌ 清除", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            m_ComicRootPathInput = "";
+                            UCL_ReadingLibraryIO.SetComicRoot("");
+                            LoadData();
+                        }
+                    }
+                }
+
+                if (string.IsNullOrEmpty(m_ComicRootPath))
+                {
+                    GUILayout.Label("<color=#aaaaaa><i>（尚未設定外部漫畫庫路徑，可於上方輸入框或點擊「📁 瀏覽」指定如 D:\\commic 之目錄；設定僅儲存於本機 EditorPrefs 不上 Git）</i></color>", UCL_GUIStyle.LabelStyle);
+                    return;
+                }
+
+                if (!Directory.Exists(m_ComicRootPath))
+                {
+                    GUILayout.Label($"<color=#ffaa44>⚠ 目錄不存在或未掛載：{m_ComicRootPath}</color>", UCL_GUIStyle.LabelStyle);
+                    return;
+                }
+
+                if (m_ExternalComics.Count == 0)
+                {
+                    GUILayout.Label($"（目錄內未找到任何漫畫子資料夾：{m_ComicRootPath}）", UCL_GUIStyle.LabelStyle);
+                    return;
+                }
+
+                // ── 漫畫下拉選單列 ──
+                using (new GUILayout.HorizontalScope("box"))
+                {
+                    GUILayout.Label("挑選漫畫:", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    int curIdx = m_ExternalComics.FindIndex(x => x.Slug == m_SelectedComicSeriesSlug);
+                    if (curIdx < 0) curIdx = 0;
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, m_ComicDisplayOptions, m_Dic.GetSubDic("ComicPicker"), "ExternalComicPicker");
+                    if (newIdx >= 0 && newIdx < m_ExternalComics.Count) m_SelectedComicSeriesSlug = m_ExternalComics[newIdx].Slug;
+                    GUILayout.FlexibleSpace();
+                }
+
+                // ── 選中漫畫詳細面板 ──
+                var comic = m_ExternalComics.Find(x => x.Slug == m_SelectedComicSeriesSlug);
+                if (comic == null) return;
+
+                using (new GUILayout.VerticalScope("box"))
+                {
+                    // 標題列
+                    string statusBadge = comic.Status switch
+                    {
+                        UCL_ReadingLibraryIO.ComicMatchStatus.Synced => "<color=#44ff88>[🟢 已在 Library 建檔]</color>",
+                        UCL_ReadingLibraryIO.ComicMatchStatus.MissingSource => "<color=#ffcc00>[🟡 來源失聯 (Missing Source)]</color>",
+                        _ => "<color=#aaaaaa>[⚪ 未建檔 (Unregistered)]</color>"
+                    };
+
+                    GUILayout.Label($"<b><size=15>{comic.SeriesName}</size></b>  {statusBadge}　<size=11>({comic.MediaId})</size>", UCL_GUIStyle.LabelStyle);
+                    if (!string.IsNullOrEmpty(comic.RegisteredTitle) && comic.RegisteredTitle != comic.SeriesName)
+                    {
+                        GUILayout.Label($"<i>Library 書名：{comic.RegisteredTitle}</i>", UCL_GUIStyle.LabelStyle);
+                    }
+
+                    GUILayout.Label($"<b>卷數</b>: {comic.Volumes.Count} 卷　|　<b>總話數</b>: {comic.TotalChapters} 話　|　<b>總圖片</b>: {comic.TotalPages} 張", UCL_GUIStyle.LabelStyle);
+
+                    // 卷數清單展開
+                    if (comic.Volumes.Count > 0)
+                    {
+                        GUILayout.Space(4);
+                        GUILayout.Label("<b>卷話明細：</b>", UCL_GUIStyle.LabelStyle);
+                        foreach (var v in comic.Volumes)
+                        {
+                            string chRange = v.Chapters.Count > 0 ? $"{v.Chapters[0]} ~ {v.Chapters[v.Chapters.Count - 1]} ({v.Chapters.Count} 話)" : "0 話";
+                            using (new GUILayout.HorizontalScope())
+                            {
+                                GUILayout.Label($"  • <b>Vol.{v.VolumeLabel}</b> ({v.FolderName})：{chRange}，共 {v.PageCount} 頁", UCL_GUIStyle.LabelStyle);
+                                if (GUILayout.Button("📂 開啟該卷", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                                {
+                                    OpenInExplorer(v.FolderPath);
+                                }
+                                GUILayout.FlexibleSpace();
+                            }
+                        }
+                    }
+
+                    GUILayout.Space(6);
+
+                    // 操作按鈕列
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        if (comic.Volumes.Count > 0 && Directory.Exists(comic.Volumes[0].FolderPath))
+                        {
+                            if (GUILayout.Button("📂 開啟漫畫資料夾", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                OpenInExplorer(comic.Volumes[0].FolderPath);
+                            }
+                        }
+
+                        if (comic.Status == UCL_ReadingLibraryIO.ComicMatchStatus.Synced)
+                        {
+                            if (GUILayout.Button("📖 開啟閱讀心得頁",
+                                UCL_GUIStyle.GetButtonStyle(new Color(0.75f, 0.95f, 0.75f)), GUILayout.ExpandWidth(false)))
+                            {
+                                UCL_ReadingNotesManagePage.CreateForTitle(string.IsNullOrEmpty(comic.RegisteredTitle) ? comic.SeriesName : comic.RegisteredTitle);
+                            }
+                        }
+                        else if (comic.Status == UCL_ReadingLibraryIO.ComicMatchStatus.Unregistered)
+                        {
+                            if (GUILayout.Button("📥 初始化 Library Media",
+                                UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.85f, 1f)), GUILayout.ExpandWidth(false)))
+                            {
+                                string initLog = UCL_ReadingLibraryIO.MediaInit(
+                                    comic.Slug, comic.MediaId, "comic", "apex-one",
+                                    comic.SeriesName, "", "", 5,
+                                    null, null, out string initErr);
+                                if (!string.IsNullOrEmpty(initErr))
+                                {
+                                    Debug.LogError($"[LibraryManage] MediaInit failed: {initErr}");
+                                }
+                                else
+                                {
+                                    Debug.Log($"[LibraryManage] MediaInit success: {initLog}");
+                                    LoadData();
+                                }
+                            }
+                        }
+                        else if (comic.Status == UCL_ReadingLibraryIO.ComicMatchStatus.MissingSource)
+                        {
+                            if (GUILayout.Button("📖 檢視既有閱讀心得",
+                                UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.9f, 0.6f)), GUILayout.ExpandWidth(false)))
+                            {
+                                UCL_ReadingNotesManagePage.CreateForTitle(comic.RegisteredTitle);
+                            }
+                        }
+
+                        GUILayout.FlexibleSpace();
+                    }
+                }
+            }
+        }
+
 
         // 區塊職責：書籍索引區塊 — 下拉選一本書 → 導覽到該書的閱讀心得頁 / 資料夾。
         // 物理意義：**本區塊不再顯示 BookNotes 的閱讀內容**（進度 / 書籤 / 人物 / arc / 卷 / 書評）。

@@ -367,6 +367,49 @@ def letters_root() -> Path:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# 外部漫畫庫路徑（.comic_root.local 快照檔）
+# 區塊職責：讀取 C# UCL_ReadingLibraryIO 寫出的外部漫畫庫本機快照。
+# 物理意義：Python 端唯讀消費、絕不刪檔自癒（Tim 2026-08-17 拍板方案 B）。
+# 數值影響：若目錄不存在或未掛載，回傳 None 並印警告，保留快照內容。
+# ─────────────────────────────────────────────────────────────────────────
+COMIC_ROOT_FILENAME = ".comic_root.local"
+
+
+def comic_root() -> Path | None:
+    candidates = []
+    if _UCL_CORE_DIR:
+        candidates.append(_UCL_CORE_DIR / COMIC_ROOT_FILENAME)
+    root = repo_root()
+    if root:
+        candidates.append(root / COMIC_ROOT_FILENAME)
+
+    for p in candidates:
+        if p.is_file():
+            try:
+                for line in p.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        k, _, v = line.partition("=")
+                        if k.strip() == "comic_root":
+                            cand_path = Path(v.strip())
+                            if cand_path.is_dir():
+                                return cand_path.resolve()
+                            else:
+                                import sys
+                                print(f"⚠ [ucl_paths] comic_root 目錄不存在或未掛載: {cand_path}", file=sys.stderr)
+                                return None
+                    else:
+                        cand_path = Path(line)
+                        if cand_path.is_dir():
+                            return cand_path.resolve()
+            except Exception:
+                pass
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # API 4 — ucl_tool(name)
 # 區塊職責：組出 UCL_Core 內某支工具腳本的絕對路徑（e.g. run_cmd.py / awakening.py）。
 # 物理意義：所有工具都在 <UCL_Core>/Tools~/AgentCommands/ 下；本函式把「認死那段相對路徑」
@@ -376,6 +419,7 @@ def letters_root() -> Path:
 # ─────────────────────────────────────────────────────────────────────────
 def ucl_tool(name: str) -> Path:
     return _UCL_CORE_DIR / "Tools~" / "AgentCommands" / name
+
 
 
 # ─────────────────────────────────────────────────────────────────────────

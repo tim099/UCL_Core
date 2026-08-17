@@ -64,11 +64,11 @@ def _data_root() -> Path:
 
 
 def registry_path() -> Path:
-    return _data_root() / "AwakenInit" / "agent_emails.json"
+    return _paths.awaken_init_dir() / "agent_emails.json"
 
 
 def persona_path(persona: str) -> Path:
-    return _data_root() / "AwakenInit" / "personas" / f"{persona}.json"
+    return _paths.persona_file(persona)
 
 
 def load_registry() -> dict:
@@ -143,7 +143,7 @@ def cmd_resolve(args) -> int:
 
 
 def cmd_list(args) -> int:
-    d = _data_root() / "AwakenInit" / "personas"
+    d = _paths.personas_dir()
     rows = []
     if d.is_dir():
         for f in sorted(d.glob("*.json")):

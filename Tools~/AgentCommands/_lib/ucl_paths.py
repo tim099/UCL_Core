@@ -212,8 +212,22 @@ def registry_path() -> Path:
     return resolve_data_path("AgentCommands/AwakenInit/persona_registry.json", "registry_path")
 
 
+def awaken_init_dir() -> Path:
+    """AwakenInit/ —— persona 檔、_registry_meta、agent_emails / agent_models 的家。
+
+    ⚠ 從 registry_path() 的**父目錄**推導，不是 data_root()/"AwakenInit" ——
+      那是 awakening.py 的既有語意（`_REGISTRY_PATH.parent`）。改成後者會在設了
+      registry_path override 的機器上指到別處，**而且不會報錯**。
+    """
+    return registry_path().parent
+
+
+def registry_meta_path() -> Path:
+    return awaken_init_dir() / "_registry_meta.json"
+
+
 def personas_dir() -> Path:
-    return registry_path().parent / "personas"
+    return awaken_init_dir() / "personas"
 
 
 def persona_file(persona: str) -> Path:

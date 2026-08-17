@@ -21,6 +21,25 @@ from pathlib import Path
 # _HERE = <UCL_Core>/Tools~/AgentCommands（本檔在其下的 _lib/）
 _HERE = Path(__file__).resolve().parent.parent
 
+
+# ⚠ 路徑一律委派 _lib/ucl_paths.py（Tim 2026-08-17 拍板）——
+#   persona 檔／AwakenInit 子路徑的唯一解析點在那裡，本檔不自己拼字串。
+_UCL_PATHS_CACHE = None
+
+
+def _ucl_paths_mod():
+    global _UCL_PATHS_CACHE
+    if _UCL_PATHS_CACHE is None:
+        import importlib.util as _ilu
+        from pathlib import Path as _P
+        _spec = _ilu.spec_from_file_location(
+            "_ucl_paths_shared", _P(__file__).resolve().parent / "ucl_paths.py")
+        _m = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+        _UCL_PATHS_CACHE = _m
+    return _UCL_PATHS_CACHE
+
+
 def _find_git_root_by_walk(start: Path) -> Path | None:
     p = start.resolve()
     while p != p.parent:
@@ -45,7 +64,7 @@ _REPO_ROOT = _resolve_repo_root()
 
 _SESSIONS_PATH = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "work_sessions.json"
 _QUOTA_PATH = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "agent_bonus_quota.json"
-_PERSONAS_DIR = _REPO_ROOT / "AgentCommands" / "AwakenInit" / "personas"
+_PERSONAS_DIR = _ucl_paths_mod().personas_dir()
 # run_cmd.py is sibling — UCL_Core/Tools~/AgentCommands/run_cmd.py.
 _RUN_CMD = _HERE / "run_cmd.py"
 
@@ -55,7 +74,7 @@ _RUN_CMD = _HERE / "run_cmd.py"
 #          (2026-07-21 calli 收斂: 舊硬編 AGENT_TO_BANK 缺 Luna → kaguya stream-watch 抱 AGENT_TO_BANK miss,
 #           per kaguya 證物 A + summit「快取≠真相」家族; 對齊 awakening.py / canvas.py 同一 resolver)。
 # 數值影響: 新增 agent 只改 _registry_meta.json，本檔零改動即同步；未知 agent 走命名慣例 {canonical}-da-xiaojie。
-_REGISTRY_META_PATH = _REPO_ROOT / "AgentCommands" / "AwakenInit" / "_registry_meta.json"
+_REGISTRY_META_PATH = _ucl_paths_mod().registry_meta_path()
 
 import importlib.util as _ilu  # 顯式檔案路徑載入共用 resolver，避開 _lib package 名稱相撞 (同 awakening.py idiom)
 _BANK_RESOLVER_PATH = _HERE / "_lib" / "bank_resolver.py"
@@ -66,9 +85,9 @@ _br_spec.loader.exec_module(_br_mod)
 _REPO_ROOT = _resolve_repo_root()
 
 _QUOTA_PATH = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "agent_bonus_quota.json"
-_PERSONAS_DIR = _REPO_ROOT / "AgentCommands" / "AwakenInit" / "personas"
+_PERSONAS_DIR = _ucl_paths_mod().personas_dir()
 _RUN_CMD = _HERE / "run_cmd.py"
-_REGISTRY_META_PATH = _REPO_ROOT / "AgentCommands" / "AwakenInit" / "_registry_meta.json"
+_REGISTRY_META_PATH = _ucl_paths_mod().registry_meta_path()
 
 import importlib.util as _ilu  # 顯式檔案路徑載入共用 resolver，避開 _lib package 名稱相撞 (同 awakening.py idiom)
 _BANK_RESOLVER_PATH = _HERE / "_lib" / "bank_resolver.py"

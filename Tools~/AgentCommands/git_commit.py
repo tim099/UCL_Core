@@ -53,6 +53,25 @@ EXIT_ANNOUNCE_FAIL = 6
 TRAILER_PREFIX = "Co-Authored-By:"
 
 
+
+# ⚠ 路徑一律委派 _lib/ucl_paths.py（Tim 2026-08-17 拍板）——
+#   persona 檔／AwakenInit 子路徑的唯一解析點在那裡，本檔不自己拼字串。
+_UCL_PATHS_CACHE = None
+
+
+def _ucl_paths_mod():
+    global _UCL_PATHS_CACHE
+    if _UCL_PATHS_CACHE is None:
+        import importlib.util as _ilu
+        from pathlib import Path as _P
+        _spec = _ilu.spec_from_file_location(
+            "_ucl_paths_shared", _P(__file__).resolve().parent / "_lib" / "ucl_paths.py")
+        _m = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+        _UCL_PATHS_CACHE = _m
+    return _UCL_PATHS_CACHE
+
+
 def git(repo: str, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, encoding="utf-8")
 
@@ -109,7 +128,7 @@ def resolve_sender(persona: str) -> str:
         pass
     try:
         agent = (load_persona(persona).get("agent") or "").strip()
-        reg = json.loads((root / "AwakenInit" / "_registry_meta.json").read_text(encoding="utf-8"))
+        reg = json.loads(_ucl_paths_mod().registry_meta_path().read_text(encoding="utf-8"))
         return (reg.get("agent_banks") or {}).get(agent, "") or ""
     except Exception:
         return ""

@@ -51,13 +51,32 @@ AGENT_ALIASES = {
 }
 
 
+
+# ⚠ 路徑一律委派 _lib/ucl_paths.py（Tim 2026-08-17 拍板）——
+#   persona 檔／AwakenInit 子路徑的唯一解析點在那裡，本檔不自己拼字串。
+_UCL_PATHS_CACHE = None
+
+
+def _ucl_paths_mod():
+    global _UCL_PATHS_CACHE
+    if _UCL_PATHS_CACHE is None:
+        import importlib.util as _ilu
+        from pathlib import Path as _P
+        _spec = _ilu.spec_from_file_location(
+            "_ucl_paths_shared", _P(__file__).resolve().parent / "_lib" / "ucl_paths.py")
+        _m = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+        _UCL_PATHS_CACHE = _m
+    return _UCL_PATHS_CACHE
+
+
 def _norm(value: str) -> str:
     """辨識用正規化 —— 無視大小寫、空白、連字號、底線。"""
     return "".join(ch for ch in (value or "").lower() if ch.isalnum())
 
 
 def registry_path() -> Path:
-    return _data_root() / "AwakenInit" / "agent_models.json"
+    return _ucl_paths_mod().awaken_init_dir() / "agent_models.json"
 
 
 def load_registry() -> dict:
@@ -75,7 +94,7 @@ def load_agent_names() -> dict:
     # 數值影響：對應關係由現存 persona 檔推導，不另建一張要維護的表；推不出來就不辨識（保留原值）。
     """
     out = {}
-    d = _data_root() / "AwakenInit" / "personas"
+    d = _ucl_paths_mod().personas_dir()
     if not d.is_dir():
         return out
     tally = {}
@@ -181,7 +200,7 @@ def cmd_list(args) -> int:
     for a in CANONICAL_AGENTS:
         print(f"  {a:<14} {(reg.get('models') or {}).get(a) or '(未設定)'}")
     print()
-    d = _data_root() / "AwakenInit" / "personas"
+    d = _ucl_paths_mod().personas_dir()
     print("# agent 廠牌（key = actual_agent）")
     for a in CANONICAL_AGENTS:
         print(f"  {a:<14} {(reg.get('vendors') or {}).get(a) or '(未設定)'}")

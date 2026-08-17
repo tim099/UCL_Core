@@ -39,6 +39,25 @@ _HERE = Path(__file__).resolve().parent
 DEFAULT_MAIL_FEE = 5          # 與 C# UCL_CentralBankSettings.DefaultRegisteredMailFee 對齊
 
 
+
+# ⚠ 路徑一律委派 _lib/ucl_paths.py（Tim 2026-08-17 拍板）——
+#   persona 檔／AwakenInit 子路徑的唯一解析點在那裡，本檔不自己拼字串。
+_UCL_PATHS_CACHE = None
+
+
+def _ucl_paths_mod():
+    global _UCL_PATHS_CACHE
+    if _UCL_PATHS_CACHE is None:
+        import importlib.util as _ilu
+        from pathlib import Path as _P
+        _spec = _ilu.spec_from_file_location(
+            "_ucl_paths_shared", _P(__file__).resolve().parent / "_lib" / "ucl_paths.py")
+        _m = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+        _UCL_PATHS_CACHE = _m
+    return _UCL_PATHS_CACHE
+
+
 def _find_repo_root(start: Path):
     """取最外層那個 `.git` 是**資料夾**的目錄（submodule 的 .git 是檔案）。
 
@@ -90,10 +109,10 @@ def resolve_bank(persona: str) -> str | None:
     try:
         sys.path.insert(0, str(_HERE))
         from _lib import bank_resolver                     # noqa: E402
-        reg_path = REPO_ROOT / "AgentCommands" / "AwakenInit" / "_registry_meta.json"
+        reg_path = _ucl_paths_mod().registry_meta_path()
         reg = json.loads(reg_path.read_text(encoding="utf-8")) if reg_path.exists() else {}
         # personas 資料在別的檔；resolve_persona_bank 需要完整 reg，缺的部分讓它自己 fail-loud
-        p_dir = REPO_ROOT / "AgentCommands" / "AwakenInit" / "personas"
+        p_dir = _ucl_paths_mod().personas_dir()
         if p_dir.is_dir():
             reg.setdefault("personas", {})
             for f in p_dir.glob("*.json"):

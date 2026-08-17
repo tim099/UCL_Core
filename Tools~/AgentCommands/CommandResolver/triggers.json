@@ -1,7 +1,7 @@
 {
   "_schema_version": 1,
   "_synced_from": "Assets/Plugins/UCL_Core/Docs~/zh-Hant/CommandTable.md",
-  "_synced_at": "2026-08-17T12:01:18Z",
+  "_synced_at": "2026-08-17T12:07:25Z",
   "_synced_by": "sync_command_table.py",
   "_entry_count": 21,
   "triggers": [
@@ -488,8 +488,7 @@
         "translate workflow",
         "把文件翻成英文",
         "把文檔翻成日文",
-        "本地化文檔",
-        "translate_docs.py"
+        "本地化文檔"
       ],
       "workflow_path": "ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md",
       "intent": "翻譯或本地化 Markdown 文件或說明文檔，確保多語系對齊、術語精準及高雅傲嬌語氣。",

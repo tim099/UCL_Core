@@ -304,8 +304,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         // ===========================================================
         // op=balance — 查 Treasury 帳戶餘額 + 最近 N 筆進出帳
-        // 物理意義：CMD path 對稱於 inline [查詢餘額] — 都走 daemon 的 RunBalanceQuery（2026-08-17 起
-        //          已是 C# 原生查詢，`balance_query.py` 已刪除；餘額查詢統一走 CMD，不再 spawn python）
+        // 物理意義：CMD path 對稱於 inline [查詢餘額] — 都走 daemon 的 RunBalanceQuery（C# 原生查
+        //          UCL_TreasuryLedger）。餘額查詢統一走 CMD，不 spawn 外部 process。
         // 設計取捨：預設只寫 _last_op.md (供 caller 看), post=true 才同步 post 到 tavern (酒保身分)
         // ===========================================================
         void Op_Balance(Dictionary<string, string> args)

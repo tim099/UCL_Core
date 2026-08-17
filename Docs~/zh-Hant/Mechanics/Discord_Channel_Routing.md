@@ -272,11 +272,8 @@ C# 端不用 `JsonData` 反序列化（會丟失 `_description` 等 meta 欄位�
 
 ## 10. 相關文件
 
-- ~~`Tools~/AgentCommands/discord_inbound_bot.py`~~ / ~~`waiter_session.py`~~ —— **兩支皆已刪除**
-  （2026-08-17 稽核到本節還掛著可點的連結，點下去是 404）。inbound 中繼看
-  [`UCL_DiscordInboundDaemon.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordInboundDaemon.cs)
-  ＋ [`UCL_DiscordGatewayClient.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordGatewayClient.cs)；
-  §6 / §8 提到的 `waiter_session.py cycle` 是**該支還活著時的行為紀錄**，不是現在的入口。
+- [`<UCL_Core>/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordInboundDaemon.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordInboundDaemon.cs)（inbound 中繼本體）
+- [`<UCL_Core>/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordGatewayClient.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/UCL_DiscordGatewayClient.cs)（WebSocket 連線）
 - [`<UCL_Core>/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_DiscordChannelRoutingPage.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_DiscordChannelRoutingPage.cs)
 - [`docs/Workflows/Discord_Inbound_Workflow.md`](../../../../../../docs/Workflows/Discord_Inbound_Workflow.md)（主專案，整體 setup SOP）
 

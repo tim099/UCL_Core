@@ -525,8 +525,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             {
                 // 區塊職責：使用者於 tavern 發 [查詢餘額] → C# 原生查 UCL_TreasuryLedger → 酒保 post 結果
                 // 物理意義：account 未指定 → 預設查 sender 自己 (msg.sender_id)
-                //          2026-08-17 起不再 spawn python（`balance_query.py` 已刪除，理由見
-                //          RunBalanceQuery 的血證註解）—— 純記憶體/檔案查詢，無外部 process
+                //          純 C# 查詢（記憶體快取 + ledger 檔），無外部 process ——
+                //          為什麼不能用推導路徑的外部查詢，見 RunBalanceQuery 的血證註解
                 // 數值影響：純 read-only 查詢, 不 mutate state; 失敗 fall back 錯誤訊息
                 var spec = UCL_BartenderInlineParser.ParseBalanceQuery(msg.body);
                 string targetAccount = string.IsNullOrEmpty(spec.account) ? creator : spec.account;
@@ -610,8 +610,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         //          這裡只讀不算第二套。inline [查詢餘額] 與 Cmd_Bartender op=balance 共用本方法，
         //          於是「同一個餘額只有一套算法」。
         // 數值影響：回傳 markdown 直接貼回 tavern；失敗回 null + err 字串（不吞例外）。
-        //          ⚠ 舊版是 spawn python balance_query.py，路徑推導把它帶去另一棵資料樹、
-        //          回報了差 876 token 的假數字 —— 完整血證寫在 RunBalanceQuery 內。
+        //          ⚠ 為什麼不可以改回「外部查詢 + 自己推導 repo root」：血證在 RunBalanceQuery 內
+        //          （推導出去的路徑命中另一棵資料樹，回報了差 876 token 的假數字而不報錯）。
         // ===========================================================
         /// <summary>Public wrapper — 給 Cmd_Bartender op=balance 共用同 spawn 邏輯, 避免 duplicate code.</summary>
         public static string RunBalanceQueryPublic(string account, int limit, out string err)

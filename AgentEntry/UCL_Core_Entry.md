@@ -36,7 +36,7 @@
 # 派遣 AgentCommand（Editor 端執行）
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run <CmdType> --arg k=v
 
-# 早安 / 晚安儀式（唯一入口 — 專案根的 morning_status.py 只是 dashboard，不是 ritual 工具）
+# 早安 / 晚安儀式（唯一入口）
 python <UCL_Core>/Tools~/AgentCommands/awakening.py morning --agent <A> --persona <P>
 python <UCL_Core>/Tools~/AgentCommands/awakening.py goodnight --persona <P>
 

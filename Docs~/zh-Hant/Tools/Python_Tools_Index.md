@@ -177,15 +177,10 @@ UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle 
 | Tool | 用途 |
 |---|---|
 | `affinity_update.py` | gura→Tim affinity CLI |
-| `agent_task.py` | 跨 agent task 系統 |
 | `balance_query.py` | Treasury 餘額 + 近 N 筆 audit |
-| `build_tavern_identities.py` | identity card 預先建好 |
 | `debuglog_query.py` | DebugLog 查 (5 ops: tail / component / errors / search / summary) |
 | `discord_inbound_bot.py` | Discord → Tavern 中繼 daemon |
-| `gold_convert.py` / `migrate_voucher_v1_to_v2.py` | Treasury currency 遷移 |
-| `morning_status.py` | Tim dashboard（token / Tavern / inbox） |
-| `persona_character_clone.py` | T-PERSONA-CHAR clone tool |
-| `persona_ding.py` | persona ↔ persona ding CLI |
+| `gold_convert.py` | Treasury currency 遷移 |
 | `qa_*.py` (3 個) | QA battle 工具 (record / score / balance report) |
 | `screenshot.py` / `screenstream_*.py` (2 個) | 螢幕串流 daemon + annotate |
 | `secret_install.py` / `secrets_crypto.py` | 機密管理 |

@@ -1,9 +1,9 @@
 ---
 title: Ding 協議工作流 (Ding Protocol Workflow)
-last_updated: 2026-08-04 (指令去重: Step 1 與命令範例改指向 skill 單一來源; 「最近5條/近20條」已由工具 --context 與 durable inbox 落實)
+last_updated: 2026-08-17 (自叮 persona↔persona 機制退役 — persona_ding.py 移除，原 Part 2 整段刪除；本檔現在只講 Tim→agent 的叮)
 status: active
 theme: agent_collaboration
-summary: 兩種 ding 的共用工作流 — Tim→agent「叮」(聊天通知模型:讀→判斷→回; 支援 叮(seq N) 指定筆 + 被@/指定seq必回、一般nudge可選的分層) 與 persona↔persona「自叮」(inbox.md 便利貼; 2026-08-12 起無專屬 skill，本檔 Part 2 即唯一入口)。共用「兩種 ack 形式」精神；各自的工具/儲存/self-trigger 分列。
+summary: Tim→agent「叮」的工作流 — 聊天通知模型:讀→判斷→回; 支援 叮(seq N) 指定筆 + 被@/指定seq必回、一般nudge可選的分層。
 audience: Tim / agent (Claude / Antigravity / Gemini / Zeta)
 canonical_term: Ding Protocol
 related:
@@ -14,13 +14,13 @@ related:
 
 # 🔔 Ding 協議工作流
 
-> **兩種 ding**：
-> - **叮 (Tim → agent)**：像聊天軟體通知 —— **讀 → 判斷 → 回**。先讀 context（最近 5 條＋掃近 20 條有無 @你／指定 seq），再依「被 @ 或指定 seq 必回、一般 nudge 可選」判斷，要回一律走酒館 `tavern` 房。
-> - **自叮 (persona ↔ persona)**：同一 actor 內某 persona 戳另一 persona，走 `inbox.md` 便利貼（收到必回）。
+> **叮 (Tim → agent)**：像聊天軟體通知 —— **讀 → 判斷 → 回**。
+> 先讀 context（最近 5 條＋掃近 20 條有無 @你／指定 seq），
+> 再依「被 @ 或指定 seq 必回、一般 nudge 可選」判斷，要回一律走酒館 `tavern` 房。
 >
 > 對應 `CLAUDE.md` hard rule 同 tier（早安 / 晚安 / Task Completion → Tavern Share）。
 
-## 共用精神：兩種 ack 形式
+## 兩種 ack 形式
 
 要回時兩種接受形式：
 
@@ -28,8 +28,6 @@ related:
 - **(B) 罐頭文** — 保禮貌的制式 ack，但**必含 read 證據**（看到的最近一筆 sender + 一個關鍵詞），純口號禁用。
 
 ---
-
-# Part 1 — 叮 (Tim → agent)
 
 ## 為何走酒館
 
@@ -109,74 +107,3 @@ cursor: `AgentCommands/ChatTavern/_inbox_cursor/<persona>.json`；重置 `tavern
 | 200 字長文 | 那是 task share 該標 `tag=task-share` |
 | 罐頭沒標 `tag=ack-only` | 統計分不清 ack / 討論 |
 | agent 自己亂觸發「叮」 | 本協議是 Tim→agent，別 self-trigger |
-
----
-
-# Part 2 — 自叮 (persona ↔ persona)
-
-## 定位
-
-| 機制 | 場景 | Round | 重量 |
-|---|---|---|---|
-| 叮 (Tim→agent) | 人喚起 agent | 1 | 輕 |
-| letter | persona → 全部未來 layer 廣播 | 0(單向) | 中 |
-| dialogue chain | persona ↔ persona 深度辯證 | 2-3 + CLOSED | 重 |
-| **自叮** | persona → 特定 persona 單次 ping | 1 + reply | 輕 |
-
-填補「想戳一下另一 layer 但不開 dialogue chain」：e.g. basecamp 留問題給 ridge-001 醒來答、留 reminder 給特定 persona（不適合廣播全 layer 的私訊）。
-
-**什麼話等於在要求自叮**（原 `ucl-persona-ding` skill 的觸發詞，2026-08-12 skill 退場時搬進本檔以免遺失）：
-`自叮` / `persona ding` / `戳一下另一 persona` / `留訊息給 <persona>` / `persona inbox` /
-`persona 之間對話` / `跨 layer 留問題`。跨 agent 通用（Claude / Antigravity / Gemini —— 各自 actor 內的 personas 之間）。
-⚠ 這些詞**不再有專屬 skill 入口**，本檔 Part 2 就是唯一來源；聽到這類要求直接照下面的三招走。
-
-哲學：letter=日記留給未來 / dialogue=深度辯證信件 / **自叮=便利貼貼冰箱「記得回我」**。每個 persona 有自己的冰箱（inbox.md），輕量但**必須撕下來認真看**。
-
-## 儲存結構
-
-persona 專屬 inbox（跟 overlay 同目錄）：
-```
-constitution/<actor>/personas/<persona>/
-  ├── _latest.md / amendment_log.jsonl / ...
-  └── inbox.md              # 自叮 inbox (多筆 append, 每筆一個 YAML frontmatter block)
-```
-`inbox.md` 每筆 ding 一個 block（`from_persona` / `to_persona` / `ding_id` / `expects_reply` / `replied` frontmatter + body）；回覆時 append `### reply by <persona> @ <ts>` block + 改 `replied: true`。
-
-## Tool: `persona_ding.py`（`AgentCommands/Tools/`，專案層）
-
-```bash
-# 招 1: 發 ding
-python AgentCommands/Tools/persona_ding.py send --actor <actor> --from <self> --to <target> \
-  --body "..." --expects-reply true --session-context "..."
-  # → gen UUID6 ding_id → append block 到 personas/<to>/inbox.md → (可選 --broadcast) tavern post
-
-# 招 2: 讀 ding (醒來必走, 整合進 ucl-letters-to-self 初始化 SOP)
-cat AgentCommands/ChatTavern/baton/constitution/<actor>/personas/<my-persona>/inbox.md
-  # → 看 replied:false, 必回
-
-# 招 3: 回 ding
-python AgentCommands/Tools/persona_ding.py reply --actor <actor> --persona <me> \
-  --ding-id <id> --body "..."
-  # → 找到 block append reply + 改 replied:true → (可選 --broadcast)
-```
-
-## 收到自叮必回
-
-看到 `replied: false` → 必回（實質 or 制式 ack）。不接受：完全 ignore / 改 `replied: true` 但沒寫 reply（=假回）。例外：`expects_reply: false` 純 FYI，可只 mark replied 不寫 body。
-
-## 第一次發 ding (Quick Start)
-
-1. 確認目標 persona overlay 已存在（`personas/<target>/_v1.md`）；不存在 → 該 persona 未 spawn，改寫 letter 廣播。
-2. cat 自己 letter/overlay 確認真有問題要問。
-3. `persona_ding.py send ...`
-4. (可選) tavern broadcast。
-5. commit `[persona-ding]` prefix + inbox.md 入 git。
-
-## 不要做
-
-- ❌ 自叮 > 5 筆未答堆積 → 升級 dialogue chain。
-- ❌ 用自叮代替 letter（廣播）/ dialogue chain（深度辯證）。
-- ❌ 跨 actor 自叮 → 走 tavern @mention。
-- ❌ 自叮 body > 300 字 → 該寫 letter / dialogue。
-- ❌ 手動 edit inbox.md 繞過 persona_ding.py（UUID6/ts/frontmatter 易寫壞）。
-- ❌ persona 還沒 spawn 就先寫 ding（inbox 應 lazy-create）。

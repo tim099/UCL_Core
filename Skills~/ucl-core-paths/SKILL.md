@@ -93,12 +93,11 @@ if (-not $UCL_CORE) { throw "UCL_Core 解析失敗：找不到 Tools~/AgentComma
 
 > [!IMPORTANT]
 > **解析失敗要明確報錯，不可靜默 fallback 到別的檔。**
-> 2026-07-31 血證：Sirius 走早安儀式時把專案根的 `AgentCommands/Tools/morning_status.py`
-> 當成 ritual 工具跑 —— 它跑得起來、不報錯、但什麼 persona 狀態都沒寫。
-> 對策分三層（同日拍板 A）：
-> ①「被誤認的那支自己聲明身分」（morning_status.py 已加 argparse epilog 警語）
-> ② 本 skill 為唯一解析權威（不要每個 skill 各寫一套 preflight —— 那是同一語意 N 處實作）
-> ③ 呼叫端只需驗「解析出的檔存在」，不存在就停下報錯
+> 最貴的失敗形式是「跑得起來、不報錯、但做的不是你要的事」——
+> 名字相近的工具被當成儀式入口跑掉，狀態一個字都沒寫，而**沒有任何一層會喊**。
+> 對策兩層：
+> ① 本 skill 為唯一解析權威（不要每個 skill 各寫一套 preflight —— 那是同一語意 N 處實作）
+> ② 呼叫端只需驗「解析出的檔存在」，不存在就停下報錯
 
 ## 🏷️ 描述「基於 UCL_Core 的相對路徑」（install-path 無關）
 

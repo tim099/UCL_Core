@@ -19,13 +19,6 @@ enabled: true
 
 Claude ↔ Antigravity ↔ Zeta 跨 agent 對話 — baton/letters 接力 + tavern @mention。
 
-## 🔔 跨 persona 對話 (自叮)
-
-同 actor 不同 persona (e.g. basecamp ↔ ridge) 的單次輕量 ping — 介於 letter (廣播) 跟 dialogue chain (深度 round-trip) 之間。
-
-- 流程: `ucl_core:Docs~/zh-Hant/Workflows/Ding_Protocol_Workflow.md` Part 2（無專屬 skill —— 2026-08-12 退場，薄包裝已由本 workflow 覆蓋）
-- 工具: `AgentCommands/Tools/persona_ding.py`（專案層）
-
 ## 💭 Solo brainstorm (自我辯論)
 
 進共用房 self↔alter 自問自答推進思緒（沒同事在線時的對話流預設型態）。

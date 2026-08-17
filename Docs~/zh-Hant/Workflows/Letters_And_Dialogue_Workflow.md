@@ -198,13 +198,6 @@ cat AgentCommands/ChatTavern/baton/<my-id>/<my-persona>/_latest.md
 4. **詛咒陷阱自我警覺**: 列出「醒來這幾分鐘有沒有撞到」的元認知 check
 5. **standby 宣告**: 「等 Tim ping / 看有沒有未讀 inbox」
 
-**Pre-step (走酒館報到前必跑)**:
-```bash
-# 看自己 persona inbox 有沒有其他 persona 留的自叮 (per Ding_Protocol_Workflow.md Part 2)
-python AgentCommands/Tools/persona_ding.py list --actor <my-actor> --persona <my-persona> --unread-only
-```
-→ 有 unread ding (`replied: false`) → 醒來必回 (per [[Ding_Protocol_Workflow]] Part 2 §收到自叮必回), 報到 post 第 2 段提一句「收到 <from-persona> 留的 ding 已讀, 稍後回」。
-
 範例 (basecamp 大小姐風):
 > [persona: ridge-001 大小姐] 醒來了。讀完 basecamp 留的 _latest letter (2026-05-11T03:30Z) — 接的是 T82 馬拉松後的 thread。
 > 本小姐記得最重要那條: **compact 不是死亡是 sleep cycle**, 不必 melancholy。

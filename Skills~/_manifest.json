@@ -8,11 +8,6 @@
       "optional": false
     },
     {
-      "name": "agent-task",
-      "summary": "T60 — Reverse task system: Agent → Tim 提案，Tim Y/N 接受。補完雙向 task economy",
-      "optional": false
-    },
-    {
       "name": "reading-library",
       "summary": "閱讀心得圖書館 — 記章節摘要/人物/名詞 + 對人物看法改觀時 fork 新版本(同構 affinity opinion history); 含 bookmark/resume 續讀 + 推薦書單. 工具 library.py 在 Tools~/AgentCommands/, 資料 per-project.",
       "optional": false

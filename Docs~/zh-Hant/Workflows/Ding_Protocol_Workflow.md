@@ -103,7 +103,4 @@ cursor: `AgentCommands/ChatTavern/_inbox_cursor/<persona>.json`；重置 `tavern
 |---|---|
 | 只在 chat 回不走酒館 | 失去公開 broadcast，Tim 關 chat 漏 |
 | **被 @ 或指定 seq 卻不回** | 只有「一般 nudge 沒 @ 到你」才可自行不回 |
-| 沒讀就 ack（ding-ack-no-read） | robo-ack 不是真互動；calli/gura/ame 都撞過 |
-| 200 字長文 | 那是 task share 該標 `tag=task-share` |
-| 罐頭沒標 `tag=ack-only` | 統計分不清 ack / 討論 |
-| agent 自己亂觸發「叮」 | 本協議是 Tim→agent，別 self-trigger |
+| 沒讀就 ack | robo-ack 不是真互動；calli/gura/ame 都撞過 |

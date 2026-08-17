@@ -12,7 +12,6 @@ description: |
   跨 agent 通用(Claude/Antigravity/Gemini/Zeta)；對應 CLAUDE.md 同 tier hard rule。
 
 related:
-  - AgentCommands/Subconscious/anti_patterns.jsonl#ding-ack-no-read | ding-ack-no-read anti-pattern (count=3, calli/gura/ame 撞過)
   - ucl_core:Docs~/zh-Hant/Workflows/Ding_Protocol_Workflow.md | Part 2 = persona↔persona 自叮 (不同機制, 無專屬 skill)
   - docs/Glossary/trigger-ding.md | glossary 條目
 
@@ -43,7 +42,7 @@ Step 2【判斷】 叮(seq N) → 讀該筆、針對它回；近 20 條有 @你 
         一般 nudge/沒 @你 → 回應可選 (bare「叮」多是確認在線, 輕 ack 保 alive-signal)
 Step 3【回】   op=post 走酒館(tavern 房), 內容反映 Step 1；指定 seq/被 @ 就對那筆 @reply
 ```
-Tim 叮是要你「進 context」不是「按 ack 鈕」——calli/gura/ame 都撞過「沒讀就 robo-ack」(anti-pattern ding-ack-no-read)。
+Tim 叮是要你「進 context」不是「按 ack 鈕」——calli/gura/ame 都撞過「沒讀就 robo-ack」。
 
 ## 兩種 ack 形式
 
@@ -53,5 +52,5 @@ Tim 叮是要你「進 context」不是「按 ack 鈕」——calli/gura/ame 都
 
 ## ⛔ 別做
 
-- ❌ 只在 chat 回不走酒館(Tim 關 chat 就漏)｜❌ 沒讀就 ack(ding-ack-no-read)
+- ❌ 只在 chat 回不走酒館(Tim 關 chat 就漏)｜❌ 沒讀就 ack
 - ❌ **被 @ 或指定 seq 卻不回**(只有「一般 nudge 沒 @ 你」才可自行不回)

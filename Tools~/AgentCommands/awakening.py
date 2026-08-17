@@ -44,7 +44,7 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
                                                       太短(<10 行)時 brief 會往前合併更早的信
     見叢 T1.5 letters/<persona>/_keys_open.md         當期交棒清單 (可勾銷/執行用)
     見林 T2   longterm/wake_<N>-<M>.md                ~10 夜反思濃縮
-    見森 T3   longterm/forest/gen_<NNN>_*.md          第 5 份見林起, 跨段縱向敘事 (rolling fold)
+    見森 T3   longterm/forest/gen_<NNN>_*.md          見林 ≥ 3 份起, 之後每份新林折一代 (rolling fold)
     見根 T4   fragments/<type>_<slug>.md + _root_index.md   關鍵記憶片段 (唯一事實來源) + 機械索引
   對應 subcommand:
     consolidate --persona X [--digest-body ...] [--level linzi|forest]
@@ -1379,7 +1379,7 @@ def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
 #            不足 200 行時 brief §5 往前合併到夠讀（見 wake_brief.MERGE_STOP_LINES）
 #   見叢 T1.5 letters/<persona>/_keys_open.md        當期交棒清單（checkbox，執行用）
 #   見林 T2  letters/<persona>/longterm/wake_N-M.md  10 夜濃縮（既有）
-#   見森 T3  letters/<persona>/longterm/forest/      第 5 份見林起，跨段縱向敘事（rolling fold）
+#   見森 T3  letters/<persona>/longterm/forest/      見林 ≥ 3 份起，之後每份新林折一代（rolling fold）
 #   見根 T4  letters/<persona>/fragments/            關鍵記憶片段 + 機械生成索引 _root_index.md
 #
 # 物理意義（防漂移的核心）：fragment 檔是**唯一事實來源**，內容寫一次之後不再改寫；
@@ -2555,7 +2555,7 @@ def main():
     pcons.add_argument("--span-end", type=int, default=None, help="迄 wake# (預設 現在 wake_count)")
     # 見森 (T3): --level forest 改折「上代森 + 最新見林」; 純加法, 預設仍是見林 (linzi)
     pcons.add_argument("--level", choices=["linzi", "forest"], default="linzi",
-                       help="linzi=見林 digest (預設) / forest=見森 fold (第 5 份見林起可用)")
+                       help="linzi=見林 digest (預設) / forest=見森 fold (見林 ≥ 3 份起, 之後每份新林折一代)")
 
     # 見根 (T4): 機械重建必讀索引 — 產物可隨時重建, 故不需要 body 參數
     prid = sub.add_parser("root-index", help="見根: 掃 fragments/ 機械重建 _root_index.md")

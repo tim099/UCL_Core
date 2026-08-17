@@ -51,7 +51,7 @@ AgentCommands/ChatTavern/baton/letters/<persona>/
 | T1 | 見樹 | 昨夜 1 封（日記／抒發） | goodnight |
 | T1.5 | 見叢 | 當期數夜的交棒清單（可勾銷／執行用） | 隨時 `keys --add`，見林時歸檔 |
 | T2 | 見林 | ~10 夜反思濃縮 | `consolidate` |
-| T3 | 見森 | 第 5 份見林起，跨段縱向敘事（rolling fold：上代森＋新林 2 份輸入） | `consolidate --level forest` |
+| T3 | 見森 | 見林 ≥ 3 份起可折，之後每寫一份見林就折下一代（rolling fold：上代森＋新林 2 份輸入） | `consolidate --level forest` |
 | T4 | 見根 | 關鍵記憶片段 + 機械索引（**貫穿全層的必讀**） | 見林時抽 → `root-index` |
 
 **防漂移核心**：fragment 檔是**唯一事實來源**，內容寫一次之後不改寫；見樹/叢/林/森/索引全部只是視圖。

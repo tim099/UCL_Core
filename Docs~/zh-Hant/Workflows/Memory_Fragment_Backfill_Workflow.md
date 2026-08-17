@@ -34,7 +34,7 @@ last_updated: 2026-07-28 (初版 — Tim 拍板「讓 wake>30 的同事都能跑
 | 見樹 T1 | `letters/<persona>/_latest.md` | 昨夜 1 封（日記，抒發） | goodnight |
 | 見叢 T1.5 | `letters/<persona>/_keys_open.md` | 當期交棒清單（checkbox，執行） | **隨時 append**，見林時歸檔 |
 | 見林 T2 | `letters/<persona>/longterm/wake_N-M.md` | 每 ~10 夜濃縮 | consolidate |
-| 見森 T3 | `letters/<persona>/longterm/forest/gen_NNN_*.md` | 第 5 份見林起，跨段縱向敘事 | `consolidate --level forest` |
+| 見森 T3 | `letters/<persona>/longterm/forest/gen_NNN_*.md` | 見林 ≥ 3 份起可折，之後每份見林折一代 | `consolidate --level forest` |
 | **見根 T4** | `letters/<persona>/fragments/*.md` + `_root_index.md` | **關鍵記憶片段（本 workflow 的產物）** | 見林時抽 / 本 workflow 回溯補 |
 
 **事實來源永遠是 fragment 檔**；見樹/叢/林/森/索引都只是視圖。這是防漂移的核心 —— 內容寫一次之後不改寫，折疊只做「集合聯集 + 重排」，不重寫散文。
@@ -232,7 +232,7 @@ top3 是**三個不同 persona 各自寫的近似檔**（`lesson_multi-lock-expl
 ## 🔗 跑完之後（回到常規節奏）
 
 - **每次見林（consolidate）時抽新 fragment** → `consolidate` 寫完 digest 會自動提示，並歸檔當期見叢、提示見森門檻
-- **第 5 份見林起**：`consolidate --persona $P --level forest` 折見森（首折讀全部見林，之後只讀「上代森 + 新見林」2 份，成本恆定）
+- **見林 ≥ 3 份起、且之後每寫一份見林都折一代**：`consolidate --persona $P --level forest`（首折讀全部見林，之後只讀「上代森 + 新見林」2 份，成本恆定）
 - **morning 自動**：刷新見根索引 → 生成 wake brief → 印一行「讀這一份就好」
 
 ## 📣 跑完請回報

@@ -113,7 +113,10 @@ Step 4. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
 
 本檔只記三條不隨當次狀態變的事：
 
-- 三層記憶的門檻：**見林** gap ≥ 10 觸發濃縮；**見森** 見林 ≥ 5 份起可折；**見叢** 隨時可 append。
+- 三層記憶的門檻：**見林** gap ≥ 10 觸發濃縮；**見森** 見林 ≥ 3 份起可折，**之後每寫一份見林就折下一代**
+  （rolling fold：只讀「上代森＋新林」兩份，成本不隨壽命成長）；**見叢** 隨時可 append。
+  ⚠ 見森不是「偶爾才做一次」—— 折了新林卻沒折森，那一份林就沒有任何上層在看。
+  現況以 `consolidate --level forest`（不帶 body）印的狀態為準：`folded_digest_count < 見林份數` 就是待折。
 - **重要節點（fork / 重大 reframe / compact 大關）可自決提前整理**，不必等門檻。
 - 醒超過 30 次卻從未抽過 fragment → 跑一次
   [Memory_Fragment_Backfill_Workflow](Memory_Fragment_Backfill_Workflow.md)。

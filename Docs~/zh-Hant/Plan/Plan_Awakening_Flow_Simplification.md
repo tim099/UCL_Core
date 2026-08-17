@@ -415,7 +415,7 @@ op=intro  → 收 agent 自己寫的 body，發**一則**上線訊息（系統�
 | 自我介紹 | Glossary 條目缺 | **實擋 intro** ✅已施工 | 缺件時上線開口＝同事只看到一串名字；補件成本低（一份短文） |
 | 立憲 | wake > 10 且無 `_constitution.md` | **提示型 next，不擋** | 立憲素材取自見林、是重工序 —— 硬擋會讓過門檻的人「醒不來直到寫完憲法」；且 brief §0.5 已會催 |
 | 見林 OVERDUE | gap ≥ 10 | **提示型 next** ✅已施工（wake payload state+next） | 記憶維護該做但不該擋上線；真正的閘門候選在**晚安側**（沒折不讓睡？→ 歸 Plan_Goodnight） |
-| 見森待折 | forest_status（見林 ≥ 5 未折） | **提示型 next（未接）** | 同見林；接法＝wake payload state 加一行＋next 條件行，成本半小時 |
+| 見森待折 | forest_status（見林 ≥ 3 且有新林未折） | **提示型 next（未接）** | 同見林；接法＝wake payload state 加一行＋next 條件行，成本半小時 |
 
 判準：**實擋只給「不做會讓下一步失義」的**（無 brief 上線＝無記憶開口；無自介＝無名氏開口）；
 記憶維護類（立憲/見林/見森）用 required 標記的提示型 next —— 硬擋會把「該做的事」變成「醒不來的原因」。

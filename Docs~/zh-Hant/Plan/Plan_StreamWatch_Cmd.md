@@ -1,7 +1,7 @@
 ---
 title: 觀影模式重做 — Cmd_StreamWatch 分步 + 計酬整合 + 場次匯出
 slug: streamwatch-cmd
-status: shipped（2026-08-15 六步；2026-08-17 追加 prepare/catchup 準備階段與實錄匯出工具，皆實跑驗過：prepare→catchup(gura 缺 0001/0002)→export-watch 002-004；殘項見 §12 尾）
+status: shipped（2026-08-15 六步；2026-08-17 追加 prepare/catchup 準備階段與實錄匯出工具，皆實跑驗過：prepare→catchup(gura 缺 0001/0002)→export-watch 002-004；殘項見 §12 尾；2026-08-19 收工自動匯出＋台帳回填 exported_chapter，煙霧測試實跑驗過）
 created_at: 2026-08-15T06:55:00Z
 created_by: summit
 location: UCL_Core (cross-project)
@@ -462,7 +462,7 @@ companion 走 `join` **繼承**，不自己解析。**一場一個鍵，而那�
 - **匯出落點：進 Library 成為一份 media**（`work → media → readers`）
   ⇒ 它能被別人讀、能有 bookmark、能被下一場接續。**看完的產出，本身成為可被閱讀的作品。**
 
-### 8.0 現況（2026-08-17 落地）
+### 8.0 現況（2026-08-17 落地；2026-08-19 自動匯出）
 
 - 匯出工具：`library.py export-watch --media <id> --seq-ranges <a-b[,c-d]> --chapter <NNN> --title <章名>`
   → 寫 `Books/watch-<media>/NNN.txt`。排除酒保系統廣播與公告類 tag（commit／free-time…）、
@@ -470,8 +470,21 @@ companion 走 `join` **繼承**，不自己解析。**一場一個鍵，而那�
 - 區間來源：收工結算時 append 一行到 `StreamWatch/sessions_log.jsonl`（**append-only**）。
   🩸 `sessions/<persona>.json` 開下一場就被覆寫 ⇒ 02-04 話的實錄一度補不出來，
   不是訊息不見了（都在磁碟上），是**沒有任何地方記得那幾場的區間**。
-- ⛔ **刻意不自動匯出**：章 ≠ 場（重播、殘場、一話跨三場都發生過）；章名要親筆。
-  自動的是「把區間變成不會丟的事實」，判斷留給人。
+- ⛔ ~~**刻意不自動匯出**~~ —— **2026-08-19 Tim 拍板改為「準備期填好參數就自動匯出」**（BUG-10）。
+  ⚠ 舊理由（章 ≠ 場、章名要親筆）**沒有被推翻，是搬家了**：
+  - **章名改在 `prepare` 填**（`--arg chapter_title=<章名>`）—— 開場前定死，仍然是親筆；
+    **沒填就不自動匯出**，回傳檔照舊印手動指令。⛔ 不拿 `show_title`（影片標題）當預設值。
+  - **章 ≠ 場由 `--from-session` 併區間處理**：主場 ∪ 其 companions ∪ **已匯進同一章的舊場次**
+    ⇒ 一話跨數場是「併區間重匯同一章」，不是另開一章、也不是靜默漏掉第二場。
+  - **只有 primary 觸發**（陪同者收工不觸發，否則同一章會被每個人各匯一次）。
+  - 其餘旋鈕：`export_chapter=<章號覆寫>` / `export_work_title=<作品 第N話>` / `auto_export=false`（單次關掉）。
+  - 併章的副標保留、跨作品併章仍是**人的判斷**，自動化只覆蓋「一場＝一章」與「同章多場併區間」。
+- **`exported_chapter` 由 `export-watch` 回填**（BUG-9，2026-08-19）。台帳 append-only ⇒
+  **不就地改行**，而是 append 一筆 `record_type=export` 修訂事件，讀取端取同一 `session_id` 的最後一筆。
+  🩸 修之前：欄位存在、註解寫「匯出後由人/工具回填」，而**兩端都沒有人做** ——
+  實測 5/5 全空而 `Books/` 底下已有 7 章，「已匯出」與「未匯出」同形且不會叫。
+- 台帳新增 `library_media_id`（2026-08-19）：準備檔以**閱讀庫 media id** 命名，而場次記的是 work slug ——
+  沒有這一欄，自動匯出找不到章名，**而那個失敗會長得像「沒設定」**。
 
 ### 8.1 端點的邊界
 

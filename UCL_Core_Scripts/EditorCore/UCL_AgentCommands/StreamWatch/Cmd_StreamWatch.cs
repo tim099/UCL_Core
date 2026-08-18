@@ -433,8 +433,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!aAutoExport)
                 aR.AppendLine("- ⏸ `auto_export=false` ⇒ 本媒材收工**不自動匯出**（回傳檔仍會印手動指令）");
             else if (string.IsNullOrEmpty(aChapterTitle))
-                aR.AppendLine("- ⛔ **未啟用** —— `chapter_title` 沒填。章名要親筆，工具不代取（不拿影片標題頂替）。
-"
+                aR.AppendLine("- ⛔ **未啟用** —— `chapter_title` 沒填。章名要親筆，工具不代取（不拿影片標題頂替）。\n"
                     + $"  ⇒ 要啟用：重跑本步並帶 `--arg chapter_title=\"<章名>\"`（prepare 可重入）");
             else
                 aR.AppendLine($"- ✅ **已啟用** —— 主觀影者收工時自動匯出成章 `{(string.IsNullOrEmpty(aExportChapter) ? aChapterId : aExportChapter)}`"
@@ -1527,15 +1526,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (aOk)
                 {
                     // 印 ✓ 不算數 —— 原樣搬 python 的回讀行（行數/字元數/實錄段數都是它讀回檔案量的）
-                    foreach (var line in aOut.Replace("", "").Split('
-'))
+                    foreach (var line in aOut.Replace("\r", "").Split('\n'))
                         if (!string.IsNullOrWhiteSpace(line)) ioR.AppendLine($"- {line.Trim()}");
                 }
                 else
                 {
                     ioR.AppendLine($"- ⚠ **自動匯出失敗** —— {aErr}");
-                    if (!string.IsNullOrWhiteSpace(aOut)) ioR.AppendLine($"- stdout: {Truncate(aOut.Replace("
-", " "), 400)}");
+                    if (!string.IsNullOrWhiteSpace(aOut)) ioR.AppendLine($"- stdout: {Truncate(aOut.Replace("\n", " "), 400)}");
                     ioR.AppendLine("- ⇒ 章沒進書（結算不受影響）。用下面 next 的手動指令補，別當它已經進去了。");
                 }
             }
@@ -2490,6 +2487,78 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // 數值影響：一行一場 JSON、append-only、失敗只 warning（結算不能因為寫台帳失敗而回頭）。
         //   欄位是給 `library.py export-watch` 用的：media_id + start_seq/end_seq 就是匯出區間。
         // ===========================================================
+        // ===========================================================
+        // 區塊職責：收工自動匯出的兩支 helper（BUG-10）。
+        // ① ReadAutoExportSetting —— 讀準備檔決定「這一場收工要不要自動匯出」。
+        //    ⚠ 回傳理由字串：關掉與沒設定是兩件事，而它們在回傳檔上會長得一樣（那正是本系統一直在修的形狀）。
+        // ② RunExportWatch —— 呼叫 library.py export-watch --from-session。
+        //    區間、同場清單、章號、章名全部由 python 端從台帳與準備檔反查（C# 不重算一次，避免兩份產線）。
+        // ===========================================================
+        static (bool On, string Why) ReadAutoExportSetting(string iLibraryMediaId)
+        {
+            if (string.IsNullOrEmpty(iLibraryMediaId))
+                return (false, "session 沒有 library_media_id（舊場次；台帳自 2026-08-19 起才帶這欄）");
+            string aPath = PreparedPath(iLibraryMediaId);
+            if (!File.Exists(aPath))
+                return (false, $"找不到準備檔 `StreamWatch/prepared/{iLibraryMediaId}.json`（本場沒走 prepare？）");
+            try
+            {
+                var aP = JsonData.ParseJson(File.ReadAllText(aPath));
+                if (aP == null) return (false, "準備檔讀不出 JSON");
+                if (aP.Contains("auto_export") && !aP["auto_export"].GetBool())
+                    return (false, "準備檔 `auto_export=false`（本媒材刻意關掉）");
+                string aTitle = aP.Contains("chapter_title") ? aP["chapter_title"].GetString() : "";
+                if (string.IsNullOrWhiteSpace(aTitle))
+                    return (false, "準備檔沒有 `chapter_title` —— 章名要親筆，工具不代取"
+                        + "（prepare 可重入：`--arg chapter_title=\"<章名>\"`）");
+                return (true, aTitle);
+            }
+            catch (Exception e) { return (false, $"準備檔解析失敗：{e.Message}"); }
+        }
+
+        static async UniTask<(bool Ok, string Out, string Err)> RunExportWatch(
+            string iSessionId, System.Threading.CancellationToken iToken)
+        {
+            try
+            {
+                string aCoreRel = UCL_EditorPath.CorePath;
+                if (string.IsNullOrEmpty(aCoreRel)) return (false, "", "解析不到 UCL_Core 路徑");
+                string aScript = Path.GetFullPath(Path.Combine(
+                    UCL_RepoPath.UnityProjectRoot, aCoreRel, "Tools~/AgentCommands/library.py")).Replace('\\', '/');
+                if (!File.Exists(aScript)) return (false, "", $"找不到 library.py（{aScript}）");
+
+                var aPsi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = $"\"{aScript}\" export-watch --from-session {iSessionId} --force",
+                    WorkingDirectory = UCL_RepoPath.UnityProjectRoot,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8,
+                };
+                using var aProc = System.Diagnostics.Process.Start(aPsi);
+                if (aProc == null) return (false, "", "Process.Start 回 null");
+                // 硬規則：每顆外部 Process 都要登記（Coding_Standards「外部 Process」）
+                using var aScope = UCL_ProcessRegistryService.RegisterScope(
+                    aProc, $"streamwatch_export_{iSessionId}", "實錄匯出成章（收工自動）", nameof(Cmd_StreamWatch));
+
+                string aOut = "", aErr = "";
+                bool aExited = await System.Threading.Tasks.Task.Run(() =>
+                {
+                    aOut = aProc.StandardOutput.ReadToEnd();
+                    aErr = aProc.StandardError.ReadToEnd();
+                    return aProc.WaitForExit(120000);
+                }, iToken);
+                if (!aExited) { try { aProc.Kill(); } catch { } return (false, aOut, "timeout(>120s)"); }
+                if (aProc.ExitCode != 0) return (false, aOut, $"exit={aProc.ExitCode}; {Truncate(aErr, 400)}");
+                return (true, aOut, "");
+            }
+            catch (Exception e) { return (false, "", $"spawn exception: {e.Message}"); }
+        }
+
         const string SESSION_LOG_NAME = "sessions_log.jsonl";
 
         static void AppendSessionLog(JsonData iS, string iPersona, int iEndSeq, int iPaidMin, int iPaidTotal)

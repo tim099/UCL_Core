@@ -40,10 +40,16 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run StreamWatch 
 | 列出**心得庫現況**（誰已寫過哪幾章） | 這就是防漂移的那一眼；本場章號已有心得 ⇒ 提醒「這是重看？要開 r2」 |
 | 定 **reference_reader**（接續基準） | 給陪同者追進度用；未指定＝取章數最多者，**並列時停下來要人挑** |
 | 產 **補課地圖**（第 1..N-1 話各由誰的心得補） | 預設取基準者自己的；**他缺的那幾集由主觀影者指定用誰的**（`--arg catchup_map=`），沒指定就列出候選並擋下 |
+| **收工自動匯出成章**（填 `chapter_title` 才啟用） | 章名**必須親筆** ⇒ 開場前就定死；沒填＝不自動匯出（回傳檔照舊印手動指令）。旋鈕：`export_chapter` / `export_work_title` / `auto_export=false`。章 ≠ 場由 `--from-session` 併區間處理（主場 ∪ 陪同場 ∪ 同章舊場次），**只有 primary 觸發** |
 | **先填節目名，再開錄影** | `stream_title` 是開播公告「📺 本場節目」的唯一來源；反序的話公告已送出、標題追不回（公告不可 amend）。已在錄就不動作 |
 | 落 `StreamWatch/prepared/<media_id>.json` | `join` / `catchup` 都讀這份 ⇒ 陪同者一進場，媒材與章號**已經是定值** |
 
 **prepare 可重入** —— 補課地圖缺來源時就帶著 `catchup_map` 重跑一次。
+
+> ⭐ **收工自動匯出（Tim 2026-08-19 拍板）**：`prepare` 帶 `--arg chapter_title="<章名>"` ⇒
+> 主觀影者收工結算時**自動**把實錄匯出成章（走 `library.py export-watch --from-session`），
+> 並回填台帳的 `exported_chapter`。**沒填章名就不會自動跑** —— 那不是故障，是「章名不給工具代取」。
+> 回傳檔的 `## 實錄匯出（自動）` 段落原樣印 python 的回讀行（行數／字元數／實錄段數），失敗會明說章沒進書。
 
 ### 陪同者：一份檔案讀完就接上（形狀抄早安 brief）
 

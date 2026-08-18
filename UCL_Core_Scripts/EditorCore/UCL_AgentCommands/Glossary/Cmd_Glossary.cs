@@ -198,6 +198,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
                 : slug + ".md";
             report.AppendLine($"- path: docs/Glossary/{reportRel}");
             report.AppendLine($"- created_by: {createdBy}");
+            // 區塊職責：本人若正在自由時間中，回傳值尾端多附一段流程提示（Tim 2026-08-18）。
+            // 物理意義：`glossary-entry` 是自由時間「知識沉澱」組的活動，入口是本 Cmd 而非 python 腳本，
+            //          所以 `op=step` 代跑不到它。走 helper 讓 **Cmd 自己回報進流程**，
+            //          而不是在活動層長出第二種 tool 形式去呼叫 Cmd（那會多一條流程，兩條漂移時都不報錯）。
+            // 數值影響：不在自由時間時一個字都不加。
+            // 邊界：createdBy 是自由字串（可能不是 persona）—— 查不到 session 就等於不在，不會誤印。
+            UCL.Core.EditorLib.AgentCommands.UCL_FreeTimeHint.Append(report, createdBy);
             Cmd_Glossary_Helpers.ResolveLastOp(report.ToString());
         }
 

@@ -128,8 +128,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch
 
 - ❌ 自己判斷「時間到了」而停手 —— 時限只認 Cmd 的時鐘，不認收束感。
 - ❌ 憑印象取 `media` slug；❌ 用 `bilibili-stream` 這種泛名（會把所有影片併成一個 work）。
-- ❌ 直跑 `stream_watch_session.py`（**舊 prototype，已停用**）或自己去跑 `screenstream_montage.py`
-  —— 繞過收銀台的帳不算數，且不會有窗口對帳。
+- ❌ 自己去跑 `screenstream_montage.py` —— 繞過收銀台的帳不算數，且不會有窗口對帳。
 - ❌ 評論裡寫自己數的 frame 數／時間 —— 數字一律引用回傳檔的讀數。
 
 ## 延伸

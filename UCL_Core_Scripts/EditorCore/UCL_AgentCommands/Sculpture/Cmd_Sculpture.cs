@@ -198,6 +198,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             aR.AppendLine("## next");
             aR.AppendLine($"- 看成品：run_cmd.py run Sculpture --arg op=view [--arg region=…] [--arg exclude_color=…]（免費）");
             aR.AppendLine("- 驗收慣例：宣稱含內部結構的作品，交件附外觀＋室內（region 裁進去）各一張。");
+            // 區塊職責：本人若正在自由時間中，回傳值尾端多附一段流程提示（Tim 2026-08-18）。
+            // 物理意義：`sculpt-3d` 是自由時間「繪圖」組的活動，而它的入口是 Cmd 不是 python 腳本 ——
+            //          所以 `op=step` 代跑不到它（代跑層只 spawn python）。**修法不是讓代跑層去呼叫 Cmd**
+            //          （那要在活動層長出第二種 tool 形式），而是反過來：**Cmd 自己回報進流程。**
+            //          落子完成正是最容易斷線的位置 —— 產物剛落地、注意力在產物上。
+            // 數值影響：不在自由時間時一個字都不加（本 Cmd 平常也用於工作，不該多噪音）。
+            UCL_FreeTimeHint.Append(aR, aPersona);
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[Sculpture] op={iOp} {aActual} voxels, charged {aCharge}（f{aUsedFree}/v{aUsedVoucher}/t{aUsedToken}） → {aPath}");
         }

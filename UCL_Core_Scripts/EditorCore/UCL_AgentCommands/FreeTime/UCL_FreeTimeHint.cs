@@ -27,6 +27,28 @@ namespace UCL.Core.EditorLib.AgentCommands
     // 用法（活動類 Cmd 在組完自己的回傳值之後）：
     //   UCL_FreeTimeHint.Append(aReport, aPersona);
     // ⛔ 別掛在跟自由時間無關的 Cmd 上（commit / 記帳 / 登入）—— 見上面那句噪音。
+    //
+    // ── 該掛在哪：判準（Tim 2026-08-18 拍板「入口是 Cmd 的活動一律走這條」）──────────
+    // 自由時間活動的代跑（`Cmd_FreeTimeActivity op=step`）只 spawn python 腳本，
+    // 所以「入口是 Cmd 的活動」代跑不到。修法**不是**讓代跑層去呼叫 Cmd
+    // （那要在活動層長出第二種 tool 形式，等於多一條流程；兩條漂移時兩邊都不報錯），
+    // 而是反過來 —— **那支 Cmd 自己在回傳值裡回報進流程**，也就是掛本 helper。
+    //
+    // 掛的三個條件，缺一個就不該掛：
+    //   ① 這支 Cmd 是某個自由時間活動的**實際入口**（活動 md 的 how 指向它）
+    //   ② 它有一份**給人讀的 markdown 回傳值**可以附加（沒有回傳面就無處可掛）
+    //   ③ 它拿得到**persona 形式的身分**（拿到 agent id 之類的自由字串會查不到 session
+    //      而靜默不印 —— 那不會壞，但也就等於沒掛）
+    //
+    // 目前掛著的：Cmd_NoteLesson（`lesson-log`）／Cmd_Sculpture 落子（`sculpt-3d`）／
+    //            Cmd_Glossary op=register（`glossary-entry`）。
+    //
+    // 刻意**沒有**掛的，與理由（都是條件不成立，不是忘了）：
+    //   - **Cmd_Tavern**（活動 `tavern-creative`）：它沒有 markdown 回傳面（結果是 post_seq，
+    //     不走 ResolveLastOp / WritePayload）⇒ 條件②不成立。而且自由時間自己的骰面宣告
+    //     也走這支，掛上去會在自己的 post 裡重印一次。
+    //   - **Cmd_StreamWatch**（活動 `stream-watch`）：它**本身就是分步流程**，每一步已經指出
+    //     自己的下一步。再掛一段「下一步」＝同一個位置有兩個指路，而它們遲早會指不同方向。
     // ===========================================================
     public static class UCL_FreeTimeHint
     {

@@ -21,7 +21,7 @@ last_updated: 2026-07-27
 ## 配套元件（全鏈 2026-07-26 遷入 UCL_Core）
 
 - `UCL_ScreenStreamDaemon`（EditorCore/UCL_AgentCommands/MediaAdmin/）— [InitializeOnLoad] spawn/看護 `<UCL_Core>/Tools~/AgentCommands/screenstream_daemon.py`。**過渡期守門**：偵測到 legacy `RCG.Editor.RCG_ScreenStreamDaemon` 仍在專案 → 讓位待命（防新舊雙 daemon 併寫 frames ring buffer）；Tim 移除 RCG 版後下次 domain reload 自動接管。
-- python 工具鏈（`screenstream_daemon.py` / `stream_watch_session.py` / `screenstream_montage.py` / `audio_transcribe.py`）— 同住 Tools~，repo-walk（跳 submodule gitlink）＋ honors `.agentcommands_root.local` 把 runtime 狀態落主專案 `AgentCommands/_screenstream/`。
+- python 工具鏈（`screenstream_daemon.py` / `screenstream_montage.py` / `audio_transcribe.py`）— 同住 Tools~，repo-walk（跳 submodule gitlink）＋ honors `.agentcommands_root.local` 把 runtime 狀態落主專案 `AgentCommands/_screenstream/`。
 - 陪看 skill：`Skills~/ucl-stream-watch`（自 EOV valor-stream-watch 遷移；`install_skills.py --include ucl-stream-watch` 安裝）。
 
 ## 承繼的行為釘（與 RCG 版一致）

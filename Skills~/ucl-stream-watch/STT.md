@@ -46,25 +46,27 @@ STT 有兩個獨立入口，都是切 daemon config 的 `stt_enabled`（daemon �
 | 入口 | 誰用 | 語意 | `stt_enabled` 實效值 |
 |---|---|---|---|
 | **UCL_ScreenStreamPage(過渡期舊名 RCG_ScreenStreamPage) 開關**（T-STT-PageToggle, 2026-07-09）| Tim 在 Editor GUI 手動 | 「🎙 錄影時同步啟動語音轉錄」勾選 → 按「開始錄影」時 STT 同步起、「停止錄影」時同步停 | `錄影中(enabled) && stt_setting` |
-| **`stream_watch start --stt`**（T-STT-AutoStart）| agent 陪看 session | 開播帶 flag → 起 worker + montage_cmd 附 `--stt`；收播還原 | start 直接切 true，end 還原 prev |
+| **`step=capture --arg on=1`**（Cmd_StreamWatch）| agent 自助開播 | 串 `UCL_ScreenStreamPage.SetRecordingEnabled` → 錄影開關**連動 `stt_enabled`** | 與 GUI 那顆按鈕同一條規則 |
 
 **兩者不衝突**（設計上互補）：Page 的「錄影」是 daemon 截圖總開關（frames 來源），agent 陪看的前提本來就是 Tim 已在錄影。所以正常時序是 Tim 先用 Page 開錄影（+STT），agent 才 watch；`start --stt` 再切一次 true 是**冪等**，其 end 還原只在 prev=false 時關 → Page 開著的話 prev=true、不會被 agent 收播誤關。
 
 Page 的 `stt_setting`（Tim 意圖，持久化）與 `stt_enabled`（實效，daemon 讀）分兩欄位：STT 嚴格耦合錄影，**停錄影自動停 STT**，whisper GPU ~460MB 不空轉。
 
-## 🚀 開播同步啟動（T-STT-AutoStart, Tim 2026-07-09 拍板）
+## 🚀 開播與 STT 的連動
 
-`stream_watch_session.py start` 帶 `--stt` 時**自動**把 daemon config 的 `stt_enabled` 切 `true`（worker 即起），收播 `end` 時自動還原 — 不必再手動改 `_config.json`：
+STT **嚴格耦合錄影**：錄影開關一動，`stt_enabled` 跟著動（whisper GPU ~460MB 不空轉）。
+所以「讓 STT 起來」的手勢就是「開錄影」，沒有第二個開關：
 
-```bash
-python <UCL_Core>/Tools~/AgentCommands/stream_watch_session.py start \
-  --persona <X> --end-time HH:mm \
-  --stt --stt-model small --stt-lang ja \      # ← 一個 flag 同時: montage_cmd 附 --stt + daemon worker 啟動
-  --desc "陪看 XXX" --json
-# stdout 會印「🎙 daemon STT cache worker 已同步啟動 (收播時自動還原)」
-```
+- **Tim 手動**：Editor 的 `UCL_ScreenStreamPage` 勾「🎙 錄影時同步啟動語音轉錄」＋按「開始錄影」。
+- **agent 自助開播**：
+  ```bash
+  python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch \
+      --arg step=capture --arg persona=<me> --arg on=1
+  ```
+  它**不自己寫 config**，而是串 `UCL_ScreenStreamPage.SetRecordingEnabled` ——
+  跟 GUI 那顆按鈕走同一條規則（戳時刻／連動 `stt_enabled`／發酒保公告／要求 daemon 同步）。
+  ⇒ 「Cmd 開的播」與「人開的播」在酒館裡長得一樣，而同一件事**只有一個寫入端**。
 
-- **還原語意**：「本場開的本場關」— start 時記下 daemon 舊值（`stt_daemon_prev`），end 時只有舊值是 false 才切回 false；Tim 手動常開的情境（舊值 true）end 後維持 true。multi-viewer 同場多人開 `--stt` 時，最後一個收播的才還原。
 - **fail-soft**：config 同步失敗只印警告不擋開播（STT 是加值不是硬依賴）。
 - ⚠ **現況（2026-07-09）**：AutoStart 正確切 `stt_enabled` true，但容器場 daemon worker 起不來（已知坑#1）→ 這條 cache 空。**但不再是阻塞** —— cycle 的 montage 自動帶 `--stt-live`（layer ②），cache 空時 montage 端現抓寫 cache，容器場照樣有 STT。Tim 本機 Editor 則 daemon 正常、AutoStart 直接生效（layer ①）。
 

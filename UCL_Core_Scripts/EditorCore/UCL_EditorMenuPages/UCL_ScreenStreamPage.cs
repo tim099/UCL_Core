@@ -166,7 +166,7 @@ namespace UCL.Core.EditorLib.Page
         const float DEFAULT_W_PCT = 1f;            // 滿寬 = 加這功能之前的固定行為
 
         // 區塊職責: 3-way merge baseline — 每個可編輯欄位記「上次從磁碟看到的值」
-        // 物理意義: config 檔會被外部工具 (stream_watch_session.py / agent) 併發改寫;
+        // 物理意義: config 檔會被外部寫入端 (Cmd_StreamWatch step=capture / agent 手改) 併發改寫;
         //          reload 時只有「UI 值 == baseline (Tim 沒動過)」的欄位才吃磁碟新值,
         //          Tim 編輯中的欄位保留 — 修「Page 拿舊快取蓋掉外部新設定」的 stale-clobber bug (Tim 2026-07-20).
         // 數值影響: baseline 每次 reload/save 後更新為磁碟當前值; 判定粒度 = 單一欄位.
@@ -675,7 +675,7 @@ namespace UCL.Core.EditorLib.Page
         void ReloadFromDisk()
         {
             // T-STT-StaleFix (Tim 2026-07-20): mtime 感知 reload + 可編輯欄位 3-way merge —
-            //   外部工具 (stream_watch_session.py / agent) 改 config 要能即時反映, 又不蓋掉 Tim 編輯中的欄位.
+            //   外部寫入端 (Cmd_StreamWatch step=capture / agent 手改) 改 config 要能即時反映, 又不蓋掉 Tim 編輯中的欄位.
             try
             {
                 string repoRoot = GetRepoRoot();
@@ -1499,7 +1499,7 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Label("config: AgentCommands/_screenstream/_config.json");
             GUILayout.Label("frames: AgentCommands/_screenstream/frames/frame_NNNN.jpg");
             GUILayout.Label("latest: AgentCommands/_screenstream/_latest.jpg");
-            GUILayout.Label("tools: <UCL_Core>/Tools~/AgentCommands/screenstream_daemon.py / screenstream_montage.py / stream_watch_session.py");
+            GUILayout.Label("tools: <UCL_Core>/Tools~/AgentCommands/screenstream_daemon.py / screenstream_montage.py");
         }
 
         // ===========================================================

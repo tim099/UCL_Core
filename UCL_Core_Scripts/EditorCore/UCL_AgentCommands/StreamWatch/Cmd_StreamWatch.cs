@@ -54,6 +54,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
           + "reference_reader=<persona> — prepare 選填（接續基準；並列最多章時必填） | "
           + "catchup_map=\"0001=persona,0002=persona\" — prepare 選填（基準者缺的集數由主觀影者指定來源） | "
           + "start_recording=false — prepare 選填（預設會在未錄影時自動開播；先填節目名再開） | "
+          + "chapter_title=<章名> — prepare 選填，**填了就啟用收工自動匯出實錄成章**（章名必須親筆；"
+          + "另有 export_chapter=<章號覆寫> / export_work_title=<作品 第N話> / auto_export=false 單次關掉） | "
           + "on=1|0 — capture 必填（開/關錄影；串 UCL_ScreenStreamPage 同一條規則） | " +
             "seconds=<5..600> — peek 選填，看最近幾秒（預設 60） | raw=1 — peek 選填，不夾感官水位（看最新畫面，代價寫在回傳檔） | " +
             "until=<HH:mm 本地> — start 必填 | media=<work-slug> — start 選填（不給則由 Cmd 問；" +
@@ -255,6 +257,15 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aCatchupMap = GetArg(iArgs, "catchup_map", "").Trim(); // 0001=summit,0002=gura
             string aSttPrompt = GetArg(iArgs, "stt_prompt", null);
             bool aStartRec = GetArg(iArgs, "start_recording", "true").Trim().ToLowerInvariant() != "false";
+            // 區塊職責：收工自動匯出的參數，**在開場前就定死**（Tim 2026-08-19 拍板）。
+            // 物理意義：匯出本來就只缺一個「誰在收工時按下去」——
+            //   而它唯一需要人的東西是**章名**，那正是 prepare 這一步存在的理由（開場前把該定的定死）。
+            // ⛔ 章名沒填 ⇒ 不自動匯出（回傳檔照舊印手動指令）。不拿 show_title 當預設值：
+            //   影片標題不是章名，讓工具代取就是「造一個名字比事實大的東西」。
+            string aChapterTitle = GetArg(iArgs, "chapter_title", "").Trim();
+            string aExportChapter = GetArg(iArgs, "export_chapter", "").Trim();
+            string aExportWorkTitle = GetArg(iArgs, "export_work_title", "").Trim();
+            bool aAutoExport = GetArg(iArgs, "auto_export", "true").Trim().ToLowerInvariant() != "false";
 
             if (string.IsNullOrEmpty(aTitleIn) && string.IsNullOrEmpty(aMediaArg))
             {
@@ -410,9 +421,24 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aP["reference_reader"] = new JsonData(aRefReader);
             aP["catchup_map"] = aMap;
             aP["catchup_unfilled"] = UCL_ReadingLibraryIO.ToStringArray(aUnfilled.Select(u => u.Substring(0, 4)).ToList());
+            aP["chapter_title"] = new JsonData(aChapterTitle);
+            aP["export_chapter"] = new JsonData(aExportChapter);
+            aP["export_work_title"] = new JsonData(aExportWorkTitle);
+            aP["auto_export"] = new JsonData(aAutoExport);
             AtomicWrite(PreparedPath(aMediaId), aP.ToJsonBeautify());
             aR.AppendLine();
             aR.AppendLine($"- 準備檔：`StreamWatch/prepared/{aMediaId}.json`（join / catchup 都讀這份）");
+            aR.AppendLine();
+            aR.AppendLine("## ⑥ 收工自動匯出實錄");
+            if (!aAutoExport)
+                aR.AppendLine("- ⏸ `auto_export=false` ⇒ 本媒材收工**不自動匯出**（回傳檔仍會印手動指令）");
+            else if (string.IsNullOrEmpty(aChapterTitle))
+                aR.AppendLine("- ⛔ **未啟用** —— `chapter_title` 沒填。章名要親筆，工具不代取（不拿影片標題頂替）。
+"
+                    + $"  ⇒ 要啟用：重跑本步並帶 `--arg chapter_title=\"<章名>\"`（prepare 可重入）");
+            else
+                aR.AppendLine($"- ✅ **已啟用** —— 主觀影者收工時自動匯出成章 `{(string.IsNullOrEmpty(aExportChapter) ? aChapterId : aExportChapter)}`"
+                    + $"：「{aChapterTitle}」（陪同場區間會一併併入；同章舊場次也會一起重匯）");
 
             // 公告：陪同者要知道「現在可以進場了、而且 id 已經定了」
             var aBody = new StringBuilder();
@@ -1253,6 +1279,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             string aMedia = ReadStr(aPrimary, "media_id");
+            string aLibMediaId = ReadStr(aPrimary, "library_media_id");
 
             // ⛔ 準備階段門檻（Tim 2026-08-17）：**準備完成才輪到陪同者進場。**
             // 物理意義：進場時 media_id / 章號 / 接續基準必須**已經是定值** ——
@@ -1261,6 +1288,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 邊界：這裡**不擋死**成無路可走 —— 缺準備檔就明說要主觀影者跑 prepare（一行指令），
             //   並把本場 media 帶進那行指令裡（不要求對方自己回想）。
             var aPrep = LoadPrepared(aMedia);
+            if (aPrep == null && !string.IsNullOrEmpty(aLibMediaId))
+            {
+                aPrep = LoadPrepared(aLibMediaId);
+            }
             if (aPrep == null)
             {
                 Blocked(iArgs, aR, aPath,
@@ -1271,7 +1302,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
             string aPrepChapter = ReadStr(aPrep, "chapter_id");
             string aPrepRef = ReadStr(aPrep, "reference_reader");
-            var aMyChapters = ReaderChapters(aMedia, iPersona);
+            string aLibId = !string.IsNullOrEmpty(aLibMediaId) ? aLibMediaId : aMedia;
+            var aMyChapters = ReaderChapters(aLibId, iPersona);
             var aMyGaps = new List<string>();
             for (int e = 1; e < ReadInt(aPrep, "episode"); e++)
             {
@@ -1285,6 +1317,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aS["session_id"] = new JsonData(aSessionId);
             aS["role"] = new JsonData("companion");
             aS["media_id"] = new JsonData(aMedia);            // ← 繼承，不自己解析
+            aS["work_id"] = new JsonData(ReadStr(aPrimary, "work_id"));
+            aS["library_media_id"] = new JsonData(aLibMediaId);
             aS["parent_session_id"] = new JsonData(ReadStr(aPrimary, "session_id"));
             aS["parent_persona"] = new JsonData(aPrimaryPersona);
             aS["start_ts"] = new JsonData(UCL_AwakeningService.NowIso());
@@ -1474,11 +1508,52 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             ioR.AppendLine($"- 收播公告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
             ioR.AppendLine($"- 場次紀錄: seq **{ReadInt(ioS, "start_seq")} → {aSeq}**（匯出區間，`tavern` 房）");
             ioR.AppendLine($"- 實錄台帳: 已 append `StreamWatch/{SESSION_LOG_NAME}`（append-only；per-persona session 檔下一場就被覆寫，台帳不會）");
+            // ── 實錄自動匯出（Tim 2026-08-19 拍板；BUG-10）────────────────
+            // 區塊職責：把「收工 → 實錄進書」這一步從人的記憶挪到通道上。
+            // ⚠ 原本刻意手動的理由（章 ≠ 場、章名要親筆）**沒有被推翻，只是搬家了**：
+            //   章名改在 prepare 填（開場前就定死），章 ≠ 場由 python 端 --from-session 併區間處理
+            //   （主場 ∪ 其 companions ∪ 已匯進同一章的舊場次），所以自動化不會把第二場漏掉。
+            // 數值影響：只有 **primary** 觸發（陪同者收工不觸發，否則同一章會被每個人各匯一次）；
+            //   準備檔沒填章名或 auto_export=false ⇒ 完全不跑，退回原本的手動指令。
+            bool aIsPrimary = ReadStr(ioS, "role") != "companion";
+            var (aAutoOn, aAutoWhy) = ReadAutoExportSetting(ReadStr(ioS, "library_media_id"));
+            bool aExported = false;
+            if (aIsPrimary && aAutoOn)
+            {
+                var (aOk, aOut, aErr) = await RunExportWatch(aSessionId, iToken);
+                aExported = aOk;
+                ioR.AppendLine();
+                ioR.AppendLine("## 實錄匯出（自動）");
+                if (aOk)
+                {
+                    // 印 ✓ 不算數 —— 原樣搬 python 的回讀行（行數/字元數/實錄段數都是它讀回檔案量的）
+                    foreach (var line in aOut.Replace("", "").Split('
+'))
+                        if (!string.IsNullOrWhiteSpace(line)) ioR.AppendLine($"- {line.Trim()}");
+                }
+                else
+                {
+                    ioR.AppendLine($"- ⚠ **自動匯出失敗** —— {aErr}");
+                    if (!string.IsNullOrWhiteSpace(aOut)) ioR.AppendLine($"- stdout: {Truncate(aOut.Replace("
+", " "), 400)}");
+                    ioR.AppendLine("- ⇒ 章沒進書（結算不受影響）。用下面 next 的手動指令補，別當它已經進去了。");
+                }
+            }
+
             ioR.AppendLine();
             ioR.AppendLine("## next");
             ioR.AppendLine("1. 本場已收工結算，session 已關閉。");
             ioR.AppendLine($"2. 要再看：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
-            // 實錄匯出：**不自動跑**。章 ≠ 場（重播、殘場、一話跨數場都發生過，001 章末就記了一次併章），
+            if (aExported)
+            {
+                ioR.AppendLine("3. 實錄已自動匯出成章（見上）。要重出（改章名／併入別人的章）："
+                    + $"`python <UCL_Core>/Tools~/AgentCommands/library.py export-watch --from-session {aSessionId} --force`");
+                ioR.AppendLine("   （併章時的副標保留、跨作品併章仍是人的判斷，工具只覆蓋「一場＝一章」與「同章多場併區間」）");
+                return;
+            }
+            if (aIsPrimary && !aAutoOn)
+                ioR.AppendLine($"   ℹ 自動匯出未啟用：{aAutoWhy}");
+            // 實錄匯出：沒啟用自動時**不自動跑**。章 ≠ 場（重播、殘場、一話跨數場都發生過，001 章末就記了一次併章），
             // 而章名要親筆 ⇒ 這裡只把可直接貼的指令連同已量到的區間交出去，別讓它變成要人自己記得的事。
             ioR.AppendLine($"3. 本場實錄可匯出成章（章 ≠ 場：一話跨數場就把區間一起給）：");
             ioR.AppendLine($"   `python <UCL_Core>/Tools~/AgentCommands/library.py export-watch --media {aMedia} "
@@ -2428,6 +2503,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aRec["persona"] = new JsonData(iPersona);
                 aRec["role"] = new JsonData(ReadStr(iS, "role"));
                 aRec["media_id"] = new JsonData(ReadStr(iS, "media_id"));
+                // 準備檔是以**閱讀庫 media id** 命名（work slug ≠ media id）——
+                // 台帳沒帶它的話，收工自動匯出就找不到章名，而那個失敗會長得像「沒設定」。
+                aRec["library_media_id"] = new JsonData(ReadStr(iS, "library_media_id"));
                 aRec["parent_session_id"] = new JsonData(ReadStr(iS, "parent_session_id"));
                 aRec["start_ts"] = new JsonData(ReadStr(iS, "start_ts"));
                 aRec["settled_at"] = new JsonData(ReadStr(iS, "settled_at"));

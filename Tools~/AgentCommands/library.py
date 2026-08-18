@@ -2337,7 +2337,154 @@ def _parse_seq_ranges(spec: str):
     return sorted(ranges)
 
 
+# ===========================================================
+# 區塊職責：StreamWatch 實錄台帳（`StreamWatch/sessions_log.jsonl`）的讀 / 回填。
+# 物理意義：台帳是 **append-only** —— 它是為了「開下一場就被覆寫的 start_seq/end_seq 不會丟」
+#          而長出來的（C# Cmd_StreamWatch.AppendSessionLog 的血證註解）。
+#          ⇒ 回填 `exported_chapter` **不就地改行**，而是 append 一筆 `record_type=export` 的修訂事件，
+#            讀取端取同一個 session_id 的**最後一筆**為準。改寫既有行會破壞它唯一的保證。
+# 🩸 BUG-9：`exported_chapter` 欄位存在、註解寫「匯出後由人/工具回填」，而**沒有任何一端回填** ——
+#          於是「已匯出」與「還沒匯出」在台帳上同形（實測 5/5 全空，而 Books/ 底下已有 7 章）。
+#          假陰性不會叫，下一個人讀到空值只會重複匯出。
+# ===========================================================
+_SESSION_LOG_REC_EXPORT = "export"
+
+
+def _sessions_log_path() -> Path:
+    return _DATA_ROOT / "StreamWatch" / "sessions_log.jsonl"
+
+
+def _read_sessions_log():
+    """回 [(行號, dict)]；壞行不靜默跳過（印 warning 並保留位置感）。"""
+    p = _sessions_log_path()
+    out = []
+    if not p.is_file():
+        return out
+    for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append((i, json.loads(line)))
+        except Exception as e:
+            print(f"⚠ sessions_log 第 {i} 行讀不動: {e}（略過該行，不當成沒有場次）", file=sys.stderr)
+    return out
+
+
+def _sessions_log_state():
+    """收斂成 {session_id: {場次欄位…, 'exported_chapter': 以最後一筆修訂事件為準}}。"""
+    state = {}
+    for _, rec in _read_sessions_log():
+        sid = rec.get("session_id") or ""
+        if not sid:
+            continue
+        if str(rec.get("record_type", "")) == _SESSION_LOG_REC_EXPORT:
+            if sid in state:
+                state[sid]["exported_chapter"] = rec.get("exported_chapter", "")
+                state[sid]["exported_book"] = rec.get("book", "")
+        else:
+            state[sid] = dict(rec)
+    return state
+
+
+def _append_export_events(session_ids, chapter: str, book: str):
+    """把「這幾場進了哪一章」append 進台帳（BUG-9）。回傳實際寫入的 session id 清單。"""
+    session_ids = [s for s in dict.fromkeys(session_ids) if s]
+    if not session_ids:
+        return []
+    p = _sessions_log_path()
+    if not p.is_file():
+        print("⚠ 找不到 sessions_log.jsonl —— 本次未回填 exported_chapter"
+              f"（{p}）", file=sys.stderr)
+        return []
+    ts = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    with open(p, "a", encoding="utf-8", newline="\n") as f:
+        for sid in session_ids:
+            f.write(json.dumps({
+                "record_type": _SESSION_LOG_REC_EXPORT,
+                "session_id": sid,
+                "exported_chapter": chapter,
+                "book": book,
+                "exported_at": ts,
+            }, ensure_ascii=False) + "\n")
+    return session_ids
+
+
+def _resolve_from_session(session_id: str):
+    """收工自動匯出用：由 session id 反查 media / seq 區間 / 同場清單 / 準備檔。
+
+    區塊職責：把「章 ≠ 場」這件事處理掉 —— 一章可能由主場＋陪同場（＋同章的其它場次）組成。
+    數值影響：回傳的 ranges 已含主場、其 companions、以及**已經匯進同一章**的舊場次
+             ⇒ 一話跨數場時是「併區間重匯」，不是另開一章、也不是靜默漏掉第二場。
+    """
+    state = _sessions_log_state()
+    me = state.get(session_id)
+    if not me:
+        raise SystemExit(f"❌ sessions_log 裡查不到場次 {session_id} —— 不猜區間。")
+    media = me.get("media_id") or ""
+    lib_media = me.get("library_media_id") or ""
+    sessions = [session_id]
+    ranges = [(int(me.get("start_seq") or 0), int(me.get("end_seq") or 0))]
+    for sid, rec in state.items():
+        if sid == session_id:
+            continue
+        if rec.get("parent_session_id") == session_id:
+            sessions.append(sid)
+            ranges.append((int(rec.get("start_seq") or 0), int(rec.get("end_seq") or 0)))
+    prepared = {}
+    if lib_media:
+        pp = _DATA_ROOT / "StreamWatch" / "prepared" / f"{lib_media}.json"
+        if pp.is_file():
+            try:
+                prepared = json.loads(pp.read_text(encoding="utf-8")) or {}
+            except Exception as e:
+                print(f"⚠ 準備檔讀不動 {pp.name}: {e}", file=sys.stderr)
+    chapter = str(prepared.get("export_chapter") or prepared.get("chapter_id") or "").strip()
+    # 同一章的舊場次也要一起收（重播／殘場／一話跨數場）
+    if chapter:
+        want = f"{int(chapter):03d}" if chapter.isdigit() else chapter
+        for sid, rec in state.items():
+            if sid in sessions:
+                continue
+            prev = str(rec.get("exported_chapter") or "")
+            same_ch = prev == want or (prev.isdigit() and want.isdigit() and int(prev) == int(want))
+            if prev and same_ch and rec.get("media_id") == media:
+                sessions.append(sid)
+                ranges.append((int(rec.get("start_seq") or 0), int(rec.get("end_seq") or 0)))
+    ranges = [(lo, hi) for lo, hi in ranges if lo and hi and hi >= lo]
+    if not ranges:
+        raise SystemExit(f"❌ 場次 {session_id} 沒有可用的 seq 區間（start/end 缺）。")
+    return {
+        "media": media, "library_media_id": lib_media, "sessions": sessions,
+        "ranges": sorted(set(ranges)), "prepared": prepared, "chapter": chapter,
+    }
+
+
 def cmd_export_watch(args):
+    # 收工自動匯出：由場次 id 反查 media/區間/章號/章名（缺的才用旗標補）。
+    resolved = None
+    if getattr(args, "from_session", None):
+        resolved = _resolve_from_session(args.from_session)
+        prep = resolved["prepared"]
+        args.media = args.media or resolved["media"]
+        args.seq_ranges = args.seq_ranges or ",".join(f"{lo}-{hi}" for lo, hi in resolved["ranges"])
+        args.sessions = args.sessions or ",".join(resolved["sessions"])
+        args.chapter = args.chapter or (resolved["chapter"] or None)
+        args.title = args.title or (prep.get("chapter_title") or "").strip() or None
+        args.work_title = args.work_title or (prep.get("export_work_title")
+                                              or prep.get("show_title") or "").strip() or None
+        if not args.title:
+            # ⛔ 章名一定要親筆 —— 不拿影片標題（show_title）當預設值。
+            print("❌ 準備檔沒有 chapter_title —— 章名要親筆，工具不代取。\n"
+                  "   補法：prepare 時帶 --arg chapter_title=\"<章名>\"（可重入），或手動 export-watch --title。",
+                  file=sys.stderr)
+            return 1
+        print(f"↩ from-session {args.from_session}："
+              f"media={args.media} 章={args.chapter or '(自動)'} "
+              f"區間={args.seq_ranges} 場次={args.sessions}")
+    if not args.media or not args.seq_ranges:
+        print("❌ 缺 --media / --seq-ranges（或改用 --from-session 由台帳反查）。", file=sys.stderr)
+        return 1
     media = args.media
     # 區塊職責：決定書的 slug。
     # 🩸 2026-08-17 實跑踩到：預設寫成 `watch-<media_id>`，而既有那本是 `watch-<work_id>`
@@ -2507,6 +2654,24 @@ def cmd_export_watch(args):
           f"、實錄段 {back.count('### [seq ')} 則")
     if len(excluded):
         print("   ⚠ 未收錄清單已寫進章內 <details>，不靜默截斷")
+
+    # BUG-9：回填台帳的 exported_chapter —— append 修訂事件（台帳 append-only，不就地改行）。
+    #   對象＝--sessions 明列者 ∪ 區間被本章完全涵蓋的場次（陪同場常常沒被列進 --sessions）。
+    want_sids = [x.strip() for x in (args.sessions or "").split(",") if x.strip()]
+    try:
+        for sid, rec in _sessions_log_state().items():
+            lo0, hi0 = int(rec.get("start_seq") or 0), int(rec.get("end_seq") or 0)
+            if not lo0 or not hi0:
+                continue
+            if any(lo <= lo0 and hi0 <= hi for lo, hi in ranges) and sid not in want_sids:
+                want_sids.append(sid)
+        done = _append_export_events(want_sids, chapter, book)
+        if done:
+            print(f"   ↳ 台帳回填 exported_chapter={chapter}：{len(done)} 場（{', '.join(done)}）")
+        else:
+            print("   ⚠ 台帳未回填（沒有對得上的場次）—— 「已匯出」在台帳上仍與「未匯出」同形")
+    except Exception as e:
+        print(f"   ⚠ 台帳回填失敗（章已落地，不回頭）：{e}", file=sys.stderr)
     return 0
 
 
@@ -2722,8 +2887,11 @@ def build_parser():
 
     a = sub.add_parser("export-watch",
                        help="觀影實錄匯出：把 StreamWatch 期間的酒館 seq 區間寫成 Books/watch-<media>/NNN.txt")
-    a.add_argument("--media", required=True, help="媒材 id（如 apocalypse-hotel）")
-    a.add_argument("--seq-ranges", dest="seq_ranges", required=True,
+    a.add_argument("--media", default=None, help="媒材 id（如 apocalypse-hotel）；用 --from-session 時可省略")
+    a.add_argument("--from-session", dest="from_session", default=None,
+                   help="由 StreamWatch/sessions_log.jsonl 的場次 id 反查 media／seq 區間／同場清單，"
+                        "並讀 prepared/<library_media_id>.json 取章號與**親筆章名**（收工自動匯出走這條）")
+    a.add_argument("--seq-ranges", dest="seq_ranges", default=None,
                    help="一或多段 seq 區間，如 15440-15459,15430-15433（同一話跨數場就給多段）")
     a.add_argument("--chapter", default=None, help="章號（三位數）；省略＝取現有最大值+1")
     a.add_argument("--title", default=None, help="章名（親筆；機械匯出不代取）")

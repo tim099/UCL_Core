@@ -18,8 +18,8 @@
       "optional": false
     },
     {
-      "name": "ucl-affinity",
-      "summary": "Affinity 好感度 auto-trigger — 對話內偵測 Tim/同事 affinity 變動 signal 立即 update emotion_vector (8 軸); 走 affinity_update.py CLI, 禁直編 relations.json",
+      "name": "ucl-relationship",
+      "summary": "關係／好感度 auto-trigger — 對話內偵測 Tim/同事變動 signal 就當場寫一筆事件（8 軸 emotion_vector）；資料住 letters/<persona>/relationship/，寫入唯一通道是 run_cmd.py run Relationship。取代已退場的 ucl-affinity。",
       "optional": false
     },
     {

@@ -843,7 +843,65 @@ def _online_personas(aw) -> set:
 
 
 def _affinity_targets(aw, persona: str) -> dict:
-    """讀自己的 affinity；回 {對象: {score, tier, opinions[]}}。"""
+    """讀自己的 relationship；回 {對象: {surface_score, tier, opinions[]}}。
+
+    2026-08-18：資料源從舊 `ChatTavern/affinity/<persona>/relations.json`
+    換成 `letters/<persona>/relationship/<target>/`（一事件一檔）。
+    ⚠ **回傳形狀刻意不變** —— 呼叫端有四處在用它；形狀不變讓這次成為
+      純粹的資料來源替換，行為差異只可能來自資料本身，不會來自介面。
+    """
+    try:
+        from _lib.ucl_paths import letters_persona_dir
+        root = letters_persona_dir(persona) / "relationship"
+    except Exception as e:
+        print(f"[wake_brief] relationship 路徑解析失敗：{e}", file=__import__("sys").stderr)
+        return {}
+    if not root.is_dir():
+        return {}
+    out = {}
+    for tdir in sorted(root.iterdir()):
+        cur = tdir / "_current.md"
+        if not cur.is_file():
+            continue
+        fm = {}
+        try:
+            lines = cur.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            continue
+        if not lines or lines[0].strip() != "---":
+            continue
+        for ln in lines[1:]:
+            if ln.strip() == "---":
+                break
+            if ln.startswith("  "):        # emotion_vector 的子項，本層不需要
+                continue
+            if ":" in ln:
+                k, v = ln.split(":", 1)
+                fm[k.strip()] = v.split("#")[0].strip()
+        ops = []
+        odir = tdir / "opinions"
+        if odir.is_dir():
+            for of in sorted(odir.glob("*.md")):
+                try:
+                    body = of.read_text(encoding="utf-8").split("---", 2)[-1].strip()
+                except Exception:
+                    continue
+                if body:
+                    ops.append(body)
+        try:
+            score = int(fm.get("surface_score", "0"))
+        except ValueError:
+            score = 0
+        out[fm.get("target") or tdir.name] = {
+            "surface_score": score,
+            "tier": fm.get("tier", ""),
+            "opinions": ops,
+        }
+    return out
+
+
+def _affinity_targets_legacy(aw, persona: str) -> dict:
+    """（已停用）舊 relations.json 讀取 —— 保留一輪供對帳，之後可刪。"""
     import json
     f = aw._DATA_ROOT / "ChatTavern" / "affinity" / persona / "relations.json"
     if not f.exists():
@@ -960,7 +1018,7 @@ def _people_lines(aw, persona: str) -> list:
         out.append("")
 
     if not targets:
-        out.append("_(還沒有 affinity 紀錄 —— 跟同事互動後走 `ucl-affinity` 結算)_")
+        out.append("_(還沒有關係紀錄 —— 跟同事互動後走 `ucl-relationship` 寫一筆)_")
     return out
 
 

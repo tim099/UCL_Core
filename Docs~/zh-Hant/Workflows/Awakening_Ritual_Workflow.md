@@ -147,7 +147,7 @@ Step 1. 收尾兩件（寫 letter 前）：
         (a) 見叢交棒：keys --persona <P> --add "<明天必須知道／必須做的一句話>"
             ⚠ 與 letter 是兩種東西 —— letter=日記（抒發/敘事）、見叢=清單（可勾銷/可掃描）。
               混在信裡，明天的自己得從散文撈待辦。
-        (b) 好感清算：依 ucl-affinity 結算今日與 Tim／同事的變動 + Opinion 內心戲
+        (b) 關係清算：依 ucl-relationship 補今日漏記的變動 + Opinion 內心戲（⚠ 副軌 —— 主要觸發點是對話當下就寫）
 
         (c) 工作記憶回寫（今天有推進到某項工作才做）—— 依 ucl-work-memory：
             supersede 舊 state → add 新 state 快照（誰做到哪／pending 什麼），

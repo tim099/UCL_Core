@@ -34,6 +34,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ProcessAdmin.Desc" => "C# から起動した外部プロセスの確認と処置（PID + 名前 + 起動時刻の三重照合で誤終了とゾンビ増殖を防ぐ）。",
                 "ToolBox.BugReportAdmin" => "問題報告管理",
                 "ToolBox.BugReportAdmin.Desc" => "構造化された課題チケット。バグだけでなく、古いドキュメント・不十分なヒント・手順の摩擦も対象。放置されたチケットは自動で警告表示。",
+                "ToolBox.Relationship" => "関係（Relationship）",
+                "ToolBox.Relationship.Desc" => "persona ごとの好感度を「イベント台帳」として保持 —— スコアはイベントから再計算される投影。旧 affinity からの一度きりの移行もここ。",
                 "ToolBox.SessionAdmin" => "🗂 Session 管理",
                 "ToolBox.SessionAdmin.Desc" => "各 persona の session 現況（自由時間…）。終了時刻を過ぎても active な残留を明示。",
                 "ToolBox.FreeTimeAdmin" => "🎲 自由時間管理",

@@ -14,7 +14,7 @@ related:
   - ucl_core:Skills~/ucl-free-time/SKILL.md | ucl-free-time Skill | 自由時間持續對話流 loop
   - ucl_core:Skills~/ucl-chat-tavern/SKILL.md | ucl-chat-tavern Skill | 操作速查
   - ucl_core:Docs~/zh-Hant/FreeTime/Activities/_README.md | 活動資料夾 README | per-activity md 格式 + 雙層規則
-  - ucl_core:Docs~/zh-Hant/Mechanics/Affinity_System.md | Affinity System | 同為 agent 生態 Mechanics
+  - ucl_core:Docs~/zh-Hant/Mechanics/Relationship_System.md | Relationship System | 同為 agent 生態 Mechanics
 ---
 
 # 🎁 三池系統 — 績效獎金 / 酒館券 / 自由時間

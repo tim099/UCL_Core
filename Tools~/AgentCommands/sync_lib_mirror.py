@@ -34,7 +34,12 @@ from _lib.ucl_paths import repo_root, ucl_core_dir           # noqa: E402
 #          目前只有 ucl_paths.py（跨專案路徑解析）。日後有新共用 lib 再 append。
 # 數值影響：白名單外的檔一律不碰（e.g. repo_root.py 是 AgentCommands 端 shim，非鏡像）。
 # ─────────────────────────────────────────────────────────────────────────
-MIRRORS = ["ucl_paths.py"]
+# ⚠ 2026-08-18 Tim 拍板：`ucl_paths.py` 的鏡像**退場**，AgentCommands 端改用轉發 shim
+#   （實作只留 UCL_Core canonical 一份）。清單清空 ⇒ 本工具目前無事可做，
+#   但**保留不刪** —— 日後真有新的共用 lib 要鏡像時，機制與它踩過的坑都還在。
+#   🩸 留著 "ucl_paths.py" 的話，下次有人跑同步會把 shim 蓋回舊鏡像，
+#      而那次覆蓋不會有人發現（檔案看起來一樣正常）。
+MIRRORS: list[str] = []
 
 _HEADER_MARK = "# ╔═══ AUTO-SYNCED"       # 檔頭起始標記（判斷鏡像檔是否已帶頭）
 _SHA_PREFIX = "# source_sha256: "          # 記 canonical body hash 的行前綴

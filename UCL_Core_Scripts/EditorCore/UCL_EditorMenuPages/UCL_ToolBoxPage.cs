@@ -63,6 +63,10 @@ namespace UCL.Core.EditorLib.Page
                 UCL_CodeLocalize.Get("ToolBox.BugReportAdmin.Desc"),
                 () => UCL_BugReportAdminPage.Create());
 
+            DrawTool(UCL_CodeLocalize.Get("ToolBox.Relationship"),
+                UCL_CodeLocalize.Get("ToolBox.Relationship.Desc"),
+                () => UCL_RelationshipPage.Create());
+
             DrawTool(UCL_CodeLocalize.Get("ToolBox.SessionAdmin"),
                 UCL_CodeLocalize.Get("ToolBox.SessionAdmin.Desc"),
                 () => UCL_SessionAdminPage.Create());

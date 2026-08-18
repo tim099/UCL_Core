@@ -34,6 +34,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ProcessAdmin.Desc" => "Inspect and manage external processes spawned from C# (identity verified by PID + name + start time — prevents wrong kills and zombie pile-ups).",
                 "ToolBox.BugReportAdmin" => "Bug Reports",
                 "ToolBox.BugReportAdmin.Desc" => "Structured issue tickets — not only bugs: outdated docs, half-written hints and process friction all belong here. Stale tickets are flagged automatically.",
+                "ToolBox.Relationship" => "Relationship",
+                "ToolBox.Relationship.Desc" => "Per-persona affinity as an event ledger — the score is recomputed from events, not stored. Also hosts the one-off migration from the retired affinity system.",
                 "ToolBox.SessionAdmin" => "🗂 Session Admin",
                 "ToolBox.SessionAdmin.Desc" => "Current sessions per persona (free time...). Marks stale ones that are still active past their end time.",
                 "ToolBox.FreeTimeAdmin" => "🎲 Free Time Admin",

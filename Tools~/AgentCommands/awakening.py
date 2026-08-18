@@ -2243,72 +2243,29 @@ def cmd_set_availability(args: argparse.Namespace) -> int:
 
 
 def cmd_affinity(args: argparse.Namespace) -> int:
-    """好感度系統: 查詢或更新 Persona 對某人的好感度"""
-    try:
-        from _lib import affinity_manager
-    except ImportError:
-        print("❌ 無法載入 affinity_manager", file=sys.stderr)
-        return 2
+    """退場指路（Tim 2026-08-18）—— 好感度系統改名並改架構為 relationship。
 
-    # 如果沒有傳 persona, 嘗試從當前 env claim_origin 反查 lock (T05: claim_origin match)
-    persona = args.persona
-    if not persona:
-        found = None
-        my_origin = compute_claim_origin()
-        if _SESSION_DIR.exists():
-            for lp in sorted(_SESSION_DIR.glob("_persona_*.json")):
-                try:
-                    with open(lp, "r", encoding="utf-8") as f:
-                        d = json.load(f)
-                except Exception:
-                    continue
-                if is_lock_expired(d):
-                    continue
-                if lock_claim_origin(d) == my_origin:
-                    found = d
-                    break
-        if found:
-            persona = found["persona"]
-        else:
-            print("❌ 本 environment 沒持有 active session lock，請指定 --persona", file=sys.stderr)
-            return 2
-
-    if args.status:
-        data = affinity_manager.get_affinity(persona)
-        print(f"# 💖 好感度狀態: {persona}")
-        if not data:
-            print("  (尚無任何紀錄)")
-        for target, record in data.items():
-            print(f"- {target}: {record['surface_score']} ({record['tier']})")
-            if record['opinions']:
-                print(f"  看法: {', '.join(record['opinions'])}")
-        return 0
-
-    if not args.target:
-        print("❌ 必須指定 --target 或 --status", file=sys.stderr)
-        return 2
-
-    target = args.target
-
-    if args.delta is not None:
-        reason = args.reason or "無特定理由"
-        record = affinity_manager.update_affinity(persona, target, args.delta, reason)
-        print(f"✓ {persona} 對 {target} 好感度變動 {args.delta} → 目前: {record['surface_score']} ({record['tier']})")
-
-    if args.add_opinion:
-        record = affinity_manager.add_opinion(persona, target, args.add_opinion)
-        print(f"✓ {persona} 對 {target} 新增看法: {args.add_opinion}")
-
-    if args.delta is None and not args.add_opinion:
-        record = affinity_manager.get_affinity(persona, target)
-        print(f"💖 {persona} 對 {target} 好感度: {record['surface_score']} ({record['tier']})")
-        if record['opinions']:
-            print(f"   看法: {', '.join(record['opinions'])}")
-    
-    return 0
+    區塊職責：不再自己讀寫，只告訴呼叫端該走哪裡。
+    物理意義：舊實作直寫 `ChatTavern/affinity/<persona>/relations.json`，那個倉庫已凍結為對照組
+             —— **寫進去不會被任何人看到，而且不會報錯**。
+    ⛔ 保留子命令而不是移除：移除只會得到 argparse 的 invalid choice，
+      那句話不告訴任何人該改用什麼。用一個會說話的失敗換掉一個沉默的失敗。
+    """
+    _msg = [
+        "⛔ awakening.py affinity 已退場（2026-08-18）—— 好感度系統改名為 relationship。",
+        "",
+        "  run_cmd.py --persona <me> run Relationship --arg op=update --arg persona=<me>",
+        "             --arg target=<對誰> --arg reason=<這件事是什麼>",
+        "             --arg trust=0.05 --arg respect=0.03 --arg admiration=0.02",
+        "",
+        "  其餘 op：add-opinion / show / list / rebuild",
+        "  完整說明 → skill `ucl-relationship`",
+        "  規格與維護流程 → ucl_core:Docs~/{lang}/Mechanics/Relationship_System.md",
+    ]
+    print(chr(10).join(_msg), file=sys.stderr)
+    return 2
 
 
-# ─── T07 Session Token / Memo / Whoami / Enforce subcommands ───────────────
 def cmd_whoami(args: argparse.Namespace) -> int:
     """反查身分 — 路徑 A: --token <X>; 路徑 B: 無 arg 走 claim_origin 推當前 process 對到的 lock."""
     # 路徑 A: token 已知

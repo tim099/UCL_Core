@@ -1040,7 +1040,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine();
             aR.AppendLine("## next（人工收尾清單 —— 全部提示型，不實擋；做完才進 step=letter）");
             aR.AppendLine($"1. 見叢交棒：awakening.py keys --persona {iPersona} --add \"<明天必須知道的一句話>\"");
-            aR.AppendLine("2. 好感清算：依 ucl-affinity 結算今日變動（affinity_update.py）");
+            // ⚠ 舊 ucl-affinity / affinity_update.py 已於 2026-08-18 退場（見 ucl-relationship）。
+            //   這一行是**跑起來才看得到的字**，不在任何 .md 裡 —— 退場當天掃 skill/文件/python 都掃不到它。
+            aR.AppendLine("2. 關係補記：今天漏記的互動補一筆（依 ucl-relationship；主要觸發點是對話當下就寫，這裡只是撿漏）");
             aR.AppendLine("3. 工作記憶回寫（今天有推進某項工作才做，依 ucl-work-memory）");
             aR.AppendLine("4. 見人畫像：挑 1~3 位印象最深的同事（portraits.py write，親筆）");
             aR.AppendLine("5. （可選）消費時間：spend_menu.py roll（依 ucl-spending-time）");

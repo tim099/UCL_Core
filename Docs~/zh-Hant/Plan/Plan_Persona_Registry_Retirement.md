@@ -1,0 +1,253 @@
+---
+title: 廢棄 AwakenInit/personas — 必要欄位遷進 letters/<persona>/，路由欄留中央
+slug: persona-registry-retirement
+status: analysis-only（2026-08-18 Tim 要求先分析；**尚未拍板、尚未施工**）
+created_at: 2026-08-18T13:55:00Z
+created_by: calli
+location: UCL_Core (cross-project)
+target_audience: [AI_Agent, Developer]
+related:
+  - ucl_core:Docs~/{lang}/Plan/Plan_Letters_Dir_Layout.md | letters 目錄分層 | 目標落點的既有慣例
+  - ucl_core:Docs~/{lang}/Plan/Plan_Relationship_System.md | Relationship 系統 | 「資料放人的資料夾而不是系統的資料夾」同一條理路
+  - repo:AgentCommands/BugReports/reports/0004.md | BUG-4 | 見林書籤被蓋回（本案「可推導欄該刪不該搬」的血證）
+  - repo:AgentCommands/BugReports/reports/0006.md | BUG-6 | 兩個序列化器輪流整檔重寫 persona json
+---
+
+# 廢棄 `AwakenInit/personas` — 必要欄位遷進 `letters/<persona>/`
+
+> **一句話**：23 個欄位裡**只有 11 個有真消費端**；其中 4 個是「別人要查的路由欄」不能搬進 letters，
+> 7 個是「我是誰」該搬；剩下 12 個是可推導的快取或根本沒人讀的死欄 —— **那 12 個要刪，不是搬。**
+>
+> ⚠ 本文是分析，不是施工單。所有「建議」都等拍板。
+
+## 0. 先講量出來的數字（掃過的，不是估計）
+
+| 量 | 值 | 怎麼量的 |
+|---|---|---|
+| persona 檔 | **21** 個（`AwakenInit/personas/*.json`） | 目錄實掃 |
+| 欄位種類 | **23** 種 | 21 檔欄位聯集 |
+| 內容體積 | ≈ 59,465 字元 | `json.dumps` 逐檔累加 |
+| ↳ 自傳／身分欄佔 | **91.3%** | 同上，按欄分桶 |
+| ↳ 路由欄佔 | 2.2% | 同上 |
+| ↳ 活體狀態欄佔 | 6.5% | 同上 |
+| 碰到這批檔的程式檔 | **32** 支（14 py / 18 cs） | 路徑符號實掃（見 §1） |
+| `letters/` 底下目錄 | **30** 個 —— 其中 **9 個沒有對應 persona 檔** | 兩邊集合相減 |
+| `letters/<p>` 是自己 repo 的 | **7 / 21**（apex-one·basecamp·calli·gura·kiara·Sirius·summit） | 逐目錄看 `.git` |
+
+⚠ 那 9 個幽靈目錄是 `GawrGura` `MoriCalliope` `TakanashiKiara` `Tim` `apex` `basecamp0512`
+`cross-agent` `mit` `tavern-keeper` —— **所以「掃 letters 目錄」不能當 persona 名單**，
+任何以它為輸入的遷移腳本會撈到 9 個不存在的人。
+
+## 1. 消費端盤點 —— 32 支程式碰這批檔
+
+按「拿走 personas/ 之後會怎麼壞」分類，不按目錄分類。
+
+### 1.1 錢與路由（拿掉會算錯帳，且**必須不依賴 letters 有沒有 checkout**）
+
+| 檔 | 用途 | 讀哪欄 |
+|---|---|---|
+| `_lib/bank_resolver.py` | persona→agent→bank（薪資／扣款的唯一解析） | `agent` |
+| `canvas.py` / `mbti.py` / `freetime.py` / `dice.py` | 扣款、寄信、發薪前反查 bank | `agent` |
+| `git_commit.py` / `agent_email.py` / `agent_model.py` | commit trailer（`agent@persona(model) <email>`） | `agent` `model` `actual_agent` `email` |
+| `registered_mail.py` / `_lib/session_common.py` | 收件人解析 / session 共用 | `agent` |
+| `Tools/tavern_catchup.py` | 顯示發言者所屬 agent | `agent` |
+| `UCL_TreasuryAccountResolver.cs` / `UCL_BankAdminPage.cs` | C# 端同一套 bank 解析 | `agent` |
+
+🩸 `bank_resolver.py` 檔頭已經寫著 footgun：用只載 meta 的 loader 會讓**每個 persona 都拋
+`PersonaResolutionError`**（summit + kaguya 2026-07-21 撞出）。⇒ 路由欄一旦散進 21 個 letters 目錄，
+「某人的 letters 沒 clone」就等於這條錯誤重演，而且是在扣款路徑上。
+
+### 1.2 身分／顯示（拿掉會少印東西，不會算錯帳）
+
+| 檔 | 用途 | 讀哪欄 |
+|---|---|---|
+| `wake_brief.py` | §0 身分卡（血統 fork from …） | `forked_from` |
+| `awakening.py` | fork 建人、lineage 查詢、vector 近鄰、status 報表 | `identity_vector` `fork_lineage` `forked_from` `forked_at` `layer_role` `wake_count` |
+| `Cmd_GoodMorning.cs` | 自介訊息前半的系統欄 | `wake_count` `layer_role` |
+| `Cmd_LoginStatus.cs` / `UCL_LoginStatusPage.cs` | 登入狀態頁 pool 列表 | `layer_role` `last_active` `status` `wake_count` |
+| `UCL_PersonaInspectorPage.cs` | 全欄位檢視（含 vector_history / last_session_keys） | 幾乎全部 |
+| `UCL_PersonaAgentAdminPage.cs` | 建 persona／fork／換綁 agent／同步角色卡 | 幾乎全部（**寫入端**） |
+| `UCL_ChatTavernPersonaCardAsset.cs` / `UCL_ChatTavernAdminPage.cs` | 角色卡 ↔ persona 對應、孤兒卡偵測 | 檔名 + `layer_role` |
+| `UCL_ChatTavernIO.cs` | persona pool id 集合（inbox 分流） | **只要檔名**，不讀內容 |
+| `UCL_RelationshipIO.cs` | 關係對象名的次要來源 | 只要檔名 |
+
+📌 `UCL_RelationshipIO.cs:104` 的註解已經寫著：
+「🥈 過渡期的次要來源：AwakenInit/personas —— Tim 2026-08-18 說它之後會遷進 letters。」
+⇒ 遷移意圖已經在 code 裡留了記號，本案是把它做完。
+
+### 1.3 只碰路徑不碰內容（遷移時改一處就好）
+
+`_lib/ucl_paths.py`（`personas_dir()` / `persona_file()` 的唯一解析點）、
+`_lib/tavern_paths.py`（`PERSONAS_DIR` 委派上者）、
+`UCL_AwakeningService.cs`（`PersonasDir` / `ResolvePersonaFile`，C# 側唯一解析點）、
+`UCL_AgentCommandsPath.cs`、`UCL_AutoCommitPage.cs`（commit 範圍 `AwakenInit/` 前綴）、
+`_lib/affinity_manager.py`（legacy，自己拼了 `REPO_ROOT/AgentCommands/AwakenInit/personas` —— **唯一一個沒走解析點的**）。
+
+⇒ 好消息：**兩端各已有唯一解析點**，路徑遷移不必動 32 支。壞消息：`affinity_manager.py` 那條寫死的要一起收。
+
+## 2. 欄位必要性判定（23 欄）
+
+判準只有一句：**「拿掉它，哪個消費端會壞？」** —— 沒有消費端的欄位不叫資料，叫殘留。
+（命中數＝非註解行的靜態命中；標 ⚠ 的表示同名詞污染，已人工複核。）
+
+### 2.1 必要・路由欄 —— 留中央（4 欄，2.2% 體積）
+
+| 欄 | 命中 | 為什麼不能只住 letters |
+|---|---|---|
+| `agent` | 137 ⚠ | 錢的入口（bank 由它推）；且要**跨全體**查（agent→persona 反查、多數決） |
+| `model` | 56 ⚠ | commit trailer + brief 抬頭；`agent_model` 要跨 persona 多數決推 agent→型號 |
+| `actual_agent` | 33 | email／model 解析的 key；lock 也要它 |
+| `email` | 25 | commit trailer；只有 2 位有 override，其餘吃 agent 預設 |
+
+### 2.2 必要・身分欄 —— 建議搬 `letters/<persona>/`（7 欄，91.3% 體積）
+
+| 欄 | 命中 | 備註 |
+|---|---|---|
+| `layer_role` | 10 | 登入頁／自介抬頭／角色卡同步都讀 |
+| `forked_from` | 14 | brief §0「血統」、lineage 工具 |
+| `fork_lineage` | 12 | 鏈深、改名時的連動修正 |
+| `forked_at` | 5 | lineage 顯示 |
+| `created_at` | 少（registry 用途） | 36 個命中裡多數是別的檔自己的 created_at |
+| `identity_vector` | 8 | ⚠ **有跨 persona 讀**：`awakening.py:2244` 拿別人的 vector 算 cosine 近鄰 |
+| `vector_history` | 5 | 只有寫入端＋Inspector 顯示 |
+
+⚠ `identity_vector` 是唯一「身分欄但需要聚合讀」的例外 —— 搬進 letters 之後
+「vector 近鄰」功能會依賴所有人的 letters 都在。要嘛接受降級（只比 checkout 到的人、
+**並且明講掃了幾個**），要嘛在中央留 hash（見 §3.3）。
+
+### 2.3 可推導 —— 建議刪，不要搬（5 欄，BUG-4 的家）
+
+| 欄 | 真相源已經在哪 | 證據 |
+|---|---|---|
+| `wake_count` | `wakes/` 收尾信數 +1 | C# 登入本來就採磁碟值並印「快取落後…採磁碟值」 |
+| `last_consolidated_wake` | `longterm/wake_<a>-<b>.md` 檔名 | **BUG-4**：快取停在 12 而磁碟已到 23 → 假 OVERDUE。兩端 2026-08-18 已加對帳 |
+| `last_consolidated_at` | 同上檔的 `consolidated_at` frontmatter | 同上 |
+| `status` | `_session/_persona_<p>.json`（lock） | 登入路徑自己寫著「registry status=online 但查無 lock ⇒ 以 lock 為準」 |
+| `last_active` | lock `locked_at` ／最近訊息 | 目前純顯示用（3 個頁面讀） |
+
+⇒ **搬快取＝多一個會被 checkout 回滾的地方。** BUG-4 今天證明的就是這件事：
+一個沒有磁碟對帳的快取，落後時看起來跟正常值一模一樣（12 不像壞值，0 才像）。
+
+### 2.4 沒有消費端 —— 建議直接不遷（6 欄）
+
+| 欄 | 狀態 |
+|---|---|
+| `availability` | **只有寫入端**（`awakening.py set-availability` + 登入/登出）；讀它的派工功能（T06.1 Plan_Standby_Dispatch_Bartender）從沒接上 —— 酒保端 0 命中 |
+| `last_session_keys` | 只有 `UCL_PersonaInspectorPage` 顯示，**沒有任何寫入端** ⇒ 歷史殘留（5 位有） |
+| `relogin_count` | 非註解命中 **0**（2 位有） |
+| `persona_spec` | 命中 **0**（1 位有） |
+| `narrative_role` / `narrative_note` | 命中 **0**（各 1 位有） |
+| `worldlines` | 唯一命中是 `wake_brief.py:342` 讀 **`letters/<p>/worldlines/` 目錄** —— 不是這個欄位 |
+
+## 3. 目標配置
+
+### 3.1 `letters/<persona>/_persona.json` —— 身分欄的新家
+
+理由：`identity_vector` 是 64 維數字陣列，markdown frontmatter 表達它只會變難讀難改；
+letters 底下已有先例（`bookshelf/reader.json` 是機器真相、`.md` 是人可讀投影）。
+
+```
+letters/<persona>/
+  _persona.json      ← 身分欄真相源（machine-owned）
+  _persona.md        ← 選配：人可讀投影（機械生成，改 json 後重生）
+  _constitution.md   ← 既有
+  longterm/ fragments/ wakes/ relationship/ …
+```
+
+### 3.2 `AwakenInit/_registry_meta.json` 的 `persona_routing` —— 路由欄的新家
+
+**不是「留著 personas/ 只放 4 欄」，而是把 4 欄併進既有的 meta 檔**，於是 `personas/` 這個目錄可以整個退場：
+
+```json
+{
+  "agent_banks": { "...": "..." },
+  "persona_routing": {
+    "calli": { "agent": "Myth", "model": "claude-opus-5", "actual_agent": "ClaudeCode" },
+    "basecamp": { "agent": "Claude", "model": "…", "email": "…" }
+  }
+}
+```
+
+好處三個：
+1. **persona pool 名單有了權威來源** —— `persona_routing` 的 key 集合。解掉 §0 那 9 個幽靈目錄的問題
+   （現在名單是「掃 21 個檔名」，遷移後如果改成掃 letters 目錄會變 30 個）。
+2. 錢的路徑**一次讀一個檔**，不依賴任何 letters checkout（§1.1 的 footgun 從結構上消失）。
+3. 21 檔 → 1 檔，`save_registry` 那個「寫一個 persona 卻重寫全部 21 檔」的行為（今天實測波及
+   basecamp / gura 兩個無關檔）自然消失。
+
+### 3.3 待拍板的一個小決定
+
+`identity_vector` 的跨 persona 比較怎麼辦（三個選項，本見習生偏 B）：
+- **A**：接受降級 —— 只比 letters 在手的人，且回報「掃了 N/21 位」。
+- **B**：中央只存 `identity_hash`（`awakening.py:2178` 已經在算 hash 了），
+  近鄰查詢先用 hash 篩、要精算才讀對方的 letters。
+- **C**：vector 不搬，留中央 —— 但它是體積大戶，等於 91% 沒搬成。
+
+## 4. 遷移分期
+
+| 期 | 做什麼 | 為什麼這個順序 |
+|---|---|---|
+| **0** | 收斂讀寫接縫：`persona_profile.py` + `UCL_PersonaProfile.cs`，32 支消費端全走它 | 先做這步的話，後面每一期都只改 1~2 個檔。不先做＝32 支各自改路徑＝2026-06-16 路徑漂移家族的下一集 |
+| **1** | 雙寫雙讀：寫新家、讀優先新家；讀到舊家時**印一行帶呼叫端**的 log 進 `AwakenInit/_persona_access.log` | 這是唯一能證明「還有誰在讀舊檔」的手段（§5） |
+| **2** | 觀察期（建議 ≥ 一週、且要跨過一次全 persona 登入＋一次晚安＋一次發薪） | 消費端不是每天都跑；只跑一天證明不了 |
+| **3** | log 乾淨後移除舊路徑分支，`personas/` 從 code 裡消失 | 到這一步才叫廢棄 |
+| **4** | 刪檔，**備份靠 git tag 不靠留在樹裡**（§5.3） | — |
+
+## 5. 「改資料夾名備份起來，看還有誰在讀」為什麼**驗不出來**
+
+這是本案最重要的一段，因為它是直覺的反面。
+
+### 5.1 半數消費端撞到「目錄不見了」是**靜默**的
+
+實掃 §1 的消費端，寫法長這樣的有一票：
+
+```csharp
+if (Directory.Exists(PersonasDir))          // UCL_LoginStatusPage / UCL_BankAdminPage /
+    foreach (var pf in Directory.GetFiles(...))   // UCL_TreasuryAccountResolver / UCL_ChatTavernIO …
+```
+```python
+if not d.is_dir(): return out                # agent_model.py / registered_mail.py / affinity_manager.py
+```
+
+⇒ 改名之後它們**回空集合、繼續跑、不報錯**：pool 列表變空、bank 解析退命名慣例 fallback、
+persona 名單少一半。**看起來全綠。** 這正是 BUG-4／BUG-5 同一族的失敗形狀。
+
+### 5.2 有效的三種偵測（建議三個都做）
+
+| 手法 | 抓得到什麼 | 抓不到什麼 |
+|---|---|---|
+| **靜態證明**：接縫做完後 grep 全樹，`personas_dir\|PersonasDir\|AwakenInit/personas` 應只剩接縫本身 | 所有寫在 code 裡的路徑 | 反射／字串拼接／外部腳本 |
+| **執行期 log**（Phase 1 的 `_persona_access.log`，記時間＋呼叫端） | 真的被跑到的舊路徑讀取 | 觀察期內沒被跑到的路徑 |
+| **毒藥檔**（保留目錄，內容換成 `{"_deprecated_read_via":"persona_profile"}`） | 「讀了但不檢查欄位」的呼叫端會**當場拿到空值而不是舊值** | 只判目錄／檔案存在性的呼叫端 |
+
+⚠ **毒藥檔比改名安全**：改名讓「檢查存在性」的呼叫端靜默退化；毒藥檔讓「真的讀欄位」的呼叫端拿到
+明顯錯誤的值（空 agent → bank 解析當場報錯，而不是安靜地少列幾個人）。
+**一個更精確的失敗比一個模糊的成功更能證明事情發生了。**
+
+### 5.3 備份不要留在樹裡
+
+「改資料夾名留著」＝樹裡多一份看起來合法的舊資料。今天修的 BUG-5 就是這個病：
+`_lib/ucl_paths.py` 的鏡像留在樹裡、內容落後一天，`import` 失敗被 fail-soft 吞成「沒有資料」。
+
+⇒ 備份用 **git（commit + tag，例如 `personas-retire-baseline`）**；
+若非要留在樹裡，名字必須讓「讀到它就一定壞」（例如 `_personas.retired.20260818/` 前綴 `_` 已被
+letters 慣例用來標「機械產物／不要當人寫的檔」，這裡要更狠 —— 副檔名改掉，讓 `*.json` glob 撈不到）。
+
+## 6. 風險與未決
+
+| # | 事項 | 現況 |
+|---|---|---|
+| 1 | 只有 7/21 有自己的 letters repo | 其餘 14 位搬過去仍在 AgentCommands 內，**同一份資料兩種家**；但 §3.1 的落點對兩者都成立（路徑一致），只是 commit 邊界不同 |
+| 2 | 7 個 letters submodule 的寫入會變頻繁 | 登入寫 `wake_count` 那類欄若照 §2.3 刪掉，寫入頻率其實**降低**；若照搬則 7 個 submodule 每次登入都 dirty（Tim 的每晚 bump 工作量 ×7） |
+| 3 | `identity_vector` 跨 persona 比較 | §3.3 待拍板 |
+| 4 | BUG-6（兩個序列化器輪流整檔重寫） | 遷移前先定 canonical 格式，否則新檔立刻繼承同一個病 |
+| 5 | `affinity_manager.py` 寫死路徑 | 遷移時要一起收進接縫（它是唯一沒走解析點的） |
+| 6 | 見叢舊記錄「6 個 letters repo 是 detached HEAD」 | **2026-08-18 實測 7 個全在 `master` 且有 remote** —— 那條記錄已過期，遷移前不必先修 detached |
+
+## 7. 驗收標準（施工時照這條驗，不驗「有沒有報錯」）
+
+1. `bank_resolver` 對全 21 位都解得出 bank，**且在故意把某人 letters 移走的情況下仍然解得出**（證明路由不依賴 letters）。
+2. `wake_brief` 的 §0 血統、§6.5 關係、§6 見林三段**都有實際讀數**，不是空狀態文案。
+3. 登入回傳檔的 `wake_count` / 見林 gap 與磁碟推導一致（BUG-4 的兩條對帳仍在）。
+4. `_persona_access.log` 在完整一輪（登入→晚安→發薪→後台頁全開一次）之後**零筆**。
+5. `git diff` 一筆 persona 身分變更**只有那幾行**（BUG-6 定案的副產物）。

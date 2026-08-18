@@ -100,6 +100,12 @@ skill 與文件**整個重寫，不基於舊版本修改**。
 1. ✅ `step=end`（提前收工）**收進第一版**——提早收工要有名字的出口，不靜默。
 2. ✅ 像素 **per-session 清零**——「每次 10 顆」語意乾淨，用不完歸零。
 3. ✅ 完整流程文件**併入 Awakening_Cmd_Flow.md**——守衛/回傳檔慣例同款，兩份必漂移。
+   - ⚠ **2026-08-18 由 Tim 改判：拆成獨立檔** [`Workflows/FreeTime_Cmd_Flow.md`](../Workflows/FreeTime_Cmd_Flow.md)。
+     原句不刪（那是當時的判斷，且它的**理由仍然成立**）。改判的前提變了：自由時間長出了活動層
+     （`Cmd_FreeTimeActivity` pick/step/done）、換骰整合讀訊息＋聊天、活動 md 的 `tool`/`steps`
+     —— 它已不是「早晚安的同款三步」。
+     ⇒ 而「兩份必漂移」這個理由被**照著執行**：`Awakening_Cmd_Flow.md` 的自由時間章節**整段刪除**（歷史留 git），
+     全系統仍只有一份完整流程。**拆檔沒有讓那句話失效，是那句話決定了拆法。**
 4. ✅ start **強制在線**（lock 存在）——自由時間是登入後的狀態；未登入先走 GoodMorning step=wake。
 
 另拍（同日補充）：`step=next` 的觸發時間點＝**當前活動事件的自然結束**（已寫入 §1 ③）。

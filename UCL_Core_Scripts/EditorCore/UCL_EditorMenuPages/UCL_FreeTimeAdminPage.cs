@@ -227,6 +227,44 @@ namespace UCL.Core.EditorLib.Page
 
                 DrawDraftField(iAct, "顯示名稱", "name", iAct.name, m_DraftName);
                 DrawDraftField(iAct, "做法(how)", "how", iAct.how, m_DraftHow);
+                DrawStepRunSection(iAct);
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：顯示這個活動有沒有接「Cmd 代跑一步」（frontmatter `tool` / `steps`）。
+        // 物理意義：`Cmd_FreeTimeActivity op=step` 只對有掛 `tool` + `steps` 的活動放行 ——
+        //          而本頁原本完全看不到這兩個欄位，於是「為什麼這個活動不能代跑」
+        //          在管理台上沒有答案（只能去翻 md）。
+        // 數值影響：**唯讀**。
+        // ⛔ 刻意不開放在 UI 編輯 `steps`：那是白名單，而白名單的值會直接進外部程式的 argv ——
+        //   在管理頁上手打等於把注入面搬到滑鼠可及的地方。要改請改 md（改完本頁重掃就看得到）。
+        //   `tool` 同理：打錯檔名的症狀是「代跑永遠 blocked」，而那看起來像功能沒做。
+        // ===========================================================
+        void DrawStepRunSection(UCL_FreeTimeActivity iAct)
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aWired = !string.IsNullOrEmpty(iAct.tool) && iAct.steps != null && iAct.steps.Count > 0;
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("Cmd 代跑一步", UCL_GUIStyle.LabelStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                    GUILayout.Label(aWired ? $"✅ 已接　工具 `{iAct.tool}`" : "⚪ **未接**（`op=step` 會擋下並指回 `op=pick`）",
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
+                if (aWired)
+                {
+                    GUILayout.Label($"　允許的 step（白名單）：{string.Join(" / ", iAct.steps)}", WrapLabelStyle);
+                }
+                else
+                {
+                    GUILayout.Label("　要接：在該活動 md 的 frontmatter 加 `tool: <腳本.py>` 與 `steps: <逗號分隔子命令>`。"
+                        + "**未接不是壞掉**，是這個活動還沒被拆成一步一步。", WrapLabelStyle);
+                }
+                GUILayout.Label("　⚠ 這兩欄**本頁唯讀** —— `steps` 的值會進外部程式的 argv，"
+                    + "在 UI 上手打等於把注入面搬到滑鼠可及的地方。要改請改 md。", WrapLabelStyle);
             }
         }
 

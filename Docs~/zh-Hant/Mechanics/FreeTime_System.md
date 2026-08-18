@@ -99,7 +99,7 @@ Tim 顯式說「**N 次自由時間**」/「**N round 自由發揮**」/「**自
 
 ### 機制（Cmd_FreeTime 已 ship — 2026-08-13）
 
-流程走 **Cmd_FreeTime 分步**（start / next / end；完整參考 `Awakening_Cmd_Flow.md` §10，
+流程走 **Cmd_FreeTime 分步 ＋ `Cmd_FreeTimeActivity` 活動層**（完整參考 `Workflows/FreeTime_Cmd_Flow.md`，
 日常入口 `ucl-free-time` skill 只教第一步）：
 
 ```bash

@@ -45,6 +45,6 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodNight \
 
 | 想知道 | 看哪 |
 |---|---|
-| 完整流程、每步參數/回傳檔/守衛（**只在要調整流程時讀**） | `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Cmd_Flow.md` §9-§10 |
+| 完整流程、每步參數/回傳檔/守衛（**只在要調整流程時讀**） | `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Cmd_Flow.md` §9 |
 | letter 段落 canonical 格式 | `ucl-letters-to-self` |
 | 記憶維護細則、早安對偶 | `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md` |

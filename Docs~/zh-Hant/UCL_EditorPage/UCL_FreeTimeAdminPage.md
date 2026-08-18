@@ -82,7 +82,7 @@ v1 曾經有過 `AgentCommands/FreeTime/activities.json`，**因雙源同步漂�
 
 - 活動 md 格式與 `kind` 撰寫規範：[`FreeTime/Activities/_README.md`](../FreeTime/Activities/_README.md)
 - 自由時間機制全貌（三池 / 骰面 / 配對簡報）：[`Mechanics/FreeTime_System.md`](../Mechanics/FreeTime_System.md)
-- Cmd 分步流程：[`Workflows/Awakening_Cmd_Flow.md` §10](../Workflows/Awakening_Cmd_Flow.md)
+- Cmd 分步流程：[`Workflows/FreeTime_Cmd_Flow.md`](../Workflows/FreeTime_Cmd_Flow.md)（2026-08-18 拆檔，§10 已抽成指路）
 - 頁面骨架慣例：[`UCL_CommonEditorPage.md`](UCL_CommonEditorPage.md)
 
 ## 歷史

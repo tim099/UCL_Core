@@ -83,7 +83,35 @@ run BugReport --arg op=claim  --arg index=<n> --arg assignee=<me>
 run BugReport --arg op=resolve --arg index=<n> --arg commit_sha=<SHA> --arg note="<怎麼修的>"
 ```
 
-## 5. 關單：**優先走 commit，不要手動**
+## 5. 修 bug 的流程（認領 → 復現 → 修 → 驗 → commit 關單）
+
+> 開單只是把事情記下來。**這一節才是單子真正被消化的地方。**
+
+### ① 先認領，不要默默動手
+
+```bash
+run BugReport --arg op=claim --arg index=<n> --arg assignee=<me>
+```
+
+理由不是儀式感：單子的 `updated_at` 會前進 ⇒ **它不會在別人的早安 brief 裡被算成 stale**。
+沒認領就開修，別人看到的是一張沒人理的舊單，可能有人跟你撞車修同一隻。
+
+### ② 復現，而且**用單子上的 `evidence` 復現**
+
+`evidence` 欄存在的目的就是這一步。復現不出來時**不要當它不存在** ——
+改成留 `note` 說明你試了什麼、環境差在哪，狀態留 `in_progress` 或走
+`--arg resolution=duplicate`（找到本尊）。⛔ **復現不出來 ≠ wontfix。**
+
+### ③ 修，然後驗到能確定為止
+
+- 改 `.cs` ⇒ **一律送 recompile**（`run_cmd.py --persona <me> recompile`），
+  Unity 失焦時不會自己編，`Cmd 回 Success` 只證明請求被收下。
+- **編譯過不算驗過。** 要能講出一句「哪個讀數從 A 變成 B」——
+  ⭐ 一個更精確的失敗，比一個模糊的成功更能證明事情發生了。
+- 順手複查 console：**有些 bug 的症狀只出現在 log 裡，輸出看起來完全正常。**
+  （🩸 本系統自己就栽過：八條驗收全過，而 `LogError` 每次都在噴，抓到的是別人的眼睛。）
+
+### ④ commit 關單 —— **優先走 commit，不要手動 resolve**
 
 修好之後在 commit 訊息裡寫一行：
 
@@ -91,9 +119,30 @@ run BugReport --arg op=resolve --arg index=<n> --arg commit_sha=<SHA> --arg note
 Fixes BUG-12
 ```
 
-`git_commit.py` 會在公告成功之後自動 `op=resolve` 並帶上 SHA。
+`git_commit.py` 會在公告成功之後自動 `op=resolve` 並帶上 SHA
+（完整提交規範 → skill `ucl-commit`）。
+
 理由：修東西的人本來就要 commit，**把關單掛在他一定會走的那條路上**，
 不要另外要求他記得再跑一支指令 —— 「記得」正是這套系統不能依賴的東西。
+
+⚠ 幾個邊界：
+- **一則 commit 可以帶多個 `Fixes BUG-a` / `Fixes BUG-b`**，每張各自關掉。
+- **`--no-announce` 的 commit 不會關單**（閉環掛在公告成功之後）⇒ 那種情況要手動 `op=resolve`。
+- 關單失敗只警告不致命（commit 已落地）—— 看到 `⚠ BUG-n 自動關單失敗` 就手動補一次。
+
+### ⑤ 修不動的時候，也要收尾
+
+```bash
+run BugReport --arg op=resolve --arg index=<n> --arg resolution=wontfix --arg note="<為什麼不修>"
+```
+
+**`wontfix` 要寫理由。** 一張沒有理由的 wontfix 跟一張被忘掉的單，對下一個人來說是同一件事。
+
+### ⑥ 順手記 lesson（可選但常常該做）
+
+坑本身關單了，**但「我為什麼會掉進去」是另一筆帳** ⇒ `NoteLesson`（見 §2）。
+判準：這個坑修掉之後就不存在了 ⇒ 只要關單；
+**修掉之後我還是會用同樣的方式犯下一個** ⇒ 兩邊都記。
 
 ## 6. 查重：機械會提示，但**它不保證**
 
@@ -125,4 +174,5 @@ Editor → **ToolBox → 問題回報管理**。列表、篩 type、展開詳情
 |---|---|
 | 完整設計、資料結構、驗收清單 | `ucl_core:Docs~/{lang}/Plan/Plan_BugReport_System.md` |
 | 記 lesson（本 skill 的對偶） | skill `agent-lessons-log` |
-| commit 與領薪 | skill `ucl-commit` |
+| **提交規範與 `Fixes BUG-n` 關單**（§5 ④ 的本體） | skill `ucl-commit` |
+| 改完 .cs 怎麼確認真的編過（§5 ③） | skill `ucl-compile-error` |

@@ -89,6 +89,7 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
 它會做而你不必記的事：
 - 每位 `--persona` 各一行 trailer（身分／型號／信箱全部推導自檔案，重複自動去重）
 - **提交後自動發酒館公告領薪**，SHA 與 meta 由它填；`--no-announce` 可關
+- **解析訊息裡的 `Fixes BUG-<n>` 並自動關掉那幾張問題回報單**（見下節）
 - `--announce-body` / `--announce-body-file` 是**可選**開場白，插在標題與 commit 內文之間。
   不帶就只發 commit 資訊。（commit 訊息寫給日後查 history 的人，開場白寫給現在在酒館的同事。）
 
@@ -148,6 +149,33 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <par
   同步時是**套用同一個編輯**，不是把正本複製過去（複製會把那行吃掉）。
 - ❌ code 混 chat → history 噪音。
 
+## 🐛 `Fixes BUG-<n>` —— commit 順手關掉問題回報單
+
+修好一張 `BugReport` 的單之後，**在 commit 訊息裡寫一行就好**：
+
+```
+Fixes BUG-12
+```
+
+`git_commit.py` 會在**公告成功之後**自動跑 `op=resolve` 並把 SHA 掛上去，
+console 會印一行 `🐛 BUG-12 已自動關單（<sha>）`。
+
+**為什麼掛在 commit 上**：修東西的人本來就要 commit ——
+把關單掛在他**一定會走的那條路**上，就不必要求他記得再跑一支指令。
+而「記得」正是那套系統不能依賴的東西（一張沒人回來關的 open 單，
+跟一張還真的壞著的單長得一模一樣，還會主動誤導）。
+
+⚠ 邊界，每一條都會咬人：
+- **一則 commit 可以帶多行 `Fixes BUG-a` / `Fixes BUG-b`**，各自關掉。
+- **`--no-announce` 的 commit 不會關單** —— 閉環掛在公告成功之後。
+  那種情況要手動 `run BugReport --arg op=resolve --arg index=<n> --arg commit_sha=<SHA>`。
+- 關單失敗**只警告不致命**（commit 已經落地了，不該讓它看起來失敗）——
+  看到 `⚠ BUG-n 自動關單失敗` 就手動補一次，別假設它成功了。
+- ⛔ **別在訊息裡寫沒有真的修好的單號。** 關單是對別人的宣告：
+  清單上少一筆＝所有人不再看它。
+
+開單、修復流程與 severity 判準 → skill `ucl-bug-report`。
+
 ## 執行順序（收到「commit」指令）
 
 0. **先判層數**：使用者說了 `commit all` / `全包` / `逐層 bump` 嗎？沒說 = **單層**。
@@ -157,6 +185,7 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <par
 4. stage → `git_commit.py` 提交（trailer 與公告自動）。
    **單層**：只做改動所在那一層，做完就停。
    **commit all**：由內往外逐層 stage + bump。
+4.5 **這筆有修到 BugReport 的單嗎** → 訊息裡加 `Fixes BUG-<n>`（提交時自動關單，見上節）。
 5. 跑 `commit_payout_check.py` 對帳，報告 SHA 與已領狀態給 Tim。**不 push。**
    單層時**一併報「父層仍指著舊 hash，同事 pull 拿到的還是舊版」**——
    那句不是免責聲明，是這次交付真實的邊界。
@@ -181,3 +210,7 @@ python <UCL_Core>/Tools~/AgentCommands/commit_payout_check.py --strict   # 有�
 > **不是漏做，是做完了倒在門外。** 同族的還有 trailer 手打造成的漂移（同一位 meadow 三筆 commit
 > 出現過三種型號寫法與兩種 domain）。
 > **寫進 skill 只能讓下一個人知道；把它變成工具的預設行為，才是讓它不再需要被記得。**
+
+---
+
+修的是一張問題回報單 → skill `ucl-bug-report`（開單 / 修復流程 / severity 判準；訊息記得帶 `Fixes BUG-<n>`）。

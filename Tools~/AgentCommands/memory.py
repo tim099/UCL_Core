@@ -241,6 +241,31 @@ def latest_longterm_digest(persona: str) -> Path | None:
     return digs[-1] if digs else None
 
 
+def latest_digest_span(persona: str) -> tuple:
+    """回 (磁碟上最大的 digest span_end, 該檔的 consolidated_at)；沒有 digest 回 (0, None)。
+
+    區塊職責：把「見林做到哪」的磁碟真相集中在一處，給 consolidation_status 對帳用。
+    物理意義：digest 檔（`longterm/wake_<start>-<end>.md`）是既成事實 ——
+             檔在那裡就代表那段濃縮真的發生過，persona json 的書籤只是它的快取。
+    數值影響：取**最大 span_end** 而不是「檔名排序的最後一個」——
+             檔名零填充三位，wake 破百之後 `wake_099-105` 會排在 `wake_100-110` 後面，
+             那時排序與大小不再等價（現在等價，所以這個坑不會叫）。
+    """
+    best_end, best_path = 0, None
+    for path in list_digests(persona):
+        m = re.search(r"wake_(\d+)-(\d+)", path.name)
+        if not m:
+            continue
+        end = int(m.group(2))
+        if end > best_end:
+            best_end, best_path = end, path
+    if best_path is None:
+        return 0, None
+    # 欄名是 consolidated_at（不是 written_at）—— 用錯欄名會讓 last_at 留 None，
+    # pending_letters 就退化成「列出全部信」。
+    return best_end, (read_frontmatter_field(best_path, "consolidated_at") or None)
+
+
 def consolidation_status(persona: str, p: dict,
                          threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD) -> dict:
     """算 persona 的長期記憶整理狀態（overdue / span / 待濃縮信件）。
@@ -251,20 +276,28 @@ def consolidation_status(persona: str, p: dict,
     wake = p.get("wake_count", 0)
     last_c = p.get("last_consolidated_wake", 0) or 0
     last_at = p.get("last_consolidated_at")
-    # 欄位缺失時改問磁碟：digest 檔名 wake_<start>-<end>.md 才是既成事實，
+    # 跟磁碟對帳：digest 檔名 wake_<start>-<end>.md 才是既成事實，
     # persona json 的這兩欄只是快取 —— 而它已經證明會掉（2026-07-31：letters 同步了、
     # personas/ 沒同步，於是 kiara/basecamp 的欄位歸零，但 digest 檔好端端躺在那）。
     # 不自癒的話：gap 從 0 起算 → 立刻 OVERDUE → 逼人重做已經做過的濃縮。
-    if not last_c:
-        digs = list_digests(persona)
-        if digs:
-            m = re.search(r"wake_(\d+)-(\d+)", digs[-1].name)
-            if m:
-                last_c = int(m.group(2))
-                # digest 的日期欄叫 consolidated_at（不是 written_at）——
-                # 用錯欄名會讓 last_at 留 None，pending_letters 就退化成「列出全部信」。
-                last_at = last_at or read_frontmatter_field(digs[-1], "consolidated_at") or None
+    #
+    # 🩸 BUG-4（calli wake#24）：判準原本是「欄位缺失(not last_c)才問磁碟」，
+    #    但快取不只會歸零，還會**落後**：lcw 停在 12 而 wake_013-023.md 已在磁碟上，
+    #    於是 gap=12 → 假 OVERDUE → 叫人重濃縮同一批 15 封信（照做會同名覆寫那份見林）。
+    #    落後比歸零更難發現 —— 0 看起來像壞值，12 看起來像正常值。
+    #    所以判準改成無條件對帳、取較大者；「快取空了才問磁碟」是它的子集。
+    disk_c, disk_at = latest_digest_span(persona)
+    bookmark_behind_disk = bool(disk_c and disk_c > last_c)
+    if bookmark_behind_disk:
+        last_c = disk_c
+        # 時戳一起換：留著落後的舊時戳，pending_letters 會把已濃縮過的信全列一次。
+        last_at = disk_at or last_at
     return {
+        # 對帳結果一起帶出去 —— 呼叫端要能說「這個數字是磁碟給的，快取落後了」，
+        # 而不是安靜地用一個跟 registry 不一致的值（靜默自癒＝下次沒人修得動病灶）。
+        "bookmark_behind_disk": bookmark_behind_disk,
+        "bookmark_disk_value": disk_c,
+        "bookmark_cached_value": p.get("last_consolidated_wake", 0) or 0,
         "wake_count": wake,
         "last_consolidated_wake": last_c,
         "last_consolidated_at": last_at,

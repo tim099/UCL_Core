@@ -513,17 +513,58 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         }
 
         /// <summary>
+        /// 磁碟上的見林既成事實 —— 回 (最大 digest span_end, 該檔的 consolidated_at)；沒 digest 回 (0, null)。
+        /// 區塊職責：digest 檔（longterm/wake_&lt;start&gt;-&lt;end&gt;.md）存在就代表那段濃縮真的發生過，
+        ///          persona json 的 last_consolidated_wake 只是它的快取。
+        /// 物理意義：與 Python memory.latest_digest_span() 同契約（兩端都取**最大 span_end**，
+        ///          不取檔名排序最後一個 —— wake 破百後 wake_099-105 會排在 wake_100-110 之後）。
+        /// 數值影響：純唯讀（列目錄 + 讀 frontmatter 一欄）；解析不出來的檔名直接跳過。
+        /// </summary>
+        static (int spanEnd, string at) MaxDigestSpan(string iPersona)
+        {
+            string aDir = Path.Combine(LettersDir, iPersona, "longterm");
+            if (!Directory.Exists(aDir)) return (0, null);
+            int aBest = 0; string aBestFile = null;
+            foreach (var f in Directory.GetFiles(aDir, "wake_*.md"))
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(Path.GetFileName(f), @"wake_(\d+)-(\d+)");
+                if (!m.Success) continue;
+                if (!int.TryParse(m.Groups[2].Value, out int aEnd)) continue;
+                if (aEnd > aBest) { aBest = aEnd; aBestFile = f; }
+            }
+            if (aBestFile == null) return (0, null);
+            string aAt = ReadFrontmatterField(aBestFile, "consolidated_at");
+            return (aBest, string.IsNullOrEmpty(aAt) ? null : aAt);
+        }
+
+        /// <summary>
         /// 見林書籤換算（port 自 rebase_consolidation_bookmark，冪等）——
         /// 有改動時 mutate iRawPersona 並回 (舊, 新)；沒書籤 / 沒變回 null。
+        /// 🩸 BUG-4（calli wake#24）：本函式用「written_at &lt;= last_consolidated_at 的收尾信數」重算書籤，
+        ///    而那個算法會讓書籤**倒退**（實測：aAt 停在 2026-06-16 → 數出 12，而磁碟上已有 wake_013-023.md）。
+        ///    倒退的代價不是少提醒，是 gap 變大 → 假 OVERDUE → 叫人重濃縮同一批信（照做會同名覆寫既有見林）。
+        ///    ⇒ 換算結果一律以磁碟 digest 為地板：**書籤永遠不得低於已經寫成檔的 span_end。**
         /// </summary>
         public static (int oldVal, int newVal)? RebaseBookmark(string iPersona, JsonData iRawPersona)
         {
             int aOld = iRawPersona.GetInt("last_consolidated_wake", 0);
             string aAt = iRawPersona.GetString("last_consolidated_at", "");
-            if (aOld <= 0 || string.IsNullOrEmpty(aAt)) return null;
-            int aNew = WakeLetterFiles(iPersona)
-                .Count(f => string.CompareOrdinal(ReadFrontmatterField(f, "written_at"), aAt) <= 0
-                            && !string.IsNullOrEmpty(ReadFrontmatterField(f, "written_at")));
+            var (aFloor, aFloorAt) = MaxDigestSpan(iPersona);
+            int aNew = aOld;
+            // 換算只在「有舊書籤且有時戳」時成立（那是它的定義域）；算不出來就維持原值，交給地板判。
+            if (aOld > 0 && !string.IsNullOrEmpty(aAt))
+            {
+                int aCounted = WakeLetterFiles(iPersona)
+                    .Count(f => string.CompareOrdinal(ReadFrontmatterField(f, "written_at"), aAt) <= 0
+                                && !string.IsNullOrEmpty(ReadFrontmatterField(f, "written_at")));
+                if (aCounted > 0) aNew = aCounted;
+            }
+            if (aNew < aFloor)
+            {
+                aNew = aFloor;
+                // 時戳跟著換：留著落後的舊時戳，下次換算又會從舊時戳數出偏低值（地板會擋，但讀數會一直互相矛盾）。
+                if (!string.IsNullOrEmpty(aFloorAt)) iRawPersona["last_consolidated_at"] = new JsonData(aFloorAt);
+            }
             if (aNew == aOld || aNew <= 0) return null;
             iRawPersona["last_consolidated_wake"] = new JsonData(aNew);
             return (aOld, aNew);

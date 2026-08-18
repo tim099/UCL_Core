@@ -1298,6 +1298,26 @@ def write_longterm_digest(persona: str, reg: dict, body: str,
 
 
 
+def heal_consolidation_bookmark(persona: str, reg: dict, st: dict) -> bool:
+    """書籤快取落後磁碟 digest 時，把快取修回磁碟值並存檔。回傳有沒有真的寫。
+
+    區塊職責：memory.py 只負責「讀的時候算對」（它不擁有 registry）；持久化在本檔。
+    物理意義：不寫回的話，每個直接讀 registry 欄位的消費端（C# 登入回傳檔的 gap、
+             後台頁）都還是看到落後值 —— 讀時自癒只治印出來的那一行，不治源頭。
+    數值影響：只動 last_consolidated_wake / last_consolidated_at 兩欄；
+             persona 不在 registry（孤兒 digest）時什麼都不做並回 False，不靜默假裝成功。
+    """
+    if not st.get("bookmark_behind_disk"):
+        return False
+    if persona not in reg.get("personas", {}):
+        return False
+    reg["personas"][persona]["last_consolidated_wake"] = st["last_consolidated_wake"]
+    if st.get("last_consolidated_at"):
+        reg["personas"][persona]["last_consolidated_at"] = st["last_consolidated_at"]
+    save_registry(reg)
+    return True
+
+
 def write_wake_brief_files(persona: str, reg: dict, p: dict,
                            threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD):
     """刷新見根索引 + 生成 wake brief，回傳 (brief_path | None, err | None)。
@@ -1955,6 +1975,11 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
         print(f"# 🧠 長期記憶整理狀態 — {persona}")
         print(f"- wake_count: {st['wake_count']}")
         print(f"- last_consolidated_wake: {st['last_consolidated_wake']} (@ {st['last_consolidated_at'] or '從未整理'})")
+        if st.get("bookmark_behind_disk"):
+            print(f"- 🔧 書籤對帳：registry 快取={st['bookmark_cached_value']} 落後磁碟 digest="
+                  f"{st['bookmark_disk_value']} —— 採磁碟值（BUG-4）。")
+            healed = heal_consolidation_bookmark(persona, reg, st)
+            print(f"  ↳ {'已把快取修回磁碟值並存檔' if healed else '⚠ 快取修回失敗（registry 無此 persona）—— 讀數已對，但下次還會落後'}")
         print(f"- gap: {st['gap']} (門檻 {st['threshold']}) → {'⚠ OVERDUE 該整理' if st['overdue'] else 'ok 尚未到門檻'}")
         print(f"- 建議 span: wake {st['span_start']}-{st['span_end']}")
         print(f"- 本段待濃縮 episodic letters ({len(st['pending_letters'])} 封):")

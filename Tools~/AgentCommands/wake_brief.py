@@ -842,6 +842,14 @@ def _online_personas(aw) -> set:
     return out
 
 
+# 區塊職責：記住上一次 _affinity_targets() 是「讀失敗」還是「真的沒有紀錄」。
+# 物理意義：兩種情況都回 {}（回傳形狀刻意不變，呼叫端有四處在用），差別只能靠旗標傳出去。
+#          🩸 BUG-5：關係區塊 import 失敗被 fail-soft 吞成 {}，brief 於是印「還沒有關係紀錄」——
+#          那句肯定句會叫剛醒來的人去寫一筆新的（製造重複資料），而正確行動是去修路徑。
+# 數值影響：per-process 旗標，每次呼叫 _affinity_targets() 重設；只影響 §6.5 那一行文字。
+_AFFINITY_LOAD_ERROR = None
+
+
 def _affinity_targets(aw, persona: str) -> dict:
     """讀自己的 relationship；回 {對象: {surface_score, tier, opinions[]}}。
 
@@ -850,10 +858,14 @@ def _affinity_targets(aw, persona: str) -> dict:
     ⚠ **回傳形狀刻意不變** —— 呼叫端有四處在用它；形狀不變讓這次成為
       純粹的資料來源替換，行為差異只可能來自資料本身，不會來自介面。
     """
+    global _AFFINITY_LOAD_ERROR
+    _AFFINITY_LOAD_ERROR = None
     try:
         from _lib.ucl_paths import letters_persona_dir
         root = letters_persona_dir(persona) / "relationship"
     except Exception as e:
+        # stderr 只有跑 Cmd 的人看得到一次；旗標才會讓 brief 本體自己招（見 _people_lines 結尾）。
+        _AFFINITY_LOAD_ERROR = f"{type(e).__name__}: {e}"
         print(f"[wake_brief] relationship 路徑解析失敗：{e}", file=__import__("sys").stderr)
         return {}
     if not root.is_dir():
@@ -1018,7 +1030,12 @@ def _people_lines(aw, persona: str) -> list:
         out.append("")
 
     if not targets:
-        out.append("_(還沒有關係紀錄 —— 跟同事互動後走 `ucl-relationship` 寫一筆)_")
+        if _AFFINITY_LOAD_ERROR:
+            # 讀不到要出聲：印成「還沒有紀錄」會把一個壞掉的區塊講成一個空的區塊。
+            out.append(f"⚠ 關係讀取失敗（{_AFFINITY_LOAD_ERROR}）—— "
+                       f"**這不代表沒有關係紀錄**，是這一區沒生成出來。")
+        else:
+            out.append("_(還沒有關係紀錄 —— 跟同事互動後走 `ucl-relationship` 寫一筆)_")
     return out
 
 

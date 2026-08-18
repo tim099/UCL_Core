@@ -33,7 +33,17 @@ _RUN_CMD = _HERE.parent / "run_cmd.py"           # .../Tools~/AgentCommands/run_
 
 def _run(cmd_type: str, args: dict, *, timeout: float = 180.0) -> tuple[bool, str]:
     """送一個 Cmd 進 Editor 佇列並等它跑完。回 (ok, 訊息尾段)。"""
-    argv = [sys.executable, str(_RUN_CMD), "run", cmd_type, "--wait-reply", "0"]
+    # 區塊職責：走 system lane（Tim 2026-08-18 拍板）。
+    # 物理意義：金流 Cmd **不是人派的** —— 呼叫端是 canvas.py / library.py 這類工具，
+    #          而 args 裡的 `account` 是**銀行**（Myth / cc / zeta）不是 persona，
+    #          本來就路由不到任何人的 lane。過去兩個旗標都沒帶 ⇒ 全落 queues/anonymous/，
+    #          跟「漏帶 --persona 的人」混在一起，那個資料夾就不再是儀表。
+    # ⚠ `--system` 只改**走哪條 lane**，不宣告身分：帳戶隔離鐵律看的是 `caller` / `account`
+    #   （UCL_TreasuryLedger），跟 lane 無關 ⇒ 記帳語意逐位元不變。
+    #   （互斥守衛只認顯式 `--persona` 旗標，`--arg persona=` 照樣能帶身分 —— 2026-08-18 實測。）
+    # 數值影響：路由 queues/anonymous/ → queues/system/。balance / debit / credit /
+    #          canvas_voucher_consume 四支共用本函式，因此一併生效。
+    argv = [sys.executable, str(_RUN_CMD), "--system", "run", cmd_type, "--wait-reply", "0"]
     for k, v in args.items():
         argv += ["--arg", f"{k}={v}"]
     try:

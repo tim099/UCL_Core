@@ -1485,7 +1485,9 @@ def _run_treasury_debit(donor: str, amount: int, slug: str, desc: str, use_kind:
     # use_kind 預設 book_donation (捐贈); 打賞流程傳 book_tip — 同一條 debit sink, 不同記帳 kind
     import subprocess
     run_cmd = _HERE / "run_cmd.py"
-    cmd = [sys.executable, str(run_cmd), "run", "Treasury",
+    # `--system`：捐書扣款不是人派的（呼叫端是 library.py），而 account 是銀行不是 persona
+    # ⇒ 落 system lane 而不是 anonymous。身分仍由 caller / account 承載（Tim 2026-08-18）。
+    cmd = [sys.executable, str(run_cmd), "--system", "run", "Treasury",
            "--arg", "op=debit", "--arg", f"account={donor}",
            "--arg", f"amount={amount}", "--arg", f"use_kind={use_kind}",
            "--arg", f"use_ref={slug}", "--arg", f"description={desc}",

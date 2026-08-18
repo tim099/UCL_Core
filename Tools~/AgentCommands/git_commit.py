@@ -182,7 +182,7 @@ ANNOUNCE_ACK_TIMEOUT_SEC = 240
 # ⚠ 刻意放在**公告成功之後**才跑：commit 與領薪是主線，關單是附帶效果。
 def resolve_fixed_bugs(message: str, sha: str, persona: str) -> None:
     idxs = []
-    for m in re.finditer(r"Fixes\s+BUG-(\d+)", message, re.IGNORECASE):
+    for m in re.finditer(r"\bFixes\s+BUG-(\d+)\b", message, re.IGNORECASE):
         n = m.group(1)
         if n not in idxs:
             idxs.append(n)

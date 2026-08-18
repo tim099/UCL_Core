@@ -32,6 +32,28 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             UCL_ChatTavernRender.WriteLastOp(md);
         }
 
+        // ===========================================================
+        // 區塊職責：成功結果同時落一份**帶輪替的 payload**，並回報給呼叫端。
+        //
+        // 物理意義：`_last_op.md` 是**全 Cmd 共用的單一格** —— 下一支 Cmd 一寫就整份蓋掉。
+        //   🩸 gura 2026-08-18 實測：register 完幾秒後一筆 Treasury 查詢就蓋掉它，
+        //      而那份報告尾端正掛著「你在自由時間中，下一步是…」的指路。
+        //      **掛了但沒人看得到，效果等於沒掛。**
+        // ⇒ Tim 拍板補 per-op payload（保留最近 10 筆、收在資料夾裡）。
+        //   `_last_op.md` **仍然照寫**：那是既有契約（python 端與酒館頁都讀它），
+        //   拿掉它等於為了修耐久度去砍掉一個還有人用的入口。
+        //
+        // 數值影響：多一次寫檔 ＋ 一次目錄列舉；輪替只發生在超過 10 筆時。
+        //   iArgs 為 null（內部呼叫）時仍會落檔，只是不回報路徑。
+        // ===========================================================
+        public static void ResolveLastOpWithPayload(
+            System.Collections.Generic.IDictionary<string, string> iArgs, string iOp, string md, string iScope = null)
+        {
+            UCL_ChatTavernRender.WriteLastOp(md);
+            string aPath = UCL_CmdPayloadStore.Write("Glossary", iOp, md, iScope);
+            if (!string.IsNullOrEmpty(aPath)) UCL_AgentCommandRunner.ReportOutputFile(iArgs, aPath);
+        }
+
         public static void RejectLastOp(string msg)
         {
             UCL_ChatTavernRender.WriteLastOp($"# ⚠ Glossary Cmd Rejected\n\n{msg}\n");
@@ -205,7 +227,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             // 數值影響：不在自由時間時一個字都不加。
             // 邊界：createdBy 是自由字串（可能不是 persona）—— 查不到 session 就等於不在，不會誤印。
             UCL.Core.EditorLib.AgentCommands.UCL_FreeTimeHint.Append(report, createdBy);
-            Cmd_Glossary_Helpers.ResolveLastOp(report.ToString());
+            // 走帶輪替的 payload —— register 是**有產物**的 op，它的報告值得活過下一支 Cmd
+            // （`_last_op.md` 共用一格，會被蓋掉；見 ResolveLastOpWithPayload 的血證）。
+            Cmd_Glossary_Helpers.ResolveLastOpWithPayload(args, "register", report.ToString(), createdBy);
         }
 
         // ===========================================================

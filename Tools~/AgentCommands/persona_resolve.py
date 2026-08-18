@@ -205,8 +205,20 @@ def resolve(explicit=None, queue_id=None, live_locks=None, my_origin=None,
         return lower                                  # 沒有宣告 → 直接用推論層的三態
 
     if top.ok and lower.ok and top.persona != lower.persona:
+        # 🩸 gura 2026-08-18 抓到：這句原本寫「但在線 lock **只有** '<X>'」——
+        #   而 code 從來沒查過「只有幾把 lock」。lower.ok 的語意是
+        #   「**某個比對方式**（token / origin / marker）把候選縮到恰好一個」，
+        #   不是「磁碟上只有一把」。她現場量了 `_session/`：四把 lock 都在，
+        #   而警告說只有一把。
+        # ⇒ 後果不是誤報而已：她說「如果我當時信了那句警告去修正身分，
+        #   我就會去動一個根本沒壞的東西」。**叫錯比不叫更糟** ——
+        #   不叫是我知道沒人守，叫錯是我開始懷疑一個明明正確的宣告。
+        # ⇒ 修法：只講 code 真的知道的事，並把 note（哪一種比對）一起印出來 ——
+        #   那個欄位裡本來就是真話，是訊息把它換成了一句更強的斷言。
         warn(f"身分不一致：宣告說 '{top.persona}'（tier {top.tier}），"
-             f"但在線 lock 只有 '{lower.persona}' —— 依宣告執行，此行僅留痕。")
+             f"但依 lock 推論出的是 '{lower.persona}'"
+             f"{f'（{lower.note}）' if lower.note else ''} —— 依宣告執行，此行僅留痕。"
+             f" ⚠ 這不代表在線只有 '{lower.persona}'：本層只回報推論結果，沒有清點 lock 總數。")
         top.note = (top.note + "；" if top.note else "") + f"與 lock({lower.persona}) 不一致"
     elif top.ok and lower.is_ambiguous and top.persona not in lower.candidates:
         warn(f"身分不一致：宣告說 '{top.persona}'，但在線的是 {' / '.join(lower.candidates)} "

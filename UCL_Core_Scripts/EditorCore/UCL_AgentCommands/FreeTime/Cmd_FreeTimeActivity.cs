@@ -321,18 +321,26 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     UCL_EditorPath.CorePath, "Tools~", "AgentCommands", iActivity.tool);
                 if (!System.IO.File.Exists(aTool)) return (false, "", $"找不到工具：{aTool}");
 
+                // 區塊職責：參數走 **ArgumentList（argv 陣列）**，不自己組單一字串。
+                //
+                // 物理意義：`Arguments` 是一個字串，於是**引號同時要扮演兩個角色** ——
+                //          「當內容送過去」與「把多個詞綁成一個 argument」。一個字元兩種語意，
+                //          而 CreateProcess 只認後者。⇒ 早上為了 JSON payload 補的 `\"` 逃脫
+                //          解決了前者，但也讓引號**永遠不再具有綁詞能力**。
+                //
+                // 🩸 2026-08-18 兩次實跑（同一個字元，兩個相反的症狀）：
+                //   ① `--pixels [{"x":518,...}]` → 引號被 CreateProcess 吃掉 ⇒ canvas.py 回
+                //      「JSON 解析失敗」（錯誤訊息指向 canvas.py，真因在這一層）。
+                //   ② `--say "多個 詞"` → 逃脫後的 `\"` 成了**內容**，argparse 只吃到 `"多個`，
+                //      `詞"` 變成多餘 positional ⇒ exit=2，**而那一步從未發生**。
+                //
+                // ⇒ 修法不是再調一次逃脫規則（那是在兩個相反需求之間挑一邊），
+                //   而是**把兩個角色分到兩層**：切詞在這裡做（引號＝綁詞），
+                //   逐個 token 交給 ArgumentList（.NET 依平台規則自己逃脫＝內容原樣抵達）。
+                //   兩件事因此不再共用同一個字元。
                 var aPsi = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "python",
-                    // 區塊職責：把 step_args 裡的雙引號**逃脫後**再進 Arguments。
-                    // 🩸 2026-08-18 實跑抓到：`--pixels [{"x":518,...}]` 送過去變成沒有引號的
-                    //   `[{x:518,...}]` ⇒ canvas.py 回「JSON 解析失敗」。
-                    //   原因：Arguments 是**單一字串**，Windows CreateProcess 會把裡面的 `"`
-                    //   當成「引號區段的開關」消化掉，而不是當成內容。
-                    //   ⇒ 要讓引號原樣抵達，得寫成 `\"`（CreateProcess 的逃脫慣例）。
-                    // ⚠ 症狀值得記：**這一格不會報「參數壞了」**，它會讓下游工具收到一個
-                    //   語法不合的 payload 然後自己抱怨 —— 錯誤訊息指向 canvas.py，而真因在這裡。
-                    Arguments = ("\"" + aTool + "\" " + iStep + " " + iStepArgs.Replace("\"", "\\\"")).Trim(),
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -340,6 +348,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     StandardOutputEncoding = System.Text.Encoding.UTF8,
                     StandardErrorEncoding = System.Text.Encoding.UTF8,
                 };
+                aPsi.ArgumentList.Add(aTool);
+                aPsi.ArgumentList.Add(iStep);
+                foreach (var aTok in SplitStepArgs(iStepArgs)) aPsi.ArgumentList.Add(aTok);
+
                 var aProc = System.Diagnostics.Process.Start(aPsi);
                 if (aProc == null) return (false, "", "Process.Start 回 null");
 
@@ -364,6 +376,65 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             {
                 return (false, "", $"spawn exception: {e.Message}");
             }
+        }
+
+        // ===========================================================
+        // 區塊職責：把 `step_args` 這一行字切成 argv token。
+        //
+        // 規則兩條，分別對應引號的兩種身分：
+        //   ① **引號在 token 開頭 ＝ 綁詞用**：吃到配對的收尾引號為止，**引號本身不進內容**。
+        //   ② **引號在 token 中間 ＝ 內容**（JSON 語法）：原樣保留，
+        //      但**它一樣會讓引號內的空白不切詞** —— 否則帶空白的 JSON 會被切成兩半。
+        //
+        // 物理意義：這兩條同時滿足三個原本互相打架的需求 ——
+        //   - `--say "多個 詞"`              → 開頭引號 ⇒ 綁成一個 argument `多個 詞`
+        //   - `[{"x":518,"y":1}]`            → 開頭是 `[` ⇒ 引號原樣送到
+        //   - `[{"k":"值 含空白"}]`          → 開頭是 `[` ⇒ 引號原樣送到，**且空白不切詞**
+        //   舊做法（單一 Arguments 字串）沒有「token 開頭」這個概念，所以無法區分前兩者。
+        //
+        // 🩸 第三個 case 是我第二次才補上的：第一版只寫了「開頭才算綁詞」，
+        //   拿兩個**沒有空白**的 JSON 驗過就以為成立 —— 直到端到端實跑餵了一個
+        //   `"值 含空白"` 才切成兩半（`unrecognized arguments: 含空白"}]`）。
+        //   單元驗證只證明我想到的 case，端到端才會餵我沒想到的那個。
+        //
+        // 數值影響：純字串處理。未配對的引號 ⇒ 讀到行尾為止（**不丟例外**：
+        //   少打一個引號時，讓工具自己抱怨參數，比在這裡炸掉整個 step 更好查）。
+        //   空字串 / 全空白 ⇒ 回空清單（不產生一個空 token —— 那會變成多餘的 positional）。
+        // ===========================================================
+        internal static List<string> SplitStepArgs(string iRaw)
+        {
+            var aOut = new List<string>();
+            if (string.IsNullOrWhiteSpace(iRaw)) return aOut;
+
+            int i = 0;
+            while (i < iRaw.Length)
+            {
+                while (i < iRaw.Length && char.IsWhiteSpace(iRaw[i])) i++;   // 跳過分隔空白
+                if (i >= iRaw.Length) break;
+
+                var aTok = new StringBuilder();
+                if (iRaw[i] == '"')
+                {
+                    // ① 開頭引號 ＝ 綁詞：吃到配對的收尾引號（或行尾）為止，引號本身不進內容
+                    i++;
+                    while (i < iRaw.Length && iRaw[i] != '"') { aTok.Append(iRaw[i]); i++; }
+                    if (i < iRaw.Length) i++;   // 收尾引號
+                }
+                else
+                {
+                    // ② 非引號開頭：中間的 `"` 是**內容**（原樣保留），但它同樣切換
+                    //    「引號內」狀態 —— 引號內的空白不切詞，否則帶空白的 JSON 會斷成兩半。
+                    bool aInQuote = false;
+                    while (i < iRaw.Length && (aInQuote || !char.IsWhiteSpace(iRaw[i])))
+                    {
+                        if (iRaw[i] == '"') aInQuote = !aInQuote;
+                        aTok.Append(iRaw[i]);
+                        i++;
+                    }
+                }
+                if (aTok.Length > 0) aOut.Add(aTok.ToString());
+            }
+            return aOut;
         }
 
         // ===========================================================

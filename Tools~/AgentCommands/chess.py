@@ -44,6 +44,22 @@ import sys
 import uuid
 from pathlib import Path
 
+# 區塊職責：Windows console UTF-8 fallback（對齊 canvas.py / library.py / freetime.py 慣例）。
+# 物理意義：**stderr 也要 reconfigure** —— 本檔原本只設 stdout，於是 argparse 的錯誤訊息
+#          （唯一寫進 stderr 的東西）在 Windows 走 cp950。
+# 🩸 2026-08-18 實測：`Cmd_FreeTimeActivity op=step` 以 UTF-8 解 stderr，於是錯誤訊息裡的中文
+#   變成 `d5 ï¿½Lï¿½A...`。**同一份回傳檔裡 C# 自己印的中文是好的**，
+#   只有 python 吐回來的那段壞 —— 那個對比正好把壞點釘在解碼邊界，而不是整條鏈。
+# 數值影響：純輸出編碼；errors="replace" 讓罕見字不會反過來炸掉整個錯誤訊息。
+# ⚠ 位置刻意提到 import 段之後、任何輸出之前：留在 `__main__` 裡也「有設」，
+#   但被 import 當模組用時就完全不生效 —— 而那看起來跟設好了一模一樣。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, OSError):
+    pass
+
+
 # ───────────────────────── 路徑解析 ─────────────────────────
 # 區塊職責: 解析 data root → chess 狀態目錄 + 繪圖券 ledger (跟 canvas 共用)。
 # 物理意義: 本檔在 UCL_Core/Tools~/AgentCommands/ (跨專案共用 code); 狀態落主專案 AgentCommands/。
@@ -1013,5 +1029,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8") if hasattr(sys.stdout, "reconfigure") else None
     main()

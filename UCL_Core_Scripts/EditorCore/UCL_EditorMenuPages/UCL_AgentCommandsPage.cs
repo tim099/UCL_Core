@@ -53,6 +53,12 @@ namespace UCL.Core.EditorLib.Page
 
         // PopupSearchCache 需要一個 UCL_ObjectDictionary 作為 cache 容器
         readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
+        // 區塊職責：History 每筆條目的折疊狀態 — **刻意跟 m_Dic 分開**（比照 UCL_ControlPanelPage.m_FoldDic）
+        // 物理意義：折疊是使用者的 UI 偏好（該長存）；PopupSearchCache 是衍生資料（選項變了該失效）。
+        //          共用一個 dic 時，資料重載路徑上的 Clear() 會把折疊值一起清掉 ——
+        //          症狀是「收不起來 / 一動就全展開」，看起來像 key 撞名，其實是被連坐清掉。
+        // 數值影響：key = 條目 Id（唯一），預設 false（收合）；純 UI 狀態，不寫任何檔。
+        readonly UCL_ObjectDictionary m_HistoryFoldDic = new UCL_ObjectDictionary();
 
         // ==== 顯示用快取（每幀重讀檔太重，只在按下 Refresh 時更新）====
         UCL_AgentCommandQueueData m_Cached;
@@ -714,19 +720,17 @@ namespace UCL.Core.EditorLib.Page
                         // 不在這裡 invalidate cache — 計數一直可見，展開只是顯示已快取的內容
                     }
                     GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.HistoryCount"), m_HistoryCache?.Count ?? 0), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    GUILayout.FlexibleSpace();
-                    if (m_ShowHistory)
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                        {
-                            m_HistoryCache = null;
-                        }
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                        {
-                            UCL_AgentCommandHistory.EnsureDir();
-                            UnityEditor.EditorUtility.RevealInFinder(UCL_AgentCommandHistory.GetHistoryDir());
-                        }
+                        m_HistoryCache = null;
                     }
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_AgentCommandHistory.EnsureDir();
+                        UnityEditor.EditorUtility.RevealInFinder(UCL_AgentCommandHistory.GetHistoryDir());
+                    }
+
+                    GUILayout.FlexibleSpace();
                 }
 
                 if (!m_ShowHistory) return;
@@ -788,6 +792,14 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
 
+                // 區塊職責：清理鈕按下後，同一個 OnGUI pass 內把快取補回來
+                // 物理意義：上面三顆清理鈕（刪除過舊 / 去除重複 / 全部清空）都以 `m_HistoryCache = null`
+                //          當作 invalidate 訊號，但**它們就在本行上方、同一幀執行** ——
+                //          於是這一行拿到 null，下一行 `visible.Count` 直接 NullReferenceException。
+                //          （Tim 2026-08-18 按「刪除過舊」實測；此路徑早於 queue 欄位就存在。）
+                // 數值影響：清理後多做一次 LoadAll（清理本來就要重讀）；沒清理時 no-op。
+                if (m_HistoryCache == null) m_HistoryCache = UCL_AgentCommandHistory.LoadAll();
+
                 var visible = string.IsNullOrWhiteSpace(m_HistorySearch)
                     ? m_HistoryCache
                     : m_HistoryCache.Where(e => MatchesHistory(e, m_HistorySearch.Trim().ToLowerInvariant())).ToList();
@@ -807,12 +819,16 @@ namespace UCL.Core.EditorLib.Page
                 {
                     using (new GUILayout.VerticalScope("box"))
                     {
+                        // 區塊職責：每筆歷史改成可折疊 —— 標題列一眼看完「什麼指令、跑在哪條 queue」
+                        // 物理意義：比照 UCL_ControlPanelPage 的折疊慣例 ——
+                        //          **關鍵操作（Apply / Re-Add / To Template / Delete）畫在折疊外層**，
+                        //          收合後仍可一鍵操作；折疊內只放 Id / Desc / Args / 時間戳這些查閱型資訊。
+                        // 數值影響：純 UI；折疊狀態存在 m_HistoryFoldDic（key = 條目 Id），不落檔。
+                        bool aShow;
                         using (new GUILayout.HorizontalScope())
                         {
-                            GUILayout.Label($"<b>{e.Type}</b>", UCL_GUIStyle.LabelStyle, GUILayout.Width(220));
-                            GUILayout.Label($"({e.Mode}, ×{e.UseCount})", UCL_GUIStyle.LabelStyle, GUILayout.Width(120));
-                            GUILayout.Label($"src: {e.Source ?? "?"}", UCL_GUIStyle.LabelStyle, GUILayout.Width(180));
-                            GUILayout.FlexibleSpace();
+                            aShow = UCL_GUILayout.Toggle(m_HistoryFoldDic, e.Id, 18, iDefaultValue: false);
+                            GUILayout.Label($"<b>{e.Type}</b>", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
                             if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.ApplyToForm"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                             {
                                 ApplyHistoryToForm(e);
@@ -829,16 +845,28 @@ namespace UCL.Core.EditorLib.Page
                             {
                                 ConvertHistoryToTemplate(e);
                             }
+                            // 135：容得下 "(Repeatable, ×1234)" —— 110 會把右括號切掉（實測 ×4 就已經切到）
+                            GUILayout.Label($"({e.Mode}, ×{e.UseCount})[{FormatQueueSummary(e)}],src:{e.Source ?? "?"}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+
+                            GUILayout.FlexibleSpace();
                             if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Delete"), UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false)))
                             {
                                 deleteId = e.Id;
                             }
                         }
+                        if (!aShow) continue;   // 收合 → 只留標題列（按鈕已畫在上面，仍可操作）
+
                         // 區塊職責：Id / Desc / Args 一律用 WrapLabelStyle
                         // 物理意義：args 字串長度不可控（agent 隨意傳 op=... room=... 等），
                         //          一行會把 box 撐到把同列右側按鈕推出視窗 → 必 wordWrap
                         // 數值影響：渲染上純視覺折行；不影響任何資料
                         GUILayout.Label($"  Id: <i>{e.Id}</i>", WrapLabelStyle);
+                        // queue 明細：標題列只塞得下摘要，這裡列完整分布（多條 queue 時才有意義）
+                        if (e.QueueCounts != null && e.QueueCounts.Count > 0)
+                        {
+                            GUILayout.Label($"  Queue: {string.Join(", ", e.QueueCounts.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} ×{kv.Value}"))}", WrapLabelStyle);
+                        }
                         if (!string.IsNullOrEmpty(e.Description))
                         {
                             GUILayout.Label($"  Desc: {e.Description}", WrapLabelStyle);
@@ -863,11 +891,39 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
+        // ===========================================================
+        // 區塊職責：把一筆歷史的 queue 歸屬壓成一行摘要（標題列用）
+        // 物理意義：回答「這道指令實際跑在哪條 queue」——
+        //          `--persona` 決定 queues/<persona>/，只帶 `--arg persona=` 的會落 anonymous。
+        // 數值影響：純字串；⛔ **沒有資料時回「未記錄」而不是 anonymous** ——
+        //          舊條目（2026-08-18 之前）本來就沒有這個欄位，把空值畫成 anonymous
+        //          等於憑空生出一個讀數，而它看起來會跟真的量到一模一樣。
+        // ===========================================================
+        static string FormatQueueSummary(UCL_AgentCommandHistoryEntry e)
+        {
+            if (e?.QueueCounts == null || e.QueueCounts.Count == 0)
+            {
+                return $"queue: {UCL_CodeLocalize.Get("AgentCmd.QueueUnrecorded")}";
+            }
+            var ordered = e.QueueCounts.OrderByDescending(kv => kv.Value).ToList();
+            string head = $"queue: {ordered[0].Key} ×{ordered[0].Value}";
+            return ordered.Count == 1 ? head : $"{head} (+{ordered.Count - 1})";
+        }
+
         static bool MatchesHistory(UCL_AgentCommandHistoryEntry e, string lowerKeyword)
         {
             if (Contains(e.Type, lowerKeyword)) return true;
             if (Contains(e.Description, lowerKeyword)) return true;
             if (Contains(e.Source, lowerKeyword)) return true;
+            // queue 也納入搜尋 —— 「有哪些指令還跑在 anonymous」直接搜得到，不必逐筆展開
+            if (Contains(e.QueueId, lowerKeyword)) return true;
+            if (e.QueueCounts != null)
+            {
+                foreach (var kv in e.QueueCounts)
+                {
+                    if (Contains(kv.Key, lowerKeyword)) return true;
+                }
+            }
             if (e.Args != null)
             {
                 foreach (var kv in e.Args)
@@ -1106,7 +1162,10 @@ namespace UCL.Core.EditorLib.Page
             UCL_AgentCommandQueue.Save(m_Cached, SelectedAgentId);
 
             // 寫入 / 重用 History（以管理層 API 操作，Page 不直接動檔）
-            UCL_AgentCommandHistory.Record(type, mode, safeArgs, description, source);
+            // queueId 跟上一行 Save 用的是**同一個值** —— 指令落哪條 queue、歷史就記哪條，
+            // 兩者分開取值就會出現「歷史說 A、queue 檔在 B」而且不報錯。
+            UCL_AgentCommandHistory.Record(type, mode, safeArgs, description, source,
+                queueId: string.IsNullOrEmpty(SelectedAgentId) ? UCL_AgentCommandQueue.AnonymousQueueId : SelectedAgentId);
             m_HistoryCache = null;
 
             Debug.Log($"[UCL_AgentCmd UI] Added command: {c.Type} (id={c.Id}, mode={c.Mode}, source={source}, queue={SelectedAgentId ?? "default"})");

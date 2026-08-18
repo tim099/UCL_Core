@@ -252,7 +252,11 @@ namespace UCL.Core.EditorLib.AgentCommands
                     //          Record 內部會以 Type+Args 簽章 dedup，所以不會灌爆 History。
                     // 數值影響：寫 History/<Id>.json — 讀 queue 時若是相同簽章，只會 bump UseCount
                     //          且不會覆寫已存在的 Source 欄位（避免「Manual」紀錄被改成「Agent」）。
-                    UCL_AgentCommandHistory.Record(c.Type, c.Mode, c.Args, c.Description, source: "Agent");
+                    // queueId：Runner 的 agentId 為 null＝跑的是預設 queue，而預設 queue 的實體
+                    // 資料夾就是 queues/anonymous/ —— 所以這裡顯式正規化成 AnonymousQueueId。
+                    // ⚠ 這不是「猜它是匿名」，是**讀出它真的落在哪個資料夾**（GetQueueDir(null) 同解）。
+                    UCL_AgentCommandHistory.Record(c.Type, c.Mode, c.Args, c.Description, source: "Agent",
+                        queueId: string.IsNullOrEmpty(agentId) ? UCL_AgentCommandQueue.AnonymousQueueId : agentId);
 
                     var handler = UCL_AgentCommandRegistry.Get(c.Type);
                     if (handler == null)

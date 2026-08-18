@@ -4,7 +4,10 @@
 // Create time : 05/07 2026
 // Agent Commands — History 子系統 (Page 之外的管理層)
 // 設計目標：
-//   1. 每筆歷史指令以「獨立 JSON 檔」保存於 AgentCommands/History/<Id>.json，
+//   1. 每筆歷史指令以「獨立 JSON 檔」保存於 AgentCommands/queues/anonymous/History/<Id>.json，
+//      （＝GetQueueDir() 無參數版的資料夾。History 是**全體共用一份**，不隨 queue 分裂；
+//       它位在 anonymous 資料夾底下只是歷史沿革，跟指令跑在哪條 queue 無關 ——
+//       跑在哪條 queue 記在條目的 QueueId / QueueCounts 欄位。）
 //      讓 agent 可以直接 ls 資料夾、grep 內容當作參考；單檔損毀也只壞一筆。
 //   2. 提供搜尋（Type / Description / Args 全文比對）、刪除過舊、刪除重複。
 //   3. 完全與 Page UI 解耦 —— UI 層只負責呼叫這裡的 API + 渲染。
@@ -48,11 +51,29 @@ namespace UCL.Core.EditorLib.AgentCommands
         public int UseCount = 1;
         /// <summary>最近一次重用的時間（ISO 8601；首次建立 = CreatedAt）</summary>
         public string LastUsedAt;
+
+        // ===========================================================
+        // 區塊職責：這筆指令實際跑在哪條 queue（persona lane）
+        // 物理意義：queue 路由是 `run_cmd.py --persona <P>` 決定的（queues/<persona>/），
+        //          而 `--arg persona=<P>` 只是 Cmd 參數 —— 兩者不同，實務上常只帶後者
+        //          ⇒ 全員掉進 queues/anonymous/ 互相阻塞。這兩個欄位就是為了**用讀數回答
+        //          「是不是還擠在 anonymous」**，而不是靠印象。
+        // 數值影響：純紀錄欄位，不影響 dedup 簽章（簽章仍是 Type+Mode+Args）——
+        //          同一道指令在不同 queue 跑過**不會分裂成多筆歷史**，改記在 QueueCounts 裡。
+        // 邊界：**舊條目沒有這兩個欄位**（本欄位 2026-08-18 才加）。空值語意是「未記錄」，
+        //      ⛔ 不可顯示成 anonymous —— 那會把「沒量到」講成「量到是匿名」。
+        // ===========================================================
+        /// <summary>最近一次執行所在的 queue id（"&lt;persona&gt;" 或 "&lt;persona&gt;/&lt;lane&gt;"）。空 = 未記錄。</summary>
+        public string QueueId;
+        /// <summary>各 queue 的累計使用次數（key = queue id）。空 = 未記錄；總和應等於加上本欄位之後累積的 UseCount。</summary>
+        public Dictionary<string, int> QueueCounts = new();
     }
 
     /// <summary>
     /// History 的讀寫管理。<br/>
-    /// 路徑：&lt;repoRoot&gt;/AgentCommands/History/&lt;Id&gt;.json（一檔一筆）<br/>
+    /// 路徑：&lt;repoRoot&gt;/AgentCommands/queues/anonymous/History/&lt;Id&gt;.json（一檔一筆）<br/>
+    /// ⚠ 舊版曾寫在 &lt;repoRoot&gt;/AgentCommands/History/ —— persona 資料夾制之後不再讀那裡，
+    ///   舊檔仍留在磁碟上（不會被本類別看到）。<br/>
     /// 與 queue.json 完全分離，互不影響。
     /// </summary>
     public static class UCL_AgentCommandHistory
@@ -65,7 +86,8 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 數值影響：純路徑運算 + 必要時 mkdir。
         // ===========================================================
 
-        /// <summary>取得 History 資料夾的絕對路徑（不保證存在）。</summary>
+        /// <summary>取得 History 資料夾的絕對路徑（不保證存在）。
+        /// 無參數的 GetQueueDir() ⇒ queues/anonymous/ ——**刻意共用一份歷史**，不是路由結果。</summary>
         public static string GetHistoryDir()
         {
             string queueDir = UCL_AgentCommandQueue.GetQueueDir();
@@ -101,12 +123,18 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// <param name="args">Args dictionary（null 視為空）</param>
         /// <param name="description">人類描述（可為空）</param>
         /// <param name="source">來源標籤（如 "Manual" / "Template:foo"）</param>
+        /// <param name="queueId">
+        /// 這筆實際跑在哪條 queue（"&lt;persona&gt;" / "&lt;persona&gt;/&lt;lane&gt;"）。
+        /// null → 呼叫端沒提供 ⇒ 記成未知（**不會被當成 anonymous**）；
+        /// 要表達「真的跑在匿名 queue」請顯式傳 <see cref="UCL_AgentCommandQueue.AnonymousQueueId"/>。
+        /// </param>
         public static UCL_AgentCommandHistoryEntry Record(
             string type,
             UCL_AgentCommandMode mode,
             Dictionary<string, string> args,
             string description,
-            string source)
+            string source,
+            string queueId = null)
         {
             if (string.IsNullOrEmpty(type)) return null;
             EnsureDir();
@@ -125,6 +153,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 existing.UseCount += 1;
                 existing.LastUsedAt = nowIso;
                 if (!string.IsNullOrEmpty(description)) existing.Description = description;
+                BumpQueue(existing, queueId);
                 WriteEntry(existing);
                 return existing;
             }
@@ -141,8 +170,24 @@ namespace UCL.Core.EditorLib.AgentCommands
                 Source = string.IsNullOrEmpty(source) ? "Manual" : source,
                 UseCount = 1,
             };
+            BumpQueue(entry, queueId);
             WriteEntry(entry);
             return entry;
+        }
+
+        // ===========================================================
+        // 區塊職責：把一次執行計進該 queue 的累計次數
+        // 物理意義：queueId 為空＝呼叫端沒告訴我們，這種情況**什麼都不寫** ——
+        //          寫進去就等於替它挑一個值，而挑出來的那個值日後看起來跟真讀數一模一樣。
+        // 數值影響：QueueCounts[queueId] +1；QueueId 更新為最近一次。空值時 no-op。
+        // ===========================================================
+        static void BumpQueue(UCL_AgentCommandHistoryEntry entry, string queueId)
+        {
+            if (entry == null || string.IsNullOrEmpty(queueId)) return;
+            entry.QueueCounts ??= new Dictionary<string, int>();
+            entry.QueueCounts.TryGetValue(queueId, out int n);
+            entry.QueueCounts[queueId] = n + 1;
+            entry.QueueId = queueId;
         }
 
         // ===========================================================
@@ -393,6 +438,21 @@ namespace UCL.Core.EditorLib.AgentCommands
             AppendStr(sb, "LastUsedAt", e.LastUsedAt, false);
             AppendStr(sb, "Source", e.Source, false);
             sb.Append(",\n  \"UseCount\": ").Append(e.UseCount);
+            // queue 歸屬（2026-08-18 新增）：空值就**整個欄位不寫** ——
+            // 寫成 "" 或 "anonymous" 都會讓「沒記錄」跟「記錄到匿名」在讀取端長得一樣。
+            if (!string.IsNullOrEmpty(e.QueueId)) AppendStr(sb, "QueueId", e.QueueId, false);
+            if (e.QueueCounts != null && e.QueueCounts.Count > 0)
+            {
+                sb.Append(",\n  \"QueueCounts\": {");
+                bool firstQ = true;
+                foreach (var kv in e.QueueCounts)
+                {
+                    if (!firstQ) sb.Append(",");
+                    firstQ = false;
+                    sb.Append("\n    \"").Append(EscapeStr(kv.Key)).Append("\": ").Append(kv.Value);
+                }
+                sb.Append("\n  }");
+            }
             sb.Append("\n}\n");
             return sb.ToString();
         }
@@ -443,6 +503,8 @@ namespace UCL.Core.EditorLib.AgentCommands
                     case "LastUsedAt":  e.LastUsedAt = ParseStringOrNull(json, ref pos); break;
                     case "Source":      e.Source = ParseStringOrNull(json, ref pos); break;
                     case "UseCount":    e.UseCount = ParseInt(json, ref pos); break;
+                    case "QueueId":     e.QueueId = ParseStringOrNull(json, ref pos); break;
+                    case "QueueCounts": e.QueueCounts = ParseIntDict(json, ref pos); break;
                     default:            SkipValue(json, ref pos); break;
                 }
                 SkipWS(json, ref pos);
@@ -467,6 +529,27 @@ namespace UCL.Core.EditorLib.AgentCommands
                 SkipWS(json, ref pos);
                 string v = ParseStringOrNull(json, ref pos) ?? "";
                 d[k] = v;
+                SkipWS(json, ref pos);
+                if (pos < json.Length && json[pos] == ',') { pos++; continue; }
+            }
+            return d;
+        }
+
+        // 區塊職責：解析 { "queueId": 次數 } 形狀 —— 鏡像 ParseStringDict，值是數字不是字串。
+        // 邊界：舊檔沒有這個欄位 → 本支不會被呼叫，物件保持建構時的空 Dictionary。
+        static Dictionary<string, int> ParseIntDict(string json, ref int pos)
+        {
+            var d = new Dictionary<string, int>();
+            ExpectChar(json, ref pos, '{');
+            while (true)
+            {
+                SkipWS(json, ref pos);
+                if (json[pos] == '}') { pos++; break; }
+                string k = ParseString(json, ref pos);
+                SkipWS(json, ref pos);
+                ExpectChar(json, ref pos, ':');
+                SkipWS(json, ref pos);
+                d[k] = ParseInt(json, ref pos);
                 SkipWS(json, ref pos);
                 if (pos < json.Length && json[pos] == ',') { pos++; continue; }
             }

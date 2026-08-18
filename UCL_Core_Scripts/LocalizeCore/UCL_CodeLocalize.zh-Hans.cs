@@ -288,6 +288,7 @@ namespace UCL.Core.LocalizeLib
                 "AgentCmd.AddToQueue" => "加入 Queue",
                 "AgentCmd.Delete" => "删除",
                 "AgentCmd.History" => "历史记录",
+                "AgentCmd.QueueUnrecorded" => "(未记录)",
                 "AgentCmd.HistoryCount" => " {0} 条",
                 "AgentCmd.NoHistory" => "(没有符合的历史 — 按下「新增指令」后会自动记录到这里)",
                 "AgentCmd.Cleanup" => "清理 —",

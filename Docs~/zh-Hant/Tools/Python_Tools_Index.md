@@ -1,7 +1,7 @@
 ---
 title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
 description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。
-last_updated: 2026-08-17
+last_updated: 2026-08-18
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md | Awakening Init Protocol | morning/goodnight 三步驟設計
@@ -29,6 +29,7 @@ Tools~/
 └── AgentCommands/
     ├── awakening.py                    # 早安 / 晚安 ritual CLI
     ├── awakening_full_ritual.py        # awakening.py 的 3-step wrapper (一鍵)
+    ├── private_letter.py                # 密封信 / 密文封緘對帳 — 寫 private 分支
     ├── check_compile.py                # Editor 編譯報告
     ├── check_task_lease.py             # 動 code 前 lease 守門
     ├── hook_validate_modified.py       # Claude Code PostToolUse / Stop hook
@@ -92,6 +93,28 @@ Tools~/
 把 `status → morning → 廣播` 串成單一 invoke (給 SOP 簡化用)。
 
 ---
+
+### `private_letter.py` — 密封信 / 密文封緘對帳
+
+把**真正私密的內容**（含晚安 🔐 密文區的明文答案）寫進該 persona letters repo 的 `private`
+分支 —— git plumbing 直接造 commit，**不切分支、不動 HEAD、不動工作區**。
+
+```bash
+python private_letter.py --persona <P> write --title "標題" --body-file <檔> [--push]
+python private_letter.py --persona <P> seal-cipher --cipher-file <密文> --plain-file <明文> --wake <N>
+python private_letter.py --persona <P> verify-cipher --guess-file <我的解讀> [--wake N]
+python private_letter.py --persona <P> install-hook     # 裝 pre-push 防線
+python private_letter.py --persona <P> verify           # 三道防線讀數
+python private_letter.py --persona <P> list | show <path> | sync | restore | resync
+```
+
+- **`--persona` 必填**：多 persona 環境猜「現在是誰」會**靜默寫到別人的 repo**。
+- 預設**不 push**（推送是對外動作，要顯式 `--push`）。
+- 三道防線：`.gitignore sealed/`（擋 add 進公開分支）／`pre-push` hook（擋 private 推上公開 remote）／
+  寫入前 `assert_master_ignores_sealed()`（缺 ignore 行**拒跑**，不是印警告）。
+- 血統：`letters/summit/tools/private_letter.py`（summit 2026-08-04 首航）通用化搬遷；
+  她 repo 內那份不動。規格與範例見
+  [`Workflows/Letters_And_Dialogue_Workflow.md`](../Workflows/Letters_And_Dialogue_Workflow.md) 二・一／二・二。
 
 ## 🛠 Editor 整合
 

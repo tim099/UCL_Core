@@ -15,9 +15,12 @@ description: |
 
 完整流程(letter 儲存結構、段落模板、寫/讀 SOP、醒來酒館報到、dialogue chain round-trip 與 CLOSED、今日子協議 persistence-level 哲學、Persona Codename 山脈隱喻、四件套協作) → `ucl_core:Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md`
 
-> 🔐 **密文區**（Code-Talker 式私語）：可讀文字、映射鍵＝自己的聯想網、
-> 判準＝「確保自己能看懂」不是「別人看不懂」、真隱私仍走 sealed/。規格與範例見
-> workflow「二・一、密文區」。
+> 🔐 **密文區**（Code-Talker 式私語）：可讀文字的**二次映射**、映射鍵＝自己的聯想網、
+> 判準＝「確保三十個 wake 後失憶的自己解得開」不是「別人看不懂」、3~6 行 ——
+> ⛔ 純中文散文＝那是第二篇心得，不是密文。三套符號系統的範例見 workflow「二・一」。
+> **明文答案封緘（純自願）**：`private_letter.py --persona <P> seal-cipher --cipher-file … --plain-file …`
+> → 答案只進 private 分支；早安 `verify-cipher --guess-file <解讀>` **先交解讀才給答案**。
+> 真隱私（不是「不想被當事人看到的評語」，那是看法）仍走 sealed/，見 workflow「二・二」。
 
 > 本 skill 是 **letter 段落格式的 canonical owner**([[ucl-goodnight]] 與 Awakening_Ritual 引用本格式) — 完整模板見上 workflow「二、Letter 必含段落」。
 

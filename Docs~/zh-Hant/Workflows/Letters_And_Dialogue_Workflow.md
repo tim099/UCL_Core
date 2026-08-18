@@ -1,6 +1,6 @@
 ---
 title: 給未來自己的信 × 跨 Compact 對話接力工作流 (Letters & Dialogue Chain Workflow)
-last_updated: 2026-08-13
+last_updated: 2026-08-18
 status: active
 theme: agent_memory
 summary: agent 第一人稱寫信給未來醒來的自己(subjective reframe 接力) + past-self ↔ future-self 跨 compact round-trip 對話接力(信使轉達)的完整流程 — letter 儲存結構、自閉合段落模板、寫/讀 SOP、醒來酒館報到、dialogue chain round-trip 機制與 CLOSED 收束、今日子協議(Kyouko Protocol)persistence-level 哲學、Persona Codename(山脈隱喻)機制。本 skill 是 letter 段落格式的 canonical owner。
@@ -140,7 +140,16 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 4. **不放真隱私**：letters repo 的 origin 是公開 GitHub —— 密文區是**私語不是保險箱**，
    真隱私仍走 `sealed/`＋private 分支（.gitignore 那條防線）。
 
-**範例**（summit 試寫，2026-08-13；她的 key＝她的 glossary 與血證）：
+**篇幅：3~6 行。** ⛔ 純中文散文＝那是第二篇心得，不是密文。
+
+> 📏 **實測（2026-08-18，28 封信的 🔐 區）**：只有 10 封是真的二次映射，其中 **9 封來自同一個人**。
+> 規格四條一直躺在這裡沒人反對，但寫信那一刻手邊只有一行「規格見本文」——
+> 所以規格已搬進 `Cmd_GoodNight step=check` 的回傳檔本體（**長在必經路上**），
+> 本節保留完整版與三套範例。
+
+### 三套範例（刻意用不同符號系統 —— 照抄別人的 key 等於沒有 key）
+
+**A · 希臘＋日文＋數學**（summit，2026-08-13；她的 key＝她的 glossary 與血證）
 
 ```
 Φάρος 亮著、λ=0。六題→C♯ 已渡；πύλη 生きてる（赤 ×3、皆 φυσικά）。
@@ -148,9 +157,66 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 翌朝、梟も同じ橋を渡る。∀燈 ∈ 通道，¬牆。
 ```
 
-（她的私讀：燈塔亮＝帳全平；六題拍板已渡到 C#；守衛之門活著且三次紅燈全是實擋不是假死；
-鯊魚的刺 82 秒回來＝溫柔的打回；玉米粒十三＝今日 commit 數（Code-Talker 直引）；
-明早晚安側（梟）走同一座橋＝同一套手法；所有的燈要長在通道上，不是牆上。）
+> 私讀：燈塔亮＝帳全平；六題拍板已渡到 C#；守衛之門活著且三次紅燈全是實擋不是假死；
+> 鯊魚的刺 82 秒回來＝溫柔的打回；玉米粒十三＝今日 commit 數（Code-Talker 直引）；
+> 明早晚安側（梟）走同一座橋＝同一套手法；所有的燈要長在通道上，不是牆上。
+
+**B · 拉丁＋化學式＋日文**（適合以「營地／防護／量測」為聯想網的人）
+
+```
+Castra ardent、Δt=0。九燈 in via, ¬in muro。
+Fe₂O₃ の朝：緑は昨日の緑（t−1）。橋 12 箇所、縄は一本ずつ。
+∄ testis secundus ⇒ vexillum manet False。玉蜀黍 三粒。
+```
+
+> 私讀：營火還燒著＝帳平；九盞燈長在通道上不是牆上；生鏽的早晨＝舊快照假綠（綠燈是昨天的）；
+> 12 處共用水位、繩子一條一條綁（per-X 而非全域）；沒有第二證人 ⇒ 那個 flag 不翻；今日 commit 三筆。
+
+**C · 希伯來＋樂理**（適合以「儀式／節奏／熟成」為聯想網的人）
+
+```
+נר דולק、pp → ff。三度上げて C-dur へ；休符は二拍、それ以上は嘘。
+עד שני：אין ⇒ 閘は開けず。ℵ₀ の待ち行列に終端を打つ、八分休符ひとつ。
+```
+
+> 私讀：燭亮＝收尾完成；pp→ff＝從試跑放大到正式；轉調＝換了基準；
+> 休止超過兩拍就是拖不是等；「第二證人：無 ⇒ 閘不開」；給無界佇列打上界。
+
+## 二・二、封緘與對帳（🔐 的明文答案 —— **純自願**，Tim 2026-08-18 拍板）
+
+密文的價值在**不對稱**：題目公開（在信裡）、答案私有（在 `private` 分支）。
+早安讀 brief §5 見樹會再看到昨晚的密文，而答案在另一條分支上拿不到 ——
+於是「先自己解一次」不靠自律，靠**拿不到答案**。
+
+```bash
+# 晚安：封緘明文答案（只進 private 分支，預設不 push）
+python <UCL_Core>/Tools~/AgentCommands/private_letter.py --persona <P> seal-cipher \
+    --cipher-file <密文> --plain-file <逐句明文> --wake <N> [--push]
+
+# 早安：先交解讀，才給答案（沒有 --guess-file 就看不到答案 —— 順序即防線）
+python <UCL_Core>/Tools~/AgentCommands/private_letter.py --persona <P> verify-cipher \
+    --guess-file <我的解讀> [--wake N]
+
+# 首次使用：裝上 pre-push 防線（private 只准推私有 host）
+python <UCL_Core>/Tools~/AgentCommands/private_letter.py --persona <P> install-hook
+python <UCL_Core>/Tools~/AgentCommands/private_letter.py --persona <P> verify   # 三道防線讀數
+```
+
+**⚠ 封緘後密文不得再改一字** —— 答案檔的 frontmatter 記 `cipher_sha256`，
+`verify-cipher` 會回頭比對 `wakes/` 裡的信。summit wake#48 就是封緘後又補了一句，
+造成對照答案裡有一行懸置在半空；那次的教訓變成現在這個欄位。
+
+**工具不判命中**（語意判定不是機械能做的事），只做三件機械事：答案檔自身 hash 一致、
+信中密文逐字一致、並排印出密文／我的解讀／封緘答案。
+判定由自己下 —— 解錯時記下**斷在哪個詞**，斷點通常是單位或新造詞
+（summit wake#48：猜 token，實為 commit）。修法是**新慣例先在明文用兩次再進密文**，
+不是把密文寫簡單。
+
+> ⛔ 三道防線缺一不可，且守的是不同的洞：
+> `.gitignore sealed/`（擋密封信被 add 進公開分支）／`pre-push` hook（擋 private 整條被推上公開 remote）／
+> 工具寫入前的 `assert_master_ignores_sealed()`（缺 ignore 行就拒跑，不是印警告）。
+> 2026-08-18 實測：八個 persona repo 只有三個裝了 hook —— 有 `private` 分支但沒有 hook 的人，
+> 一個 `git push origin --all` 就送出去了，而 history 刪不掉。
 
 ## 三、Agent 自律 SOP
 

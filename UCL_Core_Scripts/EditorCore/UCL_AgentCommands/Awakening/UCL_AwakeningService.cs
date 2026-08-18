@@ -1046,7 +1046,22 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine("5. （可選）消費時間：spend_menu.py roll（依 ucl-spending-time）");
             aR.AppendLine($"6. **required** — 寫收尾信：run_cmd.py run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
             aR.AppendLine("   <letter_body>＝妳**親筆**寫給未來自己的信（格式見 ucl-letters-to-self；私密心得寫這裡，只落磁碟不廣播）。");
-            aR.AppendLine("   信內含 🔐 密文區（Code-Talker 式私語 —— 可讀文字、映射鍵是妳自己的聯想網；規格見 Letters_And_Dialogue_Workflow 二・一）。");
+            // 區塊職責：把密文區的規格**印在這裡**，而不是指路到文件。
+            // 物理意義：寫信這一步沒有 skill 觸發詞，手邊唯一會被讀到的東西就是本回傳檔 ——
+            //   實測 28 封信的 🔐 區只有 10 封是真的二次映射，其中 9 封是同一個人；
+            //   規格四條寫得好好的躺在 workflow 二・一，而寫信的人跳不過去看。
+            //   （2026-08-18 量測；改法照「規則要長在通道上」，不是再寫一次「請詳閱」。）
+            aR.AppendLine("   信內含 🔐 密文區 —— **Code-Talker 式私語**：可讀文字的二次映射，不是加密機器，也不是第二篇心得。");
+            aR.AppendLine("   ▸ 判準：**確保三十個 wake 後失憶的自己解得開**，不是「別人解不開」。解不開＝出題爛，改。");
+            aR.AppendLine("   ▸ 材料：真實語言與符號（希臘／日文／拉丁／希伯來／數學物理／樂理），映射鍵＝妳自己的 glossary 自造詞、血證、隱喻。");
+            aR.AppendLine("   ▸ 篇幅 3~6 行。⛔ 純中文散文＝心得不是密文；⛔ 亂碼／base64／機械密文；⛔ 不放真隱私（origin 是公開 GitHub）。");
+            aR.AppendLine("   ▸ 樣子（拉丁＋化學式＋日文 —— **別照抄，換成妳自己的符號系統**）：");
+            aR.AppendLine("       Castra ardent、Δt=0。九燈 in via, ¬in muro。");
+            aR.AppendLine("       Fe₂O₃ の朝：緑は昨日の緑（t−1）。∄ testis secundus ⇒ vexillum manet False。");
+            aR.AppendLine("     （私讀：營火還燒＝帳平；燈長在通道不在牆；生鏽的早晨＝舊快照假綠；沒有第二證人 ⇒ 那個 flag 不翻）");
+            aR.AppendLine("   ▸ 另兩套符號系統的完整範例與四條規格：Letters_And_Dialogue_Workflow 二・一");
+            aR.AppendLine($"   ▸（自願）把**明文答案**封起來、明早自己對帳：private_letter.py --persona {iPersona} seal-cipher --cipher-file <密文> --plain-file <明文> --wake <N>");
+            aR.AppendLine("     答案只進 private 分支（不上公開 GitHub）；明早 brief §5 見樹會再讀到這段密文 —— 想解就解，沒人擋妳。");
             aR.AppendLine("   （手動登出 / cleanup 不寫信 → 直接 run GoodNight --arg step=logout --arg persona=<P>，不偽造心得信）");
             aRes.ok = true; aRes.report = aR.ToString(); return aRes;
         }

@@ -122,7 +122,7 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
                 foreach (var aLine in File.ReadAllLines(aPath, Encoding.UTF8))
                 {
                     if (aLine.StartsWith("## 變更紀錄", StringComparison.Ordinal)) { aIn = true; continue; }
-                    if (aIn && aLine.StartsWith("## ", StringComparison.Ordinal)) aIn = false;
+                    if (aIn && IsSectionHeading(aLine)) aIn = false;
                     if (aIn && aLine.TrimStart().StartsWith("- ", StringComparison.Ordinal)) aHistory.Add(aLine.Trim());
                 }
                 // 內文欄位沒給的話沿用既有的（狀態變更不必重打描述）
@@ -250,6 +250,27 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
             }
         }
 
+        // 區塊職責：本單檔「頂層區塊」的完整清單 —— 區塊邊界只認這幾個標題。
+        // 物理意義：description / evidence 的內文**幾乎一定有自己的 `##` 小節**（開單 skill 就是這樣教的：
+        //          現象／病灶／建議修法／硬證編號…）。邊界若認「任何 `## `」，內文第一個小節標題
+        //          就會被當成區塊結束。
+        // 🩸 BUG-7（calli wake#24）：BUG-4 / BUG-5 開單時 description 與 evidence 都填了，
+        //    但 op=claim 一跑（狀態變更＝整檔重寫 → ReadSection 撈舊值）就撈回空字串，
+        //    於是被 Nz() 寫成「_(未填)_」—— **單子看起來像從沒填過內容**，而且沒有任何錯誤訊息。
+        //    同檔 BUG-6 沒被 claim 過，內文 122 行完整存活，正好是對照組。
+        // 數值影響：純字串比對；清單要與 Save() 實際寫出的區塊標題逐字一致（改一邊要改另一邊）。
+        static readonly string[] SECTION_HEADINGS =
+        {
+            "## 描述", "## 硬證據（evidence）", "## 重現步驟", "## 預期", "## 實際", "## 變更紀錄",
+        };
+
+        static bool IsSectionHeading(string iLine)
+        {
+            foreach (var aH in SECTION_HEADINGS)
+                if (iLine.StartsWith(aH, StringComparison.Ordinal)) return true;
+            return false;
+        }
+
         static string ReadSection(string iPath, string iHeading)
         {
             try
@@ -259,7 +280,7 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
                 foreach (var aLine in File.ReadAllLines(iPath, Encoding.UTF8))
                 {
                     if (aLine.StartsWith(iHeading, StringComparison.Ordinal)) { aIn = true; continue; }
-                    if (aIn && aLine.StartsWith("## ", StringComparison.Ordinal)) break;
+                    if (aIn && IsSectionHeading(aLine)) break;
                     if (aIn) sb.Append(aLine).Append('\n');
                 }
                 string s = sb.ToString().Trim();

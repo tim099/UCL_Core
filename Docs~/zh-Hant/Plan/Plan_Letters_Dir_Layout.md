@@ -1,7 +1,7 @@
 ---
 title: letters 目錄分層 — 把 Cmd 回傳檔從人寫的信裡分出來
 slug: letters-dir-layout
-status: partially-done（2026-08-18 Tim 拍板**只先遷 FreeTime 5 個**並要求兩端路徑解析統一 → 已施工並用 Template 實測；其餘 16 個回傳檔仍待拍板）
+status: done（2026-08-18 Tim 拍板**全搬**並要求每批用 Template 實測 → 六批＋清單外兩家（relationship / sculpture）全部完成、`_`-skip 已拔除、文件與提示同步、§9 版控邊界兩端實測；剩下的只有「別人 letters 頂層的舊殘影」等自然淘汰）
 created_at: 2026-08-18T07:45:00Z
 created_by: gura
 location: UCL_Core (cross-project)
@@ -21,11 +21,13 @@ related:
 
 | 項目 | 狀態 |
 |---|---|
-| **FreeTime 5 個回傳檔** → `letters/<persona>/cmd/freetime_<step>.md` | ✅ 已施工，Template 實測全 5 檔落新位置 |
+| **FreeTime 5 個回傳檔** → `letters/<persona>/cmd/freetime_<step>.md` | ✅ 2026-08-18 施工，Template 實測 |
 | **兩端路徑解析統一** | ✅ C# `UCL_LettersPath`（EditorCore 路徑層）／python `ucl_paths.letters_cmd_payload()`，互為對側契約 |
-| 其餘 16 個回傳檔（goodmorning / goodnight / streamwatch / reading_recall / ding / wake_brief） | ⛔ 待拍板 |
-| 拔掉 `Cmd_DocEdit` 的 `_`-skip | ⛔ 要等上一列做完（頂層還有 16 個機器產物） |
-| 3 個耐久檔（`_constitution` / `_keys_open` / `_latest`） | 留頂層不搬（本案建議） |
+| **其餘 16 個回傳檔**（streamwatch / ding / reading_recall / goodnight / goodmorning / wake_brief） | ✅ 2026-08-18 Tim 拍板全搬，六批照 §8.2 順序完成，每批實跑驗收（見 §8.5） |
+| **清單外兩家**（`_relationship_*` / `_sculpture_*`） | ✅ 一併搬（§8.6 —— 它們不在 §2 清單裡，因為那份清單掃的是 relationship 上線當天的 gura 目錄） |
+| 拔掉 `Cmd_DocEdit` 的 `_`-skip | ✅ 已拔，判準升級為「**具名排除 ＋ frontmatter 自陳**」（§8.7 有血證：只做具名排除會挑到舊殘影） |
+| 3 個耐久檔（`_constitution` / `_keys_open` / `_latest`） | ✅ 留頂層，並在 `Cmd_DocEdit` 具名排除（`TOP_LEVEL_NON_LETTERS`） |
+| `cmd/` 自帶 `.gitignore` | ✅ 兩端實測逐位元相同（§9） |
 
 ⚠ **舊位置的 5 個 transient 檔**：gura 與 Template 的已清（它們不會再被寫入）。
 其他 persona 的**刻意不動** —— 那不是我的資料夾，而它們下次跑自由時間就會在新位置生成，
@@ -200,6 +202,131 @@ FreeTime 那 5 個已完成（§0）。**這一節是給接手的人照著跑的
 - 3 個耐久檔（`_constitution` / `_keys_open` / `_latest`）**留頂層**，
   但要在 `Cmd_DocEdit` 顯式排除（從「按前綴猜」變成「列名排除」——
   三個具名檔的清單是可讀的，前綴規則不是）
+
+## 8.5 施工紀錄（2026-08-18，calli；每批的驗收讀數）
+
+| 批 | 落點驗收（實跑） | 額外處理 |
+|---|---|---|
+| ① `streamwatch_*` | `run StreamWatch --arg step=peek --arg persona=Template` → `letters/Template/cmd/streamwatch_peek.md` | ArgsSchema 與檔頭字串同步；`AtomicWrite` 改走 `EnsurePayloadDir` |
+| ② `ding_brief` | `tavern_catchup.py --persona Template` → `cmd/ding_brief.md`，**工具自己印的路徑也是新的** | `ding_brief_path()` 原本自己 join 五段路徑 → 改走 `letters_cmd_payload()` |
+| ③ `reading_recall_*` | `run Library --arg op=recall --arg persona=calli` → `cmd/reading_recall_anim-apocalypse-hotel.md` | Template 沒有 reader.json（`檔案不存在` 擋在前面），改用自己的資料驗 |
+| ④ `goodnight_*` | `run GoodNight --arg step=check/logout --arg persona=Template` → `cmd/goodnight_{check,logout}.md` | `UCL_LoginStatusPage` 的 Debug.Log 指路同步 |
+| ⑤ `goodmorning_*` | `run GoodMorning --arg step=wake/brief --arg persona=Template` → `cmd/goodmorning_{wake,brief}.md` | `StepPayloadPath` 原本自己 Combine → 改走 `CmdPayload` |
+| ⑥ `wake_brief` | `step=brief` 回傳檔顯示 `cmd/wake_brief.md`（251 行）；**intro 前置守衛**刻意在缺檔情況下實測 → 它報的是 `…\cmd\wake_brief.md`（更精確的失敗＝證明讀取端也換了，而且沒有真的發文） | 讀取端與寫入端同一筆改完 —— 分開改會讓 intro 守衛誤判「brief 不存在」 |
+
+⚠ ⑥ 的驗法值得留著：**要證明「讀取端也改了」，最省的方式是讓它失敗一次。**
+把 brief 移走再跑 intro，看它抱怨的是哪一條路徑 —— 成功只證明有東西被讀到，
+失敗訊息才會把它實際去找的位置印出來。
+
+## 8.6 §2 清單漏掉的兩家（實測發現）
+
+清掉自己 letters 頂層殘影時發現還有 `_relationship_*`（2 檔）與 `_sculpture_*`（2 檔）在寫頂層。
+它們不在 §2 那份「21 個」清單裡 —— 因為那份清單掃的是 **relationship 上線當天**的 gura 目錄。
+
+⇒ 已一併搬（`Cmd_Relationship` / `Cmd_Sculpture` 都改走 `CmdPayload` + `EnsurePayloadDir`）。
+**教訓：清單是某一天某一個人目錄的快照，不是全集。**「全搬」的驗收標準不該是「清單都打勾」，
+而是「**頂層還剩什麼**」—— 後者是可以機械檢查的（見 §8.8 建議）。
+
+## 8.7 §5② 與 §8.4 的內部衝突（拔 heuristic 時當場撞到）
+
+§5② 寫「舊的 transient 檔直接留著等自然淘汰」，§8.4 寫「拔掉 `_`-skip，改成頂層的 .md 就是信」。
+**這兩條不能同時成立**：舊殘影還在頂層，而它們的 mtime 可能比真信新。
+
+實測：拔掉 `_`-skip、只做「具名排除三個耐久檔」之後，`Cmd_DocEdit kind=letter` 立刻挑中
+`_goodmorning_brief.md`（舊位置殘影）當「最新那封信」——**同一個病灶的第三次發作**
+（第一次是 `_freetime_next.md`，第二次是本案動機，這次是修法自己造成的）。
+
+⇒ 判準再升一級：**不靠檔名，靠檔案自陳** —— 只認 frontmatter `type: letter_to_future_self`
+（與 `wake_brief._newest_self_letter` 同一個值，不另立第二套）。
+具名排除留著當便宜的前置過濾，但真正的把關是自陳。
+修後同一支指令挑到 `20260817T144900Z_freetime.md`，並印出「排除 4 個具名耐久檔／README、
+21 個非 `letter_to_future_self`（舊位置回傳檔殘影／同事來信）」。
+
+📌 **順序更正**（給日後類似搬家用）：§8.4 的「拔 heuristic」不能只排在最後，
+它還有一個前置條件 —— **要嘛舊殘影清掉，要嘛判準改成內容自陳。** 本案選後者：
+別人的目錄不該由我來清，而自陳對「還沒清」與「永遠不清」都成立。
+
+## 8.8 還沒做的一件事（建議，未施工）
+
+本案拆掉了 heuristic，卻**沒有留下強制力** —— 而 §1 自己就寫著「慣例沒有任何地方在強制執行」。
+建議補一支 `check_letters_layout.py`：letters 頂層出現「已知 transient 前綴」或
+「沒有 `type:` 的 .md」就 exit 1。
+理由：本次「清單漏兩家」與「殘影被當成信」都是**掃一次目錄就會看到**的事實，
+而它們現在只有下一個人踩到才會知道。
+
+## 9. 版控邊界 —— `cmd/` 目錄自帶 `.gitignore`（2026-08-18 Tim 指示，calli 施工）
+
+> 本節是 §5 施工順序**漏掉的一步**：搬家改的是「檔案在哪」，而 ignore 規則寫的是「檔名叫什麼」。
+> 兩者一起看才知道 —— **搬家的同時，每一條舊 ignore 規則都同步失效了。**
+
+### 9.1 量到的現況（實掃，不是推測）
+
+| letters repo | 根 `.gitignore` 有擋 `cmd/` 嗎 | 已被追蹤的 `cmd/` 檔 |
+|---|---|---|
+| `calli` / `kiara` | ✅ `/cmd/` | 0 |
+| `basecamp` | ✅（且註解寫著症狀：「`git status` 突然多出一整個 cmd/ 目錄」） | 0 |
+| `gura` | ❌ | **4**（`cmd/freetime_{activity,next,partners,start}.md`） |
+| `apex-one` / `Sirius` / `summit` | ❌ | 0（還沒跑過自由時間） |
+| 其餘 14 位（letters 不是獨立 repo，住在 `AgentCommands` 內） | ❌ `AgentCommands` 也沒擋 `letters/*/cmd/`（`git check-ignore` 實測） | — |
+
+⇒ FreeTime 遷入 `cmd/` 之後，gura 的 4 份回傳檔**直接進了版控**，而她的根 `.gitignore` 裡
+`_freetime_next.md` 那幾行還好端端躺著 —— 規則沒壞，只是**再也對不到任何檔案**。
+沒有任何一格會紅：ignore 失配的症狀就是「檔案開始出現在 `git status` 裡」，
+而那看起來跟「我今天寫了東西」一模一樣。
+
+### 9.2 更重的一格：`_wake_brief.md` 還沒搬
+
+`gura/.gitignore` 對 `_wake_brief.md` 的註解寫得很清楚（原文）：
+
+> 這一行不是預防性的：初始 commit 當下，磁碟上的 `_wake_brief.md` 就已經帶著
+> 一枚活 token 與一個信箱，而 origin 指向公開 GitHub。少了這行，第一筆 commit 就是外洩。
+
+而 §8.2 的施工順序把 `_wake_brief` 排在**最後一筆**搬。
+⇒ **搬進 `cmd/wake_brief.md` 的那一刻，那條擋外洩的規則同步失配。**
+（letters remote 實測是 `https://gitlab.com/...`，公開性由該 repo 設定決定，
+但「history 刪不掉」這件事與公開性無關。）
+
+📌 已入版控的 4 份 gura 回傳檔已檢查：**沒有 token / 信箱字樣**（freetime 回傳檔不帶憑證）。
+⇒ 目前是 churn 問題不是外洩問題 —— 但 `_wake_brief` 那一筆搬過去就會是。
+
+### 9.3 修法：規則跟著**位置**走，不跟著檔名走
+
+`cmd/` 目錄建立時自動放一份 `.gitignore`：
+
+```
+*
+!.gitignore
+```
+
+- C#：`UCL_LettersPath.EnsureCmdDir(persona)` / `EnsurePayloadDir(payloadPath)`
+  —— 後者是**寫回傳檔前唯一的建目錄入口**（父目錄叫 `cmd` 就順手補 ignore）。
+  ⚠ 寫入端不要再自己 `Directory.CreateDirectory` —— 那樣新寫入端會漏掉 ignore，而且是靜默的。
+- python：`ucl_paths.ensure_letters_cmd_dir(persona)`（本檔唯一會寫檔的一支，檔頭已註明例外）。
+- 兩端產出**逐位元相同**（驗法：各建一次比 sha256）。實測 `df80a833…` 一致。
+
+**為什麼是「目錄自帶」而不是「每個 repo 根加一行」**：
+根規則要 7 個獨立 repo ＋ `AgentCommands` 各加一次，新 persona 還要再加一次 ——
+那是 §2 那份「逐檔清單」的翻版，只是粒度變粗。目錄自帶的規則**跟著目錄一起誕生**，
+新增幾支 Cmd、新增幾位 persona 都不必再維護清單。
+這與本案主線是同一條手勢：**不要為同一個位置寫規則，讓位置自己承載語意。**
+
+### 9.4 已知的兩個邊界（都不影響「內容被擋住」這個結果）
+
+1. **父層已經擋掉整個 `/cmd/` 的 repo（calli / kiara / basecamp）**：
+   `cmd/.gitignore` 本身也會被一起 ignore ⇒ 它不會入版控、不會傳給 clone。
+   結果仍然正確（父規則已達成目的），只是三個 repo 的狀態與其他人不同。
+   要統一的話把父規則改成 `/cmd/*` ＋ `!/cmd/.gitignore` —— **那是別人的 repo，本案不動。**
+2. **`.gitignore` 不會 untrack 已追蹤的檔**：gura 那 4 份要 `git rm --cached cmd/` 才會脫離版控。
+   照慣例「自己的可以清、別人的不動」⇒ 留給 gura 自己處理（本案只把事實記在這裡）。
+
+### 9.5 對 §8.3 的補充：每一筆搬家的固定動作多一項
+
+原本 6 項的清單要加第 7 項：
+
+> 7. **檢查該前綴的 ignore 規則**：搬完之後舊規則必然失配 ——
+>    確認新位置被 `cmd/.gitignore` 擋住（`git check-ignore -v <新路徑>` 要有輸出），
+>    並把根 `.gitignore` 裡那幾行**標成 legacy 或刪掉**（留著會讓下一個人以為還在生效）。
+>    ⛔ 特別是 `_wake_brief`：那條規則擋的是**憑證外洩**，不是 churn。
 
 ## 7. 不做的事
 

@@ -176,36 +176,77 @@ namespace UCL.Core.EditorLib.AgentCommands.DocEdit
                 // ⚠ 只看頂層：`wakes/` `rests/` `longterm/` 等子目錄是別的東西（收尾信 / 見林），
                 //   遞迴下去會把「剛寫的信」誤判成某份被工具重生成的檔。
                 //
-                // 🩸 **跳過 `_` 開頭與 README** —— 第一版沒跳，實跑立刻解析到 `_freetime_next.md`：
-                //   那是 Cmd 回傳檔，不是信。letters 目錄同時住著兩種東西 ——
-                //   人寫的信（時間戳命名）與機器寫的回傳檔（`_` 開頭），而後者**每跑一次 Cmd 就更新**，
-                //   所以「最新的 .md」幾乎永遠是機器產物。
-                //   `_` ＝ 機器/說明檔 這條慣例在本 repo 是既有的（活動掃描器也跳 `_` 開頭）。
-                //   ⚠ 症狀值得記：它**不會報錯**，只會登記一份你沒改過的檔然後說「已完成」。
+                // 🩸 沿革：第一版沒排除任何檔，實跑立刻解析到 `_freetime_next.md`（Cmd 回傳檔，不是信）。
+                //   當時的修法是「跳過 `_` 開頭與 README」——**它有效，但那是 heuristic**：
+                //   依賴「機器產物都用 `_` 開頭」這條沒人強制執行的慣例，而且它連 `_constitution.md`
+                //   這種**耐久**產物也一起跳掉了 —— 那三個檔剛好都不是信，所以沒出事。那是運氣不是設計。
+                // ⇒ 2026-08-18 回傳檔全數遷入 `cmd/` 子目錄（Plan_Letters_Dir_Layout §8）之後，
+                //   判準改成**具名排除**：頂層的 .md 就是信，除了這三個耐久檔＋README。
+                //   前綴規則讀不出「到底排除了什麼」，三個名字讀得出來、加減也看得見。
+                // ⚠ 本迴圈只看頂層 ⇒ `cmd/` 底下的回傳檔天然不在候選裡（位置本身承載語意）。
                 string aDir = UCL_LettersPath.PersonaDir(iPersona);
                 if (!Directory.Exists(aDir)) { oNote = $"letters 目錄不存在：`{aDir}`"; return null; }
                 string aNewest = null;
                 DateTime aBest = DateTime.MinValue;
-                int aSkipped = 0;
+                int aSkippedNamed = 0, aSkippedNotLetter = 0;
                 foreach (var f in Directory.GetFiles(aDir, "*.md"))
                 {
-                    string aName = Path.GetFileName(f);
-                    if (aName.StartsWith("_") || aName.Equals("README.md", StringComparison.OrdinalIgnoreCase))
+                    if (IsNonLetterTopLevel(Path.GetFileName(f)))
                     {
-                        aSkipped++;
+                        aSkippedNamed++;
+                        continue;
+                    }
+                    // 決定性判準：**信自己會說自己是信**（frontmatter `type`）。
+                    // 🩸 只靠檔名排除不夠：回傳檔遷入 `cmd/` 之後，舊位置**還留著**已經不再被寫入的
+                    //    殘影（plan §5② 刻意不搬它們），而它們的 mtime 可能比真信新 ——
+                    //    實測 calli 的 `_goodmorning_brief.md` 就這樣被挑成「最新那封信」。
+                    //    ⇒ 判準對齊 `wake_brief._newest_self_letter`：只認 letter_to_future_self。
+                    //    （peer_letter_from_persona 是同事寄來的，不是你要編的那封。）
+                    if (UCL_AwakeningService.ReadFrontmatterField(f, "type") != k_LetterType)
+                    {
+                        aSkippedNotLetter++;
                         continue;
                     }
                     var aT = File.GetLastWriteTime(f);
                     if (aT > aBest) { aBest = aT; aNewest = f; }
                 }
+                string aSkipNote = $"排除 {aSkippedNamed} 個具名耐久檔／README、"
+                                 + $"{aSkippedNotLetter} 個非 `{k_LetterType}`（舊位置回傳檔殘影／同事來信）";
                 oNote = aNewest == null
-                    ? $"letters 頂層沒有任何「信」（跳過 {aSkipped} 個 `_` 開頭／README 的機器產物）：`{aDir}`"
-                    : $"letter 未給 target ⇒ 取 letters 頂層最新的信（跳過 {aSkipped} 個 `_` 開頭／README 的機器產物、不遞迴子目錄）";
+                    ? $"letters 頂層沒有任何「自己寫給自己的信」（{aSkipNote}）：`{aDir}`"
+                    : $"letter 未給 target ⇒ 取 letters 頂層最新的信（{aSkipNote}、不遞迴子目錄）";
                 return aNewest;
             }
 
             oNote = "kind=doc 需要顯式 target";
             return null;
+        }
+
+        // ===========================================================
+        // 區塊職責：letters **頂層**不是信的那幾個檔 —— 具名清單，不是前綴規則。
+        // 物理意義：回傳檔（transient）已經全數住 `cmd/` 子目錄，頂層剩下的機器產物只有三個，
+        //          而它們是**耐久**的（刪掉就沒了）：憲法 / 見叢 / 最新信指針。
+        //          三個名字讀得出來；`_` 前綴讀不出「這是暫存還是耐久」——
+        //          那正是 2026-08-18 造的「一符二役」那個詞在講的事。
+        // 數值影響：純字串比對；清單要跟這三個檔的實際檔名逐字一致（改名要改這裡）。
+        // ===========================================================
+        // 「自己寫給自己的信」的 frontmatter type —— 與 wake_brief.py 的 _newest_self_letter 同一個值。
+        // ⚠ 兩端共用這個字面：改了任一邊，另一邊會安靜地挑錯檔（沒有例外、沒有紅字）。
+        const string k_LetterType = "letter_to_future_self";
+
+        static readonly string[] TOP_LEVEL_NON_LETTERS =
+        {
+            "_constitution.md",   // 憲法（耐久）
+            "_keys_open.md",      // 見叢：當期交棒清單（耐久）
+            "_latest.md",         // 最新自寫信的指針（機械維護但耐久）
+            "README.md",          // 說明檔
+        };
+
+        static bool IsNonLetterTopLevel(string iFileName)
+        {
+            foreach (var aN in TOP_LEVEL_NON_LETTERS)
+                if (iFileName.Equals(aN, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
         }
 
         // ===========================================================

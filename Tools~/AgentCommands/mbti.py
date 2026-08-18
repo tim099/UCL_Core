@@ -235,7 +235,9 @@ def save_to_letter(persona, result, answers_str):
     full_type = result["type"]
     filename = f"{today_str}-w{wake_count}-{full_type}.md"
     
-    letter_dir = get_repo_root() / "AgentCommands" / "ChatTavern" / "baton" / "letters" / persona / "mbti"
+    # ⛔ 原本從 repo root 自己拼，連 data root override 都繞過（BUG-2）
+    from _lib.ucl_paths import letters_persona_dir
+    letter_dir = letters_persona_dir(persona) / "mbti"
     letter_dir.mkdir(parents=True, exist_ok=True)
     file_path = letter_dir / filename
     

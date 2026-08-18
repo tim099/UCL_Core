@@ -35,8 +35,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Mail
         const string MailboxDirName = "mailbox";   // 收件者端（投遞用）
         const string OutboxDirName = "outbox";     // 寄件者端（存證用）
 
-        static string LettersRoot =>
-            Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "baton", "letters");
+        // letters 走唯一解析點（BUG-2）—— 原本這裡自己拼佈局，等於把它複製一份。
+        static string LettersRoot => UCL_LettersPath.Root;
 
         // 區塊職責：寄一封**系統**掛號信（免費）
         // 物理意義：後台代表系統通知某個 persona 一件跟他有關、而他當下多半不在線的事。

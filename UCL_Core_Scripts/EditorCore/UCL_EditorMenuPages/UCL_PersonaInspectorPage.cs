@@ -105,7 +105,7 @@ namespace UCL.Core.EditorLib.Page
             //   原本走 UCL_RepoPath.AgentCommandsDir。設了 override 的機器上本頁與 Cmd 讀不同目錄，
             //   而兩邊都不會報錯。預設模式下兩者逐字相同。
             m_PersonasDir = AgentCommands.Awakening.UCL_AwakeningService.PersonasDir;
-            m_LettersDir = Path.Combine(m_AgentCommandsDir, "ChatTavern", "baton", "letters");
+            m_LettersDir = UCL_LettersPath.Root;   // 同 UCL_LoginStatusPage：走唯一解析點（BUG-2）
             LoadData();
         }
 

@@ -417,7 +417,8 @@ def cmd_prepare(args):
     print(f"✅ canonical={slug}；{reader} 已讀章節: {own or '（尚無）'}")
     print("📚 其他讀者覆蓋: " + "; ".join(f"{who}: {nums or '（尚無）'}" for who, nums in coverage.items()))
     print("→ 決定追讀前，可用 resume --book " + slug + " --reader " + reader + " --up-to <N> 取得跨分支前情。")
-    brief = _DATA_ROOT / "ChatTavern" / "baton" / "letters" / reader / "_wake_brief.md"
+    from _lib.ucl_paths import letters_persona_dir   # letters 唯一入口（BUG-2）
+    brief = letters_persona_dir(reader) / "_wake_brief.md"
     report = LIB_ROOT / "_search_reports" / f"prepare_{_slugify(reader)}_{_slugify(args.title)}.md"
     lines = ["# 閱讀入口解析報告", "", f"- query: {args.title}", f"- reader: {reader}",
              f"- canonical: {slug}", f"- own_chapters: {own}",
@@ -713,7 +714,8 @@ def _letters_root() -> Path:
     except Exception as e:
         print(f"⚠ 借用 awakening.py 的 letters 路徑解析失敗，退回預設（若有 config override 會不一致）：{e}",
               file=sys.stderr)
-        return _REPO_ROOT / "AgentCommands" / "ChatTavern" / "baton" / "letters"
+        from _lib.ucl_paths import letters_root       # 退路也走唯一入口，不自己拼佈局（BUG-2）
+        return letters_root()
 
 
 def _shelf_dir(persona: str) -> Path:

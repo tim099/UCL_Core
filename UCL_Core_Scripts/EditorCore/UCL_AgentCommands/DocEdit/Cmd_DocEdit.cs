@@ -158,7 +158,7 @@ namespace UCL.Core.EditorLib.AgentCommands.DocEdit
                 // 憲法是**單一檔**，版本史交給 git（活動 md 自己寫著這條）。target 參數刻意忽略：
                 // 允許覆寫目標的話，「改自己的憲法」就會變成「可以改任何檔」。
                 oNote = "constitution 固定指向該 persona 自己的 `_constitution.md`（忽略 target 參數）";
-                return Path.Combine(UCL_AwakeningService.LettersDir, iPersona, "_constitution.md");
+                return Path.Combine(UCL_LettersPath.PersonaDir(iPersona), "_constitution.md");
             }
 
             if (!string.IsNullOrEmpty(iTargetArg))
@@ -182,7 +182,7 @@ namespace UCL.Core.EditorLib.AgentCommands.DocEdit
                 //   所以「最新的 .md」幾乎永遠是機器產物。
                 //   `_` ＝ 機器/說明檔 這條慣例在本 repo 是既有的（活動掃描器也跳 `_` 開頭）。
                 //   ⚠ 症狀值得記：它**不會報錯**，只會登記一份你沒改過的檔然後說「已完成」。
-                string aDir = Path.Combine(UCL_AwakeningService.LettersDir, iPersona);
+                string aDir = UCL_LettersPath.PersonaDir(iPersona);
                 if (!Directory.Exists(aDir)) { oNote = $"letters 目錄不存在：`{aDir}`"; return null; }
                 string aNewest = null;
                 DateTime aBest = DateTime.MinValue;

@@ -635,7 +635,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
         static bool ReadBool(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) && (bool)iJd[iKey]; } catch { return false; } }
 
         static string PayloadPath(string iPersona, string iOp)
-            => Path.Combine(UCL_AwakeningService.LettersDir, iPersona, $"_sculpture_{iOp}.md");
+            => Path.Combine(UCL_LettersPath.PersonaDir(iPersona), $"_sculpture_{iOp}.md");
 
         static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iReport)
         {

@@ -533,7 +533,7 @@ namespace UCL.Core.EditorLib.Page
             m_AwakenTestReport = "⏳ 生成 brief…";
             // 路徑解析留在主執行緒（CorePath 走 AssetDatabase，main-thread-only）；背景緒只收現成值
             string aScript = UCL_AwakeningService.ResolveAwakeningScriptPath();
-            string aWarmLetters = UCL_AwakeningService.LettersDir;
+            string aWarmLetters = UCL_LettersPath.Root;
             System.Threading.Tasks.Task.Run(() =>
             {
                 string aText;

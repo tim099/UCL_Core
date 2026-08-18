@@ -80,7 +80,9 @@ def _repo_root() -> Path:
 
 
 REPO_ROOT = _repo_root()
-LETTERS_DIR = REPO_ROOT / "AgentCommands" / "ChatTavern" / "baton" / "letters"
+# letters 走唯一入口（BUG-2）—— 從 REPO_ROOT 自己拼會繞過 data root override
+from _lib.ucl_paths import letters_root as _letters_root
+LETTERS_DIR = _letters_root()
 BANK_SETTINGS = REPO_ROOT / "AgentCommands" / "Treasury" / "bank_settings.json"
 RUN_CMD = _HERE / "run_cmd.py"
 

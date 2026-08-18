@@ -118,7 +118,9 @@ namespace UCL.Core.EditorLib.Page
             //   ⇒ 設了 DataRoot override 的機器上，本頁與 Cmd_LoginStatus **原本讀不同目錄**，
             //     而兩邊都不會報錯（頁面顯示一組、Cmd 操作另一組）。預設模式下兩者逐字相同。
             m_PersonasDir = AgentCommands.Awakening.UCL_AwakeningService.PersonasDir;
-            m_LettersDir = Path.Combine(m_AgentCommandsDir, "ChatTavern", "baton", "letters");
+            // letters 走唯一解析點（BUG-2）—— 本頁原本自己拼 `ChatTavern/baton/letters`，
+            // 等於把佈局知識複製一份；佈局調整時它不會跟著改，而且**不會報錯**。
+            m_LettersDir = UCL_LettersPath.Root;
             // 區塊：UCL_Core path 解析 — 走 UCL_EditorPath.CorePath (per AgentSkillManagerPage)
             string corePathRel = UCL_EditorPath.CorePath;
             if (!string.IsNullOrEmpty(corePathRel))
@@ -717,7 +719,7 @@ namespace UCL.Core.EditorLib.Page
             string aActualStr = aActual != UCL_ActualAgent.None ? UCL_ActualAgentUtility.ToStorageValue(aActual) : "";
             // 主執行緒先解析路徑＋暖快取（CorePath 走 AssetDatabase、DataRoot 走 PlayerPrefs，皆 main-thread 資源）
             string aScript = UCL_AwakeningService.ResolveAwakeningScriptPath();
-            string aWarmLetters = UCL_AwakeningService.LettersDir;
+            string aWarmLetters = UCL_LettersPath.Root;
             m_AwakeningRunning = true;
             System.Threading.Tasks.Task.Run(() =>
             {

@@ -86,7 +86,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     // 路徑解析在主執行緒先做（CorePath 走 AssetDatabase，main-thread-only）；
                     // 長跑段（spawn python + WaitForExit）才丟背景執行緒，不擋 Editor 主執行緒。
                     string aScript = UCL_AwakeningService.ResolveAwakeningScriptPath();
-                    string aWarmLetters = UCL_AwakeningService.LettersDir;   // 暖 DataRoot 快取（PlayerPrefs 同屬主執行緒資源）
+                    string aWarmLetters = UCL_LettersPath.Root;   // 暖 DataRoot 快取（PlayerPrefs 同屬主執行緒資源）
                     // 餘額也在主緒先查好餵過去（同理由：Treasury 路徑解析走 DataRoot）。
                     // 這行是 step=brief 從 112s 降到秒級的關鍵 —— 見 ResolveBankBalanceArg 的血證註解。
                     string aBankBalance = UCL_AwakeningService.ResolveBankBalanceArg(aPersona);

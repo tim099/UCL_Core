@@ -70,9 +70,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         const string k_CharactersDirName = "characters";
         const string k_ProfileJsonName = "profile.json";
         // 追回檔輸出路徑（與 _wake_brief.md 同住 persona 的 letters/）
-        const string k_ChatTavernDirName = "ChatTavern";
-        const string k_BatonDirName = "baton";
-        const string k_LettersDirName = "letters";
+        // ⛔ 原本這裡有 k_ChatTavernDirName / k_BatonDirName / k_LettersDirName 三個常數
+        //    自己拼出 letters 路徑 —— 那是把佈局知識複製了一份（BUG-2）。
+        //    letters 的唯一入口是 `UCL_LettersPath`，佈局調整時只有它需要改。
 
         public const string Key_CharacterId = "character_id";
         public const string Key_Name = "name";
@@ -1039,8 +1039,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         {
             try
             {
-                string path = Path.Combine(UCL_RepoPath.AgentCommandsDir, k_ChatTavernDirName,
-                                           k_BatonDirName, k_LettersDirName, persona,
+                string path = Path.Combine(UCL_LettersPath.PersonaDir(persona),
                                            k_LettersBookshelfDirName, $"{mediaId}.md");
                 SaveText(path, text);
             }
@@ -1367,8 +1366,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         {
             string text = RenderRecall(mediaId, persona, fullRounds, out error);
             if (text == null) return null;
-            string path = Path.Combine(UCL_RepoPath.AgentCommandsDir, k_ChatTavernDirName,
-                                       k_BatonDirName, k_LettersDirName, persona,
+            string path = Path.Combine(UCL_LettersPath.PersonaDir(persona),
                                        $"_reading_recall_{mediaId}.md");
             SaveText(path, text);
             return path;

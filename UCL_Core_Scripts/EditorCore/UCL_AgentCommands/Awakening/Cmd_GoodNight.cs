@@ -138,7 +138,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         }
 
         static string PayloadPath(string iPersona, string iStep)
-            => Path.Combine(UCL_AwakeningService.LettersDir, iPersona, $"_goodnight_{iStep}.md");
+            => Path.Combine(UCL_LettersPath.PersonaDir(iPersona), $"_goodnight_{iStep}.md");
 
         void WriteAndVerdict(IDictionary<string, string> iArgs, string iPersona, string iStep, UCL_AwakeningService.StepResult iResult)
         {

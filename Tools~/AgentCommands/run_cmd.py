@@ -951,7 +951,8 @@ def _warn_stale_payload(args) -> None:
         # ⇒ 有 persona 就用它 glob 出來，沒有就只印上面那句通用提醒（不猜）。
         who = _persona_from_cmd_args(args) or (getattr(args, "persona", None) or "").strip()
         if who and cmd_type:
-            d = Path(DATA_ROOT) / "ChatTavern" / "baton" / "letters" / who
+            from _lib.ucl_paths import letters_persona_dir   # letters 唯一入口（BUG-2）
+            d = letters_persona_dir(who)
             if d.is_dir():
                 stale += sorted(d.glob(f"_{cmd_type.lower()}*.md"),
                                 key=lambda f: f.stat().st_mtime, reverse=True)[:2]

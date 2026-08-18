@@ -2484,8 +2484,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         }
 
         static string PayloadPath(string iPersona, string iStep)
-            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "baton", "letters",
-                            iPersona, $"_streamwatch_{iStep}.md");
+            => Path.Combine(UCL_LettersPath.PersonaDir(iPersona), $"_streamwatch_{iStep}.md");
 
         static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iContent)
         {

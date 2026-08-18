@@ -768,7 +768,7 @@ namespace UCL.Core.EditorLib.Page
                 var queueOptions = BuildHistoryQueueOptions(m_HistoryCache);
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.QueueFilter"), UCL_GUIStyle.LabelStyle, GUILayout.Width(90));
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.QueueFilter"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     int curIdx = Mathf.Max(0, queueOptions.IndexOf(string.IsNullOrEmpty(m_HistoryQueueFilter)
                         ? UCL_CodeLocalize.Get("AgentCmd.QueueFilterAll") : m_HistoryQueueFilter));
                     // PopupSearchCache 選項為 0 時會 LogError —— 這裡恆 >=1（第一項固定是 All）
@@ -778,7 +778,7 @@ namespace UCL.Core.EditorLib.Page
                         m_HistoryQueueFilter = newIdx == 0 ? "" : queueOptions[newIdx];
                         m_HistoryPage = 0;
                     }
-                    GUILayout.FlexibleSpace();
+                    //GUILayout.FlexibleSpace();
                 }
 
                 using (new GUILayout.HorizontalScope())

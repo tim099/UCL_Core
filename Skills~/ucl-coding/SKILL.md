@@ -153,7 +153,7 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 | 端 | 用什麼 | ❌ 不要 |
 |---|---|---|
 | **Python** | `_lib/ucl_paths.py`（`repo_root()` / `data_root()` / `ucl_core_dir()`） | `parents[N]`、自己 walk `.git`、自排 env/cwd fallback |
-| **C#** | `UCL_AgentCommandsPath.DataRoot` / `UCL_RepoPath` / `UCL_EditorPath.CorePath` | `Application.dataPath + "../.."` |
+| **C#** | `UCL_AgentCommandsPath.DataRoot` / `UCL_RepoPath` / `UCL_EditorPath.CorePath` ／ **letters 底下走 `UCL_LettersPath`** | `Application.dataPath + "../.."`、自己 `Path.Combine` 出 letters 版面 |
 | **文件** | `ucl_core:` / `repo:` prefix | 寫死 `Assets/Plugins/UCL_Core/...` |
 
 > 🩸 **2026-08-17 一天內同一個病撞到三次，全部無聲**：
@@ -287,6 +287,7 @@ run_cmd.py --persona <me> run Invoke --arg target='$imp' --arg member=Save   # �
 |---|---|
 | 開外部 process | `UCL_ProcessRegistryService` |
 | 找 repo root / Unity project root / AgentCommands 目錄 | `UCL_RepoPath` |
+| **組 letters 底下的路徑**（信 / Cmd 回傳檔） | `UCL_LettersPath`（python 對側：`ucl_paths.letters_cmd_payload()`）—— 別自己 `Path.Combine`，2026-08-18 那次搬家就是因為四種算法各在一處 |
 | 用檔案管理器開啟路徑 | `UCL_ExplorerUtil` |
 | 存持久化資料 | `UCL_Asset<T>` |
 | 頁面設定記住上次的值 | `EditorPrefs`（key 用 `const string`） |

@@ -74,6 +74,36 @@ run_cmd.py --persona <me> run Invoke --arg target='$s' --arg member=SerializeToJ
 **④ 欄位順序會變。** base/derived 拆開後，衍生類欄位可能排到最前面。
 鍵序對兩端都不重要（都按鍵取值），但 diff 會整片變 —— 別把它誤讀成內容變了。
 
+## letters 目錄底下的路徑（硬規則）
+
+**任何 `letters/…` 底下的路徑一律走 `UCL_LettersPath`，不要自己 `Path.Combine`。**
+
+| 要什麼 | 用哪個 |
+|---|---|
+| letters 根 | `UCL_LettersPath.Root`（它委派 `UCL_AwakeningService.LettersDir` —— **override 語意的唯一擁有者**） |
+| 某人的信目錄 | `UCL_LettersPath.PersonaDir(persona)` |
+| Cmd 回傳檔目錄 | `UCL_LettersPath.CmdDir(persona)` |
+| 一份 Cmd 回傳檔 | `UCL_LettersPath.CmdPayload(persona, cmd, step)` |
+
+```csharp
+// ✅
+string aPath = UCL_LettersPath.CmdPayload(iPersona, "freetime", iStep);
+
+// ❌ 以下每一種都在 repo 裡出現過
+Path.Combine(UCL_AwakeningService.LettersDir, iPersona, $"_{iCmd}_{iStep}.md")   // 自己組版面
+Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "baton", "letters")   // 連根都自己推
+```
+
+> 🩸 **為什麼是硬規則**：2026-08-18 之前 `Cmd_FreeTime` / `Cmd_Sculpture` / `Cmd_StreamWatch`
+> 各自組一份回傳檔路徑，其中 `Cmd_StreamWatch` 連 letters 根都自己推 ——
+> **同一個目錄的第四種算法**。於是 Tim 要求「回傳檔搬進 `cmd/` 子目錄」時，
+> 那件事從「改一行」變成「12 處各改一次」，而**漏掉一處不會報錯**
+> （寫檔會自動建目錄 ⇒ 那支的回傳檔靜靜留在舊位置，看起來完全正常）。
+
+⚠ **對側契約**：python 端等價入口是 `_lib/ucl_paths.py` 的
+`letters_root()` / `letters_cmd_dir()` / `letters_cmd_payload()`。
+**兩端要一起改** —— 只改一端的後果是兩邊各看各的目錄，而**兩邊都不會報錯**。
+
 ## 字串 key 與設定欄位名稱
 
 - 重複使用、代表 schema／EditorPrefs／JSON／routing 的字串 key，先宣告為具語意的 `const string`，再由所有讀寫點共用。

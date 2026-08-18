@@ -134,3 +134,21 @@ UCL_DocsModule.SourceToken   // → "ucl_core:Docs~"（{Prefix}:{DocsSubfolder}�
 - `UCL_DocsModule.cs`（`SourceToken`）、`UCL_DocsModuleManifestGenerator.cs`（`# Source:` token 化）
 - `UCL_CoreDocsBootstrap.cs`（`ucl_core:` / `repo:` prefix resolver 註冊）
 - `Tools~/AgentCommands/run_cmd.py`（python `__file__`-walk 範式）
+
+## 📬 letters 底下的路徑：走 `UCL_LettersPath` / `ucl_paths`
+
+`letters/<persona>/…` 有**兩層**要各自走解析器，不要自己接字串：
+
+| 端 | 根 | 版面（信 vs Cmd 回傳檔） |
+|---|---|---|
+| **C#** | `UCL_LettersPath.Root`（委派 `UCL_AwakeningService.LettersDir`） | `PersonaDir()` / `CmdDir()` / `CmdPayload(persona, cmd, step)` |
+| **python** | `ucl_paths.letters_root()` | `letters_persona_dir()` / `letters_cmd_dir()` / `letters_cmd_payload()` |
+
+- **人寫的信**住 `letters/<persona>/` 頂層；**Cmd 回傳檔**住 `letters/<persona>/cmd/`。
+- 兩端互為**對側契約**，要一起改 —— 只改一端＝兩邊各看各的目錄，而**兩邊都不會報錯**。
+
+> 🩸 2026-08-18：`Cmd_FreeTime` / `Cmd_Sculpture` / `Cmd_StreamWatch` 各自組回傳檔路徑
+> （StreamWatch 連根都自己推 ＝ 同一目錄的第四種算法）。於是「搬進 `cmd/`」從改一行
+> 變成 12 處各改一次，而漏一處**不會報錯**（自動建目錄 ⇒ 靜靜留在舊位置）。
+> 現況：FreeTime 已走 `UCL_LettersPath`；其餘待遷移，見
+> `ucl_core:Docs~/zh-Hant/Plan/Plan_Letters_Dir_Layout.md`。

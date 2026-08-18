@@ -38,6 +38,12 @@ CORE_DIR  = _ucl_paths().ucl_core_dir()   # UCL_Core 掛載位置
 | AgentCommands 資料根 | `data_root()` |
 | UCL_Core 自身 | `ucl_core_dir()` |
 | persona / registry / letters / comic 等子路徑 | `persona_file()` / `registry_path()` / `letters_root()` / `comic_root()`… |
+| **letters 底下的版面**（信 vs Cmd 回傳檔） | `letters_persona_dir()` / `letters_cmd_dir()` / `letters_cmd_payload(persona, cmd, step)` |
+
+> ⚠ **letters 底下不要自己接字串**（`letters_root() / persona / f"_{cmd}_{step}.md"`）。
+> C# 對側是 `UCL_LettersPath`，兩端**要一起改** —— 只改一端的後果是兩邊各看各的目錄，
+> 而**兩邊都不會報錯**（寫檔會自動建目錄，新舊位置各有一份、各自看起來都正常）。
+> 🩸 2026-08-18 Cmd 回傳檔搬進 `letters/<persona>/cmd/` 時就是靠這兩支才只改一處。
 
 ### ❌ 以下每一種都出過事，全部禁止
 

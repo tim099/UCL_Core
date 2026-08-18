@@ -28,6 +28,7 @@ namespace UCL.Core.EditorLib.Page
     {
         const string KeyActivitiesFold = "FreeTimeActivitiesFold";
         const string KeyNewActivityFold = "FreeTimeNewActivityFold";
+        const string KeyPickPreviewFold = "FreeTimePickPreviewFold";
         const string LogTag = "FreeTimeAdmin";
 
         // 區塊職責：折疊狀態專用容器 —— 刻意不與任何資料快取共用。
@@ -51,10 +52,12 @@ namespace UCL.Core.EditorLib.Page
         readonly Dictionary<string, string> m_DraftMinMinutes = new Dictionary<string, string>();
         readonly Dictionary<string, string> m_DraftName = new Dictionary<string, string>();
         readonly Dictionary<string, string> m_DraftHow = new Dictionary<string, string>();
+        readonly Dictionary<string, string> m_DraftGroup = new Dictionary<string, string>();
         string m_NewId = "";
         string m_NewName = "";
         string m_NewHow = "";
         string m_NewMinMinutes = "0";
+        string m_NewGroup = "";
         string m_Status = "";
         bool m_Loaded;
 
@@ -77,6 +80,7 @@ namespace UCL.Core.EditorLib.Page
             m_DraftMinMinutes.Clear();
             m_DraftName.Clear();
             m_DraftHow.Clear();
+            m_DraftGroup.Clear();
             RebuildOptions();
             m_Loaded = true;
         }
@@ -93,7 +97,11 @@ namespace UCL.Core.EditorLib.Page
             {
                 string aKind = a.kind == UCL_FreeTimeActivityKind.Default ? "" : $" [{a.kind}]";
                 string aLayer = a.isProjectLayer ? "🏠" : "📦";
-                m_ActivityOptions.Add($"{(a.enabled ? "" : "（停用）")}{aLayer} {a.id}{aKind}");
+                // 選項字串前綴組名並以 "/" 分隔 —— UCL_GUILayout.PopupGrouped 依「第一個分隔符前」
+                // 自動摺成分組（未分組者落 Other 組）。⚠ 在頁面裡自己再寫一套分組摺疊就是第二份實作，
+                // 而下拉的分組行為該跟其他頁一致。
+                string aPrefix = string.IsNullOrEmpty(a.group) ? "" : a.group + "/";
+                m_ActivityOptions.Add($"{aPrefix}{(a.enabled ? "" : "（停用）")}{aLayer} {a.id}{aKind}");
             }
             m_SelectedIdx = 0;
             if (string.IsNullOrEmpty(m_SelectedId)) { m_SelectedId = m_Activities.Count > 0 ? m_Activities[0].id : ""; return; }
@@ -163,8 +171,11 @@ namespace UCL.Core.EditorLib.Page
                 {
                     GUILayout.Label("編輯活動", UCL_GUIStyle.LabelStyle,
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    int aNewIdx = UCL_GUILayout.PopupSearchCache(m_SelectedIdx, m_ActivityOptions, m_PickerDic,
-                        "FreeTimeActivityPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(320)));
+                    // 分組版下拉（既有基建）：展開面板自帶分組切換列 ＋ 搜尋欄，
+                    // 回傳值仍是原清單 index（組過濾／搜尋過濾在內部映回）。
+                    int aNewIdx = UCL_GUILayout.PopupGrouped(m_SelectedIdx, m_ActivityOptions, m_PickerDic,
+                        "FreeTimeActivityPicker", iSeparator: "/",
+                        iOptions: GUILayout.Width(UCL_GUIStyle.GetScaledSize(360)));
                     if (aNewIdx != m_SelectedIdx && aNewIdx >= 0 && aNewIdx < m_Activities.Count)
                     {
                         m_SelectedIdx = aNewIdx;
@@ -227,7 +238,123 @@ namespace UCL.Core.EditorLib.Page
 
                 DrawDraftField(iAct, "顯示名稱", "name", iAct.name, m_DraftName);
                 DrawDraftField(iAct, "做法(how)", "how", iAct.how, m_DraftHow);
+                DrawGroupRow(iAct);
                 DrawStepRunSection(iAct);
+                DrawPickPreviewSection(iAct);
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：分組（frontmatter `group`）—— 既有組用下拉挑，開新組才打字。
+        //
+        // 物理意義：Tim 2026-08-18 拍板「一份 md ＝ 一件具體活動，分類交給 group」。
+        //          下拉與文字欄併存是刻意的：純文字欄打錯一個字會**安靜地長出一個只有
+        //          一名成員的新組**（`繪圖` vs `繪圖 `），而畫面上兩者看起來一模一樣；
+        //          純下拉又永遠開不了新組。⇒ 下拉負責歸到既有組，文字欄負責開新組。
+        //
+        // ⛔ 這一區刻意不交給 DrawObjectData：那支畫的是**記憶體物件**，而本頁每個欄位的
+        //   落點是 md frontmatter 的單一行（走 WriteFrontmatterField）。用反射自動畫會得到
+        //   一個「改了看起來有效、但沒有任何東西被寫進 md」的介面 —— 而那不會報錯。
+        //
+        // 數值影響：選項＝當前所有非空 group 去重 ＋ 一個「(不分組)」保底項。
+        //          ⚠ Popup 選項為 0 會 LogError；保底項讓它不可能為 0，別當裝飾拿掉。
+        // ===========================================================
+        const string NoGroupLabel = "(不分組)";
+
+        void DrawGroupRow(UCL_FreeTimeActivity iAct)
+        {
+            var aGroups = new List<string> { NoGroupLabel };
+            foreach (var a in m_Activities)
+            {
+                if (string.IsNullOrEmpty(a.group)) continue;
+                if (!aGroups.Contains(a.group)) aGroups.Add(a.group);
+            }
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("分組", UCL_GUIStyle.LabelStyle,
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
+                int aCur = string.IsNullOrEmpty(iAct.group) ? 0 : aGroups.IndexOf(iAct.group);
+                if (aCur < 0) aCur = 0;
+                int aNew = UCL_GUILayout.Popup(aCur, aGroups, m_PickerDic, $"Group_{iAct.id}",
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                if (aNew != aCur && aNew >= 0 && aNew < aGroups.Count)
+                    WriteField(iAct, "group", aNew == 0 ? "" : aGroups[aNew]);
+
+                GUILayout.Label("或開新組", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                string aKey = iAct.id;
+                if (!m_DraftGroup.TryGetValue(aKey, out string aDraft)) aDraft = "";
+                m_DraftGroup[aKey] = GUILayout.TextField(aDraft, UCL_GUIStyle.TextFieldStyle,
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                string aTrimmed = (m_DraftGroup[aKey] ?? "").Trim();
+                if (aTrimmed.Length > 0
+                    && GUILayout.Button("套用", UCL_GUIStyle.GetButtonStyle(Color.green),
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(70))))
+                {
+                    WriteField(iAct, "group", aTrimmed);   // Trim 過才寫 —— 尾隨空白會長出看不見的第二個組
+                }
+                GUILayout.FlexibleSpace();
+            }
+
+            // 同組有幾件要看得到：只有一名成員的「組」在骰面上跟「不分組」是同一個形狀，
+            // 而建它的人以為自己做了分類。
+            if (!string.IsNullOrEmpty(iAct.group))
+            {
+                int aMates = 0;
+                foreach (var a in m_Activities) if (a.enabled && a.group == iAct.group) aMates++;
+                GUILayout.Label($"　「{iAct.group}」組目前有 <b>{aMates}</b> 件啟用中的活動"
+                    + (aMates <= 1 ? "　⚠ 只有它自己 —— 骰面上跟「不分組」長得一樣" : "")
+                    + "。同組在骰面**收成同一項**；本活動觸發特殊邏輯時會**脫離分組**單獨排最前。",
+                    WrapLabelStyle);
+            }
+            else
+            {
+                GUILayout.Label("　不分組 ＝ 自成骰面一項。", WrapLabelStyle);
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：預覽「agent 挑到這個活動時，op=pick 會讓它讀到什麼」。
+        //
+        // 物理意義：`how` 在上面是一個單行輸入框 —— 那是**編輯**的樣子，不是**被讀到**的樣子。
+        //          兩者不同時，改的人無從判斷自己寫的提示夠不夠用。
+        //          🩸 這正是 op=pick 一度漏印 op=step 的那一格：**寫的人看不見讀的人看到什麼**，
+        //          於是代跑能力隱形了整整一輪，而沒有任何地方報錯。
+        //
+        // 數值影響：**唯讀**，不呼叫 Cmd、不開 session。
+        // ⚠ 文案與 Cmd_FreeTimeActivity.OpPick 的輸出對齊，那邊改了這裡要跟著改 ——
+        //   代價是同一份文案兩處各寫一次；換到的是「不必真的開一場 session 才看得到一行提示」。
+        // ===========================================================
+        void DrawPickPreviewSection(UCL_FreeTimeActivity iAct)
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, KeyPickPreviewFold, 21, iDefaultValue: true);
+                    GUILayout.Label("<b>👁 op=pick 預覽</b>（挑到它的人會讀到的東西）",
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
+                GUILayout.Label($"## 已選：<b>{iAct.name}</b>（id `{iAct.id}`）", WrapLabelStyle);
+                if (iAct.minMinutes > 0)
+                {
+                    GUILayout.Label($"- ⏳ 剩餘不足 {iAct.minMinutes} 分時附「本場時間可能不夠」"
+                        + "（**不擋** —— 截止是軟的）", WrapLabelStyle);
+                }
+                GUILayout.Label("## 怎麼執行（取自本 md 的 frontmatter，不是 Cmd 另編的）", WrapLabelStyle);
+                GUILayout.Label(string.IsNullOrEmpty(iAct.how)
+                    ? "- <color=#ff8866>（本 md 沒填 how —— 讀的人會拿到這句括號，等於沒有提示）</color>"
+                    : $"- {iAct.how}", WrapLabelStyle);
+                GUILayout.Label($"- 📄 細節全文：`{iAct.path}`", WrapLabelStyle);
+
+                bool aWired = !string.IsNullOrEmpty(iAct.tool) && iAct.steps != null && iAct.steps.Count > 0;
+                GUILayout.Label(aWired
+                    ? $"## ▶ 下一步：**可代跑** —— `--arg step=<{string.Join("|", iAct.steps)}>`"
+                    : "## ▶ 下一步：**尚未支援 Cmd 代跑** —— 會告知對方自己跑上面那行",
+                    WrapLabelStyle);
             }
         }
 
@@ -389,6 +516,15 @@ namespace UCL.Core.EditorLib.Page
                     m_NewHow = GUILayout.TextField(m_NewHow, UCL_GUIStyle.TextFieldStyle,
                         GUILayout.MinWidth(UCL_GUIStyle.GetScaledSize(320)));
                 }
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("分組", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
+                    m_NewGroup = GUILayout.TextField(m_NewGroup, UCL_GUIStyle.TextFieldStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                    GUILayout.Label("（留空＝不分組，自成骰面一項）",
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
                 if (GUILayout.Button("➕ 建立", UCL_GUIStyle.GetButtonStyle(Color.cyan),
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(120))))
                 {
@@ -419,6 +555,8 @@ namespace UCL.Core.EditorLib.Page
                 aSb.AppendLine($"name: {Quote(aName)}");
                 aSb.AppendLine($"how: {Quote((m_NewHow ?? "").Trim())}");
                 aSb.AppendLine("enabled: true");
+                string aGroup = (m_NewGroup ?? "").Trim();
+                if (aGroup.Length > 0) aSb.AppendLine($"group: {Quote(aGroup)}");
                 aSb.AppendLine($"min_minutes: {aMin}");
                 aSb.AppendLine("---");
                 aSb.AppendLine();
@@ -427,7 +565,7 @@ namespace UCL.Core.EditorLib.Page
                 aSb.AppendLine("> ⚠ 正文待補 —— 這一段是給挑到這個活動的人看的「怎麼做」。");
                 aSb.AppendLine("> GUI 生得出欄位，生不出「這個活動是什麼」。");
                 File.WriteAllText(aPath, aSb.ToString(), new System.Text.UTF8Encoding(false));
-                m_NewId = m_NewName = m_NewHow = "";
+                m_NewId = m_NewName = m_NewHow = m_NewGroup = "";
                 m_NewMinMinutes = "0";
                 Reload();
                 m_Status = $"✅ 已建立：{aPath}（正文待補）";

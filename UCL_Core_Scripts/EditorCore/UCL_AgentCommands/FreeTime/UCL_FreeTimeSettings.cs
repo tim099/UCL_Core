@@ -64,6 +64,20 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         public bool enabled = true;
         public bool isProjectLayer;     // true＝專案層（同 id 會覆蓋共用層）
 
+        // 區塊職責：把「這件活動屬於哪一類」從活動本身分離出來（Tim 2026-08-18 拍板）。
+        // 物理意義：原本一份 md 就是一「組」活動（`canvas-draw` ＝ 2D 畫布**或** 3D 雕刻、
+        //          `gaming` ＝ TRPG**或** QA），於是子分支的選擇**完全沒有落盤** ——
+        //          `session.activity` 只存得到組別 id，帳面上分不出做的是哪一個。
+        //          更硬的一格：`tool` / `steps` 是掛在 md 上的，所以一組裡分支用不同工具時
+        //          （canvas.py vs Cmd_Sculpture）**只有第一個分支接得到 op=step 代跑**，
+        //          而第二個分支的缺席不會有任何地方喊。
+        // ⇒ 現在一份 md ＝ 一件**具體活動**（id 對應一組設定、tool/steps 一對一），
+        //   分類改由本欄承擔：骰面依 group 呈現具體項目，管理頁可改 group 而不必搬檔。
+        // 數值影響：空字串＝未分組（骰面直接印活動名，不加前綴）。純顯示與組織用，
+        //          **不參與可用性 / 優先層 / 時間感知三道排序** —— 那三道的判準在 kind 與 minMinutes。
+        /// <summary>所屬分組（frontmatter `group`）。空＝未分組。骰面用它呈現具體項目的歸屬。</summary>
+        public string group = "";
+
         // 區塊職責：讓活動的「一步」可以被 Cmd 代跑（Tim 2026-08-18）。
         // 物理意義：`how` 是給人讀的一整串自由文字（"chess.py lobby 找局 / start 開局徵人 / move 走子…"）——
         //          機器沒辦法從它取出「第一步該跑什麼」，所以活動層只能整串轉貼。
@@ -146,6 +160,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                         id = aId,
                         name = Nz(UCL_AwakeningService.ReadFrontmatterField(aMd, "name"), Path.GetFileNameWithoutExtension(aMd)),
                         how = UCL_AwakeningService.ReadFrontmatterField(aMd, "how") ?? "",
+                        group = (UCL_AwakeningService.ReadFrontmatterField(aMd, "group") ?? "").Trim(),
                         path = aMd,
                         minMinutes = aMinMinutes,
                         enabled = !string.Equals(Nz(UCL_AwakeningService.ReadFrontmatterField(aMd, "enabled"), "true"),

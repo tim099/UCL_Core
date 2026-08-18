@@ -34,6 +34,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ProcessAdmin.Desc" => "C# から起動した外部プロセスの確認と処置（PID + 名前 + 起動時刻の三重照合で誤終了とゾンビ増殖を防ぐ）。",
                 "ToolBox.SessionAdmin" => "🗂 Session 管理",
                 "ToolBox.SessionAdmin.Desc" => "各 persona の session 現況（自由時間…）。終了時刻を過ぎても active な残留を明示。",
+                "ToolBox.FreeTimeAdmin" => "🎲 自由時間管理",
+                "ToolBox.FreeTimeAdmin.Desc" => "ダイス面の活動設定（有効／グループ／推奨分数／特殊ロジック／実行ヒント）—— 活動 md の frontmatter を直接書き換え、override は作らない。",
                 "ToolBox.LibraryManage" => "ライブラリ管理",
                 "ToolBox.LibraryManage.Desc" => "既存の Books とライブラリデータを管理します。",
                 "ToolBox.ReadingNotesManage" => "読書メモ管理",

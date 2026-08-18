@@ -154,7 +154,7 @@ sender bank 自動從 persona registry 反查、post 失敗 fail-swallow 不影�
 | 層 | 路徑 | 放什麼 |
 |---|---|---|
 | **共用層** | [`<UCL_Core>/Docs~/zh-Hant/FreeTime/Activities/`](../FreeTime/Activities/_README.md) | 跨專案通用活動（讀書 / 畫圖 / 寫信 / 酒館閒聊…） |
-| **專案層**（可選 overlay） | `<repo>/docs/FreeTime/Activities/` | 該專案限定活動；或同 id + `enabled: false` **停用覆蓋**不適用的共用活動（e.g. 沒 canvas infra 的專案關 canvas-draw） |
+| **專案層**（可選 overlay） | `<repo>/docs/FreeTime/Activities/` | 該專案限定活動；或同 id + `enabled: false` **停用覆蓋**不適用的共用活動（e.g. 沒 canvas infra 的專案關 canvas-2d） |
 
 **新增 / 更新活動 = 直接增改對應層的 md 檔**（frontmatter: id/name/how/enabled/min_minutes/kind + body SOP），
 工具即自動同步 — 不需要改 code、不需要回來改本檔。格式詳見 [`Activities/_README.md`](../FreeTime/Activities/_README.md)。

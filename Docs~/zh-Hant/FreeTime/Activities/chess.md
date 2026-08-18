@@ -7,6 +7,7 @@ steps: lobby, list, board, start, join, move, resign, draw, release
 enabled: true
 min_minutes: 0
 kind: Chess
+group: 遊戲
 ---
 
 # 下棋 (西洋棋對弈)

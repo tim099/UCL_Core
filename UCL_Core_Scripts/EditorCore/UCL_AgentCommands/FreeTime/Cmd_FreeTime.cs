@@ -152,7 +152,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aBody.AppendLine();
             AppendPriorityNote(aBody, aList, aIsLive);
             aBody.AppendLine("開場擲骰 🎲 全清單隨機排序（僅供參考 — 自由意志優先）：");
-            for (int i = 0; i < aList.Count; i++) aBody.AppendLine($"{i + 1}. {aList[i].name}");
+            for (int i = 0; i < aList.Count; i++) aBody.AppendLine($"{i + 1}. {(aList[i].priority ? "⭐ " : "")}{aList[i].TavernLine()}");
             aBody.AppendLine();
             aBody.AppendLine($"[{aSource}] 活動事件結束時跑 step=next 換骰面，時間到自動收工。");
             int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "dice-roll-entry", iToken);
@@ -283,7 +283,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 : $"🎲💬 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}，剩約 {aRemainText}）"
                   + "　※ **本則上半是留言，往上讀** ↑");
             AppendPriorityNote(aDiceBody, aList, aIsLive);
-            for (int i = 0; i < Math.Min(3, aList.Count); i++) aDiceBody.AppendLine($"{i + 1}. {aList[i].name}");
+            for (int i = 0; i < Math.Min(3, aList.Count); i++) aDiceBody.AppendLine($"{i + 1}. {(aList[i].priority ? "⭐ " : "")}{aList[i].TavernLine()}");
             aDiceBody.AppendLine($"（前 3 名；全清單 {aList.Count} 項｜跟沒跟骰照舊酒館可觀測）");
             int aDiceSeq = await TavernPost(iArgs, iPersona, aDiceBody.ToString(), "dice-roll", iToken);
 
@@ -542,7 +542,62 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             return aHeads.Count;
         }
 
-        struct ActivityInfo { public string id; public string name; public string how; public string path; public int minMinutes; public bool priority; }
+        struct ActivityInfo { public string id; public string name; public string how; public string path; public int minMinutes; public bool priority; public string group; public bool tooLong; }
+
+        // ===========================================================
+        // 區塊職責：骰面的「一項」—— 可能是一個分組（內含多件具體活動），也可能是單獨一件活動。
+        //
+        // 物理意義：Tim 2026-08-18 拍板的分組規則。在這之前一份活動 md 就是一「組」
+        //          （`canvas-draw` ＝ 2D 畫布**或** 3D 雕刻），於是子分支的選擇沒有落盤、
+        //          `tool`/`steps` 也只掛得住組內第一個分支。拆成具體活動之後，
+        //          「分類」由 `group` 欄位承擔，而骰面**骰的是項、不是活動**：
+        //            - 預設：同組收成骰面的**同一項**（骰面不會因為拆檔而暴長）。
+        //            - 例外：觸發特殊規則排序的活動（棋局對手在線／繪圖券滿）
+        //              **脫離分組成為單獨一項**排到最前面 —— 它此刻特別值得做的理由是
+        //              它自己的，被組名蓋住就傳達不到（「繪圖」不會告訴你券快滿了）。
+        //
+        // ⚠ 脫離的活動**必須從原組的清單裡移除**，否則同一件事在骰面出現兩次，
+        //   而重複的選項會讓人以為那是兩件不同的事。組員全被脫離時整組不列
+        //   （空組是個比事實大的名字）。
+        //
+        // 數值影響：純顯示結構，不參與可用性判定（那在 UCL_FreeTimeGating）。
+        // ===========================================================
+        class DiceEntry
+        {
+            /// <summary>顯示標題：分組名，或單獨項的活動名。</summary>
+            public string label = "";
+            /// <summary>是否在優先層（脫離出來的單獨項一定是 true）。</summary>
+            public bool priority;
+            /// <summary>true＝觸發特殊規則、從分組脫離出來的單獨項。</summary>
+            public bool hoisted;
+            /// <summary>脫離前的原分組（僅 hoisted 時非空 —— 讓人看得出它從哪一組來的）。</summary>
+            public string fromGroup = "";
+            /// <summary>本項整體時間不夠（組內全員不夠時才成立）—— 降尾並標明，不隱藏。</summary>
+            public bool tooLong;
+            /// <summary>本項底下的具體活動（單獨項＝ 1 筆）。</summary>
+            public List<ActivityInfo> items = new List<ActivityInfo>();
+
+            /// <summary>本項是否只是單獨一件活動（沒有分組結構要顯示）。</summary>
+            public bool IsSingle => items.Count == 1 && string.IsNullOrEmpty(label) == false && items.Count == 1;
+
+            // 區塊職責：酒館一行版（開場宣告／換骰宣告用）。
+            // 物理意義：酒館那則只有一行的空間，而**讀的人要能直接下 op=pick** ——
+            //          所以分組項要把組員的 id 列出來，不能只印組名（只印組名的話，
+            //          想選的人得再跑一次 Cmd 才知道 id，那就是把路指到一半）。
+            public string TavernLine()
+            {
+                string aMark = tooLong ? " ⏳（本場時間不夠）" : "";
+                if (items.Count == 1)
+                {
+                    var a = items[0];
+                    string aFrom = hoisted && !string.IsNullOrEmpty(fromGroup) ? $"（{fromGroup} 組）" : "";
+                    return $"{a.name}{aFrom}　`{a.id}`{aMark}";
+                }
+                var aIds = new List<string>();
+                foreach (var a in items) aIds.Add($"{a.name} `{a.id}`");
+                return $"{label}{aMark} — {string.Join(" ／ ", aIds)}";
+            }
+        }
 
         /// <summary>
         /// 擲骰＋兩層排序（Tim 2026-08-17 拍板 kind 標記方案）。
@@ -557,7 +612,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         ///       「最優先但這場做不完」是自相矛盾的建議。</item>
         /// </list>
         /// </summary>
-        static (List<ActivityInfo> list, string source, bool isLive) RollActivities(string iPersona, int iRemainMinutes)
+        static (List<DiceEntry> list, string source, bool isLive) RollActivities(string iPersona, int iRemainMinutes)
         {
             // 掃描走 UCL_FreeTimeIO 的唯一實作（管理頁共用同一份 —— 兩份掃描器的漂移
             // 症狀是「頁面看到的清單跟實際擲出來的不一樣」，而它不會報錯）。
@@ -565,61 +620,101 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             var aScanned = UCL_FreeTimeIO.ScanActivities();
             int aSharedCount = 0, aProjectCount = 0;
             bool aIsLive = false;
-            var aPriority = new List<ActivityInfo>();
-            var aNormal = new List<ActivityInfo>();
+            var aVisible = new List<ActivityInfo>();
+
+            // ── 第一道：可用性 ＋ 第二道：時間感知（都在活動層判定，與分組無關）──────
             foreach (var a in aScanned)
             {
                 if (!a.enabled) continue;
                 var aGate = UCL_FreeTimeGating.Evaluate(a, iPersona);
                 if (!aGate.visible) continue;                       // 條件不成立 → 隱藏，不佔候選位置
                 if (a.kind == UCL_FreeTimeActivityKind.StreamWatch) aIsLive = true;   // 看得到它就是在播
-                var aInfo = new ActivityInfo
+
+                // ⚠ 時間感知在**脫離之前**判定，因為「時間不夠壓過優先」——
+                //   一件這場做不完的活動不該被拉到最前面當推薦（那是自相矛盾的建議）。
+                //   iRemainMinutes<=0 時不做這道（剩餘算不出來就不假裝知道）。
+                bool aTooLong = iRemainMinutes > 0 && a.minMinutes > 0 && a.minMinutes > iRemainMinutes;
+                aVisible.Add(new ActivityInfo
                 {
                     id = a.id,
-                    name = a.name + (aGate.nameSuffix ?? ""),
+                    name = a.name + (aGate.nameSuffix ?? "")
+                           + (aTooLong ? $" ⏳（建議 ≥{a.minMinutes} 分，剩 {iRemainMinutes} 分 —— 本場時間不夠）" : ""),
                     how = a.how,
                     path = a.path,
                     minMinutes = a.minMinutes,
-                    priority = aGate.priority,
-                };
-                if (aGate.priority) aPriority.Add(aInfo); else aNormal.Add(aInfo);
+                    priority = aGate.priority && !aTooLong,   // 降級了就不該再標成優先（標記要跟實際位置一致）
+                    group = a.group,
+                    tooLong = aTooLong,
+                });
                 if (a.isProjectLayer) aProjectCount++; else aSharedCount++;
             }
 
-            // 兩層各自洗牌 —— 優先層內部也要隨機（拍板：最優先有多項時一樣隨機排序）
-            Shuffle(aPriority);
-            Shuffle(aNormal);
-            var aList = new List<ActivityInfo>(aPriority.Count + aNormal.Count);
-            aList.AddRange(aPriority);
-            aList.AddRange(aNormal);
-
-            // 時間感知：min_minutes > 剩餘 → 移到尾端＋名字標「時間不夠」（量了就要用在輸出上）
-            // ⚠ 這道在兩層排序**之後**：時間不夠壓過優先，否則會推薦一件這場做不完的事。
-            //   下棋不設 min_minutes（每步落盤、沒有時間壓力），所以不受本道影響。
-            if (iRemainMinutes > 0)
+            // ── 第三道：脫離（Tim 2026-08-18）──────────────────────────────
+            // 觸發特殊規則排序的活動**從分組脫離成單獨一項**排最前。
+            // 理由：它此刻特別值得做的理由是它自己的（棋局對手在線／券快滿），
+            //      被組名蓋住就傳達不到 —— 「繪圖」這個組名不會告訴你券超過 100 了。
+            var aHoisted = new List<DiceEntry>();
+            var aRest = new List<ActivityInfo>();
+            foreach (var a in aVisible)
             {
-                var aFit = new List<ActivityInfo>();
-                var aTooLong = new List<ActivityInfo>();
-                foreach (var a in aList)
+                if (a.priority)
                 {
-                    if (a.minMinutes > 0 && a.minMinutes > iRemainMinutes)
-                    {
-                        var aDeco = a;
-                        aDeco.priority = false;   // 降級了就不該再標成優先（標記要跟實際位置一致）
-                        aDeco.name = $"{a.name} ⏳（建議 ≥{a.minMinutes} 分，剩 {iRemainMinutes} 分 —— 本場時間不夠）";
-                        aTooLong.Add(aDeco);
-                    }
-                    else aFit.Add(a);
+                    var aEntry = new DiceEntry { label = a.name, priority = true, hoisted = !string.IsNullOrEmpty(a.group), fromGroup = a.group };
+                    aEntry.items.Add(a);
+                    aHoisted.Add(aEntry);
                 }
-                aFit.AddRange(aTooLong);
-                aList = aFit;
+                else aRest.Add(a);   // 脫離的必須從原組移除 —— 同一件事在骰面出現兩次會被讀成兩件事
             }
 
+            // ── 第四道：分組（未脫離的收成組項；未分組者自成一項）────────────
+            // 用 List 而非 Dictionary 保序：先出現的組先建，之後整批洗牌
+            // （Dictionary 的列舉序是實作細節，靠它就是把隨機性交給不保證的東西）。
+            var aGroups = new List<DiceEntry>();
+            foreach (var a in aRest)
+            {
+                if (string.IsNullOrEmpty(a.group))
+                {
+                    var aSolo = new DiceEntry { label = a.name, priority = false };
+                    aSolo.items.Add(a);
+                    aGroups.Add(aSolo);
+                    continue;
+                }
+                DiceEntry aFound = null;
+                foreach (var g in aGroups) if (g.items.Count > 0 && g.label == a.group) { aFound = g; break; }
+                if (aFound == null)
+                {
+                    aFound = new DiceEntry { label = a.group, priority = false };
+                    aGroups.Add(aFound);
+                }
+                aFound.items.Add(a);
+            }
+
+            // 組項整體時間不夠 ＝ 組內**全員**都不夠。有一個做得成就不該把整組標成做不完。
+            foreach (var g in aGroups)
+            {
+                bool aAllTooLong = g.items.Count > 0;
+                foreach (var a in g.items) if (!a.tooLong) { aAllTooLong = false; break; }
+                g.tooLong = aAllTooLong;
+            }
+
+            // 兩層各自洗牌 —— 優先層內部也要隨機（拍板：最優先有多項時一樣隨機排序）
+            Shuffle(aHoisted);
+            Shuffle(aGroups);
+
+            // 時間不夠的組項降到最尾（與原本的活動層行為一致，只是單位從活動變成項）
+            var aFit = new List<DiceEntry>();
+            var aTail = new List<DiceEntry>();
+            foreach (var g in aGroups) { if (g.tooLong) aTail.Add(g); else aFit.Add(g); }
+
+            var aList = new List<DiceEntry>(aHoisted.Count + aGroups.Count);
+            aList.AddRange(aHoisted);
+            aList.AddRange(aFit);
+            aList.AddRange(aTail);
             return (aList, $"UCL_Core 共用 {aSharedCount} + 專案 {aProjectCount}", aIsLive);
         }
 
         /// <summary>Fisher-Yates（System.Random —— 擲骰不需要密碼學強度）。</summary>
-        static void Shuffle(List<ActivityInfo> ioList)
+        static void Shuffle<T>(List<T> ioList)
         {
             var aRng = new System.Random();
             for (int i = ioList.Count - 1; i > 0; i--)
@@ -637,8 +732,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         static string SessionPath(string iPersona)
             => UCL_SessionService.SessionPath(UCL_SessionKind.FreeTime, iPersona);
 
+        // 路徑委派 UCL_FreeTimePixelState —— 這條組法在 C# 曾有兩份（本檔、Cmd_Sculpture），
+        // 而路徑重造的失敗是靜默的：改一處另一處指舊位置，兩邊都能各自運作、都不報錯。
         static string FreePixelPath(string iPersona)
-            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "Canvas", "freetime", $"{iPersona}.json");
+            => UCL_FreeTimePixelState.StatePath(iPersona);
 
         // 區塊職責：session 檔的讀 / 寫 / 收工 —— 三處都走 typed model，不再逐鍵手搭。
         // 物理意義：鍵名從「字串」變成「欄位」⇒ 打錯是編譯期錯誤，不是讀回預設值。
@@ -706,15 +803,12 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             }
         }
 
+        // 讀額度走 typed model（UCL_FreeTimePixelState.Read）—— 鍵名打錯是編譯期錯誤，
+        // 不是讀回 0；而讀回 0 在這裡長得跟「這場還沒發過額度」一模一樣。
         static (int granted, int used) ReadFreePixelUsage(string iPersona)
         {
-            try
-            {
-                if (!File.Exists(FreePixelPath(iPersona))) return (0, 0);
-                var aFt = JsonData.ParseJson(File.ReadAllText(FreePixelPath(iPersona), Encoding.UTF8));
-                return aFt == null ? (0, 0) : (ReadInt(aFt, "granted"), ReadInt(aFt, "used"));
-            }
-            catch (Exception) { return (0, 0); }
+            var aGrant = UCL_FreeTimePixelState.Read(iPersona);
+            return aGrant == null ? (0, 0) : (aGrant.granted, aGrant.used);
         }
 
         // ===========================================================
@@ -853,7 +947,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
         // 區塊職責：優先層的一行說明（開場宣告／換骰宣告共用一份 —— 兩處各寫一次，
         //          遲早只有一邊跟著改）。物理意義：優先**不是指定**，仍是參考。
-        static void AppendPriorityNote(StringBuilder ioBody, List<ActivityInfo> iList, bool iIsLive)
+        static void AppendPriorityNote(StringBuilder ioBody, List<DiceEntry> iList, bool iIsLive)
         {
             int aPri = 0;
             foreach (var a in iList) if (a.priority) aPri++;
@@ -863,16 +957,38 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 : $"⭐ 優先層 {aPri} 項排在前面（條件成立才會進來；層內仍隨機、不強制）");
         }
 
-        static void AppendDiceSection(StringBuilder ioR, List<ActivityInfo> iList, string iSource, bool iIsLive)
+        // 區塊職責：回傳檔的骰面段 —— 項（分組／單獨）在外層，具體活動在內層。
+        // 物理意義：**要能直接下 op=pick 的東西是具體活動的 id**，所以組項一定要把組員的
+        //          id / how / md 路徑列出來。只印組名的骰面等於把路指到一半 ——
+        //          讀的人還得再跑一次 Cmd 才知道能填什麼，而那正是這層要消滅的斷點。
+        // 數值影響：純輸出。組員數 1 的項（未分組活動、脫離出來的單獨項）不重複印一層縮排。
+        static void AppendDiceSection(StringBuilder ioR, List<DiceEntry> iList, string iSource, bool iIsLive)
         {
             ioR.AppendLine("## dice（兩層隨機排序，僅供參考 — 自由意志優先；無明確意圖從前 3 挑）");
             ioR.AppendLine("- ⭐＝優先層（條件成立：直播中／棋局對手也在自由時間）；層內仍隨機。");
             ioR.AppendLine("- 做不成的活動**已隱藏**（例：沒開播時不列「觀看直播」）—— 清單長度會隨當下狀況變動，那是正常的。");
+            ioR.AppendLine("- **同組收成同一項**；觸發特殊規則的活動會**脫離分組成單獨一項**排最前（理由跟著印在它旁邊）。");
+            ioR.AppendLine("- `op=pick` 要填的是**具體活動 id**（下面反引號裡那個），不是組名。");
             for (int i = 0; i < iList.Count; i++)
             {
-                var a = iList[i];
-                ioR.AppendLine($"{i + 1}. {(a.priority ? "⭐ " : "")}**{a.name}**{(string.IsNullOrEmpty(a.how) ? "" : $" — {a.how}")}");
-                ioR.AppendLine($"   （md: `{a.path}`）");   // 掃描端傳遞實路徑，不讓 agent 拿活動名反推雙層目錄
+                var aEntry = iList[i];
+                if (aEntry.items.Count == 1)
+                {
+                    var a = aEntry.items[0];
+                    string aFrom = aEntry.hoisted && !string.IsNullOrEmpty(aEntry.fromGroup)
+                        ? $"（⭐ 自「{aEntry.fromGroup}」組脫離 —— 此刻特別值得做）" : "";
+                    ioR.AppendLine($"{i + 1}. {(aEntry.priority ? "⭐ " : "")}**{a.name}**　`{a.id}`{aFrom}"
+                                   + $"{(string.IsNullOrEmpty(a.how) ? "" : $" — {a.how}")}");
+                    ioR.AppendLine($"   （md: `{a.path}`）");   // 掃描端傳遞實路徑，不讓 agent 拿活動名反推雙層目錄
+                    continue;
+                }
+                ioR.AppendLine($"{i + 1}. {(aEntry.priority ? "⭐ " : "")}**{aEntry.label}**"
+                               + $"（{aEntry.items.Count} 項{(aEntry.tooLong ? "，本組全員本場時間不夠" : "")}）");
+                foreach (var a in aEntry.items)
+                {
+                    ioR.AppendLine($"   - `{a.id}` **{a.name}**{(string.IsNullOrEmpty(a.how) ? "" : $" — {a.how}")}");
+                    ioR.AppendLine($"     （md: `{a.path}`）");
+                }
             }
             ioR.AppendLine($"- [清單來源: {iSource}]");
         }

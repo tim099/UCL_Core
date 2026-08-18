@@ -34,6 +34,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ProcessAdmin.Desc" => "檢視與處置 C# 開出去的外部 process（PID + 名稱 + 啟動時間三重身分驗證，防誤殺、防屍潮）。",
                 "ToolBox.SessionAdmin" => "🗂 Session 管理",
                 "ToolBox.SessionAdmin.Desc" => "各 persona 的 session 現況（自由時間…）。標出超時未收工、active 仍為 true 的殘留。",
+                "ToolBox.FreeTimeAdmin" => "🎲 自由時間管理",
+                "ToolBox.FreeTimeAdmin.Desc" => "骰面上的活動設定（啟用／分組／建議時間／特殊邏輯／執行提示）—— 就地改寫活動 md 的 frontmatter，不另存 override。",
                 "ToolBox.LibraryManage" => "圖書館管理",
                 "ToolBox.LibraryManage.Desc" => "管理既有 Books 與圖書館資料。",
                 "ToolBox.ReadingNotesManage" => "閱讀心得管理",

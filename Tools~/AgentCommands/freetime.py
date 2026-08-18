@@ -146,6 +146,11 @@ DEFAULT_ACTIVITIES = [
 ]
 
 
+# ⚠ 分組（frontmatter `group`）在**本工具與 C# 兩端的處理刻意不同**，這是宣告過的差異、不是漂移：
+#   - C# `Cmd_FreeTime`（真正的骰面）：**同組收成骰面的同一項**，觸發特殊規則的活動脫離成單獨一項。
+#   - 本工具 shuffle（純參考擲骰，不進場不發像素）：**活動層逐項列出**，只把組名印成行首 `[組名]`。
+#   收合邏輯只在 C# 一份 —— 這裡再實作一次，兩邊的排序遲早會對同一份 md 講出不同的話，
+#   而那種不一致不會報錯（症狀是「參考骰跟真骰面對不上」，而人會以為是隨機性）。
 # 區塊職責: 極簡 frontmatter 解析 (flat key: value, 不依賴 PyYAML)
 # 物理意義: 活動 md 的機讀層只需 4 個 flat 欄位 (id/name/how/enabled), 不需要完整 YAML;
 #          value 內含冒號 OK (只 split 第一個 ":"); enabled 認 true/false (大小寫不拘)。
@@ -191,6 +196,7 @@ def _scan_dir(folder: Path):
             "how": meta.get("how", ""),
             "enabled": str(meta.get("enabled", "true")).lower() != "false",
             "kind": (meta.get("kind", "") or "Default").strip(),
+            "group": (meta.get("group", "") or "").strip(),
             "min_minutes": _int_or_zero(meta.get("min_minutes", "")),
             "_path": md,
         }
@@ -208,7 +214,7 @@ def _int_or_zero(val) -> int:
 # 物理意義: 共用層 = 跨專案通用活動 (跟著 UCL_Core 走); 專案層 = 該專案限定活動 —
 #          新增活動 = 丟一個 md 進對應資料夾, freetime.py 即自動同步 (單一事實源)。
 #          同 id 時專案層覆蓋共用層 — 含 enabled:false 的「停用覆蓋」(專案可關掉不適用的共用活動,
-#          e.g. 沒 canvas infra 的專案關 canvas-draw); 故 enabled 過濾必須在 merge **之後**。
+#          e.g. 沒 canvas infra 的專案關 canvas-2d); 故 enabled 過濾必須在 merge **之後**。
 #          兩層都空 → fallback DEFAULT_ACTIVITIES。
 # 數值影響: 回傳已過濾 enabled=true 的清單 (按 id 排序, 穩定) + 來源字串 (給輸出標註,
 #          計數為 enabled 後的有效活動數)。
@@ -432,7 +438,9 @@ def op_shuffle(args):
     if not args.persona:
         print("  ℹ 沒帶 --persona → **棋局優先判定跳過**（不知道是誰的棋局）")
     for i, a in enumerate(shuffled, 1):
-        line = f"  {i}. {'⭐ ' if a.get('_priority') else ''}{a.get('name', a.get('id', '?'))}"
+        grp = a.get("group") or ""
+        line = (f"  {i}. {'⭐ ' if a.get('_priority') else ''}"
+                f"{f'[{grp}] ' if grp else ''}{a.get('name', a.get('id', '?'))}  `{a.get('id','?')}`")
         if args.verbose and a.get("how"):
             line += f" — {a['how']}"
         print(line)
@@ -517,7 +525,9 @@ def op_list(args):
     activities, source = load_activities()
     print(f"📋 自由時間活動清單 ({len(activities)} 項 enabled | 來源: {source}):")
     for i, a in enumerate(activities, 1):
-        print(f"  {i}. [{a.get('id', '?')}] {a.get('name', '?')} — {a.get('how', '')}")
+        grp = a.get("group") or ""
+        print(f"  {i}. [{a.get('id', '?')}]{f' ({grp})' if grp else ''} "
+              f"{a.get('name', '?')} — {a.get('how', '')}")
     return 0
 
 

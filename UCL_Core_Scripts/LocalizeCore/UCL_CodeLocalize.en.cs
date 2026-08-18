@@ -34,6 +34,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ProcessAdmin.Desc" => "Inspect and manage external processes spawned from C# (identity verified by PID + name + start time — prevents wrong kills and zombie pile-ups).",
                 "ToolBox.SessionAdmin" => "🗂 Session Admin",
                 "ToolBox.SessionAdmin.Desc" => "Current sessions per persona (free time...). Marks stale ones that are still active past their end time.",
+                "ToolBox.FreeTimeAdmin" => "🎲 Free Time Admin",
+                "ToolBox.FreeTimeAdmin.Desc" => "Activity settings behind the dice roll (enabled / group / suggested minutes / special rule / how-to). Edits the activity md frontmatter in place — no override file.",
                 "ToolBox.LibraryManage" => "Library Manager",
                 "ToolBox.LibraryManage.Desc" => "Manage existing Books and library data.",
                 "ToolBox.ReadingNotesManage" => "Reading Notes Manager",

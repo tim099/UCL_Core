@@ -189,13 +189,21 @@ run_cmd.py --persona <me> run FreeTimeActivity --arg op=done --arg persona=<P> \
 | `enabled` | `false` = 不進骰面（**停用要留下停用的理由，那是資料不是垃圾**） |
 | `min_minutes` | 建議所需分鐘；0＝不做時間感知排序 |
 | `kind` | 特殊邏輯標記；**認不得的值不靜默 Default**，會在骰面與管理頁顯形 |
+| `group` | 分組（2026-08-18）；同組**收成骰面的同一項**，觸發特殊規則者**脫離分組**單獨排最前。空＝不分組 |
 
 - `tool` / `steps` 是 **additive**（2026-08-18 新增）：舊 md 沒填就是「還沒接」，不是壞掉
 - 掃描器**跳過 `_` 開頭的檔**（`_README.md` 等）
 - 雙層：共用層（UCL_Core）＋專案層，**同 id 專案覆蓋**
 
-已接代跑：`chess` → `chess.py`／`canvas-draw` → `canvas.py`／`reading`・`writing` → `library.py`。
-未接：`knowledge`（走 `Cmd_NoteLesson`，是 Cmd 不是腳本）／`self-writing`／`gaming`／`stream-watch`。
+已接代跑：`chess` → `chess.py`／`canvas-2d` → `canvas.py`／`reading`・`book-writing` → `library.py`。
+未接：`lesson-log`（走 `Cmd_NoteLesson`，是 Cmd 不是腳本）／`glossary-entry`／`doc-reflection`／
+`letter-to-self`／`constitution`／`sculpt-3d`（走 `Cmd_Sculpture`）／`trpg`／
+`tavern-creative`／`stream-watch`。
+
+> ⚠ **2026-08-18 拆分後這份清單才講得出真話**：在那之前 `tool` / `steps` 掛在**組別** md 上，
+> 於是「`canvas-draw` 已接代跑」是對的但不完整 —— 組裡的 3D 分支走 `Cmd_Sculpture`，
+> **在代跑路徑上根本不存在**，而那個缺席沒有任何地方會喊。
+> 一份 md ＝ 一件具體活動之後，「接了沒」才是一個對得起 id 的答案。
 
 ### `social-chat` 已停用並併進換骰流程（2026-08-18）
 
@@ -252,8 +260,16 @@ run_cmd.py --persona <me> run FreeTimeActivity --arg op=done --arg persona=<P> \
 
 工作記憶主題 **`freetime-cmd-flow`**（`work_memory.py read --topic freetime-cmd-flow --with-links`）。
 
-1. **`UCL_FreeTimeAdminPage`** —— 未開始。形狀照 `UCL_SessionAdminPage` ＋ `UCL_ProcessAdminPage`，
-   入口放 `UCL_ToolBoxPage`（四語系 key 都要加）。⚠ `WrapLabelStyle` 不是基底成員，各頁自己定。
-2. **`knowledge` / `self-writing` 的 `op=step`** —— 需要 `tool: cmd:<Type>` 形式改成
-   in-process 呼叫 handler。⚠ **「一步」的粒度尚未決定**（寫一段＝一次 append？一次 Cmd？）。
-3. `gaming` / `stream-watch` 未接 `tool` / `steps`（低優先）。
+1. ~~**`UCL_FreeTimeAdminPage`** —— 未開始~~ ⇒ **這條交接寫錯了**：該頁自 `92a1b6f` 就存在，
+   `1c676fd` 還又改過它。2026-08-18 gura 實際補的是**缺的那幾格**：分組編輯、`op=pick` 預覽、
+   活動下拉改用既有 `UCL_GUILayout.PopupGrouped`、ToolBox 入口 ＋ 四語系 key。
+   🩸 教訓與交接檔最後那句同形，只是反向：**「⛔ 未開始」也要去讀產物才算數。**
+2. **`lesson-log` / `glossary-entry` / `doc-reflection` / `letter-to-self` / `constitution`
+   的 `op=step`** —— 需要 `tool: cmd:<Type>` 形式改成 in-process 呼叫 handler。
+   ⚠ **「一步」的粒度尚未決定**（寫一段＝一次 append？一次 Cmd？）。
+   （拆分後這幾個各自是具體活動，`tool` 可以一對一掛 —— 這是拆分換來的直接好處。）
+3. `sculpt-3d`（走 `Cmd_Sculpture`）／`trpg`／`tavern-creative`／`stream-watch`
+   未接 `tool` / `steps`（低優先）。
+4. **免費像素併入券系統為期間限定券**（Tim 2026-08-18 拍板方案乙）—— 券 ledger 長出 batches
+   與 expires_at、`balance` 改推導不落檔、限時券與永久券**讀取路徑分開**、
+   永久券 > 100 時繪圖活動進優先層。接縫是 `UCL_FreeTimePixelState`。

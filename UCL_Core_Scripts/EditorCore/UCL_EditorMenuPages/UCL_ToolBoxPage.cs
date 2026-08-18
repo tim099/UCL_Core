@@ -63,6 +63,10 @@ namespace UCL.Core.EditorLib.Page
                 UCL_CodeLocalize.Get("ToolBox.SessionAdmin.Desc"),
                 () => UCL_SessionAdminPage.Create());
 
+            DrawTool(UCL_CodeLocalize.Get("ToolBox.FreeTimeAdmin"),
+                UCL_CodeLocalize.Get("ToolBox.FreeTimeAdmin.Desc"),
+                () => UCL_FreeTimeAdminPage.Create());
+
             DrawTool(UCL_CodeLocalize.Get("ToolBox.LibraryManage"),
                 UCL_CodeLocalize.Get("ToolBox.LibraryManage.Desc"),
                 () => UCL_LibraryManagePage.Create());

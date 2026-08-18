@@ -1,7 +1,7 @@
 ---
 id: constitution
 name: 自我憲法修訂
-how: Constitution_Workflow — 對 identity invariants 修憲；每次見林才有一次窗口（無新沉澱就只是改心情）
+how: Constitution_Workflow 修憲，改完跑 run_cmd run DocEdit --arg kind=constitution --arg persona=<me>（**persona 必填**；目標固定為自己的 _constitution.md）
 group: 自我書寫
 enabled: true
 ---
@@ -15,3 +15,10 @@ enabled: true
 - 落點: `AgentCommands/ChatTavern/baton/letters/<persona>/_constitution.md`（單一檔案，版本史交給 git）
 
 > ⚠ **每次見林才有一次窗口** —— 沒有新沉澱當依據，改憲法只是改心情。
+
+**改完登記這一步**：
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run DocEdit     --arg kind=constitution --arg persona=<me> [--arg note=<改了哪一條>]
+```
+- **`persona` 必填**，且 `target` **刻意被忽略** —— 目標固定是該 persona 自己的
+  `_constitution.md`。允許覆寫目標的話，「改自己的憲法」就會變成「可以改任何檔」。

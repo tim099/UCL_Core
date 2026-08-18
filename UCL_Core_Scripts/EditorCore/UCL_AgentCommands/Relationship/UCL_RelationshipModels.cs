@@ -85,18 +85,27 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
         /// <summary>正文＝reason（人讀的那句）。</summary>
         public string reason = "";
 
-        // 區塊職責：事件的身分指紋 —— **同一筆事件不論來自哪個專案，算出來逐字元相同**。
-        // 物理意義：去重因此變成「檔案已存在就跳過」，不需要任何比對邏輯，
+        // ===========================================================
+        // 區塊職責：事件的身分 —— **就是它發生的時刻**，檔名不含內容雜湊（Tim 2026-08-18）。
+        //
+        // 物理意義：去重因此是「檔案已存在就跳過」，不需要任何比對邏輯，
         //          也就沒有比對邏輯會漏掉的可能（Plan §2.2）。
-        // 數值影響：純函式。實測 425 筆跨專案共同事件的 (at, reason) 完全一致、0 筆撞號。
-        public string FileName() => FileNameOf(at, reason);
+        //
+        // ⭐ 為什麼不含內容雜湊 —— 這不只是短一點：
+        //   檔名含 hash ⇒ **檔名依賴內容** ⇒ 改一個錯字就是換一個身分
+        //   （新檔案，舊的還在 ⇒ 同一件事在帳上變兩筆）。
+        //   檔名只有時間 ⇒ 身分是「什麼時候發生的」⇒ 修 reason 是就地編輯，帳維持一筆。
+        //   **對事件帳本來說後者才是對的語意。**
+        //   附帶好處：遷移寫出來的檔名與日後即時寫入的格式完全一致，不必解釋兩套。
+        //
+        // 🩸 量測支撐（兩專案全掃）：同一 (persona,target) 內 at 重複 **0 筆**；
+        //   同一 persona 跨 target 同時戳 0 筆；跨專案同 (persona,target,at) 但 reason 不同 0 筆。
+        //   ⚠ 但「實測不會撞」不等於「撞了可以靜默」—— 撞號的處置見 UCL_RelationshipIO.WriteEvent。
+        // ===========================================================
+        public string FileName() => FileNameOf(at);
 
-        public static string FileNameOf(string iAt, string iReason)
-        {
-            string aTs = (iAt ?? "").Replace("-", "").Replace(":", "").Replace(".", "");
-            // 指紋刻意含 at：只用 reason 的話，同一句話在不同時間發生會被誤判成同一件事
-            return aTs + "-" + Sha1Hex((iAt ?? "") + "\n" + (iReason ?? "").Trim(), 8) + ".md";
-        }
+        public static string FileNameOf(string iAt)
+            => (iAt ?? "").Replace("-", "").Replace(":", "").Replace(".", "") + ".md";
 
         public static string Sha1Hex(string iText, int iLen)
         {

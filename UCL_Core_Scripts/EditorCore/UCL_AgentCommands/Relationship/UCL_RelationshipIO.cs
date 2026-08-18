@@ -41,15 +41,30 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
         }
 
         // ===========================================================
-        // 區塊職責：寫一筆事件 —— **檔案已存在就跳過**，這就是全部的去重邏輯。
-        // 物理意義：檔名 = at + sha1(at+reason)，同一筆事件不論來自哪個專案都算出同一個名字
-        //          ⇒ 去重是檔案系統的性質，不是一段要維護的比對程式碼（Plan §2.2）。
-        // 數值影響：回 true = 真的寫了；false = 已存在（重複）。dry run 只問不寫。
+        // 區塊職責：寫一筆事件 —— 檔名 = 事件發生的時刻，**同名就是同一筆**。
+        // 物理意義：去重是檔案系統的性質，不是一段要維護的比對程式碼（Plan §2.2）。
+        //
+        // ⚠ 檔名改成純 at 之後（Tim 2026-08-18），「同名必同內容」不再由檔名保證，
+        //   而是由資料性質保證（實測兩專案 0 撞號）。**實測不會撞 ≠ 撞了可以靜默**：
+        //   同名時比對 reason —— 相同才算重複跳過；不同就 **另存 `-b` ＋ LogError**，
+        //   兩筆都留著讓人判斷。⇒ 最壞情況是多一個檔要人看，不是少一筆帳沒人知道。
+        //
+        // 數值影響：回 true = 真的寫了；false = 已存在且內容相同（重複）。dry run 只問不寫。
         // ===========================================================
         public static bool WriteEvent(UCL_RelationshipEvent e, bool iDryRun, out string oPath)
         {
             oPath = Path.Combine(EventsDir(e.persona, e.target), e.FileName());
-            if (File.Exists(oPath)) return false;
+            if (File.Exists(oPath))
+            {
+                string aOldReason = ReadBody(oPath);
+                if (string.Equals(aOldReason, (e.reason ?? "").Trim(), StringComparison.Ordinal))
+                    return false;                       // 真重複 —— 遷移的正常路徑
+                // 同時戳但內容不同：不覆蓋、不丟棄，兩筆並存並且大聲喊
+                oPath = oPath.Substring(0, oPath.Length - 3) + "-b.md";
+                Debug.LogError($"[Relationship] ⚠ 同時戳但內容不同：{e.persona}→{e.target} @ {e.at}"
+                    + $"　⇒ 另存 {Path.GetFileName(oPath)}，兩筆都保留，請人工判斷哪一筆是對的。");
+                if (File.Exists(oPath)) return false;
+            }
             if (iDryRun) return true;
             Directory.CreateDirectory(Path.GetDirectoryName(oPath));
             var sb = new StringBuilder();
@@ -186,6 +201,23 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
                 aOut.Add(e);
             }
             return aOut;
+        }
+
+        // 讀一個事件檔的正文（＝reason）。給撞號比對用。
+        static string ReadBody(string iPath)
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                int aDash = 0;
+                foreach (var ln in File.ReadAllLines(iPath, Encoding.UTF8))
+                {
+                    if (aDash < 2 && ln.StartsWith("---", StringComparison.Ordinal)) { aDash++; continue; }
+                    if (aDash >= 2) sb.Append(ln).Append('\n');
+                }
+                return sb.ToString().Trim();
+            }
+            catch { return ""; }
         }
 
         public static int CountOpinions(string iPersona, string iTarget)
@@ -339,7 +371,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
         public class MigrateReport
         {
             public int sources, pairs, eventsWritten, eventsSkipped, opinionsWritten, opinionsSkipped;
-            public int currentsWritten, openingBalances, eventsNoAt;
+            public int currentsWritten, openingBalances, eventsNoAt, caseCollisions;
             public List<string> notes = new();
         }
 
@@ -379,6 +411,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
             sb.Append($"事件：寫入 {r.eventsWritten}　跳過（已存在＝重複）{r.eventsSkipped}").Append(NL_);
             sb.Append($"看法：寫入 {r.opinionsWritten}　跳過 {r.opinionsSkipped}").Append(NL_);
             sb.Append($"_current.md 寫入 {r.currentsWritten}　期初餘額 {r.openingBalances} 筆").Append(NL_);
+            if (r.caseCollisions > 0)
+                sb.Append($"⚠ **target 名大小寫衝突 {r.caseCollisions} 組** —— 明細見下，"
+                          + "未處理的話 Windows 會靜默合併、Linux 不會。").Append(NL_);
             foreach (var n in r.notes) sb.Append("⚠ ").Append(n).Append(NL_);
 
             // 落檔 —— 遷移是一次性的破壞性動作，GUI 上的數字關掉視窗就沒了。
@@ -433,6 +468,35 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
                     {
                         m.vector = r.vector; m.surface_score = r.surface_score;
                     }
+                }
+            }
+
+            // ===========================================================
+            // 區塊職責：target 名大小寫衝突偵測。
+            // 物理意義：舊資料同一位 persona 底下同時有 `Tim` 與 `tim`（LY 5 組 / Bar 5 組 / 217 筆事件）。
+            //          Windows 檔案系統大小寫不敏感 ⇒ 兩者**靜默合併**進同一個資料夾；
+            //          Linux/macOS 則會是兩個資料夾 ⇒ **同一份程式在不同平台產生不同的資料**。
+            //          合併多半是對的（那就是同一個人），但它必須是**被決定的**，
+            //          不是被檔案系統決定的。⇒ 這裡只負責讓它顯形。
+            // 數值影響：純偵測，不改任何寫入行為；數字進報告、明細進 notes。
+            // ===========================================================
+            {
+                var aByLower = new Dictionary<string, List<string>>();
+                foreach (var k in aMerged.Keys)
+                {
+                    int bar = k.IndexOf('|');
+                    string pn = k.Substring(0, bar), tg = k.Substring(bar + 1);
+                    string lk = pn + "|" + tg.ToLowerInvariant();
+                    if (!aByLower.TryGetValue(lk, out var lst)) aByLower[lk] = lst = new List<string>();
+                    lst.Add(tg);
+                }
+                foreach (var kv2 in aByLower)
+                {
+                    if (kv2.Value.Count <= 1) continue;
+                    aRep.caseCollisions++;
+                    string pn = kv2.Key.Substring(0, kv2.Key.IndexOf('|'));
+                    aRep.notes.Add($"target 名只差大小寫：{pn} → {string.Join(" / ", kv2.Value)}"
+                        + "　⇒ Windows 上會合併進同一個資料夾（Linux 不會）。請先決定要不要合併。");
                 }
             }
 

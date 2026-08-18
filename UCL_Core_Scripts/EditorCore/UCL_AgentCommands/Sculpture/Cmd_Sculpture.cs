@@ -525,8 +525,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
         // ── 免費像素（Canvas/freetime/<P>.json；schema 對齊 canvas.py load_freetime／Cmd_FreeTime）──
         static string FreePixelPath(string iPersona)
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, "Canvas", "freetime", $"{iPersona}.json");
+        // 路徑委派 UCL_SessionService —— 這條組法曾在三個檔各寫一份，改一處另兩處指舊位置且不報錯。
         static string FreeSessionPath(string iPersona)
-            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "FreeTime", "sessions", $"{iPersona}.json");
+            => UCL_SessionService.SessionPath(UCL_SessionKind.FreeTime, iPersona);
 
         static int FreePixelsAvailable(string iPersona)
         {

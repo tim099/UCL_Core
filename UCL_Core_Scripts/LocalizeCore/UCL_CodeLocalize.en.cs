@@ -32,6 +32,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ScreenStream.Desc" => "Console for the screen recording / STT / OCR daemon (watch-along streams, media transcription).",
                 "ToolBox.ProcessAdmin" => "Process Admin",
                 "ToolBox.ProcessAdmin.Desc" => "Inspect and manage external processes spawned from C# (identity verified by PID + name + start time — prevents wrong kills and zombie pile-ups).",
+                "ToolBox.SessionAdmin" => "🗂 Session Admin",
+                "ToolBox.SessionAdmin.Desc" => "Current sessions per persona (free time...). Marks stale ones that are still active past their end time.",
                 "ToolBox.LibraryManage" => "Library Manager",
                 "ToolBox.LibraryManage.Desc" => "Manage existing Books and library data.",
                 "ToolBox.ReadingNotesManage" => "Reading Notes Manager",

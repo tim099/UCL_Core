@@ -65,6 +65,23 @@ description: |
 
 ## 規範本體（本 skill 只是指路，細節不在這裡重抄）
 
+> [!IMPORTANT]
+> ## 🧱 JSON 一律定義具體 class 並繼承 `UnityJsonSerializable`（Tim 2026-08-18 拍板）
+>
+> 已知 schema 不准用裸 `JsonData` 逐鍵讀寫 —— 鍵名打錯不會編譯錯、也不會執行錯，
+> **只會讀回預設值**，而讀回預設值通常長得跟「這筆資料不存在」一模一樣。
+> `JsonData` 只留在邊界層（解析外部 JSON / 保存未知欄位 / migration），且要在註解寫明理由。
+>
+> 換成 typed model 時**有三個坑會讓 wire format 靜默改變**（編譯過、看起來對）：
+> **① 欄位名＝JSON 鍵名**（`FieldNameUnityVer` 只脫 `m_`）⇒ 沿用舊鍵名時刻意不走 `m_PascalCase`，
+> 並在註解寫明；**② `bool` 會被寫成 `"True"`/`"False"` 字串**，C# 載入端雙接看不出來，
+> 但 python 讀到的 `"False"` 是 **truthy** ⇒ 有非 C# 讀取端時要 `override SerializeToJson()`
+> 把 bool 寫回原生；**③ 驗收要拿真實舊檔 round-trip 比對**（`Cmd_Invoke` 可直接做），
+> 不是編譯過就算 —— 那隻 bool 正是在「recompile 回報 0 錯」之後才被 round-trip 抓到的。
+>
+> 完整血證與範例 → `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md`「換成 typed model 時的三個坑」。
+> 參考實作：`UCL_SessionBase` / `UCL_FreeTimeSession` / `HSceneSpineImportConfig`。
+
 | 主題 | 文件 |
 |---|---|
 | C# 撰寫規範（設定/JSON、字串 key、**外部 Process**） | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |

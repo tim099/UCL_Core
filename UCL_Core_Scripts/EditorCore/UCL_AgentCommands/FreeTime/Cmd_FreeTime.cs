@@ -108,9 +108,9 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             // 守衛③：不疊開 —— 既有 active 且未到期 → blocked；已到期殘留 → 自動收掉（stale）
             var aOld = LoadSession(iPersona);
-            if (aOld != null && ReadBool(aOld, "active"))
+            if (aOld != null && aOld.active)
             {
-                DateTime? aOldEnd = ParseIsoLocal(ReadStr(aOld, "end_ts"));
+                DateTime? aOldEnd = UCL_FreeTimeSession.ParseIsoToLocal(aOld.end_ts);
                 if (aOldEnd.HasValue && aNow <= aOldEnd.Value)
                 {
                     aR.AppendLine("## blocked");
@@ -121,21 +121,23 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 }
                 // 到期殘留：自動收工（不宣告 —— 那場的收工時刻早已過去，補宣告只會誤導時間軸）
                 CloseSession(iPersona, aOld, "expired-stale-on-start", out _);
-                aR.AppendLine($"- ℹ 偵測到過期殘留 session（{ReadStr(aOld, "session_id")}）已自動收掉，開新場。");
+                aR.AppendLine($"- ℹ 偵測到過期殘留 session（{aOld.session_id}）已自動收掉，開新場。");
             }
 
             // session 註冊（C# 唯一寫入端；canvas.py 讀本檔判免費像素 —— schema 對齊義務）
             string aSessionId = $"ft-{DateTime.UtcNow:yyyyMMddTHHmmssZ}-{iPersona}";
-            var aSession = new JsonData();
-            aSession["persona"] = new JsonData(iPersona);
-            aSession["session_id"] = new JsonData(aSessionId);
-            aSession["start_ts"] = new JsonData(UCL_AwakeningService.NowIso());
-            aSession["end_ts"] = new JsonData(aUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
-            aSession["until_local"] = new JsonData(aUntil.ToString("yyyy-MM-dd HH:mm"));
-            aSession["rounds"] = new JsonData(0);
-            aSession["active"] = new JsonData(true);
-            aSession["end_reason"] = new JsonData("");
-            AtomicWrite(SessionPath(iPersona), aSession.ToJsonBeautify());
+            var aSession = new UCL_FreeTimeSession
+            {
+                persona = iPersona,
+                session_id = aSessionId,
+                start_ts = UCL_AwakeningService.NowIso(),
+                end_ts = aUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                until_local = aUntil.ToString("yyyy-MM-dd HH:mm"),
+                rounds = 0,
+                active = true,
+                end_reason = "",
+            };
+            SaveSession(iPersona, aSession);
 
             // 免費像素發放：整份覆寫額度欄（per-session 清零 —— 拍板②），history 保留供回溯
             GrantFreePixels(iPersona, aSessionId, out int aPrevForfeit);
@@ -189,7 +191,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine();
 
             var aSession = LoadSession(iPersona);
-            if (aSession == null || !ReadBool(aSession, "active"))
+            if (aSession == null || !aSession.active)
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine("- reason: 沒有進行中的自由時間 session");
@@ -199,7 +201,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             }
 
             DateTime aNow = DateTime.Now;
-            DateTime aUntil = ParseIsoLocal(ReadStr(aSession, "end_ts")) ?? aNow;
+            DateTime aUntil = UCL_FreeTimeSession.ParseIsoToLocal(aSession.end_ts) ?? aNow;
             bool aExpired = aNow > aUntil;
 
             if (iEarlyEnd || aExpired)
@@ -233,9 +235,8 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             }
 
             // 未到期：輪次 +1、重擲骰（時間感知）、宣告、回傳新骰面＋剩餘時間＋像素餘額
-            int aRound = ReadInt(aSession, "rounds") + 1;
-            aSession["rounds"] = new JsonData(aRound);
-            AtomicWrite(SessionPath(iPersona), aSession.ToJsonBeautify());
+            int aRound = ++aSession.rounds;
+            SaveSession(iPersona, aSession);
 
             double aRemainSec = Math.Max(0, (aUntil - aNow).TotalSeconds);
             int aRemain = (int)(aRemainSec / 60);
@@ -598,34 +599,30 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // ===========================================================
         // 區塊：session state / 免費像素 state 讀寫（canvas.py 對齊端 —— 改欄位要兩端同步）
         // ===========================================================
+        // 路徑委派 UCL_SessionService —— 這條組法曾在三個檔各寫一份
+        // （本檔、UCL_FreeTimeGating、Cmd_Sculpture），改一處另兩處指舊位置且不報錯。
         static string SessionPath(string iPersona)
-            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "FreeTime", "sessions", $"{iPersona}.json");
+            => UCL_SessionService.SessionPath(UCL_SessionKind.FreeTime, iPersona);
 
         static string FreePixelPath(string iPersona)
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, "Canvas", "freetime", $"{iPersona}.json");
 
-        static JsonData LoadSession(string iPersona)
-        {
-            try
-            {
-                string aPath = SessionPath(iPersona);
-                if (!File.Exists(aPath)) return null;
-                return JsonData.ParseJson(File.ReadAllText(aPath, Encoding.UTF8));
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[FreeTime] session 檔讀取失敗（視為無 session）: {e.Message}");
-                return null;
-            }
-        }
+        // 區塊職責：session 檔的讀 / 寫 / 收工 —— 三處都走 typed model，不再逐鍵手搭。
+        // 物理意義：鍵名從「字串」變成「欄位」⇒ 打錯是編譯期錯誤，不是讀回預設值。
+        //          （讀回預設值在這裡長得跟「這個人沒有 session」一模一樣，那是最難查的一種。）
+        // 數值影響：JSON 逐鍵與舊格式相同（欄位名＝鍵名，見 UCL_FreeTimeSession 的命名警告），
+        //          既有檔不需遷移，python 端讀 active / end_ts 不受影響。
+        static UCL_FreeTimeSession LoadSession(string iPersona)
+            => UCL_SessionService.Load<UCL_FreeTimeSession>(UCL_SessionKind.FreeTime, iPersona);
 
-        static void CloseSession(string iPersona, JsonData ioSession, string iReason, out int oRounds)
+        static void SaveSession(string iPersona, UCL_FreeTimeSession iSession)
+            => UCL_SessionService.Save(UCL_SessionKind.FreeTime, iPersona, iSession);
+
+        /// <summary>收工。rounds 是自由時間專屬的，所以由本檔取出回報；翻旗標與記時刻走 service。</summary>
+        static void CloseSession(string iPersona, UCL_FreeTimeSession ioSession, string iReason, out int oRounds)
         {
-            oRounds = ReadInt(ioSession, "rounds");
-            ioSession["active"] = new JsonData(false);
-            ioSession["end_reason"] = new JsonData(iReason ?? "");
-            ioSession["ended_at"] = new JsonData(UCL_AwakeningService.NowIso());
-            AtomicWrite(SessionPath(iPersona), ioSession.ToJsonBeautify());
+            oRounds = ioSession.rounds;
+            UCL_SessionService.Close(UCL_SessionKind.FreeTime, iPersona, ioSession, iReason);
         }
 
         /// <summary>發放本場免費像素：額度欄整份覆寫（per-session 清零），history 保留。回傳上場作廢顆數。</summary>

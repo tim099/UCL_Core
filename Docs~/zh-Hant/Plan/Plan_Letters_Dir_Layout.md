@@ -246,13 +246,31 @@ FreeTime 那 5 個已完成（§0）。**這一節是給接手的人照著跑的
 它還有一個前置條件 —— **要嘛舊殘影清掉，要嘛判準改成內容自陳。** 本案選後者：
 別人的目錄不該由我來清，而自陳對「還沒清」與「永遠不清」都成立。
 
-## 8.8 還沒做的一件事（建議，未施工）
+## 8.8 機械閘：`check_letters_layout.py`（✅ 2026-08-18 已施工）
 
-本案拆掉了 heuristic，卻**沒有留下強制力** —— 而 §1 自己就寫著「慣例沒有任何地方在強制執行」。
-建議補一支 `check_letters_layout.py`：letters 頂層出現「已知 transient 前綴」或
-「沒有 `type:` 的 .md」就 exit 1。
-理由：本次「清單漏兩家」與「殘影被當成信」都是**掃一次目錄就會看到**的事實，
-而它們現在只有下一個人踩到才會知道。
+本案拆掉了 heuristic，若不補強制力就等於把 §1 那句話（「慣例沒有任何地方在強制執行」）留在原地。
+`<UCL_Core>/Tools~/AgentCommands/check_letters_layout.py` 就是那個執行者。
+
+**檢查三條，但刻意分兩級**（`errors` → exit 1；`notes` → 只報不算錯）：
+
+| 級別 | 檢查 | 為什麼是這一級 |
+|---|---|---|
+| ❌ error | 頂層 transient 檔**比 `cmd/` 裡最新那份還新** | 那代表**有寫入端還在寫舊位置**，不是殘影 |
+| ❌ error | 有 `cmd/` 但缺 `cmd/.gitignore` | 擋的是憑證外洩（`cmd/wake_brief.md` 含活 token），不是整潔 |
+| ❌ error | `cmd/` 有**已追蹤**的回傳檔（`.gitignore` 除外） | ignore 治不了既有追蹤，要人 `git rm --cached` |
+| · note | 頂層 transient 檔比 `cmd/` 舊 | §5② 明文讓殘影自然淘汰 —— 算成錯就會**永遠紅**，而永遠紅的閘等於沒有閘 |
+| · note | 頂層 .md 沒有信的 frontmatter | 舊手寫信多半如此；`Cmd_DocEdit` 會跳過它們（§8.7），是既成事實不是新病 |
+
+⚠ 「殘影 vs 還在寫」的分法**不寫死遷移日期**，而是拿該目錄 `cmd/` 內最新 mtime 當基準
+—— 自校準，下一次搬家不必回來改這支工具。
+
+首跑結果（21 個目錄）：**1 個違規**（gura：缺 `cmd/.gitignore` ＋ 4 個已追蹤回傳檔）、
+10 個只有提醒。`--fix-gitignore` 已補上缺的那份。
+
+⇒ 建議掛在早安 brief 生成時順手跑一次（違規印在 §6 那格）——
+理由同 `Fixes BUG-n` 掛在 commit 上：**把檢查掛在人一定會經過的路上，就不必要求他記得。**
+
+
 
 ## 9. 版控邊界 —— `cmd/` 目錄自帶 `.gitignore`（2026-08-18 Tim 指示，calli 施工）
 
@@ -266,8 +284,14 @@ FreeTime 那 5 個已完成（§0）。**這一節是給接手的人照著跑的
 | `calli` / `kiara` | ✅ `/cmd/` | 0 |
 | `basecamp` | ✅（且註解寫著症狀：「`git status` 突然多出一整個 cmd/ 目錄」） | 0 |
 | `gura` | ❌ | **4**（`cmd/freetime_{activity,next,partners,start}.md`） |
-| `apex-one` / `Sirius` / `summit` | ❌ | 0（還沒跑過自由時間） |
-| 其餘 14 位（letters 不是獨立 repo，住在 `AgentCommands` 內） | ❌ `AgentCommands` 也沒擋 `letters/*/cmd/`（`git check-ignore` 實測） | — |
+| `apex-one` / `Sirius` / `summit` / `Template` | ❌ | 0（還沒跑過自由時間） |
+| 其餘 13 位（letters 不是獨立 repo，住在 `AgentCommands` 內） | ❌ `AgentCommands` 也沒擋 `letters/*/cmd/`（`git check-ignore` 實測） | — |
+
+> 📌 **更正（2026-08-18 當日）**：本表初版寫「7 個獨立 letters repo」並把 `Template` 算成非 repo ——
+> **那是錯的，實際是 8 個**（`apex-one` / `basecamp` / `calli` / `gura` / `kiara` / `Sirius` /
+> `summit` / **`Template`**）。當時那份掃描對 Template 回報「不是 repo」，重驗（`git rev-parse
+> --show-toplevel`）是 `master` + remote。**為什麼第一次讀成那樣沒查出來，不編一個原因。**
+> ⇒ 教訓：用「`.git` 檔案存在性」判 repo 不如直接問 git（後者是那個問題的權威）。
 
 ⇒ FreeTime 遷入 `cmd/` 之後，gura 的 4 份回傳檔**直接進了版控**，而她的根 `.gitignore` 裡
 `_freetime_next.md` 那幾行還好端端躺著 —— 規則沒壞，只是**再也對不到任何檔案**。
@@ -327,6 +351,44 @@ FreeTime 那 5 個已完成（§0）。**這一節是給接手的人照著跑的
 >    確認新位置被 `cmd/.gitignore` 擋住（`git check-ignore -v <新路徑>` 要有輸出），
 >    並把根 `.gitignore` 裡那幾行**標成 legacy 或刪掉**（留著會讓下一個人以為還在生效）。
 >    ⛔ 特別是 `_wake_brief`：那條規則擋的是**憑證外洩**，不是 churn。
+
+### 9.6 `.gitignore` 基線與同步（Tim 2026-08-18 指示：綜合各 persona 的做成 Template 範本）
+
+**實掃八個 letters repo 的結果，證明「逐檔清單」這條路已經在爛：**
+
+| 規則 | 幾個 repo 有 |
+|---|---|
+| `sealed/` `_wake_brief.md` `_ding_brief.md` ＋ 4 條 Windows 垃圾檔 | **8**（全員） |
+| `_goodmorning_*.md` / `_goodnight_*.md` | 6 |
+| `_freetime_*.md` | 5 |
+| `_streamwatch_observe.md` / `_streamwatch_join.md` / `_streamwatch_cycle.md` | 4 |
+| `_freetime_partners.md` / `_relationship_update.md` / `_goodnight_logout.md` | **1** |
+| `/cmd/` 或 `cmd/` | 3 |
+
+⇒ 同一件事在八個地方各寫一半 —— 而漏掉的那半不會叫。
+
+**機制**：`letters/Template/.gitignore` 是**基線（唯一真相源）**，
+`sync_letters_gitignore.py` 把它同步到其他 persona：
+
+```
+python <UCL_Core>/Tools~/AgentCommands/sync_letters_gitignore.py            # 同步（預設只做獨立 repo）
+python <UCL_Core>/Tools~/AgentCommands/sync_letters_gitignore.py --check    # 只報漂移（exit 2）
+```
+
+- 目標檔 = `BASELINE` 區塊（同步覆寫，標頭記 `baseline_sha256`）＋
+  `BASELINE END` 之後的**「本 persona 自訂」區塊（同步工具不動）**。
+  首次同步時，該 persona 原本的整份 `.gitignore` 會被保留進自訂區 ——
+  **刻意不自動刪**：那裡面有別人寫的血證註解，機器判斷不出哪句還有價值。
+- 基線用 `/cmd/*` + `!/cmd/.gitignore`（不是 `/cmd/`）——
+  後者會把目錄自帶的那份 ignore 一起擋掉，規則就傳不到 clone（§9.4 邊界①的正解）。
+
+🩸 **實測撞到的靜默互動**：gitignore 是**後者勝**，而自訂區排在基線之後 ——
+所以自訂區留著舊的 `/cmd/` 會把基線的 `!/cmd/.gitignore` **蓋回去**。
+症狀是「同步成功但規則沒生效」，沒有任何一格會紅。
+⇒ 同步工具現在會逐一報出這種衝突（basecamp / kiara 命中），但**不自動刪** —— 自訂區是那位 persona 的地盤。
+
+首次同步結果：8 個獨立 repo 全部一致（`--check` 乾淨）；
+gura 另有 4 個**已追蹤**的回傳檔（`git rm --cached cmd/` 要她自己決定）。
 
 ## 7. 不做的事
 

@@ -86,7 +86,25 @@ namespace UCL.Core.EditorLib.Page
                 return aKind != 0 ? aKind : string.CompareOrdinal(a.Persona, b.Persona);
             });
         }
-
+        protected override void TopBarButtons()
+        {
+            base.TopBarButtons();
+            if (GUILayout.Button("🔄 立即重新整理", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                Refresh();
+                m_LastRefresh = UnityEditor.EditorApplication.timeSinceStartup;
+            }
+            if (GUILayout.Button("📂 開啟資料夾", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                try
+                {
+                    string aDir = UCL_SessionService.SessionsDir(UCL_SessionKind.FreeTime);
+                    if (!Directory.Exists(aDir)) Directory.CreateDirectory(aDir);
+                    UnityEditor.EditorUtility.RevealInFinder(aDir);
+                }
+                catch (Exception e) { Debug.LogWarning($"[UCL_SessionAdminPage] 開啟資料夾失敗: {e.Message}"); }
+            }
+        }
         protected override void ContentOnGUI()
         {
             double aNow = UnityEditor.EditorApplication.timeSinceStartup;
@@ -106,26 +124,6 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Label($"掃描範圍（已登記 kind）：{string.Join(" / ", UCL_SessionService.ScannedKinds())}"
                           + "　—— 未登記的種類不在其中（見 UCL_SessionKind.Kinds 註解）", WrapStyle);
             GUILayout.Space(6);
-
-            using (new GUILayout.HorizontalScope())
-            {
-                if (GUILayout.Button("🔄 立即重新整理", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                {
-                    Refresh();
-                    m_LastRefresh = aNow;
-                }
-                if (GUILayout.Button("📂 開啟資料夾", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                {
-                    try
-                    {
-                        string aDir = UCL_SessionService.SessionsDir(UCL_SessionKind.FreeTime);
-                        if (!Directory.Exists(aDir)) Directory.CreateDirectory(aDir);
-                        UnityEditor.EditorUtility.RevealInFinder(aDir);
-                    }
-                    catch (Exception e) { Debug.LogWarning($"[UCL_SessionAdminPage] 開啟資料夾失敗: {e.Message}"); }
-                }
-            }
-            GUILayout.Space(8);
 
             if (m_Rows.Count == 0)
             {

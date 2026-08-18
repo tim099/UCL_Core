@@ -215,7 +215,8 @@ def list_episodic_letters(persona: str, since_iso: str | None = None) -> list:
         if not p.is_file() or p.suffix != ".md":
             continue
         if p.name.startswith("_") or p.name == "README.md":
-            # 常駐檔/機械產物（_latest / _index / _wake_brief / _constitution / _keys_open / README）
+            # 常駐檔/機械產物（_latest / _index / _constitution / _keys_open / README；
+            # Cmd 回傳檔與 wake brief 已遷 cmd/ 子目錄，本迴圈只掃頂層所以碰不到它們）
             # 不是 episodic 信。用檔名擋而不用「沒有 written_at 就跳過」:
             # 後者會把真信因 frontmatter 壞掉而靜默漏掉。
             continue

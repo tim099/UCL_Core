@@ -5,7 +5,7 @@
 //          都由 cycle 對系統時鐘與 _screenstream/_config.json 的 enabled 判定。
 //          「自動」指的是**判斷自動**（Cmd 算好告訴你），不是觸發自動 —— 不新增任何常駐偵測。
 // 數值影響：session state 落 <DataRoot>/StreamWatch/sessions/<persona>.json（C# 唯一寫入端）；
-//          回傳檔 letters/<persona>/_streamwatch_<step>.md（路徑經 ReportOutputFile 進 result outputs）。
+//          回傳檔 letters/<persona>/cmd/streamwatch_<step>.md（路徑經 ReportOutputFile 進 result outputs）。
 // ⚠ 阻塞紀律（Tim 2026-08-15 指示 + WorkMemory/unitask-editor-async）：
 //   縮圖牆是外部 process，**一律 await Task.Run 包起來**，不得在主執行緒輪詢 WaitForExit。
 //   照抄 UCL_BartenderDaemon.RunBalanceQuery 會自動繼承它的同步性（那支因 out 參數不可能 async）。
@@ -60,7 +60,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             "**bilibili 一律 `bilibili-<up主 slug>` 並必帶 up=**） | " +
             "up=<up主名> / title=<影片標題> / desc=<影片介紹> / url=<網址> — start 選填（bilibili 場 up 必填） | " +
             "body=<內文> — observe/note 必填（長文走 --arg-file） | " +
-            "回傳落檔 letters/<persona>/_streamwatch_<step>.md（路徑隨 run_cmd verdict 印出）";
+            "回傳落檔 letters/<persona>/cmd/streamwatch_<step>.md（路徑隨 run_cmd verdict 印出）";
 
         public override string ExampleArgs => "step=start;persona=Template;until=23:59";
 
@@ -2329,7 +2329,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 foreach (var h in aHits) aSb.AppendLine(h);
                 aSb.AppendLine("- ⚠ **開看前先追回** —— 否則等於從零開始看續篇：");
                 aSb.AppendLine($"  `run_cmd.py run Library --arg op=recall --arg persona={iPersona} --arg media_id=<上面那個>`");
-                aSb.AppendLine("  → 產物落 `letters/<persona>/_reading_recall_<media-id>.md`，**Read 它**再開看。");
+                aSb.AppendLine("  → 產物落 `letters/<persona>/cmd/reading_recall_<media-id>.md`，**Read 它**再開看。");
                 aSb.AppendLine("- ℹ 媒材進度各自獨立（改編不是原作的第二版）；跨媒材時仍值得先 recall 一次。");
             }
             return aSb.ToString();
@@ -2476,15 +2476,17 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
         static void AtomicWrite(string iPath, string iContent)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(iPath));
+            UCL_LettersPath.EnsurePayloadDir(iPath);   // 建目錄＋補 cmd/.gitignore（唯一入口）
             string aTmp = iPath + ".tmp";
             File.WriteAllText(aTmp, iContent, new UTF8Encoding(false));
             if (File.Exists(iPath)) File.Delete(iPath);
             File.Move(aTmp, iPath);
         }
 
+        // 落點走 UCL_LettersPath —— 版面只有一份實作（Plan_Letters_Dir_Layout §8.2 批次①）。
+        // ⚠ 對側契約：python 端等價入口是 `_lib/ucl_paths.py::letters_cmd_payload()`。
         static string PayloadPath(string iPersona, string iStep)
-            => Path.Combine(UCL_LettersPath.PersonaDir(iPersona), $"_streamwatch_{iStep}.md");
+            => UCL_LettersPath.CmdPayload(iPersona, "streamwatch", iStep);
 
         static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iContent)
         {

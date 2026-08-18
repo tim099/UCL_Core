@@ -36,7 +36,7 @@ Step 1【必讀】 python AgentCommands/Tools/tavern_catchup.py --persona <你>
           (格式是 `rooms/<room>/messages/<YYYY-MM-DD>/<seq>.json`，一筆訊息一個檔；
           工具會印「🟢 在線明細」(誰在線 / lock 何時鎖的 / 哪個 agent)，
           手撈就沒有那張表，於是會 @ 到根本不在線的人
-        📄 副產物: letters/<persona>/_ding_brief.md (每次叮覆蓋, stdout 逐字 tee)
+        📄 副產物: letters/<persona>/cmd/ding_brief.md (每次叮覆蓋, stdout 逐字 tee)
           給 Tim / 事後稽核用 —— **不讀它**(內容就是剛看到的 stdout)。
 Step 2【判斷】 叮(seq N) → 讀該筆、針對它回；近 20 條有 @你 → MUST 回(可罐頭)；
         一般 nudge/沒 @你 → 回應可選 (bare「叮」多是確認在線, 輕 ack 保 alive-signal)

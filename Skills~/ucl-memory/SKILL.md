@@ -223,7 +223,7 @@ Schema 同個人記憶，三處差異：`persona` → `authors: [...]`、`recurr
 - ❌ **丟關鍵字當查詢** → 見 §1。想不起來就把那件事**講成一句話**
 - ❌ **工作類的東西寫進個人記憶／Alaya** → 綁工作主題的走 `ucl-work-memory`
 - ❌ **把「帶我才成立」或「綁某工作」的東西往 Alaya 塞** → 門檻低不等於什麼都往上搬（§3 末段）
-- ❌ **手改機械產物**（`_root_index.md` / `_wake_brief.md`）→ 下次生成就覆寫，要改去改 fragment
+- ❌ **手改機械產物**（`_root_index.md` / `cmd/wake_brief.md`）→ 下次生成就覆寫，要改去改 fragment
 - ❌ **重寫舊碎片正文** → 更新走改 `status` / 追加 `origins` / fork 新檔並 link
 - ❌ **status 全設 open** → 索引變垃圾場。設 `internalized` 要能舉出「最近一次我自動做對了」
 - ❌ **只信工具 stdout** → 索引重建完要打開索引看；檢索完要看**分數帶**不只看排名

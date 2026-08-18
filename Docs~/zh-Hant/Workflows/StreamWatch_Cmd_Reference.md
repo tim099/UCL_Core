@@ -82,7 +82,7 @@ before-mtime = min(OCR 水位, STT 水位)     ← 感官開著的那幾項才�
 ```
 session : <DataRoot>/_screenstream/_montage_<persona>.jpg      ＋ .subtitles.md
 peek    : <DataRoot>/_screenstream/_montage_peek_<owner>.jpg   ＋ .subtitles.md
-回傳檔  : <DataRoot>/ChatTavern/baton/letters/<persona>/_streamwatch_<step>.md
+回傳檔  : <DataRoot>/ChatTavern/baton/letters/<persona>/cmd/streamwatch_<step>.md
 session : <DataRoot>/StreamWatch/sessions/<persona>.json       ← C# 唯一寫入端
 work    : <DataRoot>/BookNotes/Library/works/<slug>/work.json
 ```

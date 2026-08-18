@@ -475,7 +475,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(aPath));
+                UCL_LettersPath.EnsurePayloadDir(aPath);   // 建目錄＋補 cmd/.gitignore（唯一入口）
                 File.WriteAllText(aPath, aB.ToString(), new UTF8Encoding(false));
             }
             catch (Exception e)
@@ -1012,7 +1012,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
         static void AtomicWrite(string iPath, string iContent)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(iPath));
+            UCL_LettersPath.EnsurePayloadDir(iPath);       // 建目錄＋補 cmd/.gitignore（唯一入口）
             string aTmp = iPath + ".tmp";
             File.WriteAllText(aTmp, iContent, new UTF8Encoding(false));
             if (File.Exists(iPath)) File.Delete(iPath);
@@ -1031,7 +1031,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(iPath));
+                UCL_LettersPath.EnsurePayloadDir(iPath);   // 建目錄＋補 cmd/.gitignore（唯一入口）
                 File.WriteAllText(iPath, iReport, new UTF8Encoding(false));
                 // 回報產出檔 → result 檔 outputs 欄，run_cmd 端隨 verdict 印路徑（不再靠 skill 背）
                 UCL_AgentCommandRunner.ReportOutputFile(iArgs, iPath);

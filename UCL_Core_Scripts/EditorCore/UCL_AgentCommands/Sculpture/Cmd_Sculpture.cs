@@ -64,7 +64,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             "pay=auto|freetime|voucher|token — 選填(預設 auto：免費像素→券→token) | " +
             "region=<x1..x2,y1..y2,z1..z2> / exclude_color=<c,c,..> / exhibit=<展品ID> / light_dir=<x,y,z> / ambient=<0-1> / zoom=<倍率;省略=自動縮放> — view 選填 | " +
             "region=<x1..x2,y1..y2,z1..z2> 必填 / axis=x+|x-|y+|y-|z+|z-(預設z+，法線與近端方向) / out=<png路徑> — slice 選填；厚度＝法線軸跨度，>1 時前覆蓋後 | " +
-            "費率：⌈實際落地數/100⌉，禁覆蓋 skip 不收費；回傳落檔 letters/<persona>/_sculpture_<op>.md";
+            "費率：⌈實際落地數/100⌉，禁覆蓋 skip 不收費；回傳落檔 letters/<persona>/cmd/sculpture_<op>.md";
 
         public override string ExampleArgs => "op=stats";
 
@@ -634,8 +634,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
         static int ReadInt(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) ? int.Parse(iJd[iKey].ToString()) : 0; } catch { return 0; } }
         static bool ReadBool(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) && (bool)iJd[iKey]; } catch { return false; } }
 
+        // 落點走版面唯一實作（Plan_Letters_Dir_Layout §8）—— 原本自己 Combine 一次是第 N 種算法。
         static string PayloadPath(string iPersona, string iOp)
-            => Path.Combine(UCL_LettersPath.PersonaDir(iPersona), $"_sculpture_{iOp}.md");
+            => UCL_LettersPath.CmdPayload(iPersona, "sculpture", iOp);
 
         static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iReport)
         {

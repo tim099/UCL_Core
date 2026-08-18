@@ -153,13 +153,13 @@ grep -rl 'wake_001-044\|wake_045-054' AgentCommands/ChatTavern/baton/letters/<pe
 ```
 
 basecamp 實測：**19 個檔 / 27 處** —— fragments（`origin.source`）、兩封舊收尾信、
-`_wake_brief.md`、`_index.md`、digest 自己。漏改的話那些引用會變成指向不存在的檔。
+`cmd/wake_brief.md`、`_index.md`、digest 自己。漏改的話那些引用會變成指向不存在的檔。
 
 ### Step 5 — 驗證
 
 ```bash
 python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <persona>
-grep -n '§4 見林\|見林進度' <letters>/<persona>/_wake_brief.md
+grep -n '§4 見林\|見林進度' <letters>/<persona>/cmd/wake_brief.md
 ```
 
 三個數字要對得起來：**§4 的檔名是新的、`gap` 沒變、見森份數沒變**。

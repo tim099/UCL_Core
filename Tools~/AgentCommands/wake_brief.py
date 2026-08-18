@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # 區塊職責：wake brief 的**唯一生成點** —— 把五層記憶（見根→見樹）＋回憶與營運層（收件匣 /
-#          酒館 / 動作清單）組裝成一份 `_wake_brief.md`，讓 agent 醒來只 Read 一份就完成 onboarding。
+#          酒館 / 動作清單）組裝成一份 `cmd/wake_brief.md`，讓 agent 醒來只 Read 一份就完成 onboarding。
 # @doc-sync: Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md（Step 2 的區塊清單）
 # 物理意義：本檔是從 awakening.py 抽出來的（Tim 2026-07-31：那支已經 3200 行太肥）。
 #          抽離的邊界是「組裝與排版」——**狀態讀寫仍留在 awakening.py**（registry / lock /
@@ -242,7 +242,7 @@ def _newest_self_letter(aw, persona):
     """掃目錄取最新一封『自己寫給自己』的 letter。
 
     數值影響：只認 `type: letter_to_future_self` —— 排除同夾的 peer_letter_from_persona
-             （同事寄來的信）與 `_` 開頭的機械產物（`_wake_brief.md` 若誤入，會因為
+             （同事寄來的信）與 `_` 開頭的機械產物（舊位置的 `_wake_brief.md` 若還在，會因為
              '_' 的字元序大於數字而被當成「最新」，那是個安靜的災難）。
 
     ⚠ **必須連 `wakes/` 一起掃**（2026-07-31）：收尾信改版之後，遷移後新寫的
@@ -1354,7 +1354,7 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
     if moved:
         main += ["## 📎 可續讀（超出主檔上限，已分檔不刪內容）", ""]
         main += [f"- {t}" for t in moved]
-        main += ["", "→ 續讀檔：`_wake_brief_part2.md`（視情況再讀）", ""]
+        main += ["", "→ 續讀檔：`cmd/wake_brief_part2.md`（視情況再讀）", ""]
     return "\n".join(main), ("\n".join(overflow) if overflow else None)
 
 
@@ -1368,11 +1368,15 @@ def write_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
     if healed:
         print(f"🔧 _latest.md 落後，已校正為目錄內最新的自寫 letter（persona={persona}）")
     main, overflow = build_wake_brief(aw, persona, reg, p, threshold)
-    d = aw._LETTERS_DIR_TPL / persona
-    d.mkdir(parents=True, exist_ok=True)
-    path = d / "_wake_brief.md"
+    # 落點走版面唯一實作（Plan_Letters_Dir_Layout §8.2 批次⑥）：brief 是機器產物，住 cmd/。
+    # ⚠ 對側契約：C# 讀取端 = UCL_LettersPath.CmdPayload(persona, "wake", "brief")。
+    # ⚠ ensure_letters_cmd_dir 會順手補 cmd/.gitignore —— brief 含活 session_token 與信箱，
+    #   而 letters remote 可能是公開的；那份 ignore 不是整潔問題，是外洩防線。
+    from _lib.ucl_paths import ensure_letters_cmd_dir, letters_cmd_payload
+    ensure_letters_cmd_dir(persona)
+    path = letters_cmd_payload(persona, "wake", "brief")
     path.write_text(main, encoding="utf-8")
-    part2 = d / "_wake_brief_part2.md"
+    part2 = letters_cmd_payload(persona, "wake", "brief_part2")
     if overflow:
         part2.write_text(
             f"---\ntype: wake_brief_part2\npersona: {persona}\ngenerated_at: {aw.utcnow_iso()}\n---\n\n"

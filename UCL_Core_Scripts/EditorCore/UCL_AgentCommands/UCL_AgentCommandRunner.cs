@@ -56,7 +56,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static string CurrentCmdId = null;
 
         // 區塊職責：per-cmd 產出檔收集 slot（Tim 2026-08-13 拍板 —— 路徑直接寫進 result 檔）
-        // 物理意義：handler 落回傳檔（如 letters/<P>/_goodmorning_wake.md）時 caller 只拿到
+        // 物理意義：handler 落回傳檔（如 letters/<P>/cmd/goodmorning_wake.md）時 caller 只拿到
         //          Success/Failed，「檔在哪」得靠 skill/文件的文字背 —— letters root 跨專案
         //          會漂，agent 照字面讀就 File not found（wake#48 血證）。handler 經
         //          ReportOutputFile 回報 → WriteCmdResult 寫進 _cmd_results/<id>.json 的

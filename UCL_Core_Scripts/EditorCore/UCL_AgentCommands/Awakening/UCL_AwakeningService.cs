@@ -303,7 +303,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             if (!string.IsNullOrEmpty(aSe)) aSb.AppendLine("── stderr ──").AppendLine(aSe);
 
             // 驗收看落地檔不看 stdout：brief 檔存在且行數 > 0 才算生成成功。
-            string aBriefPath = Path.Combine(LettersDir, iPersona, "_wake_brief.md");
+            string aBriefPath = UCL_LettersPath.CmdPayload(iPersona, "wake", "brief");
             int aLines = 0;
             bool aExists = File.Exists(aBriefPath);
             if (aExists)
@@ -643,10 +643,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             return aList;
         }
 
-        /// <summary>step 回傳值落檔路徑 —— persona 步驟放 letters/&lt;persona&gt;/（與 _wake_brief 同層同慣例），
-        /// 底線開頭＝機械產物、每次該步驟重跑即覆寫（Tim 2026-08-13 拍板：每步回傳值落檔供 QA）。</summary>
+        /// <summary>step 回傳值落檔路徑 —— persona 步驟放 letters/&lt;persona&gt;/cmd/（與 wake brief 同層同慣例），
+        /// 目錄本身即宣告「機器寫的、每次該步驟重跑即覆寫」（Tim 2026-08-13 拍板：每步回傳值落檔供 QA）。</summary>
+        // 落點走 UCL_LettersPath（版面唯一實作，Plan_Letters_Dir_Layout §8.2 批次⑤）——
+        // 原本在這裡自己 Combine 一次，那是「letters 底下版面」的第 N 種算法。
+        // ⚠ 對側契約：python 端等價入口 = `_lib/ucl_paths.py::letters_cmd_payload()`。
         public static string StepPayloadPath(string iPersona, string iStep)
-            => Path.Combine(LettersDir, iPersona, $"_goodmorning_{iStep}.md");
+            => UCL_LettersPath.CmdPayload(iPersona, "goodmorning", iStep);
 
         public class StepResult
         {
@@ -885,7 +888,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     + string.Join("\n", SelfIntroTodoLines(iPersona))
                     + "\n  補完重跑本步即過（參考 Constitution_Workflow §5）。",
                     aLock, null, 0);
-            string aBrief = Path.Combine(LettersDir, iPersona, "_wake_brief.md");
+            string aBrief = UCL_LettersPath.CmdPayload(iPersona, "wake", "brief");
             if (!File.Exists(aBrief))
                 return (false, $"brief 不存在：`{aBrief}` —— 先跑 step=brief（一個沒有記憶的殼不該上線開口）", aLock, null, 0);
             int aLines;

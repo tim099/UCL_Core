@@ -60,8 +60,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
                         + "（update|add-opinion|show|list|rebuild）");
             }
 
-            string aPath = Path.Combine(UCL_LettersPath.PersonaDir(aPersona), $"_relationship_{aOp}.md");
-            Directory.CreateDirectory(Path.GetDirectoryName(aPath));
+            // 落點走版面唯一實作（Plan_Letters_Dir_Layout §8）—— 回傳檔住 cmd/，不與人寫的信混層。
+            string aPath = UCL_LettersPath.CmdPayload(aPersona, "relationship", aOp);
+            UCL_LettersPath.EnsurePayloadDir(aPath);   // 建目錄＋補 cmd/.gitignore（唯一入口）
             File.WriteAllText(aPath, aR.ToString(), new UTF8Encoding(false));
             Debug.Log($"[Relationship] op={aOp} {aPersona} → {aPath}");
         }

@@ -173,7 +173,7 @@ not_merged:                 # 禁靜默 —— 明寫什麼沒有被回流
 |---|---|---|
 | S1 | 建 `letters/summit/worldlines/20260617-a/` | 目錄存在且為空 |
 | S2 | 算分歧點：兩邊 `written_at` 升冪比對，最後一封 byte-identical 的即 `divergence_at` | 印出 29 / `20260617T134019Z`，與 §1 表一致 |
-| S3 | `mit/` **分岔後**的 16 封 + `longterm/`（3 檔）+ `fragments/`（14 檔，含 `_root_index.md`）+ `_keys_open.md` / `_latest.md` / `_wake_brief.md` → `git mv` 進 Y | Y 內檔數 = 16 + 3 + 14 + 3 = 36；**逐檔 md5 與搬移前相同** |
+| S3 | `mit/` **分岔後**的 16 封 + `longterm/`（3 檔）+ `fragments/`（14 檔，含 `_root_index.md`）+ `_keys_open.md` / `_latest.md` / `cmd/wake_brief.md` → `git mv` 進 Y | Y 內檔數 = 16 + 3 + 14 + 3 = 36；**逐檔 md5 與搬移前相同** |
 | S4 | `mit/` **分岔前**的 29 封：**不搬、直接刪**（本體已有 byte-identical 實體） | 刪前逐檔 md5 對本體確認相同；**有任一筆不同就停手** |
 | S5 | 寫 `_manifest.md`（§2.3 全欄位，`title` 留空、`status: closed`） | 欄位齊全；`not_merged` 明寫 |
 | S6 | registry 補 `worldlines: {20260617-a: {wake_count: 39, last_consolidated_wake: 31, last_consolidated_at: 2026-07-03T05:26:58.313Z}}` | 從 git 史復原（`e2041701`），**不猜** |

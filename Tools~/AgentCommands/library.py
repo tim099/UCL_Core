@@ -417,8 +417,8 @@ def cmd_prepare(args):
     print(f"✅ canonical={slug}；{reader} 已讀章節: {own or '（尚無）'}")
     print("📚 其他讀者覆蓋: " + "; ".join(f"{who}: {nums or '（尚無）'}" for who, nums in coverage.items()))
     print("→ 決定追讀前，可用 resume --book " + slug + " --reader " + reader + " --up-to <N> 取得跨分支前情。")
-    from _lib.ucl_paths import letters_persona_dir   # letters 唯一入口（BUG-2）
-    brief = letters_persona_dir(reader) / "_wake_brief.md"
+    from _lib.ucl_paths import letters_cmd_payload   # letters 版面唯一入口（BUG-2）
+    brief = letters_cmd_payload(reader, "wake", "brief")
     report = LIB_ROOT / "_search_reports" / f"prepare_{_slugify(reader)}_{_slugify(args.title)}.md"
     lines = ["# 閱讀入口解析報告", "", f"- query: {args.title}", f"- reader: {reader}",
              f"- canonical: {slug}", f"- own_chapters: {own}",

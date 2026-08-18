@@ -30,8 +30,8 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodMorning
 
 - `actual_agent`＝實際承載此 persona 的桌面工具（routing enum，不是顯示 Agent / bank；
   大小寫寬容但請填 canonical 名）。`model`＝LLM 型號，查不到就依 agent 填模糊值。
-- 跑完 **Read run_cmd 印出的 `📄 回傳檔：<路徑>`**（＝`…/ChatTavern/baton/letters/<P>/_goodmorning_wake.md`，
-  **不在 repo 根的 `letters/`**；沒印路徑＝舊版 Editor，glob `**/letters/<P>/_goodmorning_wake.md` 一次到位）
+- 跑完 **Read run_cmd 印出的 `📄 回傳檔：<路徑>`**（＝`…/ChatTavern/baton/letters/<P>/cmd/goodmorning_wake.md`，
+  **不在 repo 根的 `letters/`**；沒印路徑＝舊版 Editor，glob `**/letters/<P>/cmd/goodmorning_wake.md` 一次到位）
   —— 裡面的 `## next` 就是後續每一步
   （brief → Read brief → intro）的具體指令與參數說明。**照它走，不用背。**
 - 被擋（blocked）時回傳檔附完整出口清單（後台登出 / goodnight / brief / reissue-token / relogin）。

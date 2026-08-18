@@ -69,7 +69,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         const string k_BookshelfName = "bookshelf.md";
         const string k_CharactersDirName = "characters";
         const string k_ProfileJsonName = "profile.json";
-        // 追回檔輸出路徑（與 _wake_brief.md 同住 persona 的 letters/）
+        // 追回檔輸出路徑（與 wake brief 同住 persona 的 letters/cmd/）
         // ⛔ 原本這裡有 k_ChatTavernDirName / k_BatonDirName / k_LettersDirName 三個常數
         //    自己拼出 letters 路徑 —— 那是把佈局知識複製了一份（BUG-2）。
         //    letters 的唯一入口是 `UCL_LettersPath`，佈局調整時只有它需要改。
@@ -1069,7 +1069,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             JsonData progress = reader.Contains(Key_Progress) ? reader[Key_Progress] : null;
 
             var sb = new StringBuilder();
-            // 區塊職責：frontmatter —— 與 _wake_brief.md 同慣例，明寫「機械產物、手改會被覆寫」。
+            // 區塊職責：frontmatter —— 與 cmd/wake_brief.md 同慣例，明寫「機械產物、手改會被覆寫」。
             // 物理意義：這份是視圖不是筆記；事實源永遠是 reader.json / chapter round / character view。
             // 數值影響：純輸出；generated_at 用本機時間（跨機比對時以檔內 media/persona 為準）。
             sb.AppendLine("---");
@@ -1357,17 +1357,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         }
 
         // ===========================================================
-        // 區塊職責：把追回檔寫進該 persona 自己的 letters/ —— 與 _wake_brief.md 同一個家。
-        // 物理意義：**沿用 Python 版的同一個檔名與路徑**（`_reading_recall_<media-id>.md`）。
-        //          刻意不另開新位置：同一件事兩個檔案就是今天治了一整天的漂移。
+        // 區塊職責：把追回檔寫進該 persona 自己的 letters/cmd/ —— 與其他 Cmd 回傳檔同一個家。
+        // 物理意義：落點 `cmd/reading_recall_<media-id>.md`，走 UCL_LettersPath（版面唯一實作，
+        //          Plan_Letters_Dir_Layout §8.2 批次③）。原本平鋪在 letters 頂層，
+        //          與人寫的信混住 —— 那正是 Cmd_DocEdit「找最新那封信」抓到機器產物的病灶。
         // 數值影響：每次完整覆寫；原始章節與人物歷史不受影響。回傳寫出的絕對路徑。
         // ===========================================================
         public static string WriteRecallBrief(string mediaId, string persona, bool fullRounds, out string error)
         {
             string text = RenderRecall(mediaId, persona, fullRounds, out error);
             if (text == null) return null;
-            string path = Path.Combine(UCL_LettersPath.PersonaDir(persona),
-                                       $"_reading_recall_{mediaId}.md");
+            string path = UCL_LettersPath.CmdPayload(persona, "reading_recall", mediaId);
+            UCL_LettersPath.EnsurePayloadDir(path);   // 建目錄＋補 cmd/.gitignore（唯一入口）
             SaveText(path, text);
             return path;
         }

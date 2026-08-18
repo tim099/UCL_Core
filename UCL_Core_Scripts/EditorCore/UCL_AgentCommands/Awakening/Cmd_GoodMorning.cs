@@ -4,8 +4,8 @@
 //          步驟分派、回傳落檔。四步：wake（守衛+狀態寫入，不廣播）→ brief（經 UCL_ProcessCli
 //          spawn python，R20）→ [agent Read brief] → intro（單則上線廣播＋next 指路 catchup，R21）。
 // 數值影響：每一步的回傳值落檔（Tim 2026-08-13 拍板供 QA）——
-//          persona 步驟 → letters/<persona>/_goodmorning_<step>.md（與 _wake_brief 同層同慣例，
-//          底線開頭＝機械產物、該步驟重跑即覆寫）；全域步驟 audit → AwakenInit/_goodmorning_audit.md。
+//          persona 步驟 → letters/<persona>/cmd/goodmorning_<step>.md（回傳檔一律住 cmd/，
+//          目錄本身即宣告「機器寫的、該步驟重跑即覆寫」）；全域步驟 audit → AwakenInit/_goodmorning_audit.md。
 //          blocked / 失敗一律「payload 落檔＋非零 verdict」雙讀回（§8.9 P2 卡點③）。
 #if UNITY_EDITOR
 using System;
@@ -28,7 +28,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
     /// ③ Read（step=brief 回傳的 brief 路徑）
     /// ④ run_cmd.py run GoodMorning --arg step=intro --arg persona=&lt;P&gt; --arg-stdin body   ← body 親筆
     /// </code>
-    /// <para>每步回傳值落檔 letters/&lt;persona&gt;/_goodmorning_&lt;step&gt;.md；audit 落 AwakenInit/_goodmorning_audit.md。</para>
+    /// <para>每步回傳值落檔 letters/&lt;persona&gt;/cmd/goodmorning_&lt;step&gt;.md；audit 落 AwakenInit/_goodmorning_audit.md。</para>
     /// </summary>
     public class Cmd_GoodMorning : UCL_AgentCommandHandlerBase
     {
@@ -42,7 +42,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             "intro: 單則上線廣播(需 body 親筆, Cmd 只組系統欄位); audit: 全 persona 對帳(唯讀) | " +
             "persona=<name> — wake/brief/intro 必填 | model=<M> / actual_agent=<Codex|ClaudeCode|Antigravity> — wake 選填 | " +
             "body=<text> — intro 必填(走 --arg-stdin body) | note=<text> — intro 選填 | " +
-            "回傳落檔 letters/<persona>/_goodmorning_<step>.md（audit → AwakenInit/_goodmorning_audit.md）";
+            "回傳落檔 letters/<persona>/cmd/goodmorning_<step>.md（audit → AwakenInit/_goodmorning_audit.md）";
 
         public override string ExampleArgs => "step=wake;persona=Template";
 

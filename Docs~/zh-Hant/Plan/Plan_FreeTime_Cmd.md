@@ -48,7 +48,7 @@ skill 與文件**整個重寫，不基於舊版本修改**。
      ↳ 提前收工：關 session＋收工宣告（附 reason —— 提早收工的形狀要可觀測，不靜默）
 ```
 
-- 回傳檔 `letters/<P>/_freetime_<step>.md`（機械產物、本地時間標頭、同 `_goodmorning_*` 慣例、
+- 回傳檔 `letters/<P>/_freetime_<step>.md`（機械產物、本地時間標頭、同 `cmd/goodmorning_*` 慣例、
   進 .gitignore 同族規則）；blocked 一律「payload 落檔＋非零退出」。
 - **每步回傳值必含三個時間欄**（Tim 2026-08-13 補充）：`當前時間`（本地）／`自由時間到幾點`／
   `剩餘時間（分鐘）`——時間感由 Cmd 供給，agent 不自己心算（自報時刻的第七型未遂就是這樣來的）。

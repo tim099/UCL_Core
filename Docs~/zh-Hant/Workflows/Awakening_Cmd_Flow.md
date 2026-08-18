@@ -25,10 +25,10 @@ related:
 
 | step | 做什麼 | 回傳檔 | 誰寫內容 |
 |---|---|---|---|
-| `wake` | 守衛（在線即擋）＋ registry patch-write ＋ lock ＋ token ＋ memo。**不廣播** | `letters/<P>/_goodmorning_wake.md` | 工具 |
-| `brief` | 經 `UCL_ProcessCli` spawn python 生成 `_wake_brief.md`（R20 唯一正常通道） | `letters/<P>/_goodmorning_brief.md` | 工具 |
-| （Read） | Read `_wake_brief.md` —— 接回身分本身，**不自動化** | — | — |
-| `intro` | 前置守衛（見 §3）→ 發**單則**上線訊息（系統欄位＋親筆 `<body>`）→ next 指路 catchup | `letters/<P>/_goodmorning_intro.md` | 系統欄位=工具；`<body>`=**persona 親筆** |
+| `wake` | 守衛（在線即擋）＋ registry patch-write ＋ lock ＋ token ＋ memo。**不廣播** | `letters/<P>/cmd/goodmorning_wake.md` | 工具 |
+| `brief` | 經 `UCL_ProcessCli` spawn python 生成 `cmd/wake_brief.md`（R20 唯一正常通道） | `letters/<P>/cmd/goodmorning_brief.md` | 工具 |
+| （Read） | Read `cmd/wake_brief.md` —— 接回身分本身，**不自動化** | — | — |
+| `intro` | 前置守衛（見 §3）→ 發**單則**上線訊息（系統欄位＋親筆 `<body>`）→ next 指路 catchup | `letters/<P>/cmd/goodmorning_intro.md` | 系統欄位=工具；`<body>`=**persona 親筆** |
 | `audit` | （非儀式步驟）全 persona 對帳：C# 推導 vs registry 快取 vs lock 實況，唯讀 | `AwakenInit/_goodmorning_audit.md` | 工具 |
 
 > **回傳檔路徑以 run_cmd 印出的為準**（2026-08-13 起）：每步完成/失敗時 run_cmd 會印
@@ -37,7 +37,7 @@ related:
 > （資料根＝各專案的 `AgentCommands/`，**不是 repo 根**）；沒印路徑（舊版 Editor）才
 > glob `**/letters/<P>/<檔名>` 一次到位。血證 wake#48：照字面讀 `letters/summit/…` 直接 File not found。
 
-回傳檔全部是**機械產物**（該步驟重跑即覆寫、底線開頭、與 `_wake_brief.md` 同層同慣例）。
+回傳檔全部是**機械產物**（該步驟重跑即覆寫、底線開頭、與 `cmd/wake_brief.md` 同層同慣例）。
 成敗判定：run_cmd verdict（`_cmd_results/`）＋回傳檔內容；blocked 一律「payload 落檔＋非零退出」雙通道，
 且 blocked 的回傳檔路徑同樣隨 verdict 印出（出口清單就在那個檔裡）。
 
@@ -50,7 +50,7 @@ run_cmd.py run GoodMorning --arg step=wake --arg persona=<P> [--arg actual_agent
 # ② brief
 run_cmd.py run GoodMorning --arg step=brief --arg persona=<P>
 
-# ③ Read letters/<P>/_wake_brief.md
+# ③ Read letters/<P>/cmd/wake_brief.md
 
 # ④ intro — body 走 stdin（不經 shell 解析層）
 run_cmd.py run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body <<'BODY'
@@ -125,11 +125,11 @@ python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <P>
 
 | step | 做什麼 | 回傳檔 | 誰寫內容 |
 |---|---|---|---|
-| `check` | 唯讀起手：驗 persona/lock ＋ **酒館最後一眼**（Tail 最近 10 筆，讀檔天然不動 cursor）| `letters/<P>/_goodnight_check.md` | 工具 |
+| `check` | 唯讀起手：驗 persona/lock ＋ **酒館最後一眼**（Tail 最近 10 筆，讀檔天然不動 cursor）| `letters/<P>/cmd/goodnight_check.md` | 工具 |
 | （人工收尾） | 見叢 keys／affinity／workmem／portraits／消費時間[可選] —— check 的 next 全列，**提示型不實擋** | — | persona |
-| `letter` | 收尾信落檔（編號=信數+1、`_latest.md` 指標、registry wake_count 同步）| `letters/<P>/_goodnight_letter.md` | `<letter_body>`＝**親筆** |
-| `sleep` | **letter-before-sleep 守衛** → perturb → offline → 解鎖 → **單則**下線廣播（`<summary>` 親筆併系統欄位）→ expire token | `letters/<P>/_goodnight_sleep.md` | `<summary>`＝親筆（選填）|
-| `logout` | **獨立登出**（不綁晚安流程；cleanup／手動登出）＝ sleep 的不寫信版，廣播標明未留信 | `letters/<P>/_goodnight_logout.md` | 工具 |
+| `letter` | 收尾信落檔（編號=信數+1、`_latest.md` 指標、registry wake_count 同步）| `letters/<P>/cmd/goodnight_letter.md` | `<letter_body>`＝**親筆** |
+| `sleep` | **letter-before-sleep 守衛** → perturb → offline → 解鎖 → **單則**下線廣播（`<summary>` 親筆併系統欄位）→ expire token | `letters/<P>/cmd/goodnight_sleep.md` | `<summary>`＝親筆（選填）|
+| `logout` | **獨立登出**（不綁晚安流程；cleanup／手動登出）＝ sleep 的不寫信版，廣播標明未留信 | `letters/<P>/cmd/goodnight_logout.md` | 工具 |
 
 ```bash
 run_cmd.py run GoodNight --arg step=check  --arg persona=<P>

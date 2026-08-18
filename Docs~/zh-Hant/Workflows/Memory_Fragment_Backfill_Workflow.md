@@ -148,14 +148,14 @@ python $CORE/awakening.py keys --persona $P            # 列出當期清單
 ```bash
 python $CORE/awakening.py brief --persona $P
 ```
-產出 `letters/<persona>/_wake_brief.md` —— 五層彙整成**一份可直讀文本**（見根→見森→見林→見叢→見樹＋維護狀態）。之後每次 morning 都會自動重生成，agent 只需要 Read 這一份。
+產出 `letters/<persona>/cmd/wake_brief.md` —— 五層彙整成**一份可直讀文本**（見根→見森→見林→見叢→見樹＋維護狀態）。之後每次 morning 都會自動重生成，agent 只需要 Read 這一份。
 
-主檔上限 1000 行；超出的區塊**整段移進 `_wake_brief_part2.md`**（不砍內容），主檔末尾列出「可續讀」清單，視情況再讀。
+主檔上限 1000 行；超出的區塊**整段移進 `cmd/wake_brief_part2.md`**（不砍內容），主檔末尾列出「可續讀」清單，視情況再讀。
 
 **驗收清單（跑完自己核）**
 - [ ] `_root_index.md` 的「必讀」筆數 = 你抽的 `status: open` 數量
 - [ ] 排在最上面的是你**踩最多次**的那條（不是最新那條）
-- [ ] `_wake_brief.md` 的 §1 有 inline 索引、§2 有你剛加的見叢事項
+- [ ] `cmd/wake_brief.md` 的 §1 有 inline 索引、§2 有你剛加的見叢事項
 - [ ] 每個 `lesson` fragment 都有「可行動守則」段（沒有 = 你寫的是感想不是教訓）
 - [ ] 每筆 origin 都有 `source`（可回溯到原始信／見林）
 
@@ -205,7 +205,7 @@ basecamp 2026-07-28 實測（59 檔 / 220 chunks）：
 
 1. **把 fragment 寫成感想**：沒有「可行動守則」段的不算 fragment。判準 —— 未來的你讀完能不能**照著做一個動作**？
 2. **為每次踩坑開新檔** → 索引洗版、失去計數器價值。**先搜既有 fragment，命中就追加 origin + bump recurrence**。
-3. **手改 `_root_index.md` / `_wake_brief.md`** → 下次生成就被覆寫。要改內容去改 fragment 檔。
+3. **手改 `_root_index.md` / `cmd/wake_brief.md`** → 下次生成就被覆寫。要改內容去改 fragment 檔。
 4. **status 全設 open** → 索引變垃圾場。真的已成反射弧的設 `internalized`（要能舉出「最近一次我自動做對了」的證據）。
 5. **只信工具 stdout** → 跑完 `root-index` 要真的打開索引看內容對不對（本 workflow 的作者就在寫這份文件時，因為 replace 沒命中卻印了「修正完成」而白改一次）。
 

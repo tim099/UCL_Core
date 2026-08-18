@@ -374,7 +374,7 @@ namespace UCL.Core.EditorLib.Page
         // 區塊職責：追回檢視 —— 在頁內直接看 RenderRecall 的輸出（Tim QA 的主要對象）。
         // 物理意義：與 Cmd_Library op=recall 共用 UCL_ReadingLibraryIO.RenderRecall（唯一 schema
         //          實作者），本頁不長第二套讀取。「產生追回檔」= WriteRecallBrief，寫的也是
-        //          Cmd 寫的那個檔（letters/<persona>/_reading_recall_<media>.md）。
+        //          Cmd 寫的那個檔（letters/<persona>/cmd/reading_recall_<media>.md）。
         // 數值影響：檢視純讀；產檔會覆寫該 persona 的追回檔（機械產物，本來就每次重生成）。
         // ===========================================================
         string m_RecallMediaId = "";

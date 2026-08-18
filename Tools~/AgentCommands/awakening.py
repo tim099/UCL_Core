@@ -52,7 +52,7 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
               見林寫入後自動: 歸檔當期見叢 + 提示抽 fragment + 檢查見森門檻.
     root-index --persona X        見根: 掃 fragments/ 機械重建 _root_index.md (手改會被覆寫)
     keys --persona X [--add "…"]  見叢: append (隨時可加, 不限儀式) / 列出當期清單
-    brief --persona X             重生成 _wake_brief.md (身分+五層記憶+營運層單一文本; morning 自動跑)
+    brief --persona X             重生成 cmd/wake_brief.md (身分+五層記憶+營運層單一文本; morning 自動跑)
 
 範例:
   python awakening.py morning --persona basecamp --model claude-opus-5
@@ -1356,7 +1356,7 @@ def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
         print(f"\n## 📖 記憶接續 — 讀這一份就好")
         print(f"   → `{brief.relative_to(_REPO_ROOT)}`  "
               f"(§0 身分 → §1-6 記憶 → §7-9 營運; 每次 morning 重生成)")
-        part2 = brief.parent / "_wake_brief_part2.md"
+        part2 = brief.parent / "wake_brief_part2.md"   # 與 brief 同層（cmd/）
         if part2.exists():
             print(f"   ↳ 續讀檔(超出主檔上限已分檔, 視情況再讀): `{part2.relative_to(_REPO_ROOT)}`")
     except Exception as e:
@@ -1488,7 +1488,7 @@ def _deprecated_login_cmd(name: str, extra: str = "") -> int:
     print("   新流程（Editor 開啟時的唯一通道）：", file=sys.stderr)
     print("   ① run_cmd.py run GoodMorning --arg step=wake  --arg persona=<P> [--arg actual_agent=<A>] [--arg model=<M>]", file=sys.stderr)
     print("   ② run_cmd.py run GoodMorning --arg step=brief --arg persona=<P>", file=sys.stderr)
-    print("   ③ Read brief（路徑在 step=brief 的回傳檔 letters/<P>/_goodmorning_brief.md）", file=sys.stderr)
+    print("   ③ Read brief（路徑在 step=brief 的回傳檔 letters/<P>/cmd/goodmorning_brief.md）", file=sys.stderr)
     print("   ④ run_cmd.py run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body（body 親筆）", file=sys.stderr)
     print("   晚安側：run_cmd.py run GoodNight --arg step=check|letter|sleep|logout --arg persona=<P>", file=sys.stderr)
     print("   Editor 未開啟：登入/登出不可用（R18）；純讀記憶備援 → awakening.py brief --persona <P>", file=sys.stderr)
@@ -2074,7 +2074,7 @@ def cmd_brief(args: argparse.Namespace) -> int:
     path = write_wake_brief(args.persona, reg, reg["personas"][args.persona])
     lines = len(path.read_text(encoding="utf-8").split("\n"))
     print(f"✅ wake brief 生成: {path.relative_to(_REPO_ROOT)} ({lines} 行 / 上限 {BRIEF_LINE_CAP})")
-    part2 = path.parent / "_wake_brief_part2.md"
+    part2 = path.parent / "wake_brief_part2.md"     # 與 brief 同層（cmd/）
     if part2.exists():
         print(f"   ↳ 續讀檔: {part2.relative_to(_REPO_ROOT)}")
     return 0

@@ -571,7 +571,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
 
         /// <summary>遷移報告落點（每次覆蓋）。</summary>
         public static string ReportPath
-            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "_last_relationship_migrate.md");
+            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "_lastcmd/relationship_migrate.md");
 
         const string NL_ = "\n";
 

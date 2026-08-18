@@ -167,9 +167,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             bool full = GetArg(args, "full", "true").Trim().ToLowerInvariant() != "false";
 
             // 區塊職責：先產檔、再把「檔在哪」報回呼叫端（Tim 2026-08-06 QA：要能落檔才能檢視格式）。
-            // 物理意義：`_last_op.md` 是共用通道會被其他 Cmd 覆寫；追回檔要住 persona 自己的 letters/，
-            //          與 `_wake_brief.md` 同一個家、同樣是可重建的機械視圖。
-            // 數值影響：完整覆寫同一份 `_reading_recall_<media-id>.md`；原始筆記不動。
+            // 物理意義：`_last_op.md` 是共用通道會被其他 Cmd 覆寫；追回檔要住 persona 自己的
+            //          letters/cmd/，與其他 Cmd 回傳檔同一個家、同樣是可重建的機械視圖。
+            // 數值影響：完整覆寫同一份 `cmd/reading_recall_<media-id>.md`；原始筆記不動。
             string path = UCL_ReadingLibraryIO.WriteRecallBrief(mediaId, persona, full, out string error);
             if (path == null)
                 throw new InvalidOperationException($"[{CommandType}] recall 失敗：{error}");

@@ -857,7 +857,7 @@ namespace UCL.Core.EditorLib.Page
             try
             {
                 await new Cmd_GoodNight().ExecuteAsync(iArgs, System.Threading.CancellationToken.None);
-                Debug.Log($"[LoginStatus] ✓ logout {iPersona} 完成（詳見 letters/{iPersona}/_goodnight_logout.md）");
+                Debug.Log($"[LoginStatus] ✓ logout {iPersona} 完成（詳見 letters/{iPersona}/cmd/goodnight_logout.md）");
             }
             catch (Exception e)
             {

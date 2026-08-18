@@ -64,7 +64,7 @@ Tim 的原話是「一步改一個 Doc，**改完後** CMD 一樣提示下一步
 >
 > ⚠ **那件事後來從結構上修掉了一半**：FreeTime 的回傳檔已遷入
 > `letters/<persona>/cmd/`（2026-08-18，見 [`Plan_Letters_Dir_Layout`](../../Plan/Plan_Letters_Dir_Layout.md)）。
-> 但 `_goodmorning_*` / `_goodnight_*` / `_streamwatch_*` / `_wake_brief` 等**還在頂層**，
+> 但 `cmd/goodmorning_*` / `cmd/goodnight_*` / `_streamwatch_*` / `cmd/wake_brief` 等**還在頂層**，
 > 所以這道 `_`-skip **仍然必要**，不能因為 freetime 搬走就拔掉 ——
 > 拔掉的條件是那些也搬完（plan §5 的第 ③ 步）。
 

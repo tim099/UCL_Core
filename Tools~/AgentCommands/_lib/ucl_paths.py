@@ -10,7 +10,10 @@
 #   歷史上這三者由 ≥5 份漂移的 find_repo_root 各自解析（.git-walk / AgentCommands-walk /
 #   baton-walk / git rev-parse〔吃 cwd 有 bug〕 / EOV 專屬的 CardGame 錨），漂移正是
 #   2026-06-16 cwd 路徑詐欺 bug 家族的病灶。本檔把解析收斂成一處。
-# 數值影響：純唯讀檔案系統探測（os.path/Path 判斷），不寫任何 asset / token / 狀態檔。
+# 數值影響：路徑解析純唯讀檔案系統探測（os.path/Path 判斷），不寫任何 asset / token / 狀態檔。
+#          **唯一例外是 `ensure_letters_cmd_dir()`**：建 `cmd/` 目錄並補一份 `.gitignore`
+#          （對側 = C# `UCL_LettersPath.EnsureCmdDir`）。那份 ignore 屬於版面語意，
+#          而版面的擁有者是本檔 —— 分散到各寫入端就是下一次靜默漂移。
 #
 # 契約對齊：本檔的 repo_root() 與 C# 端 UCL.Core.EditorLib.UCL_RepoPath.RepoRoot 等價 ——
 #   兩者都「從固定位置往上 walk，找第一個含 .git〖資料夾〗的 ancestor（submodule 的 .git
@@ -391,6 +394,42 @@ def letters_cmd_dir(persona: str) -> Path:
 def letters_cmd_payload(persona: str, cmd: str, step: str) -> Path:
     """一份 Cmd 回傳檔(`letters/<persona>/cmd/<cmd>_<step>.md`) —— 檔名**不帶 `_` 前綴**(目錄已說明它是什麼)。"""
     return letters_cmd_dir(persona) / f"{cmd}_{step}.md"
+
+
+# `cmd/` 目錄自帶的 ignore 內容 —— 與 C# `UCL_LettersPath.CmdDirGitignore` **逐位元相同**
+# （驗法：兩端各建一次、比 sha256；不同就是有一端被改過而另一端沒跟上）。
+# 物理意義：回傳檔是 transient，不入版控。原本這件事靠各 letters repo 根 `.gitignore` 逐檔列名，
+#          而清單天生會落後：FreeTime 遷進 `cmd/` 之後那幾行全部失配，4 份回傳檔就被 commit 了；
+#          更重的是 `_wake_brief.md`（含活 session_token 與信箱、remote 公開）照計畫也要搬進來。
+# ⇒ 規則改成跟著「位置」走，新增任何 Cmd / step 都不必再維護清單。
+CMD_DIR_GITIGNORE = (
+    "# Cmd 回傳檔（transient）—— 每跑一次就重生、手改無效，一律不入版控。\n"
+    "# 有些回傳檔含 session_token / 信箱等憑證，而 letters remote 可能是公開的；\n"
+    "# 這份 ignore 是「目錄層」的，所以新增任何 Cmd / step 都不必再維護逐檔清單。\n"
+    "# 本檔由 UCL_LettersPath.EnsureCmdDir() / ucl_paths.ensure_letters_cmd_dir() 自動建立（兩端同一份字面）。\n"
+    "*\n"
+    "!.gitignore\n"
+)
+
+
+def ensure_letters_cmd_dir(persona: str) -> Path:
+    """建好 `letters/<persona>/cmd/` 並確保內有 `.gitignore`（缺才寫，不覆蓋既有）；回該目錄。
+
+    ⚠ **本函式是本檔唯一會寫檔的一支**（見檔頭「數值影響」）。放在這裡是因為
+      「`cmd/` 不入版控」屬於版面語意，而版面在本檔 —— 交給各寫入端各自記得就是下一次靜默漂移。
+    失敗不丟例外：回傳檔本身比 ignore 重要，不該因為這步讓 Cmd／工具掛掉。
+    """
+    d = letters_cmd_dir(persona)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        gi = d / ".gitignore"
+        if not gi.exists():                      # 缺才寫 —— 有人手改過（放行某一份）時不該被蓋回
+            # newline="\n" 是硬需求：預設會在 Windows 把 \n 轉成 \r\n，而 C# 端寫的是 LF
+            # ⇒ 兩端產出就不再逐位元相同（同一份檔在兩端交替寫入會製造無意義的 diff）。
+            gi.write_text(CMD_DIR_GITIGNORE, encoding="utf-8", newline="\n")
+    except Exception as e:
+        print(f"[ucl_paths] cmd/ 目錄或 .gitignore 準備失敗（回傳檔仍會嘗試寫入）：{d} — {e}")
+    return d
 
 
 # ─────────────────────────────────────────────────────────────────────────

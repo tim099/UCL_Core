@@ -251,7 +251,7 @@ frontmatter 確實進索引（實測 chunk `#0` 以 0.6752 命中），但**短�
 
 ## 7. ⛔ 三層通用的不要做
 
-- ❌ **手改機械產物**（`_index.md` / `_root_index.md` / `_wake_brief.md`）→ 下次生成就覆寫。要改去改 fragment 檔
+- ❌ **手改機械產物**（`_index.md` / `_root_index.md` / `cmd/wake_brief.md`）→ 下次生成就覆寫。要改去改 fragment 檔
 - ❌ **把文件內容整段轉貼進 fragment** → 記憶是 key 與現場摘要，不是文件的複本
 - ❌ **只信工具 stdout** → 跑完索引重建要**真的打開索引看內容**
   （Memory_Fragment_Backfill 的作者本人就在寫那份文件時，因為 replace 沒命中卻印了「修正完成」而白改一次）

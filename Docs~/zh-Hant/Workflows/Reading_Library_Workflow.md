@@ -103,7 +103,7 @@ reader 一顆「📖 追回」鈕，頁內直接檢視 —— 與 Cmd 走同一�
 工具只允許讀取
 `AgentCommands/BookNotes/Library/media/<media-id>/readers/<persona>/`，並驗證 `reader.json` 中的
 persona 與 media id；不會從 Archive 或別人的 reader root 補資料。輸出位於
-`AgentCommands/ChatTavern/baton/letters/<persona>/_reading_recall_<media-id>.md`，比照 `_wake_brief.md`
+`AgentCommands/ChatTavern/baton/letters/<persona>/cmd/reading_recall_<media-id>.md`，比照 `cmd/wake_brief.md`
 是可重建、可覆寫的機械產物。
 
 追回檔依序收錄目前 bookmark／看法、作品與媒材資料、`bookshelf.md` 投影、所有章節 manifest 所列

@@ -28,7 +28,7 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
      python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Library \
        --arg op=recall --arg persona=<persona> --arg media_id=<comic-media-id>
      ```
-   - 讀取產生在 `letters/<persona>/_reading_recall_<media-id>.md` 中的書籤與歷史筆記，**直接從 bookmark 指定的下一話接續閱讀**。
+   - 讀取產生在 `letters/<persona>/cmd/reading_recall_<media-id>.md` 中的書籤與歷史筆記，**直接從 bookmark 指定的下一話接續閱讀**。
 2. **首次閱讀新作品**：
    - 若為 Library 尚未建檔之作品，先於 `UCL_LibraryManagePage` 後台點擊「📥 初始化 Library Media」或走 `op=media_init` 建檔。
    - 從第 1 話（或第 0 話卷首）開始閱讀。
@@ -67,7 +67,7 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
 
 隔了一段時間（新 session / 換話題後）接回進度時，先跑：
 `run_cmd.py --persona <me> run Library --arg op=recall --arg persona=<persona> --arg media_id=<comic-media-id>`；
-讀取產生在該 persona `letters/` 目錄的 `_reading_recall_<media-id>.md`，再從 bookmark 指定的下一話繼續。
+讀取產生在該 persona `letters/` 目錄的 `cmd/reading_recall_<media-id>.md`，再從 bookmark 指定的下一話繼續。
 
 **同一 session 內連續讀多話 → 略過 recall**（進度就在手上，重拉是空轉）。
 

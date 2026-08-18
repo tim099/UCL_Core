@@ -1,6 +1,6 @@
 // 區塊職責：Cmd_GoodNight — 晚安流程的 Cmd 入口（Plan_Goodnight_Flow_Simplification §7）。
 //          與 Cmd_GoodMorning 對稱：step 分步、每步回傳檔 `## next` 指路、每步落檔
-//          letters/<persona>/_goodnight_<step>.md 供 QA（Tim 2026-08-13 六題拍板）。
+//          letters/<persona>/cmd/goodnight_<step>.md 供 QA（Tim 2026-08-13 六題拍板）。
 // 物理意義：邏輯全在 UCL_AwakeningService（morning 同一 class，lock/registry/paths 共用）。
 //          三步：check（唯讀＋酒館最後一眼）→ letter（收尾信親筆落檔）→ sleep（offline→
 //          解鎖→單則下線廣播→expire token）。logout ＝獨立步驟（不綁晚安流程、persona 顯式必填、
@@ -21,7 +21,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
     /// <summary>
     /// 晚安流程 Cmd（分步）。正常流程：check → [人工收尾] → letter → sleep；
     /// 手動登出 / cleanup：logout（單獨跑，不寫信）。
-    /// <para>回傳落檔 letters/&lt;persona&gt;/_goodnight_&lt;step&gt;.md。</para>
+    /// <para>回傳落檔 letters/&lt;persona&gt;/cmd/goodnight_&lt;step&gt;.md。</para>
     /// </summary>
     public class Cmd_GoodNight : UCL_AgentCommandHandlerBase
     {
@@ -35,7 +35,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             "sleep: offline+解鎖+單則下線廣播(需先寫信); logout: 獨立登出(不寫信, 廣播標明未留信) | " +
             "persona=<name> — 全步驟必填(要下線誰不能用猜的) | letter_body=<text> — step=letter 必填(走 --arg-file) | " +
             "summary=<text> — sleep 選填(公開睡前心得, 併入下線廣播) | " +
-            "回傳落檔 letters/<persona>/_goodnight_<step>.md";
+            "回傳落檔 letters/<persona>/cmd/goodnight_<step>.md";
 
         public override string ExampleArgs => "step=check;persona=Template";
 
@@ -137,8 +137,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             }
         }
 
+        // 落點走 UCL_LettersPath（版面唯一實作，Plan_Letters_Dir_Layout §8.2 批次④）。
+        // ⚠ 對側契約：python 端等價入口 = `_lib/ucl_paths.py::letters_cmd_payload()`。
         static string PayloadPath(string iPersona, string iStep)
-            => Path.Combine(UCL_LettersPath.PersonaDir(iPersona), $"_goodnight_{iStep}.md");
+            => UCL_LettersPath.CmdPayload(iPersona, "goodnight", iStep);
 
         void WriteAndVerdict(IDictionary<string, string> iArgs, string iPersona, string iStep, UCL_AwakeningService.StepResult iResult)
         {

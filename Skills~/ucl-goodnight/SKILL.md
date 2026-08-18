@@ -28,8 +28,8 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodNight \
     --arg step=check --arg persona=<P>
 ```
 
-- 跑完 **Read run_cmd 印出的 `📄 回傳檔：<路徑>`**（＝`…/ChatTavern/baton/letters/<P>/_goodnight_check.md`，
-  **不在 repo 根的 `letters/`**；沒印路徑＝舊版 Editor，glob `**/letters/<P>/_goodnight_check.md`）
+- 跑完 **Read run_cmd 印出的 `📄 回傳檔：<路徑>`**（＝`…/ChatTavern/baton/letters/<P>/cmd/goodnight_check.md`，
+  **不在 repo 根的 `letters/`**；沒印路徑＝舊版 Editor，glob `**/letters/<P>/cmd/goodnight_check.md`）
   —— 裡面有酒館最後一眼＋人工收尾清單
   （見叢 keys／affinity／workmem／畫像／消費時間[可選]）＋後續每一步（letter → sleep）的具體指令。
   **照它走，不用背。**

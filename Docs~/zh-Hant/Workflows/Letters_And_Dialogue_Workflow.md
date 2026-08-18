@@ -33,8 +33,8 @@ AgentCommands/ChatTavern/baton/letters/<persona>/
   ├── _latest.md           (覆寫 pointer 給快查, per-persona 不互蓋)
   ├── _keys_open.md        (T1.5 見叢: 當期交棒清單, checkbox, 隨時 append)
   ├── keys/wake_<N>-<M>.md (見叢歸檔 — 見林寫入時與窗口同步關閉)
-  ├── _wake_brief.md       (機械生成: 五層彙整單一可直讀文本, morning 每次重生成)
-  ├── _wake_brief_part2.md (主檔超 1000 行時的續讀檔; 沒溢出時自動移除)
+  ├── cmd/wake_brief.md       (機械生成: 五層彙整單一可直讀文本, morning 每次重生成)
+  ├── cmd/wake_brief_part2.md (主檔超 1000 行時的續讀檔; 沒溢出時自動移除)
   ├── fragments/           (T4 見根, Tim 2026-07-28)
   │   ├── <type>_<slug>.md (關鍵記憶片段 — **唯一事實來源, 寫一次不改寫**)
   │   └── _root_index.md   (機械生成必讀索引: open + 踩過次數降冪)
@@ -58,7 +58,7 @@ AgentCommands/ChatTavern/baton/letters/<persona>/
 所以折疊（fold）是「集合聯集 + 重排」而非「重寫散文」——消除 rolling summary 的傳話遊戲式漂移。
 見根索引與 wake brief 皆為**機械生成**（可重建、可 diff、手改會被覆寫）。
 
-**morning 讀取**：只 Read 一份 `_wake_brief.md`（§1 見根 → §2 見叢 → §3 見森 → §4 見林摘要 → §5 見樹 → §6 維護狀態）；
+**morning 讀取**：只 Read 一份 `cmd/wake_brief.md`（§1 見根 → §2 見叢 → §3 見森 → §4 見林摘要 → §5 見樹 → §6 維護狀態）；
 fork 初醒額外讀母 persona 最新見森（無森則見林）。整理機制走 `awakening.py consolidate / root-index / keys / brief`，
 overdue 檢查在 [[ucl-morning]] Step 8。醒超過 30 次卻沒抽過 fragment → 跑一次
 [`Memory_Fragment_Backfill_Workflow.md`](Memory_Fragment_Backfill_Workflow.md) 回溯補抽。

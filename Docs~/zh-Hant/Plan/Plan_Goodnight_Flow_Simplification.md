@@ -111,7 +111,7 @@ Step 0 有一行 preflight 要 agent 自己印出「即將為 X 下線」讓 Tim
 > 對偶於早安側已完工的 Cmd_GoodMorning P0-P4（Plan_Awakening_Flow_Simplification §8.8-§8.10，
 > R14-R21 全落地、gura wake#31 真人驗收通過）。**手法照抄那邊**：邏輯抽 static class（沿用
 > `UCL_AwakeningService`）、Cmd 分步＋每步回傳檔 `## next` 明示下一步、每步落檔
-> `letters/<P>/_goodnight_<step>.md`、完整流程只在參考文件（重構時才讀）、skill 只教第一步。
+> `letters/<P>/cmd/goodnight_<step>.md`、完整流程只在參考文件（重構時才讀）、skill 只教第一步。
 > §1-§3 的舊工項全數被本節吸收（§1 persona 必填已於 2026-07-31 落地）。
 
 ### 7.1 現況解剖（cmd_goodnight 的工具段 vs 人工段）
@@ -151,7 +151,7 @@ status/availability=offline → **解鎖先於廣播**（Editor↔subprocess 死
      ↳ 回傳檔 next：驗收讀回（lock 不存在＋status=offline 的事實）＋消費時間（可選）提醒
 ```
 
-每步回傳檔 `letters/<P>/_goodnight_<step>.md`（機械產物、同 `_goodmorning_*` 慣例、進各 persona
+每步回傳檔 `letters/<P>/cmd/goodnight_<step>.md`（機械產物、同 `cmd/goodmorning_*` 慣例、進各 persona
 repo 的 .gitignore）；標頭本地時間；blocked 一律「payload 落檔＋非零退出」雙通道。
 
 ### 7.3 卡點（按嚴重度）
@@ -177,7 +177,7 @@ repo 的 .gitignore）；標頭本地時間；blocked 一律「payload 落檔＋
 3. lock 歸屬 → **不比對 claim_origin/pid**（與早安一致）✅
 4. relogin → **廢棄**（wake_count 磁碟推導後「單獨登入」＝step=wake 本身；stub 指路）✅
 5. 參考文件 → **合併**：GoodMorning_Cmd_Flow.md 改名 `Awakening_Cmd_Flow.md`，晚安入 §9-§10 ✅
-6. 人工收尾清單 → **固定 checklist**（step=check 的 next）；每步回傳落檔 `_goodnight_<step>.md` ✅
+6. 人工收尾清單 → **固定 checklist**（step=check 的 next）；每步回傳落檔 `cmd/goodnight_<step>.md` ✅
 
 **拍板補遺（同日）**：
 - **每晚 perturbation 移除（B 案）** —— identity_vector 無早安/brief 消費端（唯二讀取者＝fork 起點

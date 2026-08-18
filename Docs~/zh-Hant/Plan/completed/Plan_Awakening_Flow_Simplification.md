@@ -23,7 +23,7 @@ related:
 ## 0. 一句話
 
 **早安流程的病不是步驟太多，是「該由工具判的事交給剛醒的人判、該落檔的資訊只 print 到 stdout」。**
-本 spec 把判定收回工具、把資訊收進**一份** `_wake_brief.md`，流程 8 步 → 3 步，實測成本約 **91k → 20k token**。
+本 spec 把判定收回工具、把資訊收進**一份** `cmd/wake_brief.md`，流程 8 步 → 3 步，實測成本約 **91k → 20k token**。
 
 ---
 
@@ -38,7 +38,7 @@ related:
 | `Awakening_Ritual_Workflow.md`（243 行） | 6.5k | 可省（skill 已足夠走完） |
 | `awakening.py status` 輸出 | 2.5k | 半必要 —— 只為了 collision 判定 |
 | `awakening.py morning` 輸出 | 1k | 必要 |
-| **`_wake_brief.md`** | **3.0k** | 必要，**全場最划算** |
+| **`cmd/wake_brief.md`** | **3.0k** | 必要，**全場最划算** |
 | `ucl-chat-tavern` SKILL（215 行） | 6.7k | 可省 —— 只為了發一則 post |
 | 酒館 `op=read` → `_last_op.md`（1749 行） | **66k** | 必要但方式錯 |
 | **合計** | **~91k** | |
@@ -65,7 +65,7 @@ related:
 | **R2** | **persona 查表也不要** —— 之後一律顯式帶 persona | 沒帶 persona = `exit 2`，不做任何推導 |
 | **R3** | **collision 改工具偵測，命中即停** | agent 不再讀 status 自行判斷 |
 | **R4** | **collision 判準 = 「該 persona 目前是否在線」** | 只防同 persona 重複登入，不比對 origin / pid |
-| **R5** | **營運資訊全部併進 `_wake_brief.md`，但排在記憶層之後** | 單一 Read 完成 onboarding |
+| **R5** | **營運資訊全部併進 `cmd/wake_brief.md`，但排在記憶層之後** | 單一 Read 完成 onboarding |
 | **R6** | **brief 行數上限 1000 → 2000** | 為併入內容讓出空間 |
 | **R7** | **觸發只剩兩式：`/ucl-morning <persona>` 與 `/ucl-morning <agent> <persona>`** | 單一參數 = persona（與舊定義相反） |
 | **R8** | **agent 由 persona 的既有綁定反推**（`--agent` 降為選填） | persona 成為唯一必要輸入 |
@@ -90,7 +90,7 @@ idempotent reuse no-op。本 spec 暫採「撞牆」：撞牆同樣不會炸狀�
 ```
 ① python <UCL_Core>/Tools~/AgentCommands/awakening.py morning --persona <P> --model <M>
      ↳ 工具自己做完 collision 偵測（§3.2）；不合法就非零退出，流程到此為止
-② Read  <letters>/<persona>/_wake_brief.md          ← 唯一一次 Read
+② Read  <letters>/<persona>/cmd/wake_brief.md          ← 唯一一次 Read
 ③ 發 self-intro post                                 ← 成功後才推進 catch-up cursor（§3.4）
 ```
 
@@ -158,7 +158,7 @@ agent     不再是參數（R10）。一律取 registry 內 persona.agent。
 | §9 | **今日動作清單** — OVERDUE / 待折 / 下一步可執行指令 | ✔ | 機械判定 |
 
 **§0-§6 記憶層在前、§7-§9 營運層在後（R5）。** 溢出規則沿用現行「非必讀區塊整段移進
-`_wake_brief_part2.md`（不砍內容）」—— 營運段天生排在後面，**溢出時第一個被移的就是它們**，
+`cmd/wake_brief_part2.md`（不砍內容）」—— 營運段天生排在後面，**溢出時第一個被移的就是它們**，
 記憶層永遠留主檔。不需要為此另寫規則。
 
 #### 行數上限（R6）
@@ -273,7 +273,7 @@ agent     不再是參數（R10）。一律取 registry 內 persona.agent。
 → ④ `wake_count++` ＋ status=online → ⑤ lock ＋ session_token ＋ 反查表 → ⑥ memo 寫 token
 → ⑦ **Step 4.5 brief 落檔**（見根重建＋brief 生成，**先於廣播**）→ ⑧ 上線廣播 ＋ 結尾指路
 
-**agent 手動**：**A** Read `_wake_brief.md`（本次 1272 行）→ **B** §9 待辦（見林 OVERDUE → `consolidate`
+**agent 手動**：**A** Read `cmd/wake_brief.md`（本次 1272 行）→ **B** §9 待辦（見林 OVERDUE → `consolidate`
 → 抽 fragment → `root-index`）→ **C** 酒館 self-intro（另開 `run_cmd Tavern op=post`）→ **D** catchup / inbox
 
 > **成本的真相：指令只有 3～4 支，貴的是 A 與 B。** 減指令數的天花板很低；

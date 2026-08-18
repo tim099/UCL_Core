@@ -52,7 +52,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch
 ```
 
 - 只要給自己的 persona ⇒ 自動算出**我缺哪幾集**，並把那幾集**別人親筆心得的全文**收進一份檔
-  （`letters/<me>/_streamwatch_catchup.md`），末尾附基準者的接續點與當前看法。
+  （`letters/<me>/cmd/streamwatch_catchup.md`），末尾附基準者的接續點與當前看法。
 - 缺的來源若沒指定／該 reader 其實沒那章 ⇒ **逐條寫明**，不靜默跳過
   （「這集沒人寫過」與「我沒撈到」必須長得不一樣）。
 - 讀完再 `step=join`。⚠ 補課讀到的是**他們看到的**，不是我看到的 —— 自己的心得要寫自己的觀察。

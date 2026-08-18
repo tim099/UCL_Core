@@ -56,7 +56,7 @@ Step 1. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
         fork          不在本流程（R11）—— 走後台「🧬 Persona & Agent 管理頁」建分身後再登入
 
         ⛔ 中斷條件（工具內判定）：目標 persona 已在線 → blocked＋非零退出，
-           出口清單在回傳檔 letters/<P>/_goodmorning_wake.md
+           出口清單在回傳檔 letters/<P>/cmd/goodmorning_wake.md
 
 Step 2. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
             --arg step=brief --arg persona=<P>
@@ -93,7 +93,7 @@ Step 3. Read wake brief（路徑在 step=brief 的回傳檔）  ← 唯一一次
           §9 今日動作清單
           ⚠ §7 收件匣 / §8 酒館 catch-up 於 2026-08-13 起退出 brief（R21）——
           這兩樣改由 Step 4 之後的酒館 catchup 一次補齊（在線同事＋未讀＋inbox）。
-        主檔上限 2000 行；溢出的非必讀區塊整段移進 _wake_brief_part2.md（不砍內容）。
+        主檔上限 2000 行；溢出的非必讀區塊整段移進 cmd/wake_brief_part2.md（不砍內容）。
         brief 是機械產物 —— 手改無效，要改去改 fragment / letter / 見叢原檔。
 
 Step 4. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
@@ -107,7 +107,7 @@ Step 4. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
 
 ## 記憶維護（morning 的一部分）
 
-**操作步驟不寫在本檔** —— 待辦一旦觸發，`_wake_brief.md` 的 §9 會把當次該做的每一步
+**操作步驟不寫在本檔** —— 待辦一旦觸發，`cmd/wake_brief.md` 的 §9 會把當次該做的每一步
 （含要貼的指令、fragment type 與 layer 清單）**展開在你正在讀的那份 brief 裡**；
 沒待辦的日子那區塊只有三行。這樣才不會出現「規則在 workflow、人在 brief」的兩地分離。
 
@@ -317,7 +317,7 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
     自動遷移）。`awakening.py` 裡那個 `persona_registry.json` 預設值只是遷移前的錨，
     **在已遷移的專案上它指向一個不存在的檔** —— 這正是「別把路徑抄進文件」的現成血證。
   - `_session/_persona_*.json`（lock）
-  - `ChatTavern/baton/letters/<persona>/`（letters / wakes / longterm / fragments / _wake_brief.md）
+  - `ChatTavern/baton/letters/<persona>/`（letters / wakes / longterm / fragments / cmd/wake_brief.md）
 
 - **排查工具**：`awakening.py status` —— 唯讀環境報告（active locks / pid / 全 persona pool）。
   不是儀式的一步，卡 lock 或要看全池時才用。

@@ -49,14 +49,14 @@ graph TD
 
 ### A1. 護欄先於 add（第一筆 commit 就可能是外洩的那一發）
 
-`_wake_brief.md` 的 §0 身分卡含**活 session_token 與個人信箱**，而 repo 的 origin 是公開 GitHub。
+`cmd/wake_brief.md` 的 §0 身分卡含**活 session_token 與個人信箱**，而 repo 的 origin 是公開 GitHub。
 照「做初始 commit」的字面直接 add，第一筆就把憑證推上公開網路 —— **history 刪不掉**，
 事後刪檔只是再加一個 commit。
 
 `.gitignore` 三行缺一不可（沿用 summit 版全文最穩，內含各行的理由註解）：
 
 ```gitignore
-_wake_brief.md    # 每早由 wake_brief.py 重生成；§0 含 session_token + 個人信箱
+cmd/wake_brief.md    # 每早由 wake_brief.py 重生成；§0 含 session_token + 個人信箱
 _ding_brief.md    # 每次叮由 tavern_catchup.py 重生成；同族機械產物
 sealed/           # 密封信只存在 private 分支；這行是唯一一道自動防線
 ```
@@ -86,7 +86,7 @@ git add ./*.md longterm portraits sketchbook wakes   # 具名 stage，絕不 add
 驗收**不能只看檔名不在 staged 清單**（那只證明檔名），要掃 staged blob 全文：
 
 ```bash
-git check-ignore -v _wake_brief.md _ding_brief.md sealed/x.md   # 三條規則逐一確認命中
+git check-ignore -v cmd/wake_brief.md _ding_brief.md sealed/x.md   # 三條規則逐一確認命中
 git diff --cached | grep -nE "\b[0-9a-f]{32}\b"                  # 32-hex session_token
 git diff --cached | grep -nE "[A-Za-z0-9._%-]+@[A-Za-z0-9.-]+\.(com|net|org|tw)"
 ```
@@ -131,7 +131,7 @@ ls <AgentCommands>/ChatTavern/baton/letters/   # 目標路徑必須已讓空
 diff --strip-trailing-cr <舊夾>/<file> <repo>/<file>
 ```
 
-檔名差異只該剩兩邊各自應有的：舊夾多機械產物（`_wake_brief.md` 等）、新 repo 多護欄檔。
+檔名差異只該剩兩邊各自應有的：舊夾多機械產物（`cmd/wake_brief.md` 等）、新 repo 多護欄檔。
 
 ---
 
@@ -225,7 +225,7 @@ git push --dry-run origin master:refs/heads/master    # 反向 → 必須放行�
 
 | 症狀 | 真相 | 對策 |
 |---|---|---|
-| 初始 commit 看起來乾淨 | `_wake_brief.md` 帶活 token 已入 history | 護欄先於 add；掃 staged blob 全文 |
+| 初始 commit 看起來乾淨 | `cmd/wake_brief.md` 帶活 token 已入 history | 護欄先於 add；掃 staged blob 全文 |
 | wildcard add 報錯 | ignored 檔被擋（防線正常），其餘已 stage 完 | 看 `diff --staged --stat`，別 `-f` |
 | 換手對帳 md5 全紅 | CRLF vs LF，內容差異可能是 0 | `diff --strip-trailing-cr` 複驗 |
 | commit 訊息寫了「防線」 | hooksPath 空白，hook 從沒生效 | 設定 + 兩向實測，訊息內容為準 |

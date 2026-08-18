@@ -33,6 +33,7 @@ exit code: 0 成功 / 2 參數或 persona 有問題 / 3 信箱未設定 / 4 沒�
 from __future__ import annotations
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -169,6 +170,42 @@ def build_announcement(message: str, sha: str, repo: str, personas: list, intro:
 # 公告前等佇列空出來的上限（秒）。run_cmd 預設 60s —— 多人同時用時不夠。
 # 逾時的語意是「沒送出」（ensure_idle 在寫 trigger 前就 SystemExit），所以拉長是純等待、不是重試。
 ANNOUNCE_ACK_TIMEOUT_SEC = 240
+
+
+# 區塊職責：commit 訊息裡的 `Fixes BUG-<n>` → 自動把那幾張單關掉。
+# 物理意義：**這是 BugReport 系統兩條防死機制的其中一條**（另一條是早安 brief 的 stale 讀數）。
+#          `status: open` 的失效方式是沉默的 —— 一張沒人回來按 resolve 的單，
+#          跟一張還真的壞著的單長得一模一樣，而且它會主動誤導。
+#          修好東西的人本來就要 commit，所以把關單掛在**他一定會走的那條路**上，
+#          不要另外要求他記得再跑一支指令（「記得」正是這套系統不能依賴的東西）。
+# 數值影響：一張單一次 Cmd 呼叫；失敗只警告不影響 commit 與領薪（關單失敗不該讓 commit 看起來失敗）。
+# ⚠ 刻意放在**公告成功之後**才跑：commit 與領薪是主線，關單是附帶效果。
+def resolve_fixed_bugs(message: str, sha: str, persona: str) -> None:
+    idxs = []
+    for m in re.finditer(r"Fixes\s+BUG-(\d+)", message, re.IGNORECASE):
+        n = m.group(1)
+        if n not in idxs:
+            idxs.append(n)
+    if not idxs:
+        return
+    run_cmd = Path(__file__).with_name("run_cmd.py")
+    for n in idxs:
+        cmd = [sys.executable, str(run_cmd), "--persona", persona, "run", "BugReport",
+               "--arg", "op=resolve", "--arg", f"index={n}",
+               "--arg", "resolution=fixed", "--arg", f"commit_sha={sha}",
+               "--arg", f"note=由 git_commit.py 自動關單（commit 訊息含 Fixes BUG-{n}）",
+               "--wait-reply", "0"]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=180)
+            if r.returncode == 0 and "Success" in (r.stdout or ""):
+                print(f"🐛 BUG-{n} 已自動關單（{sha}）")
+            else:
+                # 大聲但不致命 —— commit 已經落地，這裡失敗只是那張單還開著
+                print(f"⚠ BUG-{n} 自動關單失敗，單子還開著：手動補 "
+                      f"run BugReport --arg op=resolve --arg index={n} --arg commit_sha={sha}",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"⚠ BUG-{n} 自動關單失敗（{e}）—— 單子還開著，需手動 resolve。", file=sys.stderr)
 
 
 def post_announcement(body: str, sha: str, sender: str, persona: str) -> tuple:
@@ -364,6 +401,7 @@ def main() -> int:
             print(f"📣 酒館公告已發（sha={sha} / sender={sender}）—— 不要再手動貼一次，同 SHA 貼兩次會付兩次錢。")
         else:
             print(f"✓ {sha} 已提交並公告（{primary}{'／bump of ' + args.bump_of if args.bump_of else ''}）")
+        resolve_fixed_bugs(message, sha, primary)
         return EXIT_OK
     # commit 已經落地了，這裡失敗只有錢沒領到 —— 講清楚是哪一半失敗，別讓人以為 commit 也沒成功。
     print(f"⚠ commit 成功但公告發送失敗：{detail}", file=sys.stderr)

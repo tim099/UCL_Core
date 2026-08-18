@@ -140,10 +140,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
 
             // 預授權：最壞情況費用 ≤ 三通道可用量（依 pay 模式取用哪些通道）
             int aMaxUnits = CeilDiv(aVolume, VOXELS_PER_UNIT);
-            int aFreeAvail = FreePixelsAvailable(aPersona);
+            int aFreeAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetExpiring(aPersona);
             // 規劃付款要的是**可花總額**（未過期限時 ＋ 永久）—— 不是「存了多少永久券」。
             // 2026-08-18 券改批次制後這三種讀法分成三個 API，呼叫端必須選；選錯不會報錯。
-            int aVoucherAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetSpendable(aPersona);
+            int aVoucherAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetPermanent(aPersona);
             int aTokenAvail = string.IsNullOrEmpty(aBank) ? 0 : Treasury.UCL_TreasuryLedger.GetBalance(aBank);
             int aAuthorized = aPay switch
             {
@@ -156,7 +156,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: 預授權不足 —— 本刀最壞費用 {aMaxUnits} 單位（體積 {aVolume:N0}/⌈{VOXELS_PER_UNIT}⌉），" +
-                              $"pay={aPay} 可用 {aAuthorized}（免費像素 {aFreeAvail}＋券 {aVoucherAvail}＋token {aTokenAvail} 依模式取用）");
+                              $"pay={aPay} 可用 {aAuthorized}（限時券 {aFreeAvail}＋永久券 {aVoucherAvail}＋token {aTokenAvail} 依模式取用）");
                 aR.AppendLine("- how: 縮小範圍、換 pay 模式、或先賺錢 —— 引擎未執行，未扣任何費用");
                 WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] op={iOp} 預授權不足（詳見 {aPath}）");
@@ -300,8 +300,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                 : UCL_AwakeningService.ResolveBankAccount(aMeta, UCL_AwakeningService.NormalizeAgent(aMeta, GetArg(iArgs, "agent", "")));
 
             int aMaxUnits = CeilDiv((int)aWorstVolume, VOXELS_PER_UNIT);
-            int aFreeAvail = FreePixelsAvailable(aPersona);
-            int aVoucherAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetSpendable(aPersona);   // 可花總額（理由見 op=box 那處）
+            int aFreeAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetExpiring(aPersona);
+            int aVoucherAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetPermanent(aPersona);   // 永久券（限時的算在 aFreeAvail，見 op=box 那處）
             int aTokenAvail = string.IsNullOrEmpty(aBank) ? 0 : Treasury.UCL_TreasuryLedger.GetBalance(aBank);
             int aAuthorized = aPay switch
             {
@@ -314,7 +314,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: 預授權不足 —— 本刀最壞費用 {aMaxUnits} 單位（{aSrcDesc} × thickness {aThickness} = {aWorstVolume:N0}/⌈{VOXELS_PER_UNIT}⌉），" +
-                              $"pay={aPay} 可用 {aAuthorized}（免費像素 {aFreeAvail}＋券 {aVoucherAvail}＋token {aTokenAvail} 依模式取用）");
+                              $"pay={aPay} 可用 {aAuthorized}（限時券 {aFreeAvail}＋永久券 {aVoucherAvail}＋token {aTokenAvail} 依模式取用）");
                 aR.AppendLine("- how: 縮小來源、降 thickness、換 pay 模式、或先賺錢 —— 引擎未執行，未扣任何費用");
                 aR.AppendLine("- 註：透明像素不落地，實際帳單通常遠低於此上限；預授權擋的是**最壞情況**。");
                 WritePayload(iArgs, aPath, aR.ToString());
@@ -506,12 +506,21 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
 
             if (aUseFree && aRemain > 0)
             {
-                aFree = Math.Min(aRemain, FreePixelsAvailable(iPersona));
-                if (aFree > 0) { ConsumeFreePixels(iPersona, aFree, aRef); aRemain -= aFree; }
+                // 2026-08-18：免費像素**就是限時繪圖券** —— 不再有券系統之外的第二套錢。
+                // 這裡先算限時券可用量，只為了讓 pay_breakdown 誠實報出「這幾張是限時的」；
+                // 扣款走同一個 Consume（ledger 本身**先花快過期的**，順序不需要在這裡排）。
+                aFree = Math.Min(aRemain, CanvasVoucher.UCL_CanvasVoucherLedger.GetExpiring(iPersona));
+                if (aFree > 0)
+                {
+                    CanvasVoucher.UCL_CanvasVoucherLedger.Consume(iPersona, aFree, "sculpture_place_freetime", aRef);
+                    aRemain -= aFree;
+                }
             }
             if (aUseVoucher && aRemain > 0)
             {
-                int aBal = CanvasVoucher.UCL_CanvasVoucherLedger.GetSpendable(iPersona);   // 結算也用可花總額
+                // ⚠ 用**永久券**：上一段已經把限時券扣掉了。這裡若用「可花總額」，
+                //   同一批限時券會被算第二次 —— 症狀是合計對、但 pay_breakdown 的分類是假的。
+                int aBal = CanvasVoucher.UCL_CanvasVoucherLedger.GetPermanent(iPersona);
                 aVoucher = Math.Min(aRemain, aBal);
                 if (aVoucher > 0)
                 {
@@ -531,43 +540,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             return (aFree, aVoucher, aToken);
         }
 
-        // ── 免費像素（Canvas/freetime/<P>.json；schema 對齊 canvas.py load_freetime／Cmd_FreeTime）──
-        static string FreePixelPath(string iPersona)
-            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "Canvas", "freetime", $"{iPersona}.json");
-        // 路徑委派 UCL_SessionService —— 這條組法曾在三個檔各寫一份，改一處另兩處指舊位置且不報錯。
-        static string FreeSessionPath(string iPersona)
-            => UCL_SessionService.SessionPath(UCL_SessionKind.FreeTime, iPersona);
-
-        static int FreePixelsAvailable(string iPersona)
-        {
-            try
-            {
-                if (!File.Exists(FreeSessionPath(iPersona)) || !File.Exists(FreePixelPath(iPersona))) return 0;
-                var aSession = JsonData.ParseJson(File.ReadAllText(FreeSessionPath(iPersona), Encoding.UTF8));
-                if (aSession == null || !ReadBool(aSession, "active")) return 0;   // 軟截止：只認 active 旗標
-                var aFt = JsonData.ParseJson(File.ReadAllText(FreePixelPath(iPersona), Encoding.UTF8));
-                if (aFt == null || ReadStr(aFt, "session_id") != ReadStr(aSession, "session_id")) return 0;   // 額度不跨場
-                return Math.Max(0, ReadInt(aFt, "granted") - ReadInt(aFt, "used"));
-            }
-            catch (Exception) { return 0; }
-        }
-
-        static void ConsumeFreePixels(string iPersona, int iCount, string iRef)
-        {
-            var aFt = JsonData.ParseJson(File.ReadAllText(FreePixelPath(iPersona), Encoding.UTF8));
-            aFt["used"] = new JsonData(ReadInt(aFt, "used") + iCount);
-            if (!aFt.Contains("history")) { var aH = new JsonData(); aH.Init(JsonType.List); aFt["history"] = aH; }
-            var aEntry = new JsonData();
-            aEntry["ts"] = new JsonData(UCL_AwakeningService.NowIso());
-            aEntry["ref"] = new JsonData(iRef ?? "");
-            aEntry["session_id"] = aFt.Contains("session_id") ? aFt["session_id"] : new JsonData("");
-            aEntry["count"] = new JsonData(iCount);
-            aFt["history"].Add(aEntry);
-            string aTmp = FreePixelPath(iPersona) + ".tmp";
-            File.WriteAllText(aTmp, aFt.ToJsonBeautify(), new UTF8Encoding(false));
-            if (File.Exists(FreePixelPath(iPersona))) File.Delete(FreePixelPath(iPersona));
-            File.Move(aTmp, FreePixelPath(iPersona));
-        }
+        // ⚠ 免費像素的額度檔（`Canvas/freetime/<P>.json`）2026-08-18 廢除 ——
+        //   `FreePixelPath` / `FreeSessionPath` / `FreePixelsAvailable` / `ConsumeFreePixels` 四支一併移除。
+        //   免費像素現在**就是限時繪圖券**（`Cmd_FreeTime step=start` 發、到期自動作廢），
+        //   所以不再有「券系統之外的第二套錢」要各自讀檔、各自算可用量、各自作廢。
+        //   ⇒ 錢一律走 `UCL_CanvasVoucherLedger`（唯一寫入 owner）。
 
         // ── 小工具 ──
         static string ResolveEngineScript()

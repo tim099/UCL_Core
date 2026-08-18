@@ -66,6 +66,23 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
             return aSum;
         }
 
+        // ===========================================================
+        // 區塊職責：某一批（按 ref）還剩多少 —— 給「本場自由時間的免費像素還剩幾顆」用。
+        // 物理意義：`GetExpiring` 回的是**所有**未過期限時券，而自由時間要回報的是
+        //          「**本場**發的那 10 顆用了幾顆」。兩者在同時持有多批限時券時不同 ——
+        //          用前者去報「本場已用」會算出別場的量，而那不會報錯。
+        // 數值影響：純讀。ref 空 ⇒ 回 0（不要回總額 —— 那是拿「沒指定」冒充「全部」）。
+        // ===========================================================
+        public static int GetExpiringByRef(string persona, string refText)
+        {
+            if (string.IsNullOrEmpty(refText)) return 0;
+            DateTime aNow = DateTime.UtcNow;
+            int aSum = 0;
+            foreach (var b in LoadBatches(persona))
+                if (!b.IsPermanent && b.IsSpendableAt(aNow) && b.@ref == refText) aSum += b.remain;
+            return aSum;
+        }
+
         /// <summary>**可花總額**（未過期的限時 ＋ 永久）。規劃付款用這支。</summary>
         public static int GetSpendable(string persona)
         {

@@ -119,6 +119,12 @@ namespace UCL.Core.EditorLib.Page
         string m_TavernGrantAmountDraft = "0";   // 酒館券發放金額（Tim 2026-07-24：接上 UCL_TavernVoucherLedger canonical grant）
         string m_VoucherDescDraft = "";   // 繪圖券／酒館券發放共用的說明欄（Tim 2026-07-21：發券同步說明到酒館通知，仿打款）
 
+        // 區塊職責：繪圖券的**有效期限**（分鐘）—— 0 ＝ 永久券（Tim 2026-08-18 期間限定券）。
+        // 物理意義：用「幾分鐘後到期」而不是要人手打 ISO 時戳 —— 手打時戳會打錯，
+        //          而打錯的後果是發出一批**已經過期**或**永遠不過期**的券，兩者都不會報錯。
+        // 數值影響：>0 才換算成 expires_at；0 走原本的永久券路徑（行為與改動前逐值相同）。
+        string m_CanvasExpireMinutesDraft = "0";
+
         // 🏦 央行政策參數草稿（Tim 2026-08-01）—— 進頁時由 LoadCentralBankDrafts() 從落盤值填入。
         // 存草稿而非直接綁 property：TextField 每幀寫回會讓「打到一半的字」直接落盤
         // （打 "50" 的過程中會先經過 "5"，那一瞬間費率就變成 0.5% 並生效）。
@@ -1139,9 +1145,16 @@ namespace UCL.Core.EditorLib.Page
                 // 數值影響：填 0 的券種不寫帳；兩欄皆為 0 時不允許發放，避免產生空操作／空公告。
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label($"🎨 繪圖券 餘額: <b>{(hasPersona ? m_CacheCanvasBal.ToString() : "-")}</b>", WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                    GUILayout.Label($"🎨 繪圖券: 永久 <b>{(hasPersona ? m_CacheCanvasBal.ToString() : "-")}</b>"
+                        + (hasPersona && m_CacheCanvasExpiring > 0 ? $" ＋限時 <b>{m_CacheCanvasExpiring}</b>" : ""),
+                        WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(230)));
                     GUILayout.Label("發放", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
                     m_CanvasGrantAmountDraft = GUILayout.TextField(m_CanvasGrantAmountDraft ?? "0", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                    // 期間限定券（Tim 2026-08-18）：用「幾分鐘後到期」而不是要人手打 ISO 時戳 ——
+                    // 手打時戳會打錯，而打錯的後果是發出一批**已經過期**或**永遠不過期**的券，
+                    // 兩者都不會報錯。0 ＝ 永久券（行為與改動前逐值相同）。
+                    GUILayout.Label("期限(分, 0=永久)", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                    m_CanvasExpireMinutesDraft = GUILayout.TextField(m_CanvasExpireMinutesDraft ?? "0", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
                 }
 
                 using (new GUILayout.HorizontalScope())
@@ -1483,7 +1496,18 @@ namespace UCL.Core.EditorLib.Page
             {
                 int canvasBefore = 0, canvasAfter = 0, tavernBefore = 0, tavernAfter = 0;
                 if (canvasAmount > 0)
-                    (canvasBefore, canvasAfter) = UCL_CanvasVoucherLedger.Grant(persona, canvasAmount, "admin_grant", desc);
+                {
+                    // 期限欄 → ISO 到期時刻。解析不出來或 <=0 ⇒ 空字串 ＝ 永久券（**不猜**：
+                    // 把打錯的字當成某個天數，等於替發券的人決定了一批券的壽命）。
+                    string aExpiresAt = "";
+                    if (int.TryParse((m_CanvasExpireMinutesDraft ?? "0").Trim(), out int aMins) && aMins > 0)
+                    {
+                        aExpiresAt = DateTime.UtcNow.AddMinutes(aMins)
+                            .ToString("yyyy-MM-ddTHH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture) + "Z";
+                    }
+                    (canvasBefore, canvasAfter) = UCL_CanvasVoucherLedger.Grant(
+                        persona, canvasAmount, "admin_grant", desc, aExpiresAt);
+                }
                 if (tavernAmount > 0)
                     (tavernBefore, tavernAfter) = UCL_TavernVoucherLedger.Grant(bank, persona, tavernAmount, "admin_grant", desc);
 

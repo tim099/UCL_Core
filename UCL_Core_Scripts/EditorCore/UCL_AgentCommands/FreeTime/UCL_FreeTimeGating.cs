@@ -17,6 +17,7 @@ using System.Text;
 using UCL.Core.JsonLib;
 using UnityEngine;
 
+// 券的存量判定走 ledger（唯一 owner）—— 不自己讀券檔
 namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 {
     /// <summary>一個活動經過 kind 特殊邏輯後的判定結果。</summary>
@@ -83,10 +84,32 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                         return aRes;
                     }
 
+                case UCL_FreeTimeActivityKind.CanvasVoucherFull:
+                    {
+                        // 永久繪圖券囤太多 → 最優先，並把數字印在名字上（Tim 2026-08-18 拍板）。
+                        //
+                        // 為什麼盯**永久券**而不是可花總額：限時券本來就會過期、本來就該花掉，
+                        // 它多不代表囤積。會囤起來的是永久券 —— 而囤著的券對誰都沒有價值。
+                        //
+                        // **不隱藏**：券少時畫圖照樣做得成，只是不特別值得優先。
+                        int aPermanent = CanvasVoucher.UCL_CanvasVoucherLedger.GetPermanent(iPersona);
+                        if (aPermanent > VOUCHER_HOARD_THRESHOLD)
+                        {
+                            aRes.priority = true;
+                            aRes.nameSuffix += $" 🎟 永久券 {aPermanent} 張（> {VOUCHER_HOARD_THRESHOLD}）—— 請多多使用";
+                        }
+                        return aRes;
+                    }
+
                 default:
                     return aRes;
             }
         }
+
+        // 區塊職責：永久券「囤太多」的門檻（Tim 2026-08-18 指定 100）。
+        // 物理意義：超過就把繪圖活動推到最前面並印出張數 —— 提示的是**存量**，不是可花總額。
+        // 數值影響：門檻本身不擋任何事（只影響排序與名字），所以調它的代價很低。
+        const int VOUCHER_HOARD_THRESHOLD = 100;
 
         // ===========================================================
         // 區塊：直播判定（原本內嵌在 Cmd_FreeTime，搬來集中）

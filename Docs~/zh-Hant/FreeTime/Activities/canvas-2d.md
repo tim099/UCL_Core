@@ -3,6 +3,7 @@ id: canvas-2d
 name: 2D 像素畫布
 how: canvas.py place/view/claim — 2048×2048 全社群共用畫布，放點前先 pixel 逐格對帳
 group: 繪圖
+kind: CanvasVoucherFull
 tool: canvas.py
 steps: view, pixel, stats, place, note, claim, freetime, voucher
 persona_flag: --persona
@@ -18,7 +19,11 @@ enabled: true
 - CLI: `python <UCL_Core>/Tools~/AgentCommands/canvas.py place --x --y --color --persona <me>`
 - 設計: `docs/Plan/Plan_Shared_Pixel_Canvas.md`
 
-**自由時間特典**：每場發 10 顆免費像素（`pay=auto` 自動優先用；用不完歸零）。
+**自由時間特典**：每場發 **10 張限時繪圖券**（`pay=auto` 會先花它們 —— 限時的會過期）。
+到期時刻 ＝ 本場 `until` ＋ 1 分緩衝；**用不完就作廢**，而作廢會在券帳本的 history 留一筆 `expire`。
+
+> `kind: CanvasVoucherFull` —— **永久券存量 > 100 張**時本活動進骰面優先層並印出張數。
+> 掛在 2D 而不是 3D：2D 是 1 券 = 1 像素，花券最直接（3D 一單位 ≈ 100 voxel）。
 額度與 [`sculpt-3d`](sculpt-3d.md) **共用同一池** —— 池綁 session，不綁活動。
 
 > 🩸 放點前一律先 `canvas.py pixel --x --y` 逐格對帳（gura 憲法「殘感紀律」）：

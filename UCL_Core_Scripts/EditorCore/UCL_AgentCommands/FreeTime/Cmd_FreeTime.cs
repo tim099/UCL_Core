@@ -16,6 +16,7 @@ using System.Text;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UCL.Core.JsonLib;
+using UCL.Core.EditorLib.AgentCommands.CanvasVoucher;   // 免費像素 = 限時繪圖券（錢一律走 ledger，不自寫額度檔）
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.FreeTime
@@ -51,6 +52,9 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
         public override string HelpURL =>
             "ucl_core:Docs~/zh-Hant/Workflows/Awakening_Cmd_Flow.md";
+
+        /// <summary>限時券的到期緩衝（分鐘）—— **截止是軟的**，最後一件活動可能跨過 until 才收工（Tim 2026-08-18 指定 1 分）。</summary>
+        const int FREE_PIXEL_GRACE_MINUTES = 1;
 
         /// <summary>每場自由時間發放的免費像素數（Tim 2026-08-13 拍板；per-session 清零不累積）。</summary>
         public const int FREE_PIXELS_PER_SESSION = 10;
@@ -140,7 +144,13 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             SaveSession(iPersona, aSession);
 
             // 免費像素發放：整份覆寫額度欄（per-session 清零 —— 拍板②），history 保留供回溯
-            GrantFreePixels(iPersona, aSessionId, out int aPrevForfeit);
+            // 免費像素 ＝ **綁本場的限時繪圖券**（Tim 2026-08-18 拍板期間限定券）。
+            // 物理意義：舊制自己維護一份 `Canvas/freetime/<P>.json` 額度檔（granted/used），
+            //          於是「用不完歸零」需要一條**專門的作廢寫入路徑**（收工時把 granted 壓成 used）。
+            //          改成限時券之後，**歸零是到期的自然結果** —— 那條寫入路徑整條消失。
+            // 到期時刻 ＝ session end_ts ＋ 1 分緩衝（Tim 指定）。緩衝的理由：截止是軟的，
+            //          最後一件活動可能跨過 until 才收工，而那一刻他手上的券不該已經失效。
+            int aPrevForfeit = GrantFreePixelVouchers(iPersona, aSessionId, aUntil);
 
             // 開場擲骰（兩層隨機排序：優先層在前、層內仍隨機；做不成的活動已隱藏；時間不夠的降尾端）
             int aMinutes = (int)Math.Max(0, (aUntil - aNow).TotalMinutes);
@@ -148,7 +158,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             // 酒館開場宣告（單則：時段＋像素額度＋骰面 —— in-process 走 Cmd_Tavern，計酬/mirror 全沿用）
             var aBody = new StringBuilder();
-            aBody.AppendLine($"🎫 [{iPersona} 大小姐] 進入自由時間 — 至 **{aUntil:HH:mm}**（約 {aMinutes} 分鐘）｜🎨 免費像素 {FREE_PIXELS_PER_SESSION} 顆已發放（本場有效，用不完歸零）");
+            aBody.AppendLine($"🎫 [{iPersona} 大小姐] 進入自由時間 — 至 **{aUntil:HH:mm}**（約 {aMinutes} 分鐘）｜🎟 限時繪圖券 {FREE_PIXELS_PER_SESSION} 張已發放（到 {aUntil.AddMinutes(FREE_PIXEL_GRACE_MINUTES):HH:mm} 作廢）");
             aBody.AppendLine();
             AppendPriorityNote(aBody, aList, aIsLive);
             aBody.AppendLine("開場擲骰 🎲 全清單隨機排序（僅供參考 — 自由意志優先）：");
@@ -160,7 +170,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             // 回傳檔：三個時間欄（拍板：時間感由 Cmd 供給）＋骰面（附活動 md 實路徑 —— 傳遞不反推）＋ next
             AppendTimeFields(aR, aNow, aUntil);
             aR.AppendLine($"- session: `{aSessionId}`（state: `{SessionPath(iPersona)}`）");
-            aR.AppendLine($"- 免費像素: **{FREE_PIXELS_PER_SESSION} 顆**（canvas.py place --pay auto 自動優先用；per-session 清零{(aPrevForfeit > 0 ? $"，上場作廢 {aPrevForfeit} 顆" : "")}）");
+            aR.AppendLine($"- 🎟 限時繪圖券: **{FREE_PIXELS_PER_SESSION} 張**（`--pay auto` 會先花它們；**到期即作廢**，到 {aUntil.AddMinutes(FREE_PIXEL_GRACE_MINUTES):HH:mm}）{(aPrevForfeit > 0 ? $"　⚠ 上場還掛著 {aPrevForfeit} 張未用（過期後由券帳本清掉並記 expire）" : "")}");
             aR.AppendLine($"- 酒館開場宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort，不影響 session）")}");
             AppendOnlineSection(aR, iPersona);
             AppendPartnerBriefSection(aR, iPersona);
@@ -212,20 +222,24 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     ? (string.IsNullOrEmpty(iReason) ? "early（未附 reason —— 提前收工的形狀該可觀測，下次帶上）" : $"early: {iReason}")
                     : "expired";
                 CloseSession(iPersona, aSession, aEndReason, out int aRounds);
-                int aForfeited = ForfeitFreePixels(iPersona, out int aUsed);
+                // 收工**不再需要作廢寫入** —— 限時券到期自己失效（且 ledger 下次寫入時
+                // 會清掉並在 history 記一筆 `expire`）。這裡只要讀回「本場還剩幾張」來回報。
+                int aLeftover = UCL_CanvasVoucherLedger.GetExpiringByRef(iPersona, aSession.session_id);
+                int aUsed = Math.Max(0, FREE_PIXELS_PER_SESSION - aLeftover);
+                int aForfeited = aLeftover;   // 沒用完的 ＝ 即將到期作廢的（ledger 下次寫入時清並記 history）
 
                 var aBody = new StringBuilder();
                 aBody.AppendLine(iEarlyEnd
                     ? $"🏁 [{iPersona} 大小姐] 自由時間提前收工（{(string.IsNullOrEmpty(iReason) ? "未附 reason" : iReason)}）"
                     : $"⏰ [{iPersona} 大小姐] 自由時間到點收工（至 {aUntil:HH:mm}）");
-                aBody.AppendLine($"本場 {aRounds} 輪活動｜🎨 免費像素用 {aUsed} 顆{(aForfeited > 0 ? $"、歸零作廢 {aForfeited} 顆" : "")}。回工位了。");
+                aBody.AppendLine($"本場 {aRounds} 輪活動｜🎟 限時券用 {aUsed} 張{(aForfeited > 0 ? $"、{aForfeited} 張到期作廢" : "、全數用畢")}。回工位了。");
                 int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), iEarlyEnd ? "session-end-early" : "session-end", iToken);
 
                 AppendTimeFields(aR, aNow, aUntil);
                 aR.AppendLine(aExpired && !iEarlyEnd ? "- ⏰ **時間到** —— session 已收工" : "- 🏁 提前收工 —— session 已收工");
                 aR.AppendLine($"- end_reason: {aEndReason}");
                 aR.AppendLine($"- 本場輪次: {aRounds}");
-                aR.AppendLine($"- 免費像素: 用 {aUsed} 顆{(aForfeited > 0 ? $"、作廢 {aForfeited} 顆（per-session 清零）" : "（全數用畢）")}");
+                aR.AppendLine($"- 🎟 限時券: 用 {aUsed} 張{(aForfeited > 0 ? $"、**{aForfeited} 張到期作廢**（券帳本會在下次寫入時清掉並記一筆 expire）" : "（全數用畢）")}");
                 aR.AppendLine($"- 收工宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
                 aR.AppendLine("## ⏹ 已收工 —— 自由時間結束，**不要再跑 step=next**");
                 aR.AppendLine("- 回工作；或走晚安流程：run_cmd.py run GoodNight --arg step=check --arg persona=" + iPersona);
@@ -242,7 +256,11 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             double aRemainSec = Math.Max(0, (aUntil - aNow).TotalSeconds);
             int aRemain = (int)(aRemainSec / 60);
             var (aList, aSource, aIsLive) = RollActivities(iPersona, aRemain);
-            (int aGranted, int aUsedNow) = ReadFreePixelUsage(iPersona);
+            // 本場限時券剩餘 ⇒ 已用 = 發放量 - 剩餘（按 session_id 查那一批，不是查所有限時券 ——
+            // 同時持有多批時後者會把別場的量算進來，而那不會報錯）。
+            int aGranted = FREE_PIXELS_PER_SESSION;
+            int aRemainNow = UCL_CanvasVoucherLedger.GetExpiringByRef(iPersona, aSession.session_id);
+            int aUsedNow = Math.Max(0, aGranted - aRemainNow);
             string aRemainText = aRemainSec < 60 ? $"{(int)aRemainSec} 秒" : $"{aRemain} 分";
 
             // ⚠ 這裡曾經有一段「末段提示」（剩 N 分改印『不建議起新活動』而不是新骰面）。
@@ -292,7 +310,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                           + (aRound - aSession.activities_done >= 2
                              ? $"　⚠ 換骰比開工多 {aRound - aSession.activities_done} 次 —— 挑一個開做，別再骰了"
                              : ""));
-            aR.AppendLine($"- 免費像素: 已用 {aUsedNow}/{aGranted}");
+            aR.AppendLine($"- 🎟 限時券: 已用 {aUsedNow}/{aGranted}（剩 {aRemainNow} 張，到期即作廢）");
             aR.AppendLine($"- 換骰宣告: {(aDiceSeq > 0 ? $"seq **{aDiceSeq}**" : "未發（best-effort）")}");
             aR.AppendLine(string.IsNullOrEmpty(aChatBody)
                 ? "- 本輪交流: **未帶訊息**（不強制）—— 下一輪想跟同事講話就帶 `--arg-file body=<檔>`，會併進換骰宣告同一則"
@@ -726,17 +744,14 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         }
 
         // ===========================================================
-        // 區塊：session state / 免費像素 state 讀寫（canvas.py 對齊端 —— 改欄位要兩端同步）
+        // 區塊：session state 讀寫（canvas.py 對齊端 —— 改欄位要兩端同步）
+        // ⚠ 免費像素的額度檔（`Canvas/freetime/<P>.json`）2026-08-18 已廢除 —— 改成限時繪圖券，
+        //   發放走 ledger、歸零是到期的自然結果。那條「第二套錢」不再存在。
         // ===========================================================
         // 路徑委派 UCL_SessionService —— 這條組法曾在三個檔各寫一份
         // （本檔、UCL_FreeTimeGating、Cmd_Sculpture），改一處另兩處指舊位置且不報錯。
         static string SessionPath(string iPersona)
             => UCL_SessionService.SessionPath(UCL_SessionKind.FreeTime, iPersona);
-
-        // 路徑委派 UCL_FreeTimePixelState —— 這條組法在 C# 曾有兩份（本檔、Cmd_Sculpture），
-        // 而路徑重造的失敗是靜默的：改一處另一處指舊位置，兩邊都能各自運作、都不報錯。
-        static string FreePixelPath(string iPersona)
-            => UCL_FreeTimePixelState.StatePath(iPersona);
 
         // 區塊職責：session 檔的讀 / 寫 / 收工 —— 三處都走 typed model，不再逐鍵手搭。
         // 物理意義：鍵名從「字串」變成「欄位」⇒ 打錯是編譯期錯誤，不是讀回預設值。
@@ -756,60 +771,33 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             UCL_SessionService.Close(UCL_SessionKind.FreeTime, iPersona, ioSession, iReason);
         }
 
-        /// <summary>發放本場免費像素：額度欄整份覆寫（per-session 清零），history 保留。回傳上場作廢顆數。</summary>
-        static void GrantFreePixels(string iPersona, string iSessionId, out int oPrevForfeit)
+        // ===========================================================
+        // 區塊職責：發放本場的免費像素 —— **一批綁本場的限時繪圖券**。
+        //
+        // 物理意義：2026-08-18 前這裡寫的是 `Canvas/freetime/<persona>.json`（granted/used 額度檔），
+        //          而那份檔是**券系統之外的第二套錢**：它需要自己的發放、自己的消費、
+        //          以及一條專門的「用不完歸零」作廢路徑。三個消費端（canvas.py / Cmd_Sculpture /
+        //          本檔）各自讀它、各自算可用量。
+        //   ⇒ Tim 拍板併入券系統：免費像素 ＝ 限時券。**歸零變成到期的自然結果**，
+        //     作廢路徑整條刪掉（`ForfeitFreePixels` / `ReadFreePixelUsage` / `FreePixelPath` 一併移除）。
+        //
+        // 數值影響：發 FREE_PIXELS_PER_SESSION 張限時券，`ref` ＝ session_id
+        //   （那是「這批屬於哪一場」的唯一憑據，回報本場已用時按它查）。
+        //   到期 ＝ until ＋ **1 分緩衝**：截止是軟的，最後一件活動可能跨過 until 才收工。
+        //   回傳「上一場作廢了幾張」—— 已由 ledger 在寫入時清理並記 history，這裡只是讀來回報。
+        // ⚠ 錢一律走 ledger（唯一寫入 owner），不自己寫券檔。
+        // ===========================================================
+        static int GrantFreePixelVouchers(string iPersona, string iSessionId, DateTime iUntilLocal)
         {
-            oPrevForfeit = 0;
-            JsonData aFt = null;
-            try
-            {
-                if (File.Exists(FreePixelPath(iPersona)))
-                    aFt = JsonData.ParseJson(File.ReadAllText(FreePixelPath(iPersona), Encoding.UTF8));
-            }
-            catch (Exception e) { Debug.LogWarning($"[FreeTime] freetime state 讀取失敗（重建）: {e.Message}"); }
-            if (aFt != null) oPrevForfeit = Math.Max(0, ReadInt(aFt, "granted") - ReadInt(aFt, "used"));
-            var aNew = new JsonData();
-            aNew["persona"] = new JsonData(iPersona);
-            aNew["session_id"] = new JsonData(iSessionId);
-            aNew["granted"] = new JsonData(FREE_PIXELS_PER_SESSION);
-            aNew["used"] = new JsonData(0);
-            aNew["granted_at"] = new JsonData(UCL_AwakeningService.NowIso());
-            if (aFt != null && aFt.Contains("history")) aNew["history"] = aFt["history"];
-            else { var aHist = new JsonData(); aHist.Init(JsonType.List); aNew["history"] = aHist; }
-            AtomicWrite(FreePixelPath(iPersona), aNew.ToJsonBeautify());
-        }
+            // 先讀「還掛在身上的舊限時券」＝ 上一場沒用完的（此刻可能還沒被清理）
+            int aPrevLeftover = UCL_CanvasVoucherLedger.GetExpiring(iPersona);
 
-        /// <summary>收工時把剩餘額度作廢（granted=used —— canvas 端雙保險；主閘門是 session active 判定）。</summary>
-        static int ForfeitFreePixels(string iPersona, out int oUsed)
-        {
-            oUsed = 0;
-            try
-            {
-                if (!File.Exists(FreePixelPath(iPersona))) return 0;
-                var aFt = JsonData.ParseJson(File.ReadAllText(FreePixelPath(iPersona), Encoding.UTF8));
-                if (aFt == null) return 0;
-                oUsed = ReadInt(aFt, "used");
-                int aForfeit = Math.Max(0, ReadInt(aFt, "granted") - oUsed);
-                if (aForfeit > 0)
-                {
-                    aFt["granted"] = new JsonData(oUsed);
-                    AtomicWrite(FreePixelPath(iPersona), aFt.ToJsonBeautify());
-                }
-                return aForfeit;
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[FreeTime] 免費像素作廢失敗（session 閘門仍會擋）: {e.Message}");
-                return 0;
-            }
-        }
-
-        // 讀額度走 typed model（UCL_FreeTimePixelState.Read）—— 鍵名打錯是編譯期錯誤，
-        // 不是讀回 0；而讀回 0 在這裡長得跟「這場還沒發過額度」一模一樣。
-        static (int granted, int used) ReadFreePixelUsage(string iPersona)
-        {
-            var aGrant = UCL_FreeTimePixelState.Read(iPersona);
-            return aGrant == null ? (0, 0) : (aGrant.granted, aGrant.used);
+            string aExpiresIso = iUntilLocal.AddMinutes(FREE_PIXEL_GRACE_MINUTES)
+                .ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fff",
+                    System.Globalization.CultureInfo.InvariantCulture) + "Z";
+            UCL_CanvasVoucherLedger.Grant(iPersona, FREE_PIXELS_PER_SESSION,
+                "freetime", iSessionId, aExpiresIso);
+            return aPrevLeftover;
         }
 
         // ===========================================================

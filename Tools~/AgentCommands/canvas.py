@@ -727,9 +727,17 @@ def _voucher_batches(P: Paths, persona: str) -> list[dict]:
 
 
 def _batch_spendable(b: dict, now: datetime.datetime) -> bool:
-    """這批此刻能不能花。expires_at 空 = 永久；**解析失敗視為永久**（不奪走既有權益）。"""
+    """這批此刻能不能花。expires_at 空 = 永久；**解析失敗視為永久**（不奪走既有權益）。
+
+    🩸 2026-08-18 端到端抓到：本檔的 `utcnow()` 回的是 **offset-naive**（`datetime.utcnow()`），
+      而 `expires_at` 解析出來是 aware ⇒ `now <= t` 直接 TypeError。
+      單元路徑（voucher --sub balance）用的是 aware 預設值，所以**只有真的放點才會炸**。
+      ⇒ 這裡把兩邊一律正規化成 aware UTC，不假設呼叫端給的是哪一種。
+    """
     if int(b.get("remain", 0) or 0) <= 0:
         return False
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.timezone.utc)
     exp = (b.get("expires_at") or "").strip()
     if not exp:
         return True
@@ -766,21 +774,16 @@ def voucher_balance(P: Paths, persona: str, now: datetime.datetime | None = None
 
 # ───────────────────────── freetime state ─────────────────────────
 
-def freetime_path(P: Paths, persona: str) -> Path:
-    return P.freetime / f"{persona}.json"
+# 每場自由時間發放的限時券張數 —— **對側是 C# `Cmd_FreeTime.FREE_PIXELS_PER_SESSION`**。
+# ⚠ 兩端要一起改；只改一端會讓「已用 x/10」的 x 算錯而不報錯（分母是常數、分子是推導）。
+FREE_PIXELS_PER_SESSION = 10
 
 
-def load_freetime(P: Paths, persona: str) -> dict:
-    """區塊職責：載入 / 初始化 per-persona 免費像素額度 state（2026-08-13 額度制）。
-
-    物理意義：發放端是 Cmd_FreeTime step=start（granted=10 / used=0 / session_id 整份覆寫，
-              history 保留）；本工具只在消費時遞增 used —— 兩端 schema 對齊義務。
-    """
-    data = read_json(freetime_path(P, persona))
-    if data is None:
-        data = {"persona": persona, "session_id": None,
-                "granted": 0, "used": 0, "history": []}
-    return data
+# ⚠ 免費像素的額度檔（`Canvas/freetime/<persona>.json`）2026-08-18 廢除 ——
+#   `freetime_path` / `load_freetime` / `free_pixels_available` 三支一併移除。
+#   免費像素現在**就是限時繪圖券**（發放端 Cmd_FreeTime step=start、到期自動作廢），
+#   可用量走 `voucher_expiring()`，扣款走 Cmd（C# ledger 是唯一寫入 owner）。
+#   ⇒ 不再有「券系統之外的第二套錢」要各自讀檔、各自算可用量、各自作廢。
 
 
 def free_session_path(P: Paths, persona: str) -> Path:
@@ -806,22 +809,6 @@ def active_free_session(P: Paths, persona: str, now: datetime.datetime) -> dict 
     if start is None or start > now:
         return None
     return {"id": s.get("session_id"), "end_ts": s.get("end_ts")}
-
-
-def free_pixels_available(P: Paths, persona: str, now: datetime.datetime) -> int:
-    """
-    區塊職責：回此刻可用的免費像素顆數（額度制，可批量）
-    物理意義：(a) 必須在 active free session；(b) 額度記錄必須屬於**當前** session
-              （session_id 對得上）—— 舊場殘餘額度不跨場（per-session 清零，Tim 拍板）。
-    數值影響：回 max(0, granted - used)；不在 session / 額度不屬於本場 → 0。
-    """
-    session = active_free_session(P, persona, now)
-    if session is None:
-        return 0
-    ft = load_freetime(P, persona)
-    if ft.get("session_id") != session.get("id"):
-        return 0   # 額度是別場發的 → 不跨場
-    return max(0, int(ft.get("granted", 0)) - int(ft.get("used", 0)))
 
 
 # ───────────────────────────── place ─────────────────────────────
@@ -875,8 +862,12 @@ def plan_payment(P: Paths, persona: str, bank: str, n: int, pay: str,
     # 免費像素 2026-08-13 改制回歸：舊制（冷卻制）2026-08-01 廢止的死因是 session 來源檔
     # 沒有寫入端；新制寫入端 = Cmd_FreeTime step=start（每場 10 顆，per-session 清零），
     # 本工具讀 session 檔 + 額度檔判可用量 —— 有寫入端了，回歸。
-    free_avail = free_pixels_available(P, persona, now)
-    voucher_avail = voucher_balance(P, persona)
+    # 2026-08-18：**免費像素就是限時繪圖券**（Cmd_FreeTime step=start 發、到期自動作廢）。
+    # 舊制那份 `Canvas/freetime/<P>.json` 額度檔是券系統之外的第二套錢 —— 已廢除。
+    # ⇒ 這裡兩個數字都來自同一個 ledger，且**刻意分開讀**：
+    #   限時券要先花（會過期），永久券墊後。分開讀才報得出誠實的 pay_breakdown。
+    free_avail = voucher_expiring(P, persona, now)
+    voucher_avail = voucher_permanent(P, persona)
     token_avail = ledger_balance(P, bank)
     if token_avail is None:
         # 查不到餘額就**不要猜**。當 0 會拒付並回一句「餘額不足」——
@@ -891,21 +882,22 @@ def plan_payment(P: Paths, persona: str, bank: str, n: int, pay: str,
         # 只用免費像素
         if n > free_avail:
             raise ValueError(
-                f"免費像素不足：需 {n}，{persona} 本場可用 {free_avail} — "
-                "額度來自 Cmd_FreeTime step=start（每場 10 顆，不跨場累積）；"
-                "不在自由時間 session 內時額度為 0。")
+                f"限時券不足：需 {n}，{persona} 未過期的限時券 {free_avail} — "
+                "自由時間的免費像素現在是**限時繪圖券**（Cmd_FreeTime step=start 每場發 10 張，"
+                "到期即作廢）。不在自由時間、或本場的券已過期時這個數字是 0。")
         use_free = n
     elif pay == "voucher":
         # 只用券
         if n > voucher_avail:
-            raise ValueError(f"繪畫券不足：需 {n}，{persona} 餘額 {voucher_avail}")
+            raise ValueError(f"永久繪畫券不足：需 {n}，{persona} 永久券 {voucher_avail}"
+                             f"（未過期限時券另有 {free_avail} 張，用 --pay auto 會先花它們）")
         use_voucher = n
     elif pay == "token":
         # 只用 token
         if n > token_avail:
             raise ValueError(f"token 不足：需 {n}，{bank} 餘額 {token_avail}")
         use_token = n
-    else:  # auto：免費 → 券 → token 依序消耗
+    else:  # auto：**限時券 → 永久券 → token**（2026-08-18 收斂；限時的會過期所以先花）
         remaining = n
         use_free = min(free_avail, remaining)
         remaining -= use_free
@@ -915,7 +907,7 @@ def plan_payment(P: Paths, persona: str, bank: str, n: int, pay: str,
         remaining -= use_token
         if remaining > 0:
             raise ValueError(
-                f"資源合計不足：需 {n}，免費 {free_avail} + 券 {voucher_avail} "
+                f"資源合計不足：需 {n}，限時券 {free_avail} + 永久券 {voucher_avail} "
                 f"+ token {token_avail} = {free_avail + voucher_avail + token_avail}")
 
     return {"free": use_free, "voucher": use_voucher, "token": use_token}
@@ -990,6 +982,18 @@ def cmd_place(args):
                 sys.exit(3)
             ledger_refs.append(f"treasury:{event_uuid}")
 
+        # ⚠ 限時券與永久券**都走同一支 consume** —— ledger 內部先花快過期的，
+        #   所以這裡不需要（也不該）自己排順序。分兩筆呼叫只為了讓 source 分得出來：
+        #   帳面上「這幾張是自由時間的限時券」與「這幾張是存量券」因此可追。
+        if free_consumed > 0:
+            ok, msg = canvas_voucher_consume(
+                persona=persona, amount=free_consumed, source_ref=event_uuid,
+                description=f"canvas {free_consumed} px (freetime 限時券) by {persona}")
+            if not ok:
+                print(f"❌ place 拒絕（限時券扣款失敗，未畫任何像素）：{msg}", file=sys.stderr)
+                sys.exit(3)
+            ledger_refs.append(f"voucher-expiring:{event_uuid}")
+
         if voucher_consumed > 0:
             ok, msg = canvas_voucher_consume(
                 persona=persona, amount=voucher_consumed, source_ref=event_uuid,
@@ -1002,17 +1006,10 @@ def cmd_place(args):
         # 步驟 4：（已移除）本地 voucher ledger 寫入
         # 消券已在步驟 3 走 Cmd_CanvasVoucher op=consume —— C# 是券的 canonical owner。
         # 這裡若保留本地讀-改-寫會**雙重扣券**（Cmd 扣一次、本地再扣一次）。
-        # 步驟 5：更新 per-persona freetime state（額度制：used 遞增；發放端是 Cmd_FreeTime）
-        if free_consumed > 0:
-            ft = load_freetime(P, persona)
-            ft["used"] = int(ft.get("used", 0)) + free_consumed
-            ft.setdefault("history", []).append({
-                "ts": iso_ms(now), "uuid": secrets.token_hex(3),
-                "ref": f"{event_uuid}",
-                "session_id": ft.get("session_id"),
-                "count": free_consumed,
-            })
-            write_json(freetime_path(P, persona), ft)
+        # 步驟 5（2026-08-18 移除）：原本這裡把 `Canvas/freetime/<P>.json` 的 `used` 遞增 ——
+        #   那份額度檔是**券系統之外的第二套錢**，而免費像素現在就是限時繪圖券，
+        #   扣款已經在步驟 3 由 ledger 做完（且它記了自己的 history）。
+        #   ⇒ 這裡不再有第二次寫入。**同一筆消費只有一個寫入端。**
     finally:
         # 臨界區結束（含正常 / 例外 / sys.exit 路徑）一律釋放付款鎖
         lock_cm.__exit__(None, None, None)
@@ -1349,11 +1346,14 @@ def cmd_freetime(args):
         sys.exit(2)
 
     session = active_free_session(P, persona, now)
-    ft = load_freetime(P, persona)
-    granted = int(ft.get("granted", 0))
-    used = int(ft.get("used", 0))
+    # 2026-08-18：免費像素 = **限時繪圖券**。額度檔已廢除 ⇒ 讀 ledger。
+    # 「本場發了幾張」不從檔案推（那份檔沒了），而是用常數 10 對照剩餘量算已用 ——
+    # 精確的「本場那一批」由 C# 端 GetExpiringByRef(session_id) 回答（回傳檔會印）。
+    remain = voucher_expiring(P, persona, now)
+    granted = FREE_PIXELS_PER_SESSION
+    used = max(0, granted - remain)
 
-    print(f"# 🎨 {persona} 自由時間免費像素狀態（額度制：每場 10 顆，不跨場累積）")
+    print(f"# 🎨 {persona} 自由時間免費像素狀態（**限時繪圖券**：每場 {granted} 張，到期作廢）")
     if session is None:
         print("  自由時間: ❌ 不在 active session（免費像素額度為 0）")
         print("  進場: run_cmd.py run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>")

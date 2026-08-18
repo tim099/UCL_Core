@@ -201,8 +201,8 @@ namespace UCL.Core.EditorLib.Page
             {
                 using (new GUILayout.HorizontalScope())
                 {
-                    m_ShowFrontmatter = UCL_GUILayout.Toggle(m_ShowFrontmatter, 16);
-                    GUILayout.Label(UCL_CodeLocalize.Get("MdViewer.Frontmatter"));
+                    m_ShowFrontmatter = UCL_GUILayout.Toggle(m_ShowFrontmatter);
+                    GUILayout.Label(UCL_CodeLocalize.Get("MdViewer.Frontmatter"), UCL_GUIStyle.LabelStyle);
                     GUILayout.FlexibleSpace();
                 }
                 if (m_ShowFrontmatter)

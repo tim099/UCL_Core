@@ -335,13 +335,19 @@ namespace UCL.Core.EditorLib.Page
             switch (b.Type)
             {
                 case UCL_MdBlockType.Heading:
-                {
-                    // 區塊職責：H1/H2 加多一點上方間距，視覺把章節分開
-                    GUILayout.Space(b.HeadingLevel <= 2 ? 8 : 4);
-                    int idx = Mathf.Clamp(b.HeadingLevel - 1, 0, 5);
-                    GUILayout.Label(InlineFormat(b.Text), m_HeadingStyles[idx]);
-                    break;
-                }
+                    {
+                        // 區塊職責：H1/H2 加多一點上方間距，視覺把章節分開
+                        GUILayout.Space(b.HeadingLevel <= 2 ? 8 : 4);
+                        GUILayout.BeginHorizontal();
+                        int idx = Mathf.Clamp(b.HeadingLevel - 1, 0, 5);
+                        if (GUILayout.Button("📋", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            GUIUtility.systemCopyBuffer = b.Text;
+                        }
+                        GUILayout.Label(InlineFormat(b.Text), m_HeadingStyles[idx]);
+                        GUILayout.EndHorizontal();
+                        break;
+                    }
                 case UCL_MdBlockType.Paragraph:
                     GUILayout.Label(InlineFormat(b.Text), m_BodyStyle);
                     break;

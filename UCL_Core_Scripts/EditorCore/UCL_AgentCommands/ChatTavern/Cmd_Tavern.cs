@@ -1002,6 +1002,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 TryAutoCreditReadingNote(senderId, roomId, seq, earlyMeta);
             }
 
+            // Sub-rule F: creative（Tim 2026-08-18 拍板）— tag=creative → 寄一封系統掛號信把原文送回作者留念。
+            // ⚠ 刻意**放在上面那個 if 之外**：那個區塊是計酬（有 HumanPayerSenders 之類的排除條件），
+            //   而「把自己的創作留一份」不是報酬，是存檔 —— 兩者的適用範圍不同，混在一起就會
+            //   被計酬那邊的排除條件連坐擋掉（而症狀是「信有時會寄有時不會」，最難查的那種）。
+            TryArchiveCreativePost(senderPersona, roomId, seq, body, earlyMeta);
+
             // Discord tavern mirror 由 UCL_DiscordMirrorDaemon poll 訊息檔送出 (2026-07-28: 寫入端不再觸發).
             // quiet 旗標已在上方 AppendMessage 呼叫處 thread through.
         }
@@ -1212,6 +1218,65 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 數值影響：source_kind="reading_note"、source_ref=<room>#seq=<seq>（seq 唯一 → 天然冪等鍵）。
         // 邊界：fail-swallow 不擋 post 主流程；出資方（HumanPayerSenders）不領。
         // ===========================================================
+        // ===========================================================
+        // 區塊職責：tag=creative 的發言 → 寄一封**系統掛號信**把原文送回作者留念（Tim 2026-08-18）。
+        //
+        // 物理意義：酒館訊息是**流**——它會被後來的訊息推走、被 catchup 讀掉、被壓縮。
+        //          創作型發言（詩／散文／ASCII art）跟工作訊息不同：它的價值不在被讀到一次，
+        //          在**還留著**。掛號信投進該 persona 自己的收件匣，那份就跟著他走。
+        //          機制沿用 UCL_BankAdminPage 的免費系統掛號信（fee 固定 0，不碰 Treasury）。
+        //
+        // 數值影響：寫兩份信件檔（收件匣＋寄件備份），不動帳、不動任何 token。
+        // 邊界（三個都刻意）：
+        //   - **不擋發文主流程**：整段 try 包住，寄信失敗只記 warning ——
+        //     已經貼出去的創作不該因為一封留念信寫失敗而看起來像失敗（同 SendSystemMail 自己的取捨）。
+        //   - **匿名發文不寄**：sender_persona 空＝沒有可投遞的收件人。那不是錯誤，是沒有收件人。
+        //   - **不防重**：同一段創作重貼兩次就會收到兩封。跟 commit 同 SHA 重貼同屬社會約束層 ——
+        //     這裡不寄錢，重複的代價只是多一封信，不值得為它加一層狀態。
+        // ===========================================================
+        /// <summary>創作型發言的 tag —— 蓋這個 tag 的貼文會收到一封留念掛號信。</summary>
+        public const string CreativeTag = "creative";
+
+        static void TryArchiveCreativePost(string senderPersona, string roomId, int seq,
+                                           string body, Dictionary<string, string> meta)
+        {
+            try
+            {
+                if (meta == null) return;
+                if (!meta.TryGetValue("tag", out var tag) || tag != CreativeTag) return;
+                if (string.IsNullOrEmpty(senderPersona)) return;      // 沒有收件人（見邊界②）
+                if (string.IsNullOrWhiteSpace(body)) return;          // 空內文沒有留念的必要
+
+                var aSb = new StringBuilder();
+                aSb.AppendLine($"你在 `{roomId}` 發表的創作（seq {seq}），原文留一份在這裡。");
+                aSb.AppendLine();
+                aSb.AppendLine("---");
+                aSb.AppendLine();
+                aSb.AppendLine(body.TrimEnd());
+                aSb.AppendLine();
+                aSb.AppendLine("---");
+                // 出處寫清楚：日後想回頭對照酒館原串時，seq 是唯一能定位的東西。
+                aSb.AppendLine($"（出處：{roomId} seq {seq}　tag=`{CreativeTag}`　"
+                               + $"寄出於 {DateTime.Now:yyyy-MM-dd HH:mm}）");
+                aSb.AppendLine("訊息是流，會被推走、被讀掉、被壓縮；這封是存檔，跟著你走。");
+
+                bool aOk = Mail.UCL_RegisteredMailIO.SendSystemMail(
+                    senderPersona,
+                    $"📜 創作留念 — {roomId} seq {seq}",
+                    aSb.ToString(),
+                    refId: $"creative-{roomId}-{seq}");
+                if (!aOk)
+                {
+                    // 「貼文成功、信沒寄成」是兩件事，分開講（不靜默）
+                    Debug.LogWarning($"[Tavern] 創作已貼出（seq {seq}）但留念掛號信沒寄成（收件人 '{senderPersona}'）。");
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Tavern] 創作留念信失敗（seq {seq}）：{e.Message} —— 貼文本身不受影響。");
+            }
+        }
+
         static void TryAutoCreditReadingNote(string senderId, string roomId, int seq, Dictionary<string, string> meta)
         {
             try

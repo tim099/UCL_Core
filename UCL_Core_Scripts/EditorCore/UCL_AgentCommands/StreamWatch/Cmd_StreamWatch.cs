@@ -1121,8 +1121,20 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // ⇒ **沒讀到東西就沒有「已讀」到那裡**：shown==0 不推進。
             int aTavernShown = ParseTavernShown(aStdout);
             int aTavernMax = ParseTavernMaxSeq(aStdout);
+            string aGlobalCursorTs = null;
             if (aTavernShown > 0 && aTavernMax > 0)
+            {
                 aS["tavern_seq"] = new JsonData(Math.Max(aTavernMax, ReadInt(aS, "tavern_seq")));
+                // 區塊職責：本輪 sidecar 顯示過的訊息，一併消化**全域**已讀游標（Tim 2026-08-18 拍板）。
+                // 物理意義：sidecar 水位是 per-session 的 seq（語意＝這場開始以來），
+                //          叮／自由時間的游標是全域 ts —— 兩套原本互不相干。
+                //          但**觀影期間顯示過的訊息確實已經進到眼裡**，不消化的話整場結束後
+                //          未讀會累成一堵牆，然後下一次 catchup 一次倒出來（＝等於沒有人在讀）。
+                // 數值影響：只在 shown>0 && maxSeq>0 時推（同上方兩隻血證的守衛：沒讀到就沒有已讀到那裡）；
+                //          推進本身單調，只前進不後退。
+                // ⚠ 不影響 sidecar 自己的顯示範圍 —— 它讀的是 tavern_seq，不是這個游標。
+                aGlobalCursorTs = ChatTavern.UCL_TavernCursor.AdvanceToSeq(iPersona, "tavern", aTavernMax);
+            }
             aS["cycles"] = new JsonData(ReadInt(aS, "cycles") + 1);
             aS["tiles_total"] = new JsonData(ReadInt(aS, "tiles_total") + aInfo.Tiles);
             aS["last_tiles"] = new JsonData(aInfo.Tiles);
@@ -1164,6 +1176,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 單一入口：字幕／語音／同場訊息全部嵌進本檔（Tim 2026-08-16）
             // 游標印本輪實際餵進去的那個（aTavernSince），與 sidecar 標題的 `已讀 seq≤N` 同源 —— 見瑕疵①③。
             AppendSidecar(aR, aSubPath, aHasSub, iPersona, aTavernShown, Math.Max(0, aTavernSince), true);
+            // 讓「全域游標有沒有被消化」可觀測 —— 靜默推進跟沒推進在回傳檔上會同形。
+            aR.AppendLine(string.IsNullOrEmpty(aGlobalCursorTs)
+                ? "- 全域已讀游標: **未推進**（本輪沒顯示同場訊息，或已在更前面 —— 沒讀到就沒有已讀到那裡）"
+                : $"- 全域已讀游標: ✓ 推進到 `{aGlobalCursorTs}`（觀影期間顯示過＝已消化，叮不會再倒一次）");
             AppendHotspots(aR, iPersona);   // 熱點清單 —— 有沒有都印（零狀態必印）
             aR.AppendLine();
             aR.AppendLine("## next");

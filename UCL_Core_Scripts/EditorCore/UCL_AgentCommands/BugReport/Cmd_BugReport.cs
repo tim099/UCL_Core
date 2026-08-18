@@ -2,7 +2,7 @@
 // 物理意義：跨 agent 的「現場故障與待辦工單」通道 —— 與 NoteLesson（事後認知沉澱）分工，
 //          判準不是嚴重度，是**修得動的東西在誰手上**：
 //          系統可以被改成不讓下一個人踩 ⇒ 這裡；只有我自己需要記住 ⇒ NoteLesson。
-// 數值影響：寫 BugReports/ 底下三種檔（jsonl / reports md / 回傳檔）；不動 Treasury、不發酒館訊息
+// 數值影響：寫 BugReports/ 底下兩種檔（reports/<index>.md 一單一檔 / 回傳檔）；不動 Treasury、不發酒館訊息
 //          （公告由呼叫端自己決定要不要發 —— 這支不替人決定要吵誰）。
 // 設計沿革：Plan_BugReport_System.md（Tim 2026-08-18 拍板；RFC 酒館 seq 12080/12103/12104）。
 #if UNITY_EDITOR
@@ -69,7 +69,7 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
         // 物理意義：evidence 是**必填**，不是建議。
         //   原 RFC 把「先抓硬證不憑感覺」寫成 agent 自律守則 —— 守則靠人記得，欄位靠 schema 擋，
         //   而 2026-08-18 當天就有三次「我以為我記得」失手的紀錄。
-        // 數值影響：配一個 index、append 一行 jsonl、寫一份 reports md。
+        // 數值影響：配一個 index、寫一份 reports/<index>.md（一單一檔，見 UCL_BugReportIO 檔頭）。
         // ===========================================================
         void OpReport(Dictionary<string, string> iArgs, StringBuilder ioR)
         {
@@ -107,9 +107,9 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
                 created_at = aNow,
                 updated_at = aNow,
             };
-            UCL_BugReportIO.Append(e);
-            UCL_BugReportIO.WriteReportMd(e, aDesc, aEvidence,
-                GetArg(iArgs, "repro_steps", ""), GetArg(iArgs, "expected", ""), GetArg(iArgs, "actual", ""));
+            UCL_BugReportIO.Save(e, aDesc, aEvidence,
+                GetArg(iArgs, "repro_steps", ""), GetArg(iArgs, "expected", ""), GetArg(iArgs, "actual", ""),
+                $"{aNow}　`open`　由 {e.reporter} 開單");
 
             ioR.AppendLine($"## ✅ 已建單 **BUG-{e.index}**");
             ioR.AppendLine($"- `{e.type}` / `{e.severity}` / `{e.status}`　回報者：{e.reporter}");
@@ -217,7 +217,8 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
                 throw new Exception("[BugReport] claim 需要 --arg assignee=<你>（不猜身分）");
             e.status = "in_progress";
             e.updated_at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-            UCL_BugReportIO.Append(e);
+            UCL_BugReportIO.Save(e, "", "", "", "", "",
+                $"{e.updated_at}　`in_progress`　由 {e.assignee} 認領");
             ioR.AppendLine($"## ✅ BUG-{e.index} 已認領 → `in_progress`（{e.assignee}）");
         }
 
@@ -233,7 +234,9 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
             e.resolution_note = GetArg(iArgs, "note", "").Trim();
             e.commit_sha = GetArg(iArgs, "commit_sha", "").Trim();
             e.updated_at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-            UCL_BugReportIO.Append(e);
+            UCL_BugReportIO.Save(e, "", "", "", "", "",
+                $"{e.updated_at}　`{e.status}`　{(string.IsNullOrEmpty(e.commit_sha) ? "手動關單" : e.commit_sha)}"
+                + (string.IsNullOrEmpty(e.resolution_note) ? "" : $" —— {e.resolution_note}"));
             ioR.AppendLine($"## ✅ BUG-{e.index} → `{e.status}`"
                 + (string.IsNullOrEmpty(e.commit_sha) ? "" : $"（{e.commit_sha}）"));
             if (!string.IsNullOrEmpty(e.resolution_note)) ioR.AppendLine($"- note: {e.resolution_note}");

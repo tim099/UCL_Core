@@ -32,6 +32,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ScreenStream.Desc" => "画面録画 / STT / OCR デーモンのコンソール（配信の同時視聴、音声文字起こし）。",
                 "ToolBox.ProcessAdmin" => "プロセス管理",
                 "ToolBox.ProcessAdmin.Desc" => "C# から起動した外部プロセスの確認と処置（PID + 名前 + 起動時刻の三重照合で誤終了とゾンビ増殖を防ぐ）。",
+                "ToolBox.BugReportAdmin" => "問題報告管理",
+                "ToolBox.BugReportAdmin.Desc" => "構造化された課題チケット。バグだけでなく、古いドキュメント・不十分なヒント・手順の摩擦も対象。放置されたチケットは自動で警告表示。",
                 "ToolBox.SessionAdmin" => "🗂 Session 管理",
                 "ToolBox.SessionAdmin.Desc" => "各 persona の session 現況（自由時間…）。終了時刻を過ぎても active な残留を明示。",
                 "ToolBox.FreeTimeAdmin" => "🎲 自由時間管理",

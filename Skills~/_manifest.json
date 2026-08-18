@@ -33,6 +33,11 @@
       "optional": false
     },
     {
+      "name": "ucl-bug-report",
+      "summary": "結構化問題回報 — 收的不只是 bug：文件過時 / 提示缺一半 / 錯誤訊息指錯地方 / 流程可簡化都走 Cmd_BugReport；一單一檔、commit 帶 Fixes BUG-n 自動關單、stale 自動標。",
+      "optional": false
+    },
+    {
       "name": "ucl-chat-tavern",
       "summary": "Chat Tavern / Solo Brainstorm 多 agent 對話流程",
       "optional": false

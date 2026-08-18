@@ -32,6 +32,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ScreenStream.Desc" => "螢幕錄影 / STT / OCR daemon 的控制台（陪看直播、影音轉錄）。",
                 "ToolBox.ProcessAdmin" => "Process 管理",
                 "ToolBox.ProcessAdmin.Desc" => "檢視與處置 C# 開出去的外部 process（PID + 名稱 + 啟動時間三重身分驗證，防誤殺、防屍潮）。",
+                "ToolBox.BugReportAdmin" => "問題回報管理",
+                "ToolBox.BugReportAdmin.Desc" => "結構化問題工單 —— 收的不只是 bug：文件過時、提示缺一半、流程可簡化都在這裡。超過 14 天沒動作的單會自動標記。",
                 "ToolBox.SessionAdmin" => "🗂 Session 管理",
                 "ToolBox.SessionAdmin.Desc" => "各 persona 的 session 現況（自由時間…）。標出超時未收工、active 仍為 true 的殘留。",
                 "ToolBox.FreeTimeAdmin" => "🎲 自由時間管理",

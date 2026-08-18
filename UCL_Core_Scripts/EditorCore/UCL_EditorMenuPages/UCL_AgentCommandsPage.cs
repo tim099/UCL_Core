@@ -95,6 +95,11 @@ namespace UCL.Core.EditorLib.Page
         bool m_ShowHistory = false;                                    // History 區塊是否展開
         string m_TemplateSearch = "";                                  // Templates 搜尋關鍵字
         string m_HistorySearch = "";                                   // History 搜尋關鍵字
+        // 區塊職責：History 的 queue 篩選（Tim 2026-08-18 派單：查最近 anonymous 跑了什麼）
+        // 物理意義：存**字串不是索引** —— 選項清單每幀由現有資料重建，筆數一變索引就指到別人身上，
+        //          而那種錯位不會報錯（它會安靜地篩出另一條 queue 的結果）。
+        // 數值影響：空字串 = 全部；HistoryQueueAll 以外的值即為要篩的 queue id。
+        string m_HistoryQueueFilter = "";
         string m_SaveTemplateName = "";                                // 「Save as Template」用的暫存名稱
         string m_SaveTemplateNotes = "";                               // Template 補充筆記
         int m_HistoryAgeDays = 30;                                     // 清理「N 天沒重用」的門檻
@@ -754,6 +759,28 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
 
+                // ---- queue 篩選（Tim 2026-08-18 派單）----
+                // 區塊職責：依「這筆實際跑在哪條 queue」過濾歷史。
+                // 物理意義：用途是「最近 anonymous 跑了什麼」——那條 queue 的內容就是待修清單
+                //          （漏帶 --persona 的派遣）。選項由**現有資料**長出來，不寫死名單：
+                //          寫死的話新 persona 出現時篩選器看不到它，而且不會有人發現。
+                // 數值影響：純顯示過濾；換選項回第一頁（不回的話會停在一個空白頁）。
+                var queueOptions = BuildHistoryQueueOptions(m_HistoryCache);
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.QueueFilter"), UCL_GUIStyle.LabelStyle, GUILayout.Width(90));
+                    int curIdx = Mathf.Max(0, queueOptions.IndexOf(string.IsNullOrEmpty(m_HistoryQueueFilter)
+                        ? UCL_CodeLocalize.Get("AgentCmd.QueueFilterAll") : m_HistoryQueueFilter));
+                    // PopupSearchCache 選項為 0 時會 LogError —— 這裡恆 >=1（第一項固定是 All）
+                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, queueOptions, m_Dic, "HistoryQueueFilter");
+                    if (newIdx != curIdx && newIdx >= 0 && newIdx < queueOptions.Count)
+                    {
+                        m_HistoryQueueFilter = newIdx == 0 ? "" : queueOptions[newIdx];
+                        m_HistoryPage = 0;
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+
                 using (new GUILayout.HorizontalScope())
                 {
                     // 區塊職責：History 清理工具列 — 標籤寬度需容下不同語系字長
@@ -803,6 +830,10 @@ namespace UCL.Core.EditorLib.Page
                 var visible = string.IsNullOrWhiteSpace(m_HistorySearch)
                     ? m_HistoryCache
                     : m_HistoryCache.Where(e => MatchesHistory(e, m_HistorySearch.Trim().ToLowerInvariant())).ToList();
+                if (!string.IsNullOrEmpty(m_HistoryQueueFilter))
+                {
+                    visible = visible.Where(e => MatchesHistoryQueue(e, m_HistoryQueueFilter)).ToList();
+                }
 
                 if (visible.Count == 0)
                 {
@@ -908,6 +939,51 @@ namespace UCL.Core.EditorLib.Page
             var ordered = e.QueueCounts.OrderByDescending(kv => kv.Value).ToList();
             string head = $"queue: {ordered[0].Key} ×{ordered[0].Value}";
             return ordered.Count == 1 ? head : $"{head} (+{ordered.Count - 1})";
+        }
+
+        // ===========================================================
+        // 區塊職責：由現有歷史資料長出 queue 篩選選項（第一項固定為「全部」）
+        // 物理意義：不寫死名單 —— 新 persona 出現時篩選器要自己看得到它。
+        //          「(未記錄)」只在**真的有**沒記錄的條目時才出現：永遠列著會讓人以為
+        //          那是一個存在的 queue，而它其實是欄位還沒填的舊資料。
+        // 數值影響：每幀重建（歷史筆數級的字典走訪）；已在折疊收合時 return，不會白跑。
+        // ===========================================================
+        static List<string> BuildHistoryQueueOptions(List<UCL_AgentCommandHistoryEntry> entries)
+        {
+            var opts = new List<string> { UCL_CodeLocalize.Get("AgentCmd.QueueFilterAll") };
+            if (entries == null) return opts;
+            var seen = new SortedSet<string>(StringComparer.Ordinal);
+            bool hasUnrecorded = false;
+            foreach (var e in entries)
+            {
+                if (e?.QueueCounts != null && e.QueueCounts.Count > 0)
+                {
+                    foreach (var kv in e.QueueCounts) seen.Add(kv.Key);
+                }
+                else if (string.IsNullOrEmpty(e?.QueueId))
+                {
+                    hasUnrecorded = true;
+                }
+                else
+                {
+                    seen.Add(e.QueueId);
+                }
+            }
+            opts.AddRange(seen);
+            if (hasUnrecorded) opts.Add(UCL_CodeLocalize.Get("AgentCmd.QueueUnrecorded"));
+            return opts;
+        }
+
+        // 區塊職責：判斷一筆歷史是否屬於選定的 queue。
+        // 物理意義：「(未記錄)」是它自己的一格 —— 舊條目沒有欄位，**不歸進任何一條真 queue**。
+        //          把它們算進 anonymous 會讓「anonymous 還剩多少待修」這個讀數直接失真。
+        static bool MatchesHistoryQueue(UCL_AgentCommandHistoryEntry e, string filter)
+        {
+            bool recorded = (e?.QueueCounts != null && e.QueueCounts.Count > 0) || !string.IsNullOrEmpty(e?.QueueId);
+            if (filter == UCL_CodeLocalize.Get("AgentCmd.QueueUnrecorded")) return !recorded;
+            if (!recorded) return false;
+            if (e.QueueCounts != null && e.QueueCounts.ContainsKey(filter)) return true;
+            return e.QueueId == filter;
         }
 
         static bool MatchesHistory(UCL_AgentCommandHistoryEntry e, string lowerKeyword)

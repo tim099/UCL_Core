@@ -190,7 +190,15 @@ def post_announcement(body: str, sha: str, sender: str, persona: str) -> tuple:
         #    ensure_idle 逾時＝沒送出（重試安全），但**送出之後**的任何失敗都可能其實已經貼上了
         #    （今天實測過「CLI 逾時而產物已落地」），而同一個 SHA 貼兩次 = **付兩次錢**。
         #    ⇒ 分不清的時候不要自動重試；讓它誠實失敗，人工補一則（工具已經會這樣提示）。
-        cmd = [sys.executable, str(run_cmd), "run", "Tavern",
+        # 區塊職責：公告走 system lane（Tim 2026-08-18）
+        # 物理意義：領薪公告不是人派的，過去落 queues/anonymous/ ——
+        #          跟「漏帶 --persona 的人」混在同一個資料夾，於是 anonymous 的流量
+        #          永遠降不到 0，「還有多少人漏帶旗標」這個讀數就失效了。
+        #          `--system` 只改**走哪條 lane**；這筆代表誰仍由下面的 `--arg persona=` 承載
+        #          （領薪要用那個，不是用 lane）。
+        # 數值影響：路由 queues/anonymous/ → queues/system/；也順帶不再跟 agent 自己的
+        #          指令搶同一條 lane（上方 ensure_idle 逾時那隻的同族成因）。
+        cmd = [sys.executable, str(run_cmd), "--system", "run", "Tavern",
                "--arg", "op=post", "--arg", "room=tavern",
                "--arg", f"sender_id={sender}", "--arg", f"persona={persona}",
                "--arg", f"meta={meta}", "--wait-reply", "0",

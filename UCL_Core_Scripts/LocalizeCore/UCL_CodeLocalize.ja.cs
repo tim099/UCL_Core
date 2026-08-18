@@ -289,6 +289,8 @@ namespace UCL.Core.LocalizeLib
                 "AgentCmd.Delete" => "削除",
                 "AgentCmd.History" => "履歴",
                 "AgentCmd.QueueUnrecorded" => "(未記録)",
+                "AgentCmd.QueueFilter" => "Queue 絞込",
+                "AgentCmd.QueueFilterAll" => "(すべて)",
                 "AgentCmd.HistoryCount" => " {0} 件",
                 "AgentCmd.NoHistory" => "（一致する履歴なし — 「指令を追加」でここに自動記録されます）",
                 "AgentCmd.Cleanup" => "整理 —",

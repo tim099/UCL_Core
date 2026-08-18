@@ -262,6 +262,14 @@ def set_persona(persona: str | None) -> None:
 #   ⚠ C# 端樣板在 UCL_AgentCommandQueue.cs，兩邊**必須同時改**：任一邊落後，
 #     trigger 就寫在對方沒在看的地方，而那種斷線是**靜默**的（cmd 永遠 pending 到 timeout）。
 ANONYMOUS_QUEUE_ID = "anonymous"   # 保留字：身分解析讀到它回 None，不可當 persona 用
+SYSTEM_QUEUE_ID = "system"         # 保留字：系統自動派遣（commit 公告 / daemon）的落點
+# 區塊職責：兩個保留字集中一處 —— 加第三個時只有一個地方要改。
+# 物理意義：把 system 從 anonymous 拆出來，是為了讓 anonymous **重新變回儀表**：
+#          混著系統訊息時，那個資料夾的數字永遠降不到 0，於是「還有多少人漏帶 --persona」
+#          這個讀數就失效了。拆開之後 anonymous 剩下的每一筆都是待修的漏帶。
+# ⚠ 保留字不可當 persona 用：身分解析讀到它必須回「本層沒有答案」，
+#   否則會流進記帳層，bank_resolver 的 fallback 命名會替一個不存在的人開帳戶。
+RESERVED_QUEUE_IDS = (ANONYMOUS_QUEUE_ID, SYSTEM_QUEUE_ID)
 
 # ═══════════════════════════════════════════════════════════════════════
 # ⛔ 自動路由開關 —— **目前刻意關著**（summit 2026-08-16 22:5x 自行關回）
@@ -1409,6 +1417,15 @@ def main() -> int:
                         help="顯式宣告這筆 cmd 是誰派的（身分解析階梯 tier 1，最權威）。"
                              "同時決定 queue 路由 → queues/<persona>/queue.json；"
                              "並戳進 cmd args 讓下游不必反查 session lock 去猜。")
+    # 區塊職責：系統自動派遣的 queue 路由（Tim 2026-08-18）。
+    # 物理意義：commit 領薪公告、daemon 這類**不是人派的**指令 —— 它們沒有 persona 可帶
+    #          （硬帶一個等於謊報是誰派的），過去就落 anonymous，跟「漏帶旗標的人」混在一起。
+    #          `--system` 只改**走哪條 lane**，不宣告身分：`--arg persona=<P>` 照舊獨立運作
+    #          （那是「這筆代表誰」，領薪要用），兩者本來就是兩件事。
+    # 數值影響：queue id → "system"（queues/system/）。與 --persona 互斥（同時給會擋下）。
+    parser.add_argument("--system", action="store_true",
+                        help="系統自動派遣：路由到 queues/system/，不宣告 persona。"
+                             "給 commit 公告 / daemon 這類非人派遣用，讓 anonymous 只剩「漏帶旗標」。")
     sub = parser.add_subparsers(dest="action", required=True)
 
     # submit
@@ -1501,6 +1518,17 @@ def main() -> int:
         if _persona:
             print(f"  ↪ queue 路由：由 --arg persona={_persona} 推得 → queues/{_persona}/"
                   f"（未帶 --persona；要走別條通道請顯式帶 --persona）")
+    # ⚠ `--persona anonymous` / `--persona system` **不擋**（Tim 2026-08-18）——
+    #   那是「顯式路由到那條 lane」的合法寫法，不是誤用。保留字的語意由**讀取端**負責：
+    #   C# GetDeclaredPersona 讀到保留字回 null（本層沒有答案），不會讓它流進記帳層。
+    #   ⇒ 防護長在會被讀到的那一端，不是在呼叫端擋掉一種正當寫法。
+    # --system：只改 lane，不宣告身分（身分仍走 --arg persona=，領薪要用）
+    if getattr(args, "system", False):
+        if _persona:
+            print(f"⛔ --system 與 --persona {_persona} 互斥 —— 一筆 cmd 只能走一條 lane。", file=sys.stderr)
+            print(f"   要標記這筆是誰的事，用 --arg persona={_persona}（那是身分，不是路由）。", file=sys.stderr)
+            return 2
+        _base_agent = SYSTEM_QUEUE_ID
     _base_agent = _base_agent or _persona
     # lane 是**檔名後綴**不是 id 的一部分：queues/<persona>/queue-<lane>.json。
     # 分隔符從舊制的 '~' 改成 '/' —— 它現在對應真實的目錄層級，不是一個編碼在字串裡的假層級。

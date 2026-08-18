@@ -53,6 +53,17 @@ namespace UCL.Core.EditorLib.AgentCommands
         //   fallback（{canonical}-da-xiaojie）會為一個不存在的人隱含開帳戶。
         public const string AnonymousQueueId = "anonymous";
 
+        // 區塊職責：系統自動產生的派遣落點（Tim 2026-08-18）。
+        // 物理意義：commit 領薪公告、daemon 之類**不是人派的**指令，過去跟「忘了帶 --persona」
+        //          的人擠同一個 anonymous 資料夾 ⇒ anonymous 的流量同時混了兩種東西：
+        //          「系統本來就該匿名」與「有人漏帶旗標」。混在一起，那個資料夾就不再是儀表 ——
+        //          數字降不下來，而且看不出哪些是該修的。
+        //          分出 system/ 之後，**anonymous 剩下的每一筆都是待修的漏帶**。
+        // ⚠ 同樣是**保留字不是 persona**：身分解析讀到它一律回「本層沒有答案」
+        //   （理由同 AnonymousQueueId —— 否則會為不存在的人隱含開帳戶）。
+        //   系統訊息的真實身分仍走 `--arg persona=<P>`（那是「這筆代表誰」，跟走哪條 lane 無關）。
+        public const string SystemQueueId = "system";
+
         // 區塊職責：queueId 的形狀 —— "<persona>" 或 "<persona>/<lane>"。
         // 物理意義：呼叫端（Watcher / Page / Runner）仍然只傳**一個不透明字串**，簽名不變；
         //          但這個字串現在是**路徑形狀**而不是要猜的名字 —— '/' 是呼叫端自己組出來的
@@ -170,14 +181,24 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// <remarks>
         /// ⚠ 回 null 的語意是「**本層沒有答案**」，不是「查無此人」——
         /// 呼叫端不可把它當否定證據，該往解析階梯的下一層走。
-        /// anonymous 回 null 是刻意的：它是狀態不是人（見 AnonymousQueueId 註解）。
+        /// anonymous / system 回 null 是刻意的：它們是狀態不是人
+        /// （見 AnonymousQueueId / SystemQueueId 註解）。
         /// </remarks>
         public static string GetDeclaredPersona(string agentId)
         {
             if (string.IsNullOrEmpty(agentId)) return null;
             SplitQueueId(agentId, out string folder, out _);
-            return folder == AnonymousQueueId ? null : folder;
+            return IsReservedQueueId(folder) ? null : folder;
         }
+
+        // 區塊職責：判斷一個 queue 資料夾名是不是保留字（狀態，不是人）。
+        // 物理意義：保留字有兩個且會再長 —— 逐處寫 `== AnonymousQueueId` 的話，
+        //          新增第二個保留字就得去找出所有比對點，而**漏掉的那一處不會報錯**：
+        //          它會把 "system" 當成 persona 回出去，下游 bank_resolver 的
+        //          fallback 命名就替一個不存在的人開了帳戶。收成一處＝只有一種讀法。
+        // 數值影響：純比對，無 IO。
+        public static bool IsReservedQueueId(string folder)
+            => folder == AnonymousQueueId || folder == SystemQueueId;
 
         /// <summary>讀取 queue.json — 不存在或解析失敗時回傳空 queue。</summary>
         public static UCL_AgentCommandQueueData Load(string agentId = null)

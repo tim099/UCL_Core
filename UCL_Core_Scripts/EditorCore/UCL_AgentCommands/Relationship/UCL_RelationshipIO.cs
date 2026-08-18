@@ -23,12 +23,71 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
         // ⚠ 路徑一律走既有解析器 —— 各專案掛載位置不同，自推導跨專案必壞而且是靜默的。
         public static string PersonaDir(string iPersona)
             => Path.Combine(UCL_AwakeningService.LettersDir, iPersona, DIR_NAME);
-        public static string TargetDir(string iPersona, string iTarget)
-            => Path.Combine(PersonaDir(iPersona), Sanitize(iTarget));
+        // ===========================================================
+        // 區塊職責：解析 target 的資料夾，**大小寫只差的名字要分開存**（Tim 2026-08-18 選 B）。
+        //
+        // 物理意義：Windows 檔案系統大小寫不敏感 ⇒ `Tim/` 與 `tim/` 是同一個資料夾，
+        //          兩個 target 會被**靜默併在一起**；而 Linux/macOS 上不會。
+        //          🩸 實測舊資料真的有：LY 5 組、Bar 5 組、共 217 筆事件
+        //          （basecamp 對 Tim 的感情被拆成 89 筆與 5 筆兩桶）。
+        //          ⇒ 併不併是**人要決定的事**，不能讓檔案系統代決 —— 目前決定是「先分開，之後再談合併」。
+        //
+        // 做法：資料夾裡放一個 `_target.txt` 釘住「這個資料夾屬於哪個 exact 名字」。
+        //      名字對不上（大小寫不同）就換一個帶 `__<hash4>` 後綴的資料夾。
+        //      後綴只依賴 **exact 名字本身**，不依賴誰先被處理
+        //      ⇒ 同一批資料在不同機器上得到同一組資料夾名（冪等、跨機器一致）。
+        //
+        // 數值影響：可能建立資料夾與 `_target.txt`；iDryRun 時不寫，只回算出來的路徑。
+        // ===========================================================
+        public static string TargetDir(string iPersona, string iTarget) => TargetDir(iPersona, iTarget, false);
+
+        public static string TargetDir(string iPersona, string iTarget, bool iDryRun)
+        {
+            string aBase = Path.Combine(PersonaDir(iPersona), Sanitize(iTarget));
+            string aExact = (iTarget ?? "").Trim();
+
+            string aOwner = ReadOwner(aBase);
+            if (aOwner == null)                                   // 資料夾還不存在／還沒釘 ⇒ 這個名字拿下它
+            {
+                if (!iDryRun) WriteOwner(aBase, aExact);
+                return aBase;
+            }
+            if (string.Equals(aOwner, aExact, StringComparison.Ordinal)) return aBase;   // 本來就是我的
+
+            // 名字只差大小寫（或同名不同寫法）⇒ 換一個專屬資料夾，兩邊都留著
+            string aAlt = aBase + "__" + UCL_RelationshipEvent.Sha1Hex(aExact, 4);
+            if (!iDryRun)
+            {
+                WriteOwner(aAlt, aExact);
+                Debug.LogWarning($"[Relationship] target 名只差大小寫：`{aOwner}` 已占用 "
+                    + $"{Path.GetFileName(aBase)}／`{aExact}` 改用 {Path.GetFileName(aAlt)}"
+                    + "（刻意分開保存，合併與否另案處理）。");
+            }
+            return aAlt;
+        }
+
+        const string OWNER_FILE = "_target.txt";
+
+        static string ReadOwner(string iDir)
+        {
+            string f = Path.Combine(iDir, OWNER_FILE);
+            if (!File.Exists(f)) return Directory.Exists(iDir) ? "" : null;   // 有夾無釘 ⇒ 回 "" 讓它被接管
+            try { return File.ReadAllText(f, Encoding.UTF8).Trim(); } catch { return ""; }
+        }
+
+        static void WriteOwner(string iDir, string iExact)
+        {
+            Directory.CreateDirectory(iDir);
+            File.WriteAllText(Path.Combine(iDir, OWNER_FILE), iExact + "\n", new UTF8Encoding(false));
+        }
         public static string EventsDir(string iPersona, string iTarget)
             => Path.Combine(TargetDir(iPersona, iTarget), EVENTS);
+        public static string EventsDir(string iPersona, string iTarget, bool iDryRun)
+            => Path.Combine(TargetDir(iPersona, iTarget, iDryRun), EVENTS);
         public static string OpinionsDir(string iPersona, string iTarget)
             => Path.Combine(TargetDir(iPersona, iTarget), OPINIONS);
+        public static string OpinionsDir(string iPersona, string iTarget, bool iDryRun)
+            => Path.Combine(TargetDir(iPersona, iTarget, iDryRun), OPINIONS);
         public static string CurrentPath(string iPersona, string iTarget)
             => Path.Combine(TargetDir(iPersona, iTarget), "_current.md");
 
@@ -53,7 +112,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
         // ===========================================================
         public static bool WriteEvent(UCL_RelationshipEvent e, bool iDryRun, out string oPath)
         {
-            oPath = Path.Combine(EventsDir(e.persona, e.target), e.FileName());
+            oPath = Path.Combine(EventsDir(e.persona, e.target, iDryRun), e.FileName());
             if (File.Exists(oPath))
             {
                 string aOldReason = ReadBody(oPath);
@@ -89,7 +148,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
         public static bool WriteOpinion(string iPersona, string iTarget, UCL_RelationshipOpinion o,
             bool iDryRun, out string oPath)
         {
-            oPath = Path.Combine(OpinionsDir(iPersona, iTarget), o.FileName());
+            oPath = Path.Combine(OpinionsDir(iPersona, iTarget, iDryRun), o.FileName());
             if (File.Exists(oPath)) return false;
             if (iDryRun) return true;
             Directory.CreateDirectory(Path.GetDirectoryName(oPath));
@@ -412,8 +471,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
             sb.Append($"看法：寫入 {r.opinionsWritten}　跳過 {r.opinionsSkipped}").Append(NL_);
             sb.Append($"_current.md 寫入 {r.currentsWritten}　期初餘額 {r.openingBalances} 筆").Append(NL_);
             if (r.caseCollisions > 0)
-                sb.Append($"⚠ **target 名大小寫衝突 {r.caseCollisions} 組** —— 明細見下，"
-                          + "未處理的話 Windows 會靜默合併、Linux 不會。").Append(NL_);
+                sb.Append($"⚠ **target 名大小寫衝突 {r.caseCollisions} 組** —— 已分開保存（見明細）。"
+                          + "沒有這道處理的話 Windows 會靜默合併、Linux 不會。").Append(NL_);
             foreach (var n in r.notes) sb.Append("⚠ ").Append(n).Append(NL_);
 
             // 落檔 —— 遷移是一次性的破壞性動作，GUI 上的數字關掉視窗就沒了。
@@ -496,7 +555,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
                     aRep.caseCollisions++;
                     string pn = kv2.Key.Substring(0, kv2.Key.IndexOf('|'));
                     aRep.notes.Add($"target 名只差大小寫：{pn} → {string.Join(" / ", kv2.Value)}"
-                        + "　⇒ Windows 上會合併進同一個資料夾（Linux 不會）。請先決定要不要合併。");
+                        + "　⇒ 已**分開保存**（後到者加 `__hash4` 後綴）。合併與否另案處理。");
                 }
             }
 

@@ -2,6 +2,8 @@
 id: chess
 name: 下棋 (西洋棋對弈)
 how: chess.py lobby 找局 / start 開局徵人 / move 走子 — 每步落盤, 隨時可中斷續下
+tool: chess.py
+steps: lobby, list, board, start, join, move, resign, draw, release
 enabled: true
 min_minutes: 0
 kind: Chess

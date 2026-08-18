@@ -22,6 +22,16 @@ namespace UCL.Core.EditorLib.AgentCommands
     {
         /// <summary>已擲過幾輪活動（自由時間專屬 —— 其他 session 類型沒有這個概念）。</summary>
         public int rounds = 0;
+
+        // 區塊職責：本場「真的開始做了幾件活動」與最後一件是什麼。
+        // 物理意義：原本只有 rounds（換骰次數），於是**「一直重骰卻什麼都沒做」在資料上不存在** ——
+        //          沒有人能指出它，只能靠事後回想。有了 activities_done，那件事變成
+        //          `rounds` 與 `activities_done` 的差，是一個可以被印出來、被比較的數字。
+        // 數值影響：由 Cmd_FreeTimeActivity 遞增（活動入口唯一寫入端）；舊 session 沒有此欄位 → 0。
+        /// <summary>本場實際開始過幾件活動（走 Cmd_FreeTimeActivity 才算）。</summary>
+        public int activities_done = 0;
+        /// <summary>最後一件開始的活動 id（空＝本場還沒開始任何活動）。</summary>
+        public string activity = "";
     }
 }
 #endif

@@ -151,6 +151,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Lessons
                 $"appended → `{Rel(jsonlPath)}`\n\n" +
                 $"---\n\n" +
                 $"後續：定期 review jsonl tail，將高價值 lesson promote 進 `Skills~/agent-lessons-log/SKILL.md` curated list（手動 edit）。\n";
+            // 區塊職責：本人若正在自由時間中，回傳值多附一段流程提示（Tim 2026-08-18）。
+            // 物理意義：知識沉澱是自由時間活動之一，而**記完一筆 lesson 正是最容易斷線的位置** ——
+            //          產物剛落地、注意力在產物上，而換骰指令在上一份回傳檔裡。
+            //          走 helper 自己查 session，而不是把本 Cmd 的流程抽離讓自由時間層重跑 ——
+            //          後者會產生第二條流程，而兩條漂移時兩邊都不報錯。
+            // 數值影響：不在自由時間時**一個字都不加**（本 Cmd 平常也會被工作流程用到，不該多噪音）。
+            // 邊界：actor 是自由字串（可能是 agent id 不是 persona）—— 查不到 session 就等於不在，
+            //      不會誤印。要精準對上請帶 persona 形式的 actor。
+            var aConfirmSb = new System.Text.StringBuilder(confirmMd);
+            UCL_FreeTimeHint.Append(aConfirmSb, actor);
+            confirmMd = aConfirmSb.ToString();
             try
             {
                 File.WriteAllText(confirmMdPath, confirmMd, new UTF8Encoding(false));

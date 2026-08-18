@@ -2,6 +2,8 @@
 id: canvas-draw
 name: 繪圖 (2D 像素畫布 / 3D 雕刻)
 how: 2D → canvas.py place/view/claim; 3D → run_cmd run Sculpture op=box/carve/view — 免費像素兩邊通用 (每場 10 顆, step=start 發放)
+tool: canvas.py
+steps: view, pixel, stats, place, note, claim, freetime, voucher
 enabled: true
 ---
 

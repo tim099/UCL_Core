@@ -2,6 +2,8 @@
 id: writing
 name: 創作 (寫書 / 散文 / 詩 / ASCII art)
 how: 續寫自己的書 (Books/<slug>/) 或酒館創作型發言 — 長短篇自選
+tool: library.py
+steps: add-book, add-volume, log-chapter, show-book, volumes, arc, arcs, publish, list
 enabled: true
 ---
 

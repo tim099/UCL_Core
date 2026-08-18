@@ -64,6 +64,20 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         public bool enabled = true;
         public bool isProjectLayer;     // true＝專案層（同 id 會覆蓋共用層）
 
+        // 區塊職責：讓活動的「一步」可以被 Cmd 代跑（Tim 2026-08-18）。
+        // 物理意義：`how` 是給人讀的一整串自由文字（"chess.py lobby 找局 / start 開局徵人 / move 走子…"）——
+        //          機器沒辦法從它取出「第一步該跑什麼」，所以活動層只能整串轉貼。
+        //          下棋走一子、繪圖放一個像素**本來就是一次性的次秒級動作**，
+        //          拆成「一步」之後 Cmd 就能代跑並在回傳檔接上下一步。
+        // ⚠ **additive**：舊 md 沒填這兩欄 ⇒ `tool` 空 ⇒ 活動層回「此活動尚未支援代跑，
+        //   用 op=pick 取得指令自己跑」。**沒填不是壞掉，是還沒接** —— 兩者要長得不一樣。
+        // 數值影響：純資料；`steps` 是白名單，不在名單上的子命令一律拒跑
+        //          （不做白名單＝把任意 argv 交給外部程式，那是 CLI 注入面）。
+        /// <summary>代跑用的腳本檔名（frontmatter `tool`，例 `chess.py`）。空＝本活動不支援代跑。</summary>
+        public string tool = "";
+        /// <summary>允許代跑的子命令白名單（frontmatter `steps`，逗號分隔）。空＝即使有 tool 也不放行。</summary>
+        public List<string> steps = new List<string>();
+
         /// <summary>特殊邏輯標記（frontmatter `kind`；缺欄位＝Default）。</summary>
         public UCL_FreeTimeActivityKind kind = UCL_FreeTimeActivityKind.Default;
 
@@ -137,6 +151,8 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                         enabled = !string.Equals(Nz(UCL_AwakeningService.ReadFrontmatterField(aMd, "enabled"), "true"),
                                                  "false", StringComparison.OrdinalIgnoreCase),
                         isProjectLayer = iIsProject,
+                        tool = (UCL_AwakeningService.ReadFrontmatterField(aMd, "tool") ?? "").Trim(),
+                        steps = ParseSteps(UCL_AwakeningService.ReadFrontmatterField(aMd, "steps")),
                     };
                 }
                 catch (Exception e)
@@ -164,6 +180,22 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             Debug.LogWarning($"[FreeTime] 認不得的 kind='{aVal}' —— 視為 Default，並在骰面標記。"
                 + $" 可用值：{string.Join(" / ", Enum.GetNames(typeof(UCL_FreeTimeActivityKind)))}");
             return UCL_FreeTimeActivityKind.Default;
+        }
+
+        // 區塊職責：`steps: move, board, lobby` → 白名單清單。
+        // 物理意義：白名單存在的理由不是整潔，是**不把任意 argv 交給外部程式** ——
+        //          活動層代跑時 step 名直接進 argv，沒有白名單就是一條 CLI 注入面。
+        // 數值影響：空／缺欄位回空清單 ⇒ 呼叫端一律拒跑（fail-closed，不是 fail-open）。
+        static List<string> ParseSteps(string iRaw)
+        {
+            var aList = new List<string>();
+            if (string.IsNullOrWhiteSpace(iRaw)) return aList;
+            foreach (var aPart in iRaw.Split(','))
+            {
+                string aTrim = aPart.Trim();
+                if (aTrim.Length > 0) aList.Add(aTrim);
+            }
+            return aList;
         }
 
         static string Nz(string iVal, string iFallback) => string.IsNullOrEmpty(iVal) ? iFallback : iVal;

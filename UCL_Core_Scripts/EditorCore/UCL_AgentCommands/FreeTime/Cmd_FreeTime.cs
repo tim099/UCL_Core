@@ -171,6 +171,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine($"3. **活動事件自然結束時**（棋局終局／繪圖收筆／聊天告一段落）→ run_cmd.py run FreeTime --arg step=next --arg persona={iPersona}");
             aR.AppendLine("   收工由這裡自動判定 —— **截止是軟的**：時間到不打斷進行中的活動，最後一件做完跑 next 才通知收工。");
             aR.AppendLine($"4. step=end（提前收工）**除非 Tim 明確指示，不要用** —— 正常結束一律交給 step=next 對時鐘判定。");
+            AppendContinueBlock(aR, iPersona, (int)Math.Max(0, (aUntil - aNow).TotalMinutes));
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[FreeTime] step=start 完成 session={aSessionId} → {aPath}");
         }
@@ -226,7 +227,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 aR.AppendLine($"- 本場輪次: {aRounds}");
                 aR.AppendLine($"- 免費像素: 用 {aUsed} 顆{(aForfeited > 0 ? $"、作廢 {aForfeited} 顆（per-session 清零）" : "（全數用畢）")}");
                 aR.AppendLine($"- 收工宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
-                aR.AppendLine("## next");
+                aR.AppendLine("## ⏹ 已收工 —— 自由時間結束，**不要再跑 step=next**");
                 aR.AppendLine("- 回工作；或走晚安流程：run_cmd.py run GoodNight --arg step=check --arg persona=" + iPersona);
                 aR.AppendLine("- 還想花錢再睡 →（可選）ucl-spending-time（不綁死晚安）。");
                 WritePayload(iArgs, aPath, aR.ToString());
@@ -254,24 +255,56 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             //   不只是「燈不會亮」，是連燈座都看不到（summit 當場在自己的回傳上撞到）。
             // 所以修法不是把燈調暗，是把燈拆掉：**加規則之前先問，這是在防真實問題，
             //   還是在防「我沒有把問題本身移走」。** 這次是後者。
+            // 區塊職責：換骰時順帶跟同事交流（Tim 2026-08-18 派單）
+            // 物理意義：換骰到下一次換骰之間，**唯一被強制發生的事是零** —— 於是很容易變成
+            //          一直重骰卻什麼都沒做。把訊息併進換骰宣告，等於讓「發生一件事」
+            //          成為 next 本身的一部分，不靠自律。
+            // 數值影響：body 空＝行為與改動前逐字相同（**不強制、不擋** —— Tim 拍板）；
+            //          有 body 就併進**同一則** post（不另發一則 —— 兩則會洗版，而洗版
+            //          會讓人開始略過整個 tag，那比沒訊息更糟）。
+            // GetArg 吃 Dictionary，本函式收的是 IDictionary —— 直接取，不為了共用去改簽章。
+            string aChatBody = (iArgs != null && iArgs.TryGetValue("body", out var aChatRaw) ? aChatRaw : "").Trim();
             var aDiceBody = new StringBuilder();
-            aDiceBody.AppendLine($"🎲 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}，剩約 {aRemainText}）：");
+            if (!string.IsNullOrEmpty(aChatBody))
+            {
+                aDiceBody.AppendLine(aChatBody);
+                aDiceBody.AppendLine();
+                aDiceBody.AppendLine("---");
+            }
+            // 區塊職責：骰面標題自己說出「上面還有一段話」（Tim 2026-08-18 回報）。
+            // 物理意義：留言在骰面**上方**，所以只看到骰面那一段的人（截斷預覽、滑到中段、
+            //          從骰面往上讀）會以為這則只有骰面 —— Tim 就是這樣讀到的，
+            //          而他的結論「換骰還是沒有聊天」在他看到的範圍內是正確的。
+            //          ⇒ 機制沒壞，是**可見性**壞了。修法不是把留言搬到下面（那只是把問題翻面），
+            //            是讓骰面那一行自己承認上面有東西。
+            // 數值影響：純顯示；沒帶 body 時逐字與改動前相同。
+            aDiceBody.AppendLine(string.IsNullOrEmpty(aChatBody)
+                ? $"🎲 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}，剩約 {aRemainText}）："
+                : $"🎲💬 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}，剩約 {aRemainText}）"
+                  + "　※ **本則上半是留言，往上讀** ↑");
             AppendPriorityNote(aDiceBody, aList, aIsLive);
             for (int i = 0; i < Math.Min(3, aList.Count); i++) aDiceBody.AppendLine($"{i + 1}. {aList[i].name}");
             aDiceBody.AppendLine($"（前 3 名；全清單 {aList.Count} 項｜跟沒跟骰照舊酒館可觀測）");
             int aDiceSeq = await TavernPost(iArgs, iPersona, aDiceBody.ToString(), "dice-roll", iToken);
 
             AppendTimeFields(aR, aNow, aUntil);
-            aR.AppendLine($"- 輪次: **{aRound}**");
+            aR.AppendLine($"- 輪次: **{aRound}**　活動實作: **{aSession.activities_done}** 件"
+                          + (aRound - aSession.activities_done >= 2
+                             ? $"　⚠ 換骰比開工多 {aRound - aSession.activities_done} 次 —— 挑一個開做，別再骰了"
+                             : ""));
             aR.AppendLine($"- 免費像素: 已用 {aUsedNow}/{aGranted}");
             aR.AppendLine($"- 換骰宣告: {(aDiceSeq > 0 ? $"seq **{aDiceSeq}**" : "未發（best-effort）")}");
+            aR.AppendLine(string.IsNullOrEmpty(aChatBody)
+                ? "- 本輪交流: **未帶訊息**（不強制）—— 下一輪想跟同事講話就帶 `--arg-file body=<檔>`，會併進換骰宣告同一則"
+                : "- 本輪交流: ✅ 已併入換骰宣告");
             AppendOnlineSection(aR, iPersona);
+            AppendTavernCatchupSection(aR, iPersona);
             AppendPartnerBriefSection(aR, iPersona);
             AppendDiceSection(aR, aList, aSource, aIsLive);
             aR.AppendLine("## next");
             aR.AppendLine("1. 從骰面挑下一件活動（跟骰規則同 start）；引擎（--wait-reply）持續掛著。");
-            aR.AppendLine("2. 活動事件自然結束 → 再跑 step=next（**截止是軟的**：時間到不打斷進行中活動，最後一件做完跑 next 才通知收工）。");
-            aR.AppendLine("3. step=end（提前收工）除非 Tim 明確指示，不要用。");
+            aR.AppendLine("2. step=end（提前收工）除非 Tim 明確指示，不要用。");
+            AppendContinueBlock(aR, iPersona, (int)Math.Max(0, (aUntil - aNow).TotalMinutes));
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[FreeTime] step=next 第 {aRound} 輪 → {aPath}");
         }
@@ -612,10 +645,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         //          （讀回預設值在這裡長得跟「這個人沒有 session」一模一樣，那是最難查的一種。）
         // 數值影響：JSON 逐鍵與舊格式相同（欄位名＝鍵名，見 UCL_FreeTimeSession 的命名警告），
         //          既有檔不需遷移，python 端讀 active / end_ts 不受影響。
-        static UCL_FreeTimeSession LoadSession(string iPersona)
+        internal static UCL_FreeTimeSession LoadSession(string iPersona)
             => UCL_SessionService.Load<UCL_FreeTimeSession>(UCL_SessionKind.FreeTime, iPersona);
 
-        static void SaveSession(string iPersona, UCL_FreeTimeSession iSession)
+        internal static void SaveSession(string iPersona, UCL_FreeTimeSession iSession)
             => UCL_SessionService.Save(UCL_SessionKind.FreeTime, iPersona, iSession);
 
         /// <summary>收工。rounds 是自由時間專屬的，所以由本檔取出回報；翻旗標與記時刻走 service。</summary>
@@ -688,7 +721,91 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // 區塊：酒館宣告（in-process Cmd_Tavern，best-effort —— 權威狀態先落地、廣播殿後）
         // ===========================================================
         // ⚠ iArgs：本筆 cmd 的 args（`_cmd_id` 由此傳給子 Cmd，seq 才回得到本筆 context）。
-        static async UniTask<int> TavernPost(IDictionary<string, string> iArgs, string iPersona, string iBody, string iSubtag, CancellationToken iToken)
+        // ===========================================================
+        // 區塊職責：固定位置的「續跑」區塊 —— 自由時間最容易斷在「做完一件事就沒有下一步」。
+        // 物理意義：原本這行指令埋在 next 清單的第 3 條，跟其他三條長得一樣 ——
+        //          而**看起來一樣的東西不會被當成動作**。獨立成一個位置固定、只有一條指令的區塊，
+        //          讓「還沒結束」在視覺上就跟「已收工」不同（收工時同一位置變成 ⏹，且不給指令）。
+        // 數值影響：純輸出；不影響任何判定。剩餘分鐘由呼叫端傳入（時間感一律由 Cmd 供給）。
+        // ===========================================================
+        static void AppendContinueBlock(StringBuilder ioR, string iPersona, int iRemainMinutes)
+        {
+            ioR.AppendLine();
+            ioR.AppendLine($"## ▶ 下一步（自由時間**進行中**，剩 {iRemainMinutes} 分）");
+            // 區塊職責：把「社交對話」寫成**同時進行**而不是一個選項（Tim 2026-08-18）。
+            // 物理意義：social-chat 已 enabled:false 併進本流程 —— 換骰這一步本身就在讀訊息、發訊息。
+            //          不寫明的話它會變成「消失的活動」：骰面上看不到，也沒人知道它去哪了。
+            ioR.AppendLine("💬 **社交對話是同時進行的，不是另一個選項** —— 換骰這一步本身就在讀未讀訊息、");
+            ioR.AppendLine("　 也可以帶 `body` 跟同事講話。所以不必為了「跟人互動」去挑一個活動；");
+            ioR.AppendLine("　 挑你想做的事，講話在換骰時一起發生。");
+            ioR.AppendLine();
+            ioR.AppendLine("活動告一段落就跑這行 —— **截止是軟的**，時間到不打斷進行中的活動，最後一件做完跑它才收工：");
+            ioR.AppendLine("```bash");
+            ioR.AppendLine($"python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona {iPersona} run FreeTime \\");
+            ioR.AppendLine($"    --arg step=next --arg persona={iPersona} [--arg-file body=<想跟同事說的話>]");
+            ioR.AppendLine("```");
+            ioR.AppendLine("- `body` **可選**（不強制）—— 帶了就併進換骰宣告同一則，換骰同時跟同事交流。");
+        }
+
+        // ===========================================================
+        // ===========================================================
+        // 區塊職責：把**未讀酒館訊息**併進換骰回傳檔，並比照叮推進已讀游標。
+        // 物理意義：Tim 2026-08-18 拍板兩件事 ——
+        //   ① 骰面與訊息要在**同一份檔**（分兩處＝一定有一處不會被讀到）；
+        //   ② **要推游標**：換骰是高頻動作，只看不推的話未讀會整場堆積，
+        //      下一次真的 catchup 一次倒出來 —— 那等於沒有人在讀。
+        // 順序不可反：**先印進回傳檔、再推游標**。反過來的話回傳檔寫入若失敗，
+        //   那批訊息已被標成已讀 ⇒ 永遠不再出現在任何人的未讀裡，而且不報錯。
+        // 數值影響：讀最近 SCAN_LIMIT 則、寫一次游標檔。長訊息截斷（骰面是主體，不能被洗掉）。
+        // ===========================================================
+        const int TAVERN_MSG_BODY_MAX = 200;
+
+        static void AppendTavernCatchupSection(StringBuilder ioR, string iPersona)
+        {
+            ioR.AppendLine("## 🍺 酒館未讀（比照叮 —— **本段印出後即推進已讀游標**）");
+            string aNewest = null;
+            try
+            {
+                var aUnread = ChatTavern.UCL_TavernCursor.ReadUnread(iPersona, "tavern", out aNewest, out bool aTruncated);
+                if (aUnread.Count == 0)
+                {
+                    ioR.AppendLine("- （沒有未讀）");
+                }
+                else
+                {
+                    ioR.AppendLine($"- **{aUnread.Count} 筆未讀**：");
+                    foreach (var aMsg in aUnread)
+                    {
+                        string aTag = aMsg.meta != null && aMsg.meta.TryGetValue("tag", out var t) ? $" «{t}»" : "";
+                        string aBody = (aMsg.body ?? "").Replace("\r", "").Replace("\n", " ⏎ ");
+                        if (aBody.Length > TAVERN_MSG_BODY_MAX) aBody = aBody.Substring(0, TAVERN_MSG_BODY_MAX) + "…";
+                        ioR.AppendLine($"  - [{aMsg.ts}] **{aMsg.DisplayName}**{aTag}: {aBody}");
+                    }
+                    if (aTruncated)
+                    {
+                        ioR.AppendLine($"  - ⚠ **可能還有更舊的未讀沒列出**（掃描上限 {ChatTavern.UCL_TavernCursor.SCAN_LIMIT} 則已滿）"
+                                       + " —— 游標仍會推進，漏掉的請跑 catchup 對帳");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                // 讀不到不是「沒訊息」—— 空白會被讀成安靜，那是兩件事。
+                ioR.AppendLine($"- ⚠ 讀取失敗（{e.Message}）—— **這不代表沒人講話**；游標不推進");
+                return;
+            }
+            // 先印後推（見上方順序不可反）
+            if (!string.IsNullOrEmpty(aNewest))
+            {
+                ChatTavern.UCL_TavernCursor.WriteCursor(iPersona, aNewest);
+                ioR.AppendLine($"- ✓ 已讀游標推進到 `{aNewest}`");
+            }
+            ioR.AppendLine("- inbox（@ 我的待處理）不在本段範圍 —— 那仍走 `tavern_catchup.py`／`inbox_ack.py`。");
+        }
+
+        // internal：活動入口 Cmd_FreeTimeActivity 複用同一支發文（含「bank 解析失敗不擋發言」那個修正）——
+        // 各自再寫一份的話，其中一份遲早會退回「沒錢就沒聲音」。
+        internal static async UniTask<int> TavernPost(IDictionary<string, string> iArgs, string iPersona, string iBody, string iSubtag, CancellationToken iToken)
         {
             try
             {
@@ -797,10 +914,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             File.Move(aTmp, iPath);
         }
 
-        static string PayloadPath(string iPersona, string iStep)
+        internal static string PayloadPath(string iPersona, string iStep)
             => Path.Combine(UCL_AwakeningService.LettersDir, iPersona, $"_freetime_{iStep}.md");
 
-        static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iReport)
+        internal static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iReport)
         {
             try
             {

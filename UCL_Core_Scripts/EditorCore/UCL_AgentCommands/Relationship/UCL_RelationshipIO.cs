@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
-using UCL.Core.EditorLib.AgentCommands.Awakening;
 using UCL.Core.JsonLib;
 using UnityEngine;
 
@@ -21,8 +20,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
         public const string OPINIONS = "opinions";
 
         // ⚠ 路徑一律走既有解析器 —— 各專案掛載位置不同，自推導跨專案必壞而且是靜默的。
+        //   letters 的正式入口是 `UCL_LettersPath`（python 端對偶是 `ucl_paths.letters_*`）。
+        //   ⛔ 不要直接用 `UCL_AwakeningService.LettersDir`：它現在剛好是同一個值，
+        //     但那是「碰巧相同」不是「同一個入口」—— letters 解析規則改了這裡不會跟著改，
+        //     而且不會有人發現（路徑解析壞掉幾乎都是靜默的，最壞是找到另一棵樹上的檔）。
         public static string PersonaDir(string iPersona)
-            => Path.Combine(UCL_AwakeningService.LettersDir, iPersona, DIR_NAME);
+            => Path.Combine(UCL_LettersPath.PersonaDir(iPersona), DIR_NAME);
         // ===========================================================
         // 區塊職責：解析 target 的資料夾，**大小寫只差的名字要分開存**（Tim 2026-08-18 選 B）。
         //
@@ -43,8 +46,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
 
         public static string TargetDir(string iPersona, string iTarget, bool iDryRun)
         {
-            string aBase = Path.Combine(PersonaDir(iPersona), Sanitize(iTarget));
-            string aExact = (iTarget ?? "").Trim();
+            // 先正規化 —— 之後所有路徑都用收斂後的名字，兩種寫法自然落進同一個資料夾
+            string aExact = CanonicalTarget(iTarget);
+            string aBase = Path.Combine(PersonaDir(iPersona), Sanitize(aExact));
 
             string aOwner = ReadOwner(aBase);
             if (aOwner == null)                                   // 資料夾還不存在／還沒釘 ⇒ 這個名字拿下它
@@ -65,6 +69,76 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
             }
             return aAlt;
         }
+
+        // ===========================================================
+        // 區塊職責：target 名正規化 —— 大小寫只差的收斂成同一個（Tim 2026-08-18）。
+        //
+        // 規則：① 有同名 persona（大小寫不論）⇒ **以 persona 的寫法為準**
+        //      ② 沒有對應 persona ⇒ **預設大寫開頭**
+        //
+        // 物理意義：舊資料把同一個人拆成兩桶（`Tim` 89 筆 / `tim` 5 筆）——
+        //          那不是兩個人，是兩種打字方式。正規化把它們併回一個人。
+        //          ⚠ 併回去**會改變分數**：兩桶的事件流合起來重算，
+        //            那正是修正的目的（原本的分數是被拆開之後的局部值）。
+        //
+        // 🩸 規則 ① 不是「一律大寫開頭」：`Zeta`/`zeta` 收斂成**小寫** `zeta`，
+        //   因為 persona 註冊表裡它就是小寫。實測 5 組衝突有 1 組走這條 ——
+        //   要是我圖省事寫成「一律 Capitalize」，那一組會被改成一個不存在的寫法。
+        //
+        // 數值影響：純字串；已知名字集合快取一次（Editor 生命週期內不重掃）。
+        // ===========================================================
+        static HashSet<string> s_Known;
+
+        static HashSet<string> KnownNames()
+        {
+            if (s_Known != null) return s_Known;
+            s_Known = new HashSet<string>(StringComparer.Ordinal);
+            try
+            {
+                // 🥇 主來源：letters/ —— 一個人的櫃子就是他存在的證據。
+                string aLetters = UCL_LettersPath.Root;
+                if (Directory.Exists(aLetters))
+                    foreach (var d in Directory.GetDirectories(aLetters))
+                        s_Known.Add(Path.GetFileName(d));
+
+                // 🥈 過渡期的次要來源：AwakenInit/personas —— Tim 2026-08-18 說它之後會遷進 letters。
+                //    ⚠ 到那天**把這一段刪掉就好，規則本身不用動** ——
+                //      先寫成兩段而不是混在一起，就是為了讓退場只是刪程式碼不是改邏輯。
+                string aPersonas = Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "personas");
+                if (Directory.Exists(aPersonas))
+                    foreach (var f in Directory.GetFiles(aPersonas, "*.json"))
+                        s_Known.Add(Path.GetFileNameWithoutExtension(f));
+            }
+            catch (Exception e)
+            {
+                // 掃不到不該讓遷移停擺，但要喊 —— 空的已知集合會讓規則①失效、全部走規則②
+                Debug.LogError($"[Relationship] 已知名字掃描失敗，正規化將只走「大寫開頭」：{e.Message}");
+            }
+            return s_Known;
+        }
+
+        /// <summary>target 名正規化。回傳規則決定的寫法；oWhy 說明依據（給報告用）。</summary>
+        public static string CanonicalTarget(string iTarget, out string oWhy)
+        {
+            oWhy = "";
+            string t = (iTarget ?? "").Trim();
+            if (t.Length == 0) return t;
+            var aKnown = KnownNames();
+            if (aKnown.Contains(t)) { oWhy = "exact"; return t; }
+            // 大小寫不論的命中 —— 多個時取 ordinal 最小者（決定性，不看誰先掃到）
+            string aHit = null;
+            foreach (var k in aKnown)
+            {
+                if (!string.Equals(k, t, StringComparison.OrdinalIgnoreCase)) continue;
+                if (aHit == null || string.CompareOrdinal(k, aHit) < 0) aHit = k;
+            }
+            if (aHit != null) { oWhy = $"依 persona 寫法（{t} → {aHit}）"; return aHit; }
+            string aCap = char.ToUpperInvariant(t[0]) + t.Substring(1);
+            if (!string.Equals(aCap, t, StringComparison.Ordinal)) oWhy = $"預設大寫開頭（{t} → {aCap}）";
+            return aCap;
+        }
+
+        public static string CanonicalTarget(string iTarget) => CanonicalTarget(iTarget, out _);
 
         const string OWNER_FILE = "_target.txt";
 
@@ -471,8 +545,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
             sb.Append($"看法：寫入 {r.opinionsWritten}　跳過 {r.opinionsSkipped}").Append(NL_);
             sb.Append($"_current.md 寫入 {r.currentsWritten}　期初餘額 {r.openingBalances} 筆").Append(NL_);
             if (r.caseCollisions > 0)
-                sb.Append($"⚠ **target 名大小寫衝突 {r.caseCollisions} 組** —— 已分開保存（見明細）。"
-                          + "沒有這道處理的話 Windows 會靜默合併、Linux 不會。").Append(NL_);
+                sb.Append($"🔀 **target 名大小寫收斂 {r.caseCollisions} 組** —— 已合併（見明細）。"
+                          + "**這幾組的分數會與舊值不同**：原本被拆成兩桶，合併後由完整事件流重算。").Append(NL_);
             foreach (var n in r.notes) sb.Append("⚠ ").Append(n).Append(NL_);
 
             // 落檔 —— 遷移是一次性的破壞性動作，GUI 上的數字關掉視窗就沒了。
@@ -506,12 +580,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
             var aRep = new MigrateReport();
             // key = persona|target
             var aMerged = new Dictionary<string, LegacyRecord>();
+            // key → 收進來的原始 target 寫法（>1 個代表這是大小寫合併的結果）
+            var aRawNames = new Dictionary<string, HashSet<string>>();
             foreach (var (root, tag) in iSources)
             {
                 aRep.sources++;
                 foreach (var r in LoadLegacy(root, tag))
                 {
+                    string aRaw = r.target;
+                    r.target = CanonicalTarget(r.target);      // 正規化後再合併，兩種寫法收成一筆
                     string k = r.persona + "|" + r.target;
+                    // 記下「這個 key 收過哪些原始寫法」—— 收過兩種以上 = 它是合併來的
+                    if (!aRawNames.TryGetValue(k, out var aSet)) aRawNames[k] = aSet = new HashSet<string>(StringComparer.Ordinal);
+                    aSet.Add(aRaw);
                     if (!aMerged.TryGetValue(k, out var m))
                     {
                         aMerged[k] = r;
@@ -554,8 +635,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
                     if (kv2.Value.Count <= 1) continue;
                     aRep.caseCollisions++;
                     string pn = kv2.Key.Substring(0, kv2.Key.IndexOf('|'));
+                    string aCanon = CanonicalTarget(kv2.Value[0], out _);
                     aRep.notes.Add($"target 名只差大小寫：{pn} → {string.Join(" / ", kv2.Value)}"
-                        + "　⇒ 已**分開保存**（後到者加 `__hash4` 後綴）。合併與否另案處理。");
+                        + $"　⇒ 已**合併**成 `{aCanon}`（規則：有同名 persona 就依 persona 的寫法，"
+                        + "否則大寫開頭）。兩桶的事件流合起來重算，分數會與舊值不同。");
                 }
             }
 
@@ -567,6 +650,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
 
                 foreach (var e in r.events)
                 {
+                    e.target = r.target;                       // 檔內的 target 與資料夾一致
                     if (WriteEvent(e, iDryRun, out _)) aRep.eventsWritten++;
                     else aRep.eventsSkipped++;
                 }
@@ -586,7 +670,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
 
                 // 期初餘額：舊存值減「由事件重算」的差；差到可忽略就不寫
                 Dictionary<string, float> aOpening = null;
-                if (r.vector.Count > 0)
+                // ⛔ 被合併的配對**不算期初餘額**：舊存值只來自其中一桶，
+                //    而重算用的是兩桶合起來的事件流 ⇒ 兩者的差是「另一桶的貢獻」不是「遺失的歷史」。
+                //    填進去等於把合併的效果抵銷掉 —— 做了合併又假裝沒做。
+                bool aWasMerged = aRawNames.TryGetValue(kv.Key, out var aRaws) && aRaws.Count > 1;
+                if (aWasMerged)
+                    aRep.notes.Add($"{r.persona} → {r.target}：由 {string.Join(" / ", aRaws)} 合併而來，"
+                        + "**不套期初餘額**，分數由完整事件流重算（會與舊值不同）。");
+                if (!aWasMerged && r.vector.Count > 0)
                 {
                     var aRecomp = UCL_RelationshipCurrent.Recompute(r.events, null);
                     var aDiff = new Dictionary<string, float>();

@@ -86,7 +86,7 @@ namespace UCL.Core.EditorLib.Page
         void LoadData()
         {
             m_Personas.Clear();
-            string aLetters = UCL.Core.EditorLib.AgentCommands.Awakening.UCL_AwakeningService.LettersDir;
+            string aLetters = UCL_LettersPath.Root;      // letters 的正式入口，見 UCL_RelationshipIO 註解
             if (Directory.Exists(aLetters))
             {
                 foreach (var d in Directory.GetDirectories(aLetters))

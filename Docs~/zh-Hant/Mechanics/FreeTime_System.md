@@ -187,7 +187,7 @@ enabled 過濾在雙層 merge **之後**執行（kotoko QA 2026-06-11 抓出 mer
 ⚠ **權威實作在 C#**（`Cmd_FreeTime` 走的那條）。`freetime.py shuffle` 有一份**鏡像**供純參考擲骰用，
 跨語言無法共用實作 —— **改判定規則要同步改兩邊**。（py 端沒帶 `--persona` 時棋局判定會跳過並明說。）
 
-### 4.1.2 配對簡報 `_freetime_partners.md`（Tim 2026-08-17）
+### 4.1.2 配對簡報 `cmd/freetime_partners.md`（Tim 2026-08-17）
 
 要對手的活動（下棋 / TRPG / 聊天）佔了自由時間的一半，但「現在找誰、玩什麼」原本散在四處：
 在線 lock、各人的 free-time session、棋局檔、酒館 inbox。step=start / next 會把它們**合成一份檔**：

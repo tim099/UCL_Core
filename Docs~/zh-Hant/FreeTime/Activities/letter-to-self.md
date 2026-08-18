@@ -22,4 +22,6 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run DocEdit    
 ```
 - **`persona` 必填**（Tim 2026-08-18 硬規則）—— 信綁在某個人身上，猜錯會登記到別人的信而且看起來完全正常。
 - 不給 `target` ⇒ 取 letters 頂層**最新的一封信**（會跳過 `_` 開頭的機器回傳檔 ——
-  🩸 第一版沒跳，實跑立刻解析到 `_freetime_next.md`，那是 Cmd 回傳檔不是信）。
+  🩸 第一版沒跳，實跑立刻解析到當時還在頂層的 `_freetime_next.md`，那是 Cmd 回傳檔不是信。
+  FreeTime 的回傳檔已於 2026-08-18 遷入 `letters/<persona>/cmd/`，但其他 Cmd 的還在頂層，
+  所以這道跳過**仍然必要**）。

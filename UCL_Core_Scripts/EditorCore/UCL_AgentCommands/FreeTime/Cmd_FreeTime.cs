@@ -6,7 +6,7 @@
 //          繪圖收筆／聊天告一段落）——「完成的時刻」從 stop signal 變成回 loop 的通道。
 // 數值影響：session state 落 <DataRoot>/FreeTime/sessions/<persona>.json（C# 唯一寫入端；
 //          canvas.py 讀它判免費像素額度 —— 兩端 schema 對齊義務）；免費像素每場 10 顆
-//          per-session 清零；回傳檔 letters/<persona>/_freetime_<step>.md（機械產物，
+//          per-session 清零；回傳檔 letters/<persona>/cmd/freetime_<step>.md（機械產物，
 //          路徑經 ReportOutputFile 進 result 檔 outputs 欄）。blocked＝payload 落檔＋非零退出。
 #if UNITY_EDITOR
 using System;
@@ -45,7 +45,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             "next: 活動事件結束時跑(未到期→重擲, 到期→收工宣告+關 session); end: 提前收工 | " +
             "persona=<name> — 全步驟必填 | until=<HH:mm 本地> — start 必填 | " +
             "reason=<一句> — end 選填(提前收工的形狀要可觀測) | " +
-            "回傳落檔 letters/<persona>/_freetime_<step>.md（路徑隨 run_cmd verdict 印出）";
+            "回傳落檔 letters/<persona>/cmd/freetime_<step>.md（路徑隨 run_cmd verdict 印出）";
 
         public override string ExampleArgs => "step=start;persona=Template;until=23:59";
 
@@ -395,7 +395,8 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // ===========================================================
         static (string path, int online, int freeTime, int inbox) WritePartnerBrief(string iPersona)
         {
-            string aPath = Path.Combine(UCL_AwakeningService.LettersDir, iPersona, "_freetime_partners.md");
+            // 配對簡報也是 Cmd 回傳檔 —— 同樣走共用版面（別在這裡自己組第二種路徑）
+            string aPath = UCL_LettersPath.CmdPayload(iPersona, "freetime", "partners");
             var aB = new StringBuilder();
             aB.AppendLine($"# FreeTime 配對簡報 — {iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
             aB.AppendLine();
@@ -1030,8 +1031,13 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             File.Move(aTmp, iPath);
         }
 
+        // 回傳檔落點走 UCL_LettersPath —— **版面只有一份實作**。
+        // 2026-08-18 Tim 拍板搬進 `letters/<persona>/cmd/`：letters 頂層原本人寫的信與機器回傳檔
+        // 混住，而 `Cmd_DocEdit` 找「最新那封信」時實測抓到了 `_freetime_next.md`。
+        // ⇒ 「是不是信」從靠檔名前綴猜，變成位置的問題。
+        // ⚠ 對側契約：python 端是 `_lib/ucl_paths.py::letters_cmd_payload()`，兩端要一起改。
         internal static string PayloadPath(string iPersona, string iStep)
-            => Path.Combine(UCL_AwakeningService.LettersDir, iPersona, $"_freetime_{iStep}.md");
+            => UCL_LettersPath.CmdPayload(iPersona, "freetime", iStep);
 
         internal static void WritePayload(IDictionary<string, string> iArgs, string iPath, string iReport)
         {

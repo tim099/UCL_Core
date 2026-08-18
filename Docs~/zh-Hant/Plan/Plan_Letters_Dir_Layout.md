@@ -1,7 +1,7 @@
 ---
 title: letters 目錄分層 — 把 Cmd 回傳檔從人寫的信裡分出來
 slug: letters-dir-layout
-status: draft（2026-08-18 gura 提案；Tim 說「先 plan 起來」，**未施工**）
+status: partially-done（2026-08-18 Tim 拍板**只先遷 FreeTime 5 個**並要求兩端路徑解析統一 → 已施工並用 Template 實測；其餘 16 個回傳檔仍待拍板）
 created_at: 2026-08-18T07:45:00Z
 created_by: gura
 location: UCL_Core (cross-project)
@@ -14,7 +14,22 @@ related:
 
 # letters 目錄分層 — 把 Cmd 回傳檔從人寫的信裡分出來
 
-> **狀態：草案，未施工。** Tim 2026-08-18「cmd 資料夾我認為也可以處理，可以先 plan 起來」。
+> **狀態：FreeTime 段已施工（見 §0），其餘待拍板。**
+> Tim 2026-08-18 先說「先 plan 起來」，隨後拍板「**只先遷移 freetime 相關**，且 .py 端與 C# 端的路徑解析必須統一」。
+
+## 0. 施工狀態（2026-08-18）
+
+| 項目 | 狀態 |
+|---|---|
+| **FreeTime 5 個回傳檔** → `letters/<persona>/cmd/freetime_<step>.md` | ✅ 已施工，Template 實測全 5 檔落新位置 |
+| **兩端路徑解析統一** | ✅ C# `UCL_LettersPath`（EditorCore 路徑層）／python `ucl_paths.letters_cmd_payload()`，互為對側契約 |
+| 其餘 16 個回傳檔（goodmorning / goodnight / streamwatch / reading_recall / ding / wake_brief） | ⛔ 待拍板 |
+| 拔掉 `Cmd_DocEdit` 的 `_`-skip | ⛔ 要等上一列做完（頂層還有 16 個機器產物） |
+| 3 個耐久檔（`_constitution` / `_keys_open` / `_latest`） | 留頂層不搬（本案建議） |
+
+⚠ **舊位置的 5 個 transient 檔**：gura 與 Template 的已清（它們不會再被寫入）。
+其他 persona 的**刻意不動** —— 那不是我的資料夾，而它們下次跑自由時間就會在新位置生成，
+舊的留著也只是靜態殘影（會被 `_`-skip 跳掉，不影響判定）。
 
 ## 1. 導火線（實測，不是推測）
 
@@ -98,9 +113,13 @@ letters/gura/
 ## 5. 施工順序（三筆 commit，順序不可換）
 
 ### ① 收攏路徑 helper（不改行為）
-把三份 `PayloadPath` 收成一個（例 `UCL_LetterPayloadPath.For(persona, cmd, step)`），
-**落點與現在逐位元相同**。這一筆本身就是今天已記下的技術債，獨立有價值。
-驗收：所有 Cmd 跑一輪，回傳檔路徑與改動前逐字相同。
+把三份 `PayloadPath` 收成一個，**落點與現在逐位元相同**。
+
+⚠ **2026-08-18 實際施工時合併了 ①②**：只遷 FreeTime 一支 Cmd 的情況下，
+「先收攏再翻」與「收攏時直接翻」的風險相同（都只有一個消費端），
+而分兩筆會讓中間狀態多一次「helper 存在但沒人用」的空轉。
+⇒ 建 `UCL_LettersPath` 時直接把 FreeTime 的落點指到 `cmd/`。
+**其餘 16 個要搬時仍應照 ①→② 分兩筆**（那時有 9 個消費端，中間狀態必須可驗）。
 
 ### ② 翻目錄（改一行）
 helper 內把落點改成 `cmd/` 子目錄、檔名去 `_`。

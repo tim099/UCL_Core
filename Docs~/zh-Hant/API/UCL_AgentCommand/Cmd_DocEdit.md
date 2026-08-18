@@ -56,10 +56,17 @@ Tim 的原話是「一步改一個 Doc，**改完後** CMD 一樣提示下一步
 | `doc` | 只認顯式 `target`（相對路徑以 repo root 為基準） |
 
 > 🩸 **letter 的自動解析會跳過 `_` 開頭與 `README.md`。** 第一版沒跳，實跑立刻解析到
-> `_freetime_next.md` —— 那是 Cmd 回傳檔，不是信。
+> 當時還在頂層的 `_freetime_next.md` —— 那是 Cmd 回傳檔，不是信。
+>
 > letters 目錄同時住著兩種東西：人寫的信（時間戳命名）與機器寫的回傳檔（`_` 開頭），
 > 而**後者每跑一次 Cmd 就更新**，所以「最新的 .md」幾乎永遠是機器產物。
 > 症狀值得記：它**不會報錯**，只會登記一份你沒改過的檔然後說「已完成」。
+>
+> ⚠ **那件事後來從結構上修掉了一半**：FreeTime 的回傳檔已遷入
+> `letters/<persona>/cmd/`（2026-08-18，見 [`Plan_Letters_Dir_Layout`](../../Plan/Plan_Letters_Dir_Layout.md)）。
+> 但 `_goodmorning_*` / `_goodnight_*` / `_streamwatch_*` / `_wake_brief` 等**還在頂層**，
+> 所以這道 `_`-skip **仍然必要**，不能因為 freetime 搬走就拔掉 ——
+> 拔掉的條件是那些也搬完（plan §5 的第 ③ 步）。
 
 也只看**頂層**：`wakes/` `rests/` `longterm/` 是別的東西（收尾信 / 見林）。
 

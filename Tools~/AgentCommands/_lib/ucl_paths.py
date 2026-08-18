@@ -366,6 +366,33 @@ def letters_root() -> Path:
     return resolve_data_path("AgentCommands/ChatTavern/baton/letters", "letters_dir")
 
 
+# 區塊職責: letters 目錄**底下的版面** — persona 目錄 / Cmd 回傳檔子目錄與檔名組法。
+# 物理意義: letters 頂層原本同時住著**人寫的信**(時間戳命名)與**機器寫的 Cmd 回傳檔**(`_` 開頭)。
+#          🩸 2026-08-18 實測: Cmd_DocEdit 要找「最新那封信」時抓到了 `_freetime_next.md` ——
+#          機器產物每跑一次 Cmd 就更新, 所以「最新的 .md」幾乎永遠是機器的。
+#          ⇒ Tim 拍板把 Cmd 回傳檔移進 `cmd/` 子目錄: 「是不是信」不再靠檔名前綴猜, 而是位置的問題。
+# ⚠ **對側契約**: C# 等價入口是 `UCL_LettersPath`(CmdDirName / CmdDir / CmdPayload)。
+#   兩端要一起改 —— 只改一端的後果是兩邊各看各的目錄, 而**兩邊都不會報錯**
+#   (寫檔會自動建目錄, 於是新舊位置各有一份、各自看起來都正常)。
+# 數值影響: 純路徑組合, 不建目錄(建目錄由寫入端負責)。
+LETTERS_CMD_DIRNAME = "cmd"
+
+
+def letters_persona_dir(persona: str) -> Path:
+    """某 persona 的 letters 目錄 —— **人寫的信住這裡**。"""
+    return letters_root() / persona
+
+
+def letters_cmd_dir(persona: str) -> Path:
+    """某 persona 的 Cmd 回傳檔目錄(`letters/<persona>/cmd/`)。"""
+    return letters_persona_dir(persona) / LETTERS_CMD_DIRNAME
+
+
+def letters_cmd_payload(persona: str, cmd: str, step: str) -> Path:
+    """一份 Cmd 回傳檔(`letters/<persona>/cmd/<cmd>_<step>.md`) —— 檔名**不帶 `_` 前綴**(目錄已說明它是什麼)。"""
+    return letters_cmd_dir(persona) / f"{cmd}_{step}.md"
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # 外部漫畫庫路徑（.comic_root.local 快照檔）
 # 區塊職責：讀取 C# UCL_ReadingLibraryIO 寫出的外部漫畫庫本機快照。

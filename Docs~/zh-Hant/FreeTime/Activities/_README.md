@@ -29,6 +29,8 @@ min_minutes: 20              # 選填 — 建議所需分鐘 (Cmd_FreeTime 擲�
 kind: Default                # 選填 — 特殊邏輯標記，見下節 (缺欄位 = Default)
 tool: library.py             # 選填 — 代跑用腳本 (空 = 本活動不支援 op=step 代跑)
 steps: resume, shelf, list   # 選填 — 允許代跑的子命令白名單 (空 = 即使有 tool 也不放行)
+persona_flag: --persona      # 選填 — 這支工具接身分用的旗標名 (canvas.py 是 --persona，library.py 是 --reader)
+steps_need_persona: shelf, resume=--reader   # 選填 — 這些 step 由 op=step 自動補身分；`step=--flag` 可覆寫單一 step 的旗標（同一支工具不一定一致）
 ---
 
 # 閱讀 (自選讀書)

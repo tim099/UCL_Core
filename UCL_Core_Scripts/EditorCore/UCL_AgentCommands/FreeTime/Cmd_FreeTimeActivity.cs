@@ -204,7 +204,21 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 ioR.AppendLine("```bash");
                 ioR.AppendLine($"python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona {iPersona} run FreeTimeActivity \\");
                 ioR.AppendLine($"    --arg op=step --arg persona={iPersona} --arg activity={aHit.id} \\");
-                ioR.AppendLine($"    --arg step=<{string.Join("|", aHit.steps)}> --arg step_args=\"<其餘參數>\"");
+                // 區塊職責：提示裡的 step_args 直接把身分旗標填好（Tim 2026-08-18）。
+                // 物理意義：本 Cmd 手上就有 persona，而且它已經內插進其他六處印出來的指令；
+                //          唯獨這一行留 `<其餘參數>` 空殼 ⇒ 照著抄的人會漏掉身分，
+                //          得到的錯誤訊息（`canvas.py place: error: --persona is required`）指向工具，
+                //          **而真因在這一行沒把已知的東西寫出來**。
+                // 數值影響：只改印出來的字；沒宣告 persona_flag 的活動維持原樣（不憑空生一個旗標）。
+                string aHintArgs = string.IsNullOrEmpty(aHit.personaFlag)
+                    ? "<其餘參數>"
+                    : $"{aHit.personaFlag} {iPersona} <其餘參數>";
+                ioR.AppendLine($"    --arg step=<{string.Join("|", aHit.steps)}> --arg step_args=\"{aHintArgs}\"");
+                if (!string.IsNullOrEmpty(aHit.personaFlag))
+                {
+                    ioR.AppendLine($"- ℹ `{aHit.personaFlag} {iPersona}` 需要時會由 op=step **自動補**"
+                        + $"（宣告在 md 的 `steps_need_persona`）—— 自己帶也可以，帶了就以你帶的為準。");
+                }
                 ioR.AppendLine("```");
                 ioR.AppendLine("- 也可以自己直接跑上面那支工具 —— 但走 op=step 的話輸出會併進回傳檔，流程不會斷。");
             }
@@ -294,6 +308,9 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             ioR.AppendLine($"## {aHit.name} — step `{aStep}`　{(aRun.ok ? "✅ 成功" : "❌ 失敗")}");
             ioR.AppendLine($"- 工具: `{aHit.tool}`　參數: `{aStep} {aStepArgs}`".TrimEnd());
+            // ⚠ 這裡要印**這一步實際用的**旗標，不是活動層預設 —— 同一支工具的旗標可能逐 step 不同，
+            //   印錯的話畫面會說「補了 --reader」而實際補的是 --persona（2026-08-18 實測到過一次）。
+            if (aRun.injected) ioR.AppendLine($"- ℹ 自動補上身分：`{aHit.PersonaFlagForStep(aStep)} {iPersona}`（宣告在 md 的 `steps_need_persona`）");
             if (!aRun.ok) ioR.AppendLine($"- 錯誤: {aRun.err}");
             ioR.AppendLine();
             ioR.AppendLine("### 工具輸出（原樣，未經改寫）");
@@ -312,14 +329,15 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // 區塊職責：跑一步外部工具（照 Cmd_StreamWatch 的 spawn 慣例，含它踩過的坑）。
         // 數值影響：等待丟 thread pool（主執行緒不凍）；60s 超時；非 0 exit 回失敗但仍把 stdout 交回去
         //          —— 失敗時的輸出往往就是原因，吞掉它等於把診斷資訊丟了。
-        static async UniTask<(bool ok, string stdout, string err)> RunToolStep(
+        static async UniTask<(bool ok, string stdout, string err, bool injected)> RunToolStep(
             UCL_FreeTimeActivity iActivity, string iStep, string iStepArgs, string iPersona, CancellationToken iToken)
         {
+            bool aInjected = false;
             try
             {
                 string aTool = System.IO.Path.Combine(
                     UCL_EditorPath.CorePath, "Tools~", "AgentCommands", iActivity.tool);
-                if (!System.IO.File.Exists(aTool)) return (false, "", $"找不到工具：{aTool}");
+                if (!System.IO.File.Exists(aTool)) return (false, "", $"找不到工具：{aTool}", false);
 
                 // 區塊職責：參數走 **ArgumentList（argv 陣列）**，不自己組單一字串。
                 //
@@ -350,10 +368,13 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 };
                 aPsi.ArgumentList.Add(aTool);
                 aPsi.ArgumentList.Add(iStep);
-                foreach (var aTok in SplitStepArgs(iStepArgs)) aPsi.ArgumentList.Add(aTok);
+                var aToks = SplitStepArgs(iStepArgs);
+                var aFinal = InjectPersona(iActivity, iStep, iPersona, aToks);
+                aInjected = aFinal.Count != aToks.Count;
+                foreach (var aTok in aFinal) aPsi.ArgumentList.Add(aTok);
 
                 var aProc = System.Diagnostics.Process.Start(aPsi);
-                if (aProc == null) return (false, "", "Process.Start 回 null");
+                if (aProc == null) return (false, "", "Process.Start 回 null", aInjected);
 
                 // tag 串 persona —— 同一人的新一步收掉自己上一顆，別人的完全不碰（見上方血證）
                 using var aScope = UCL_ProcessRegistryService.RegisterScope(
@@ -368,14 +389,52 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     return aProc.WaitForExit(60000);
                 }, iToken);
 
-                if (!aExited) { try { aProc.Kill(); } catch { } return (false, aOut, "timeout(>60s) —— 一步不該跑這麼久"); }
-                if (aProc.ExitCode != 0) return (false, aOut, $"exit={aProc.ExitCode}; {(aErr ?? "").Trim()}");
-                return (true, aOut, "");
+                if (!aExited) { try { aProc.Kill(); } catch { } return (false, aOut, "timeout(>60s) —— 一步不該跑這麼久", aInjected); }
+                if (aProc.ExitCode != 0) return (false, aOut, $"exit={aProc.ExitCode}; {(aErr ?? "").Trim()}", aInjected);
+                return (true, aOut, "", aInjected);
             }
             catch (Exception e)
             {
-                return (false, "", $"spawn exception: {e.Message}");
+                return (false, "", $"spawn exception: {e.Message}", false);
             }
+        }
+
+        // ===========================================================
+        // 區塊職責：需要身分的 step 自動補上身分旗標（Tim 2026-08-18 拍板）。
+        //
+        // 物理意義：`step_args` 原樣轉發，而**工具對身分的要求逐 step 不同、旗標名也不同**：
+        //   - `canvas.py` 的 `view` / `pixel` / `stats` **沒有 --persona 這個選項**（硬塞 ⇒ unrecognized arguments）
+        //   - `canvas.py` 的 `note` / `claim` / `freetime` / `voucher` 少了它 ⇒ exit 2
+        //   - `library.py` 用的是 `--reader`，不是 `--persona`
+        //   ⇒ 所以「一律注入」與「猜旗標名」都會壞，而且壞在不同的活動上。
+        //   本函式只做**宣告過**的事：md 沒寫 `persona_flag` / `steps_need_persona` ⇒ 原樣回傳。
+        //
+        // ⚠ 呼叫端自己帶了同一個旗標時**不覆蓋、不重複附加** —— 顯式優先。
+        //   （重複附加會讓 argparse 取最後一個 ⇒ 呼叫端以為自己指定了誰，實際被我們蓋掉。）
+        //
+        // 🩸 2026-08-18 calli 實跑：`op=step step=place` 沒帶身分 ⇒
+        //   `canvas.py place: error: the following arguments are required: --persona`。
+        //   錯誤訊息指向 canvas.py，真因是本層原樣轉發了一份缺身分的 argv。
+        //
+        // 數值影響：最多往 argv 尾端加兩個 token；不改既有 token 的順序或內容。
+        // ===========================================================
+        static List<string> InjectPersona(UCL_FreeTimeActivity iActivity, string iStep,
+            string iPersona, List<string> iToks)
+        {
+            if (iActivity == null) return iToks;
+            // 旗標由 step 決定（同一支工具的旗標不一定一致 —— 見 PersonaFlagForStep 的血證）
+            string aFlag = iActivity.PersonaFlagForStep(iStep);
+            if (string.IsNullOrEmpty(aFlag)) return iToks;
+
+            foreach (var aTok in iToks)
+            {
+                // 顯式優先：已經帶了就不動（含 `--persona=X` 這種等號寫法）
+                if (string.Equals(aTok, aFlag, StringComparison.Ordinal)
+                    || aTok.StartsWith(aFlag + "=", StringComparison.Ordinal)) return iToks;
+            }
+
+            var aOut = new List<string>(iToks) { aFlag, iPersona };
+            return aOut;
         }
 
         // ===========================================================

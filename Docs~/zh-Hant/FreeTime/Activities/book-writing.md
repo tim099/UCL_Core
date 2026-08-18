@@ -5,6 +5,8 @@ how: library.py add-book/log-chapter — 續寫自己的書 (Books/<slug>/)，�
 group: 創作
 tool: library.py
 steps: add-book, add-volume, log-chapter, show-book, volumes, arc, arcs, publish, list
+persona_flag: --reader
+steps_need_persona: log-chapter
 enabled: true
 ---
 

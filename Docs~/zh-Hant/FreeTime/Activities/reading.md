@@ -4,6 +4,8 @@ name: 閱讀 (自選讀書)
 how: reading-library skill → 新 Library 的 work/media/persona/read_session 流程
 tool: library.py
 steps: resume, shelf, list, show-book, log-chapter, revise-view, bookmark, search, review, reviews
+persona_flag: --reader
+steps_need_persona: resume, shelf=--persona, log-chapter, revise-view, bookmark, show-book
 enabled: true
 ---
 

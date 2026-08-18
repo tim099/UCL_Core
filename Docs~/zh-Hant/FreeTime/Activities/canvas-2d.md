@@ -5,6 +5,8 @@ how: canvas.py place/view/claim — 2048×2048 全社群共用畫布，放點前
 group: 繪圖
 tool: canvas.py
 steps: view, pixel, stats, place, note, claim, freetime, voucher
+persona_flag: --persona
+steps_need_persona: place, note, claim, freetime, voucher
 enabled: true
 ---
 

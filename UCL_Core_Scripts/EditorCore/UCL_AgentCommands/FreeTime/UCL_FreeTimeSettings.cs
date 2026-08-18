@@ -92,6 +92,42 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         /// <summary>允許代跑的子命令白名單（frontmatter `steps`，逗號分隔）。空＝即使有 tool 也不放行。</summary>
         public List<string> steps = new List<string>();
 
+        // 區塊職責：代跑時要不要替呼叫端補上身分旗標，以及補的是哪一個旗標。
+        // 物理意義：`step_args` 是**原樣轉發**給工具的，而工具各自對身分的要求不同 ——
+        //          同一支 canvas.py 裡 `view` / `pixel` / `stats` **連 --persona 這個選項都沒有**
+        //          （硬塞會得到 `unrecognized arguments`），而 `place` / `note` / `claim` 少了它直接 exit 2。
+        //          旗標名也不統一：canvas.py 是 `--persona`，library.py 是 `--reader`。
+        // ⚠ 因此這件事**不能猜**（無條件注入會弄壞前三個 step，猜旗標名會弄壞 library）——
+        //   由每份活動 md 自己宣告。**沒宣告＝不注入**（fail-closed，行為與改動前逐位元相同）。
+        // 數值影響：純資料。空 personaFlag 或 step 不在 stepsNeedPersona ⇒ 完全不介入 argv。
+        /// <summary>身分旗標名（frontmatter `persona_flag`，例 `--persona` / `--reader`）。空＝本活動不自動補身分。</summary>
+        public string personaFlag = "";
+        /// <summary>需要自動補身分的子命令（frontmatter `steps_need_persona`，逗號分隔）。空＝一個都不補。</summary>
+        /// <remarks>
+        /// 支援 <c>step=--flag</c> 覆寫**單一 step** 的旗標名 —— 因為同一支工具的旗標**不一定一致**：
+        /// 🩸 2026-08-18 端到端實測：`library.py` 的 `resume` / `bookmark` 吃 <c>--reader</c>，
+        /// 但 <c>shelf</c> 吃 <c>--persona</c>。用單一 personaFlag 描述整支工具會在 shelf 上失敗，
+        /// 而那個失敗**只有真的跑過才會出現**（編譯過、宣告看起來也合理）。
+        /// </remarks>
+        public List<string> stepsNeedPersona = new List<string>();
+
+        // 區塊職責：查某個 step 該補哪個旗標。
+        // 物理意義：先找 step 專屬覆寫（`shelf=--persona`），沒有才回退活動層 personaFlag。
+        // 數值影響：回空字串＝這個 step 不補（呼叫端據此完全不介入 argv）。
+        public string PersonaFlagForStep(string iStep)
+        {
+            if (stepsNeedPersona == null) return "";
+            foreach (var aEntry in stepsNeedPersona)
+            {
+                int aEq = aEntry.IndexOf('=');
+                string aName = aEq < 0 ? aEntry : aEntry.Substring(0, aEq);
+                if (!string.Equals(aName.Trim(), iStep, System.StringComparison.OrdinalIgnoreCase)) continue;
+                string aOverride = aEq < 0 ? "" : aEntry.Substring(aEq + 1).Trim();
+                return aOverride.Length > 0 ? aOverride : personaFlag;
+            }
+            return "";
+        }
+
         /// <summary>特殊邏輯標記（frontmatter `kind`；缺欄位＝Default）。</summary>
         public UCL_FreeTimeActivityKind kind = UCL_FreeTimeActivityKind.Default;
 
@@ -168,6 +204,8 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                         isProjectLayer = iIsProject,
                         tool = (UCL_AwakeningService.ReadFrontmatterField(aMd, "tool") ?? "").Trim(),
                         steps = ParseSteps(UCL_AwakeningService.ReadFrontmatterField(aMd, "steps")),
+                        personaFlag = (UCL_AwakeningService.ReadFrontmatterField(aMd, "persona_flag") ?? "").Trim(),
+                        stepsNeedPersona = ParseSteps(UCL_AwakeningService.ReadFrontmatterField(aMd, "steps_need_persona")),
                     };
                 }
                 catch (Exception e)

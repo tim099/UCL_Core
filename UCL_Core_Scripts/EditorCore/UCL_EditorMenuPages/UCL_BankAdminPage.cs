@@ -72,6 +72,7 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：只在「選擇改變 / 操作後 / Refresh」重算，steady-state repaint 走快取零磁碟 I/O。
         int m_CacheTokenBal = 0;
         int m_CacheCanvasBal = 0;
+        int m_CacheCanvasExpiring;   // 未過期限時券（與永久券分開顯示 —— 混報會讓人不知道幾張明天沒了）
         int m_CacheTavernBal = -1;        // -1 = 無法解析 persona 的 bank
         int m_CacheCentralBankBal = -1;   // 🏦 央行餘額；-1 = 讀取失敗
                                           // ⚠ 2026-08-01 回歸事故：央行面板初版每幀直接呼叫
@@ -497,7 +498,8 @@ namespace UCL.Core.EditorLib.Page
             if (!m_BalancesDirty && bank == m_CacheForBank && persona == m_CacheForPersona) return;
             // 快取失效：重算一次（token replay ledger + 兩種券讀檔）
             m_CacheTokenBal = string.IsNullOrEmpty(bank) ? 0 : SafeGetTokenBalance(bank);
-            m_CacheCanvasBal = string.IsNullOrEmpty(persona) ? 0 : GetCanvasVoucherBalance(persona);
+            m_CacheCanvasBal = string.IsNullOrEmpty(persona) ? 0 : GetCanvasVoucherPermanent(persona);
+            m_CacheCanvasExpiring = string.IsNullOrEmpty(persona) ? 0 : GetCanvasVoucherExpiring(persona);
             string pbank = string.IsNullOrEmpty(persona) ? "" : ResolvePersonaToBank(persona);
             m_CacheTavernBal = string.IsNullOrEmpty(pbank) ? -1 : GetTavernVoucherBalance(pbank, persona);
             // 央行餘額跟選擇無關，但重算時機一致（選擇改變 / 操作後 / Refresh）——
@@ -567,7 +569,10 @@ namespace UCL.Core.EditorLib.Page
                 // 券（綁 persona，快取值）
                 if (!string.IsNullOrEmpty(persona))
                 {
-                    GUILayout.Label($"  🎨 繪圖券（persona <b>{persona}</b>）: <b>{m_CacheCanvasBal}</b>", WrapLabelStyle);
+                    GUILayout.Label($"  🎨 繪圖券（persona <b>{persona}</b>）: 永久 <b>{m_CacheCanvasBal}</b>"
+                        + (m_CacheCanvasExpiring > 0
+                            ? $"　＋ 限時 <color=#ffcc66><b>{m_CacheCanvasExpiring}</b></color>（到期作廢）"
+                            : "　（無限時券）"), WrapLabelStyle);
                     string pbank = ResolvePersonaToBank(persona);   // 純 dict 查表，非 I/O
                     GUILayout.Label(
                         m_CacheTavernBal < 0
@@ -1604,7 +1609,11 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // 委派 C# canonical ledger（跟發券同源、同路徑解析，不再自己讀檔避免路徑漂移）
-        int GetCanvasVoucherBalance(string persona) => UCL_CanvasVoucherLedger.GetBalance(persona);
+        // 區塊職責：繪圖券的**三種**餘額（2026-08-18 券改批次制）。
+        // 物理意義：Tim 拍板「查永久券數量時不自動包含限時券」—— 所以後台**分開顯示**。
+        //   一個欄位混報兩種的話，看到「160」的人不知道其中幾張明天就沒了。
+        int GetCanvasVoucherPermanent(string persona) => UCL_CanvasVoucherLedger.GetPermanent(persona);
+        int GetCanvasVoucherExpiring(string persona) => UCL_CanvasVoucherLedger.GetExpiring(persona);
 
         // 委派酒館券 canonical ledger（跟發券同源、同路徑解析，不再自己讀檔避免 schema/路徑漂移）
         int GetTavernVoucherBalance(string bank, string persona) => UCL_TavernVoucherLedger.GetBalance(bank, persona);

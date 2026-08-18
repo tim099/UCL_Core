@@ -705,8 +705,63 @@ def load_voucher(P: Paths, persona: str) -> dict:
     return data
 
 
-def voucher_balance(P: Paths, persona: str) -> int:
-    return load_voucher(P, persona).get("balance", 0)
+# 區塊職責: 券餘額 —— **從 batches 推導**，不讀 `balance` 欄（Tim 2026-08-18 拍板方案乙）。
+# 物理意義: 券 2026-08-18 改批次制（一次 grant = 一批，各自帶 expires_at）。
+#          `balance` 欄**已不再被寫入** —— 留一個「看起來是餘額、實際是舊快照」的數字在檔裡，
+#          過期額度就會被讀成還能花，而那不會報錯。
+#          ⇒ 三個問題分成三支：**永久 / 未過期限時 / 可花總額**。一支回答不了三個問題。
+# ⚠ 對側契約: C# 是 `UCL_CanvasVoucherLedger.GetPermanent/GetExpiring/GetSpendable`（唯一寫入 owner）。
+#          兩端要一起改 —— 只改一端會讓這邊算出 0，而「有券算成沒券」跟「真的沒券」輸出一模一樣。
+# 數值影響: legacy 相容 —— 舊檔只有純量 `balance`、沒有 `batches` ⇒ 視為「一批永久券」，
+#          讀值與舊制逐值相同（不需要遷移腳本）。
+def _voucher_batches(P: Paths, persona: str) -> list[dict]:
+    data = load_voucher(P, persona)
+    batches = data.get("batches")
+    if isinstance(batches, list):
+        return batches
+    legacy = int(data.get("balance", 0) or 0)
+    if legacy > 0:
+        return [{"uuid": "legacy", "amount": legacy, "remain": legacy,
+                 "granted_at": "", "expires_at": "", "source": "legacy_balance"}]
+    return []
+
+
+def _batch_spendable(b: dict, now: datetime.datetime) -> bool:
+    """這批此刻能不能花。expires_at 空 = 永久；**解析失敗視為永久**（不奪走既有權益）。"""
+    if int(b.get("remain", 0) or 0) <= 0:
+        return False
+    exp = (b.get("expires_at") or "").strip()
+    if not exp:
+        return True
+    try:
+        t = datetime.datetime.fromisoformat(exp.replace("Z", "+00:00"))
+    except ValueError:
+        print(f"⚠ 券 batch {b.get('uuid')} 的 expires_at 解析不出來（{exp!r}）— 視為永久券",
+              file=sys.stderr)
+        return True
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=datetime.timezone.utc)
+    return now <= t
+
+
+def voucher_permanent(P: Paths, persona: str) -> int:
+    """**永久券**（expires_at 空）。查「存了多少券」用這支。"""
+    return sum(int(b.get("remain", 0) or 0) for b in _voucher_batches(P, persona)
+               if not (b.get("expires_at") or "").strip() and int(b.get("remain", 0) or 0) > 0)
+
+
+def voucher_expiring(P: Paths, persona: str, now: datetime.datetime | None = None) -> int:
+    """**未過期的限時券**。"""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return sum(int(b.get("remain", 0) or 0) for b in _voucher_batches(P, persona)
+               if (b.get("expires_at") or "").strip() and _batch_spendable(b, now))
+
+
+def voucher_balance(P: Paths, persona: str, now: datetime.datetime | None = None) -> int:
+    """**可花總額**（未過期限時 ＋ 永久）—— 規劃付款用這支。名字沿用是為了不動既有呼叫端。"""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return sum(int(b.get("remain", 0) or 0) for b in _voucher_batches(P, persona)
+               if _batch_spendable(b, now))
 
 
 # ───────────────────────── freetime state ─────────────────────────

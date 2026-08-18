@@ -18,9 +18,9 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
         public override string ShortDescription => "繪圖券帳本 — 綁 persona（balance / grant / consume），C# canonical owner";
 
         public override string ArgsSchema =>
-            "balance: persona=persona名（必填）\n" +
-            "grant: persona=persona名 amount=N [source=admin_grant] [ref=業務ref] — 發券（balance += amount）\n" +
-            "consume: persona=persona名 amount=N [source=canvas_place] [ref=...] — 用券（不足 fail）";
+            "balance: persona=persona名（必填）—— 回**三個**數字：可花總額 / 永久券 / 未過期限時券\n" +
+            "grant: persona=persona名 amount=N [source=admin_grant] [ref=業務ref] [expires_at=<UTC ISO>] — 發券（**expires_at 空＝永久券**；帶了＝限時券，到期自動作廢並記 history）\n" +
+            "consume: persona=persona名 amount=N [source=canvas_place] [ref=...] — 用券（**先花快過期的**；可花總額不足 fail，不部分扣款）";
 
         public override string ExampleArgs => "op=balance;persona=kiara";
 
@@ -53,9 +53,18 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
         {
             string persona = GetArg(args, "persona", "");
             if (string.IsNullOrEmpty(persona)) { Reject("balance 缺少 persona"); return; }
-            int bal = UCL_CanvasVoucherLedger.GetBalance(persona);
-            WriteLastOp($"# 🎨 繪圖券 balance\n\n- persona: `{persona}`\n- **balance: {bal}**\n");
-            Debug.Log($"[CanvasVoucher] balance {persona} = {bal}");
+            // 查詢就把三種都報出來 —— **不替使用者挑一種**。
+            // 2026-08-18 券改批次制：「永久」「未過期限時」「可花總額」是三個不同的答案，
+            // 只回一個數字的話，讀的人會拿它當成自己心裡想的那一種（而那不會報錯）。
+            int aPermanent = UCL_CanvasVoucherLedger.GetPermanent(persona);
+            int aExpiring = UCL_CanvasVoucherLedger.GetExpiring(persona);
+            int bal = UCL_CanvasVoucherLedger.GetSpendable(persona);
+            WriteLastOp($"# 🎨 繪圖券 balance\n\n- persona: `{persona}`\n"
+                      + $"- **可花總額: {bal}**（未過期限時 {aExpiring} ＋ 永久 {aPermanent}）\n"
+                      + $"- 永久券: **{aPermanent}**　存著的，不會過期\n"
+                      + $"- 未過期限時券: **{aExpiring}**　到期即作廢，過期後這個數字自己會掉\n"
+                      + "\n> ⚠ 三個數字問的是**不同的問題** —— 規劃付款看「可花總額」，查存量看「永久券」。別拿其中一個當另一個用。\n");
+            Debug.Log($"[CanvasVoucher] balance {persona}: spendable={bal} permanent={aPermanent} expiring={aExpiring}");
         }
 
         void Op_Grant(Dictionary<string, string> args)
@@ -67,7 +76,9 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
             if (string.IsNullOrEmpty(persona)) { Reject("grant 缺少 persona"); return; }
             if (!int.TryParse(amountStr, out int amount) || amount <= 0) { Reject($"grant amount 無效或非正數: {amountStr}"); return; }
 
-            var (before, after) = UCL_CanvasVoucherLedger.Grant(persona, amount, source, refText);
+            // 期間限定券（Tim 2026-08-18）：`expires_at` 空 ＝ 永久券 ⇒ 不帶這個參數時行為與改動前逐值相同。
+            string aExpiresAt = GetArg(args, "expires_at", "").Trim();
+            var (before, after) = UCL_CanvasVoucherLedger.Grant(persona, amount, source, refText, aExpiresAt);
             WriteLastOp($"# ✅ 繪圖券 grant\n\n- persona: `{persona}`\n- amount: **+{amount}**\n- source: `{source}`\n- balance: {before} → **{after}**\n");
         }
 

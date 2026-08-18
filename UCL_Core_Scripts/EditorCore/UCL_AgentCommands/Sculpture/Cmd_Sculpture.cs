@@ -141,7 +141,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             // 預授權：最壞情況費用 ≤ 三通道可用量（依 pay 模式取用哪些通道）
             int aMaxUnits = CeilDiv(aVolume, VOXELS_PER_UNIT);
             int aFreeAvail = FreePixelsAvailable(aPersona);
-            int aVoucherAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetBalance(aPersona);
+            // 規劃付款要的是**可花總額**（未過期限時 ＋ 永久）—— 不是「存了多少永久券」。
+            // 2026-08-18 券改批次制後這三種讀法分成三個 API，呼叫端必須選；選錯不會報錯。
+            int aVoucherAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetSpendable(aPersona);
             int aTokenAvail = string.IsNullOrEmpty(aBank) ? 0 : Treasury.UCL_TreasuryLedger.GetBalance(aBank);
             int aAuthorized = aPay switch
             {
@@ -299,7 +301,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
 
             int aMaxUnits = CeilDiv((int)aWorstVolume, VOXELS_PER_UNIT);
             int aFreeAvail = FreePixelsAvailable(aPersona);
-            int aVoucherAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetBalance(aPersona);
+            int aVoucherAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetSpendable(aPersona);   // 可花總額（理由見 op=box 那處）
             int aTokenAvail = string.IsNullOrEmpty(aBank) ? 0 : Treasury.UCL_TreasuryLedger.GetBalance(aBank);
             int aAuthorized = aPay switch
             {
@@ -509,7 +511,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             }
             if (aUseVoucher && aRemain > 0)
             {
-                int aBal = CanvasVoucher.UCL_CanvasVoucherLedger.GetBalance(iPersona);
+                int aBal = CanvasVoucher.UCL_CanvasVoucherLedger.GetSpendable(iPersona);   // 結算也用可花總額
                 aVoucher = Math.Min(aRemain, aBal);
                 if (aVoucher > 0)
                 {

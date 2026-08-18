@@ -97,8 +97,11 @@ steps: resume, shelf, list   # 選填 — 允許代跑的子命令白名單 (空
 ## 慣例
 
 - `_` 開頭的檔案（如本檔）不算活動，掃描時跳過
-- **下架用 `enabled: false`，不刪檔**（`social-chat` / `game-qa` 皆此處置）——
-  刪掉的話「骰面上為什麼沒有那件事」就沒有答案了
+- **下架預設用 `enabled: false` 不刪檔**（例：`game-qa`）—— 刪掉的話
+  「骰面上為什麼沒有那件事」就沒有答案了。
+  **例外：替代品就是流程本身時可以刪檔** —— `social-chat` 2026-08-18 刪檔，
+  因為「換骰即聊天」已寫在 [`Workflows/FreeTime_Cmd_Flow.md`](../../Workflows/FreeTime_Cmd_Flow.md)，
+  那一節就是它的答案；墓碑不必同時留在活動清單裡
 - 對齊 EOV `docs/Glossary/` 的 per-entry md + frontmatter 前例
 - 工具：`python <UCL_Core>/Tools~/AgentCommands/freetime.py shuffle|list|show|init`
 - 三池 spec：[`<UCL_Core>/Docs~/zh-Hant/Mechanics/FreeTime_System.md`](../../Mechanics/FreeTime_System.md) §4（2026-06-11 同步搬入 UCL_Core）

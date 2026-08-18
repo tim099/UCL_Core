@@ -99,11 +99,14 @@ steps_need_persona: shelf, resume=--reader   # 選填 — 這些 step 由 op=ste
 ## 慣例
 
 - `_` 開頭的檔案（如本檔）不算活動，掃描時跳過
-- **下架預設用 `enabled: false` 不刪檔**（例：`game-qa`）—— 刪掉的話
-  「骰面上為什麼沒有那件事」就沒有答案了。
-  **例外：替代品就是流程本身時可以刪檔** —— `social-chat` 2026-08-18 刪檔，
-  因為「換骰即聊天」已寫在 [`Workflows/FreeTime_Cmd_Flow.md`](../../Workflows/FreeTime_Cmd_Flow.md)，
-  那一節就是它的答案；墓碑不必同時留在活動清單裡
+- **下架用 `enabled: false` 或刪檔，判準是「這件事的缺席有沒有答案」**：
+  - **有答案 → 可以刪檔。** `social-chat`（換骰即聊天，答案在
+    [`Workflows/FreeTime_Cmd_Flow.md`](../../Workflows/FreeTime_Cmd_Flow.md)）、
+    `game-qa`（**專案限定** —— 共用層不該放只有某個專案做得成的活動，
+    要用的專案在**專案層**放自己的同 id md）皆 2026-08-18 刪檔。
+  - **沒答案 → 留 `enabled: false`。** 例：`trpg` 待重做 —— 它會回來，
+    而在回來之前「遊戲組怎麼只剩下棋」需要 md 自己回答。
+  ⇒ 判準不是「暫時或永久」，是**刪掉之後那個問題還有沒有地方能答**。
 - 對齊 EOV `docs/Glossary/` 的 per-entry md + frontmatter 前例
 - 工具：`python <UCL_Core>/Tools~/AgentCommands/freetime.py shuffle|list|show|init`
 - 三池 spec：[`<UCL_Core>/Docs~/zh-Hant/Mechanics/FreeTime_System.md`](../../Mechanics/FreeTime_System.md) §4（2026-06-11 同步搬入 UCL_Core）

@@ -146,6 +146,61 @@ helper 內把落點改成 `cmd/` 子目錄、檔名去 `_`。
 3. **3 個耐久檔的長期歸屬**：留頂層，或各自進對應目錄（`_keys_open` → `keys/`？）。
    本案建議**留頂層**，理由是它們是「這個 persona 的當前狀態」，而頂層正是找它們的地方。
 
+## 8. 剩下 16 個回傳檔：可執行清單（Tim 2026-08-18 指示寫成 plan）
+
+FreeTime 那 5 個已完成（§0）。**這一節是給接手的人照著跑的**，
+所以每一列都寫「誰寫的」而不是只寫「還沒搬」——
+搬家的成本全在寫入端的數量，而數量只能 grep 出來、不能憑印象。
+
+### 8.1 待搬清單與寫入端
+
+| 前綴 | 檔數 | C# 寫入端 | python 寫入端 |
+|---|---|---|---|
+| `_goodmorning_*` | 3 | `Cmd_GoodMorning` / `UCL_AwakeningService` | `awakening.py` |
+| `_goodnight_*` | 4 | `Cmd_GoodNight` / `UCL_AwakeningService` / `UCL_LoginStatusPage` | `awakening.py` |
+| `_streamwatch_*` | 4 | `Cmd_StreamWatch`（⚠ **自己推導 letters 根**，不用 `LettersDir`） | — |
+| `_reading_recall_*` | 3 | `Cmd_Library` / `UCL_ReadingLibraryIO` / `Cmd_StreamWatch` / `UCL_ReadingNotesManagePage` | `library.py` |
+| `_wake_brief` | 1 | `Cmd_GoodMorning` / `UCL_AwakeningService`（＋多個唯讀端） | `awakening.py` / `wake_brief.py` / `memory.py` / `library.py` |
+| `_ding_brief` | 1 | — | `tavern_catchup.py` |
+
+⚠ `_wake_brief` 是**最多讀取端**的一份（C# 九檔、python 四檔提到它）——
+它同時是早安流程的核心產物。**它應該最後搬**，而且要單獨一筆 commit。
+
+### 8.2 施工順序（每個前綴一筆 commit，由少讀取端往多）
+
+```
+① _streamwatch_*      （寫入端 1 個，順帶修掉它自己推導 letters 根那格）
+② _ding_brief          （只有 tavern_catchup.py）
+③ _reading_recall_*    （4 個 C# ＋ library.py）
+④ _goodnight_*         （含 UCL_LoginStatusPage 這個 GUI 讀取端）
+⑤ _goodmorning_*       （早安流程，skill 指路要同步）
+⑥ _wake_brief          （最後，單獨一筆）
+```
+
+**為什麼由少往多**：每一筆都要跑一次該流程實測（早安要真的登入、觀影要真的開場），
+而流程越核心、驗一次的代價越高。先做便宜的能把 `UCL_LettersPath` 的用法磨對，
+再動每天都在跑的那幾條。
+
+### 8.3 每一筆的固定動作（缺一項就會留下靜默漂移）
+
+1. 寫入端改走 `UCL_LettersPath.CmdPayload(persona, "<cmd>", "<step>")`
+   —— ⚠ **不要自己 `Path.Combine`**（那正是本案要收的債；規範已寫進
+   `Agent/Coding_Standards.md`「letters 目錄底下的路徑（硬規則）」）
+2. python 端改走 `ucl_paths.letters_cmd_payload()`
+3. **grep 該前綴的字串殘留**，特別是 `ArgsSchema` 與檔頭說明 ——
+   那是**印給呼叫端看的輸出**，不改就會一直告訴人舊路徑（FreeTime 那筆實際踩到）
+4. 同步 skill / 文件裡寫死該路徑的地方
+5. **實跑該流程**，讀回傳檔確認：落點是新的、**且回傳檔內文的指路也是新的**
+   （兩件事分開驗 —— FreeTime 那筆 Tim 特別要求確認後者）
+6. 舊位置的檔不搬（transient，下次跑就在新位置生成）；**自己的可以清，別人的不動**
+
+### 8.4 收尾（全部搬完才做）
+
+- 拔掉 `Cmd_DocEdit` 的 `_`-skip heuristic，改成「頂層的 .md 就是信」
+- 3 個耐久檔（`_constitution` / `_keys_open` / `_latest`）**留頂層**，
+  但要在 `Cmd_DocEdit` 顯式排除（從「按前綴猜」變成「列名排除」——
+  三個具名檔的清單是可讀的，前綴規則不是）
+
 ## 7. 不做的事
 
 - **不改既有子目錄**（`wakes/` `longterm/` `keys/` …）—— 它們的語意沒有問題。

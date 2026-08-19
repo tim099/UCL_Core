@@ -52,6 +52,14 @@
         "data:BookNotes/Library/media/*/readers/*/characters/*/*.md"
       ]
     },
+    "coding": {
+      "desc": "工程實務知識（外部提煉）— AgentCommands/Knowledge/coding/*.md（解衝突／debug 迴路／TDD seam／deep module／review 兩軸／寫給 agent 的文件…；問『這件事該怎麼做』時查這裡）。⛔ **不收**我們自己的血證（→fragments/lessons/alaya）、本專案機制與 API（→coredocs/docs）、工作進度（→work_memory）",
+      "kind": "markdown",
+      "_note": "本 target 收的是**知識點**不是 skill：外部 skill 我們刻意不搬進專案（多一份要同步的東西），只提取判準與做法。每檔開頭的『## 會這樣問』是刻意的檢索鉤子 —— bge-m3 比對語意，而真人的問句與一份純技術筆記在向量上並不近（本專案既有血證：關鍵字查失敗的樣子跟『這條知識不存在』一模一樣）。前綴 _ 的檔（_README.md）是說明不是知識，不進索引。",
+      "globs": [
+        "data:Knowledge/coding/[!_]*.md"
+      ]
+    },
     "work_memory": {
       "desc": "工作記憶區 — AgentCommands/WorkMemory/<topic>/*.md（所有 agent 共用, 每工作主題的拍板/坑/現況/指路; 開工前語意查 knowhow）",
       "kind": "markdown",

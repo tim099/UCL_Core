@@ -1349,9 +1349,9 @@ def cmd_freetime(args):
     # 2026-08-18：免費像素 = **限時繪圖券**。額度檔已廢除 ⇒ 讀 ledger。
     # 「本場發了幾張」不從檔案推（那份檔沒了），而是用常數 10 對照剩餘量算已用 ——
     # 精確的「本場那一批」由 C# 端 GetExpiringByRef(session_id) 回答（回傳檔會印）。
-    remain = voucher_expiring(P, persona, now)
+    expiring_count = voucher_expiring(P, persona, now)
     granted = FREE_PIXELS_PER_SESSION
-    used = max(0, granted - remain)
+    used = max(0, granted - expiring_count)
 
     print(f"# 🎨 {persona} 自由時間免費像素狀態（**限時繪圖券**：每場 {granted} 張，到期作廢）")
     if session is None:
@@ -1361,15 +1361,13 @@ def cmd_freetime(args):
         end = parse_iso(session.get("end_ts"))
         print(f"  自由時間: ✅ active（session 至 {session.get('end_ts')}）")
         if end:
-            remain = (end - now).total_seconds()
-            if remain >= 0:
-                print(f"  session 剩餘: {int(remain // 60)} 分 {int(remain % 60)} 秒")
+            sec_left = (end - now).total_seconds()
+            if sec_left >= 0:
+                print(f"  session 剩餘: {int(sec_left // 60)} 分 {int(sec_left % 60)} 秒")
             else:
                 print("  已過軟截止 —— 最後一件活動做完跑 step=next 收工（額度在收工前仍可用）")
-    if session and ft.get("session_id") == session.get("id"):
-        print(f"  免費像素: {max(0, granted - used)} 顆可用（本場已用 {used}/{granted}）")
-    elif session:
-        print(f"  免費像素: 0 顆（額度記錄屬於別場 session — 發放端是 step=start，跑過才有）")
+    if session:
+        print(f"  免費像素: {expiring_count} 顆可用（本場已用 {used}/{granted}）")
     else:
         print(f"  （上場記錄: 已用 {used}/{granted} — 不跨場）")
 

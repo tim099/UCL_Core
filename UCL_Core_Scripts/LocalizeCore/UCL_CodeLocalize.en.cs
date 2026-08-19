@@ -339,6 +339,7 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Col.Persona" => "Persona",
                 "LoginStatus.Col.Agent" => "Agent",
                 "LoginStatus.Col.Bank" => "Bank",
+                "LoginStatus.NowStatus.None" => "(no current status set)",
                 "LoginStatus.Col.Pid" => "pid",
                 "LoginStatus.Col.LockedAt" => "locked_at (UTC)",
                 "LoginStatus.Col.SessionKey" => "session_key",

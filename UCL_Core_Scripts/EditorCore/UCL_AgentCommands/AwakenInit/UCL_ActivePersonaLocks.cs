@@ -41,6 +41,47 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         /// <summary>token 形狀由 awakening 端的命名慣例決定：session 標題就是 <c>##persona##</c>。</summary>
         public string SessionToken => $"##{Persona}##";
+
+        // ===========================================================
+        // 區塊職責：now_status 的「多久前」文字（顯示端唯一換算實作）。
+        // 物理意義：§8.5 明寫「staleness 要顯示 —— 過舊的狀態比沒有狀態更會誤導」。
+        //          換算住在這裡而不住在各個顯示頁：**「在線」相關的東西只准加在本類**
+        //          （本檔檔頭的規矩），否則後台頁與 catchup 會對同一個時間戳給出兩種說法。
+        // ⚠ 對側契約：python 端的同一份換算在 `AgentCommands/Tools/tavern_catchup.py`
+        //   （剛剛／N 分鐘前／N 小時前／N 天前）—— **用字要一致**，兩邊講同一件事用不同字
+        //   會讓人以為是兩種狀態。改一邊要改另一邊。
+        // 數值影響：時間戳解析失敗或空值回空字串（呼叫端自己決定要不要顯示「沒設定」）；
+        //          一律以 UTC 比對（lock 裡存的是 UTC ISO）。
+        // ===========================================================
+        public string StatusAgeText
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(StatusUpdatedAt)) return "";
+                if (!DateTime.TryParse(StatusUpdatedAt, null,
+                        System.Globalization.DateTimeStyles.AdjustToUniversal |
+                        System.Globalization.DateTimeStyles.AssumeUniversal, out var aAt)) return "";
+                double aSec = (DateTime.UtcNow - aAt).TotalSeconds;
+                if (aSec < 0) aSec = 0;                     // 時鐘微幅倒退不該印成負數
+                if (aSec < 60) return "剛剛";
+                if (aSec < 3600) return $"{(int)(aSec / 60)} 分鐘前";
+                if (aSec < 86400) return $"{(int)(aSec / 3600)} 小時前";
+                return $"{(int)(aSec / 86400)} 天前";
+            }
+        }
+
+        /// <summary>狀態是不是舊到會誤導（超過一天）—— 顯示端據此加警示，§8.5 的「過舊比沒有更糟」。</summary>
+        public bool IsStatusStale
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(StatusUpdatedAt)) return false;
+                if (!DateTime.TryParse(StatusUpdatedAt, null,
+                        System.Globalization.DateTimeStyles.AdjustToUniversal |
+                        System.Globalization.DateTimeStyles.AssumeUniversal, out var aAt)) return false;
+                return (DateTime.UtcNow - aAt).TotalSeconds >= 86400;
+            }
+        }
     }
 
     public static class UCL_ActivePersonaLocks

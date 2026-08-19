@@ -54,6 +54,11 @@ namespace UCL.Core.EditorLib.Page
             public int Pid = 0;
             // T07 (2026-05-15 apex-two) — 32-hex UUID4 token 發於 morning ritual; 空 = T07 前建的 lock
             public string SessionToken = "";
+            // §8.5 now_status —— 「這個人現在在做什麼」。StatusAge / StatusStale 由
+            // UCL_PersonaLockInfo 換算（顯示端不自己算，否則後台與 catchup 會對同一個時間戳各講一套）。
+            public string NowStatus = "";
+            public string StatusAge = "";
+            public bool StatusStale = false;
         }
 
         // 區塊職責：Persona pool entry — 對齊 AwakenInit/personas/<name>.json
@@ -74,6 +79,9 @@ namespace UCL.Core.EditorLib.Page
         List<LockEntry> m_Locks = new List<LockEntry>();
         readonly Dictionary<string, UCL_ActualAgent> m_ActualAgentDrafts = new Dictionary<string, UCL_ActualAgent>();
         readonly UCL_ObjectDictionary m_ActualAgentPopupDic = new UCL_ObjectDictionary();
+        // 每個 lock 的「詳細」折疊狀態（key = persona）—— 走 UCL 封裝的 Toggle，
+        // 狀態存 UCL_ObjectDictionary 而不是自己開 Dictionary<string,bool>（沿 AgentSkillManagerPage 慣例）。
+        readonly UCL_ObjectDictionary m_LockFoldDic = new UCL_ObjectDictionary();
         List<PersonaEntry> m_Pool = new List<PersonaEntry>();
         Dictionary<string, int> m_SameKeyCount = new Dictionary<string, int>();   // session_key → count (collision 偵測)
 
@@ -229,6 +237,9 @@ namespace UCL.Core.EditorLib.Page
                     SessionKey = l.SessionKey,
                     Pid = l.Pid,
                     SessionToken = l.RawSessionToken,
+                    NowStatus = l.NowStatus,
+                    StatusAge = l.StatusAgeText,
+                    StatusStale = l.IsStatusStale,
                 };
                 m_Locks.Add(entry);
                 m_ActualAgentDrafts[entry.Persona] = l.ActualAgent;
@@ -407,99 +418,110 @@ namespace UCL.Core.EditorLib.Page
                 }
                 //m_LocksScroll = GUILayout.BeginScrollView(m_LocksScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(220)));
 
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Space(UCL_GUIStyle.GetScaledSize(160));
-                    
-                    
-                    
-                    
-                    
-                    
-
-
-                    GUILayout.Label("", GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
-                }
                 // snapshot 迭代：DoLogout 內部呼叫 LoadData() 會清空 m_Locks，直接 foreach 原 list 會 throw Collection modified
                 foreach (var l in m_Locks.ToArray())
                 {
-                    using (new GUILayout.HorizontalScope())
+                    // ===========================================================
+                    // 區塊職責：一個 lock 的顯示 —— **摘要一行 ＋ 詳細折疊**（Tim 2026-08-19 指定）。
+                    // 物理意義：舊版把 8 個欄位橫著攤成「標題在上、值在下」的兩行 ×8 欄，
+                    //          每個 lock 佔兩行、寬度爆出視窗，而**最想知道的那件事
+                    //          （這個人現在在做什麼）根本沒顯示** —— now_status 欄自 §8.5 就存在 lock 裡，
+                    //          catchup／ding 都印，只有這頁沒接。
+                    //          ⇒ 摘要行只留身分三格（persona／agent／帳戶）＋ now_status；
+                    //            排錯用的欄（實際 Agent／pid／鎖定時間／session_key／token）收進折疊。
+                    // 數值影響：折疊狀態存 m_LockFoldDic（key=persona），收合時不繪製 body。
+                    // ===========================================================
+                    using (new GUILayout.VerticalScope("box"))
                     {
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.Logout"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
+                        bool aExpanded;
+                        using (new GUILayout.HorizontalScope())
                         {
-                            DoLogout(l);
-                        }
-                        // 續期按鈕已隨過期機制移除（Tim 2026-08-19）—— lock 生命週期由 goodnight/logout 顯式刪檔決定
-                        string personaLabel = l.Persona;
-                        using(new GUILayout.VerticalScope()) 
-                        {
-                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                            GUILayout.Label(personaLabel, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                        }
-                        
-                        using(new GUILayout.VerticalScope()) 
-                        {
-                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Agent"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
-                            GUILayout.Label(l.Agent, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
-                        }
-                        // 區塊職責：編輯實際承載 agent；它只影響 remote routing / 下次 morning 的 --agent，不動顯示歸屬或 bank。
-                        // 物理意義：同一 persona 可由不同桌面平台承載，而帳務與酒館顯示仍必須維持原本綁定。
-                        // 數值影響：套用同時寫 active lock 與 persona registry 的 actual_agent，下一次 morning 可帶入同一 agent。
-                        using (new GUILayout.VerticalScope())
-                        {
-                            GUILayout.Label("實際 Agent", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                            UCL_ActualAgent current = m_ActualAgentDrafts.TryGetValue(l.Persona, out var draft) ? draft : UCL_ActualAgentUtility.ParseOrNone(l.ActualAgent);
-                            current = UCL_GUILayout.PopupAuto(current, m_ActualAgentPopupDic.GetSubDic(l.Persona), "ActualAgent", 6, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
-                            m_ActualAgentDrafts[l.Persona] = current;
-                            if (GUILayout.Button("套用", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)))) ApplyActualAgent(l.Persona, current);
-                        }
-                        using (new GUILayout.VerticalScope())
-                        {
-                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Bank"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                            GUILayout.Label(l.BankAccount, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                        }
-                        using (new GUILayout.VerticalScope())
-                        {
-                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Pid"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                            GUILayout.Label(l.Pid.ToString(), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
-                        }
-                        using (new GUILayout.VerticalScope())
-                        {
-                            var width = GUILayout.Width(UCL_GUIStyle.GetScaledSize(180));
-                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LockedAt"), UCL_GUIStyle.LabelStyle, width);
-                            GUILayout.Label(TruncTs(l.LockedAt), UCL_GUIStyle.LabelStyle, width);
-                        }
-                        using (new GUILayout.VerticalScope())
-                        {
-                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.SessionKey"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
-                            GUILayout.Label(TruncKey(l.SessionKey), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
-                        }
-                        using (new GUILayout.VerticalScope())
-                        {
-                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Token"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
-                            // T07: session token 顯示 — 前 12 碼 + "…" 方便 Tim 肉眼確認; Copy 鈕拷全碼
-                            if (string.IsNullOrEmpty(l.SessionToken))
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.Logout"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
                             {
-                                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Token.None"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                                DoLogout(l);
+                            }
+                            // 續期按鈕已隨過期機制移除（Tim 2026-08-19）—— lock 生命週期由 goodnight/logout 顯式刪檔決定
+                            aExpanded = UCL_GUILayout.Toggle(m_LockFoldDic, l.Persona, 18);
+
+                            GUILayout.Label($"<b>{l.Persona}</b>", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(130)));
+                            GUILayout.Label(l.Agent, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                            GUILayout.Label($"🏦 {l.BankAccount}", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+
+                            // now_status —— §8.5 的消費端。三態刻意長得不一樣：
+                            //   有且新 → 💬 一句話（多久前）／有但過舊 → ⚠（§8.5：過舊的狀態比沒有狀態更會誤導）／
+                            //   沒有 → 明講「沒設定」，不留空白（空白會被讀成「讀取失敗」）。
+                            if (string.IsNullOrEmpty(l.NowStatus))
+                            {
+                                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.NowStatus.None"), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(true));
                             }
                             else
                             {
-                                string displayToken = l.SessionToken.Length > 12
-                                    ? l.SessionToken.Substring(0, 12) + "…"
-                                    : l.SessionToken;
-                                GUILayout.Label(displayToken, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
-                                if (GUILayout.Button(UCL_CodeLocalize.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
-                                {
-                                    GUIUtility.systemCopyBuffer = l.SessionToken;
-                                }
+                                string aAge = string.IsNullOrEmpty(l.StatusAge) ? "" : $"（{l.StatusAge}）";
+                                string aMark = l.StatusStale ? "⚠" : "💬";
+                                GUILayout.Label($"{aMark} {l.NowStatus}{aAge}", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(true));
+                            }
+
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.ForceRm"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(75))))
+                            {
+                                DoForceRemove(l.Persona);
                             }
                         }
 
+                        if (!aExpanded) continue;
 
-
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.ForceRm"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(75))))
+                        using (new GUILayout.VerticalScope("box"))
                         {
-                            DoForceRemove(l.Persona);
+                            // 區塊職責：編輯實際承載 agent；它只影響 remote routing / 下次 morning 的 --agent，不動顯示歸屬或 bank。
+                            // 物理意義：同一 persona 可由不同桌面平台承載，而帳務與酒館顯示仍必須維持原本綁定。
+                            // 數值影響：套用同時寫 active lock 與 persona registry 的 actual_agent，下一次 morning 可帶入同一 agent。
+                            using (new GUILayout.HorizontalScope())
+                            {
+                                GUILayout.Label("實際 Agent", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                                UCL_ActualAgent current = m_ActualAgentDrafts.TryGetValue(l.Persona, out var draft) ? draft : UCL_ActualAgentUtility.ParseOrNone(l.ActualAgent);
+                                current = UCL_GUILayout.PopupAuto(current, m_ActualAgentPopupDic.GetSubDic(l.Persona), "ActualAgent", 6, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                                m_ActualAgentDrafts[l.Persona] = current;
+                                if (GUILayout.Button("套用", UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)))) ApplyActualAgent(l.Persona, current);
+                                GUILayout.FlexibleSpace();
+                            }
+                            using (new GUILayout.HorizontalScope())
+                            {
+                                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Pid"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                                GUILayout.Label(l.Pid.ToString(), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                                GUILayout.FlexibleSpace();
+                            }
+                            using (new GUILayout.HorizontalScope())
+                            {
+                                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LockedAt"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                                GUILayout.Label(TruncTs(l.LockedAt), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
+                                GUILayout.FlexibleSpace();
+                            }
+                            using (new GUILayout.HorizontalScope())
+                            {
+                                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.SessionKey"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                                GUILayout.Label(TruncKey(l.SessionKey), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                                GUILayout.FlexibleSpace();
+                            }
+                            using (new GUILayout.HorizontalScope())
+                            {
+                                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Token"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                                // T07: session token 顯示 — 前 12 碼 + "…" 方便 Tim 肉眼確認; Copy 鈕拷全碼
+                                if (string.IsNullOrEmpty(l.SessionToken))
+                                {
+                                    GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Token.None"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                                }
+                                else
+                                {
+                                    string displayToken = l.SessionToken.Length > 12
+                                        ? l.SessionToken.Substring(0, 12) + "…"
+                                        : l.SessionToken;
+                                    GUILayout.Label(displayToken, UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                                    if (GUILayout.Button(UCL_CodeLocalize.Get("Copy"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60))))
+                                    {
+                                        GUIUtility.systemCopyBuffer = l.SessionToken;
+                                    }
+                                }
+                                GUILayout.FlexibleSpace();
+                            }
                         }
                     }
                 }

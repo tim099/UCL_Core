@@ -226,7 +226,10 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
         public static bool MigrateAllPersonas = false;
 
-        static readonly HashSet<string> MIGRATION_ALLOWLIST = new HashSet<string> { "Template" };
+        // kiara 2026-08-19 加入：Tim 指示先 commit 還原點、再拿**本人的資料**當第一個真人志願者
+        // （出事就 revert —— 而遷移是可逆的：legacy 從不被改，砍掉 profile/ 就回到遷移前）。
+        // ⚠ 一次只放一位 —— MigrateAllPersonas 仍是 false，全員放行是另一個決定。
+        static readonly HashSet<string> MIGRATION_ALLOWLIST = new HashSet<string> { "Template", "kiara" };
 
         /// <summary>這個 persona 現在可不可以被自動遷移。</summary>
         public static bool MayMigrate(string iPersona)

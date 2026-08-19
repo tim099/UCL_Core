@@ -106,9 +106,10 @@ namespace UCL.Core.EditorLib.AgentCommands
             // ── 第一層：cmd 層 ──
             var aView = ResolveAlias(iArgs, aSpec.Aliases);
             var aMissing = MissingOf(aView, aSpec.Required);
-            if (aMissing.Count > 0)
+            var aAbsent = AbsentOf(aView, aSpec.RequiredPresent);
+            if (aMissing.Count > 0 || aAbsent.Count > 0)
             {
-                oError = Describe(iHandler, null, aMissing, aView, aSpec.Aliases);
+                oError = Describe(iHandler, null, aMissing, aAbsent, aView, aSpec.Aliases);
                 return false;
             }
 
@@ -119,9 +120,10 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             var aOpView = ResolveAlias(aView, aOpSpec.Aliases);
             var aOpMissing = MissingOf(aOpView, aOpSpec.Required);
-            if (aOpMissing.Count > 0)
+            var aOpAbsent = AbsentOf(aOpView, aOpSpec.RequiredPresent);
+            if (aOpMissing.Count > 0 || aOpAbsent.Count > 0)
             {
-                oError = Describe(iHandler, aOp, aOpMissing, aOpView, aOpSpec.Aliases);
+                oError = Describe(iHandler, aOp, aOpMissing, aOpAbsent, aOpView, aOpSpec.Aliases);
                 return false;
             }
             return true;
@@ -159,7 +161,11 @@ namespace UCL.Core.EditorLib.AgentCommands
                  + "若本 Cmd 確實不需要驗證，掛 `[UCL_UnvalidatedArgs(\"理由\")]` 表態即可（掛上後本提示消失）。";
         }
 
-        /// <summary>缺哪些 required（空字串也算缺 —— 帶了一個空值與沒帶，對呼叫端是同一件事）。</summary>
+        /// <summary>
+        /// 缺哪些 <see cref="UCL_CmdArgsSpec.Required"/>（**空字串也算缺**）。
+        /// ⚠ 這個判準對「空值是合法輸入」的參數是錯的 —— 那種參數要宣告在
+        /// <see cref="UCL_CmdArgsSpec.RequiredPresent"/>，由 <see cref="AbsentOf"/> 驗（BUG-15）。
+        /// </summary>
         static List<string> MissingOf(IReadOnlyDictionary<string, string> iView, string[] iRequired)
         {
             var aMissing = new List<string>();
@@ -172,16 +178,51 @@ namespace UCL.Core.EditorLib.AgentCommands
             return aMissing;
         }
 
+        /// <summary>
+        /// 缺哪些 <see cref="UCL_CmdArgsSpec.RequiredPresent"/> —— 判準是**在場**（ContainsKey），
+        /// 不看值。顯式傳空值（`--arg x=`）算在場，通過（BUG-15）。
+        /// </summary>
+        static List<string> AbsentOf(IReadOnlyDictionary<string, string> iView, string[] iRequiredPresent)
+        {
+            var aAbsent = new List<string>();
+            if (iRequiredPresent == null) return aAbsent;
+            foreach (string aKey in iRequiredPresent)
+            {
+                if (string.IsNullOrEmpty(aKey)) continue;
+                if (!iView.ContainsKey(aKey)) aAbsent.Add(aKey);
+            }
+            return aAbsent;
+        }
+
         // 錯誤訊息要能直接動手修：缺什麼、目前帶了什麼、可接受的別名有哪些、完整 ArgsSchema。
         // 只說「缺少參數」會讓人回頭翻文件，而翻文件這件事本身就是這道驗證想省掉的成本。
+        // ⚠ 訊息不准講出 code 分不出來的事，也不准把兩種原因壓成一句（BUG-15 的附帶單）：
+        //   舊版對「有給但是空值」也印「缺少必要參數：[value]」，而同一句的「你目前傳的」
+        //   又把 value 列在裡面 —— **一句話說它缺、又說我傳了**。
+        //   讀到那句的人第一件事一定是去檢查自己有沒有傳，而他傳了 ⇒ 訊息把他推去查錯的地方。
+        //   ⇒ 三種原因各自成句，並在「空值」那種情況直接指出修法（改宣告 RequiredPresent）。
         static string Describe(UCL_AgentCommandHandlerBase iHandler, string iOp,
-            List<string> iMissing, IReadOnlyDictionary<string, string> iView,
+            List<string> iMissing, List<string> iAbsentPresent,
+            IReadOnlyDictionary<string, string> iView,
             IReadOnlyDictionary<string, string> iAliases)
         {
             string aWhere = string.IsNullOrEmpty(iOp) ? iHandler.CommandType : $"{iHandler.CommandType} op={iOp}";
             var aSb = new System.Text.StringBuilder();
-            aSb.Append($"[{aWhere}] 缺少必要參數：[{string.Join(", ", iMissing)}]");
+
+            var aNotGiven = iMissing.Where(k => !iView.ContainsKey(k)).ToList();
+            var aGivenEmpty = iMissing.Where(k => iView.ContainsKey(k)).ToList();
+
+            aSb.Append($"[{aWhere}] 參數檢查未過");
+            if (aNotGiven.Count > 0)
+                aSb.Append($"｜沒帶必要參數：[{string.Join(", ", aNotGiven)}]");
+            if (aGivenEmpty.Count > 0)
+                aSb.Append($"｜必要參數有帶但是空值（本 Cmd 的 Required 把空值視為缺）：[{string.Join(", ", aGivenEmpty)}]");
+            if (iAbsentPresent != null && iAbsentPresent.Count > 0)
+                aSb.Append($"｜必須顯式在場的參數沒帶（可以是空值）：[{string.Join(", ", iAbsentPresent)}]");
             aSb.Append($"（你目前傳的：[{string.Join(", ", iView.Keys.Where(k => !k.StartsWith("_")).OrderBy(k => k))}]）");
+            if (aGivenEmpty.Count > 0)
+                aSb.Append($"\n  ↳ 若這些參數的**空值是合法輸入**（例如清空一個欄位），"
+                         + $"它們該宣告在 ArgsSpec 的 `RequiredPresent` 而不是 `Required`。");
             if (iAliases != null && iAliases.Count > 0)
             {
                 aSb.Append($"\n  ↳ 可接受的 alias：{{{string.Join(", ", iAliases.Select(kv => $"{kv.Key}→{kv.Value}"))}}}");

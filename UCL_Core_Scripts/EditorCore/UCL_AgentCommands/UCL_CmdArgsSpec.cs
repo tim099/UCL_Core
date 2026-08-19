@@ -32,8 +32,33 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// </summary>
     public class UCL_CmdOpSpec
     {
-        /// <summary>必填參數名（canonical 名，非別名）。缺任一 → client 端可直接擋。</summary>
+        /// <summary>必填參數名（canonical 名，非別名）。**空字串算缺**（見 RequiredPresent）。</summary>
         public string[] Required = System.Array.Empty<string>();
+
+        // ===========================================================
+        // 區塊職責：**必須在場、但值可以是空的**參數（BUG-15，2026-08-19 kiara）。
+        // 物理意義：`Required` 的判準是「有值」（空字串算缺）—— 對絕大多數參數是對的，
+        //          因為 `--arg foo=` 通常是打錯。但有些參數**空值本身就是合法輸入**
+        //          （例：`PersonaProfile op=set` 要把一個欄位清空 ⇒ `value=`）。
+        //          這兩種需求用同一個欄位表達不出來，於是每支這樣的 Cmd 都被迫二選一：
+        //            · 放進 Required  ⇒ 合法的空值進不來（BUG-15）
+        //            · 不放進 Required ⇒ 參數名打錯時靜默走預設值（BUG-14）
+        //          🩸 這兩張單是同一天開的、**同一個表達力缺口的兩面**：
+        //             BUG-14 的修法把 value 放進 Required，於是當天就長出 BUG-15。
+        //          ⇒ 判準改成「在場 vs 有值」兩種，各自有欄位可宣告。
+        //          這就是本案 §8.7「兩態不得同形」下移到參數層：
+        //          **「沒給」與「給了空的」是兩件事，把它們壓成一件的驗證器會擋掉一半的合法輸入。**
+        //
+        // ⚠ 刻意**不匯出到 commands_schema.json**：本檔開頭那條規矩是
+        //   「只宣告 Python 端真的會拿來做判斷的東西，沒人用的欄位一定會爛」。
+        //   目前 python 端只有 `tavern_cmd.py` 會 enforce required，而 Tavern 沒有任何
+        //   「空值合法」的參數 ⇒ 現在匯出就是加一個沒有消費端的欄位。
+        //   **哪天 Tavern（或別的有 python 預檢的 Cmd）需要它，匯出與 python 端一起做**
+        //   —— 順帶提醒：`tavern_cmd.py` 的 required 檢查用的是 `not arg_pairs.get(r)`，
+        //   跟這裡修掉的是同一種 falsy 判準，那時要一起改。
+        // 數值影響：預設空陣列 ⇒ 不宣告的 Cmd 行為與本次改動前逐字相同。
+        // ===========================================================
+        public string[] RequiredPresent = System.Array.Empty<string>();
 
         /// <summary>
         /// 別名對照：alias → canonical。
@@ -62,6 +87,32 @@ namespace UCL.Core.EditorLib.AgentCommands
     {
         /// <summary>cmd 層必填參數（與 op 無關者）。有子 op 的 Cmd 通常留空，改填在各 op 內。</summary>
         public string[] Required = System.Array.Empty<string>();
+
+        // ===========================================================
+        // 區塊職責：**必須在場、但值可以是空的**參數（BUG-15，2026-08-19 kiara）。
+        // 物理意義：`Required` 的判準是「有值」（空字串算缺）—— 對絕大多數參數是對的，
+        //          因為 `--arg foo=` 通常是打錯。但有些參數**空值本身就是合法輸入**
+        //          （例：`PersonaProfile op=set` 要把一個欄位清空 ⇒ `value=`）。
+        //          這兩種需求用同一個欄位表達不出來，於是每支這樣的 Cmd 都被迫二選一：
+        //            · 放進 Required  ⇒ 合法的空值進不來（BUG-15）
+        //            · 不放進 Required ⇒ 參數名打錯時靜默走預設值（BUG-14）
+        //          🩸 這兩張單是同一天開的、**同一個表達力缺口的兩面**：
+        //             BUG-14 的修法把 value 放進 Required，於是當天就長出 BUG-15。
+        //          ⇒ 判準改成「在場 vs 有值」兩種，各自有欄位可宣告。
+        //          這就是本案 §8.7「兩態不得同形」下移到參數層：
+        //          **「沒給」與「給了空的」是兩件事，把它們壓成一件的驗證器會擋掉一半的合法輸入。**
+        //
+        // ⚠ 刻意**不匯出到 commands_schema.json**：本檔開頭那條規矩是
+        //   「只宣告 Python 端真的會拿來做判斷的東西，沒人用的欄位一定會爛」。
+        //   目前 python 端只有 `tavern_cmd.py` 會 enforce required，而 Tavern 沒有任何
+        //   「空值合法」的參數 ⇒ 現在匯出就是加一個沒有消費端的欄位。
+        //   **哪天 Tavern（或別的有 python 預檢的 Cmd）需要它，匯出與 python 端一起做**
+        //   —— 順帶提醒：`tavern_cmd.py` 的 required 檢查用的是 `not arg_pairs.get(r)`，
+        //   跟這裡修掉的是同一種 falsy 判準，那時要一起改。
+        // 數值影響：預設空陣列 ⇒ 不宣告的 Cmd 行為與本次改動前逐字相同。
+        // ===========================================================
+        public string[] RequiredPresent = System.Array.Empty<string>();
+
 
         /// <summary>cmd 層別名對照。順序語意同 <see cref="UCL_CmdOpSpec.Aliases"/>。</summary>
         public Dictionary<string, string> Aliases = new Dictionary<string, string>();

@@ -43,7 +43,14 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             Ops = new Dictionary<string, UCL_CmdOpSpec>
             {
                 ["refresh"] = new UCL_CmdOpSpec(),
-                ["set"] = new UCL_CmdOpSpec { Required = new[] { "persona", "field", "value", "actor", "reason" } },
+                // BUG-15：`value` 從 Required 移到 RequiredPresent —— 清空欄位（value=）是合法操作，
+                // 而 Required 的判準是「有值」，會把它擋掉（且擋在 handler 之前，讓下面那句
+                // ContainsKey 守衛變成永遠跑不到的死碼）。判準要的是「在場」，不是「有值」。
+                ["set"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "field", "actor", "reason" },
+                    RequiredPresent = new[] { "value" },
+                },
             }
         };
 
@@ -57,6 +64,9 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                 string field = GetArg(args, "field", "").Trim();
                 // BUG-14：value 必須**顯式在場** —— GetArg 的預設值分不出「沒給」跟「給了空字串」，
                 // 而「沒給」多半是參數名打錯；清空欄位要顯式給 value=（空值）才算意圖。
+                // BUG-15 之後這句與 ArgsSpec 的 RequiredPresent **判準一致**（都是 ContainsKey）；
+                // 留著它是因為預檢可被停用／未宣告時仍要有守衛 —— 守衛要長在必經路上，
+                // 不是長在可被跳過的那一層。（在此之前它被 Required 遮住，是死碼。）
                 if (!args.ContainsKey("value"))
                     throw new Exception("[PersonaProfile] set 缺 value —— 參數名打錯？清空欄位請顯式給 value=（空值）");
                 string value = GetArg(args, "value", "");

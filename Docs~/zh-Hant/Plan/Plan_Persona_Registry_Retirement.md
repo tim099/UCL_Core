@@ -266,17 +266,21 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 - 銀行帳戶設定各自帶 `personas: []` —— 反向索引，錢的歸屬由銀行端宣告。
 - 允許空清單（央行、系統帳戶等特殊情況）。
 - **驗證必做**：同一 persona 出現在兩家 bank ⇒ fail-loud（錢進錯帳戶是最貴的靜默錯）。
+- **防呆（Tim 2026-08-19 二輪拍板）**：persona 沒被任何 bank 登記時（理論上不會發生），
+  **預設綁央行**（央行一定存在，錢不會掉地上），並**觸發酒保系統通知**要求改綁 ——
+  fallback 要出聲，不出聲的 fallback 就是下一個平行宇宙。
 - persona→agent 綁定仍留專案層（commit trailer／顯示歸屬用）——「說話認 persona、錢認 bank」自此兩條線各自獨立，不再經 agent 中轉推導。
 
 ### 8.2 身分欄改「一欄一檔」分散式 .md（修訂 §3.1 的單一 `_persona.json`）
 
 參考 `letters/<persona>/cmd/` 的形態：**新增專用資料夾，檔名＝欄位、內文＝值**。
 
-- 資料夾名（summit 提案，待拍板）：**`profile/`** —— 與 cmd／fragments／wakes／relationship 同層同慣例。
-  備選：`dossier/`、`card/`。
+- 資料夾名：**`profile/`**（Tim 2026-08-19 二輪拍板定案）—— 與 cmd／fragments／wakes／relationship 同層同慣例。
 - 例：`profile/layer_role.md`、`profile/forked_from.md`、`profile/created_at.md`。
-- 純量欄＝內文即值（無 frontmatter）；`identity_vector` 內文為 JSON 陣列；
-  `vector_history` 比照分散哲學 → `profile/vector_history/<ts>.md` 一快照一檔。
+- 純量欄＝內文即值（無 frontmatter）；`identity_vector` 內文為 JSON 陣列。
+- `vector_history` **單檔**（`profile/vector_history.md`，Tim 拍板）—— 歷史靠 git，不拆快照檔。
+  📝 順帶備忘：vector_history 目前**沒有讀回機制**（只有寫入端＋Inspector 顯示），
+  要不要做讀回另案優化，本案只搬不加功能。
 - 好處是把 BUG-6 的解推到底：**一筆欄位變更的 diff 就是那一個檔**，且欄位間永無序列化器互踩。
 
 ### 8.3 欄位按「綁不綁專案」分家（新增判準，疊在 §2 的消費端判準之上）
@@ -285,10 +289,22 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 |---|---|---|
 | **綁專案** | bank 歸屬 | 銀行系統反向登記（§8.1） |
 | **綁專案** | `agent` / `actual_agent` / `model` | 專案層路由表（本專案的桌面工具配置，換專案可能不同） |
-| **不綁專案** | `layer_role` / `forked_from` / `fork_lineage` / `forked_at` / `created_at` / `identity_vector` / `vector_history` | `letters/<persona>/profile/`（§8.2） |
-| 待拍板 | `email` | persona 自訂信箱傾向個人層；但 commit trailer 在專案內取用 —— 有 agent 預設 fallback，degrade 安全，summit 傾向進 profile/ |
+| **不綁專案** | `layer_role` / `forked_from` / `fork_lineage` / `forked_at` / `created_at` / `identity_vector` / `vector_history` / **`email`** | `letters/<persona>/profile/`（§8.2）—— email 是個人信箱，Tim 2026-08-19 拍板進 persona 層；trailer 取用時缺檔走 agent 預設 fallback |
 
-### 8.4 連動備忘
+### 8.4 向下相容策略（Tim 2026-08-19 二輪拍板 —— 修訂 §4 的 Phase 1 雙寫）
+
+**不做雙寫，做 read-through lazy migration**：
+
+1. `AwakenInit/personas/` **保留一段時間**（唯讀舊源，不刪不改名）。
+2. 存取時：**有對應新資料（profile/ 該欄檔存在）⇒ 新資料為準**；
+   沒有 ⇒ **當場跑 migration 把舊資料遷成新檔**，之後就走新的。
+3. ⇒ 遷移是逐 persona 逐欄「被用到才發生」，不需要一次性大遷移腳本；
+   §5 的執行期 log 改記「lazy migration 觸發了誰的哪一欄」——
+   一段時間後 log 歸零＝活資料都遷完了，剩下的才是真正沒人用的，Phase 3 再收。
+4. ⚠ 寫入端規則不變：新值寫 profile/，**絕不回寫舊 personas/**（舊源只出不進，
+   否則兩邊都是活的，BUG-6 的形狀換個位置重演）。
+
+### 8.5 連動備忘
 
 券（繪圖券／未來的酒館券等）也要遷入個人資料夾＋機制統一 —— 工程較大，另立
 [`Plan_Voucher_Wallet_Migration.md`](Plan_Voucher_Wallet_Migration.md) 備忘，不併入本案施工範圍。

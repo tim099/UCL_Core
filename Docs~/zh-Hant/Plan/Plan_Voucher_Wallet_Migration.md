@@ -32,13 +32,18 @@ related:
 ## 2. 目標
 
 1. **個人錢包**：券帳本遷 `letters/<persona>/wallet/`（與 registry 退場案 §8.2 的 `profile/` 同哲學）。
-   落點形態建議一券種一檔：`wallet/canvas_voucher.json`、`wallet/tavern_voucher.json`…
-   （錢是 machine-owned 結構化資料，留 .json；「一欄一檔」的分散粒度落在**券種**層，不是欄位層。）
+   **形態照 `ucl-relationship` 機制（Tim 2026-08-19 拍板）**：事件帳本，不是餘額快照 ——
+   grant/consume 一事件一檔、檔名含穩定時間戳（同名＝同一筆），餘額由事件流重算。
+   ⇒ **跨專案可合併**：兩個專案的紀錄是同源分支（前段相同），合併時靠檔名天然去重，
+   **相同部分不重複計算** —— 這正是 relationship `WriteEvent` 冪等合併的同一招。
 2. **券種登記制**：券種定義集中一處（建議 `AgentCommands/Vouchers/_types/<type>.json` 或併入
    Treasury 設定），內容＝`{type, display_name, expires_policy, grant_sources, consume_order_priority}`。
    新增券種＝新增一筆登記，grant/consume/查餘額/後台顯示全部吃同一套泛型 Cmd。
 3. **遷移流程**（照 registry 退場案的相同紀律）：乾跑 → 對帳（每人每券種 remain 總和不變）→
    執行 → 舊檔毒藥化 → 觀察 → 退場。備份走 git tag。
+   **向下相容（Tim 拍板）**：專案層舊紀錄保留一段時間；**錢包缺失（letters 沒 clone 或還沒遷）
+   ⇒ 自動觸發 migration 從專案紀錄遷過來**，不是報錯也不是靜默回 0 ——
+   「錢不依賴 letters checkout」的 footgun 由 auto-migration 解，不靠人記得先遷。
 4. **後台操作**：遷移由後台頁按鈕執行（乾跑先於執行＋二段確認，沿用 relationship 遷移頁的閘門設計
    —— 該頁 code 已刪但 pattern 在 git `4a4ba24^` 可考）。
 
@@ -46,7 +51,7 @@ related:
 
 | # | 事項 | 備註 |
 |---|---|---|
-| 1 | **錢資料進 letters 與「錢不依賴 letters checkout」的張力** | registry 退場案 §1.1 的 footgun 同族：某人 letters 沒 clone ⇒ 付款路徑壞。緩解＝fail-loud（錢包目錄不存在就擋，絕不 fail-soft 成餘額 0）；或拍板「錢包留專案層、只是搬進 per-persona 資料夾」 |
+| 1 | ~~錢資料進 letters 與「錢不依賴 letters checkout」的張力~~ | ✅ Tim 2026-08-19 拍板：**錢包缺失 ⇒ 自動觸發 migration 從專案紀錄遷移**。前提＝專案層舊紀錄在過渡期保留（§2.3）；auto-migration 要出聲（酒保通知），不做靜默 |
 | 2 | 7 位有獨立 letters repo ⇒ 券變動會弄髒個人 repo | 券變動頻率 >> 身分欄；Tim 每晚 bump 工作量要先估 |
 | 3 | 消費順序跨券種怎麼定義 | 現在寫死「限時→永久→token」；登記制後改由券種定義的優先權欄位驅動 |
 | 4 | history 遷不遷 | batch 制的 history 是審計線索；建議遷（錢的 audit trail 不留一半在舊家） |

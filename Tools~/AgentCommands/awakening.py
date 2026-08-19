@@ -121,6 +121,29 @@ def _load_ucl_paths():
 
 _paths = _load_ucl_paths()
 
+
+# 同一個 idiom 載入 persona 讀取接縫（§8.7 單端解析）。module 級快取一次，
+# 之後每次 load_registry 都用同一份 —— 接縫自己也有 per-process 快取，不會重複發 Cmd。
+_PP_MOD = None
+# 在此**定義時**就把目錄釘成 Path，不在函式裡讀 `_HERE`（見下方註解的血證）。
+_SEAM_DIR = Path(__file__).resolve().parent
+
+
+def _persona_profile():
+    global _PP_MOD
+    if _PP_MOD is None:
+        # ⚠ 用 _SEAM_DIR 而不是 _HERE：`_HERE` 在本檔第 ~1759 行被**重新綁成 str**
+        #   （為了 sys.path.insert）。本函式在**呼叫時**才讀它 ⇒ 拿到 str ⇒ `str / str` 直接爆。
+        #   🩸 實測踩過：brief 回「persona 'Template' 不存在於 registry」，
+        #   而真正的錯是 `unsupported operand type(s) for /: 'str' and 'str'` ——
+        #   接縫 fail-soft 回空 dict，於是「讀取失敗」長得跟「沒有這個人」一模一樣。
+        spec = _ilu_paths.spec_from_file_location(
+            "_ucl_persona_profile_for_awakening", _SEAM_DIR / "_lib" / "persona_profile.py")
+        mod = _ilu_paths.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _PP_MOD = mod
+    return _PP_MOD
+
 # 🩸 repo root 的 tier 順序改用 ucl_paths 的語意（Tim 2026-08-17 拍板 A1）：
 #   舊：CLAUDE_PROJECT_DIR → **cwd** walk → __file__ walk
 #   新：CLAUDE_PROJECT_DIR → **__file__** walk → cwd walk
@@ -455,20 +478,72 @@ def load_registry() -> dict:
     else:
         reg = {}
 
-    # Scan per-persona files
-    personas: dict = {}
-    if _PERSONAS_DIR.exists():
-        for f in sorted(_PERSONAS_DIR.glob("*.json")):
-            name = f.stem
-            if name.startswith("_") or name.startswith("."):
-                continue
-            try:
-                with open(f, "r", encoding="utf-8") as pf:
-                    personas[name] = json.load(pf)
-            except Exception as e:
-                print(f"⚠ persona file {f.name} parse failed ({e}), skipping", file=sys.stderr)
-    reg["personas"] = personas
+    # ═══════════════════════════════════════════════════════════════
+    # 區塊職責：persona 資料一律走**接縫**，本函式不再自己解析 persona 檔。
+    # 物理意義：原本這裡是 glob + json.load —— 那是 python 端的**第二個解析器**，
+    #          而 Phase 1 之後它會**給錯答案**：identity 欄的真相在
+    #          `letters/<p>/profile/`，legacy 只出不進、永遠停在遷移那一刻。
+    #          🩸 同一個形狀今天已經咬過一次：`agent_email.load_persona` 直讀 legacy，
+    #          於是 commit trailer 的信箱可以是舊的 —— 而錯的信箱進 git history 改不掉。
+    # ⇒ 改走 `_lib/persona_profile`（Tim 2026-08-19 拍板：早安流程本來就走 Cmd，
+    #   資料就由 Cmd 供給；備援只要支援 brief）。三段 fallback：
+    #     ① Cmd（C# 現場解析＋刷快照）② 快照 ③ local-parse
+    #   ⚠ 被 Cmd spawn 的 python（Cmd_GoodMorning → awakening.py brief）由 C# 端帶
+    #     `UCL_PP_SKIP_CMD=1` 進來 ⇒ 直接走 ②。那**不是降級**：
+    #     呼叫我們的那個 process 就是快照的作者，它剛寫完，②拿到的就是最新值，
+    #     而且避免「在 Cmd 裡面再排一個 Cmd」的重入。
+    # 數值影響：回傳的 persona dict 可能多帶底線前綴推導欄
+    #          （`_source` / `_snapshot_at` / `_field_sources`）—— 那些是接縫的標記，
+    #          不是本體欄位；`save_registry` 會在寫檔前剝掉（見那邊）。
+    # ═══════════════════════════════════════════════════════════════
+    reg["personas"] = {}
+    try:
+        _persona_profile().load_personas_into(reg)
+    except Exception as e:
+        print(f"⚠ [awakening] persona 接縫讀取失敗：{e}", file=sys.stderr)
     return reg
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 區塊職責：寫 legacy 之前把不該落地的東西剝掉 —— C# `FreezeLegacyIdentity` 的 python 對偶。
+#
+# 物理意義：`load_registry` 改走接縫之後，拿到的 persona dict 有兩樣東西不能原樣寫回 legacy：
+#          ① **接縫的推導欄**（`_source` / `_snapshot_at` / `_field_sources`）——
+#             它們是「這份資料從哪來」的標記，不是 persona 的欄位。寫進去就變成資料，
+#             下一輪讀出來分不出是標記還是內容。
+#          ② **identity 欄的合併值** —— 那是 `profile/` 的值。原樣寫回 legacy 就是
+#             §8.4 明令禁止的「回寫舊源」，而且完全靜默：兩邊都變成活的，
+#             BUG-6 的形狀換個位置重演。
+# ⇒ 寫檔前：剝掉①，並把②按**磁碟上的 legacy 原值**釘回（legacy 沒有那個 key 就不寫）。
+#   legacy 自此只出不進，靠這一層保證，**不靠呼叫端記得**（記得是會過期的）。
+# 📌 建人（legacy 檔還不存在）原樣放行 —— 那是 legacy 檔的誕生。
+# 數值影響：回**新的 dict**（不 mutate 呼叫端的 reg，避免把 in-memory 狀態改掉造成連鎖）；
+#          多一次 legacy 檔解析，只發生在寫入路徑。
+# ═══════════════════════════════════════════════════════════════════
+_SEAM_DERIVED_KEYS = ("_source", "_snapshot_at", "_field_sources")
+
+
+def _freeze_legacy_identity(name: str, pdata: dict) -> dict:
+    out = {k: v for k, v in pdata.items() if k not in _SEAM_DERIVED_KEYS}
+
+    aPath = _PERSONAS_DIR / f"{name}.json"
+    if not aPath.exists():
+        return out                                  # 建人：原樣放行
+    try:
+        on_disk = json.loads(aPath.read_text(encoding="utf-8"))
+    except Exception as e:
+        # 讀不到舊值就無法保證「不回寫」⇒ 寧可整批不寫也不要寫一個可能污染舊源的版本
+        raise SystemExit(
+            f"❌ [awakening] 寫入前讀不到 legacy {name}.json（{e}）—— 停手。\\n"
+            f"   理由：讀不到舊值就無法保證 identity 欄不被回寫（§8.4 舊源只出不進），"
+            f"而回寫是靜默的，事後查不出來。")
+
+    for f in _PHASE1_IDENTITY_FIELDS:
+        if f in on_disk:
+            out[f] = on_disk[f]
+        else:
+            out.pop(f, None)
+    return out
 
 
 def save_registry(reg: dict) -> None:
@@ -492,7 +567,8 @@ def save_registry(reg: dict) -> None:
     for name, pdata in personas.items():
         if not isinstance(pdata, dict):
             continue
-        _atomic_write_json(_PERSONAS_DIR / f"{name}.json", pdata)
+        _atomic_write_json(_PERSONAS_DIR / f"{name}.json",
+                           _freeze_legacy_identity(name, pdata))
 
 
 # ═══════════════════════════════════════════════════════════════════

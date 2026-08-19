@@ -78,6 +78,22 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         static readonly Dictionary<string, string> s_AliasLower = new Dictionary<string, string>(StringComparer.Ordinal);
         // persona 名（小寫）→ agent 名
         static readonly Dictionary<string, string> s_PersonaToAgentLower = new Dictionary<string, string>(StringComparer.Ordinal);
+        // ===========================================================
+        // 區塊職責：§8.1 反向登記 —— persona → bank，**由銀行端宣告**（Tim 2026-08-19 拍板）。
+        // 物理意義：舊模型是兩跳正向鏈（persona 記 agent、agent 記 bank）。反轉之後
+        //          `bank_personas[<bank>] = [personas…]`：錢的歸屬是銀行的宣告，
+        //          不再由 agent 中轉推導 ⇒「說話認 persona、錢認 bank」兩條線各自獨立。
+        // ⚠ 同一 persona 出現在兩家 bank ⇒ **不解析**（Ambiguous），不挑一個。
+        //   錢進錯帳戶不會有人喊痛，而挑一個就是替它做決定。
+        // ⚠ 對側契約：python 端等價實作在 `_lib/bank_resolver.resolve_persona_bank_reverse`
+        //   （同一張 `bank_personas` 表）。兩端要一起改 —— 只改一端的後果是
+        //   同一個 persona 在兩邊解到不同 bank，而**兩邊都不會報錯**。
+        // 數值影響：key 一律 ToLowerInvariant（Windows 大小寫不敏感）；
+        //          撞名（同一 persona 兩家）記進 s_PersonaBankConflict，解析時據此拒絕。
+        // ===========================================================
+        public const string BankPersonasKey = "bank_personas";
+        static readonly Dictionary<string, string> s_PersonaToBankLower = new Dictionary<string, string>(StringComparer.Ordinal);
+        static readonly Dictionary<string, List<string>> s_PersonaBankConflict = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         // 已銷戶帳號（原拼法）→ 銷戶理由
         static readonly Dictionary<string, string> s_ClosedAccounts = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -125,6 +141,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             s_CanonicalAccounts.Clear(); s_AccountByLower.Clear();
             s_AgentToBankLower.Clear(); s_AliasLower.Clear();
             s_PersonaToAgentLower.Clear(); s_ClosedAccounts.Clear();
+            s_PersonaToBankLower.Clear(); s_PersonaBankConflict.Clear();
 
             try
             {
@@ -175,6 +192,39 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                                 foreach (var k in ca.Dic.Keys)
                                     if (!string.IsNullOrEmpty(k) && !k.StartsWith("_"))
                                         s_ClosedAccounts[k] = ca.GetString(k, "");
+                        }
+
+                        // bank_personas: bank → [personas]（§8.1 反向登記）
+                        // 空清單合法（央行／系統帳戶／尚無人的 bank）—— 不是缺資料。
+                        if (reg.Contains(BankPersonasKey))
+                        {
+                            var bp = reg[BankPersonasKey];
+                            if (bp != null && bp.IsObject && bp.Dic != null)
+                            {
+                                foreach (var bank in bp.Dic.Keys)
+                                {
+                                    if (string.IsNullOrEmpty(bank) || bank.StartsWith("_")) continue;
+                                    var arr = bp[bank];
+                                    if (arr == null || !arr.IsArray) continue;
+                                    for (int i = 0; i < arr.Count; i++)
+                                    {
+                                        string pname = arr[i] != null ? arr[i].GetString() : null;
+                                        if (string.IsNullOrEmpty(pname)) continue;
+                                        string plow = pname.Trim().ToLowerInvariant();
+                                        if (plow.Length == 0) continue;
+                                        if (s_PersonaToBankLower.TryGetValue(plow, out var prev)
+                                            && !string.Equals(prev, bank, StringComparison.Ordinal))
+                                        {
+                                            // 撞名：記下來，解析時拒絕（不覆蓋、不挑一個）
+                                            if (!s_PersonaBankConflict.TryGetValue(plow, out var lst))
+                                            { lst = new List<string> { prev }; s_PersonaBankConflict[plow] = lst; }
+                                            if (!lst.Contains(bank)) lst.Add(bank);
+                                            continue;
+                                        }
+                                        s_PersonaToBankLower[plow] = bank;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -281,13 +331,34 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     return r;
                 }
 
-                // ⑤ persona 名 → agent → bank（錢認 agent，說話才認 persona）
+                // ⑤-a 反向登記優先（§8.1）—— 銀行端宣告誰是自己的人
+                if (s_PersonaBankConflict.TryGetValue(lower, out var conflictBanks))
+                {
+                    // 撞名 ⇒ 不解析。錢寧可停在 unresolved（看得見）也不要進錯帳戶（看不見）。
+                    r.Kind = TreasuryAccountResolveKind.Unresolved;
+                    r.Trace = $"✗ persona `{accountId}` 同時登記在多家 bank："
+                            + string.Join(" / ", conflictBanks)
+                            + " —— 拒絕解析（§8.1：這裡不替你挑一個）。請修 _registry_meta.json 的 bank_personas。";
+                    return r;
+                }
+                if (s_PersonaToBankLower.TryGetValue(lower, out var bankReverse))
+                {
+                    r.AccountId = bankReverse;
+                    r.Kind = TreasuryAccountResolveKind.ViaPersona;
+                    r.Trace = $"persona `{accountId}` → bank `{bankReverse}`（§8.1 反向登記）";
+                    return r;
+                }
+
+                // ⑤-b 反向表沒有這個人 ⇒ 舊的正向鏈。過渡期保留：反向表是新資料，
+                //     缺一位不該讓那位的錢無處可去。**Trace 明寫走的是舊路** ——
+                //     否則「反向表漏一位」與「反向表已完整」在報告裡長得一模一樣。
                 if (s_PersonaToAgentLower.TryGetValue(lower, out var agentOfPersona)
                     && s_AgentToBankLower.TryGetValue(agentOfPersona.ToLowerInvariant(), out var bankViaPersona))
                 {
                     r.AccountId = bankViaPersona;
                     r.Kind = TreasuryAccountResolveKind.ViaPersona;
-                    r.Trace = $"persona `{accountId}` → agent `{agentOfPersona}` → bank `{bankViaPersona}`";
+                    r.Trace = $"⚠ persona `{accountId}` → agent `{agentOfPersona}` → bank `{bankViaPersona}`"
+                            + "（正向鏈；此人尚未登記進 bank_personas —— 請補登記，§8.1）";
                     return r;
                 }
 

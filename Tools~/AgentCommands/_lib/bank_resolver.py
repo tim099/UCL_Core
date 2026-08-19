@@ -188,10 +188,59 @@ def resolve_persona_bank(reg: dict, persona: str, model: str = None) -> str:
               resolve_bank_account 既有語意（認得→bank；未知 agent→命名慣例 {agent}-da-xiaojie，
               此為「開新 bank」的刻意 derive、非 mis-route，不違反 fail-loud）。
     """
-    # 第一跳：persona → agent（SOT = personas agent 欄），查不到會 raise
+    # ① 反向登記優先（§8.1，Tim 2026-08-19 拍板）—— 銀行端宣告誰是自己的人
+    aBank, aWhy = resolve_persona_bank_reverse(reg, persona)
+    if aBank is not None:
+        return aBank
+
+    # ② 反向表沒有這個人 ⇒ 舊的正向鏈（persona→agent→bank）。
+    #    過渡期刻意保留：反向表是新資料，缺一位不該讓那位的錢無處可去。
+    #    ⚠ 但**不准安靜地退** —— 退了要留痕，否則「反向表漏一位」與「反向表已完整」同形，
+    #      收斂就永遠量不出來（同 §8.4 那條 log 歸零判準的道理）。
+    print(f"⚠ [bank_resolver] persona '{persona}' 不在 bank_personas 反向表裡（{aWhy}）"
+          f" —— 退回正向鏈 persona→agent→bank。請把它登記到某個 bank 的 personas[]。",
+          file=_sys.stderr)
     agent = resolve_persona_to_agent(reg, persona)
-    # 第二跳：agent → bank（SOT = agent_banks），沿用既有 resolver
     return resolve_bank_account(reg, agent, model)
+
+
+# 區塊職責：§8.1 反向登記的解析 —— 「這個 persona 屬於哪家 bank」由**銀行端**回答。
+# 物理意義：舊模型是 persona 記自己的 agent、agent 記自己的 bank（兩跳正向鏈）。
+#          Tim 2026-08-19 拍板反轉：`bank_personas[<bank>] = [personas…]`，
+#          錢的歸屬由銀行宣告 ⇒「說話認 persona、錢認 bank」兩條線各自獨立，
+#          不再經 agent 中轉推導。
+# ⚠ 同一 persona 出現在兩家 bank ⇒ **fail-loud**（raise），不挑一個。
+#   理由是這條錯誤的代價：錢進錯帳戶不會有人喊痛，而挑一個就是替它做決定。
+# ⚠ 對側契約：C# 端等價實作在 UCL_TreasuryAccountResolver（同一張 bank_personas 表）。
+#   兩端要一起改 —— 只改一端的後果是同一個 persona 在兩邊解到不同 bank，而兩邊都不報錯。
+# 數值影響：純查表不寫檔。回 (bank, why)；查無此人回 (None, 理由)。
+#          比對用 casefold（Windows 大小寫不敏感，'Kiara' 與 'kiara' 必須同歸一位）。
+def resolve_persona_bank_reverse(reg: dict, persona: str):
+    aTable = reg.get("bank_personas")
+    if not isinstance(aTable, dict) or not aTable:
+        return None, "反向表不存在或為空"
+
+    aKey = (persona or "").strip().casefold()
+    if not aKey:
+        return None, "persona 名為空"
+
+    aHits = []
+    for aBank, aList in aTable.items():
+        if not isinstance(aList, list):
+            continue
+        for aName in aList:
+            if str(aName).strip().casefold() == aKey:
+                aHits.append(aBank)
+                break
+
+    if len(aHits) > 1:
+        raise PersonaResolutionError(
+            f"persona '{persona}' 同時登記在 {len(aHits)} 家 bank：{sorted(aHits)} —— "
+            f"拒絕解析（§8.1：錢進錯帳戶是最貴的靜默錯，這裡不替你挑一個）。"
+            f"請到 _registry_meta.json 的 bank_personas 把多餘那筆刪掉。")
+    if len(aHits) == 1:
+        return aHits[0], "反向表命中"
+    return None, "反向表沒有這個人"
 
 
 def all_account_ids(reg: dict) -> set:

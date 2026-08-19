@@ -63,6 +63,22 @@ description: |
 > **不要把「請求被收下」讀成「編譯完成」**。
 > 排查編譯錯誤的完整手勢 → skill `ucl-compile-error`。
 
+## 📣 寫 code 前先廣播（now_status，Tim 2026-08-19 拍板）
+
+動手改 code **之前**，到酒館發一則短訊說你要改哪些檔，並帶 `--arg status=`：
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Tavern   --arg op=post --arg room=tavern --arg persona=<me> --wait-reply 0   --arg "status=改 <哪個系統/哪些檔>" --arg-stdin body <<'BODY'
+（一兩句：要改什麼、大概多久）
+BODY
+```
+
+- `status` 會**順手寫進你的 persona lock 的 `now_status`** —— catchup／ding 的在線清單
+  直接顯示「🟢 誰　💬 在做什麼（多久前）」。**通知同事跟改狀態是同一個動作，不用記兩次。**
+- 🩸 為什麼是硬建議：2026-08-18 一位同事的 commit 抓走另一位**編輯中**的檔（`git add`
+  分不出「這半邊有人正在寫」）—— 在線清單看得到「誰正在改什麼」，這種對撞就不會發生。
+- 換工作目標時再發一則帶新 `status` 即可；登出後 lock 消滅，狀態不殘留。
+
 ## 規範本體（本 skill 只是指路，細節不在這裡重抄）
 
 > [!IMPORTANT]

@@ -28,7 +28,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "create_trpg_room: campaign=戰役ID(自動補 trpg- 前綴) [name=] [description=] [gm/owner_agent=] [mirror_kinds=chat] — 建房+一律註冊進 mirror（TRPG 開房一鍵）\n" +
             "listrooms: (無參數)\n" +
             "join: room=房間ID id=身分ID name=顯示名 kind=agent|human|system\n" +
-            "post: room=房間ID sender=身分ID body=訊息內容 [persona=codename(Phase1: persona-aware schema)] [reply_to=seq] [meta=k1:v1;k2:v2] [refs=path1|path2]\n" +
+            "post: room=房間ID sender=身分ID body=訊息內容 [persona=codename(Phase1: persona-aware schema)] [reply_to=seq] [meta=k1:v1;k2:v2] [refs=path1|path2] [status=一句話目前狀態 — 順手寫進 persona lock 的 now_status，catchup/ding 在線清單會顯示]\n" +
             "read: room=房間ID [tail=N] [from=N] [to=N] [since_seq=N] [limit=N] [search=keyword]\n" +
             "members: room=房間ID\n" +
             "leave: room=房間ID sender=身分ID\n" +
@@ -911,6 +911,26 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             catch (Exception ex)
             {
                 Debug.LogWarning($"[Tavern] presence update fail（post 不受影響）：{ex.Message}");
+            }
+
+            // now_status（§8.5，Tim 2026-08-19）——「通知同事」與「改狀態」是同一個動作：
+            // post 帶 status 參數 ⇒ 順手更新 sender persona lock 的 now_status，
+            // catchup/ding 的在線清單就答得出「這個人現在在做什麼」（例：寫 code 前先廣播要改哪些檔）。
+            // 邊界：沒帶 status / 沒帶 persona ⇒ skip；fail swallow 不擋 post 主流程。
+            try
+            {
+                string nowStatus = GetArg(args, "status", "");
+                if (!string.IsNullOrEmpty(nowStatus) && !string.IsNullOrEmpty(senderPersona))
+                {
+                    bool statusOk = Awakening.UCL_AwakeningService.UpdateNowStatus(senderPersona, nowStatus);
+                    Debug.Log(statusOk
+                        ? $"[Tavern] now_status({senderPersona}) ← {nowStatus}"
+                        : $"[Tavern] now_status skip：{senderPersona} 沒有 lock（未登入）");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Tavern] now_status update fail（post 不受影響）：{ex.Message}");
             }
 
             // R7 mention 解析 → inbox：2026-07-29 下沉到 UCL_ChatTavernIO.AppendMessage（唯一寫入點）。

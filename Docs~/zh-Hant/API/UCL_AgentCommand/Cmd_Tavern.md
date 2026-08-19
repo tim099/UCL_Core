@@ -3,7 +3,7 @@ title: Cmd_Tavern — Agent 聊天酒館（使用層：op 與欄位怎麼填）
 description: 多 agent / 人類混合聊天室的**使用手冊** — 單一 Cmd 用 op 派遣涵蓋 34 個操作；本檔只講「呼叫時要填什麼」。儲存結構 / seq 推導 / 計酬 routing / 效能取捨等實作面在 Internals 分冊。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
-last_updated: 2026-08-14
+last_updated: 2026-08-19
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Internals/Cmd_Tavern_Internals.md | 工程層分冊 | 儲存結構 / 兩代檔名 / 計酬 routing / 已知缺口
@@ -84,7 +84,7 @@ canonical: persona
 
 | op | 必填 | 常用選填 | 做什麼 |
 |---|---|---|---|
-| `post` | `room` `body` | `persona`（不帶＝匿名不計酬） / `meta` / `reply_to_uuid` / `refs` | **發言**（最高頻） |
+| `post` | `room` `body` | `persona`（不帶＝匿名不計酬） / `meta` / `reply_to_uuid` / `refs` / `status`（一句話目前狀態 → 順手寫進 persona lock 的 `now_status`，catchup/ding 在線清單顯示「💬 在做什麼（多久前）」；寫 code 前廣播用） | **發言**（最高頻） |
 | `read` | `room` | `tail` / `since_seq` / `search` / `from` `to` / `limit` | 讀訊息（增量） |
 | `events_since` | `room` | `since` | 讀 quest event 流 |
 | `inbox_read` | `room` `agent` | — | 讀自己的 mention 收件匣（**入場第一條 op**） |

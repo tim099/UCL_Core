@@ -358,6 +358,33 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         /// Tim 2026-08-13 拍板）。存檔欄位（registry/lock/token 的 *_at）仍一律 UTC ISO，與 python 端對齊。</summary>
         public static string NowLocal() => DateTime.Now.ToString("yyyy-MM-dd HH:mm:sszzz");
 
+        // ===========================================================
+        // 區塊職責：更新 lock 的 now_status（§8.5）—— 「我現在在做什麼」一句話＋時間戳。
+        // 物理意義：now_status 是活體狀態，住 lock（登出即滅、不進 git）；寫入通道只有本函式
+        //          （呼叫端＝Cmd_Tavern post 的 status 參數 —— 「通知同事」與「改狀態」是同一個動作）。
+        //          patch-write：parse 既有 lock、只動兩欄、整檔重寫（lock 不入版控，無 diff churn 問題）。
+        // 數值影響：lock 不存在 ⇒ no-op 回 false（沒登入就沒有「現在狀態」可言）；不動其他欄。
+        // ===========================================================
+        public static bool UpdateNowStatus(string iPersona, string iStatus)
+        {
+            string aPath = LockPath(iPersona);
+            if (!File.Exists(aPath)) return false;
+            try
+            {
+                var aRaw = JsonData.ParseJson(File.ReadAllText(aPath));
+                if (aRaw == null) return false;
+                aRaw["now_status"] = iStatus ?? "";
+                aRaw["status_updated_at"] = NowIso();
+                AtomicWrite(aPath, aRaw.ToJsonBeautify());
+                return true;
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogWarning($"[Awakening] UpdateNowStatus({iPersona}) 失敗：{e.Message}");
+                return false;
+            }
+        }
+
         static void AtomicWrite(string iPath, string iContent)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(iPath));

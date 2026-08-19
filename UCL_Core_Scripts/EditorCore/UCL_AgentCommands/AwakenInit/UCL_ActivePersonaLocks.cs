@@ -34,6 +34,10 @@ namespace UCL.Core.EditorLib.AgentCommands
         public string RawSessionToken = "";
         /// <summary>lock 檔的絕對路徑（admin 頁手動清 lock 用）。</summary>
         public string FilePath = "";
+        /// <summary>一句話「我現在在做什麼」（§8.5 now_status）—— 由 Cmd_Tavern post 的 status 參數順手更新。</summary>
+        public string NowStatus = "";
+        /// <summary>now_status 的更新時刻（UTC ISO）—— 顯示端要換算成「多久前」，過舊的狀態比沒有狀態更誤導。</summary>
+        public string StatusUpdatedAt = "";
 
         /// <summary>token 形狀由 awakening 端的命名慣例決定：session 標題就是 <c>##persona##</c>。</summary>
         public string SessionToken => $"##{Persona}##";
@@ -79,6 +83,8 @@ namespace UCL.Core.EditorLib.AgentCommands
                             ClaimOrigin = data.GetString("claim_origin", ""),
                             Pid = data.GetInt("pid", 0),
                             RawSessionToken = data.GetString("session_token", ""),
+                            NowStatus = data.GetString("now_status", ""),
+                            StatusUpdatedAt = data.GetString("status_updated_at", ""),
                             FilePath = file.Replace('\\', '/'),
                         });
                     }

@@ -304,13 +304,15 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 4. ⚠ 寫入端規則不變：新值寫 profile/，**絕不回寫舊 personas/**（舊源只出不進，
    否則兩邊都是活的，BUG-6 的形狀換個位置重演）。
 
-### 8.5 「現在狀態」欄帶著消費端回歸（Tim 2026-08-19 三輪補充 —— 可與本案一起做）
+### 8.5 「現在狀態」欄帶著消費端回歸 —— ✅ 已完成（summit 2026-08-19；前置的 presence 收斂＋過期機制移除亦已落地）
 
 §2.4 把 `availability` 判死的理由是**沒有消費端**；Tim 拍板把「現在狀態」概念加回來，
 而且這次先給消費端再給欄位：
 
-- **欄位**：`now_status` —— 一句話「我現在在做什麼」（例：`改 Cmd_FreeTimeActivity 的引號逃脫`），
-  帶 `updated_at` 時間戳。
+- **欄位**：`now_status`＋`status_updated_at`（lock 內；已實作）。
+- **寫入實作**：`Cmd_Tavern op=post` 的可選參數 `status` → `UCL_AwakeningService.UpdateNowStatus`
+  （Tim 拍板：整合進發訊息 —— 通知同事跟改狀態是同一個動作）；`ucl-coding` skill 已加
+  「寫 code 前先廣播」導引。
 - **落點**：session 層（lock 檔旁或 lock 內），**不進 profile/ 也不進 git** ——
   它是活體狀態，與 `status`/`last_active` 同族（§2.3 的判定不變：lock 是活體真相源），
   登出即滅，不會有 checkout 回滾問題。

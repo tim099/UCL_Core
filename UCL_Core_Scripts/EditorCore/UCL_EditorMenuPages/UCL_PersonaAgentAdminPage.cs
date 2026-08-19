@@ -1320,10 +1320,18 @@ namespace UCL.Core.EditorLib.Page
                 }
                 else
                 {
-                    string srcPath = Path.Combine(PersonasDir, forkSource + ".json");
-                    if (!File.Exists(srcPath))
-                    { SetResult($"❌ 建立 persona 失敗：fork 來源 `{forkSource}` 檔案不存在"); return; }
-                    var src = JsonData.ParseJson(File.ReadAllText(srcPath));
+                    // ⚠ fork 來源一律走接縫 `UCL_PersonaProfile.GetRaw` —— 不直讀 legacy 檔。
+                    // 🩸 退場案 Phase 1 之後直讀會**複製到舊值**：identity 欄的真相在
+                    //   letters/<p>/profile/，而 legacy 只出不進、停在遷移那一刻。
+                    //   fork 抄的正是 identity_vector / fork_lineage / layer_role 這幾欄
+                    //   ⇒ 直讀＝生一個帶著過期血統的孩子，而且沒有任何一格會紅。
+                    //   （同族事故當天已有一件：agent_email 直讀 legacy ⇒ commit trailer 掛舊信箱。）
+                    // 「不存在」的判準也一起收斂到 Exists（與 PoolNames 同一套 _ / . 前綴判準）。
+                    if (!UCL_PersonaProfile.Exists(forkSource))
+                    { SetResult($"❌ 建立 persona 失敗：fork 來源 `{forkSource}` 不存在"); return; }
+                    var src = UCL_PersonaProfile.GetRaw(forkSource);
+                    if (src == null)
+                    { SetResult($"❌ 建立 persona 失敗：fork 來源 `{forkSource}` 讀取失敗（壞檔？見 Console 警告）"); return; }
                     vector = new List<double>();
                     if (src.Contains("identity_vector") && src["identity_vector"].IsArray)
                     {

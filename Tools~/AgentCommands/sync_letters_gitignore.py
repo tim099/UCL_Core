@@ -34,7 +34,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))       # 讓 `_lib` import 得到
-from _lib.ucl_paths import letters_root, personas_dir          # noqa: E402
+from _lib.persona_profile import pool_names                   # noqa: E402
+from _lib.ucl_paths import letters_root                       # noqa: E402
 
 BASELINE_PERSONA = "Template"                                  # 基線住哪（＝範本 persona）
 GITIGNORE = ".gitignore"
@@ -121,11 +122,13 @@ def _tracked_cmd_files(d: Path) -> list:
         return []
 
 
+# ⚠ persona 名單走接縫 `_lib/persona_profile.pool_names()`，**不自己 glob**：
+#   「有哪些 persona」的判準（`_` / `.` 前綴、壞檔算不算）住在 C# 單端，
+#   快照把結果清單直接帶出來 ⇒ 這裡連判準都不必有。
+#   🩸 自己 glob 的代價是**判準漂移**：某天 C# 端改了前綴規則，這裡不會跟著改，
+#   而兩邊都不會報錯 —— 只是「有沒有這個人」開始給兩種答案。
 def _known_personas() -> set:
-    d = personas_dir()
-    if not d.is_dir():
-        return set()
-    return {f.stem for f in d.glob("*.json") if not f.stem.startswith("_")}
+    return set(pool_names())
 
 
 def main() -> int:

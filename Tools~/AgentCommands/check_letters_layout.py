@@ -34,7 +34,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))          # 讓 `_lib` import 得到
-from _lib.ucl_paths import (letters_root, personas_dir,           # noqa: E402
+from _lib.persona_profile import pool_names                      # noqa: E402
+from _lib.ucl_paths import (letters_root,                        # noqa: E402
                             LETTERS_CMD_DIRNAME, CMD_DIR_GITIGNORE,
                             ensure_letters_cmd_dir)
 
@@ -172,8 +173,12 @@ def main() -> int:
     if not root.is_dir():
         print(f"❌ letters 根不存在：{root}", file=sys.stderr)
         return 1
-    pdir = personas_dir()
-    known = {f.stem for f in pdir.glob("*.json") if not f.stem.startswith("_")} if pdir.is_dir() else set()
+# ⚠ persona 名單走接縫 `_lib/persona_profile.pool_names()`，**不自己 glob**：
+#   「有哪些 persona」的判準（`_` / `.` 前綴、壞檔算不算）住在 C# 單端，
+#   快照把結果清單直接帶出來 ⇒ 這裡連判準都不必有。
+#   🩸 自己 glob 的代價是**判準漂移**：某天 C# 端改了前綴規則，這裡不會跟著改，
+#   而兩邊都不會報錯 —— 只是「有沒有這個人」開始給兩種答案。
+    known = set(pool_names())
 
     print(f"📂 letters 根：{root}")
     targets, bad = [], 0

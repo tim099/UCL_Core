@@ -2454,9 +2454,22 @@ def _resolve_from_session(session_id: str):
     ranges = [(lo, hi) for lo, hi in ranges if lo and hi and hi >= lo]
     if not ranges:
         raise SystemExit(f"❌ 場次 {session_id} 沒有可用的 seq 區間（start/end 缺）。")
+    # 區塊職責：**合併重疊/相接的區間**。
+    # 🩸 2026-08-19 首次自動匯出實測：主場 16014-16025 與陪同場 16015-16023（子集）各掃一次，
+    #   ⇒ 同 9 則訊息在章裡出現兩次，而**收錄筆數 21、未收錄 0、回讀驗證全綠** —— 沒有一個讀數會叫。
+    #   陪同場區間幾乎必然與主場重疊（他在同一場裡），所以這不是邊角案例，是預設路徑。
+    # ⚠ 修的是這裡不是掃描端：掃描端去重會讓「同一段給兩次」變成靜默容忍，
+    #   而區間是不是該合併，是**呼叫端知道的事實**。
+    merged = []
+    for lo, hi in sorted(set(ranges)):
+        if merged and lo <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], hi))
+        else:
+            merged.append((lo, hi))
+    ranges = merged
     return {
         "media": media, "library_media_id": lib_media, "sessions": sessions,
-        "ranges": sorted(set(ranges)), "prepared": prepared, "chapter": chapter,
+        "ranges": ranges, "prepared": prepared, "chapter": chapter,
     }
 
 

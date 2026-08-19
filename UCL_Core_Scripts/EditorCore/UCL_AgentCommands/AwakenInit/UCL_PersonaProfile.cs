@@ -105,8 +105,25 @@ namespace UCL.Core.EditorLib.AgentCommands
             return d;
         }
 
-        /// <summary>整份 persona 檔（過渡期＝舊檔內容）。不存在回 null；壞檔回 null 並警告。</summary>
-        public static JsonData GetRaw(string iPersona)
+        /// <summary>
+        /// 整份 persona 資料 —— **legacy 檔疊上 `profile/` 覆蓋後的合併值**（Phase 1）。
+        /// 不存在回 null；壞檔回 null 並警告。identity 欄缺 `profile/` 檔時**當場遷移**（見 MayMigrate 的閘）。
+        /// </summary>
+        public static JsonData GetRaw(string iPersona) => GetRaw(iPersona, true);
+
+        /// <summary>
+        /// 同上，但可關閉遷移（<paramref name="iAllowMigrate"/>=false ⇒ **只合併不寫任何檔**）。
+        /// 批次匯出（<see cref="WriteSnapshot"/>）走 false —— 理由見 MayMigrate 區塊。
+        /// </summary>
+        public static JsonData GetRaw(string iPersona, bool iAllowMigrate)
+        {
+            var jd = ParseLegacy(iPersona);
+            if (jd == null) return null;
+            return MergeProfile(iPersona, jd, iAllowMigrate);
+        }
+
+        /// <summary>只讀 legacy 舊源（`AwakenInit/personas/<p>.json`），不疊 profile/、不遷移。</summary>
+        static JsonData ParseLegacy(string iPersona)
         {
             if (string.IsNullOrEmpty(iPersona)) return null;
             string path = Path.Combine(PersonasDir, iPersona + ".json");
@@ -133,6 +150,229 @@ namespace UCL.Core.EditorLib.AgentCommands
         {
             var jd = GetRaw(iPersona);
             return jd == null ? iDefault : jd.GetInt(iField, iDefault);
+        }
+
+        // ===========================================================
+        // 區塊職責：Phase 1 —— `profile/` 合併層與 read-through lazy migration（§8.2／§8.4）。
+        //
+        // 物理意義：identity 欄的真相從 legacy 大檔搬到 `letters/<p>/profile/<field>.md`（一欄一檔）。
+        //          規則（Tim §8.4 二輪拍板）：**有新讀新、缺新當場遷、絕不回寫舊源**。
+        //          合併做在 `GetRaw` 底下，所以：
+        //            ① 32 支消費端一支都不用改（Phase 0 蓋接縫就是為了這一刻）
+        //            ② `WriteSnapshot` 走同一個入口 ⇒ python 端拿到的自動是合併值，
+        //               **不需要知道 profile/ 存在**（summit 2026-08-19 拍板，酒館 seq 12448 Q1）
+        //
+        // ⚠ 型別由**欄名**決定，不由值決定（三類，見 STRUCTURED_FIELDS / NULLABLE_SCALAR_FIELDS）：
+        //   看值猜型別在讀回時分不出字串 "null" 與真的 null。
+        //   實測 21 個 persona 的型別分布支持這個切法：layer_role/created_at/email＝str、
+        //   forked_from/forked_at＝str×14＋**null×7**、fork_lineage/identity_vector/vector_history＝list×21。
+        //   而全庫**沒有任何一個空字串的 forked_from/forked_at** ⇒「空檔＝null」這個編碼與現存資料不衝突。
+        //
+        // ⚠ 尾端換行：寫檔一律補一個換行（否則每個檔都是 no-newline-at-EOF），讀回時 TrimEnd 掉。
+        //   ⇒ **純量值尾端的換行不保留**。現存資料沒有這種值；真的需要保留就得改編碼（別默默 Trim 更多東西）。
+        //
+        // 數值影響：`GetRaw` 是熱路徑，本層每次呼叫會對 8 個 identity 欄各做一次 File.Exists。
+        //          遷移只在「profile/ 缺、legacy 有」時發生一次；之後就走 ①，不再寫。
+        // ===========================================================
+
+        /// <summary>合併結果裡的**來源標記欄**（欄名 → profile／legacy／absent）。底線前綴＝衍生欄非本體欄。</summary>
+        public const string FIELD_SOURCES_KEY = "_field_sources";
+        public const string SRC_PROFILE = "profile";
+        public const string SRC_LEGACY = "legacy";
+        public const string SRC_ABSENT = "absent";
+
+        /// <summary>lazy migration 的 actor —— 讓「自動遷移」與「人改的」在審計檔裡分得開（§8.4）。</summary>
+        public const string ACTOR_LAZY_MIGRATION = "lazy-migration";
+
+        // 結構值欄（內文＝JSON）／可為 null 的純量欄（空檔＝null）；其餘 identity 欄＝純字串（空檔＝空字串）。
+        static readonly HashSet<string> STRUCTURED_FIELDS =
+            new HashSet<string> { "identity_vector", "vector_history", "fork_lineage" };
+        static readonly HashSet<string> NULLABLE_SCALAR_FIELDS =
+            new HashSet<string> { "forked_from", "forked_at" };
+
+        /// <summary>這個欄名是不是 identity 組（§8.3 不綁專案組）。</summary>
+        public static bool IsIdentityField(string iField)
+        {
+            if (string.IsNullOrEmpty(iField)) return false;
+            foreach (var f in IDENTITY_FIELDS) if (f == iField) return true;
+            return false;
+        }
+
+        // ===========================================================
+        // 區塊職責：遷移放行閘 —— **哪些 persona 現在可以被自動遷移**。
+        // 物理意義：Tim 拍板的鐵律二是「每批功能先用 Template 實測，真人不當白老鼠」。
+        //          而 `GetRaw` 是熱路徑：沒有這道閘，**第一次 domain reload 就會把 21 個真人全遷完** ——
+        //          在任何人跑過一次 Template 驗收之前。那不是「快」，那是把測試階段跳過去。
+        // ⚠ 這道閘刻意是**明擺著的靜態欄位**而不是設定檔：要放行真人得有人手動翻，
+        //   而翻的人看得到自己在翻什麼（搜 MigrateAllPersonas 就找得到所有現場）。
+        // 📌 副作用（已在酒館 seq 12454 對 summit 講明）：§8.4 的「legacy 欄數歸零」
+        //   不會靠快照 sweep 自己歸零 ⇒ Phase 3 之前需要一次**顯式 sweep**
+        //   （或那時把 WriteSnapshot 翻成允許遷移）。選這條的理由是少寫、可逆、不違反鐵律二。
+        // ===========================================================
+        public static bool MigrateAllPersonas = false;
+
+        static readonly HashSet<string> MIGRATION_ALLOWLIST = new HashSet<string> { "Template" };
+
+        /// <summary>這個 persona 現在可不可以被自動遷移。</summary>
+        public static bool MayMigrate(string iPersona)
+            => !string.IsNullOrEmpty(iPersona)
+               && (MigrateAllPersonas || MIGRATION_ALLOWLIST.Contains(iPersona));
+
+        /// <summary>某 persona 的 identity 欄來源總表（欄 → profile／legacy／absent）。**不觸發遷移。**</summary>
+        public static Dictionary<string, string> GetFieldSources(string iPersona)
+        {
+            var jd = GetRaw(iPersona, false);
+            if (jd == null) return null;
+            var d = new Dictionary<string, string>();
+            var src = jd.Contains(FIELD_SOURCES_KEY) ? jd[FIELD_SOURCES_KEY] : null;
+            foreach (var f in IDENTITY_FIELDS)
+                d[f] = (src != null && src.Contains(f)) ? src.GetString(f, SRC_ABSENT) : SRC_ABSENT;
+            return d;
+        }
+
+        /// <summary>把 `profile/` 疊到 legacy 之上，補 `_field_sources`；必要且獲准時當場遷移。</summary>
+        static JsonData MergeProfile(string iPersona, JsonData iLegacy, bool iAllowMigrate)
+        {
+            var aSources = new JsonData();
+            foreach (var f in IDENTITY_FIELDS)
+            {
+                if (TryReadProfileField(iPersona, f, out var aVal))
+                {
+                    iLegacy[f] = aVal;                          // profile/ 為準
+                    aSources[f] = new JsonData(SRC_PROFILE);
+                    continue;
+                }
+                if (!iLegacy.Contains(f))
+                {
+                    // ⚠ legacy 也沒有這個 key ⇒ **缺席**，不是「空值」。
+                    //   絕對不生一個空的 profile/ 檔：那會讓從來不存在的欄長出看似有資料的空檔
+                    //   （Q5 拍板，酒館 seq 12452）。讓「沒有」自己有名字，不靠檔案不存在來暗示。
+                    aSources[f] = new JsonData(SRC_ABSENT);
+                    continue;
+                }
+                bool aMigrated = iAllowMigrate && MayMigrate(iPersona)
+                    && WriteProfileField(iPersona, f, iLegacy[f], ACTOR_LAZY_MIGRATION,
+                        "phase1 auto-migrate " + f + " from personas/" + iPersona + ".json", false, out _);
+                aSources[f] = new JsonData(aMigrated ? SRC_PROFILE : SRC_LEGACY);
+            }
+            iLegacy[FIELD_SOURCES_KEY] = aSources;
+            return iLegacy;
+        }
+
+        /// <summary>讀一個 `profile/&lt;field&gt;.md`。檔不存在或壞掉回 false（壞掉會警告 —— 靜默退 legacy 會讓壞檔跟未遷移同形）。</summary>
+        static bool TryReadProfileField(string iPersona, string iField, out JsonData oValue)
+        {
+            oValue = null;
+            string aPath = UCL_LettersPath.ProfileField(iPersona, iField);
+            if (!File.Exists(aPath)) return false;
+            string aText;
+            try { aText = File.ReadAllText(aPath); }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[PersonaProfile] profile/{iField}.md 讀取失敗（{iPersona}）：{e.Message}");
+                return false;
+            }
+            aText = aText.TrimEnd('\r', '\n');
+
+            if (STRUCTURED_FIELDS.Contains(iField))
+            {
+                try
+                {
+                    var jd = JsonData.ParseJson(aText);
+                    if (jd == null)
+                    {
+                        Debug.LogWarning($"[PersonaProfile] profile/{iField}.md（{iPersona}）內文不是合法 JSON —— 退 legacy；請修那個檔");
+                        return false;
+                    }
+                    oValue = jd;
+                    return true;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[PersonaProfile] profile/{iField}.md（{iPersona}）JSON 解析失敗：{e.Message} —— 退 legacy");
+                    return false;
+                }
+            }
+
+            if (NULLABLE_SCALAR_FIELDS.Contains(iField) && aText.Length == 0)
+            {
+                oValue = new JsonData();                         // JsonType.None ⇒ 序列化成 null
+                return true;
+            }
+            oValue = new JsonData(aText);
+            return true;
+        }
+
+        /// <summary>
+        /// 寫一個 `profile/&lt;field&gt;.md`（原子寫）＋審計一行。actor / reason 必填（§8.6 同一條規矩）。
+        /// <paramref name="iRefreshSnapshot"/>=false 給 <see cref="MergeProfile"/> 用 —— 它自己就跑在讀取路徑上，
+        /// 在那裡刷快照會再繞回 GetRaw（每遷一欄就把全 pool 重解析一次）。
+        /// </summary>
+        public static bool WriteProfileField(string iPersona, string iField, JsonData iValue,
+            string iActor, string iReason, bool iRefreshSnapshot, out string oError)
+        {
+            oError = "";
+            if (string.IsNullOrWhiteSpace(iPersona)) { oError = "persona 必填"; return false; }
+            if (string.IsNullOrWhiteSpace(iField)) { oError = "field 必填"; return false; }
+            if (!IsIdentityField(iField))
+            { oError = $"{iField} 不是 identity 欄 —— profile/ 只收身分欄（§8.3）"; return false; }
+            if (string.IsNullOrWhiteSpace(iActor) || string.IsNullOrWhiteSpace(iReason))
+            {
+                oError = "actor 與 reason 必填（§8.6）—— 寫入要能回答「是誰、憑什麼」；匿名寫入不收";
+                return false;
+            }
+
+            string aBody;
+            if (STRUCTURED_FIELDS.Contains(iField))
+                aBody = iValue == null ? "null" : iValue.ToJsonBeautify();
+            else if (iValue == null || iValue.JsonType == JsonType.None)
+                aBody = "";                                      // 空檔＝null（僅 NULLABLE_SCALAR_FIELDS 讀回為 null）
+            else
+                aBody = iValue.IsString ? iValue.GetString() : iValue.ToJson();
+
+            try
+            {
+                string aPath = UCL_LettersPath.ProfileField(iPersona, iField);
+                Directory.CreateDirectory(Path.GetDirectoryName(aPath));
+                string aTmp = aPath + ".tmp";
+                File.WriteAllText(aTmp, aBody + "\n", new System.Text.UTF8Encoding(false));
+                if (File.Exists(aPath)) File.Delete(aPath);
+                File.Move(aTmp, aPath);
+            }
+            catch (Exception e)
+            {
+                oError = e.Message;
+                return false;
+            }
+            AppendAudit(iPersona, "profile/" + iField, iActor, iReason);
+            if (iRefreshSnapshot) WriteSnapshot();
+            return true;
+        }
+
+        // ===========================================================
+        // 區塊職責：讓 legacy 舊源在 Phase 1 之後**只出不進**（§8.4 鐵則）。
+        // 物理意義：`WriteRaw` 的呼叫端（morning patch-write／goodnight ×2）形狀都是
+        //          `GetRaw → 改活體欄 → WriteRaw 整檔`。合併層上線後那個「整檔」裡的
+        //          identity 欄**已經是 profile/ 的值** ⇒ 原樣寫回去就是回寫舊源，
+        //          而且完全靜默（兩邊都變成活的，BUG-6 的形狀換個位置重演）。
+        // ⇒ 由接縫強制：寫 legacy 之前把 identity 欄按**磁碟上的 legacy 原值**釘回，
+        //   legacy 沒有那個 key 就從 payload 移除。**不靠呼叫端記得**（記得是會過期的）。
+        // 📌 建人（onDisk == null）原樣放行 —— 那是 legacy 檔的誕生，Phase 1 不改建人路徑
+        //   （routing 表同步登記留給 Phase 2，summit 拍板）。
+        // 數值影響：多一次 legacy 檔解析（只在寫入路徑，不在熱讀路徑）。
+        //          同時剝掉衍生欄 `_field_sources` —— 它是合併層算出來的，不該落地。
+        // ===========================================================
+        static void FreezeLegacyIdentity(string iPersona, JsonData iFull)
+        {
+            iFull.Remove(FIELD_SOURCES_KEY);
+
+            var aOnDisk = ParseLegacy(iPersona);
+            if (aOnDisk == null) return;                         // 建人：legacy 檔還不存在，原樣放行
+            foreach (var f in IDENTITY_FIELDS)
+            {
+                if (aOnDisk.Contains(f)) iFull[f] = aOnDisk[f];
+                else iFull.Remove(f);
+            }
         }
 
         // ===========================================================
@@ -167,7 +407,10 @@ namespace UCL.Core.EditorLib.AgentCommands
                 int n = 0;
                 foreach (var name in PoolNamesSorted())
                 {
-                    var jd = GetRaw(name);
+                    // ⚠ iAllowMigrate:false —— 快照是**批次匯出**不是消費端讀取。
+                    //   若這裡遷移，一次 domain reload 就會把全部真人 persona 遷完
+                    //   ⇒ 直接違反「Template 先測、真人不當白老鼠」（Tim 拍板的鐵律二）。
+                    var jd = GetRaw(name, false);
                     if (jd == null) continue;   // 壞檔 GetRaw 已警告；快照誠實少這一位而不是塞空殼
                     pool.Add(new JsonData(name));
                     personas[name] = jd;
@@ -246,6 +489,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 return false;
             }
             if (iFull == null || !iFull.IsObject) { oError = "內容必須是 JSON 物件"; return false; }
+            FreezeLegacyIdentity(iPersona, iFull);
             try
             {
                 string path = Path.Combine(PersonasDir, iPersona + ".json");
@@ -265,14 +509,23 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
         }
 
-        /// <summary>單一純量欄寫入（patch：其餘欄原樣保留）。persona 檔不存在＝錯（建人走 WriteRaw）。</summary>
+        /// <summary>
+        /// 單一純量欄寫入（patch：其餘欄原樣保留）。persona 檔不存在＝錯（建人走 WriteRaw）。
+        /// ⚠ **identity 欄（§8.3 不綁專案組）改寫 `profile/<field>.md`，不碰 legacy**（§8.4：舊源只出不進）。
+        /// </summary>
         public static bool SetField(string iPersona, string iField, string iValue,
             string iActor, string iReason, out string oError)
         {
             oError = "";
             if (string.IsNullOrWhiteSpace(iField)) { oError = "field 必填"; return false; }
-            var jd = GetRaw(iPersona);
-            if (jd == null) { oError = $"persona 檔不存在或解析失敗：{iPersona}"; return false; }
+            if (ParseLegacy(iPersona) == null)
+            { oError = $"persona 檔不存在或解析失敗：{iPersona}"; return false; }
+
+            if (IsIdentityField(iField))
+                return WriteProfileField(iPersona, iField, new JsonData(iValue ?? ""),
+                    iActor, iReason, true, out oError);
+
+            var jd = ParseLegacy(iPersona);                  // 非 identity 欄：patch legacy（不疊 profile/，避免把合併值寫回去）
             jd[iField] = new JsonData(iValue ?? "");
             return WriteRaw(iPersona, jd, iActor, iReason, iField, out oError);
         }

@@ -55,6 +55,29 @@ namespace UCL.Core.EditorLib
         public static string CmdDir(string iPersona) => Path.Combine(PersonaDir(iPersona), CmdDirName);
 
         // ===========================================================
+        // 區塊職責：persona 身分欄的「一欄一檔」目錄（`letters/<persona>/profile/`）。
+        // 物理意義：退場案 §8.2 拍板 —— 身分欄從 `AwakenInit/personas/<p>.json` 的 23 欄大檔
+        //          拆成「檔名＝欄位、內文＝值」。好處是一筆欄位變更的 diff 就是那一個檔，
+        //          且欄位之間永無序列化器互踩（BUG-6 的解推到底）。
+        // ⚠ 為什麼版面住在這裡而不住在 UCL_PersonaProfile：`letters/` 底下的版面**只有一個擁有者**
+        //   （本類的存在理由）。讓讀寫接縫自己 Path.Combine 一份，就是第二種算法 ——
+        //   而路徑重造的失敗是靜默的（找到的是另一棵樹上的檔，回一個看起來正常的讀數）。
+        // ⚠ **對側契約：python 端刻意沒有對偶**（summit 2026-08-19 拍板，酒館 seq 12448 第五格）。
+        //   python 讀 persona 一律走 Cmd 產的快照，而快照是 C# 合併後的結果 ⇒
+        //   python 不需要知道 profile/ 存在。**在 `_lib/ucl_paths.py` 補一份 profile 解析＝第二解析器還魂**，
+        //   那正是 §8.7 A+B 要消滅的東西。要補之前先回去讀那條拍板。
+        // 數值影響：純字串組合，不碰 IO（建目錄由寫入端負責）。
+        // ===========================================================
+        public const string ProfileDirName = "profile";
+
+        /// <summary>某 persona 的身分欄目錄（`letters/&lt;persona&gt;/profile/`）。</summary>
+        public static string ProfileDir(string iPersona) => Path.Combine(PersonaDir(iPersona), ProfileDirName);
+
+        /// <summary>一個身分欄的檔案路徑（`letters/&lt;persona&gt;/profile/&lt;field&gt;.md`）。</summary>
+        public static string ProfileField(string iPersona, string iField)
+            => Path.Combine(ProfileDir(iPersona), iField + ".md");
+
+        // ===========================================================
         // 區塊職責：一份 Cmd 回傳檔的完整路徑。
         // 物理意義：檔名 `<cmd>_<step>.md`，**不再帶 `_` 前綴** —— 目錄本身已經說了它是什麼。
         //          「同一個 (persona, cmd, step) 永遠是同一格、每次覆寫」這個語意由**固定檔名**承載

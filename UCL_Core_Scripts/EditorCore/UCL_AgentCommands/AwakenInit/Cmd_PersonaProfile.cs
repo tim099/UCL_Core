@@ -35,6 +35,18 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
         public override string HelpURL =>
             "ucl_core:Docs~/{lang}/Plan/Plan_Persona_Registry_Retirement.md";
 
+        // BUG-14（kiara）：沒宣告 ArgsSpec 時 `value` 打錯名（val=）⇒ 靜默取空字串 ⇒ 欄位被清空，
+        // 而寫入成功、審計落行、快照跟上 —— 查帳時是一筆 actor/reason 都很正當的清空紀錄。
+        // 預檢擋在 CLI 層；執行層另有顯式檢查（預檢可被停用，守衛要長在必經路上）。
+        public override UCL_CmdArgsSpec ArgsSpec => new UCL_CmdArgsSpec
+        {
+            Ops = new Dictionary<string, UCL_CmdOpSpec>
+            {
+                ["refresh"] = new UCL_CmdOpSpec(),
+                ["set"] = new UCL_CmdOpSpec { Required = new[] { "persona", "field", "value", "actor", "reason" } },
+            }
+        };
+
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {
             await UniTask.Yield();
@@ -43,6 +55,10 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             {
                 string persona = GetArg(args, "persona", "").Trim();
                 string field = GetArg(args, "field", "").Trim();
+                // BUG-14：value 必須**顯式在場** —— GetArg 的預設值分不出「沒給」跟「給了空字串」，
+                // 而「沒給」多半是參數名打錯；清空欄位要顯式給 value=（空值）才算意圖。
+                if (!args.ContainsKey("value"))
+                    throw new Exception("[PersonaProfile] set 缺 value —— 參數名打錯？清空欄位請顯式給 value=（空值）");
                 string value = GetArg(args, "value", "");
                 string actor = GetArg(args, "actor", "").Trim();
                 string reason = GetArg(args, "reason", "").Trim();

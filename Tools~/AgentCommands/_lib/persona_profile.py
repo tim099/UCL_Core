@@ -48,16 +48,27 @@ IDENTITY_FIELDS = ("layer_role", "forked_from", "fork_lineage", "forked_at",
 _STATE: dict = {"mode": None, "data": None, "snapshot_at": ""}
 
 
+_SKIP_REASON = ""   # BUG-13：跳過 Cmd 的「原因」要跟「跑失敗」分開講 —— 一把會講錯原因的尺不能留
+
+
 def _refresh_via_cmd() -> bool:
     """跑 Cmd 讓 C# 重寫快照。任何失敗（Editor 未開／timeout／exit≠0）回 False，不丟例外。"""
+    global _SKIP_REASON
     if os.environ.get("UCL_PP_SKIP_CMD") == "1":
+        _SKIP_REASON = "顯式跳過（UCL_PP_SKIP_CMD=1）"
         return False
     try:
         r = subprocess.run(
             [sys.executable, str(_RUN_CMD), "run", "PersonaProfile"],
             capture_output=True, encoding="utf-8", errors="replace", timeout=45)
+        if r.returncode != 0:
+            _SKIP_REASON = f"Cmd exit={r.returncode}（Editor 未開？）"
         return r.returncode == 0
-    except Exception:
+    except subprocess.TimeoutExpired:
+        _SKIP_REASON = "Cmd timeout（Editor 卡住或很忙）"
+        return False
+    except Exception as e:
+        _SKIP_REASON = f"Cmd spawn 失敗（{type(e).__name__}）"
         return False
 
 
@@ -100,13 +111,13 @@ def _load() -> dict:
     if snap is not None:
         _STATE.update(mode="snapshot", data=snap,
                       snapshot_at=str(snap.get("generated_at") or ""))
-        print(f"⚠ [persona_profile] Cmd 跑不通（Editor 未開？）—— 改讀快照"
+        print(f"⚠ [persona_profile] 未走 Cmd：{_SKIP_REASON or '原因不明'} —— 改讀快照"
               f"（generated_at={_STATE['snapshot_at'] or '?'}），回傳值帶 _source 標記",
               file=sys.stderr)
         return snap
     _STATE.update(mode="local-parse", data=_local_parse(), snapshot_at="")
-    print("⚠ [persona_profile] 無 Cmd 也無快照 —— 本地解析原始檔（非典範解析器），"
-          "回傳值帶 _source 標記", file=sys.stderr)
+    print(f"⚠ [persona_profile] 未走 Cmd（{_SKIP_REASON or '原因不明'}）且無快照 —— "
+          "本地解析原始檔（非典範解析器），回傳值帶 _source 標記", file=sys.stderr)
     return _STATE["data"]
 
 

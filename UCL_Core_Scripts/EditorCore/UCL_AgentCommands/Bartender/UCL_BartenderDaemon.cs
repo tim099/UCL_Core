@@ -379,6 +379,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                         bool registered = HandleInlineRegistration(kind, msg, roomId);
                         // 註冊訊息本身不參與 keyword trigger match (control msg)
                     }
+                    else if (UCL_BartenderMentionService.IsMention(msg.body))
+                    {
+                        // 區塊職責：`@酒保` 被點名 → 交給 mention service（async，不在 tick 裡等）。
+                        // 物理意義：這是第三種發言來源（前兩種是 keyword trigger 與 time rule），
+                        //          而它沒有 trigger 的預算上限、也沒有 time rule 的每日一次，
+                        //          所以節流長在 service 裡（冷卻 ＋ 每日上限 ＋ 已回 seq 落磁碟）。
+                        // ⚠ 點名訊息**不再參與 keyword trigger 比對** —— 一則訊息一種處理，
+                        //   否則同一句話會同時觸發罐頭 trigger 與 mention 回話（兩則發言、看起來像 bug）。
+                        // ⚠ 生成期間 service 自己有 s_Running 閘：tick 每 5s 一次而生成可能數十秒，
+                        //   沒有那道閘會疊起來（顯存與訊息都會爆）。
+                        UCL_BartenderMentionService.HandleMentionAsync(msg, roomId);
+                    }
                     else
                     {
                         // 跑所有 trigger 比對

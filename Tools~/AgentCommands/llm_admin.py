@@ -401,7 +401,7 @@ def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description="本地 LLM 模型管理（ollama 薄層）")
     ap.add_argument("op", choices=["status", "list", "install", "uninstall", "test",
-                                   "install-runtime", "ps", "stop"])
+                                   "install-runtime", "ps", "stop", "reply"])
     ap.add_argument("--timeout", type=int, default=TEST_TIMEOUT, help="test：等待上限（秒）")
     ap.add_argument("--think", action="store_true", help="test：把思考段一起要回來（診斷 thinking 模型用）")
     ap.add_argument("--keep-alive", type=int, default=-1, dest="keep_alive",
@@ -416,7 +416,7 @@ def main() -> int:
     ap.add_argument("--format", choices=["json", "text"], default="text")
     a = ap.parse_args()
 
-    if a.op in ("install", "uninstall", "test", "stop") and not a.model:
+    if a.op in ("install", "uninstall", "test", "stop", "reply") and not a.model:
         print(json.dumps({"ok": False, "error": f"{a.op} 需要 --model"}, ensure_ascii=False))
         return 2
 
@@ -426,6 +426,11 @@ def main() -> int:
     elif a.op == "install":   d = op_install(a.model)
     elif a.op == "uninstall": d = op_uninstall(a.model)
     elif a.op == "ps":        d = op_ps()
+    # `reply` 與 `test` 走同一支實作 —— 差別只在**語意**：
+    # test 是人在頁面上試，reply 是 daemon 替酒保生成一句。留兩個名字是為了讀 log 時分得出來
+    # 誰在叫它（同一個名字的話，酒保的每次發言都會被誤讀成「有人在試跑」）。
+    elif a.op == "reply":     d = op_test(a.model, a.prompt, a.timeout, a.think,
+                                          a.keep_alive, a.num_predict, a.system)
     elif a.op == "stop":      d = op_stop(a.model)
     else:                     d = op_test(a.model, a.prompt, a.timeout, a.think,
                                           a.keep_alive, a.num_predict, a.system)

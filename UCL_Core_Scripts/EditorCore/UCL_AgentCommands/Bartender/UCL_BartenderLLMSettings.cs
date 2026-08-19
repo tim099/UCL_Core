@@ -13,6 +13,7 @@
 //   · 存 `ChatTavern/bartender/llm_settings.json`，與 triggers/time_rules 同層、同一套原子寫入。
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using UCL.Core.JsonLib;
@@ -53,6 +54,53 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         /// <summary>罐頭模式？—— 判準只有一個：沒啟用或沒指定模型。</summary>
         public bool IsCannedOnly => !enabled || string.IsNullOrEmpty(model_id);
+
+        // ── `@酒保` 被點名時要不要回話（與上面的 LLM 開關**分開**）──
+        // ⚠ 兩個開關刻意獨立：mention 可以只回罐頭（不用模型），而 LLM 也可以只用在別的路徑上。
+        //   綁成一個的話，「我想要被叫時有反應、但不想跑模型」就沒有位置。
+
+        /// <summary>被 `@酒保` 點名時要不要回話。預設 true —— 但沒模型時只回罐頭。</summary>
+        public bool mention_enabled = true;
+
+        /// <summary>
+        /// 全域冷卻（秒）。擋的不是單一使用者，是**互 ping**：
+        /// A @酒保 → 酒保回覆 → A 的 agent 又回…。0 ＝ 不冷卻（不建議）。
+        /// </summary>
+        public int mention_cooldown_seconds = 30;
+
+        /// <summary>每日回話上限。0 ＝ 無上限（不建議 —— 一晚可以洗掉整個酒館）。</summary>
+        public int mention_daily_cap = 50;
+
+        /// <summary>罐頭回應池（空 ＝ 用 <see cref="DefaultCanned"/>）。挑選以訊息 seq 為種子，可複驗。</summary>
+        public List<string> canned_replies = new List<string>();
+
+        // ═══════════════════════════════════════════════════════════
+        // 區塊職責：把 bool 欄位寫回**原生 true/false**，不要寫成 "True"/"False" 字串。
+        // 物理意義：JsonConvert 的 Unity 模式把 bool 序列化成字串 —— C# 讀回來雙接看不出差別，
+        //          但**python 讀到 "False" 是 truthy**（非空字串）。
+        //   🩸 實測 2026-08-19：本檔第一版存出來就是 `"enabled":"True"`。
+        //     這份設定現在只有 C# 讀，所以還沒咬到人 —— 但酒保這條線遲早會有 python 端
+        //     （daemon 的生成已經在跑 llm_admin.py 了），那時候「關掉的開關讀成開著」不會報錯。
+        //   ⇒ 趁沒人踩先把 wire format 修對。讀取端保持雙接（舊檔的字串仍讀得回來）。
+        // 數值影響：只改寫出去的 JSON 形狀；欄位名與語意不變，舊檔可直接載入。
+        // ═══════════════════════════════════════════════════════════
+        public override JsonData SerializeToJson()
+        {
+            var aJson = base.SerializeToJson();
+            aJson["enabled"] = enabled;                       // 原生 bool，不是 "True"
+            aJson["mention_enabled"] = mention_enabled;
+            return aJson;
+        }
+
+        /// <summary>內建罐頭 —— 沒模型、模型失敗、逾時、空輸出時都走這裡。</summary>
+        public static readonly List<string> DefaultCanned = new List<string>
+        {
+            "哼，叫本酒保有什麼事？先點杯的比較有誠意。",
+            "在的在的，吧檯永遠有人。要喝什麼？",
+            "來了來了 —— 擦杯子擦到一半，說吧。",
+            "酒保在此。今天的推薦是「還沒倒的那一杯」。",
+            "叫我？那就當你請客囉。",
+        };
     }
 
     /// <summary>酒保 LLM 設定的讀寫（與 triggers/time_rules 同一套原子寫入慣例）。</summary>

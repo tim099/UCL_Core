@@ -124,8 +124,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// 邊界：任何不一致 → 回 null，呼叫端退回全量列舉（本檔絕不回「可能錯的清單」）。
         /// </summary>
         public static string[] TryGetOrderedPaths(string roomId, string messagesRoot, out bool usedIndex)
+            => TryGetOrderedPaths(roomId, messagesRoot, out usedIndex, out _);
+
+        /// <summary>
+        /// 同上，外加回報**這次有幾天是現場列舉的**（不在索引裡／目錄動過）。
+        /// 物理意義：這個數字就是「索引還缺幾天」。呼叫端拿它決定要不要把索引補寫回去 ——
+        ///   🩸 2026-08-19 實測：tavern 的索引停在 08-06 而資料到 08-19，落後 10 天。
+        ///     成因不是寫壞，是**成功就 early return，而 Rebuild 只掛在全量列舉那條路的尾巴**
+        ///     ⇒ 索引一旦存在就再也不會被擴充，那 10 天每次冷啟動重列一次，而且會愈長。
+        ///   對 C# 這只是慢（缺的那幾天照樣被列舉，答案從來沒錯過）；
+        ///   但對**沒有列舉能力的消費端**（靜態網頁只能 fetch 推導出的檔名）部分索引是致命的 ——
+        ///   它會安靜地停在索引的最後一天。⇒ 同一份資料在兩個消費端有兩種嚴重度。
+        /// </summary>
+        public static string[] TryGetOrderedPaths(string roomId, string messagesRoot,
+            out bool usedIndex, out int enumeratedDays)
         {
             usedIndex = false;
+            enumeratedDays = 0;
             var idx = Load(roomId);
             if (idx == null) return null;
 
@@ -159,6 +174,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 {
                     // 只列舉「動過的那一天」。索引的價值不是全有全無，
                     // 而是把成本從「全部訊息」壓到「今天的訊息」。
+                    enumeratedDays++;      // ← 記帳：這一天沒命中索引，呼叫端要知道索引缺了幾天
                     string[] files;
                     try { files = Directory.GetFiles(dir, "*.json"); }
                     catch { return null; }

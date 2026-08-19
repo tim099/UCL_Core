@@ -313,9 +313,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             //          索引活在磁碟上，所以它治的是**冷啟動**；上面那份治的是穩態。兩者不重疊。
             // 邊界：索引回 null = 它自己判定不可信（版本不合 / 壞檔 / seq 不連續 / 還有舊格式檔），
             //      一律往下走全量列舉 —— **本區塊絕不因為索引而少給或給錯路徑**。
-            string[] indexed = UCL_ChatTavernMessageIndex.TryGetOrderedPaths(roomId, root, out _);
+            string[] indexed = UCL_ChatTavernMessageIndex.TryGetOrderedPaths(
+                roomId, root, out _, out int aEnumeratedDays);
             if (indexed != null)
             {
+                // 索引只覆蓋到某一天、後面幾天是現場列舉的 ⇒ 把索引補完整。
+                // 🩸 少了這一段，索引一旦存在就永遠不會再擴充（成功就 early return，
+                //   而 Rebuild 只掛在下面全量列舉那條路的尾巴）—— 實測 tavern 停在 08-06 落後 10 天。
+                //   對這裡只是慢（缺的那幾天照樣被列舉，答案沒錯過），
+                //   但**索引本身是對外的資料**：沒有列舉能力的消費端（例如只能 fetch 推導檔名的
+                //   靜態網頁）會安靜地停在索引的最後一天。⇒ 補寫的成本是一次 3KB 寫檔。
+                // 邊界：只在「這次真的有列舉過」時寫 —— 全命中索引時不寫，否則每次讀都在寫檔。
+                if (aEnumeratedDays > 0)
+                {
+                    UCL_ChatTavernMessageIndex.Rebuild(roomId, root, indexed);
+                }
                 if (sig != null)
                 {
                     lock (s_CacheLock)

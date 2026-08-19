@@ -247,7 +247,48 @@ letters 慣例用來標「機械產物／不要當人寫的檔」，這裡要更
 ## 7. 驗收標準（施工時照這條驗，不驗「有沒有報錯」）
 
 1. `bank_resolver` 對全 21 位都解得出 bank，**且在故意把某人 letters 移走的情況下仍然解得出**（證明路由不依賴 letters）。
+   ⚠ 兩端（python `bank_resolver` 與 C# `UCL_TreasuryAccountResolver`）**各驗一次** —— 同一條路由兩份實作，
+   只驗一端＝驗了安全的那半（summit 2026-08-19 補）。
 2. `wake_brief` 的 §0 血統、§6.5 關係、§6 見林三段**都有實際讀數**，不是空狀態文案。
 3. 登入回傳檔的 `wake_count` / 見林 gap 與磁碟推導一致（BUG-4 的兩條對帳仍在）。
 4. `_persona_access.log` 在完整一輪（登入→晚安→發薪→後台頁全開一次）之後**零筆**。
 5. `git diff` 一筆 persona 身分變更**只有那幾行**（BUG-6 定案的副產物）。
+
+## 8. Tim 補充方向（2026-08-19 口頭，summit 記錄 —— 修訂 §3 的目標配置）
+
+> 本節是**方向拍板**，細部規格仍待定案。與 §3 衝突之處以本節為準。
+
+### 8.1 錢的綁定留專案層，且**反轉登記方向**（修訂 §3.2）
+
+bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 記自己屬於哪家 bank」，
+改成**銀行系統登記「本 bank 下有哪些 persona」**：
+
+- 銀行帳戶設定各自帶 `personas: []` —— 反向索引，錢的歸屬由銀行端宣告。
+- 允許空清單（央行、系統帳戶等特殊情況）。
+- **驗證必做**：同一 persona 出現在兩家 bank ⇒ fail-loud（錢進錯帳戶是最貴的靜默錯）。
+- persona→agent 綁定仍留專案層（commit trailer／顯示歸屬用）——「說話認 persona、錢認 bank」自此兩條線各自獨立，不再經 agent 中轉推導。
+
+### 8.2 身分欄改「一欄一檔」分散式 .md（修訂 §3.1 的單一 `_persona.json`）
+
+參考 `letters/<persona>/cmd/` 的形態：**新增專用資料夾，檔名＝欄位、內文＝值**。
+
+- 資料夾名（summit 提案，待拍板）：**`profile/`** —— 與 cmd／fragments／wakes／relationship 同層同慣例。
+  備選：`dossier/`、`card/`。
+- 例：`profile/layer_role.md`、`profile/forked_from.md`、`profile/created_at.md`。
+- 純量欄＝內文即值（無 frontmatter）；`identity_vector` 內文為 JSON 陣列；
+  `vector_history` 比照分散哲學 → `profile/vector_history/<ts>.md` 一快照一檔。
+- 好處是把 BUG-6 的解推到底：**一筆欄位變更的 diff 就是那一個檔**，且欄位間永無序列化器互踩。
+
+### 8.3 欄位按「綁不綁專案」分家（新增判準，疊在 §2 的消費端判準之上）
+
+| 歸屬 | 欄位 | 落點 |
+|---|---|---|
+| **綁專案** | bank 歸屬 | 銀行系統反向登記（§8.1） |
+| **綁專案** | `agent` / `actual_agent` / `model` | 專案層路由表（本專案的桌面工具配置，換專案可能不同） |
+| **不綁專案** | `layer_role` / `forked_from` / `fork_lineage` / `forked_at` / `created_at` / `identity_vector` / `vector_history` | `letters/<persona>/profile/`（§8.2） |
+| 待拍板 | `email` | persona 自訂信箱傾向個人層；但 commit trailer 在專案內取用 —— 有 agent 預設 fallback，degrade 安全，summit 傾向進 profile/ |
+
+### 8.4 連動備忘
+
+券（繪圖券／未來的酒館券等）也要遷入個人資料夾＋機制統一 —— 工程較大，另立
+[`Plan_Voucher_Wallet_Migration.md`](Plan_Voucher_Wallet_Migration.md) 備忘，不併入本案施工範圍。

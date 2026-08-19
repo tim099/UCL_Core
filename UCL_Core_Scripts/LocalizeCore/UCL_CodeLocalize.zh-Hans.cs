@@ -24,6 +24,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.GitSubmoduleSync.Desc" => "批量对所有 submodule 切默认 branch / pull / push —— 一张状态表看谁 detached、谁 ahead，防止 submodule update 后分支跑掉。",
                 "ToolBox.AutoCommit" => "自动 Commit",
                 "ToolBox.AutoCommit.Desc" => "把 AgentCommands 自动生成的文件（酒馆消息 / Treasury / runtime state）分组、按钮触发各自成 commit，消息自动生成；ephemeral 文件永远排除。",
+                "ToolBox.LLMModelAdmin" => "本地 LLM 模型",
+                "ToolBox.LLMModelAdmin.Desc" => "管理本机大语言模型（ollama）：查环境状态、从策展目录挑模型安装／卸载、跑一句验收。默认收录 Qwen 系列（6GB 显存以下跑得动的那几颗）。",
                 "ToolBox.DocSearch" => "文件搜索",
                 "ToolBox.DocSearch.Desc" => "跨项目 200+ 篇 markdown 的即时模糊搜索（含同义词展开、当前语系优先）。",
                 "ToolBox.LocalizeEdit" => "多语言编辑",

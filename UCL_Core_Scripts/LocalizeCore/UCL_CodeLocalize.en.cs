@@ -24,6 +24,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.GitSubmoduleSync.Desc" => "Batch checkout-default-branch / pull / push across all submodules — one status table shows who is detached or ahead, so branches stop drifting after submodule update.",
                 "ToolBox.AutoCommit" => "Auto Commit",
                 "ToolBox.AutoCommit.Desc" => "Groups machine-generated AgentCommands files (tavern messages / Treasury / runtime state) and commits each group on button press with auto-generated messages; ephemeral files are always excluded.",
+                "ToolBox.LLMModelAdmin" => "Local LLM Models",
+                "ToolBox.LLMModelAdmin.Desc" => "Manage local large language models (ollama): check environment status, install/uninstall from a curated catalog, and run a smoke test. Ships with the Qwen family (the sizes that fit under 6GB VRAM).",
                 "ToolBox.DocSearch" => "Doc Search",
                 "ToolBox.DocSearch.Desc" => "Instant fuzzy search across 200+ markdown docs (synonym expansion, current locale first).",
                 "ToolBox.LocalizeEdit" => "Localize Edit",

@@ -1,0 +1,421 @@
+// 區塊職責：本地 LLM 模型管理頁 —— 環境狀態、模型目錄、安裝／解除安裝、試跑。
+// 物理意義：真正的環境檢查與安裝都在 llm_admin.py（ollama 之上的薄層）；本頁是 runner 之上的薄 UI ——
+//          按鈕 → async spawn python → 顯示結果。重活不在 main thread 跑（模型下載動輒數分鐘）。
+//          形狀對齊 UCL_MediaAdminPage（python 為唯一真相源、C# 只做顯示與確認）。
+// 數值影響：安裝／解除安裝**會真的動磁碟**（模型 0.5–5 GB），兩者都走二次確認；其餘唯讀。
+//
+// 設計取捨：
+//   · **不由本頁啟動 ollama 服務** —— 那是常駐 process，domain reload 會清掉 C# 端的控制權
+//     而 OS 層的它不會死（屍潮）。服務沒跑就**明講怎麼開**，不替使用者按下去。
+//   · **「已安裝」一律以 python 對帳 `ollama list` 的結果為準**，不看磁碟、不看本頁快取 ——
+//     磁碟上有檔 ≠ ollama 註冊得到，兩者不一致時**兩邊都不會報錯**。
+//   · **安裝完自動不試跑**，另給一顆「試跑」鈕：`pull` 成功只證明檔案下載完，
+//     不證明它在這台機器跑得動（顯存不夠會退 CPU 或直接失敗）。兩件事分兩顆鈕，帳才分得開。
+//   · UI 字串硬編 zh-Hant（同 MediaAdmin / KnowledgeBase 等內部管理頁慣例）；
+//     只有 ToolBox 入口那兩行走 UCL_CodeLocalize（四語系檔都補）。
+// RequiresConstantRepaint：python 在背景跑，忙碌狀態與結果要即時反映。
+#if UNITY_EDITOR
+using System.Collections.Generic;
+using Cysharp.Threading.Tasks;
+using UCL.Core.EditorLib.AgentCommands.LLMAdmin;
+using UCL.Core.JsonLib;
+using UCL.Core.Page;      // UCL_OptionPage / ButtonData（二次確認彈窗，既有基建）
+using UCL.Core.UI;
+using UnityEditor;
+using UnityEngine;
+
+namespace UCL.Core.EditorLib.Page
+{
+    /// <summary>
+    /// 本地 LLM 模型管理 —— 選模型、安裝、解除安裝、試跑。
+    /// 全部操作委派 llm_admin.py（經 <see cref="UCL_LLMAdminRunner"/>），python 為唯一真相源。
+    /// </summary>
+    [UCL.Core.ATTR.RequiresConstantRepaint]
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_LLMModelAdminPage.md")]
+    public class UCL_LLMModelAdminPage : UCL_CommonEditorPage
+    {
+        public override string WindowName => "本地 LLM 模型";
+        public override bool ShowInPageMenu => true;
+
+        public static UCL_LLMModelAdminPage Create() => UCL_EditorPage.Create<UCL_LLMModelAdminPage>();
+
+        const int TIMEOUT_QUERY = 60 * 1000;             // 查詢類：本機指令，1 分鐘已是異常
+        const int TIMEOUT_INSTALL = 60 * 60 * 1000;      // 下載類：好幾 GB，慢不是錯
+        const int TIMEOUT_TEST = 3 * 60 * 1000;          // 試跑：含冷啟動載入
+
+        LLMStatusResult m_Status = new LLMStatusResult();
+        List<LLMCatalogEntry> m_Catalog = new List<LLMCatalogEntry>();
+        List<LLMInstalledModel> m_NotInCatalog = new List<LLMInstalledModel>();
+        int m_Selected = 0;
+        // 預設只列「這張卡放得下」的 —— 大模型不是不能選，是不該擋在預設清單的第一排。
+        // ⚠ 關掉之後選到放不下的，ollama **不會報錯**，只會把層數丟給 CPU（速度掉一個數量級）。
+        bool m_OnlyFits = true;
+        // 下拉選單的開合／搜尋狀態。⚠ 不與別處共用 —— 資料重載路徑的 Clear() 會把它一起清掉
+        readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
+
+        bool m_Loaded = false;          // 首幀 lazy-load（OnResume 不會在首次 Push 觸發，比照既有頁慣例）
+        bool m_Busy = false;
+        string m_BusyLabel = "";
+        string m_Report = "(尚未載入 —— 按「🔄 重新整理」)";
+        string m_TestPrompt = "用繁體中文說一句吧檯招呼，20 字以內。";
+
+        GUIStyle m_WrapStyle;
+        GUIStyle WrapStyle => m_WrapStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true };
+        GUIStyle m_DimStyle;
+        GUIStyle DimStyle => m_DimStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle)
+        { wordWrap = true, normal = { textColor = new Color(0.62f, 0.62f, 0.68f) } };
+
+        protected override void TopBarButtons()
+        {
+            base.TopBarButtons();
+            using (new EditorGUI.DisabledScope(m_Busy))
+            {
+                if (GUILayout.Button("🔄 重新整理", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    Refresh().Forget();
+                }
+            }
+        }
+
+        protected override void ContentOnGUI()
+        {
+            if (!m_Loaded) { m_Loaded = true; Refresh().Forget(); }
+
+            GUILayout.Label("🤖 本地 LLM 模型管理（ollama）", WrapStyle);
+            EditorGUILayout.HelpBox(
+                "管理本機大語言模型：查狀態、裝／移除模型、跑一句驗收。實際動作全在 " +
+                "llm_admin.py（ollama 之上的薄層），本頁只是 UI。\n" +
+                "⚠ 顯存是跟 Unity 共用的 —— 判準是「可用顯存」不是「總顯存」，" +
+                "而顯存不夠時通常不會報錯，只會退回 CPU 變很慢。",
+                MessageType.Info);
+
+            DrawStatus();
+            DrawCatalog();
+            DrawActions();
+            DrawReport();
+        }
+
+        // ===========================================================
+        // 狀態
+        // ===========================================================
+        void DrawStatus()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label(m_Status.ollama_installed
+                        ? $"✅ ollama {m_Status.version}"
+                        : "❌ 尚未安裝 ollama", WrapStyle);
+                GUILayout.Label(m_Status.service_reachable
+                        ? $"✅ 服務可連線　已安裝模型 {m_Status.installed_count} 個"
+                        : "❌ 服務打不到", WrapStyle);
+                if (!string.IsNullOrEmpty(m_Status.hint))
+                {
+                    // 服務沒起來時**只指路，不代按** —— 常駐 process 由使用者決定何時起。
+                    // 「ollama 根本沒裝」則是一次性動作，那個可以代按（見 DrawRuntimeInstall）。
+                    EditorGUILayout.HelpBox(m_Status.hint, MessageType.Warning);
+                }
+                if (!m_Status.ollama_installed) DrawRuntimeInstall();
+                if (!string.IsNullOrEmpty(m_Status.error))
+                {
+                    GUILayout.Label($"⚠ {m_Status.error}", DimStyle);
+                }
+            }
+        }
+
+        // ===========================================================
+        // ollama 本體安裝（一次性；只在「沒裝」時出現）
+        // ===========================================================
+        // 區塊職責：把官方 Windows 安裝腳本變成一顆按鈕。
+        // 物理意義：`irm https://ollama.com/install.ps1 | iex` ＝ **下載並執行遠端腳本** ——
+        //          等於把安裝過程完全託付給那個網址當下的內容。所以這裡刻意做三件事：
+        //            ① 指令原文攤在畫面上（不是藏在按鈕後面）
+        //            ② 二次確認，講明它會做什麼、代價是什麼
+        //            ③ 開**看得見**的 PowerShell 視窗（可能跳 UAC；藏起來會變成「按了沒反應」）
+        //          不想讓 Editor 代跑的人有另外兩條路：複製指令自己貼、或開官方下載頁。
+        // 數值影響：安裝軟體、動 PATH。⚠ 裝完**本 Editor 行程的 PATH 仍是舊的** —— 要重開 Editor。
+        //          （llm_admin.py 另有已知安裝路徑的 fallback，所以重開前也可能直接找得到。）
+        const string OLLAMA_INSTALL_CMD = "irm https://ollama.com/install.ps1 | iex";
+
+        void DrawRuntimeInstall()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label("安裝 ollama（Windows）", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label(OLLAMA_INSTALL_CMD, WrapStyle);
+                GUILayout.Label("↑ 這行會**下載並執行**官方遠端腳本。不放心就用右邊兩顆自己來。", DimStyle);
+                using (new GUILayout.HorizontalScope())
+                {
+                    using (new EditorGUI.DisabledScope(m_Busy))
+                    {
+                        if (GUILayout.Button("⚡ 一鍵安裝（開 PowerShell）",
+                                UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 0.85f, 0.5f)),
+                                GUILayout.ExpandWidth(false)))
+                        {
+                            ConfirmInstallRuntime();
+                        }
+                    }
+                    if (GUILayout.Button("📋 複製指令", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        GUIUtility.systemCopyBuffer = OLLAMA_INSTALL_CMD;
+                        // 讀回來才算數 —— 剪貼簿被占用時是靜默失敗
+                        m_Report = GUIUtility.systemCopyBuffer == OLLAMA_INSTALL_CMD
+                            ? "✓ 指令已複製，貼到 PowerShell 執行" : "✗ 複製失敗（剪貼簿被占用？）";
+                    }
+                    if (GUILayout.Button("🌐 官方下載頁", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        Application.OpenURL("https://ollama.com/download");
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+            }
+        }
+
+        void ConfirmInstallRuntime()
+        {
+            UCL_OptionPage.Create("執行 ollama 官方安裝腳本？",
+                OLLAMA_INSTALL_CMD + "\n\n" +
+                "· 會開一個 PowerShell 視窗（可能跳 UAC）—— 進度看那個視窗，不是本頁\n" +
+                "· 這是**下載並執行遠端腳本**：內容由 ollama.com 當下提供\n" +
+                "· 裝完 PATH 對這個 Editor 行程仍是舊的 ⇒ 重開 Unity 後再按「重新整理」",
+                new ButtonData("執行", () => RunOp("安裝 ollama", "install-runtime --format text",
+                        TIMEOUT_QUERY).Forget(),
+                    UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 0.85f, 0.5f))),
+                new ButtonData("取消"));
+        }
+
+        // ===========================================================
+        // 目錄（選取模型 —— 下拉選單）
+        // ===========================================================
+        void DrawCatalog()
+        {
+            if (m_Catalog.Count == 0)
+            {
+                GUILayout.Label("（目錄尚未載入）", DimStyle);
+                return;
+            }
+            // 過濾後的索引 → 原始目錄索引的對照表。
+            // ⚠ 不能拿過濾後的 index 當 m_Selected 用 —— 切換開關時清單長度會變，
+            //   同一個數字會指到不同的模型（而畫面看起來完全正常）。
+            var aVisible = new List<int>(m_Catalog.Count);
+            for (int i = 0; i < m_Catalog.Count; i++)
+            {
+                if (!m_OnlyFits || m_Catalog[i].fits_budget) aVisible.Add(i);
+            }
+            if (aVisible.Count == 0) { m_OnlyFits = false; return; }   // 全被濾掉就自動放行，不留空畫面
+
+            using (new GUILayout.HorizontalScope())
+            {
+                bool aNext = UCL_GUILayout.CheckBox(m_OnlyFits);
+                if (aNext != m_OnlyFits) m_OnlyFits = aNext;
+                GUILayout.Label("只列這張卡放得下的（顯存 ≦ 預算）", DimStyle, GUILayout.ExpandWidth(false));
+                GUILayout.FlexibleSpace();
+            }
+
+            // 下拉的顯示字串把「裝了沒／推不推薦／下載多大／要多少顯存／中文幾分」壓進一行 ——
+            // 選之前就看得到，不必先選一顆再回頭看說明。
+            var aOptions = new List<string>(aVisible.Count);
+            foreach (int idx in aVisible)
+            {
+                var aItem = m_Catalog[idx];
+                aOptions.Add($"{(aItem.installed ? "✅" : "▫")}{(aItem.recommend ? "★" : " ")} " +
+                             $"{aItem.id}　{aItem.params_}　下載 {aItem.size_gb}GB／顯存 ~{aItem.vram_gb}GB" +
+                             $"　中文{aItem.zh}/5{(aItem.fits_budget ? "" : "　⚠放不下")}");
+            }
+            int aCur = aVisible.IndexOf(m_Selected);
+            if (aCur < 0) aCur = 0;                                    // 選中的被濾掉了 → 退回第一筆
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("模型", UCL_GUIStyle.LabelStyle,
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                // ⚠ 選項為 0 時 PopupSearchCache 會 LogError —— 上面已保證 > 0
+                aCur = UCL_GUILayout.PopupAuto(aCur, aOptions, m_Dic, "CatalogPopup");
+            }
+            if (aCur >= 0 && aCur < aVisible.Count) m_Selected = aVisible[aCur];
+
+            var aSel = m_Catalog[m_Selected];
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label($"{(aSel.installed ? "✅ 已安裝" : "▫ 未安裝")}　{aSel.id}　{aSel.params_}" +
+                    (aSel.recommend ? "　★純聊天推薦" : ""), WrapStyle);
+                // 兩個數字分開講 —— 使用者最常把「下載量」讀成「顯存需求」
+                GUILayout.Label($"下載量／磁碟 {aSel.size_gb} GB　｜　顯存需求 約 {aSel.vram_gb} GB" +
+                    "（權重＋KV cache＋執行期開銷）　｜　中文 " + aSel.zh + "/5", WrapStyle);
+                GUILayout.Label(aSel.note, DimStyle);
+                if (!aSel.fits_budget)
+                {
+                    EditorGUILayout.HelpBox(
+                        "這顆超過顯存預算。放不下時 ollama **不會報錯**，只會把層數丟給 CPU —— " +
+                        "症狀是「跑得出來但慢十倍」，不是「失敗」。",
+                        MessageType.Warning);
+                }
+                if (aSel.installed && !aSel.exact)
+                {
+                    // 變體命中：磁碟上是同族的另一個 tag。說清楚，否則「已安裝」會誤導
+                    GUILayout.Label("↳ 已安裝的是同族**變體 tag**，不是這個精確 tag", DimStyle);
+                }
+            }
+            if (m_NotInCatalog.Count > 0)
+            {
+                using (new GUILayout.VerticalScope("box"))
+                {
+                    GUILayout.Label("目錄外（你自己 pull 的，本頁不管理）", DimStyle);
+                    foreach (var aModel in m_NotInCatalog)
+                    {
+                        GUILayout.Label($"　· {aModel.id}　{aModel.size}", DimStyle);
+                    }
+                }
+            }
+        }
+
+        // ===========================================================
+        // 動作
+        // ===========================================================
+        void DrawActions()
+        {
+            var aSel = (m_Selected >= 0 && m_Selected < m_Catalog.Count) ? m_Catalog[m_Selected] : null;
+            using (new EditorGUI.DisabledScope(m_Busy || aSel == null || !m_Status.service_reachable))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button(aSel != null && aSel.installed ? "⬇️ 重新安裝" : "⬇️ 安裝",
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 0.85f, 0.5f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        ConfirmInstall(aSel);
+                    }
+                    using (new EditorGUI.DisabledScope(aSel == null || !aSel.installed))
+                    {
+                        if (GUILayout.Button("🗑 解除安裝",
+                                UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.55f, 0.5f)),
+                                GUILayout.ExpandWidth(false)))
+                        {
+                            ConfirmUninstall(aSel);
+                        }
+                        if (GUILayout.Button("▶ 試跑一句", UCL_GUIStyle.ButtonStyle,
+                                GUILayout.ExpandWidth(false)))
+                        {
+                            RunOp($"試跑 {aSel.id}", $"test --model {aSel.id} " +
+                                $"--prompt \"{m_TestPrompt.Replace("\"", "'")}\" --format text",
+                                TIMEOUT_TEST).Forget();
+                        }
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("試跑提示詞", UCL_GUIStyle.LabelStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    m_TestPrompt = GUILayout.TextField(m_TestPrompt, UCL_GUIStyle.TextFieldStyle);
+                }
+            }
+            if (m_Busy) GUILayout.Label($"⏳ 執行中（{m_BusyLabel}）—— 下載大模型可能要好幾分鐘", WrapStyle);
+            if (!m_Status.service_reachable)
+            {
+                GUILayout.Label("（服務打不到時所有動作停用 —— 先把 ollama 裝好／跑起來）", DimStyle);
+            }
+        }
+
+        void ConfirmInstall(LLMCatalogEntry iEntry)
+        {
+            if (iEntry == null) return;
+            UCL_OptionPage.Create("確認安裝模型？",
+                $"{iEntry.id}（{iEntry.params_}）\n" +
+                $"下載量約 {iEntry.size_gb} GB（佔磁碟），執行時顯存約 {iEntry.vram_gb} GB。\n" +
+                "下載期間本頁會鎖住。\n\n" +
+                "⚠ 顯存是跟 Unity Editor 共用的 —— 判準是 nvidia-smi 的**可用**顯存，不是總量。",
+                new ButtonData("安裝", () => RunOp($"安裝 {iEntry.id}",
+                        $"install --model {iEntry.id} --format text", TIMEOUT_INSTALL).Forget(),
+                    UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 0.85f, 0.5f))),
+                new ButtonData("取消"));
+        }
+
+        void ConfirmUninstall(LLMCatalogEntry iEntry)
+        {
+            if (iEntry == null) return;
+            UCL_OptionPage.Create("確認解除安裝？",
+                $"{iEntry.id}\n\n⚠ **不可逆** —— 要用回來得重新下載約 {iEntry.size_gb} GB。",
+                new ButtonData("解除安裝", () => RunOp($"解除安裝 {iEntry.id}",
+                        $"uninstall --model {iEntry.id} --format text", TIMEOUT_QUERY).Forget(),
+                    UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.5f, 0.45f))),
+                new ButtonData("取消"));
+        }
+
+        void DrawReport()
+        {
+            if (string.IsNullOrEmpty(m_Report)) return;
+            GUILayout.Label("報告", UCL_GUIStyle.LabelStyle);
+            // 不開內層 ScrollView —— UCL_EditorPage 已經把 ContentOnGUI 包在捲動區裡，再包一層是雙捲軸
+            EditorGUILayout.TextArea(m_Report, WrapStyle);
+        }
+
+        // ===========================================================
+        // 執行（全部走 python）
+        // ===========================================================
+        async UniTask Refresh()
+        {
+            if (m_Busy) return;
+            m_Busy = true; m_BusyLabel = "讀取狀態";
+            try
+            {
+                var aStatus = await UCL_LLMAdminRunner.RunAsync("status --format json", TIMEOUT_QUERY);
+                m_Status = ParseStatus(aStatus.Stdout);
+                if (!aStatus.Launched)
+                {
+                    m_Report = aStatus.DisplayText;      // 連 python 都沒跑起來 —— 直接把原因攤開
+                    return;
+                }
+                m_BusyLabel = "讀取模型目錄";
+                var aList = await UCL_LLMAdminRunner.RunAsync("list --format json", TIMEOUT_QUERY);
+                ParseList(aList.Stdout);
+                m_Report = $"狀態與目錄已更新（目錄 {m_Catalog.Count} 筆、已安裝 {m_Status.installed_count} 個）";
+            }
+            finally { m_Busy = false; m_BusyLabel = ""; }
+        }
+
+        async UniTask RunOp(string iLabel, string iArgs, int iTimeoutMs)
+        {
+            if (m_Busy) return;
+            m_Busy = true; m_BusyLabel = iLabel;
+            m_Report = $"⏳ {iLabel} 執行中…";
+            try
+            {
+                var aResult = await UCL_LLMAdminRunner.RunAsync(iArgs, iTimeoutMs);
+                // exit code 才是成敗判準 —— 失敗時 python 也會印東西，只看有沒有輸出會把失敗讀成成功
+                m_Report = (aResult.Ok ? "✅ " : "❌ ") + iLabel + "\n" + aResult.DisplayText;
+            }
+            finally { m_Busy = false; m_BusyLabel = ""; }
+            await Refresh();     // 動完磁碟一定重讀 —— 不拿本頁的記憶當現況
+        }
+
+        static LLMStatusResult ParseStatus(string iStdout)
+        {
+            var aResult = new LLMStatusResult();
+            try
+            {
+                var aJson = JsonData.ParseJson(iStdout);
+                if (aJson != null) aResult.DeserializeFromJson(aJson);
+            }
+            catch (System.Exception e)
+            {
+                aResult.error = $"狀態解析失敗：{e.Message}";
+            }
+            return aResult;
+        }
+
+        void ParseList(string iStdout)
+        {
+            try
+            {
+                var aJson = JsonData.ParseJson(iStdout);
+                m_Catalog = LLMAdminParse.Catalog(aJson);
+                m_NotInCatalog = LLMAdminParse.Installed(aJson, "not_in_catalog");
+                if (m_Selected >= m_Catalog.Count) m_Selected = 0;
+            }
+            catch (System.Exception e)
+            {
+                m_Report = $"目錄解析失敗：{e.Message}";
+            }
+        }
+    }
+}
+#endif

@@ -24,6 +24,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.GitSubmoduleSync.Desc" => "全 submodule に対して既定 branch への checkout / pull / push を一括実行 — detached や ahead を一覧で把握し、submodule update 後のブランチずれを防ぎます。",
                 "ToolBox.AutoCommit" => "自動 Commit",
                 "ToolBox.AutoCommit.Desc" => "AgentCommands の自動生成ファイル（酒場メッセージ / Treasury / runtime state）をグループ分けし、ボタンで各グループを個別 commit（メッセージ自動生成）。ephemeral ファイルは常に除外。",
+                "ToolBox.LLMModelAdmin" => "ローカル LLM モデル",
+                "ToolBox.LLMModelAdmin.Desc" => "ローカルの大規模言語モデル（ollama）を管理：環境状態の確認、厳選カタログからのインストール／アンインストール、動作確認の一発実行。既定で Qwen シリーズ（VRAM 6GB 以下で動くサイズ）を収録。",
                 "ToolBox.DocSearch" => "ドキュメント検索",
                 "ToolBox.DocSearch.Desc" => "200 以上の markdown を横断する即時あいまい検索（同義語展開・現在のロケール優先）。",
                 "ToolBox.LocalizeEdit" => "多言語編集",

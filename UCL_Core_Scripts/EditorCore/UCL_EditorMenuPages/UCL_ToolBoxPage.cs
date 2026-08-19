@@ -43,6 +43,10 @@ namespace UCL.Core.EditorLib.Page
                 UCL_CodeLocalize.Get("ToolBox.AutoCommit.Desc"),
                 () => UCL_AutoCommitPage.Create());
 
+            DrawTool(UCL_CodeLocalize.Get("ToolBox.LLMModelAdmin"),
+                UCL_CodeLocalize.Get("ToolBox.LLMModelAdmin.Desc"),
+                () => UCL_LLMModelAdminPage.Create());
+
             DrawTool(UCL_CodeLocalize.Get("ToolBox.DocSearch"),
                 UCL_CodeLocalize.Get("ToolBox.DocSearch.Desc"),
                 () => UCL_DocSearchPage.Create());

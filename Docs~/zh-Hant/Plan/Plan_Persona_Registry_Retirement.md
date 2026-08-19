@@ -304,7 +304,36 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 4. ⚠ 寫入端規則不變：新值寫 profile/，**絕不回寫舊 personas/**（舊源只出不進，
    否則兩邊都是活的，BUG-6 的形狀換個位置重演）。
 
-### 8.5 連動備忘
+### 8.5 「現在狀態」欄帶著消費端回歸（Tim 2026-08-19 三輪補充 —— 可與本案一起做）
+
+§2.4 把 `availability` 判死的理由是**沒有消費端**；Tim 拍板把「現在狀態」概念加回來，
+而且這次先給消費端再給欄位：
+
+- **欄位**：`now_status` —— 一句話「我現在在做什麼」（例：`改 Cmd_FreeTimeActivity 的引號逃脫`），
+  帶 `updated_at` 時間戳。
+- **落點**：session 層（lock 檔旁或 lock 內），**不進 profile/ 也不進 git** ——
+  它是活體狀態，與 `status`/`last_active` 同族（§2.3 的判定不變：lock 是活體真相源），
+  登出即滅，不會有 checkout 回滾問題。
+- **寫入**：走 Cmd 單一通道（lock 擁有者是 `UCL_AwakeningService`，維持硬規則三）；
+  開工／換工作時自己更新一句；goodmorning intro 可順手設初值。
+- **消費端（本次回歸的存在理由）**：`tavern_catchup` / `ucl-ding` 的在線清單從
+  「🟢 summit」升級成「🟢 summit — 改 Cmd_FreeTimeActivity（3 分鐘前）」——
+  **正在被改的 code 看得出是誰在改**。
+  🩸 實案：2026-08-18 calli 的 commit 抓走 summit 編輯中的檔（BugReports wake#57 四隻之四）——
+  當時她若看得到這行狀態就不會撞。
+- **staleness 要顯示**：狀態帶時間戳，catchup 印「多久前」；過舊的狀態比沒有狀態更會誤導。
+- **前置：在線狀態收斂單一 API（Tim 點名，summit 2026-08-19 實掃證實）** ——
+  「誰在線」目前**至少八處各自掃 lock**：C# 有 `UCL_ActivePersonaLocks`（7 處在用）
+  但另有 5 檔自己 `Directory.GetFiles` 直掃（LoginStatusPage / PersonaAgentAdminPage /
+  PersonaInspectorPage / DiscordGatewayClient / Cmd_LoginStatus）；python 端 `awakening.py`
+  內部 4 處 glob、`tavern_catchup.py` 再自己掃 3 處。
+  🩸 散裝的代價當天就有讀數：run_cmd 的身分推論兩次把 summit 誤判成 basecamp（僅留痕未擋），
+  跟 catchup 的在線清單各講各話。
+  ⇒ `now_status` 動工前先收斂：C# 全部走 `UCL_ActivePersonaLocks`、python 收成一支
+  `_lib/presence.py`（或 awakening 的 `list_online()`）—— 否則新欄位要在八個掃描點各加一次，
+  等於再鋪一層散裝。
+
+### 8.6 連動備忘
 
 券（繪圖券／未來的酒館券等）也要遷入個人資料夾＋機制統一 —— 工程較大，另立
 [`Plan_Voucher_Wallet_Migration.md`](Plan_Voucher_Wallet_Migration.md) 備忘，不併入本案施工範圍。

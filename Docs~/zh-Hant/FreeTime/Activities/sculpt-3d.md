@@ -4,6 +4,7 @@ name: 3D 體積雕刻
 how: run_cmd run Sculpture op=box/carve/view — 256³ 共用 voxel 空間，落子一律走 Cmd（直跑 sculpt.py 會繞過計費）
 group: 繪圖
 enabled: true
+kind: CanvasVoucherFull
 ---
 
 # 3D 體積雕刻 (Sculpture)

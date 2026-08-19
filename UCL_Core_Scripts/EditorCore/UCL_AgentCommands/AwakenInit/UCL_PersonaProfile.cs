@@ -185,8 +185,23 @@ namespace UCL.Core.EditorLib.AgentCommands
         public const string ACTOR_LAZY_MIGRATION = "lazy-migration";
 
         // 結構值欄（內文＝JSON）／可為 null 的純量欄（空檔＝null）；其餘 identity 欄＝純字串（空檔＝空字串）。
+        // ⚠ **本表是型別判準的唯一真相源**（summit 2026-08-19 拍板，酒館 seq 12478 A）——
+        //   快照會帶出一份（`structured_fields`）給 python 端讀，**不准在對側另立一張表**。
+        public static readonly string[] STRUCTURED_FIELDS_ORDER =
+            { "identity_vector", "vector_history", "fork_lineage" };
+
         static readonly HashSet<string> STRUCTURED_FIELDS =
-            new HashSet<string> { "identity_vector", "vector_history", "fork_lineage" };
+            new HashSet<string>(STRUCTURED_FIELDS_ORDER);
+
+        /// <summary>結構欄的期望 JSON 種類 —— 用來擋「parse 過了但形狀不對」。</summary>
+        enum StructKind { NumberArray, ObjectArray, StringArray }
+
+        static StructKind KindOf(string iField)
+        {
+            if (iField == "vector_history") return StructKind.ObjectArray;
+            if (iField == "fork_lineage") return StructKind.StringArray;
+            return StructKind.NumberArray;              // identity_vector
+        }
         static readonly HashSet<string> NULLABLE_SCALAR_FIELDS =
             new HashSet<string> { "forked_from", "forked_at" };
 
@@ -303,6 +318,68 @@ namespace UCL.Core.EditorLib.AgentCommands
             return true;
         }
 
+        // ===========================================================
+        // 區塊職責：結構欄寫入值的解析與形狀驗證（§8.2 一欄一檔的 JSON 那三欄）。
+        // 物理意義：`op=set` 收到的永遠是字串。結構欄要的是 JSON ——
+        //          而「parse 失敗就當字串存起來」會讓 `identity_vector` 變成一個**長得像陣列的字串**，
+        //          讀回來型別不對、下游拿它做數值運算才炸，離現場很遠。
+        //          ⇒ **parse 失敗＝fail-loud；形狀不符＝fail-loud。絕不退存字串**（summit 拍板 A）。
+        // ⚠ 空陣列 `[]` 是合法值 —— 實測 21 個 persona 的 `fork_lineage` 全是 `[]`，
+        //   把空陣列當「沒填」擋掉會擋掉現存的多數資料（這正是 BUG-15 那種形狀，別再犯）。
+        // 數值影響：純解析＋逐元素檢查，不碰 IO。
+        // ===========================================================
+        static bool ParseStructuredValue(string iField, string iValue, out JsonData oValue, out string oError)
+        {
+            oValue = null;
+            oError = "";
+            string aText = (iValue ?? "").Trim();
+            if (aText.Length == 0)
+            {
+                oError = $"{iField} 是結構欄，值不能是空的 —— 空陣列請顯式給 `[]`"
+                       + "（空字串與空陣列是兩件事，不猜）";
+                return false;
+            }
+
+            JsonData aJd;
+            try { aJd = JsonData.ParseJson(aText); }
+            catch (Exception e)
+            {
+                oError = $"{iField} 是結構欄，值必須是合法 JSON —— parse 失敗：{e.Message}"
+                       + "（不會退存成字串：那會變成一個長得像陣列的字串，讀回來才炸）";
+                return false;
+            }
+            if (aJd == null || !aJd.IsArray)
+            {
+                oError = $"{iField} 是結構欄，值必須是 JSON **陣列**（收到的不是陣列）";
+                return false;
+            }
+
+            var aKind = KindOf(iField);
+            for (int i = 0; i < aJd.Count; i++)
+            {
+                var e = aJd[i];
+                bool ok;
+                string want;
+                switch (aKind)
+                {
+                    case StructKind.ObjectArray: ok = e != null && e.IsObject; want = "物件"; break;
+                    case StructKind.StringArray: ok = e != null && e.IsString; want = "字串"; break;
+                    default:
+                        ok = e != null && (e.IsInt || e.IsLong || e.IsDouble);
+                        want = "數字";
+                        break;
+                }
+                if (!ok)
+                {
+                    oError = $"{iField} 的第 {i} 個元素不是{want}"
+                           + $"（本欄要求：陣列的每個元素都是{want}）";
+                    return false;
+                }
+            }
+            oValue = aJd;
+            return true;
+        }
+
         /// <summary>
         /// 寫一個 `profile/&lt;field&gt;.md`（原子寫）＋審計一行。actor / reason 必填（§8.6 同一條規矩）。
         /// <paramref name="iRefreshSnapshot"/>=false 給 <see cref="MergeProfile"/> 用 —— 它自己就跑在讀取路徑上，
@@ -401,6 +478,11 @@ namespace UCL.Core.EditorLib.AgentCommands
                 var idf = JsonData.ParseJson("[]");
                 foreach (var f in IDENTITY_FIELDS) idf.Add(new JsonData(f));
                 root["identity_fields"] = idf;
+                // 結構欄清單也帶出去 —— 型別判準的真相源在 C#（summit 拍板），
+                // python 端要判斷「這欄是不是 JSON」就讀這份，不要自己再列一張。
+                var sf = JsonData.ParseJson("[]");
+                foreach (var f in STRUCTURED_FIELDS_ORDER) sf.Add(new JsonData(f));
+                root["structured_fields"] = sf;
 
                 var pool = JsonData.ParseJson("[]");
                 var personas = new JsonData();
@@ -522,8 +604,22 @@ namespace UCL.Core.EditorLib.AgentCommands
             { oError = $"persona 檔不存在或解析失敗：{iPersona}"; return false; }
 
             if (IsIdentityField(iField))
-                return WriteProfileField(iPersona, iField, new JsonData(iValue ?? ""),
-                    iActor, iReason, true, out oError);
+            {
+                // 型別**由欄名決定，不由值的長相決定**（summit 2026-08-19 拍板 A）：
+                //   結構欄 ⇒ 必須 parse 成功且形狀相符，失敗就 fail-loud；
+                //   純量欄 ⇒ 一律字面收，就算長得像 JSON 也不猜。
+                // ⚠「看起來像 JSON 但被存成字串」是這條路唯一的死法 —— 焊死在這裡，不留退路。
+                JsonData aVal;
+                if (STRUCTURED_FIELDS.Contains(iField))
+                {
+                    if (!ParseStructuredValue(iField, iValue, out aVal, out oError)) return false;
+                }
+                else
+                {
+                    aVal = new JsonData(iValue ?? "");
+                }
+                return WriteProfileField(iPersona, iField, aVal, iActor, iReason, true, out oError);
+            }
 
             var jd = ParseLegacy(iPersona);                  // 非 identity 欄：patch legacy（不疊 profile/，避免把合併值寫回去）
             jd[iField] = new JsonData(iValue ?? "");

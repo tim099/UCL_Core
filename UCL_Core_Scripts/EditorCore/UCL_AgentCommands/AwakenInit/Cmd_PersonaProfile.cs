@@ -27,7 +27,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
 
         public override string ArgsSchema =>
             "op=refresh（預設）— 重寫 _persona_profile_snapshot.json 並回報路徑/人數 | " +
-            "op=set persona=<name> field=<欄> value=<純量值> actor=<誰寫的> reason=<憑什麼> — " +
+            "op=set persona=<name> field=<欄> value=<值：純量欄字面收／結構欄(identity_vector,vector_history,fork_lineage)必須是合法 JSON 陣列，parse 或形狀失敗即擋；長 JSON 走 --arg-file value=> actor=<誰寫的> reason=<憑什麼> — " +
             "§8.6 寫入接縫：單欄 patch（actor/reason 必填，缺了直接擋；附審計 jsonl＋快照刷新）";
 
         public override string ExampleArgs => "op=set;persona=Template;field=email;value=t@example.com;actor=summit;reason=驗收";

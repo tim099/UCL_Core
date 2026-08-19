@@ -946,6 +946,9 @@ namespace UCL.Core.EditorLib.Page
                         p.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
                         p.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
                         p.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+                        // C# 端 spawn 的 python 一律讀快照，不回頭發 Cmd —— 呼叫者就是快照的作者
+                        // （最新值），而且避免在 Editor 忙著跑這頁時再往自己的 queue 塞一筆。
+                        p.StartInfo.EnvironmentVariables["UCL_PP_SKIP_CMD"] = "1";
                         p.OutputDataReceived += (_, e) => { if (e.Data != null) stdoutSb.AppendLine(e.Data); };
                         p.ErrorDataReceived  += (_, e) => { if (e.Data != null) stderrSb.AppendLine(e.Data); };
                         p.Start();

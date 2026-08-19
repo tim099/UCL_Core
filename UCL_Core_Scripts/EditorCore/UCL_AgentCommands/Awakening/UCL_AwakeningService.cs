@@ -293,8 +293,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             string aArgs = $"\"{aScript}\" brief --persona \"{iPersona}\"";
             if (!string.IsNullOrEmpty(iBankBalanceArg))
                 aArgs += $" --bank-balance \"{iBankBalanceArg}\"";
+            // ⚠ `UCL_PP_SKIP_CMD=1` 是**必要的**，不是最佳化：
+            //   awakening.py 的 persona 讀取已改走接縫（Tim 2026-08-19 拍板），
+            //   而接縫的主路徑是「發一個 Cmd 問 C#」。這支 python 是**從 Cmd 裡面被 spawn 的**
+            //   ⇒ 不擋的話就是「在 Cmd 執行中再排一個 Cmd」，卡到 timeout 才會有人發現。
+            //   而讀快照不是降級：**呼叫它的就是快照的作者**（每次 Cmd／每次寫入都重寫），
+            //   拿到的是最新值。備援語意也照 Tim 拍的：Editor 沒開時只需要 brief 生得出來。
+            var aEnv = new Dictionary<string, string>
+            {
+                ["PYTHONIOENCODING"] = "utf-8",     // cp950 主控台會把中文報表變亂碼，而亂碼看起來像工具壞了
+                ["UCL_PP_SKIP_CMD"] = "1",
+            };
             var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aArgs, UCL_RepoPath.RepoRoot,
-                PROC_TAG, iCallerName, iTimeoutMs);
+                PROC_TAG, iCallerName, iTimeoutMs, aEnv);
 
             // stderr 不丟掉 —— awakening.py 把警告印在 stderr，只收 stdout 會讓報告假乾淨。
             var aSb = new StringBuilder();

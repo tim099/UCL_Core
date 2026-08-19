@@ -133,6 +133,30 @@ namespace UCL.Core.EditorLib.Page
                 Message = "[portraits] 收他人投遞的畫像 (auto)",
                 DefaultOn = true,
             },
+            // ===========================================================
+            // 區塊職責：`profile/` —— persona 身分欄的新家（退場案 §8.2 一欄一檔）。
+            // 物理意義：這些檔是**機械產生**的：Phase 1 read-through lazy migration
+            //          在消費端第一次讀到該 persona 時，把 legacy `personas/<p>.json` 的
+            //          identity 欄逐欄抄成 `profile/<field>.md`（審計 actor=lazy-migration）。
+            //          觸發者通常是**別人**的讀取，落地時該 persona 不在線
+            //          ⇒ 沒有人會 commit 它們，正是本頁存在的理由。
+            // ⚠ 為什麼預設勾：**身分現在住在這裡**。沒進版控的 profile/ 等於
+            //   「這個人是誰」只存在這一台機器上，而 legacy 那份是不會再更新的舊值
+            //   ⇒ 一次磁碟意外就真的丟了。這一群比 mailbox / portraits 更該落地。
+            // ⚠ 內容也可能是人改的（`Cmd PersonaProfile op=set`，例如 Tim 設某人的 email）——
+            //   但那是**設定**不是**作品**：不是信、不是碎片、不是素描本，
+            //   沒有「替她簽名」的問題（本頁的紅線是有作者的產出，不是有意圖的設定）。
+            // 📌 「在線的 persona 預設不勾」那條 repo 層規矩照舊生效 ——
+            //   她可能正在被寫（op=set 會刷檔），那一層已經擋著。
+            // ===========================================================
+            new GroupDef
+            {
+                Key = "profile",
+                Label = "身分欄 profile/（退場案 Phase 1 遷移產物：一欄一檔）",
+                Match = p => p.StartsWith("profile/"),
+                Message = "[data] 收 profile/ 身分欄（Phase 1 lazy migration 產物）(auto)",
+                DefaultOn = true,
+            },
             new GroupDef
             {
                 Key = "letters_mech",

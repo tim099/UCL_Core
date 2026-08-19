@@ -38,6 +38,51 @@ namespace UCL.Core.EditorLib.AgentCommands.LLMAdmin
         public bool exact = false;      // 精確 tag 命中 vs 變體命中
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // 區塊職責：顯存讀數與門檻（`status` 與 `list` 兩支都回同一組扁平欄位）。
+    // 物理意義：門檻不是常數 —— 它有**來源**，而來源決定這個數字可不可信：
+    //            manual   使用者自己填的（他知道要留多少給 Unity）
+    //            gpu_free nvidia-smi 的 free 欄（會隨 Unity 開了什麼而變動）
+    //            gpu_total 卡的總量（固定值，但不代表現在放得下）
+    //            fallback **偵測失敗的保底值** —— 這個一定要在畫面上講出來
+    // 數值影響：只影響目錄的 fits_budget 過濾；不影響安裝與實際載入。
+    // ⚠ 欄位名即 JSON 鍵名（同本檔開頭的規範）—— 與 llm_admin.py 的鍵名逐字對齊，
+    //   改任一端都要同時改另一端；打錯不會編譯錯，只會靜默讀成 0，
+    //   而「門檻 0GB」跟「這張卡什麼都放不下」在畫面上長得一樣。
+    // ═══════════════════════════════════════════════════════════════════
+    public class LLMVramInfo : UnityJsonSerializable
+    {
+        public float vram_budget_gb = 0f;        // 這次實際採用的門檻
+        public string vram_budget_source = "";   // manual / gpu_free / gpu_total / fallback
+        public string vram_basis = "free";       // 自動偵測時拿哪一欄當門檻
+        public string vram_budget_note = "";     // python 端寫的一句人話說明
+        public float vram_total_gb = 0f;
+        public float vram_free_gb = 0f;
+        public float vram_used_gb = 0f;
+        public string gpu_name = "";
+        public bool gpu_detected = false;        // false ＝ 沒量到（不是「沒有卡」，可能是 PATH 舊的）
+        public string vram_error = "";
+
+        public bool IsManual => vram_budget_source == "manual";
+        public bool IsFallback => vram_budget_source == "fallback";
+
+        /// <summary>來源的人話標籤 —— 保底值刻意帶 ⚠，那個數字不是量到的。</summary>
+        public string SourceLabel
+        {
+            get
+            {
+                switch (vram_budget_source)
+                {
+                    case "manual": return "手動指定";
+                    case "gpu_free": return "偵測·可用(free)";
+                    case "gpu_total": return "偵測·總量(total)";
+                    case "fallback": return "⚠ 保底值（沒量到）";
+                    default: return string.IsNullOrEmpty(vram_budget_source) ? "(未載入)" : vram_budget_source;
+                }
+            }
+        }
+    }
+
     /// <summary>`status` 的回傳。</summary>
     public class LLMStatusResult : UnityJsonSerializable
     {
@@ -71,6 +116,18 @@ namespace UCL.Core.EditorLib.AgentCommands.LLMAdmin
                 aList.Add(aEntry);
             }
             return aList;
+        }
+
+        /// <summary>
+        /// 顯存讀數／門檻 —— `status` 與 `list` 的回傳都是**同一組扁平鍵**，所以共用這一支。
+        /// ⚠ 回 null 代表這次回傳裡沒有這組鍵（舊版 python）—— 呼叫端要能分辨「沒有」與「0」。
+        /// </summary>
+        public static LLMVramInfo Vram(JsonData iJson)
+        {
+            if (iJson == null || !iJson.Contains("vram_budget_gb")) return null;
+            var aInfo = new LLMVramInfo();
+            aInfo.DeserializeFromJson(iJson);
+            return aInfo;
         }
 
         public static List<LLMInstalledModel> Installed(JsonData iJson, string iKey = "installed")

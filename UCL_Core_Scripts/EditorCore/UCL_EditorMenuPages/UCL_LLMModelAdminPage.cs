@@ -39,6 +39,9 @@ namespace UCL.Core.EditorLib.Page
 
         public static UCL_LLMModelAdminPage Create() => UCL_EditorPage.Create<UCL_LLMModelAdminPage>();
 
+        // 自動偵測的判準選項 —— 與 python 的 --vram-basis 對齊（free / total）
+        static readonly string[] VRAM_BASIS_OPTIONS = { "可用 free（扣掉 Unity 已佔）", "總量 total" };
+
         const int TIMEOUT_QUERY = 60 * 1000;             // 查詢類：本機指令，1 分鐘已是異常
         const int TIMEOUT_INSTALL = 60 * 60 * 1000;      // 下載類：好幾 GB，慢不是錯
         const int TIMEOUT_TEST = 3 * 60 * 1000;          // 試跑：含冷啟動載入
@@ -67,19 +70,92 @@ namespace UCL.Core.EditorLib.Page
         LLMTestResult m_Test;                  // 最後一次試跑（null＝還沒跑過）
         bool m_FoldThinking = false;           // 思考段預設收合 —— 它動輒上千字，會把回覆推出畫面
         bool m_FoldHistory = true;             // 歷史紀錄預設收合
-        // 預設值全部是**實測跑得出來**的那一組（2026-08-19，qwen3:4b／0.6b 皆過）——
-        // 初版預設上限 300、且沒傳 --timeout，結果 4b 在 python 端 60s 逾時 ⇒ 畫面「什麼都跑不出來」。
-        string m_TestPrompt = "跟剛進門的客人打個招呼";
-        // 🩸 2026-08-19 實測（qwen3:4b）：think=false 也一樣會把推理寫進回答
-        //   （「首先，問題是…關鍵點：…」），而 CLI 下看起來就是「跑滿 GPU 但沒回傳」。
-        //   ⇒ 診斷時要看得到思考段，才分得出「它在想」與「它死了」。預設開著。
-        bool m_ShowThink = true;
-        int m_NumPredict = 4096;        // 生成上限；4b 的思考段實測吃到 3680 token 才收尾
-        int m_TestTimeout = 180;        // 等待上限（秒）—— 必須 ≥ 模型實際要的時間（4b 實測 50s）
-        // 酒保人設一併帶進試跑：不帶 system 的試跑跟酒保實際的講話條件不一樣，
-        // 那種「試跑好好的、上線卻怪怪的」最難查。
-        string m_TestSystem = "你是酒館的酒保，講話簡短親切帶點幽默，一律繁體中文（台灣用語），只輸出要說的那一句話。";
-        int m_KeepAlive = 120;          // 用完幾秒把模型從顯存卸掉（0＝立刻卸，代價是每次冷啟動）
+        // ═══════════════════════════════════════════════════════════════
+        // 區塊職責：本頁的可持久化設定（試跑參數 ＋ 顯存門檻覆寫）。
+        // 物理意義：這些值原本是裸欄位, domain reload / 關頁就回硬編預設 ——
+        //   🩸 2026-08-19 的病根就在這裡：Tim 每次都得重打一次試跑參數,
+        //     而「回到硬編預設」跟「我沒改過」在畫面上長得一樣, 於是每次都退回一組**沒驗過**的值
+        //     （初版預設上限 300 且不傳 --timeout ⇒ 4b 在 python 端 60s 逾時 ⇒ 畫面「什麼都跑不出來」）。
+        //   ⇒ 存起來的意義不是省打字, 是**讓「上次驗過會過的那組」活過 reload**。
+        // 數值影響：只影響本頁預設帶入值；不影響酒保實際發言（那份在 llm_settings.json）。
+        // ⚠ 單一真相源：頁面上所有讀寫都走 m_Settings, **不另留同名裸欄位** ——
+        //   同一個量有兩個定義時, 兩者遲早不一致, 而不一致的那一刻沒有任何錯誤訊息。
+        // ═══════════════════════════════════════════════════════════════
+        const string PrefKey_Settings = "UCL_LLMModelAdmin.Settings";
+
+        [System.Serializable]
+        public class PageSettings
+        {
+            // 預設值全部是**實測跑得出來**的那一組（2026-08-19，qwen3:4b／0.6b 皆過）
+            public string TestPrompt = "跟剛進門的客人打個招呼";
+            // 🩸 2026-08-19 實測（qwen3:4b）：think=false 也一樣會把推理寫進回答
+            //   （「首先，問題是…關鍵點：…」），而 CLI 下看起來就是「跑滿 GPU 但沒回傳」。
+            //   ⇒ 診斷時要看得到思考段，才分得出「它在想」與「它死了」。預設開著。
+            public bool ShowThink = true;
+            public int NumPredict = 4096;      // 生成上限；4b 的思考段實測吃到 3680 token 才收尾
+            public int TestTimeout = 180;      // 等待上限（秒）—— 必須 ≥ 模型實際要的時間（4b 實測 50s）
+            // 酒保人設一併帶進試跑：不帶 system 的試跑跟酒保實際的講話條件不一樣，
+            // 那種「試跑好好的、上線卻怪怪的」最難查。
+            public string TestSystem = "你是酒館的酒保，講話簡短親切帶點幽默，一律繁體中文（台灣用語），只輸出要說的那一句話。";
+            public int KeepAlive = 120;        // 用完幾秒把模型從顯存卸掉（0＝立刻卸，代價是每次冷啟動）
+
+            // ── 顯存門檻覆寫 ──
+            // ⚠ 預設 false ＝ 走自動偵測。**不要**把預設設成手動 ——
+            //   使用者沒填過的手動值是 0, 而門檻 0 會把整份目錄濾空（然後畫面自動放行, 看起來像沒事）。
+            public bool VramManual = false;
+            public float VramManualGb = 0f;    // 只在 VramManual 時生效；<=0 時 python 端會退回自動
+            public string VramBasis = "free";  // 自動偵測拿哪一欄：free（可用, 預設）/ total（總量）
+        }
+
+        PageSettings m_Settings = new PageSettings();
+
+        // 顯存讀數（python 每次 status/list 回傳）—— null ＝ 還沒讀到（不是 0）
+        LLMVramInfo m_Vram;
+
+        void LoadSettings()
+        {
+            try
+            {
+                string aJson = UCL_ProjectEditorPrefs.GetString(PrefKey_Settings, "");
+                if (!string.IsNullOrEmpty(aJson))
+                {
+                    var aLoaded = JsonUtility.FromJson<PageSettings>(aJson);
+                    if (aLoaded != null) m_Settings = aLoaded;
+                }
+            }
+            catch (System.Exception e)
+            {
+                // 出聲但不擋 —— 靜默退預設會讓「設定壞了」跟「我沒設定過」長得一樣
+                Debug.LogWarning($"[LLMModelAdmin] 設定讀取失敗，改用預設值：{e.Message}");
+            }
+            // 舊設定檔可能沒有這個欄位（反序列化成空字串）⇒ 補回合法值, 別讓 python 收到空字串
+            if (m_Settings.VramBasis != "free" && m_Settings.VramBasis != "total") m_Settings.VramBasis = "free";
+        }
+
+        void SaveSettings()
+        {
+            try
+            {
+                UCL_ProjectEditorPrefs.SetString(PrefKey_Settings, JsonUtility.ToJson(m_Settings));
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[LLMModelAdmin] 設定保存失敗：{e.Message}");
+            }
+        }
+
+        // 區塊職責：把顯存門檻設定翻成 python 的旗標。
+        // 物理意義：手動時傳實際數字；自動時**不傳 --vram-budget**（讓 python 去偵測），只傳 basis。
+        // ⚠ 手動但填 <=0 時刻意也走自動 —— 傳 0 過去會把目錄濾成空的。
+        string VramArgs()
+        {
+            string aArgs = $" --vram-basis {m_Settings.VramBasis}";
+            if (m_Settings.VramManual && m_Settings.VramManualGb > 0f)
+            {
+                aArgs += $" --vram-budget {m_Settings.VramManualGb.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}";
+            }
+            return aArgs;
+        }
 
         GUIStyle m_WrapStyle;
         GUIStyle WrapStyle => m_WrapStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true };
@@ -106,7 +182,7 @@ namespace UCL.Core.EditorLib.Page
 
         protected override void ContentOnGUI()
         {
-            if (!m_Loaded) { m_Loaded = true; Refresh().Forget(); }
+            if (!m_Loaded) { m_Loaded = true; LoadSettings(); Refresh().Forget(); }
 
             GUILayout.Label("🤖 本地 LLM 模型管理（ollama）", WrapStyle);
             EditorGUILayout.HelpBox(
@@ -117,6 +193,7 @@ namespace UCL.Core.EditorLib.Page
                 MessageType.Info);
 
             DrawStatus();
+            DrawVramSection();
             DrawCatalog();
             DrawActions();
             DrawReport();
@@ -279,7 +356,10 @@ namespace UCL.Core.EditorLib.Page
             {
                 bool aNext = UCL_GUILayout.CheckBox(m_OnlyFits);
                 if (aNext != m_OnlyFits) m_OnlyFits = aNext;
-                GUILayout.Label("只列這張卡放得下的（顯存 ≦ 預算）", DimStyle, GUILayout.ExpandWidth(false));
+                GUILayout.Label(m_Vram == null
+                        ? "只列放得下的（門檻尚未讀取）"
+                        : $"只列放得下的（顯存 ≦ {m_Vram.vram_budget_gb} GB・{m_Vram.SourceLabel}）",
+                    DimStyle, GUILayout.ExpandWidth(false));
                 GUILayout.FlexibleSpace();
             }
 
@@ -291,7 +371,7 @@ namespace UCL.Core.EditorLib.Page
                 var aItem = m_Catalog[idx];
                 aOptions.Add($"{(aItem.installed ? "✅" : "▫")}{(aItem.recommend ? "★" : " ")} " +
                              $"{aItem.id}　{aItem.params_}　下載 {aItem.size_gb}GB／顯存 ~{aItem.vram_gb}GB" +
-                             $"　中文{aItem.zh}/5{(aItem.fits_budget ? "" : "　⚠放不下")}");
+                             $"　中文{aItem.zh}/5{(aItem.fits_budget ? "" : "　⚠超門檻")}");
             }
             int aCur = aVisible.IndexOf(m_Selected);
             if (aCur < 0) aCur = 0;                                    // 選中的被濾掉了 → 退回第一筆
@@ -339,6 +419,96 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
+        // ═══════════════════════════════════════════════════════════════
+        // 區塊職責：顯存門檻 —— 偵測讀數、來源、以及手動覆寫欄位。
+        // 物理意義：門檻決定目錄預設列哪幾顆。三個來源優先序 手動 > 偵測 > 保底,
+        //          而**來源永遠印在數字旁邊** —— 只印數字的話, 使用者無法分辨
+        //          「量到你這張卡是 4.9GB 可用」與「我沒量到, 隨便給你 6.0」。
+        //   🩸 2026-08-19 Tim 問「這個預算是真的去讀 GPU 還是寫死」——
+        //     會需要問, 就是因為舊 UI 只寫「這張卡」而它從來沒讀過那張卡。
+        // 數值影響：改這裡會重跑 list（門檻在 python 端算 fits_budget）, 不動磁碟、不動模型。
+        // ⚠ free 是**會變動的量**（Unity 開了什麼、有沒有模型還駐留在顯存都會改它）——
+        //   所以偵測值旁邊一律附 used/total, 讓人看得出這個數字為什麼是這樣。
+        // ═══════════════════════════════════════════════════════════════
+        void DrawVramSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("🎛 顯存門檻", UCL_GUIStyle.LabelStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    if (m_Vram == null)
+                    {
+                        GUILayout.Label("（尚未讀取 —— 按「🔄 重新整理」）", DimStyle);
+                    }
+                    else
+                    {
+                        GUILayout.Label($"<b>{m_Vram.vram_budget_gb} GB</b>　來源：{m_Vram.SourceLabel}",
+                            new GUIStyle(WrapStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+
+                if (m_Vram != null && m_Vram.gpu_detected)
+                {
+                    GUILayout.Label($"↳ {m_Vram.gpu_name}　total {m_Vram.vram_total_gb} GB" +
+                        $"　已用 {m_Vram.vram_used_gb} GB　可用 {m_Vram.vram_free_gb} GB", DimStyle);
+                }
+                else if (m_Vram != null && !string.IsNullOrEmpty(m_Vram.vram_error))
+                {
+                    EditorGUILayout.HelpBox("偵測失敗 ⇒ 現在用的是保底值，不是量到的數字。\n" +
+                        m_Vram.vram_error, MessageType.Warning);
+                }
+
+                EditorGUI.BeginChangeCheck();
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool aManual = UCL_GUILayout.CheckBox(m_Settings.VramManual);
+                    if (aManual != m_Settings.VramManual) m_Settings.VramManual = aManual;
+                    GUILayout.Label("手動指定", DimStyle, GUILayout.ExpandWidth(false));
+                    using (new EditorGUI.DisabledScope(!m_Settings.VramManual))
+                    {
+                        // ⚠ 刻意用 EditorGUILayout 而不是 UCL_GUILayout.FloatField：
+                        //   後者每幀拿 iVal.ToString() 重建字串、且 TryParse 失敗就回舊值
+                        //   ⇒ 打「5.」的中間狀態會被吃掉, 小數點根本輸不進去（而它不會報錯, 只是打不出來）。
+                        //   本頁是 Editor-only, 用 Editor 原生欄位拿到正確的編輯中字串狀態。
+                        m_Settings.VramManualGb = EditorGUILayout.FloatField(m_Settings.VramManualGb,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                        GUILayout.Label("GB", DimStyle, GUILayout.ExpandWidth(false));
+                    }
+                    GUILayout.Space(UCL_GUIStyle.GetScaledSize(12));
+                    using (new EditorGUI.DisabledScope(m_Settings.VramManual))
+                    {
+                        GUILayout.Label("自動時的判準", DimStyle, GUILayout.ExpandWidth(false));
+                        int aBasis = m_Settings.VramBasis == "total" ? 1 : 0;
+                        int aNextBasis = UCL_GUILayout.PopupAuto(aBasis, VRAM_BASIS_OPTIONS, m_Dic, "VramBasis");
+                        if (aNextBasis != aBasis) m_Settings.VramBasis = aNextBasis == 1 ? "total" : "free";
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                if (EditorGUI.EndChangeCheck())
+                {
+                    SaveSettings();
+                    // 門檻變了 ⇒ fits_budget 要重算, 而它算在 python 端 ⇒ 必須重跑 list。
+                    // quiet：這是使用者改設定, 不該把上一次試跑的結果從報告區蓋掉。
+                    Refresh(iQuiet: true).Forget();
+                }
+
+                if (m_Settings.VramManual && m_Settings.VramManualGb <= 0f)
+                {
+                    EditorGUILayout.HelpBox("手動值 ≤ 0 ⇒ **仍走自動偵測**（傳 0 過去會把目錄濾成空的）。",
+                        MessageType.Info);
+                }
+                if (m_Vram != null && !string.IsNullOrEmpty(m_Vram.vram_budget_note))
+                {
+                    GUILayout.Label("↳ " + m_Vram.vram_budget_note, DimStyle);
+                }
+                GUILayout.Label("⚠ 這條門檻只影響「目錄預設列哪幾顆」—— 不影響能不能安裝。" +
+                    "放不下時 ollama 不報錯，只把層數丟給 CPU（跑得出來但慢十倍）。", DimStyle);
+            }
+        }
+
         // ===========================================================
         // 動作
         // ===========================================================
@@ -374,24 +544,25 @@ namespace UCL.Core.EditorLib.Page
                     }
                     GUILayout.FlexibleSpace();
                 }
+                EditorGUI.BeginChangeCheck();
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label("試跑提示詞", UCL_GUIStyle.LabelStyle,
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
-                    m_TestPrompt = GUILayout.TextField(m_TestPrompt, UCL_GUIStyle.TextFieldStyle);
+                    m_Settings.TestPrompt = GUILayout.TextField(m_Settings.TestPrompt, UCL_GUIStyle.TextFieldStyle);
                 }
                 using (new GUILayout.HorizontalScope())
                 {
-                    bool aThink = UCL_GUILayout.CheckBox(m_ShowThink);
-                    if (aThink != m_ShowThink) m_ShowThink = aThink;
+                    bool aThink = UCL_GUILayout.CheckBox(m_Settings.ShowThink);
+                    if (aThink != m_Settings.ShowThink) m_Settings.ShowThink = aThink;
                     GUILayout.Label("🧠 顯示思考過程", DimStyle, GUILayout.ExpandWidth(false));
                     GUILayout.Space(UCL_GUIStyle.GetScaledSize(12));
                     GUILayout.Label("生成上限", DimStyle, GUILayout.ExpandWidth(false));
-                    m_NumPredict = UCL_GUILayout.IntField("", m_NumPredict, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                    m_Settings.NumPredict = UCL_GUILayout.IntField("", m_Settings.NumPredict, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
                     GUILayout.Label("token　閒置卸載", DimStyle, GUILayout.ExpandWidth(false));
-                    m_KeepAlive = UCL_GUILayout.IntField("", m_KeepAlive, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                    m_Settings.KeepAlive = UCL_GUILayout.IntField("", m_Settings.KeepAlive, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
                     GUILayout.Label("秒　等待上限", DimStyle, GUILayout.ExpandWidth(false));
-                    m_TestTimeout = UCL_GUILayout.IntField("", m_TestTimeout,
+                    m_Settings.TestTimeout = UCL_GUILayout.IntField("", m_Settings.TestTimeout,
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
                     GUILayout.Label("秒", DimStyle, GUILayout.ExpandWidth(false));
                     GUILayout.FlexibleSpace();
@@ -400,8 +571,10 @@ namespace UCL.Core.EditorLib.Page
                 {
                     GUILayout.Label("人設 prompt", UCL_GUIStyle.LabelStyle,
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
-                    m_TestSystem = GUILayout.TextField(m_TestSystem, UCL_GUIStyle.TextFieldStyle);
+                    m_Settings.TestSystem = GUILayout.TextField(m_Settings.TestSystem, UCL_GUIStyle.TextFieldStyle);
                 }
+                // 本頁持久化的唯一寫入點 —— 六個參數改了就存，讓「上次驗過會過的那組」活過 reload
+                if (EditorGUI.EndChangeCheck()) SaveSettings();
                 GUILayout.Label("🩸 實測（2026-08-19）：qwen3:4b 開 think 要 **50 秒 / 3680 token** 才吐出" +
                     "「您好，點什麼？」；關 think 它會把推理寫進回答本身。qwen3:0.6b 則 **3 秒 / 20 token** 收尾。" +
                     "⇒ 上限或等待秒數不夠時「回答」會是空的（被截斷，不是失敗）。卡住按 ⛔ 中斷。", DimStyle);
@@ -559,7 +732,7 @@ namespace UCL.Core.EditorLib.Page
             m_Busy = true; m_BusyLabel = "讀取狀態";
             try
             {
-                var aStatus = await UCL_LLMAdminRunner.RunAsync("status --format json", TIMEOUT_QUERY);
+                var aStatus = await UCL_LLMAdminRunner.RunAsync("status --format json" + VramArgs(), TIMEOUT_QUERY);
                 m_Status = ParseStatus(aStatus.Stdout);
                 if (!aStatus.Launched)
                 {
@@ -567,7 +740,7 @@ namespace UCL.Core.EditorLib.Page
                     return;
                 }
                 m_BusyLabel = "讀取模型目錄";
-                var aList = await UCL_LLMAdminRunner.RunAsync("list --format json", TIMEOUT_QUERY);
+                var aList = await UCL_LLMAdminRunner.RunAsync("list --format json" + VramArgs(), TIMEOUT_QUERY);
                 ParseList(aList.Stdout);
                 m_BusyLabel = "讀取顯存佔用";
                 var aPs = await UCL_LLMAdminRunner.RunAsync("ps --format json", TIMEOUT_QUERY);
@@ -592,12 +765,12 @@ namespace UCL.Core.EditorLib.Page
             try
             {
                 string aArgs = $"test --model {iModelId}" +
-                    $" --prompt \"{m_TestPrompt.Replace("\"", "'")}\"" +
-                    $" --system \"{m_TestSystem.Replace("\"", "'")}\"" +
-                    (m_ShowThink ? " --think" : "") +
-                    $" --num-predict {m_NumPredict} --keep-alive {m_KeepAlive}" +
-                    $" --timeout {m_TestTimeout} --format json";
-                var aResult = await UCL_LLMAdminRunner.RunAsync(aArgs, (m_TestTimeout + 30) * 1000);
+                    $" --prompt \"{m_Settings.TestPrompt.Replace("\"", "'")}\"" +
+                    $" --system \"{m_Settings.TestSystem.Replace("\"", "'")}\"" +
+                    (m_Settings.ShowThink ? " --think" : "") +
+                    $" --num-predict {m_Settings.NumPredict} --keep-alive {m_Settings.KeepAlive}" +
+                    $" --timeout {m_Settings.TestTimeout} --format json";
+                var aResult = await UCL_LLMAdminRunner.RunAsync(aArgs, (m_Settings.TestTimeout + 30) * 1000);
                 m_Test = ParseTest(aResult.Stdout);
                 if (m_Test == null)
                 {
@@ -610,8 +783,8 @@ namespace UCL.Core.EditorLib.Page
                         $"{m_Test.seconds}s　{m_Test.eval_count} token　{m_Test.tokens_per_sec} tok/s" +
                         (string.IsNullOrEmpty(m_Test.note) ? "" : "\n" + m_Test.note) +
                         (string.IsNullOrEmpty(m_Test.error) ? "" : "\n⚠ " + m_Test.error);
-                    m_Test.prompt = m_TestPrompt;
-                    UCL_LLMTestLog.Append(m_Test, m_TestSystem);   // 落檔：之後換模型要能比
+                    m_Test.prompt = m_Settings.TestPrompt;
+                    UCL_LLMTestLog.Append(m_Test, m_Settings.TestSystem);   // 落檔：之後換模型要能比
                 }
             }
             finally { m_Busy = false; m_BusyLabel = ""; }
@@ -707,6 +880,9 @@ namespace UCL.Core.EditorLib.Page
             {
                 var aJson = JsonData.ParseJson(iStdout);
                 m_Catalog = LLMAdminParse.Catalog(aJson);
+                // 門檻讀數取 list 這支 —— fits_budget 就是它算的, 兩處數字必須同源
+                var aVram = LLMAdminParse.Vram(aJson);
+                if (aVram != null) m_Vram = aVram;
                 m_NotInCatalog = LLMAdminParse.Installed(aJson, "not_in_catalog");
                 if (m_Selected >= m_Catalog.Count) m_Selected = 0;
             }

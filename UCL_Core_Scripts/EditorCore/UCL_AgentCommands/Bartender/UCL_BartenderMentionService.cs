@@ -232,7 +232,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 ? "你是酒館的酒保，講話簡短、親切、帶點幽默，一律使用繁體中文（台灣用語），只輸出要說的那一句話。"
                 : iSettings.persona_prompt;
 
-            string aArgs = $"reply --model {iSettings.model_id}" +
+            // ⚠ `--think` 一定要帶：thinking 模型（qwen3 全家）不帶它時**會把推理寫進 content**,
+            //   帶了才把推理分到 thinking 欄、content 只剩要講的那句。
+            //   🩸 2026-08-19 實測 qwen3:4b／同一組 prompt：
+            //     不帶 → output = 「首先，用户要求我作为傲娇的女仆…關鍵點：」（簡體推理, 而且 ok=True）
+            //     帶了 → output = 乾淨的一句台詞（thinking 910 字另外收）
+            //   daemon 只讀 output ⇒ 不帶的話酒保會把自言自語發到酒館, 而沒有任何一層報錯。
+            string aArgs = $"reply --model {iSettings.model_id} --think" +
                 $" --prompt \"{Sanitize(aPrompt)}\"" +
                 $" --system \"{Sanitize(aSystem)}\"" +
                 $" --num-predict {Mathf.Max(16, iSettings.max_tokens)}" +

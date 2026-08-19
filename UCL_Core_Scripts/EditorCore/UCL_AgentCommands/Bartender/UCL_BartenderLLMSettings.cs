@@ -38,11 +38,26 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         /// </summary>
         public int keep_alive_seconds = 120;
 
-        /// <summary>單次發言的生成上限（token）。酒保只要短句，別讓它寫論文。</summary>
-        public int max_tokens = 120;
+        /// <summary>
+        /// 單次發言的生成上限（token）。酒保只要短句 —— 但**思考段也吃這個額度**。
+        /// ⚠ 預設 120 → 4096。thinking 模型（qwen3 全家）光推理就要上千 token，
+        /// 上限不夠時整段被切斷 ⇒ 判成失敗並退罐頭（不再把半句話發出去）。
+        /// 🩸 實測 qwen3:4b（帶 --think，同一組酒保 prompt，2026-08-19）：
+        ///   上限 120 / 1200 → **兩者都被思考段吃光**（truncated，退罐頭）
+        ///   上限 2000 → 用掉 1648 token / 14.3s，回「哼！才不幫你～不過這杯我倒了！」
+        ///   上限 4096 → 用掉 3129 token / 28.0s，回「哼，給你一杯？才不...算了！」
+        ///   ⇒ **給多少它就想多少**，所以這個數字是「容錯上限」不是「預期用量」；
+        ///     壓低不會讓它講得短，只會讓它被切斷 ⇒ 變罐頭。要短回答請換不 thinking 的模型。
+        /// 與 UCL_LLMModelAdminPage 試跑的預設同為 4096 —— 試跑會過而實跑不過是最難查的一種。
+        /// </summary>
+        public int max_tokens = 4096;
 
-        /// <summary>等模型的上限（秒）。逾時就退罐頭 —— 不讓一次卡住變成一次沉默。</summary>
-        public int timeout_seconds = 30;
+        /// <summary>
+        /// 等模型的上限（秒）。逾時就退罐頭 —— 不讓一次卡住變成一次沉默。
+        /// ⚠ 預設 30 → 120：實測 qwen3:4b 在上限 4096 下要 28 秒才收尾，30 秒是**卡在邊界**
+        /// （同一個形狀 2026-08-19 已經咬過一次：頁面沒傳 --timeout ⇒ python 用預設 60s ⇒ 隨機失敗）。
+        /// </summary>
+        public int timeout_seconds = 120;
 
         /// <summary>酒保人設（system prompt）。空 ＝ 用內建預設。</summary>
         public string persona_prompt =
@@ -131,7 +146,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
         }
 
-        /// <summary>原子寫入（先 .tmp 再 rename）—— daemon 隨時可能在讀，不能讓它讀到半寫檔。</summary>
+        // ═══════════════════════════════════════════════════════════════
+        // 區塊職責：把設定寫回磁碟, 且**任何時刻磁碟上都要有一份完整的檔**。
+        // 物理意義：舊寫法是 Delete(target) → Move(tmp, target) ——
+        //   那兩行之間有一個**檔案不存在的真空窗**。窗裡發生 domain reload / Editor 中斷 / 當掉,
+        //   結果就是設定整份消失, 而 Load() 讀不到檔會退預設（＝罐頭模式）⇒ 酒保安靜地變回罐頭。
+        //   🩸 2026-08-19 實地撞到：磁碟上 llm_settings.json 不見了, 檔案只活在一個
+        //     不在 HEAD 線上的 runtime-sync commit 裡；當天酒保的回覆逐字等於 DefaultCanned[1]。
+        //     三個子系統（寫入端、讀取端、酒保）各自都正確, 沒有一層報錯。
+        //   ⇒ 改用 File.Replace：它是**覆蓋**而不是「先刪再搬」, 目標檔不會有不存在的瞬間。
+        // 數值影響：寫入次數與內容不變, 只改「換檔」那一步的手法。
+        // ⚠ 寫完**回讀確認檔在**（不是確認寫入函式沒丟例外）——
+        //   「我寫成功了」與「磁碟上有這個檔」是兩件事, 而我剛好被後者咬過。
+        // ═══════════════════════════════════════════════════════════════
         public static void Save(UCL_BartenderLLMSettings iData)
         {
             UCL_BartenderIO.EnsureBartenderDir();
@@ -139,8 +166,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             string aTmp = aPath + ".tmp";
             string aJson = (iData ?? new UCL_BartenderLLMSettings()).SerializeToJson().ToJsonBeautify();
             File.WriteAllText(aTmp, aJson, new UTF8Encoding(false));
-            if (File.Exists(aPath)) File.Delete(aPath);
-            File.Move(aTmp, aPath);
+            if (File.Exists(aPath))
+            {
+                // 第三參數 null ＝ 不留備份檔。Replace 在 NTFS 上是覆蓋語意, 沒有「目標消失」的中間態
+                File.Replace(aTmp, aPath, null);
+            }
+            else
+            {
+                File.Move(aTmp, aPath);
+            }
+            if (!File.Exists(aPath))
+            {
+                Debug.LogWarning($"[Bartender] LLM 設定寫完之後檔案不存在（{aPath}）—— " +
+                    "酒保會退回罐頭模式。這不該發生, 請回報。");
+            }
         }
     }
 }

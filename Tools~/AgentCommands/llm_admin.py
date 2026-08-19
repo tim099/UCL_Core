@@ -134,9 +134,106 @@ CATALOG = [
      "note": "Apache-2.0 的中大型；歐語系強，中文一般。"},
 ]
 
-# 顯存門檻：低於它才算「這張 6GB 卡放得下」。
-# ⚠ 這是**卡的容量**不是**可用量** —— Unity Editor 自己就吃 1–3GB，判準永遠是 nvidia-smi 的 free 欄。
-VRAM_BUDGET_GB = 6.0
+# ─────────────────────────────────────────────────────────────────────────
+# 區塊職責：顯存預算 —— 「這張卡放得下哪些模型」的那條門檻。
+# 物理意義：門檻有三個可能來源，優先序 **手動 > 偵測 > 保底**：
+#            · manual    使用者在管理頁填的數字（他知道自己要留多少給 Unity）
+#            · gpu_free  nvidia-smi 的 **free** 欄（扣掉 Unity 已佔的，最貼近「現在真的放得下」）
+#            · gpu_total 卡的總量（回答「這張卡買得起哪一顆」，不是「現在跑得動哪一顆」）
+#            · fallback  偵測失敗時的保底值
+#   🩸 2026-08-19 Tim 問「這個預算是真的去讀 GPU 還是寫死」—— 答案是寫死 6.0，
+#      而同一支檔案上一行的註解自己寫著「判準永遠是 nvidia-smi 的 free 欄」。
+#      **註解寫了一條紀律，實作從沒執行過它**；而 UI 那行字寫「只列這張卡放得下的」，
+#      於是一台 12GB 的 4080 Laptop 被當成 6GB 卡，qwen3:8b（中文 5/5）預設藏起來不出現。
+# 數值影響：只影響 `fits_budget`（預設清單列不列這顆），不影響能不能安裝、不影響實際載入。
+# ⚠ 偵測失敗**必須明講**（source="fallback" ＋ vram_error）——
+#   靜默退回保底值的話，「這張卡放不下」跟「我沒量到你的卡」在畫面上長得一模一樣。
+# ─────────────────────────────────────────────────────────────────────────
+VRAM_BUDGET_FALLBACK_GB = 6.0        # 偵測不到 GPU 時的保底（＝本功能之前寫死的那個數）
+VRAM_BASIS_DEFAULT = "free"          # 預設拿 free 當判準：顯存是跟 Unity 共用的
+MIB_PER_GB = 1024.0
+
+# nvidia-smi 找法比照 ollama：PATH 優先，找不到再查已知安裝位置。
+# ⚠ 驅動裝完 PATH 才更新，而 Unity Editor 這個 process 拿到的是**舊的** PATH ——
+#   於是 which() 回 None 而磁碟上它明明就在，症狀跟「這台沒有 NVIDIA 卡」一模一樣。
+_KNOWN_SMI_PATHS = [
+    r"%SYSTEMROOT%\System32\nvidia-smi.exe",
+    r"%PROGRAMFILES%\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+]
+
+
+def nvidia_smi_exe() -> str:
+    """回 nvidia-smi 路徑；找不到回 ""。"""
+    w = shutil.which("nvidia-smi")
+    if w:
+        return w
+    for raw in _KNOWN_SMI_PATHS:
+        cand = os.path.expandvars(raw)
+        if os.path.isfile(cand):
+            return cand
+    return ""
+
+
+def gpu_vram() -> dict:
+    """量第一張 NVIDIA 卡的顯存。回 {ok, name, total_gb, free_gb, used_gb, error}。
+
+    ⚠ 只回**讀到的**，不做任何推估 —— 讀不到就 ok=False 並把原因帶回去。
+      多卡機器只取第一張（ollama 預設也用第一張；要選卡是另一個題目）。
+    """
+    out = {"ok": False, "name": "", "total_gb": 0.0, "free_gb": 0.0, "used_gb": 0.0, "error": ""}
+    exe = nvidia_smi_exe()
+    if not exe:
+        out["error"] = ("找不到 nvidia-smi —— 沒有 NVIDIA 獨顯，或驅動剛裝完（本行程 PATH 是舊的，"
+                        "重開 Unity Editor）。AMD／Intel 顯卡不支援本偵測，請改用手動填寫。")
+        return out
+    try:
+        p = subprocess.run(
+            [exe, "--query-gpu=name,memory.total,memory.free,memory.used",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
+    except Exception as e:
+        out["error"] = f"nvidia-smi 執行失敗：{e}"
+        return out
+    if p.returncode != 0:
+        out["error"] = f"nvidia-smi 退出碼 {p.returncode}：{(p.stderr or p.stdout).strip()[:300]}"
+        return out
+    line = next((l for l in (p.stdout or "").splitlines() if l.strip()), "")
+    parts = [x.strip() for x in line.split(",")]
+    if len(parts) < 4:
+        out["error"] = f"nvidia-smi 輸出無法解析：{line[:200]}"
+        return out
+    try:
+        out["name"] = parts[0]
+        out["total_gb"] = round(float(parts[1]) / MIB_PER_GB, 2)
+        out["free_gb"] = round(float(parts[2]) / MIB_PER_GB, 2)
+        out["used_gb"] = round(float(parts[3]) / MIB_PER_GB, 2)
+        out["ok"] = True
+    except ValueError as e:
+        out["error"] = f"顯存數值無法解析（{e}）：{line[:200]}"
+    return out
+
+
+def resolve_vram_budget(manual_gb: float = -1.0, basis: str = VRAM_BASIS_DEFAULT) -> dict:
+    """決定這次要用的顯存門檻。回 {budget_gb, source, basis, gpu, vram_error, note}。
+
+    優先序 manual > 偵測 > 保底。manual_gb <= 0 ＝ 不覆寫（走偵測）。
+    """
+    basis = basis if basis in ("free", "total") else VRAM_BASIS_DEFAULT
+    gpu = gpu_vram()
+    if manual_gb and manual_gb > 0:
+        return {"budget_gb": round(float(manual_gb), 2), "source": "manual", "basis": basis,
+                "gpu": gpu, "vram_error": gpu.get("error", ""),
+                "note": "手動指定 —— 偵測值只做顯示, 不參與判定。"}
+    if gpu["ok"]:
+        picked = gpu["free_gb"] if basis == "free" else gpu["total_gb"]
+        return {"budget_gb": picked, "source": "gpu_" + basis, "basis": basis, "gpu": gpu,
+                "vram_error": "",
+                "note": ("free ＝ 扣掉 Unity 等已佔用之後的餘量；此值會隨 Unity 開了什麼而變動。"
+                         if basis == "free" else
+                         "total ＝ 卡的總量；答的是「這張卡買得起哪顆」, 不是「現在跑得動哪顆」。")}
+    return {"budget_gb": VRAM_BUDGET_FALLBACK_GB, "source": "fallback", "basis": basis,
+            "gpu": gpu, "vram_error": gpu.get("error", ""),
+            "note": f"偵測失敗 ⇒ 用保底 {VRAM_BUDGET_FALLBACK_GB}GB。這不是量到的數字, 請手動填寫。"}
 
 
 def _run(args, timeout=DEFAULT_TIMEOUT):
@@ -172,7 +269,7 @@ def installed_models() -> tuple[list, str]:
     return models, ""
 
 
-def op_status() -> dict:
+def op_status(vram_manual_gb: float = -1.0, vram_basis: str = VRAM_BASIS_DEFAULT) -> dict:
     exe, on_path = ollama_exe()
     have = bool(exe)
     ver_code, ver_out, ver_err = _run(["--version"]) if have else (-1, "", "")
@@ -180,6 +277,7 @@ def op_status() -> dict:
     ps = op_ps() if have else {"loaded": []}
     # 服務活著 ≠ 執行檔存在：`ollama list` 會去打本機服務，打不到就是沒跑
     serving = have and not list_err
+    _st_budget = resolve_vram_budget(vram_manual_gb, vram_basis)
     return {
         "ollama_installed": have,
         "ollama_path": exe,
@@ -191,6 +289,17 @@ def op_status() -> dict:
         "loaded": ps.get("loaded", []),     # 現在佔著顯存的（`ollama ps`）—— 跟「已安裝」是兩件事
         "loaded_count": len(ps.get("loaded", [])),
         "error": list_err,
+        # 顯存讀數與門檻 —— 與 op_list 同一支解析, 兩處數字不會各說一套
+        "vram_budget_gb": _st_budget["budget_gb"],
+        "vram_budget_source": _st_budget["source"],
+        "vram_basis": _st_budget["basis"],
+        "vram_budget_note": _st_budget["note"],
+        "vram_total_gb": _st_budget["gpu"]["total_gb"],
+        "vram_free_gb": _st_budget["gpu"]["free_gb"],
+        "vram_used_gb": _st_budget["gpu"]["used_gb"],
+        "gpu_name": _st_budget["gpu"]["name"],
+        "gpu_detected": _st_budget["gpu"]["ok"],
+        "vram_error": _st_budget["vram_error"],
         "hint": ("" if serving else
                  ("ollama 未安裝 —— 用管理頁的「一鍵安裝」，或到 https://ollama.com/download。"
                   if not have else
@@ -200,7 +309,9 @@ def op_status() -> dict:
     }
 
 
-def op_list() -> dict:
+def op_list(vram_manual_gb: float = -1.0, vram_basis: str = VRAM_BASIS_DEFAULT) -> dict:
+    # 門檻不再是常數 —— 手動 > 偵測 > 保底, 由 resolve_vram_budget 決定並把來源一起帶回去。
+    budget = resolve_vram_budget(vram_manual_gb, vram_basis)
     models, err = installed_models()
     have = {m["id"] for m in models}
     # tag 對帳刻意寬鬆：`qwen3:4b` 與 `qwen3:4b-instruct-q4_K_M` 視為同一顆的變體，
@@ -214,11 +325,21 @@ def op_list() -> dict:
         c = dict(m)
         c["installed"] = mid_installed = (m["id"] in have) or is_installed(m["id"])
         c["exact"] = m["id"] in have          # 精確命中 vs 變體命中，UI 要分得出來
-        c["fits_budget"] = m["vram_gb"] <= VRAM_BUDGET_GB   # 預設清單只列這些
+        c["fits_budget"] = m["vram_gb"] <= budget["budget_gb"]   # 預設清單只列這些
         catalog.append(c)
     extra = [m for m in models if not any(c["id"] == m["id"] for c in catalog)]
     return {"catalog": catalog, "installed": models, "not_in_catalog": extra,
-            "vram_budget_gb": VRAM_BUDGET_GB, "error": err}
+            "vram_budget_gb": budget["budget_gb"],
+            "vram_budget_source": budget["source"],      # manual / gpu_free / gpu_total / fallback
+            "vram_basis": budget["basis"],
+            "vram_budget_note": budget["note"],
+            "vram_total_gb": budget["gpu"]["total_gb"],
+            "vram_free_gb": budget["gpu"]["free_gb"],
+            "vram_used_gb": budget["gpu"]["used_gb"],
+            "gpu_name": budget["gpu"]["name"],
+            "gpu_detected": budget["gpu"]["ok"],
+            "vram_error": budget["vram_error"],
+            "error": err}
 
 
 def op_install(model: str) -> dict:
@@ -328,11 +449,23 @@ def op_test(model: str, prompt: str, timeout: int = TEST_TIMEOUT, think: bool = 
         # 🩸 2026-08-19 實測（qwen3:4b）：思考段吃掉 3680 token 才收尾。
         #   上限不夠時 `content` 是空的、`thinking` 卻很長 —— 那**不是失敗也不是卡死，是被截斷**，
         #   而 ok=True + 空回答看起來就跟「模型壞了」一樣。⇒ 這裡把原因直接講出來。
+        # 🩸 2026-08-19 二訪：舊判定只認「thinking 有、content 空」這一種截斷 ——
+        #   而實測 qwen3:4b **不帶 think 時會把推理寫進 content**，於是 content 非空、thinking 空、
+        #   剛好在 num_predict 處被切斷，判定完全漏掉 ⇒ ok=True ＋ 一段簡體推理當成「成功的回答」。
+        #   實跑讀數：num_predict=120 ⇒ output 是「首先，用户要求我作为傲娇的女仆…關鍵點：」的半句。
+        #   ⇒ 判準改成只看**有沒有撞到上限**（撞到就是被切斷, 不管切在哪個欄位），
+        #     並且 ok=False —— 半句話發進酒館比退罐頭更糟, 而 fallback 只認 ok=False。
+        truncated = n >= num_predict > 0
         note = ""
-        if not content and thinking and n >= num_predict:
+        if truncated and not content:
             note = (f"⚠ 生成上限 {num_predict} token 用完，思考還沒結束 ⇒ 回答是空的（被截斷，不是失敗）。"
                     "提高上限，或換一顆不 thinking 的小模型（酒保短句實測 qwen3:0.6b 20 token 就收尾）。")
-        return {"ok": True, "model": model, "seconds": sec, "prompt": prompt, "note": note,
+        elif truncated:
+            note = (f"⚠ 生成上限 {num_predict} token 用完 ⇒ 這段 output 是**被切斷的半句**。"
+                    "thinking 模型常把推理寫進 content（實測 qwen3:4b 不帶 think 時就是這樣）"
+                    "⇒ 看起來像回答, 其實是它在自言自語。提高上限或換不 thinking 的模型。")
+        return {"ok": not truncated, "truncated": truncated,
+                "model": model, "seconds": sec, "prompt": prompt, "note": note,
                 "output": content,
                 "thinking": thinking,
                 "eval_count": n,
@@ -350,6 +483,22 @@ def op_test(model: str, prompt: str, timeout: int = TEST_TIMEOUT, think: bool = 
                 "output": "", "thinking": "", "error": f"試跑失敗：{e}"}
 
 
+def _vram_line(d: dict) -> str:
+    """顯存門檻的一行摘要 —— **一定要印出來源**, 否則使用者無從分辨這個數字是量到的還是猜的。"""
+    src = d.get("vram_budget_source", "")
+    budget = d.get("vram_budget_gb", 0)
+    label = {"manual": "手動指定", "gpu_free": "偵測 free", "gpu_total": "偵測 total",
+             "fallback": "⚠ 保底值（不是量到的）"}.get(src, src or "?")
+    out = f"- 顯存門檻: {budget} GB（{label}）"
+    if d.get("gpu_detected"):
+        out += (f"　｜　{d.get('gpu_name', '')}"
+                f" total {d.get('vram_total_gb', 0)} / used {d.get('vram_used_gb', 0)}"
+                f" / free {d.get('vram_free_gb', 0)} GB")
+    elif d.get("vram_error"):
+        out += chr(10) + f"  ⚠ 偵測失敗：{d['vram_error']}"
+    return out
+
+
 def to_text(op: str, d: dict) -> str:
     if op == "status":
         lines = ["# 🤖 本地 LLM 狀態",
@@ -359,6 +508,7 @@ def to_text(op: str, d: dict) -> str:
                  f"- 已安裝模型: {d['installed_count']} 個"]
         for m in d["installed"]:
             lines.append(f"    · {m['id']}　{m['size']}")
+        lines.append(_vram_line(d))
         lines.append(f"- 載入顯存中: {d.get('loaded_count', 0)} 個")
         for m in d.get("loaded", []):
             lines.append(f"    · {m['id']}　{m['size']}　{m.get('processor', '')}")
@@ -366,11 +516,11 @@ def to_text(op: str, d: dict) -> str:
             lines.append(f"- ⚠ {d['hint']}")
         return "\n".join(lines)
     if op == "list":
-        lines = ["# 📚 模型目錄（★＝推薦）"]
+        lines = ["# 📚 模型目錄（★＝推薦）", _vram_line(d)]
         for c in d["catalog"]:
             mark = "✅" if c["installed"] else "　"
             star = "★" if c["recommend"] else " "
-            fit = "  " if c["fits_budget"] else " ⚠6GB放不下"
+            fit = "  " if c["fits_budget"] else f" ⚠超過{d.get('vram_budget_gb', 0)}GB門檻"
             lines.append(f"{mark}{star} {c['id']:<16} {c['params']:<8} "
                          f"下載{c['size_gb']}GB 顯存~{c['vram_gb']}GB 中文{c['zh']}/5{fit}")
             lines.append(f"      {c['note']}")
@@ -413,6 +563,13 @@ def main() -> int:
                     help="install-runtime：不開視窗、等它跑完（預設開視窗，因為可能要 UAC）")
     ap.add_argument("--model", default="")
     ap.add_argument("--prompt", default=TEST_PROMPT)
+    # 顯存門檻：不給 ＝ 自動偵測（nvidia-smi）；給正數 ＝ 手動覆寫。
+    # ⚠ 預設刻意是「自動」而不是保底 6.0 —— 讓 agent 從 CLI 跑也拿到真讀數。
+    ap.add_argument("--vram-budget", type=float, default=-1.0, dest="vram_budget",
+                    help="status/list：手動指定顯存預算（GB）；<=0 或不給 ＝ 自動偵測")
+    ap.add_argument("--vram-basis", choices=["free", "total"], default=VRAM_BASIS_DEFAULT,
+                    dest="vram_basis",
+                    help="status/list：自動偵測時拿 free（可用, 預設）還是 total（總量）當門檻")
     ap.add_argument("--format", choices=["json", "text"], default="text")
     a = ap.parse_args()
 
@@ -421,8 +578,8 @@ def main() -> int:
         return 2
 
     if a.op == "install-runtime": d = op_install_runtime(visible=not a.hidden)
-    elif a.op == "status":    d = op_status()
-    elif a.op == "list":      d = op_list()
+    elif a.op == "status":    d = op_status(a.vram_budget, a.vram_basis)
+    elif a.op == "list":      d = op_list(a.vram_budget, a.vram_basis)
     elif a.op == "install":   d = op_install(a.model)
     elif a.op == "uninstall": d = op_uninstall(a.model)
     elif a.op == "ps":        d = op_ps()

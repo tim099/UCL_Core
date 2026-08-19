@@ -130,6 +130,13 @@ namespace UCL.Core.EditorLib.Page
         bool m_LLMLoaded = false;
         string m_LLMScanNote = "";
         readonly UCL.Core.UCL_ObjectDictionary m_LLMDic = new UCL.Core.UCL_ObjectDictionary();
+        // 人設 TextArea 的存檔時機控制。
+        // ⚠ 原本是「字元一變就寫檔」—— 打一句 30 字的人設 ＝ 30 次換檔,
+        //   每一次都是一個可能被 domain reload 打斷的窗（設定整份消失的路就是這條）。
+        //   ⇒ 改成**失焦才落盤**, 並且把未存狀態顯示出來 ＋ 給一顆顯式存檔鈕。
+        const string PERSONA_CTRL = "BartenderPersonaPrompt";
+        bool m_PersonaDirty = false;
+        bool m_ShowCanned = false;   // 罐頭池預設收合（平常不改）
 
         void DrawLLMSection()
         {
@@ -230,20 +237,162 @@ namespace UCL.Core.EditorLib.Page
                             SaveLLM();
                         }
                     }
-                    GUILayout.Label("酒保人設（system prompt）", UCL_GUIStyle.LabelStyle);
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("酒保人設（system prompt）", UCL_GUIStyle.LabelStyle,
+                            GUILayout.ExpandWidth(false));
+                        GUILayout.Label(m_PersonaDirty ? "　✏ 未存（離開欄位即自動存檔）" : "　✓ 已存",
+                            UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        GUILayout.FlexibleSpace();
+                        using (new EditorGUI.DisabledScope(!m_PersonaDirty))
+                        {
+                            if (GUILayout.Button("💾 存檔", UCL_GUIStyle.ButtonStyle,
+                                    GUILayout.ExpandWidth(false)))
+                            {
+                                SaveLLM();
+                                m_PersonaDirty = false;
+                            }
+                        }
+                    }
+                    GUI.SetNextControlName(PERSONA_CTRL);
                     string aPersona = GUILayout.TextArea(m_LLM.persona_prompt ?? "",
                         UCL_GUIStyle.TextAreaStyle, GUILayout.MinHeight(UCL_GUIStyle.GetScaledSize(48)));
                     if (aPersona != m_LLM.persona_prompt)
                     {
+                        // 記憶體先收下（畫面要即時反映打的字）, 但**先不落盤**
                         m_LLM.persona_prompt = aPersona;
+                        m_PersonaDirty = true;
+                    }
+                    // 失焦即存 —— 不能只靠那顆鈕：使用者忘了按就等於白打, 而「忘了按」不會有任何提示
+                    if (m_PersonaDirty && GUI.GetNameOfFocusedControl() != PERSONA_CTRL)
+                    {
                         SaveLLM();
+                        m_PersonaDirty = false;
+                    }
+                    // 上限不足是**這一區最容易踩的一格**, 而它的症狀不是報錯 ⇒ 門檻寫成當場可見的警告
+                    if (m_LLM.max_tokens < 2000)
+                    {
+                        EditorGUILayout.HelpBox(
+                            $"⚠ 生成上限 {m_LLM.max_tokens} token 對 thinking 模型（qwen3 全家）**很可能不夠** —— " +
+                            "思考段也吃這個額度（實測 qwen3:4b 帶 think：上限 1200 全被吃光、上限 2000 用掉 1648）。" +
+                            "不夠時整段被判成截斷 ⇒ 退罐頭（不會把半句話發出去，但也就沒有模型發言）。\n" +
+                            "⚠ 給多少它就想多少 ⇒ 這是容錯上限不是預期用量；壓低只會變罐頭。建議 4096（與試跑頁同值）。",
+                            MessageType.Warning);
                     }
                     EditorGUILayout.HelpBox(
-                        "⚠ thinking 模型（如 qwen3:4b）會先想一大段才回答 —— 實測思考段要 1000+ token，" +
-                        "生成上限不夠時回答會是空的（⇒ 退罐頭）。酒保這種短句建議用 qwen3:0.6b：" +
-                        "實測 12 token 就給乾淨答案。",
-                        MessageType.Warning);
+                        "🩸 實測（2026-08-19）：thinking 模型不帶 think 參數時**會把推理寫進回答本身** —— " +
+                        "同一組 prompt 的 output 是「首先，用户要求我作为…關鍵點：」這種簡體自言自語，而且 ok=True。" +
+                        "酒保的生成路徑已固定帶 --think（推理分到 thinking 欄、回答只剩那一句），本頁不需要設定。\n" +
+                        "⚠ 出口目前**沒有簡繁／語域轉換** —— 實測 qwen3 會把簡體或粵語詞混進來（0.6b 尤其明顯）。",
+                        MessageType.Info);
                 }
+                // ═══════════════════════════════════════════════════════
+                // 區塊職責：`@酒保` 被點名時的行為（回不回、多久回一次、一天幾次、罐頭池）。
+                // 物理意義：**與上面的 LLM 開關獨立** —— 可以「被叫時有反應但不跑模型」,
+                //          所以本區刻意畫在 IsCannedOnly 的 if/else 外面。
+                //   🩸 這幾個欄位在 model 裡早就有, 但頁面一行沒畫 ⇒ 只能手改 llm_settings.json,
+                //     而那個 json 在 2026-08-19 才剛證明自己會整份消失。
+                // 數值影響：冷卻與每日上限是**防互 ping 的閘**（A @酒保 → 回覆 → A 的 agent 又回…）,
+                //          調鬆會讓酒館被洗版；0 ＝ 關掉該閘。
+                // ⚠ 冷卻是**全域**不是 per-user, 而它擋的正是互 ping。
+                // ═══════════════════════════════════════════════════════
+                using (new GUILayout.VerticalScope("box"))
+                {
+                    EditorGUI.BeginChangeCheck();
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("<b>📣 被 @酒保 點名</b>",
+                            new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true },
+                            GUILayout.ExpandWidth(false));
+                        GUILayout.Space(UCL_GUIStyle.GetScaledSize(8));
+                        bool aMention = UCL.Core.UI.UCL_GUILayout.CheckBox(m_LLM.mention_enabled);
+                        if (aMention != m_LLM.mention_enabled) m_LLM.mention_enabled = aMention;
+                        GUILayout.Label("會回話", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        GUILayout.FlexibleSpace();
+                    }
+                    using (new EditorGUI.DisabledScope(!m_LLM.mention_enabled))
+                    {
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            GUILayout.Label("全域冷卻", UCL_GUIStyle.LabelStyle,
+                                GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                            int aCd = UCL.Core.UI.UCL_GUILayout.IntField("", m_LLM.mention_cooldown_seconds,
+                                GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                            GUILayout.Label("秒（0＝不冷卻，不建議）　每日上限", UCL_GUIStyle.LabelStyle,
+                                GUILayout.ExpandWidth(false));
+                            int aCap = UCL.Core.UI.UCL_GUILayout.IntField("", m_LLM.mention_daily_cap,
+                                GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                            GUILayout.Label("次（0＝無上限，不建議）", UCL_GUIStyle.LabelStyle,
+                                GUILayout.ExpandWidth(false));
+                            GUILayout.FlexibleSpace();
+                            if (aCd != m_LLM.mention_cooldown_seconds) m_LLM.mention_cooldown_seconds = Mathf.Max(0, aCd);
+                            if (aCap != m_LLM.mention_daily_cap) m_LLM.mention_daily_cap = Mathf.Max(0, aCap);
+                        }
+                        // 罐頭池：空 ＝ 用內建那五句。列出來才知道「現在會講什麼」
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            bool aFold = UCL.Core.UI.UCL_GUILayout.CheckBox(m_ShowCanned);
+                            if (aFold != m_ShowCanned) m_ShowCanned = aFold;
+                            int aCount = m_LLM.canned_replies?.Count ?? 0;
+                            GUILayout.Label(aCount > 0
+                                    ? $"罐頭池（自訂 {aCount} 句）"
+                                    : $"罐頭池（空 ⇒ 用內建 {UCL_BartenderLLMSettings.DefaultCanned.Count} 句）",
+                                UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                            GUILayout.FlexibleSpace();
+                            if (GUILayout.Button("➕ 加一句", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                m_LLM.canned_replies ??= new System.Collections.Generic.List<string>();
+                                m_LLM.canned_replies.Add("");
+                                m_ShowCanned = true;
+                            }
+                            using (new EditorGUI.DisabledScope(aCount == 0))
+                            {
+                                if (GUILayout.Button("↩ 清空（回內建）", UCL_GUIStyle.ButtonStyle,
+                                        GUILayout.ExpandWidth(false)))
+                                {
+                                    m_LLM.canned_replies = new System.Collections.Generic.List<string>();
+                                }
+                            }
+                        }
+                        if (m_ShowCanned)
+                        {
+                            var aList = m_LLM.canned_replies;
+                            if (aList == null || aList.Count == 0)
+                            {
+                                foreach (string aLine in UCL_BartenderLLMSettings.DefaultCanned)
+                                {
+                                    GUILayout.Label("　· " + aLine, UCL_GUIStyle.LabelStyle);
+                                }
+                            }
+                            else
+                            {
+                                int aDelete = -1;
+                                for (int i = 0; i < aList.Count; i++)
+                                {
+                                    using (new GUILayout.HorizontalScope())
+                                    {
+                                        aList[i] = GUILayout.TextField(aList[i] ?? "", UCL_GUIStyle.TextFieldStyle);
+                                        if (GUILayout.Button("🗑", UCL_GUIStyle.ButtonStyle,
+                                                GUILayout.Width(UCL_GUIStyle.GetScaledSize(28))))
+                                        {
+                                            aDelete = i;
+                                        }
+                                    }
+                                }
+                                // ⚠ 迴圈裡不能直接 RemoveAt —— 下一幀的 index 會指到別人（而畫面看起來正常）
+                                if (aDelete >= 0) aList.RemoveAt(aDelete);
+                            }
+                        }
+                    }
+                    // 這一格是本區唯一的寫入點；文字欄位打字中也會逐字進來,
+                    // 但罐頭句與數字欄位的量級跟人設 TextArea 不同（短、少）, 且失焦前就是要即時生效
+                    if (EditorGUI.EndChangeCheck()) SaveLLM();
+                    GUILayout.Label("⚠ 冷卻與上限只有邏輯、目前**沒有現場讀數** —— 要驗就把上面的模型下拉切回" +
+                        "「罐頭回應」再 @酒保 兩次，並拿 mention_state.json 的 last_reply_unix 算間隔" +
+                        "（用牆上時鐘的「感覺」算會誤判：實測兩次相差 56 秒被我讀成「連續」）。",
+                        new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+                }
+
                 GUILayout.Label($"設定檔：{UCL_BartenderLLMSettingsIO.GetPath()}",
                     new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
             }

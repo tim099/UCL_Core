@@ -1,12 +1,12 @@
 ---
 title: UCL_LoginStatusPage — 登入狀態頁
-last_updated: 2026-08-17
+last_updated: 2026-08-19
 ---
 
 # UCL_LoginStatusPage
 
 **「現在誰在線、誰該下線」的唯一看板與操作台。**
-列出 active persona lock、persona 池，並提供手動登入 / 登出 / 續期 / 強制解鎖。
+列出 active persona lock、persona 池，並提供手動登入 / 登出 / 強制解鎖。
 
 > [!IMPORTANT]
 > **lock 才是在線的權威，`persona.json` 的 `status` 欄只是報告欄。**
@@ -37,7 +37,6 @@ last_updated: 2026-08-17
 3. **Active locks 表**（每列可操作）
    - `登出`：走 `Cmd_GoodNight step=logout`（in-process，Tim 2026-08-13 拍板）——
      **只解鎖、不寫收尾信**。要寫信走完整晚安流程。
-   - `續期`：延長 lock TTL（`SESSION_LOCK_TTL_HOURS`，與 Python 端同步）。
    - `實際承載 agent`（可編輯 + 套用）：只影響 remote routing 與下次 morning 的 `--agent`，
      **不動顯示歸屬、不動 bank**。改錯不會把薪水發到別人帳上。
 4. **Persona 池**（多級排序）— 全部 persona 的 wake_count / agent / bank / 在線狀態。
@@ -61,7 +60,7 @@ last_updated: 2026-08-17
 |---|---|---|
 | registry `status=online` 但表上沒有 lock | 上次下線沒走完 | 不用管，喚醒會以 lock 為準放行 |
 | 同 session_key 多個 lock | 分身前兆 | 看 collision banner，留一個、其餘登出 |
-| lock 過期但還在表上 | TTL 到期**不自動豁免**（R9） | 顯式登出或續期，工具不替你決定 |
+| lock 一直掛在表上 | lock 生命週期由 goodnight/logout 顯式刪檔決定（過期機制已於 2026-08-19 移除） | 確認該 session 已死就手動登出 |
 | 登入被擋「已在線」 | 同一 persona 不得同時登入兩次 | 照 Cmd 回傳檔的 exits 走，**不要換名字繞過去** |
 
 ## 相關

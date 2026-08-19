@@ -416,16 +416,9 @@ def autofill_persona_from_lock(arg_pairs: dict) -> str:
             session_dir = awk._SESSION_DIR
         if not session_dir.exists():
             return ""
-        # 一次載入所有未過期 lock（後續三段 fallback 共用）
-        live_locks = []
-        for lp in session_dir.glob("_persona_*.json"):
-            try:
-                with open(lp, "r", encoding="utf-8") as f:
-                    lock = json.load(f)
-            except Exception:
-                continue
-            if not awk.is_lock_expired(lock):
-                live_locks.append(lock)
+        # 一次載入所有 lock（後續三段 fallback 共用）——
+        # 走 awakening.list_locks() 唯一掃描實作；過期機制已移除（2026-08-19），有 lock ＝ 在線
+        live_locks = awk.list_locks()
         if not live_locks:
             return ""       # 無人在線 = 本層沒有答案 → 放行（不是拒絕）
 

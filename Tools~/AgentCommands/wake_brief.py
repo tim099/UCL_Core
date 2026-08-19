@@ -824,22 +824,13 @@ PEOPLE_PORTRAIT_DAYS = 14      # 印象只看近 N 天（時效：讓舊印象�
 
 
 def _online_personas(aw) -> set:
-    """目前有 live lock 的 persona。讀不到回空集合 —— **空 ≠ 沒人在線**，只是查不到。"""
-    out = set()
+    """目前有 lock 的 persona（走 awakening.list_locks 唯一掃描實作；
+    過期機制已移除，有 lock ＝ 在線）。讀不到回空集合 —— **空 ≠ 沒人在線**，只是查不到。"""
     try:
-        for lp in (aw._SESSION_DIR).glob("_persona_*.json"):
-            import json
-            try:
-                lock = json.loads(lp.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            if not aw.is_lock_expired(lock):
-                pn = (lock.get("persona") or "").strip()
-                if pn:
-                    out.add(pn)
+        return {(d.get("persona") or "").strip()
+                for d in aw.list_locks() if (d.get("persona") or "").strip()}
     except Exception:
-        pass
-    return out
+        return set()
 
 
 # 區塊職責：記住上一次 _relationship_targets() 是「讀失敗」還是「真的沒有紀錄」。

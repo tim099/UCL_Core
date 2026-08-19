@@ -69,7 +69,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public string session_token = "";
         public string claim_origin = "";
         public string locked_at = "";
-        public string expires_at = "";
         public int pid = 0;
 
         public static UCL_SessionLockData LoadFromFile(string iPath)

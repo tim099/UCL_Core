@@ -225,8 +225,8 @@ namespace UCL.Core.EditorLib.Page
                 }
 
                 // session lock = persona 目前是否被某 session 持有（換綁前要警告）
-                // —— 走 UCL_ActivePersonaLocks 唯一掃描實作；本頁語意是「有 lock 檔」（含過期），onlineOnly=false
-                m_LockedPersonas.UnionWith(UCL_ActivePersonaLocks.LockedNames(iOnlineOnly: false));
+                // —— 走 UCL_ActivePersonaLocks 唯一掃描實作（有 lock ＝ 在線；過期機制已於 2026-08-19 移除）
+                m_LockedPersonas.UnionWith(UCL_ActivePersonaLocks.LockedNames());
 
                 // 區塊職責：掃 PersonaCard asset ID → 標記每個 persona 有無對應角色卡
                 // 物理意義：GetAllIDs() 走 UCL_ModuleService（當前編輯模組 + 依賴模組），與

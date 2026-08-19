@@ -103,17 +103,15 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                     Model = l.Model,
                     BankAccount = l.BankAccount,
                     LockedAt = l.LockedAt,
-                    ExpiresAt = l.ExpiresAt,
                     SessionKey = l.SessionKey,
                     Pid = l.Pid,
-                    Expired = l.Expired,
                 });
             }
 
             // 區塊職責: scan persona registry
             // 物理意義: AwakenInit/personas/*.json 是 persona pool (full registry, offline + online)
             var personas = new List<PersonaEntry>();
-            var lockedSet = new HashSet<string>(locks.Where(l => !l.Expired).Select(l => l.Persona));
+            var lockedSet = new HashSet<string>(locks.Select(l => l.Persona));
             if (Directory.Exists(personasDir))
             {
                 foreach (var pf in Directory.GetFiles(personasDir, "*.json"))
@@ -158,7 +156,6 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
 
             var filteredLocks = locks.Where(l =>
             {
-                if (l.Expired) return false;
                 if (!string.IsNullOrEmpty(filterAgent)
                     && !string.Equals(l.Agent, filterAgent, StringComparison.OrdinalIgnoreCase)) return false;
                 return true;
@@ -195,7 +192,6 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                     sb.Append("\"model\":").Append(ToJsonString(l.Model)).Append(',');
                     sb.Append("\"bank_account\":").Append(ToJsonString(l.BankAccount)).Append(',');
                     sb.Append("\"locked_at\":").Append(ToJsonString(l.LockedAt)).Append(',');
-                    sb.Append("\"expires_at\":").Append(ToJsonString(l.ExpiresAt)).Append(',');
                     sb.Append("\"session_key\":").Append(ToJsonString(l.SessionKey)).Append(',');
                     sb.Append("\"pid\":").Append(l.Pid);
                     sb.Append('}');
@@ -290,10 +286,8 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             public string Model = "";
             public string BankAccount = "";
             public string LockedAt = "";
-            public string ExpiresAt = "";
             public string SessionKey = "";
             public int Pid = 0;
-            public bool Expired = false;
         }
 
         class PersonaEntry

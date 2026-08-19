@@ -50,10 +50,8 @@ namespace UCL.Core.EditorLib.Page
             public string Model = "";
             public string BankAccount = "";
             public string LockedAt = "";
-            public string ExpiresAt = "";
             public string SessionKey = "";
             public int Pid = 0;
-            public bool Expired = false;
             // T07 (2026-05-15 apex-two) — 32-hex UUID4 token 發於 morning ritual; 空 = T07 前建的 lock
             public string SessionToken = "";
         }
@@ -228,11 +226,9 @@ namespace UCL.Core.EditorLib.Page
                     Model = l.Model,
                     BankAccount = l.BankAccount,
                     LockedAt = l.LockedAt,
-                    ExpiresAt = l.ExpiresAt,
                     SessionKey = l.SessionKey,
                     Pid = l.Pid,
                     SessionToken = l.RawSessionToken,
-                    Expired = l.Expired,
                 };
                 m_Locks.Add(entry);
                 m_ActualAgentDrafts[entry.Persona] = l.ActualAgent;
@@ -445,20 +441,8 @@ namespace UCL.Core.EditorLib.Page
                         {
                             DoLogout(l);
                         }
-#if UNITY_EDITOR
-                        // 手動續期 (Tim 2026-07-15 拍板方案 C-3) — Tim 確認 session 還活著但 lock 已/將過期時
-                        // 一鍵把 expires_at 推到 now+TTL，不必進 CLI。續期後 LoadData 重整讓「已過期」標記即時消失。
-                        if (GUILayout.Button(UCL_CodeLocalize.Get("LoginStatus.Btn.Renew"), UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80))))
-                        {
-                            bool renewed = UCL.Core.EditorLib.AgentCommands.ChatTavern.Cmd_Tavern.RenewPersonaLock(l.Persona);
-                            Debug.Log(renewed
-                                ? $"[LoginStatus] persona lock renewed: {l.Persona}"
-                                : $"[LoginStatus] persona lock renew no-op（lock 不存在或缺 expires_at）: {l.Persona}");
-                            LoadData();
-                            GUIUtility.ExitGUI();
-                        }
-#endif
-                        string personaLabel = l.Expired ? string.Format(UCL_CodeLocalize.Get("LoginStatus.ExpiredFmt"), l.Persona) : l.Persona;
+                        // 續期按鈕已隨過期機制移除（Tim 2026-08-19）—— lock 生命週期由 goodnight/logout 顯式刪檔決定
+                        string personaLabel = l.Persona;
                         using(new GUILayout.VerticalScope()) 
                         {
                             GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.Persona"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
@@ -496,11 +480,6 @@ namespace UCL.Core.EditorLib.Page
                             var width = GUILayout.Width(UCL_GUIStyle.GetScaledSize(180));
                             GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.LockedAt"), UCL_GUIStyle.LabelStyle, width);
                             GUILayout.Label(TruncTs(l.LockedAt), UCL_GUIStyle.LabelStyle, width);
-                        }
-                        using (new GUILayout.VerticalScope())
-                        {
-                            GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.Col.ExpiresAt"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                            GUILayout.Label(TruncTs(l.ExpiresAt), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                         }
                         using (new GUILayout.VerticalScope())
                         {

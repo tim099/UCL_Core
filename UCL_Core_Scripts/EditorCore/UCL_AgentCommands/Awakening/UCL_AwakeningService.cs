@@ -350,7 +350,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         // ===========================================================
         public static string MemosDir => ResolveDataSub(Path.Combine("ChatTavern", "baton", "memos"));
 
-        public const int SESSION_LOCK_TTL_HOURS = 24;   // ⚠ 與 awakening.py SESSION_LOCK_TTL_HOURS / Cmd_Tavern PERSONA_LOCK_TTL_HOURS 同步
         public const int CONSOLIDATE_GAP_THRESHOLD = 10;
 
         public static string NowIso() => DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
@@ -705,22 +704,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             string aSessionKey = $"{aActual}-{iPersona}";
             aR.AppendLine($"- Persona={iPersona} / Agent={aAgent}（顯示歸屬）/ ActualAgent={aActual} / Bank={aBank}");
 
-            // ③ 唯一的中斷條件：該 persona 目前是否在線（lock 為真相源；過期不豁免，R9）
+            // ③ 唯一的中斷條件：該 persona 目前是否在線（lock 為真相源；有 lock ＝ 在線 ——
+            //    過期機制已於 2026-08-19 移除，R9「過期不豁免」自此不再需要例外說明）
             var aLock = ReadLock(iPersona);
             if (aLock != null)
             {
-                bool aExpired = false;
-                try
-                {
-                    aExpired = DateTime.TryParse(aLock.expires_at?.Substring(0, Math.Min(19, aLock.expires_at.Length)),
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
-                        out DateTime aExp) && DateTime.UtcNow > aExp;
-                }
-                catch { }
                 aR.AppendLine($"## blocked");
                 aR.AppendLine($"- reason: ⛔ '{iPersona}' 目前在線 —— 同一個 persona 不得同時登入兩次");
-                aR.AppendLine($"- lock: session_key={aLock.session_key} pid={aLock.pid} locked_at={aLock.locked_at}{(aExpired ? " (已過期 — 不自動豁免，R9)" : "")}");
+                aR.AppendLine($"- lock: session_key={aLock.session_key} pid={aLock.pid} locked_at={aLock.locked_at}");
                 aR.AppendLine("- exits:");
                 aR.AppendLine("  - 讓它先下線：後台「登入狀態」頁登出，或該 session 跑 goodnight，再重跑本步");
                 aR.AppendLine("  - brief 沒生出來（morning 中途被砍）→ step=brief 或 awakening.py brief（純本機，不動 lock）");
@@ -807,7 +798,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aLockJson["model"] = aModel;
             aLockJson["bank_account"] = aBank;
             aLockJson["locked_at"] = NowIso();
-            aLockJson["expires_at"] = DateTime.UtcNow.AddHours(SESSION_LOCK_TTL_HOURS).ToString("yyyy-MM-ddTHH:mm:ss.") + "000Z";
             aLockJson["session_key"] = aSessionKey;
             aLockJson["claim_origin"] = aClaimOrigin;
             aLockJson["pid"] = System.Diagnostics.Process.GetCurrentProcess().Id;

@@ -130,8 +130,8 @@ namespace UCL.Core.EditorLib.Page
             m_Personas.Clear();
 
             // 區塊：先取 session lock 名單 — 在線判定一律以 lock 為準，registry 的 status 只是快取
-            // 走 UCL_ActivePersonaLocks 唯一掃描實作；本頁語意是「有 lock 檔」（含過期），onlineOnly=false
-            var lockedPersonas = UCL_ActivePersonaLocks.LockedNames(iOnlineOnly: false);
+            // 走 UCL_ActivePersonaLocks 唯一掃描實作（有 lock ＝ 在線；過期機制已於 2026-08-19 移除）
+            var lockedPersonas = UCL_ActivePersonaLocks.LockedNames();
 
             // 區塊：scan personas — 反序列化全部 metadata
             if (Directory.Exists(m_PersonasDir))

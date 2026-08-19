@@ -193,7 +193,6 @@ FORK_CHAIN_CAP = 5
 #   - persona overlay 寫在 AgentCommands/ChatTavern/baton/constitution/<actor>/personas/<codename>/
 #   - gura 首發 overlay 範例: claude-da-xiaojie/personas/gura/_v1.md
 MYTH_POOL = ["gura", "calli", "kiara", "ame", "ina"]
-SESSION_LOCK_TTL_HOURS = 24   # ⚠ 與 Cmd_Tavern.cs PERSONA_LOCK_TTL_HOURS 保持同步 (post 滑動續期用同一 TTL)
 OVERRIDE_PROBABILITY = 0.20  # Q3 spec: 80/20 random override
 
 
@@ -204,7 +203,7 @@ def _utcnow() -> datetime.datetime:
     區塊職責: 取代 `datetime.datetime.utcnow()`(Python 3.12 起 DeprecationWarning)。
     物理意義: 回的是**去掉 tzinfo 的 UTC**, 與 utcnow() 逐位元組等價 ——
               刻意不回 tz-aware: 本檔多處拿它跟 `strptime` 解析出來的 naive 值比大小
-              (見 is_lock_expired), 混用 aware/naive 會直接 TypeError。
+              (如 strptime 解析的時戳比較), 混用 aware/naive 會直接 TypeError。
               「順手升級成 tz-aware」看起來比較現代, 但那會把一個安靜的警告
               換成一個會炸的錯 —— 換法要等價, 不是要新潮。
     為什麼值得修: 那行警告會印在 stderr, 而 UCL_PersonaAgentAdminPage 的維護欄
@@ -715,9 +714,8 @@ def write_lock(persona: str, agent: str, model: str, bank_account: str,
     """
     _SESSION_DIR.mkdir(parents=True, exist_ok=True)
     now = utcnow_iso()
-    expires = (_utcnow() +
-               datetime.timedelta(hours=SESSION_LOCK_TTL_HOURS)).strftime(
-        "%Y-%m-%dT%H:%M:%S.") + "000Z"
+    # 過期機制已移除（Tim 2026-08-19 拍板）：R9 讓過期不再豁免任何事之後，
+    # expires_at 只剩顯示在讀 —— lock 的生命週期由 goodnight/logout 顯式刪檔決定。
     data = {
         "persona": persona,
         "agent": agent,
@@ -727,7 +725,6 @@ def write_lock(persona: str, agent: str, model: str, bank_account: str,
         "model": model,
         "bank_account": bank_account,
         "locked_at": now,
-        "expires_at": expires,
         # T05 (2026-05-14): session_key = claim_identity (display); claim_origin = env_hash
         # (lock_is_mine 用此判定); pid 純診斷 (CLI 每次 invoke 都是新 PID, 不可靠當 ownership).
         "session_key": session_key or compute_session_key(agent, persona),
@@ -774,26 +771,16 @@ def find_lock_by_session_key(session_key: str) -> dict | None:
     return None
 
 
-def is_lock_expired(lock: dict) -> bool:
-    # ⚠ 例外（含缺 expires_at）回 True＝過期 —— 與 C# UCL_ActivePersonaLocks.IsExpired 的
-    #   邊界語意相反（那邊視欄位缺席為未過期）。2026-08-19 presence 收斂時發現，
-    #   影響 goodnight 守衛所以不敢靜默翻，待拍板統一；掃描實作已先收斂成單一入口。
-    try:
-        exp = datetime.datetime.strptime(lock["expires_at"][:19], "%Y-%m-%dT%H:%M:%S")
-        return _utcnow() > exp
-    except Exception:
-        return True
-
-
 # ─── Presence（在線判定）唯一掃描實作 ────────────────────────────────
 # 區塊職責: 「誰有 lock／誰在線」的**唯一** glob 點（對側 = C# UCL_ActivePersonaLocks）。
 # 物理意義: 收斂前 python 端有 7 處各自掃 _persona_*.json（本檔 4 + tavern_catchup 3），
 #          同一份 lock 資料在不同實作下講出不同的話（2026-08-19 run_cmd 身分推論
 #          兩次把 summit 誤判成 basecamp）。新增在線相關欄位（如 now_status）只准改這裡。
-# 數值影響: 壞檔略過不擋整份清單；回傳 dict 附兩個推導欄 `_expired` / `_path`（底線開頭＝
-#          非 lock 檔本體欄位，寫回時要剝掉）；依 persona 排序。
+#          ⚠ 過期機制已移除（Tim 2026-08-19）：**有 lock ＝ 在線**，直到 goodnight/logout 刪檔。
+# 數值影響: 壞檔略過不擋整份清單；回傳 dict 附推導欄 `_path`（底線開頭＝非 lock 本體欄位，
+#          寫回時要剝掉）；依 persona 排序。
 
-def list_locks(include_expired: bool = True) -> list:
+def list_locks() -> list:
     out = []
     if not _SESSION_DIR.exists():
         return out
@@ -808,22 +795,20 @@ def list_locks(include_expired: bool = True) -> list:
             continue
         if not isinstance(d, dict) or not d.get("persona"):
             continue
-        d["_expired"] = is_lock_expired(d)
         d["_path"] = str(lp)
-        if include_expired or not d["_expired"]:
-            out.append(d)
+        out.append(d)
     out.sort(key=lambda x: x.get("persona", ""))
     return out
 
 
 def list_online() -> list:
-    """未過期 lock（＝在線）。"""
-    return list_locks(include_expired=False)
+    """有 lock ＝ 在線（過期機制已移除，本函式是 list_locks 的語意別名）。"""
+    return list_locks()
 
 
 def find_locks_by_claim_origin(origin: str) -> list:
-    """本 env 持有的未過期 lock（claim_origin 相符）。"""
-    return [d for d in list_online() if lock_claim_origin(d) == origin]
+    """本 env 持有的 lock（claim_origin 相符）。"""
+    return [d for d in list_locks() if lock_claim_origin(d) == origin]
 
 
 # ─── Session Token (T07, 2026-05-15 apex-two) ────────────────────────────
@@ -1821,12 +1806,12 @@ def migrate_letters_to_wakes(persona: str, reg: dict | None = None,
     # 且 morning 在 Step 3 (L1845) 會用 `wake_letter_count + 1` 覆寫回正確值。
     # 正因如此本函式**不需要豁免參數** —— 少一個開關就少一把裝填好的槍。
     #
-    # 過期 lock 也算在線: 「過期 lock 不自動豁免」是 morning 既有政策 (L1774),
-    # 兩處對「還算不算在線」若各有一套判準, 那個分歧不會有人發現。
+    # 有 lock 就算在線（過期機制已於 2026-08-19 移除；lock_expired 欄保留形狀恆 False，
+    # 免得下游讀 dict 的人跟著改）。
     _lk = read_lock(persona)
     if _lk is not None:
         return {"moved": 0, "skipped": 0, "renumbered": 0, "locked": True,
-                "lock_expired": is_lock_expired(_lk),
+                "lock_expired": False,
                 "lock_session_key": _lk.get("session_key", "?"),
                 "old_wake_count": (reg or load_registry()).get("personas", {})
                                   .get(persona, {}).get("wake_count", 0),
@@ -1957,12 +1942,11 @@ def cmd_migrate_letters(args: argparse.Namespace) -> int:
 
         _lk = read_lock(persona)
         if _lk is not None:
-            locked_out.append((persona, is_lock_expired(_lk),
+            locked_out.append((persona, False,
                                _lk.get("session_key", "?")))
             old_wc = reg["personas"].get(persona, {}).get("wake_count", 0)
             print(f"{persona:<28}{'—':>6}{wake_letter_count(persona):>11}"
-                  f"{old_wc:>12}{'不動':>9}  🔒 在線"
-                  + ("（lock 已過期）" if is_lock_expired(_lk) else ""))
+                  f"{old_wc:>12}{'不動':>9}  🔒 在線")
             continue
         plan = _plan_letter_migration(persona)
         wd = wakes_dir(persona)

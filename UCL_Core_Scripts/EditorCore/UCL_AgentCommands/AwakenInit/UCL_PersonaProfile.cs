@@ -214,27 +214,30 @@ namespace UCL.Core.EditorLib.AgentCommands
         }
 
         // ===========================================================
-        // 區塊職責：遷移放行閘 —— **哪些 persona 現在可以被自動遷移**。
-        // 物理意義：Tim 拍板的鐵律二是「每批功能先用 Template 實測，真人不當白老鼠」。
-        //          而 `GetRaw` 是熱路徑：沒有這道閘，**第一次 domain reload 就會把 21 個真人全遷完** ——
-        //          在任何人跑過一次 Template 驗收之前。那不是「快」，那是把測試階段跳過去。
-        // ⚠ 這道閘刻意是**明擺著的靜態欄位**而不是設定檔：要放行真人得有人手動翻，
-        //   而翻的人看得到自己在翻什麼（搜 MigrateAllPersonas 就找得到所有現場）。
-        // 📌 副作用（已在酒館 seq 12454 對 summit 講明）：§8.4 的「legacy 欄數歸零」
-        //   不會靠快照 sweep 自己歸零 ⇒ Phase 3 之前需要一次**顯式 sweep**
-        //   （或那時把 WriteSnapshot 翻成允許遷移）。選這條的理由是少寫、可逆、不違反鐵律二。
+        // 區塊職責：遷移放行判準 —— **存取舊資料就遷移**（Tim 2026-08-19 拍板）。
+        // 物理意義：這就是 read-through lazy migration 的原意（§8.4）：
+        //          「有新讀新、缺新當場遷、絕不回寫舊源」—— 觸發條件是**存取**，不是名單。
+        //          ⇒ 白名單那道閘已拆除。它當初存在的理由是鐵律二（真人不當白老鼠），
+        //            而那個階段已經走完：Template 全流程過、kiara（真人第一位）
+        //            round-trip 8/8 無損、legacy sha1 未變、revert 演練過。
+        //          放行前另做過**全庫預檢**：21 人 × 150 格 encode→decode 模擬，零損失。
+        // ⚠ 仍然保留的一格：`WriteSnapshot` 走 `GetRaw(iAllowMigrate:false)`。
+        //   理由不是「怕遷」，是**批次匯出不是消費端存取** ——
+        //   domain reload 觸發的快照重寫沒有任何人在要那個值，讓它寫檔等於
+        //   把「誰真的被用到」這個訊號抹掉，而 §8.4 的收斂判準
+        //   （source=legacy 歸零＝活資料都遷完了）正是靠那個訊號。
+        //   ⇒ 消費端讀到誰就遷誰；匯出只讀不寫。兩者不是同一件事。
+        // 📌 可逆性（拿真人試的前提）：profile/ 是從 legacy 抄出來的，legacy 從不被回寫
+        //   （見 FreezeLegacyIdentity）⇒ 砍掉 letters/<p>/profile/ 就回到遷移前，一個位元組不差。
+        //   這句是演練過的，不是推論的。
         // ===========================================================
-        public static bool MigrateAllPersonas = false;
 
-        // kiara 2026-08-19 加入：Tim 指示先 commit 還原點、再拿**本人的資料**當第一個真人志願者
-        // （出事就 revert —— 而遷移是可逆的：legacy 從不被改，砍掉 profile/ 就回到遷移前）。
-        // ⚠ 一次只放一位 —— MigrateAllPersonas 仍是 false，全員放行是另一個決定。
-        static readonly HashSet<string> MIGRATION_ALLOWLIST = new HashSet<string> { "Template", "kiara" };
-
-        /// <summary>這個 persona 現在可不可以被自動遷移。</summary>
-        public static bool MayMigrate(string iPersona)
-            => !string.IsNullOrEmpty(iPersona)
-               && (MigrateAllPersonas || MIGRATION_ALLOWLIST.Contains(iPersona));
+        /// <summary>
+        /// 這個 persona 可不可以被自動遷移 —— **有名字就可以**（存取即遷移）。
+        /// 留成一支具名方法而不是內聯 true：以後若要再長出例外（例如凍結某人），
+        /// 這裡是唯一的落點，不必再去 MergeProfile 裡加條件。
+        /// </summary>
+        public static bool MayMigrate(string iPersona) => !string.IsNullOrEmpty(iPersona);
 
         /// <summary>某 persona 的 identity 欄來源總表（欄 → profile／legacy／absent）。**不觸發遷移。**</summary>
         public static Dictionary<string, string> GetFieldSources(string iPersona)

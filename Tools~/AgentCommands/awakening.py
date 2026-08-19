@@ -766,28 +766,64 @@ def remove_lock(persona: str) -> bool:
 
 
 def find_lock_by_session_key(session_key: str) -> dict | None:
-    """Legacy compat shim — scan all _persona_*.json finding one with matching
-    session_key in body. Used by goodnight legacy path (no --persona) for
-    backward compat. Returns lock dict + its persona, or None."""
-    if not _SESSION_DIR.exists():
-        return None
-    for p in _SESSION_DIR.glob("_persona_*.json"):
-        try:
-            with open(p, "r", encoding="utf-8") as f:
-                d = json.load(f)
-            if d.get("session_key") == session_key:
-                return d
-        except Exception:
-            continue
+    """Legacy compat shim — 依 session_key 反查 lock（走 list_locks 唯一掃描實作）。
+    Used by goodnight legacy path (no --persona) for backward compat."""
+    for d in list_locks():
+        if d.get("session_key") == session_key:
+            return d
     return None
 
 
 def is_lock_expired(lock: dict) -> bool:
+    # ⚠ 例外（含缺 expires_at）回 True＝過期 —— 與 C# UCL_ActivePersonaLocks.IsExpired 的
+    #   邊界語意相反（那邊視欄位缺席為未過期）。2026-08-19 presence 收斂時發現，
+    #   影響 goodnight 守衛所以不敢靜默翻，待拍板統一；掃描實作已先收斂成單一入口。
     try:
         exp = datetime.datetime.strptime(lock["expires_at"][:19], "%Y-%m-%dT%H:%M:%S")
         return _utcnow() > exp
     except Exception:
         return True
+
+
+# ─── Presence（在線判定）唯一掃描實作 ────────────────────────────────
+# 區塊職責: 「誰有 lock／誰在線」的**唯一** glob 點（對側 = C# UCL_ActivePersonaLocks）。
+# 物理意義: 收斂前 python 端有 7 處各自掃 _persona_*.json（本檔 4 + tavern_catchup 3），
+#          同一份 lock 資料在不同實作下講出不同的話（2026-08-19 run_cmd 身分推論
+#          兩次把 summit 誤判成 basecamp）。新增在線相關欄位（如 now_status）只准改這裡。
+# 數值影響: 壞檔略過不擋整份清單；回傳 dict 附兩個推導欄 `_expired` / `_path`（底線開頭＝
+#          非 lock 檔本體欄位，寫回時要剝掉）；依 persona 排序。
+
+def list_locks(include_expired: bool = True) -> list:
+    out = []
+    if not _SESSION_DIR.exists():
+        return out
+    for lp in sorted(_SESSION_DIR.glob("_persona_*.json")):
+        try:
+            with open(lp, "r", encoding="utf-8") as f:
+                d = json.load(f)
+        except Exception as e:
+            # 壞檔略過但要出聲（對齊 C# 端 LogWarning）—— 靜默跳過會讓「lock 壞了」
+            # 跟「沒這個人」長得一模一樣
+            print(f"⚠ [presence] 略過壞掉的 lock 檔 {lp.name}: {e}", file=sys.stderr)
+            continue
+        if not isinstance(d, dict) or not d.get("persona"):
+            continue
+        d["_expired"] = is_lock_expired(d)
+        d["_path"] = str(lp)
+        if include_expired or not d["_expired"]:
+            out.append(d)
+    out.sort(key=lambda x: x.get("persona", ""))
+    return out
+
+
+def list_online() -> list:
+    """未過期 lock（＝在線）。"""
+    return list_locks(include_expired=False)
+
+
+def find_locks_by_claim_origin(origin: str) -> list:
+    """本 env 持有的未過期 lock（claim_origin 相符）。"""
+    return [d for d in list_online() if lock_claim_origin(d) == origin]
 
 
 # ─── Session Token (T07, 2026-05-15 apex-two) ────────────────────────────
@@ -1615,16 +1651,7 @@ def cmd_rest(args: argparse.Namespace) -> int:
     else:
         # 反查本 env 持有的 lock (claim_origin match)
         my_origin = compute_claim_origin()
-        my_locks = []
-        if _SESSION_DIR.exists():
-            for lp in _SESSION_DIR.glob("_persona_*.json"):
-                try:
-                    with open(lp, "r", encoding="utf-8") as f:
-                        d = json.load(f)
-                    if lock_claim_origin(d) == my_origin and not is_lock_expired(d):
-                        my_locks.append(d)
-                except Exception:
-                    continue
+        my_locks = find_locks_by_claim_origin(my_origin)
         if not my_locks:
             print(f"❌ 本 environment (claim_origin={my_origin}) 沒持有任何 lock", file=sys.stderr)
             print(f"   → 帶 --persona <name> 顯式指定要小歇的 persona.", file=sys.stderr)
@@ -2170,16 +2197,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     #   claim_origin = env_hash (process identity, lock_is_mine 用)
     #   pid = 純診斷
     my_origin = compute_claim_origin()
-    active_locks = []
-    if _SESSION_DIR.exists():
-        for lp in sorted(_SESSION_DIR.glob("_persona_*.json")):
-            try:
-                with open(lp, "r", encoding="utf-8") as f:
-                    d = json.load(f)
-                if not is_lock_expired(d):
-                    active_locks.append(d)
-            except Exception:
-                continue
+    active_locks = list_online()
 
     print(f"# 🌅 Awakening Status Report\n")
     print(f"## 偵測到的環境")
@@ -2374,16 +2392,7 @@ def cmd_whoami(args: argparse.Namespace) -> int:
 
     # 路徑 B: 無 arg → 從 env 推當前 process 對到的 lock
     my_origin = compute_claim_origin()
-    my_locks = []
-    if _SESSION_DIR.exists():
-        for lp in _SESSION_DIR.glob("_persona_*.json"):
-            try:
-                with open(lp, "r", encoding="utf-8") as f:
-                    d = json.load(f)
-                if lock_claim_origin(d) == my_origin and not is_lock_expired(d):
-                    my_locks.append(d)
-            except Exception:
-                continue
+    my_locks = find_locks_by_claim_origin(my_origin)
     if not my_locks:
         print(f"❌ 本 environment (claim_origin={my_origin}) 沒持有任何 active lock",
               file=sys.stderr)

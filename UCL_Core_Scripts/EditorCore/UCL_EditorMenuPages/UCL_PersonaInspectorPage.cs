@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using UCL.Core.EditorLib.AgentCommands;   // UCL_ActivePersonaLocks（在線判定唯一掃描實作）
 using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
 using UCL.Core.Page;
@@ -128,18 +129,9 @@ namespace UCL.Core.EditorLib.Page
         {
             m_Personas.Clear();
 
-            // 區塊：先掃 session lock 檔 — 在線判定一律以 lock 為準，registry 的 status 只是快取
-            // 物理意義：AgentCommands/_session/_persona_<name>.json 存在 == 該 persona 在線
-            var lockedPersonas = new HashSet<string>();
-            string sessionDir = Path.Combine(m_AgentCommandsDir, "_session");
-            if (Directory.Exists(sessionDir))
-            {
-                foreach (var lf in Directory.GetFiles(sessionDir, "_persona_*.json"))
-                {
-                    string ln = Path.GetFileNameWithoutExtension(lf);
-                    if (ln.StartsWith("_persona_")) lockedPersonas.Add(ln.Substring("_persona_".Length));
-                }
-            }
+            // 區塊：先取 session lock 名單 — 在線判定一律以 lock 為準，registry 的 status 只是快取
+            // 走 UCL_ActivePersonaLocks 唯一掃描實作；本頁語意是「有 lock 檔」（含過期），onlineOnly=false
+            var lockedPersonas = UCL_ActivePersonaLocks.LockedNames(iOnlineOnly: false);
 
             // 區塊：scan personas — 反序列化全部 metadata
             if (Directory.Exists(m_PersonasDir))

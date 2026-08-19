@@ -403,30 +403,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         const string PRESENCE_FALLBACK = "ChatTavern ⇄ Discord";
         const int PRESENCE_REFRESH_EVERY_N_HEARTBEATS = 5;   // 心跳約 41s → 約 3.5 分鐘刷一次
 
-        /// <summary>讀目前未過期的 persona lock，回排序後的名單；讀不到回空 list。</summary>
+        /// <summary>讀目前未過期的 persona lock，回排序後的名單；讀不到回空 list。
+        /// 走 UCL_ActivePersonaLocks 唯一掃描實作（它已處理壞檔略過與排序），不自己掃。</summary>
         static List<string> OnlinePersonas()
         {
             var names = new List<string>();
             try
             {
-                string dir = Path.Combine(UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, "_session");
-                if (!Directory.Exists(dir)) return names;
-                string nowIso = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-                foreach (var f in Directory.GetFiles(dir, "_persona_*.json"))
-                {
-                    try
-                    {
-                        var jd = UCL.Core.JsonLib.JsonData.ParseJson(File.ReadAllText(f));
-                        if (jd == null || !jd.IsObject) continue;
-                        string p = jd.GetString("persona", "");
-                        string exp = jd.GetString("expires_at", "");
-                        bool expired = !string.IsNullOrEmpty(exp)
-                                       && string.Compare(exp, nowIso, StringComparison.Ordinal) < 0;
-                        if (!expired && !string.IsNullOrEmpty(p) && !names.Contains(p)) names.Add(p);
-                    }
-                    catch { /* 單一壞 lock 不影響其餘 */ }
-                }
-                names.Sort(StringComparer.Ordinal);
+                foreach (var l in UCL.Core.EditorLib.AgentCommands.UCL_ActivePersonaLocks.ListOnline())
+                    if (!names.Contains(l.Persona)) names.Add(l.Persona);
             }
             catch { /* 讀不到就回空 → 上層回退成橋名 */ }
             return names;

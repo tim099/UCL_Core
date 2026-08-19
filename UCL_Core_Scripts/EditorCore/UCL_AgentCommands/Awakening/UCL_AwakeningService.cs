@@ -630,16 +630,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             catch { return 0; }
         }
 
+        // 走 UCL_ActivePersonaLocks 唯一掃描實作。2026-08-19 收斂時語意順手修正：
+        // 舊版只看檔案存在（過期 lock 也被列成「在線」），現在名副其實只列未過期的。
         public static List<string> OnlinePersonas()
         {
             var aList = new List<string>();
-            if (!Directory.Exists(SessionDir)) return aList;
-            foreach (var f in Directory.GetFiles(SessionDir, "_persona_*.json"))
-            {
-                string aName = Path.GetFileNameWithoutExtension(f);
-                aList.Add(aName.Substring("_persona_".Length));
-            }
-            aList.Sort(StringComparer.Ordinal);
+            foreach (var l in UCL_ActivePersonaLocks.ListOnline()) aList.Add(l.Persona);
             return aList;
         }
 

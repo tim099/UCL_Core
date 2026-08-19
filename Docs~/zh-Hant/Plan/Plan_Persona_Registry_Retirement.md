@@ -322,7 +322,7 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
   🩸 實案：2026-08-18 calli 的 commit 抓走 summit 編輯中的檔（BugReports wake#57 四隻之四）——
   當時她若看得到這行狀態就不會撞。
 - **staleness 要顯示**：狀態帶時間戳，catchup 印「多久前」；過舊的狀態比沒有狀態更會誤導。
-- **前置：在線狀態收斂單一 API（Tim 點名，summit 2026-08-19 實掃證實）** ——
+- **前置：在線狀態收斂單一 API** —— ✅ **已完成（summit 2026-08-19，C# recompile 0 錯＋python 實跑驗過）**：C# 端 5 個直掃點全改走 `UCL_ActivePersonaLocks`（`ListLocks`／`ListOnline`／`LockedNames` 三視圖，SessionDir 改走可 override 的 DataRoot）；python 端收斂到 `awakening.list_locks()`／`list_online()`／`find_locks_by_claim_origin()`，tavern_catchup 三處跟進。⚠ 收斂時發現**兩端過期語意分岔待拍板**：缺 `expires_at` 的 lock，C# 視為未過期、python `is_lock_expired` 視為過期（影響 goodnight 守衛，不敢靜默翻，已在兩端註解留記號）。原始實掃紀錄 ——
   「誰在線」目前**至少八處各自掃 lock**：C# 有 `UCL_ActivePersonaLocks`（7 處在用）
   但另有 5 檔自己 `Directory.GetFiles` 直掃（LoginStatusPage / PersonaAgentAdminPage /
   PersonaInspectorPage / DiscordGatewayClient / Cmd_LoginStatus）；python 端 `awakening.py`

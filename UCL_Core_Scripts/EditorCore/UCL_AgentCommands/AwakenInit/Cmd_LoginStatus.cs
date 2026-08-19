@@ -85,46 +85,29 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             // 區塊職責: 路徑解析
             // 物理意義: 走可 override 資料根撈 _session 跟 AwakenInit/personas (預設 = RepoRoot/AgentCommands)
             string agentCmdDir = UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot;
-            string sessionDir = Path.Combine(agentCmdDir, "_session");
             // persona 目錄走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
             string personasDir = Awakening.UCL_AwakeningService.PersonasDir;
             string outDir = Path.Combine(agentCmdDir, "AwakenInit");
             try { Directory.CreateDirectory(outDir); }
             catch (Exception ex) { throw new Exception($"[LoginStatus] 建立輸出目錄失敗: {ex.Message}"); }
 
-            // 區塊職責: scan locks
-            // 物理意義: _session/_persona_*.json 是 active lock; expires_at < now → expired
+            // 區塊職責: scan locks —— 走 UCL_ActivePersonaLocks 唯一掃描實作（含過期視圖），不自己掃
             string nowIso = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
             var locks = new List<LockEntry>();
-            if (Directory.Exists(sessionDir))
+            foreach (var l in UCL_ActivePersonaLocks.ListLocks())
             {
-                foreach (var lockFile in Directory.GetFiles(sessionDir, "_persona_*.json"))
+                locks.Add(new LockEntry
                 {
-                    try
-                    {
-                        string json = File.ReadAllText(lockFile);
-                        var jd = JsonData.ParseJson(json);
-                        if (!jd.IsObject || jd.Dic == null) continue;
-                        var entry = new LockEntry
-                        {
-                            Persona = jd.GetString("persona", ""),
-                            Agent = jd.GetString("agent", ""),
-                            Model = jd.GetString("model", ""),
-                            BankAccount = jd.GetString("bank_account", ""),
-                            LockedAt = jd.GetString("locked_at", ""),
-                            ExpiresAt = jd.GetString("expires_at", ""),
-                            SessionKey = jd.GetString("session_key", ""),
-                            Pid = jd.GetInt("pid", 0),
-                        };
-                        entry.Expired = !string.IsNullOrEmpty(entry.ExpiresAt)
-                                        && string.Compare(entry.ExpiresAt, nowIso, StringComparison.Ordinal) < 0;
-                        locks.Add(entry);
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogWarning($"[LoginStatus] parse lock {lockFile} 失敗: {e.Message}");
-                    }
-                }
+                    Persona = l.Persona,
+                    Agent = l.Agent,
+                    Model = l.Model,
+                    BankAccount = l.BankAccount,
+                    LockedAt = l.LockedAt,
+                    ExpiresAt = l.ExpiresAt,
+                    SessionKey = l.SessionKey,
+                    Pid = l.Pid,
+                    Expired = l.Expired,
+                });
             }
 
             // 區塊職責: scan persona registry

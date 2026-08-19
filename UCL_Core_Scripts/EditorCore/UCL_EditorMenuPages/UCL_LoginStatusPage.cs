@@ -217,45 +217,30 @@ namespace UCL.Core.EditorLib.Page
                 Debug.LogWarning($"[LoginStatus] T07 token state load failed: {e.Message}");
             }
 
-            // 區塊：scan locks
-            if (Directory.Exists(m_SessionDir))
+            // 區塊：scan locks —— 走 UCL_ActivePersonaLocks 唯一掃描實作（本頁要含過期視圖，供人手動清）
+            foreach (var l in UCL_ActivePersonaLocks.ListLocks())
             {
-                foreach (var lockFile in Directory.GetFiles(m_SessionDir, "_persona_*.json"))
+                var entry = new LockEntry
                 {
-                    try
-                    {
-                        string json = File.ReadAllText(lockFile);
-                        var jd = JsonData.ParseJson(json);
-                        if (!jd.IsObject || jd.Dic == null) continue;
-                        var entry = new LockEntry
-                        {
-                            Persona = jd.GetString("persona", ""),
-                            Agent = jd.GetString("agent", ""),
-                            ActualAgent = jd.GetString("actual_agent", ""),
-                            Model = jd.GetString("model", ""),
-                            BankAccount = jd.GetString("bank_account", ""),
-                            LockedAt = jd.GetString("locked_at", ""),
-                            ExpiresAt = jd.GetString("expires_at", ""),
-                            SessionKey = jd.GetString("session_key", ""),
-                            Pid = jd.GetInt("pid", 0),
-                            SessionToken = jd.GetString("session_token", ""),
-                        };
-                        // expires 判斷 — 用字串比對 ISO ts (lexicographic order)
-                        entry.Expired = !string.IsNullOrEmpty(entry.ExpiresAt)
-                                        && string.Compare(entry.ExpiresAt, DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"), StringComparison.Ordinal) < 0;
-                        m_Locks.Add(entry);
-                        m_ActualAgentDrafts[entry.Persona] = UCL_ActualAgentUtility.ParseOrNone(entry.ActualAgent);
+                    Persona = l.Persona,
+                    Agent = l.Agent,
+                    ActualAgent = l.ActualAgentRaw,
+                    Model = l.Model,
+                    BankAccount = l.BankAccount,
+                    LockedAt = l.LockedAt,
+                    ExpiresAt = l.ExpiresAt,
+                    SessionKey = l.SessionKey,
+                    Pid = l.Pid,
+                    SessionToken = l.RawSessionToken,
+                    Expired = l.Expired,
+                };
+                m_Locks.Add(entry);
+                m_ActualAgentDrafts[entry.Persona] = l.ActualAgent;
 
-                        // 區塊：同 session_key 計數 (collision 偵測)
-                        if (!string.IsNullOrEmpty(entry.SessionKey))
-                        {
-                            m_SameKeyCount[entry.SessionKey] = m_SameKeyCount.GetValueOrDefault(entry.SessionKey, 0) + 1;
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogWarning($"[LoginStatus] parse lock {lockFile} failed: {e.Message}");
-                    }
+                // 區塊：同 session_key 計數 (collision 偵測)
+                if (!string.IsNullOrEmpty(entry.SessionKey))
+                {
+                    m_SameKeyCount[entry.SessionKey] = m_SameKeyCount.GetValueOrDefault(entry.SessionKey, 0) + 1;
                 }
             }
 

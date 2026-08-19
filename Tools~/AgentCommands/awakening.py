@@ -531,6 +531,61 @@ def _profile_migrated_fields(persona: str, fields) -> list:
             if f in _PHASE1_IDENTITY_FIELDS and (aDir / f"{f}.md").exists()]
 
 
+def _letters_is_own_repo(persona: str) -> bool:
+    """`letters/<persona>/` 是不是獨立 git repo（`.git` 可能是目錄也可能是檔案＝submodule）。"""
+    aGit = _paths.letters_persona_dir(persona) / ".git"
+    return aGit.exists()
+
+
+def _letters_move_or_refuse(old: str, new: str) -> None:
+    """
+    區塊職責：改名時把 `letters/<old>/` 一起搬成 `letters/<new>/`。
+    物理意義：Phase 1 之後 identity 欄住在 `letters/<p>/profile/` ⇒
+             **改名不搬家＝製造孤兒 profile/ ＋ 新名字的 identity 靜默退回 legacy 舊值**。
+             那不是「信件留在舊資料夾」的髒，是資料錯誤（summit 2026-08-19 拍板 B）。
+    ⚠ 順序拍死：**先搬 letters/、成功後才動 registry**。
+      中斷時留下的是「目錄搬了、名字沒改」—— 一眼可辨、可手動收尾；
+      反過來（registry 改了、目錄沒搬）就是最難查的半套：名字對得上、資料指向不存在的地方。
+    ⚠ 例外要擋不要猜：`letters/<persona>/` 是**獨立 git repo** 時（目前多數 persona 都是），
+      改名會動到版控結構（父層 `.gitmodules` 的 path / gitlink）——
+      **那是 Tim 的決定，工具不代拍**。直接擋下並印手動 SOP。
+    數值影響：只在確定可搬時呼叫 `Path.rename`（同一顆磁碟的原子搬移）；擋下時什麼都不動。
+    """
+    aOld = _paths.letters_persona_dir(old)
+    aNew = _paths.letters_persona_dir(new)
+
+    if not aOld.exists():
+        print(f"  (letters/{old} 不存在 —— 沒有東西要搬)")
+        return
+
+    if aNew.exists():
+        print(f"❌ rename-persona 停手 —— 目標 letters/{new} 已存在，不覆蓋。\n"
+              f"   先處理掉那個目錄再改名（合併別人的信件目錄不是工具該自己決定的事）。",
+              file=sys.stderr)
+        raise SystemExit(3)
+
+    if _letters_is_own_repo(old):
+        print("\n".join([
+            f"❌ rename-persona 停手 —— `letters/{old}/` 是獨立 git repo，改名會動到版控結構。",
+            "",
+            "   為什麼不代做：資料夾改名同時要改父層 `.gitmodules` 的 path 與 gitlink，",
+            "   那是**對外的版控結構變更**，屬於 Tim 的決定，工具不代拍。",
+            "",
+            "   手動 SOP（照順序）：",
+            f"     1. git -C <letters 父 repo> mv ChatTavern/baton/letters/{old} ChatTavern/baton/letters/{new}",
+            f"     2. 檢查 `.gitmodules` 裡 {old} 那條 path/url，需要時一起改名",
+            f"     3. 兩邊都 commit（gitlink 與 .gitmodules **必須同一筆**下去 ——",
+            "        只有 gitlink 沒有 .gitmodules 的狀態，別人 clone 會拿到沒有 URL 的 submodule）",
+            f"     4. 回來重跑 `awakening.py rename-persona {old} {new}`（那時目錄已在新位置，本步會自動略過）",
+            "",
+            "   （什麼都沒有被改 —— registry 也沒動。）",
+        ]), file=sys.stderr)
+        raise SystemExit(3)
+
+    aOld.rename(aNew)
+    print(f"✓ letters/{old} → letters/{new}（先搬目錄，成功後才動 registry）")
+
+
 def assert_legacy_write_effective(edits: dict, what: str) -> None:
     """
     寫 legacy 之前的守衛。`edits` = {persona: [要改的欄位名, ...]}。
@@ -2351,8 +2406,14 @@ def cmd_rename_persona(args: argparse.Namespace) -> int:
             aEdits.setdefault(name, []).append("fork_lineage")
 
     # Phase 1 守衛：這三個都是 identity 欄 —— 對已遷的 persona，legacy 寫入會靜默無效。
-    # 放在 save_registry 之前 ⇒ 撞到就整筆停手，不會留下「key 改了但欄位沒生效」的半套狀態。
+    # 擺在**搬目錄之前**：什麼都還沒動的時候擋下來，連「目錄搬了名沒改」都不會發生。
+    # （summit 拍板的順序講的是「搬目錄 vs 改 registry」；這道純檢查沒有副作用，放最前面只有好處。）
     assert_legacy_write_effective(aEdits, "rename-persona")
+
+    # Phase 1（§8.2）：identity 住 letters/<p>/profile/ ⇒ 改名必須把 letters 一起搬，
+    # 否則新名字沒有 profile/、identity 靜默退回 legacy 舊值（summit 2026-08-19 拍板 B）。
+    # 先搬目錄、成功後才動 registry —— 中斷時的殘局要是「可辨認」的那一種。
+    _letters_move_or_refuse(old, new)
 
     save_registry(reg)
     print(f"✓ renamed '{old}' → '{new}' in registry")

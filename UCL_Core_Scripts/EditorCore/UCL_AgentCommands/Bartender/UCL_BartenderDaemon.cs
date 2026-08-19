@@ -379,6 +379,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                         bool registered = HandleInlineRegistration(kind, msg, roomId);
                         // 註冊訊息本身不參與 keyword trigger match (control msg)
                     }
+                    else if (UCL_BartenderCliService.IsCliMessage(msg, out var cliSettings))
+                    {
+                        // 區塊職責：酒館 CLI（`cmd …`）與它的 Y／N 確認回覆。
+                        // 物理意義：這是第四種發言來源，也是**唯一會改變 Editor 狀態**的一種
+                        //          （前三種只是發話）。所以它自己帶三道關卡：總開關／白名單／二次確認。
+                        // ⚠ 排在 mention 與 keyword trigger **之前**：一則訊息一種處理。
+                        //   排在後面的話 `cmd remote-window on` 這句會同時被 keyword 比對到，
+                        //   於是一個指令換來兩則發言，而看起來像 bug。
+                        // ⚠ 確認回覆（使用者只打 `y`）**不以 prefix 開頭** ⇒ IsCliMessage 收整個 msg，
+                        //   要靠發話者 ＋ 落磁碟的 pending 才判得出來；只看 body 字首會漏掉它。
+                        UCL_BartenderCliService.Handle(msg, roomId, cliSettings);
+                    }
                     else if (UCL_BartenderMentionService.IsMention(msg.body))
                     {
                         // 區塊職責：`@酒保` 被點名 → 交給 mention service（async，不在 tick 裡等）。

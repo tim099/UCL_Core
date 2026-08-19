@@ -1308,6 +1308,98 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
         }
 
+
+        // ═══════════════════════════════════════════════════════════════
+        // 區塊職責：把**任意一段文字**送進某個在線 persona 的輸入框（給酒館 CLI 的群發用）。
+        // 物理意義：與 RunOnceCore 走**完全相同的實體序列** ——
+        //          定位視窗 → 移游標 → 前景驗證 → 點擊 → 前景驗證(第二次) → per-agent 前置
+        //          → 貼上(失敗退逐字) → 前景驗證(第三次) → Enter。
+        //   ⚠ 三次前景驗證不是重複：中間每一步都可能把焦點交給別人（使用者剛好切窗、
+        //     別的自動化搶前景），而**送出是不可逆的** —— 打進別人的視窗收不回來。
+        // 數值影響：會實際移動游標、點擊、貼上並按 Enter。不寫通知 state、不動 notify 的節流與
+        //          已讀水位（那些是「有沒有新 @ 要戳」的帳，群發不是那件事）。
+        // 邊界：
+        //   · `UCL_RemoteWindowControl.Enabled` 為 false 時**直接拒絕**，且回傳原因 ——
+        //     這是遠端能力的總閘，繞過它就等於讓一句酒館訊息無條件動別人的鍵盤。
+        //   · 每個目標各自回一行結果；**一個失敗不影響其他人**，但失敗要出現在報告裡
+        //     （靜默跳過會讓「他沒收到」跟「他收到了」長得一樣）。
+        // ⚠ 與 RunOnceCore 的序列重複是**已知的債**：兩份會漂。之所以先不抽共用 ——
+        //   RunOnceCore 的每一步都綁著 Finish(pool, chosen, …) 的通知帳，抽出來要一併重整那條帳，
+        //   而那條帳是現在唯一在跑的通知路徑。這裡刻意把重複寫下來當標記，別當成沒看到。
+        // ═══════════════════════════════════════════════════════════════
+        // ⚠ 型別是 `UCL_PersonaLockInfo`（namespace `UCL.Core.EditorLib.AgentCommands`）——
+        //   它的檔案放在 AwakenInit/ 資料夾底下，但 **namespace 沒有 .AwakenInit 那一層**。
+        //   照資料夾名去寫完全限定名會編不過（資料夾結構不是 namespace 的證據）。
+        public static async UniTask<(bool ok, string detail)> DeliverTextTo(
+            UCL_PersonaLockInfo iLock, string iText)
+        {
+            if (iLock == null) return (false, "目標 lock 為 null");
+            string aWho = string.IsNullOrEmpty(iLock.Persona) ? iLock.SessionToken : iLock.Persona;
+            if (string.IsNullOrWhiteSpace(iText)) return (false, $"{aWho}：訊息是空的，沒送");
+            if (!UCL_RemoteWindowControl.Enabled)
+            {
+                return (false, "遠端視窗協作未啟動 —— 這是總閘，沒開就不送（可用 `cmd remote-window on` 開）");
+            }
+
+            var aOptions = new UCL_PersonaLocateOptions();
+            UCL_RemotePersonaLocateConfig.Load(aOptions, out _);   // 沿用後台調好的螢幕／範圍／延遲
+
+            var aResult = await UCL_RemotePersonaLocator.Locate(iLock.SessionToken, aOptions);
+            if (!aResult.Ok || aResult.Selected == null)
+            {
+                return (false, $"{aWho}：畫面上定位不到 {iLock.SessionToken}（{aResult.Reason}）");
+            }
+            var aTarget = aResult.Selected;
+            if (!UCL_RemoteWindowControl.TryMoveCursor(aTarget.CenterX, aTarget.CenterY, out string aMove))
+            {
+                return (false, $"{aWho}：游標沒到位（{aMove}）");
+            }
+            var aExpected = UCL_RemoteWindowControl.LastActivatedWindow;
+            if (!UCL_RemoteWindowControl.ForegroundGuardPasses(aExpected, out string aGuard1))
+            {
+                return (false, $"{aWho}：{aGuard1}，中止（不往別人的視窗點）");
+            }
+            Sleep(aOptions.ClickDelaySec);
+            if (!UCL_RemoteWindowControl.TryClickLeft(out string aClick))
+            {
+                return (false, $"{aWho}：點擊失敗（{aClick}）");
+            }
+            Sleep(aOptions.TypeDelaySec);
+            if (!UCL_RemoteWindowControl.ForegroundGuardPasses(aExpected, out string aGuard2))
+            {
+                return (false, $"{aWho}：{aGuard2}，不輸入文字");
+            }
+            // per-agent 前置（Antigravity 需要 Ctrl+L 才會聚焦到輸入框；Codex / ClaudeCode 不需要）
+            string aPrepare = await UCL_RemoteAgentInput.PrepareInput(iLock.ActualAgent, aOptions);
+
+            string aTypeResult;
+            if (UsePasteInput)
+            {
+                if (!UCL_RemoteWindowControl.TryPasteText(iText, PasteRestoreDelayMs, out aTypeResult))
+                {
+                    UCL_RemoteWindowControl.TryTypeText(iText, aOptions.TypeCharDelaySec, out string aFallback);
+                    aTypeResult = $"{aTypeResult} → 已退回逐字輸入：{aFallback}";
+                }
+            }
+            else UCL_RemoteWindowControl.TryTypeText(iText, aOptions.TypeCharDelaySec, out aTypeResult);
+
+            string aEnterResult;
+            if (SendEnter)
+            {
+                Sleep(EnterDelaySeconds);
+                // 送出前最後一次確認焦點 —— 這是唯一一次「錯了就收不回」的動作
+                if (!UCL_RemoteWindowControl.ForegroundGuardPasses(aExpected, out string aGuard3))
+                {
+                    return (false, $"{aWho}：文字已輸入但未送出（{aGuard3}）");
+                }
+                UCL_RemoteWindowControl.TrySendEnter(EnterPresses, EnterGapSeconds, out aEnterResult);
+            }
+            else aEnterResult = "未送出（設定為不按 Enter）";
+
+            return (true, $"{aWho}：{aTypeResult}｜Enter：{aEnterResult}"
+                        + (string.IsNullOrEmpty(aPrepare) ? "" : $"｜前置：{aPrepare}"));
+        }
+
         static void Sleep(float seconds) =>
             System.Threading.Thread.Sleep(Mathf.Clamp(Mathf.RoundToInt(seconds * 1000f), 0, 10000));
     }

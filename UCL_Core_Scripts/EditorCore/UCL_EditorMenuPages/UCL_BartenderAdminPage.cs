@@ -101,6 +101,8 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Space(6);
                 DrawRemoteWindowSection();
                 GUILayout.Space(6);
+                DrawCliSection();
+                GUILayout.Space(6);
                 DrawAutoNotifySection();
                 DrawWaitParamsSection();
                 GUILayout.Space(6);
@@ -109,6 +111,150 @@ namespace UCL.Core.EditorLib.Page
                 DrawTriggersSection();
                 GUILayout.Space(6);
                 DrawStateSection();
+            }
+        }
+
+        // ===========================================================
+        // 酒館 CLI（cmd 指令 ＋ 白名單）
+        // ===========================================================
+        // 區塊職責：管理「酒館裡一句 `cmd …` 可以動 Editor」這條通道 —— 總開關、前綴、
+        //          確認逾時，以及**誰可以觸發**。
+        // 物理意義：白名單是這條通道唯一的授權層。它比對 sender_id / sender_name / sender_persona
+        //          的**任一全等**（忽略大小寫）—— 精確比對，不是 keyword trigger 那種 substring。
+        //          ⚠ **空清單＝全部擋光**（不是全部放行）：空清單最可能的成因是檔案剛生成或被清掉，
+        //            那時 fail-open 等於整條通道對所有人敞開。
+        // 數值影響：只寫 `ChatTavern/bartender/cli_settings.json`；不動 llm_settings、不動 triggers。
+        // 🩸 這個區塊存在的理由：沒有它，加人只能手改 json ——
+        //   而「只能手改 json」正是 2026-08-19 剛被抱怨過、且那個 json 當天就蒸發過一次的組合。
+        // ===========================================================
+        UCL_BartenderCliSettings m_Cli;
+        bool m_CliLoaded = false;
+        bool m_ShowCliUsers = true;
+        string m_CliNewUserId = "";
+
+        int CliUserCount() => m_Cli != null && m_Cli.users != null ? m_Cli.users.Count : 0;
+
+        void DrawCliSection()
+        {
+            if (!m_CliLoaded) { m_CliLoaded = true; m_Cli = UCL_BartenderCliIO.Load(); }
+            if (m_Cli == null) m_Cli = new UCL_BartenderCliSettings();
+
+            using (new GUILayout.VerticalScope("box"))
+            {
+                EditorGUI.BeginChangeCheck();
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("<b>🔧 酒館 CLI</b>",
+                        new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
+                    GUILayout.Space(UCL_GUIStyle.GetScaledSize(8));
+                    bool aOn = UCL.Core.UI.UCL_GUILayout.CheckBox(m_Cli.enabled);
+                    if (aOn != m_Cli.enabled) m_Cli.enabled = aOn;
+                    GUILayout.Label("啟用（關掉＝完全不理 cmd 訊息）", UCL_GUIStyle.LabelStyle,
+                        GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                }
+                using (new EditorGUI.DisabledScope(!m_Cli.enabled))
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("指令前綴", UCL_GUIStyle.LabelStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                        m_Cli.prefix = GUILayout.TextField(m_Cli.prefix ?? "cmd", UCL_GUIStyle.TextFieldStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                        GUILayout.Label("確認逾時", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        int aTo = UCL.Core.UI.UCL_GUILayout.IntField("", m_Cli.confirm_timeout_seconds,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                        GUILayout.Label("秒（逾期的 Y 不會執行）", UCL_GUIStyle.LabelStyle,
+                            GUILayout.ExpandWidth(false));
+                        if (aTo != m_Cli.confirm_timeout_seconds)
+                        {
+                            m_Cli.confirm_timeout_seconds = Mathf.Clamp(aTo, 10, 3600);
+                        }
+                        GUILayout.FlexibleSpace();
+                    }
+
+                    // ── 白名單 ──
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        bool aFold = UCL.Core.UI.UCL_GUILayout.CheckBox(m_ShowCliUsers);
+                        if (aFold != m_ShowCliUsers) m_ShowCliUsers = aFold;
+                        GUILayout.Label($"白名單（{CliUserCount()} 人）", UCL_GUIStyle.LabelStyle,
+                            GUILayout.ExpandWidth(false));
+                        GUILayout.FlexibleSpace();
+                        m_CliNewUserId = GUILayout.TextField(m_CliNewUserId ?? "", UCL_GUIStyle.TextFieldStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
+                        using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(m_CliNewUserId)))
+                        {
+                            if (GUILayout.Button("➕ 加入", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            {
+                                if (m_Cli.users == null)
+                                {
+                                    m_Cli.users = new System.Collections.Generic.List<UCL_BartenderCliUser>();
+                                }
+                                string aId = m_CliNewUserId.Trim();
+                                bool aDup = false;
+                                for (int i = 0; i < m_Cli.users.Count; i++)
+                                {
+                                    var u = m_Cli.users[i];
+                                    if (u != null && string.Equals(u.id, aId,
+                                            System.StringComparison.OrdinalIgnoreCase)) aDup = true;
+                                }
+                                if (!aDup)
+                                {
+                                    m_Cli.users.Add(new UCL_BartenderCliUser { id = aId, display_name = aId });
+                                }
+                                m_CliNewUserId = "";
+                                m_ShowCliUsers = true;
+                            }
+                        }
+                    }
+                    if (CliUserCount() == 0)
+                    {
+                        // 空清單的後果要當場講，不要讓人以為「還沒設定＝先開著」
+                        EditorGUILayout.HelpBox("白名單是空的 ⇒ **所有人都被擋掉**（包含 Tim）。"
+                            + "這是刻意的 fail-closed：空清單最可能是檔案剛生成或被清掉。", MessageType.Warning);
+                    }
+                    if (m_ShowCliUsers && m_Cli.users != null)
+                    {
+                        int aDelete = -1;
+                        for (int i = 0; i < m_Cli.users.Count; i++)
+                        {
+                            var u = m_Cli.users[i];
+                            if (u == null) continue;
+                            using (new GUILayout.HorizontalScope())
+                            {
+                                GUILayout.Label("比對鍵", UCL_GUIStyle.LabelStyle,
+                                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(56)));
+                                u.id = GUILayout.TextField(u.id ?? "", UCL_GUIStyle.TextFieldStyle,
+                                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                                GUILayout.Label("備註", UCL_GUIStyle.LabelStyle,
+                                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
+                                u.note = GUILayout.TextField(u.note ?? "", UCL_GUIStyle.TextFieldStyle);
+                                if (GUILayout.Button("🗑", UCL_GUIStyle.ButtonStyle,
+                                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(28))))
+                                {
+                                    aDelete = i;
+                                }
+                            }
+                        }
+                        // ⚠ 迴圈裡不能直接 RemoveAt —— 下一幀的 index 會指到別人（而畫面看起來正常）
+                        if (aDelete >= 0) m_Cli.users.RemoveAt(aDelete);
+                    }
+                }
+                if (EditorGUI.EndChangeCheck())
+                {
+                    try { UCL_BartenderCliIO.Save(m_Cli); }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogWarning($"[BartenderCli] 設定寫入失敗：{e.Message}");
+                    }
+                }
+
+                GUILayout.Label("指令：`cmd help`（列出全部）／`cmd remote-window on [permanent]`／`cmd remote-window off`。"
+                    + "不分大小寫。需要二次確認的指令會由酒保問一次 Y／N。",
+                    new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+                GUILayout.Label($"設定檔：{UCL_BartenderCliIO.GetSettingsPath()}",
+                    new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
             }
         }
 

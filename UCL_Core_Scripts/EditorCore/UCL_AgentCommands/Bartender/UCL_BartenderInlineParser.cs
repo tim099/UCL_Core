@@ -243,7 +243,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             "\r\n---\r\n\r\n📖",
         };
 
-        static string StripAutoAttachedBlocks(string s)
+        // ⚠ 2026-08-19 改為 public：第二個消費端是酒館 CLI（UCL_BartenderCliService）。
+        //   🩸 為什麼需要：`cmd msg kiara <訊息>` 這句話因為提到了 persona 名，
+        //   Cmd_Glossary 在發文後把整段新詞區塊附到訊息尾端 —— 於是那段變成指令的一部分，
+        //   而群發會把**整本詞典打進對方的輸入框並按 Enter**。
+        //   剝除器只留一份（本函式），不在 CLI 端再造一套 —— 兩套 marker 清單必漂，
+        //   而漂掉的那天是「有人收到一段莫名的詞典」。
+        public static string StripAutoAttachedBlocks(string s)
         {
             if (string.IsNullOrEmpty(s)) return s;
             foreach (var marker in AutoAttachedBlockMarkers)

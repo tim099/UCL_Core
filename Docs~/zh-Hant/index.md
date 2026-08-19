@@ -124,7 +124,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [HelpURL_Workflow](Workflows/HelpURL_Workflow.md) | `ucl_core:` / `eov_docs:` 等 prefix 機制 |
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | 硬寫本地化字串的處理 |
 | 📖 [Book_Writing_Workflow](Workflows/Book_Writing_Workflow.md) | **寫書 SOP** — 五階段 lifecycle（起書／章節 pattern／cross-persona review／source 整合／publish）／長書 resume packet ／**§編纂類書籍**（素材是別人寫的時候的四條通用規則：機械層與親筆層分開・全收＝免責・處置總表・收錄前講在前面）|
-| 🏛 [Tavern_History_Workflow](Workflows/Tavern_History_Workflow.md) | **酒館歷史書 SOP** — `tavern_history.py` 兩相流程（Phase A 機械匯出當日全文工作稿／Phase B 人工三分類編纂）／`raw`・`summary`・`appendix` 判準／`history-<date>-<slug>` 命名／處置總表與三條讀者承諾／跟 `export-watch` 的分工 |
+| 🏛 [Tavern_History_Workflow](Workflows/Tavern_History_Workflow.md) | **酒館歷史書 SOP** — `tavern_history.py` 兩相流程（Phase A 機械匯出當日全文工作稿／Phase B 人工編纂）／**紀傳體章節骨架**（序・紀・傳・志・表・徵・摘要錄・論贊 —— 敘述在前、原文在後，體例取自史記與三國志裴注）／`raw`・`summary`・`appendix`・`drop` 四分類判準／`history-<date>-<slug>` 命名／處置總表與三條讀者承諾／跟 `export-watch` 的分工 |
 | 🎨 [Manga_Adaptation_Workflow](Workflows/Manga_Adaptation_Workflow.md) | **小說漫畫化 SOP・總文件** — 原作/分鏡/作畫分工 / `ArtGallery/Comic/<slug>/` 展區結構 / **圖文分離**（字幕台詞住 `.md`、畫面零文字）/ 完成的定義與雙向驗收 / 六階段 SOP（**重讀原作・試畫一頁先於量產**）/ **收播與開播**（機械層 vs 手寫層・流程版本戳記）|
 | 🖋 [Manga_Adaptation_Author](Workflows/Manga_Adaptation_Author.md) | **漫畫化・作者篇**（原作／分鏡） — 動筆前必拍板三件事 / 文字人設寫什麼＋**用分鏡點名次數判誰要建檔** / 分鏡稿記法（字幕 vs 對白、`▸註` 寫理由）/ 鐵則機制與「到期日」/ **身分錨點 vs 自然偏移**（只守髮色・服裝・身高）/ 回報問題要標小中大 |
 | 🖌 [Manga_Adaptation_Artist](Workflows/Manga_Adaptation_Artist.md) | **漫畫化・繪師篇**（作畫） — **三視圖人設且零標註**（它會被當參考圖餵進去）/ **掛參考圖 > 文字重建** / **約束有預算**（硬的進 prompt、軟的靠人審）/ 畫面上准與不准出現的字 / **修正路徑：小問題走原圖微調不重生成** |

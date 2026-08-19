@@ -77,10 +77,18 @@ APPENDIX_TAGS = {
     "goodnight-protocol",
 }
 
-SYSTEM_SENDERS = {"酒保", "bartender", "tavern-keeper"}
+# 區塊職責：**不是人**的發話端 —— 系統元件，不是有筆跡的作者。
+# 物理意義：酒保是排程廣播；`_quest_system` 是任務系統的事件流（建任務／認領／進度／完成），
+#          內文由 Cmd 拼出來，一則一個動作。
+# 數值影響：只影響「建議」欄。⚠ **`discord:` 開頭的不算系統** —— 那是 Tim 從 Discord
+#          說的真話，只是經由另一條通道進來（2026-05-16 那天他從 Discord 發了 Hellow world）。
+SYSTEM_SENDERS = {"酒保", "bartender", "tavern-keeper", "_quest_system"}
 
 # 處置代碼 —— Phase B 由編者逐則填進 triage.json 的 disposition
-DISPOSITIONS = ("raw", "summary", "appendix")
+# ⚠ `drop` ＝ **不收進書，但仍在處置總表上留一行**（Tim 2026-08-19：有些訊息可以過濾掉）。
+#   它跟「無聲消失」的差別就是那一行 —— 讀者查得到「這則被濾掉了，理由是什麼」。
+#   純事件流（quest 建任務／認領、酒保時間提醒）走這條；有內容的機械公告（commit）仍走 appendix。
+DISPOSITIONS = ("raw", "summary", "appendix", "drop")
 
 
 def _load_day(room: str, date: str):
@@ -323,7 +331,8 @@ def cmd_verify(args):
 
     print(f"# 對帳 {date}（room {room}）— 共 {len(items)} 則")
     for d in DISPOSITIONS:
-        print(f"  {d:<9} {counts.get(d, 0)} 則")
+        note = "（不收進書，但仍列在處置總表）" if d == "drop" else ""
+        print(f"  {d:<9} {counts.get(d, 0)} 則{note}")
     print(f"  {'未處置':<8} {len(pending)} 則")
     # stdout / stderr 是兩條管線，不 flush 的話錯誤會插在表格前面 —— 讀起來像是先失敗才對帳
     sys.stdout.flush()

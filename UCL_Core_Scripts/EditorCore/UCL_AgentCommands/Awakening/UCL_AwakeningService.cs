@@ -344,8 +344,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         //          ① claim_origin：Python 是 caller env hash，這裡是 "cmd-goodmorning:<env_marker>"
         //            （Editor 代跑，caller env 不可見；該欄本來就 audit-only 不參與判定）
         //          ② pid：Editor 進程 pid（Python 是 CLI pid；同樣純診斷欄）
-        //          ③ 檔案排版：ToJsonBeautify（tab）——排版兩端本已分歧（python=2空格CRLF、
-        //            admin page 接生=tab），json 值層完全等價。
+        //          ③（已收斂，BUG-6）檔案排版：registry 家族 canonical = ToJsonBeautify（tab）。
+        //            Python 端 awakening.dump_registry_json 逐字元鏡射本格式 —— **改任一端排版必須同步另一端**。
         // 數值影響：寫 registry（patch-write）/ lock / _tokens.json / memo 四處 —— 全部 tmp+replace 原子寫。
         // ===========================================================
         public static string MemosDir => ResolveDataSub(Path.Combine("ChatTavern", "baton", "memos"));

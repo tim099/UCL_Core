@@ -283,6 +283,102 @@ _PERSONAS_DIR = _paths.personas_dir()   # 委派：persona 目錄的唯一解析
 _REGISTRY_MIGRATION_MARKER = _REGISTRY_DIR / ".migrated_from_v2_single_file"
 
 
+# ─── Canonical registry 排版（BUG-6）─────────────────────────────────
+# 區塊職責: 產出與 C# JsonData.ToJsonBeautify() **byte-identical** 的 json 字串。
+# 物理意義: personas/*.json 與 _registry_meta.json 由 C#（登入/登出/後台頁）與本檔輪流整檔重寫，
+#          排版不同 ⇒ 每次換手全檔每行都變，語意變動在 git diff 裡隱形（BUG-4 的 13→12 就藏在
+#          80+/68- 裡）。canonical 拍板跟 C# 對齊（A 案）：改這裡一支的代價 << 動 UCL_Core 共用
+#          序列化器。對側 = UCL_JsonData.SerializeJsonDataBeautify —— **改任一端排版必須同步另一端**。
+# 數值影響: TAB 縮排 / `"k":v` 無空格 / 非 32..126 一律 \uXXXX 小寫（非 BMP 拆 surrogate pair，
+#          鏡射 C# 逐 UTF-16 char）/ 換行 os.linesep（= C# Environment.NewLine）/ 無結尾換行。
+
+def _cs_escape_string(s: str) -> str:
+    out = ['"']
+    for c in s:
+        if c == '"': out.append('\\"')
+        elif c == '\\': out.append('\\\\')
+        elif c == '\b': out.append('\\b')
+        elif c == '\f': out.append('\\f')
+        elif c == '\n': out.append('\\n')
+        elif c == '\r': out.append('\\r')
+        elif c == '\t': out.append('\\t')
+        else:
+            cp = ord(c)
+            if 32 <= cp <= 126:
+                out.append(c)
+            elif cp > 0xFFFF:  # C# 逐 UTF-16 char 走 default case ⇒ 兩個 \uXXXX
+                v = cp - 0x10000
+                out.append('\\u%04x\\u%04x' % (0xD800 + (v >> 10), 0xDC00 + (v & 0x3FF)))
+            else:
+                out.append('\\u%04x' % cp)
+    out.append('"')
+    return "".join(out)
+
+
+def _cs_beautify_value(v, layer: int, nl: str) -> str:
+    ind = '\t' * layer
+    if v is None:
+        return 'null'
+    if isinstance(v, str):
+        return _cs_escape_string(v)
+    if isinstance(v, bool):  # 必須在 int 之前（bool 是 int 子類）
+        return 'true' if v else 'false'
+    if isinstance(v, dict):
+        parts = ['{', nl]
+        first = True
+        for k, val in v.items():
+            if not first:
+                parts.append(',')
+                parts.append(nl)
+            parts.append(ind + '\t' + _cs_escape_string(str(k)) + ':')
+            parts.append(_cs_beautify_value(val, layer + 1, nl))
+            first = False
+        parts.append(nl + ind + '}')
+        return "".join(parts)
+    if isinstance(v, list):  # C# 陣列開括號換行自成一行（跟在 `"k":` 之後）
+        parts = [nl + ind + '[', nl]
+        first = True
+        for item in v:
+            if not first:
+                parts.append(',')
+                parts.append(nl)
+            parts.append(ind + '\t')
+            parts.append(_cs_beautify_value(item, layer + 1, nl))
+            first = False
+        parts.append(nl + ind + ']')
+        return "".join(parts)
+    if isinstance(v, float):  # C# double.ToString("R")：整數值不留 .0（registry 目前無 float 欄，防禦性）
+        r = repr(v)
+        return r[:-2] if r.endswith('.0') else r
+    if isinstance(v, int):
+        return str(v)
+    return _cs_escape_string(str(v))
+
+
+def dump_registry_json(obj) -> str:
+    """registry 家族檔案（personas/*.json / _registry_meta.json）唯一的序列化出口。"""
+    return _cs_beautify_value(obj, 0, os.linesep)
+
+
+def _atomic_write_json(path, obj) -> bool:
+    """
+    區塊職責: canonical 排版落檔（tmp + os.replace 原子寫，同 C# AtomicWrite：UTF-8 無 BOM 無結尾換行）。
+    數值影響: 內容與磁碟現況 byte-identical 時**不落檔**（回 False）—— save_registry 每次全員重寫，
+             沒這條的話沒變的 persona 檔也會 mtime 前進、在「誰動了這個檔」的追查裡全是噪音。
+    """
+    text = dump_registry_json(obj)
+    try:
+        if path.exists() and path.read_bytes() == text.encode("utf-8"):
+            return False
+    except Exception:
+        pass  # 讀不到就照寫 —— 這裡的比對只是省寫，不是正確性條件
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8", newline="") as f:  # newline="" 防 \r\n 被再翻譯成 \r\r\n
+        f.write(text)
+    os.replace(tmp, path)
+    return True
+
+
 def _migrate_registry_to_split_if_needed() -> None:
     """
     區塊職責: 一次性 migration — 舊 persona_registry.json (single file) → per-persona files
@@ -318,17 +414,10 @@ def _migrate_registry_to_split_if_needed() -> None:
     for name, pdata in personas.items():
         if not isinstance(pdata, dict):
             continue
-        out = _PERSONAS_DIR / f"{name}.json"
-        tmp = out.with_suffix(".json.tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(pdata, f, indent=2, ensure_ascii=False)
-        os.replace(tmp, out)
+        _atomic_write_json(_PERSONAS_DIR / f"{name}.json", pdata)
 
     # metadata 寫 _registry_meta.json
-    meta_tmp = _REGISTRY_META_PATH.with_suffix(".json.tmp")
-    with open(meta_tmp, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2, ensure_ascii=False)
-    os.replace(meta_tmp, _REGISTRY_META_PATH)
+    _atomic_write_json(_REGISTRY_META_PATH, metadata)
 
     # 舊檔 rename 成備份 (不刪)
     backup = _REGISTRY_PATH.with_suffix(".json.v2.bak")
@@ -397,21 +486,14 @@ def save_registry(reg: dict) -> None:
     # metadata = reg 去掉 personas 的拷貝 (不 mutate caller 傳入的 dict)
     metadata = {k: v for k, v in reg.items() if k != "personas"}
 
-    # Write metadata atomic
-    meta_tmp = _REGISTRY_META_PATH.with_suffix(".json.tmp")
-    with open(meta_tmp, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2, ensure_ascii=False)
-    os.replace(meta_tmp, _REGISTRY_META_PATH)
+    # Write metadata atomic（canonical 排版 + 內容沒變不落檔 —— BUG-6）
+    _atomic_write_json(_REGISTRY_META_PATH, metadata)
 
     # Write each persona atomic
     for name, pdata in personas.items():
         if not isinstance(pdata, dict):
             continue
-        out = _PERSONAS_DIR / f"{name}.json"
-        tmp = out.with_suffix(".json.tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(pdata, f, indent=2, ensure_ascii=False)
-        os.replace(tmp, out)
+        _atomic_write_json(_PERSONAS_DIR / f"{name}.json", pdata)
 
 
 def list_persona_names() -> list:

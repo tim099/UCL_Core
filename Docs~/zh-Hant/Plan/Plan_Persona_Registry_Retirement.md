@@ -335,7 +335,18 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
   `_lib/presence.py`（或 awakening 的 `list_online()`）—— 否則新欄位要在八個掃描點各加一次，
   等於再鋪一層散裝。
 
-### 8.6 連動備忘
+### 8.6 寫入接縫規格（紅隊 basecamp seq 12274 ④ 開的一槍，2026-08-19 記錄 —— 待實作）
+
+寫入端（建人／fork／換綁／欄位更新）動工時的形狀約束：
+
+- **讀取端可以是「查得到就好」，寫入端不行** —— 寫入接縫**強制帶 `actor` 與 `reason`**
+  （必填參數不是 optional）：建人／fork／換綁出錯時的症狀都是「資料看起來很正常」，
+  沒有 actor 欄位就只能靠 git blame 猜是哪支工具寫的。
+- 紅隊另兩洞已修（同日）：C# 補 GetRouting/GetIdentity 讓欄位分類兩端都是編譯器可找到的東西；
+  Exists 與 PoolNames 對齊 _/. 前綴判準（兩個「有沒有這個人」判準不得給不同答案）。
+- email 欄歸位：初版錯放 routing，已依 §8.3 拍板移回 identity 組（兩端同步）。
+
+### 8.7 連動備忘
 
 券（繪圖券／未來的酒館券等）也要遷入個人資料夾＋機制統一 —— 工程較大，另立
 [`Plan_Voucher_Wallet_Migration.md`](Plan_Voucher_Wallet_Migration.md) 備忘，不併入本案施工範圍。

@@ -32,9 +32,11 @@ def _ucl_paths():
 
 _PERSONAS_DIR = _ucl_paths().personas_dir()
 
-ROUTING_FIELDS = ("agent", "model", "actual_agent", "email")
+# ⚠ email 歸 identity 不歸 routing —— Tim §8.3 二輪拍板「個人信箱進 persona 層」；
+#   初版錯放 routing，被紅隊（basecamp seq 12274 題①）對出來：信箱是人的署名，不是專案的路由。
+ROUTING_FIELDS = ("agent", "model", "actual_agent")
 IDENTITY_FIELDS = ("layer_role", "forked_from", "fork_lineage", "forked_at",
-                   "created_at", "identity_vector", "vector_history")
+                   "created_at", "identity_vector", "vector_history", "email")
 
 
 def pool_names() -> list:
@@ -76,7 +78,7 @@ def get_field(persona: str, field: str, default=None):
 
 
 def get_routing(persona: str) -> dict | None:
-    """路由欄（agent / model / actual_agent / email）。查無此人回 None。"""
+    """路由欄（agent / model / actual_agent —— §8.3 綁專案組）。查無此人回 None。"""
     d = get_raw(persona)
     if d is None:
         return None

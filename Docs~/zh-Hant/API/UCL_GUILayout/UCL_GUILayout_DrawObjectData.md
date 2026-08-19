@@ -7,8 +7,9 @@ source_files: |
   UCL_Core_Scripts/UICore/UCL_GUILayout.cs
   UCL_Core_Scripts/UICore/UCL_ObjectFieldGUILayout.cs
   UCL_Core_Scripts/InterfaceCore/UCLI_NameOnGUI.cs
+  UCL_Core_Scripts/AttributeCore/UCL_FoldoutGroupAttribute.cs
 namespace: UCL.Core.UI
-last_updated: 2026-08-07
+last_updated: 2026-08-19
 target_audience: [AI_Agent, Developer]
 aliases: [DrawObjectData, 自動繪製, 反射繪製, UCLI_IsEnable, UCLI_ShortName, UCLI_NameOnGUI, UCLI_FieldOnGUI]
 tags: [imgui, editor-page, reflection]
@@ -160,6 +161,51 @@ public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic, DrawObject
 [NameOnGUI() 全權接管其餘部分]
 ```
 
+## 3.5 `[UCL_FoldoutGroup]` —— 欄位分組折疊（2026-08-19）
+
+Odin `FoldoutGroup` 的 UCL 版，**範圍語意**：標在一段的**第一個欄位**上，
+從它開始往下的欄位都屬於這一組，**直到碰到下一個 `[UCL_FoldoutGroup]`** 為止。
+純顯示層 —— 不影響序列化、不影響 JSON 鍵名、不影響欄位值，**也不改變欄位順序**。
+
+```csharp
+public int m_Normal;                                          // 不在任何組
+[UCL_FoldoutGroup("Advanced")]    public int   m_Retry;       // ↓ Advanced 從這裡開始
+public float m_Timeout;                                       // 同組 —— 不必再標
+[UCL_FoldoutGroup("Debug", true)] public bool  m_VerboseLog;  // 上一組到此結束；本組預設展開
+[UCL_FoldoutGroup("")]            public int   m_Tail;        // 空組名＝顯式結束分組
+```
+
+| 行為 | 規則 |
+|---|---|
+| 範圍 | 從標記的欄位起，**到下一個標記為止**（沒有下一個就收到型別結尾） |
+| 結束分組 | `[UCL_FoldoutGroup("")]`（空組名）—— 之後的欄位回到未分組 |
+| 欄位順序 | **完全不動**（分組是「畫到哪裡為止」，不是把欄位搬到一起） |
+| 預設狀態 | **收合**（`expanded: true` 才預設展開）—— 分組是為了收掉平常不看的東西 |
+| 折疊狀態存哪 | 該物件的 `UCL_ObjectDictionary` → `FoldoutGroup/<組名>/Expanded`；**使用者動過就以他的選擇為準**，預設值只在沒被動過時生效 |
+| 收合時 | **整組欄位一行都不畫**（不是縮小，是不畫） |
+| 同名出現兩段 | 兩個框、**共用同一個折疊狀態**（狀態以組名為 key）—— 同名就是同一個概念 |
+| 組名在地化 | 同 `[Header]`：是 `UCL_LocalizeManager` 既有 key 就翻譯，否則原樣顯示 |
+
+⚠ **組名裡的 `/` 目前是字面字元，不是巢狀路徑**（Odin 支援 `A/B` 巢狀，本版刻意不做 ——
+沒有現場需要它；之後要加時呼叫端一行都不用改）。
+
+**驗收**（範圍層可不開 GUI 直接量，任意型別都能問）：
+
+```bash
+# 樣本型別
+run_cmd.py --persona <me> run Invoke --arg type=UCL.Core.TestLib.UCL_FoldoutGroupSample --arg member=SelfTest
+# → fields=8 | m_Plain1(-) m_AdvA(Advanced) m_AdvB(Advanced) m_AdvC(Advanced)
+#              m_DebugVerbose(Debug,open) m_DebugLevel(Debug,open) m_Plain2(-) m_Plain3(-)
+
+# 真實資產（換 --arg args= 就能問任何型別）
+run_cmd.py --persona <me> run Invoke --arg type=UCL.Core.TestLib.UCL_FoldoutGroupSample     --arg member=Dump --arg paramTypes=System.String --arg args=LittleYellow.HSceneAsset
+# → HSceneAsset fields=28 | hScene(場景與角色) skeletons(場景與角色) sceneObjects(場景與角色)
+#                           clickAreas(互動操作) … config(畫面顯示與特效)
+```
+
+⚠ 這支只證明**範圍傳遞與組名解析**；折疊框畫不畫得出來、收合有沒有真的消失，
+**只有真的重繪才算數**，別把它的綠燈讀成「分組畫對了」。
+
 ## 4. 常見誤用
 
 | 症狀 | 原因 |
@@ -169,6 +215,8 @@ public object OnGUI(string iFieldName, UCL_ObjectDictionary iDataDic, DrawObject
 | List 每個元素長得一樣 | 沒實作 `UCLI_ShortName`，退回型別名 |
 | 折疊狀態互相干擾 / 收不起來 | 多個物件共用同一個 `UCL_ObjectDictionary`，或與 `PopupSearchCache` 共用（資料重載路徑的 `Clear()` 會把折疊值一起清掉） |
 | 多型欄位存檔後子類資料不見 | 欄位漏了 `[SerializeReference]` —— 那是多型的**唯一觸發訊號**，缺了不會報錯 |
+| 最後一組吃掉了型別結尾所有欄位 | 範圍語意 —— 沒有下一個標記就收到底；要提前結束用 `[UCL_FoldoutGroup("")]`（見 §3.5） |
+| 折疊組永遠是收合的 | 預設就是收合；要預設展開寫 `[UCL_FoldoutGroup("X", true)]`，且**該格沒被人動過**時才生效 |
 
 ## 5. 什麼時候不要用
 

@@ -11,6 +11,10 @@ namespace UCL.Core.UI
     static public partial class UCL_GUILayout
     {
         public const string IsShowFieldKey = "IsShowField";
+        /// <summary>[UCL_FoldoutGroup] 折疊狀態在 UCL_ObjectDictionary 裡的子字典 key。</summary>
+        public const string FoldoutGroupKey = "FoldoutGroup";
+        /// <summary>單一折疊組的展開旗標 key（存在 <see cref="FoldoutGroupKey"/> 底下、以組名分格）。</summary>
+        public const string FoldoutExpandedKey = "Expanded";
         public class DrawObjExSetting
         {
             public System.Action OnShowField;
@@ -500,6 +504,19 @@ namespace UCL.Core.UI
             public IEnumerable<Attribute> m_Attrs;
             public bool m_SerializeReference;
             public string m_Header;
+            /// <summary>
+            /// **生效的**折疊組名（已在地化）；null＝不在任何折疊組內。
+            /// 由 <see cref="TypeFieldInfoCache"/> 沿欄位順序往下傳遞 —— 見那裡的區塊註解。
+            /// </summary>
+            public string m_FoldoutGroup;
+            /// <summary>生效組的預設展開狀態（繼承自開啟該組的那個欄位）。</summary>
+            public bool m_FoldoutDefaultExpanded;
+            /// <summary>這個欄位**自己**有沒有標 [UCL_FoldoutGroup]（有標＝一段新範圍的起點或終點）。</summary>
+            public bool m_HasFoldoutAttr;
+            /// <summary>這個欄位自己宣告的組名（已在地化）；空字串＝**結束目前這一組**。</summary>
+            public string m_DeclaredFoldoutGroup;
+            /// <summary>這個欄位自己宣告的預設展開狀態。</summary>
+            public bool m_DeclaredFoldoutExpanded;
             public FieldInfoCache() { }
             // 區塊職責：從共用 entry 抽出 GUI 用的子集
             // 物理意義：與舊版直接從 FieldInfo 反射的結果完全等價（共用層執行同樣邏輯）；
@@ -519,6 +536,19 @@ namespace UCL.Core.UI
                 // 全 attribute 在這裡 lazy 取（GUI render 時 service 已 ready；不在共用 cache 算以避開
                 // 早期載入 NRE，詳見 UCL_TypeReflectCache.UCL_FieldEntry 上方註解）
                 m_Attrs = iEntry.m_FieldInfo.GetCustomAttributes();
+                // [UCL_FoldoutGroup] —— 組名在地化沿用 [Header] 的規則（是既有 key 才翻，否則原樣）
+                var aFoldout = iEntry.m_FieldInfo.GetCustomAttribute<ATTR.UCL_FoldoutGroupAttribute>(true);
+                if (aFoldout != null)
+                {
+                    m_HasFoldoutAttr = true;
+                    m_DeclaredFoldoutGroup = aFoldout.m_GroupName ?? string.Empty;
+                    if (!string.IsNullOrEmpty(m_DeclaredFoldoutGroup)
+                        && UCL_LocalizeManager.ContainsKey(m_DeclaredFoldoutGroup))
+                    {
+                        m_DeclaredFoldoutGroup = UCL_LocalizeManager.Get(m_DeclaredFoldoutGroup);
+                    }
+                    m_DeclaredFoldoutExpanded = aFoldout.m_DefaultExpanded;
+                }
             }
         }
 
@@ -548,6 +578,40 @@ namespace UCL.Core.UI
                 {
                     if (aEntry.m_HideOnGUI) continue; // 等價舊版 [HideInInspector] || [UCL_HideOnGUI] 過濾
                     m_FieldInfos.Add(new FieldInfoCache(aEntry));
+                }
+                PropagateFoldoutGroups(m_FieldInfos);
+            }
+
+            // 區塊職責：把 [UCL_FoldoutGroup] 從「這一格」擴散成「從這一格起的一段範圍」。
+            // 物理意義：標記寫在**該組第一個欄位**上，之後的欄位自動屬於同一組，
+            //          直到遇到下一個 [UCL_FoldoutGroup]（開新組）或標記為空的那個（結束分組）。
+            //   ⇒ 使用端只要在段落開頭標一次，不必逐欄位重複標；
+            //     而且**欄位順序完全不動** —— 分組是「畫到哪裡為止」，不是把欄位搬到一起。
+            // 數值影響：純顯示；只寫 FieldInfoCache 的 m_FoldoutGroup / m_FoldoutDefaultExpanded 兩欄。
+            // ⚠ 同一個組名出現兩段（中間被別的組隔開）時，那是**兩個框共用一個折疊狀態**
+            //   （狀態以組名為 key）—— 刻意如此：同名就是同一個概念，開合本來就該一起動。
+            static void PropagateFoldoutGroups(List<FieldInfoCache> iFields)
+            {
+                string aCurGroup = null;
+                bool aCurExpanded = false;
+                foreach (var aField in iFields)
+                {
+                    if (aField.m_HasFoldoutAttr)
+                    {
+                        // 空組名＝顯式結束目前這一組（之後的欄位回到未分組狀態）
+                        if (string.IsNullOrEmpty(aField.m_DeclaredFoldoutGroup))
+                        {
+                            aCurGroup = null;
+                            aCurExpanded = false;
+                        }
+                        else
+                        {
+                            aCurGroup = aField.m_DeclaredFoldoutGroup;
+                            aCurExpanded = aField.m_DeclaredFoldoutExpanded;
+                        }
+                    }
+                    aField.m_FoldoutGroup = aCurGroup;
+                    aField.m_FoldoutDefaultExpanded = aCurExpanded;
                 }
             }
         }
@@ -829,8 +893,43 @@ namespace UCL.Core.UI
 
 
                     var aFieldInfos = aInfoCache.m_FieldInfos;
+                    // 區塊職責：[UCL_FoldoutGroup] 的折疊框邊界（欄位已由 TypeFieldInfoCache 收攏成連續段）
+                    // 物理意義：組名變了就是邊界 —— 收掉上一個框、開下一個框。收合中的組直接 continue，
+                    //          **整組欄位一行都不畫**（折疊要省的是畫面，不是只把它們縮小）。
+                    // ⚠ 這裡開的 VerticalScope 是**手動配對**的（迴圈中途開、下一次或迴圈後關）——
+                    //   不能用 using，因為它的生命週期跨迭代。迴圈結束後那句 EndVertical 不可漏。
+                    string aCurFoldoutGroup = null;
+                    bool aCurFoldoutExpanded = true;
                     foreach (var aFieldInfoCache in aFieldInfos)
                     {
+                        string aFoldoutGroup = aFieldInfoCache.m_FoldoutGroup;
+                        if (aFoldoutGroup != aCurFoldoutGroup)
+                        {
+                            if (aCurFoldoutGroup != null) GUILayout.EndVertical();   // 收掉上一組的框
+                            aCurFoldoutGroup = aFoldoutGroup;
+                            aCurFoldoutExpanded = true;
+                            if (aCurFoldoutGroup != null)
+                            {
+                                GUILayout.BeginVertical(UCL_GUIStyle.BoxStyle);
+                                var aGroupDic = iDataDic.GetSubDic(FoldoutGroupKey).GetSubDic(aCurFoldoutGroup);
+                                // 預設值只在「這一格還沒被人動過」時生效 —— 讀回來的永遠是使用者上次的選擇
+                                bool aExpanded = aGroupDic.GetData(FoldoutExpandedKey, aFieldInfoCache.m_FoldoutDefaultExpanded);
+                                using (new GUILayout.HorizontalScope())
+                                {
+                                    bool aNext = UCL_GUILayout.Toggle(aExpanded);   // ▼/► —— 全專案統一的折疊語彙
+                                    GUILayout.Label(aCurFoldoutGroup, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                                    GUILayout.FlexibleSpace();
+                                    if (aNext != aExpanded)
+                                    {
+                                        aExpanded = aNext;
+                                        aGroupDic.SetData(FoldoutExpandedKey, aExpanded);
+                                    }
+                                }
+                                aCurFoldoutExpanded = aExpanded;
+                            }
+                        }
+                        if (!aCurFoldoutExpanded) continue;   // 收合中的組：整組不畫
+
                         var aFieldInfo = aFieldInfoCache.m_FieldInfo;
                         var aData = aFieldInfo.GetValue(iObj);
 
@@ -1062,6 +1161,9 @@ namespace UCL.Core.UI
                             aFieldInfo.SetValue(iObj, result);
                         }
                     }
+                    // 最後一組的框還開著 —— 這句漏掉會讓 GUILayout 的 Begin/End 不對稱（整頁版面炸掉）
+                    if (aCurFoldoutGroup != null) GUILayout.EndVertical();
+
                     var iDrawObjExSetting = iParams.m_DrawObjExSetting;
                     if (iDrawObjExSetting != null)
                     {

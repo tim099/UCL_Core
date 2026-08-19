@@ -346,7 +346,28 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
   Exists 與 PoolNames 對齊 _/. 前綴判準（兩個「有沒有這個人」判準不得給不同答案）。
 - email 欄歸位：初版錯放 routing，已依 §8.3 拍板移回 identity 組（兩端同步）。
 
-### 8.7 連動備忘
+### 8.7 三輪補充拍板與討論題（Tim 2026-08-19，summit 記錄）
+
+**Template 拍板（推翻先前改名提案）**：Template 是測試用 persona，**走跟其他 persona 完全一樣
+的流程** —— 只有這樣才能正確測試流程本身。⇒ 不改名 `_Template.json`、接縫不排除、
+pool 名單含 Template 是**正確行為**；遷移時它跟大家一起搬（letters/Template 已存在）。
+測試殼的價值恰恰在於它跟真人無差別 —— 對它開特例＝測試蓋不到特例以外的路。
+**且（Tim 同日追加）：本案相關功能每改好一批，先用 Template persona 實測**（登入／讀欄位／
+lazy migration／寫入端）—— 真人 persona 不當白老鼠，Template 的存在理由就是這個。
+
+**洞①延伸討論題（Tim 提案，待拍板）：python 端讀取是否統一走 Cmd（C# 單端解析）？**
+動機：兩端各有一份解析，改一邊忘另一邊 ⇒ 解析結果不一致。候選三條路：
+
+| 案 | 做法 | 代價 |
+|---|---|---|
+| A（Tim 原案） | python 每次讀 persona 都發 Cmd 問 C# | 單一解析器 ✅；但 **Editor 沒開就讀不到**（awakening.py brief 備援、離線工具全斷）＋每讀一次一輪 RPC（wake_brief 一次讀 21 人） |
+| **B（summit 推薦）** | **C# 解析後寫快照檔，python 只讀快照** —— 照路徑快照 `.agentcommands_root.local` 的成熟模式（C# 只寫不讀、reload 重寫；python 只讀不寫＋過期自癒） | 單一解析器 ✅；Editor 關著仍可讀（快照留在磁碟）；代價＝快照有時差（persona 欄位低頻變動，可接受）＋要定義過期自癒 |
+| C（最小） | 兩端解析保留，但**欄位分類表由 C# 匯出**（schema 檔），python 讀表不寫死常數 | 只統一「分類」不統一「解析」；JSON 解析本身兩端都是標準庫，漂移面其實在分類與判準 |
+
+⚠ 無論選哪案，「pool 名單判準（_/. 前綴）」「有沒有這個人」等**判準類邏輯**都該進單端 ——
+B 案下判準跑在 C#、快照裡直接是結果清單，python 連判準都不用有。
+
+### 8.8 連動備忘
 
 券（繪圖券／未來的酒館券等）也要遷入個人資料夾＋機制統一 —— 工程較大，另立
 [`Plan_Voucher_Wallet_Migration.md`](Plan_Voucher_Wallet_Migration.md) 備忘，不併入本案施工範圍。

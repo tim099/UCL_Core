@@ -194,34 +194,17 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
 
-                if (Directory.Exists(PersonasDir))
+                // persona pool 走 UCL_PersonaProfile 唯一讀取入口（Phase 0 接縫；壞檔接縫已警告）
+                foreach (var name in UCL_PersonaProfile.PoolNamesSorted())
                 {
-                    foreach (var pf in Directory.GetFiles(PersonasDir, "*.json").OrderBy(f => f, StringComparer.Ordinal))
-                    {
-                        try
-                        {
-                            var pj = JsonData.ParseJson(File.ReadAllText(pf));
-                            if (pj == null) continue;
-                            var row = new PersonaRow();
-                            row.name = Path.GetFileNameWithoutExtension(pf);
-                            row.DeserializeFromJson(pj);
-                            //{
-                            //    name = Path.GetFileNameWithoutExtension(pf),
-                            //    agent = pj.GetString("agent", ""),
-                            //    model = pj.GetString("model", ""),
-                            //    layerRole = pj.GetString("layer_role", ""),
-                            //    wakeCount = pj.GetInt("wake_count", 0),
-                            //    status = pj.GetString("status", "offline"),
-                            //    forkedFrom = pj.GetString("forked_from", ""),
-                            //    lineageDepth = (pj.Contains("fork_lineage") && pj["fork_lineage"].IsArray)
-                            //        ? pj["fork_lineage"].Count : 0,
-                            //};
-                            m_Personas.Add(row);
-                            if (!string.IsNullOrEmpty(row.agent) && m_AgentPersonaCount.ContainsKey(row.agent))
-                                m_AgentPersonaCount[row.agent]++;
-                        }
-                        catch { /* 單檔壞不擋整體載入 */ }
-                    }
+                    var pj = UCL_PersonaProfile.GetRaw(name);
+                    if (pj == null) continue;
+                    var row = new PersonaRow();
+                    row.name = name;
+                    row.DeserializeFromJson(pj);
+                    m_Personas.Add(row);
+                    if (!string.IsNullOrEmpty(row.agent) && m_AgentPersonaCount.ContainsKey(row.agent))
+                        m_AgentPersonaCount[row.agent]++;
                 }
 
                 // session lock = persona 目前是否被某 session 持有（換綁前要警告）

@@ -105,16 +105,11 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
         }
 
-        /// <summary>讀 persona 檔的 override（沒有欄位或空字串都算沒設）。</summary>
+        /// <summary>讀 persona 檔的 override（沒有欄位或空字串都算沒設）——
+        /// 走 UCL_PersonaProfile 唯一讀取入口（Phase 0 接縫；email 屬 IDENTITY_FIELDS，§8.3）。</summary>
         public static string LoadPersonaOverride(string persona)
         {
-            try
-            {
-                string path = PersonaPath(persona);
-                if (!File.Exists(path)) return "";
-                var data = JsonData.ParseJson(File.ReadAllText(path));
-                return data == null ? "" : data.GetString("email", "");
-            }
+            try { return UCL_PersonaProfile.GetString(persona, "email", ""); }
             catch { return ""; }
         }
 
@@ -151,21 +146,18 @@ namespace UCL.Core.EditorLib.AgentCommands
             string actualAgent = "";
             try
             {
-                string path = PersonaPath(persona);
-                if (File.Exists(path))
+                // persona 欄位走 UCL_PersonaProfile 唯一讀取入口（Phase 0 接縫；壞檔接縫已警告）
+                var data = UCL_PersonaProfile.GetRaw(persona);
+                if (data != null)
                 {
-                    var data = JsonData.ParseJson(File.ReadAllText(path));
-                    if (data != null)
+                    actualAgent = data.GetString("actual_agent", "");
+                    string own = data.GetString("email", "");
+                    if (!string.IsNullOrWhiteSpace(own))
                     {
-                        actualAgent = data.GetString("actual_agent", "");
-                        string own = data.GetString("email", "");
-                        if (!string.IsNullOrWhiteSpace(own))
-                        {
-                            result.Email = own.Trim();
-                            result.Source = "persona-override";
-                            result.ActualAgent = actualAgent;
-                            return result;
-                        }
+                        result.Email = own.Trim();
+                        result.Source = "persona-override";
+                        result.ActualAgent = actualAgent;
+                        return result;
                     }
                 }
             }

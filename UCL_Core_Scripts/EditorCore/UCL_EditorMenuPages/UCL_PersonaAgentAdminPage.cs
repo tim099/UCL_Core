@@ -1377,6 +1377,7 @@ namespace UCL.Core.EditorLib.Page
                 pj["created_at"] = new JsonData(now);
 
                 AtomicWrite(targetPath, pj.ToJsonBeautify());
+                UCL_PersonaProfile.WriteSnapshot();   // 寫入端動作後刷新快照（§8.7）
 
                 string lineageStr = lineage.Count > 0 ? string.Join(" → ", lineage) + " → " + name : "（原生，無血統）";
                 SetResult($"✅ 建立 persona：`{name}` @ {agent}"
@@ -1424,6 +1425,7 @@ namespace UCL.Core.EditorLib.Page
                 string oldAgent = pj.GetString("agent", "");
                 pj["agent"] = new JsonData(newAgent);
                 AtomicWrite(path, pj.ToJsonBeautify());
+                UCL_PersonaProfile.WriteSnapshot();   // 寫入端動作後刷新快照（§8.7）
 
                 string lockWarn = m_LockedPersonas.Contains(persona)
                     ? "（⚠ 該 persona 目前線上，建議請它重新登入以同步 bank 認知）" : "";

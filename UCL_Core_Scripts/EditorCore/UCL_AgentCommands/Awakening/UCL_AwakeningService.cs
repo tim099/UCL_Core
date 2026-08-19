@@ -785,6 +785,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aRaw["availability"] = "idle";
             aRaw["last_active"] = NowIso();
             AtomicWrite(aPersonaPath, aRaw.ToJsonBeautify());
+            UCL_PersonaProfile.WriteSnapshot();   // 登入 patch-write 後刷新 profile 快照（§8.7）
 
             // ⑥ token（同 persona 舊 active 標 expired，audit trail 保留）+ lock + memo
             string aToken = Guid.NewGuid().ToString("N");
@@ -1158,6 +1159,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             // 信落地後 registry 對齊（wake_count == 這封的號碼）—— 不同步會 stale 一整晚
             aRaw["wake_count"] = aNumber;
             AtomicWrite(aPersonaPath, aRaw.ToJsonBeautify());
+            UCL_PersonaProfile.WriteSnapshot();   // 登入 patch-write 後刷新 profile 快照（§8.7）
             string aLatest = Path.Combine(LettersDir, iPersona, "_latest.md");
             aR.AppendLine("## verify（讀回的事實）");
             aR.AppendLine($"- letter: `{aPath}`（exists={File.Exists(aPath)}，wake #{aNumber}）");
@@ -1223,6 +1225,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aRaw["availability"] = "offline";
             aRaw["last_active"] = NowIso();
             AtomicWrite(aPersonaPath, aRaw.ToJsonBeautify());
+            UCL_PersonaProfile.WriteSnapshot();   // 登入 patch-write 後刷新 profile 快照（§8.7）
             aR.AppendLine("📴 status → offline");
 
             // 解鎖（權威狀態，先於廣播）；token 先撈——expire 要等廣播後（enforce ON 時廣播要用活 token）

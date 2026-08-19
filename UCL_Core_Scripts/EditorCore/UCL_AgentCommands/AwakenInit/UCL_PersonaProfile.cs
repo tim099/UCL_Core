@@ -134,6 +134,70 @@ namespace UCL.Core.EditorLib.AgentCommands
             var jd = GetRaw(iPersona);
             return jd == null ? iDefault : jd.GetInt(iField, iDefault);
         }
+
+        // ===========================================================
+        // 區塊職責：profile 快照 —— python 端的唯一資料來源（§8.7 A＋B 拍板）。
+        // 物理意義：解析單端化 —— python 不再碰原始 persona json，改讀本快照：
+        //          Cmd_PersonaProfile 成功＝C# 剛解析完寫好（現場值，無標記）；
+        //          Cmd 跑不通（Editor 未開）＝python 讀既有快照並**在回傳值上標記**
+        //          `_source="snapshot"`＋`_snapshot_at`（Tim 五輪：標記長在值上不長在 log 裡）。
+        // 數值影響：C# 只寫不讀（照路徑快照 .agentcommands_root.local 的成熟模式）；
+        //          reload／每次 Cmd／寫入端動作後重寫；tmp+replace 原子寫、UTF-8 無 BOM。
+        //          快照是衍生快取不入版控（AgentCommands .gitignore）。
+        // ===========================================================
+        public static string SnapshotPath
+            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "_persona_profile_snapshot.json").Replace('\\', '/');
+
+        /// <summary>重寫快照。回（成功與否, persona 數, 錯誤訊息）—— 呼叫端決定要不要大聲。</summary>
+        public static (bool ok, int count, string error) WriteSnapshot()
+        {
+            try
+            {
+                var root = new JsonData();
+                root["generated_at"] = Awakening.UCL_AwakeningService.NowIso();
+                var rf = JsonData.ParseJson("[]");
+                foreach (var f in ROUTING_FIELDS) rf.Add(new JsonData(f));
+                root["routing_fields"] = rf;
+                var idf = JsonData.ParseJson("[]");
+                foreach (var f in IDENTITY_FIELDS) idf.Add(new JsonData(f));
+                root["identity_fields"] = idf;
+
+                var pool = JsonData.ParseJson("[]");
+                var personas = new JsonData();
+                int n = 0;
+                foreach (var name in PoolNamesSorted())
+                {
+                    var jd = GetRaw(name);
+                    if (jd == null) continue;   // 壞檔 GetRaw 已警告；快照誠實少這一位而不是塞空殼
+                    pool.Add(new JsonData(name));
+                    personas[name] = jd;
+                    n++;
+                }
+                root["pool"] = pool;
+                root["personas"] = personas;
+
+                string path = SnapshotPath;
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                string tmp = path + ".tmp";
+                File.WriteAllText(tmp, root.ToJsonBeautify(), new System.Text.UTF8Encoding(false));
+                if (File.Exists(path)) File.Delete(path);
+                File.Move(tmp, path);
+                return (true, n, "");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[PersonaProfile] 快照重寫失敗：{e.Message}");
+                return (false, 0, e.Message);
+            }
+        }
+
+        // domain reload 後重寫一次（延後到 delayCall —— reload 當下做 IO 會拖編輯器）。
+        // 失敗只警告：快照是備援，寫不出來不該讓 reload 看起來壞掉。
+        [UnityEditor.InitializeOnLoadMethod]
+        static void RefreshSnapshotOnReload()
+        {
+            UnityEditor.EditorApplication.delayCall += () => { WriteSnapshot(); };
+        }
     }
 }
 #endif

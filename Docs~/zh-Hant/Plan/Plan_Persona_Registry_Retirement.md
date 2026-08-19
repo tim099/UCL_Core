@@ -358,9 +358,12 @@ lazy migration／寫入端）—— 真人 persona 不當白老鼠，Template �
 **洞①延伸 —— ✅ Tim 拍板（2026-08-19 四輪）：A＋B 混合**：
 python 先走 Cmd（C# 現場解析＝永遠最新，且每次 Cmd 順手刷新快照、值走 Cmd 回傳）；
 **Cmd 跑不通（Editor 未開）⇒ 退讀快照**。上線期間 Editor 基本常開，所以主路徑是 A、
-B 是離線備援。⇒ 實作待辦：① C# 新 Cmd（回 profile 資料＋刷新快照）② 快照檔
-（C# 只寫：reload／每次 Cmd／寫入端動作後）③ python persona_profile 改「Cmd → 快照」
-兩段 fallback。**退快照時回傳值本身要帶標記**（Tim 五輪補充）：例如附 `_source="snapshot"`
+B 是離線備援。✅ **已實作（summit 2026-08-19，Template 三段實測全過）**：① `Cmd_PersonaProfile`（op=refresh，
+回 snapshot_path/pool_count）② 快照 `AwakenInit/_persona_profile_snapshot.json`（C# 只寫：
+reload delayCall／每次 Cmd／email override／換綁／建人 fork／登入 patch-write 後；gitignored）
+③ python 三段 fallback：Cmd（live 無標記）→ 快照（`_source="snapshot"`＋`_snapshot_at`）→
+local-parse（連快照都沒有的首次 checkout 備援，`_source="local-parse"`）；欄位分類以快照內
+C# 匯出清單為準；env `UCL_PP_SKIP_CMD=1` 顯式跳過 Cmd 段。**退快照時回傳值本身要帶標記**（Tim 五輪補充）：例如附 `_source="snapshot"`
 ＋`_snapshot_at=<快照時間>` 推導欄（沿 list_locks 的 `_` 前綴慣例＝非本體欄位）——
 讓下游拿到的資料自帶「這不是最新」，不是靠呼叫端記得看 stderr；顯示端照 now_status 慣例
 換算「多久前」。⚠ 走 Cmd 成功的回傳**不帶**標記 —— 有標記＝快照，無標記＝現場值，

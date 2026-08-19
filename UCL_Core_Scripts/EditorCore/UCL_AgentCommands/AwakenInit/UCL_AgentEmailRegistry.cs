@@ -128,6 +128,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 if (data == null) { error = "persona 檔解析失敗"; return false; }
                 data["email"] = new JsonData(email ?? "");
                 File.WriteAllText(path, data.ToJsonBeautify(), new UTF8Encoding(false));
+                UCL_PersonaProfile.WriteSnapshot();   // 寫入端動作後刷新快照（§8.7）
                 return true;
             }
             catch (Exception e)

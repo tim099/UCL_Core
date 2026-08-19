@@ -495,6 +495,79 @@ def save_registry(reg: dict) -> None:
         _atomic_write_json(_PERSONAS_DIR / f"{name}.json", pdata)
 
 
+# ═══════════════════════════════════════════════════════════════════
+# 區塊職責：Phase 1 守衛 —— identity 欄已遷到 profile/ 之後，**legacy 寫入不會生效**。
+#
+# 物理意義：退場案 Phase 1（§8.2／§8.4）把 identity 欄的真相搬到
+#          `letters/<persona>/profile/<field>.md`，讀取端（C# UCL_PersonaProfile.GetRaw）
+#          是「profile/ 有欄用欄、缺欄退 legacy」。
+#          ⇒ 一個已遷欄位，python 這邊 `save_registry` 把新值寫進 `personas/<p>.json`
+#            **會成功落檔、不報錯、然後被讀取端完全忽略**。
+#          🩸 這正是本案在殺的病理型：寫入成功、讀出來是舊的、沒有任何一格會紅。
+#          具體受害場景：`rename-persona` 要改 forked_from / fork_lineage / vector_history
+#          三個 identity 欄 —— 對已遷的 persona，改名會「看起來成功但沒生效」。
+#
+# ⚠ 這裡刻意**只偵測、不代寫**：正確的寫入通道是 `Cmd PersonaProfile op=set`
+#   （§8.6 actor+reason 必填＋審計）。python 自己去寫 profile/ 就是繞過審計，
+#   而繞過審計正是本案要消滅的東西（見 UCL_PersonaProfile 的四條鐵律）。
+#   ⇒ 撞到就**吵著停手**，把修法印出來，不留半套寫入。
+#
+# 數值影響：純檔案存在性檢查（每欄一次 exists），不解析內容、不寫任何檔。
+#          Phase 1 之前（沒有任何 profile/ 目錄）一律回空清單 ⇒ 行為與改動前逐字相同。
+# ═══════════════════════════════════════════════════════════════════
+
+# 與 C# UCL_PersonaProfile.IDENTITY_FIELDS / _lib/persona_profile.IDENTITY_FIELDS
+# **三端同步義務**。此處只需要「哪些欄可能被搬走」，不需要值。
+_PHASE1_IDENTITY_FIELDS = ("layer_role", "forked_from", "fork_lineage", "forked_at",
+                           "created_at", "identity_vector", "vector_history", "email")
+
+
+def _profile_migrated_fields(persona: str, fields) -> list:
+    """這些欄位裡，哪幾個已經遷到 `letters/<persona>/profile/`（⇒ legacy 寫入無效）。"""
+    aDir = _paths.letters_persona_dir(persona) / "profile"
+    if not aDir.is_dir():
+        return []
+    return [f for f in fields
+            if f in _PHASE1_IDENTITY_FIELDS and (aDir / f"{f}.md").exists()]
+
+
+def assert_legacy_write_effective(edits: dict, what: str) -> None:
+    """
+    寫 legacy 之前的守衛。`edits` = {persona: [要改的欄位名, ...]}。
+    有任何欄已遷 ⇒ 印出完整清單與修法後 SystemExit(3)，**不落任何檔**。
+    """
+    aBlocked = {}
+    for aPersona, aFields in (edits or {}).items():
+        aHit = _profile_migrated_fields(aPersona, aFields)
+        if aHit:
+            aBlocked[aPersona] = aHit
+    if not aBlocked:
+        return
+
+    aLines = [
+        f"❌ {what} 停手 —— 有 identity 欄已遷到 profile/，寫 legacy 不會生效（退場案 Phase 1 §8.4）。",
+        "",
+        "   已遷的欄（讀取端以 profile/ 為準，legacy 的新值會被忽略）：",
+    ]
+    for aPersona in sorted(aBlocked):
+        aLines.append(f"     · {aPersona}: {', '.join(aBlocked[aPersona])}")
+    aLines += [
+        "",
+        "   正確通道（§8.6 actor+reason 必填、附審計）：",
+        "     python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run PersonaProfile \\",
+        "         --arg op=set --arg persona=<p> --arg field=<欄> --arg value=<值> \\",
+        "         --arg actor=<誰> --arg reason=<憑什麼>",
+        "",
+        "   ⚠ 結構值欄（identity_vector / vector_history / fork_lineage）目前 op=set 只收純量 ——",
+        "     那條路還沒開（見酒館討論）。需要改這幾欄請先問，不要繞路手改 profile/ 檔：",
+        "     繞過接縫＝繞過審計，本案的病就是這樣長出來的。",
+        "",
+        "   （什麼都沒有被寫入 —— 這是刻意的：半套寫入比停手難查。）",
+    ]
+    print("\n".join(aLines), file=sys.stderr)
+    raise SystemExit(3)
+
+
 def list_persona_names() -> list:
     """
     區塊職責: 列當前已建檔的 persona 名單 (給 relationship 等其他 system 反查 cross-persona target 用)
@@ -2266,11 +2339,20 @@ def cmd_rename_persona(args: argparse.Namespace) -> int:
     })
 
     # Update fork_lineage references in other personas (if any forked from old name)
+    # ⚠ 被改名的那位要用 **old** 名去查 profile/ —— 它的 profile/ 目錄在 letters/<old>/ 底下，
+    #   用 new 名查一定查不到（實測踩過：守衛沒攔，改名照樣落檔）。
+    aEdits = {old: ["vector_history"]}          # 上面剛 append 了一筆 rename history
     for name, q in reg["personas"].items():
         if q.get("forked_from") == old:
             q["forked_from"] = new
+            aEdits.setdefault(name, []).append("forked_from")
         if old in q.get("fork_lineage", []):
             q["fork_lineage"] = [new if x == old else x for x in q["fork_lineage"]]
+            aEdits.setdefault(name, []).append("fork_lineage")
+
+    # Phase 1 守衛：這三個都是 identity 欄 —— 對已遷的 persona，legacy 寫入會靜默無效。
+    # 放在 save_registry 之前 ⇒ 撞到就整筆停手，不會留下「key 改了但欄位沒生效」的半套狀態。
+    assert_legacy_write_effective(aEdits, "rename-persona")
 
     save_registry(reg)
     print(f"✓ renamed '{old}' → '{new}' in registry")

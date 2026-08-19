@@ -221,7 +221,20 @@ def resolve(explicit=None, queue_id=None, live_locks=None, my_origin=None,
              f" ⚠ 這不代表在線只有 '{lower.persona}'：本層只回報推論結果，沒有清點 lock 總數。")
         top.note = (top.note + "；" if top.note else "") + f"與 lock({lower.persona}) 不一致"
     elif top.ok and lower.is_ambiguous and top.persona not in lower.candidates:
-        warn(f"身分不一致：宣告說 '{top.persona}'，但在線的是 {' / '.join(lower.candidates)} "
-             f"—— 依宣告執行，此行僅留痕。")
+        # 🩸 BUG-12（kiara 2026-08-19）：這裡原本印「但**在線的是** X / Y」——
+        #   而 `lower.candidates` 的語意是「**某一種比對方式**（token / origin / agent marker）
+        #   縮不到唯一的那幾個候選」，不是「在線的是這些人」。
+        #   實測：宣告 kiara（agent=Myth）時它說「在線的是 basecamp / meadow」（兩人 agent=cc，
+        #   與 env marker 同家），而同一時刻在線 6 人、kiara 自己就在其中 ⇒ 那句可驗證為假。
+        # ⚠ 這跟 gura 2026-08-18 修好的 `top.ok and lower.ok` 分支是**同一個病**，
+        #   但當時的修法只落在那一個分支 ⇒ 本分支變成「更難發現的版本」：
+        #   旁邊多了一段權威註解，讀的人會以為整支檔都治過了。
+        #   **同一種病有兩個分支時，只修一個等於把另一個藏起來。**
+        # ⇒ 修法同那邊：只講 code 真的知道的事，把「哪一種比對」一起印出來，並附免責。
+        warn(f"身分不一致：宣告說 '{top.persona}'，但依 lock 推論縮不到唯一 —— "
+             f"候選是 {' / '.join(lower.candidates)}"
+             f"{f'（{lower.note}）' if lower.note else ''} —— 依宣告執行，此行僅留痕。"
+             f" ⚠ 候選 ≠ 在線清單：本層只回報**該比對方式**的候選，沒有清點 lock 總數；"
+             f"要看誰在線請看 tavern_catchup 或 awakening.list_locks。")
 
     return top

@@ -76,8 +76,9 @@ def registry_path() -> Path:
     return _paths.awaken_init_dir() / "agent_emails.json"
 
 
-def persona_path(persona: str) -> Path:
-    return _paths.persona_file(persona)
+# ⛔ `persona_path()` 已移除（2026-08-19）：本檔改走接縫之後它就沒有呼叫端了，
+#   而留一支「直接指到 legacy 檔」的路徑組裝 = 邀請下一個人再走直讀那條路。
+#   真的需要那個路徑請用 `_lib/ucl_paths.persona_file()`（唯一解析點）。
 
 
 def load_registry() -> dict:
@@ -88,10 +89,32 @@ def load_registry() -> dict:
         return {}
 
 
+# ═══════════════════════════════════════════════════════════════════
+# 區塊職責：讀一位 persona 的欄位 —— **本檔（含 agent_model / git_commit / commit-msg hook）
+#          唯一的 persona 讀取口**。
+# 物理意義：原本這裡是 `json.loads(persona_path(persona).read_text())` —— 直讀
+#          `AwakenInit/personas/<p>.json`，繞過 §8.7 的單端解析接縫。
+#          🩸 退場案 Phase 1 之後那是**會給錯答案**的：identity 欄（含 `email`）的真相
+#          已經在 `letters/<p>/profile/`，而 legacy 只出不進、永遠停在遷移那一刻的值。
+#          實測（2026-08-19 kiara）：把 email 寫進新結構後 ——
+#            profile/email.md → divergence-probe@test.invalid
+#            C# 接縫／快照     → divergence-probe@test.invalid
+#            **本函式（舊版）  → basecamp05122026@gmail.com（agent 預設，因為它讀 legacy 看不到）**
+#          而這個值會被寫進 **commit trailer** ⇒ 錯的信箱進 git history，改不掉。
+#          「寫入成功、讀出來是舊的、沒有任何一格會紅」—— 本案要殺的就是這個形狀。
+# ⇒ 改走 `_lib/persona_profile.get_raw()`：Cmd → 快照 → local-parse 三段 fallback，
+#   Editor 沒開也讀得到，而且**只有一個解析器**。
+# ⚠ 不留「接縫失敗就退直讀」的後路：那條後路就是第二個解析器，
+#   而它只在出事的時候才會跑 —— 沒人驗過的路配上最壞的時機。
+#   接縫本身的第三段（local-parse）已經是那個後路，且回傳值自帶 `_source` 標記。
+# 數值影響：回傳可能多帶 `_source` / `_snapshot_at` / `_field_sources` 等底線前綴推導欄
+#          （非本體欄位）；本檔與下游一律用 `.get("<欄名>")` 取值，不受影響。
+# ═══════════════════════════════════════════════════════════════════
 def load_persona(persona: str) -> dict:
     try:
-        return json.loads(persona_path(persona).read_text(encoding="utf-8"))
-    except Exception:
+        return _persona_profile().get_raw(persona) or {}
+    except Exception as e:
+        print(f"⚠ [agent_email] persona '{persona}' 讀取失敗（接縫）：{e}", file=sys.stderr)
         return {}
 
 

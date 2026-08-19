@@ -198,6 +198,84 @@ namespace UCL.Core.EditorLib.AgentCommands
         {
             UnityEditor.EditorApplication.delayCall += () => { WriteSnapshot(); };
         }
+
+        // ===========================================================
+        // 區塊職責：寫入接縫（§8.6，紅隊 basecamp seq 12274 ④ 的規格）——
+        //          persona 檔的每一筆寫入都要能回答「是誰、什麼時候、憑什麼寫的」。
+        // 物理意義：建人／fork／換綁／欄位更新出錯時的症狀都是「資料看起來很正常」，
+        //          沒有 actor 欄位就只能靠 git blame 猜是哪支工具寫的。
+        //          ⇒ actor 與 reason 是**必填**（空值直接 fail-loud，不寫）；
+        //          每筆寫入 append 一行審計 jsonl，並順手刷新 profile 快照（§8.7）。
+        // 數值影響：WriteRaw＝整檔原子寫（呼叫端 parse→改欄→交回，patch 語意留在呼叫端）；
+        //          SetField＝單一純量欄便捷包裝。審計檔 append-only，不入 gitignore（它就是給人查的）。
+        // ===========================================================
+        public static string AuditPath
+            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "_persona_write_audit.jsonl").Replace('\\', '/');
+
+        static void AppendAudit(string iPersona, string iFields, string iActor, string iReason)
+        {
+            try
+            {
+                var line = new JsonData();
+                line["ts"] = Awakening.UCL_AwakeningService.NowIso();
+                line["persona"] = iPersona;
+                line["fields"] = iFields;
+                line["actor"] = iActor;
+                line["reason"] = iReason;
+                File.AppendAllText(AuditPath, line.ToJson() + "\n", new System.Text.UTF8Encoding(false));
+            }
+            catch (Exception e)
+            {
+                // 審計寫不進去要大聲 —— 但不擋主寫入（資料已落地，讓它看起來失敗會引發重試風暴）
+                Debug.LogError($"[PersonaProfile] 審計 append 失敗（主寫入不受影響）：{e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 整檔寫入（建人也走這裡：目標檔不存在＝新建）。actor / reason 必填，空值不寫直接回錯。
+        /// <paramref name="iChangedFields"/>＝這次動了哪些欄（審計用；建檔傳 "create"）。
+        /// </summary>
+        public static bool WriteRaw(string iPersona, JsonData iFull, string iActor, string iReason,
+            string iChangedFields, out string oError)
+        {
+            oError = "";
+            if (string.IsNullOrWhiteSpace(iPersona)) { oError = "persona 必填"; return false; }
+            if (string.IsNullOrWhiteSpace(iActor) || string.IsNullOrWhiteSpace(iReason))
+            {
+                oError = "actor 與 reason 必填（§8.6）—— 寫入要能回答「是誰、憑什麼」；匿名寫入不收";
+                return false;
+            }
+            if (iFull == null || !iFull.IsObject) { oError = "內容必須是 JSON 物件"; return false; }
+            try
+            {
+                string path = Path.Combine(PersonasDir, iPersona + ".json");
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                string tmp = path + ".tmp";
+                File.WriteAllText(tmp, iFull.ToJsonBeautify(), new System.Text.UTF8Encoding(false));
+                if (File.Exists(path)) File.Delete(path);
+                File.Move(tmp, path);
+                AppendAudit(iPersona, iChangedFields ?? "", iActor, iReason);
+                WriteSnapshot();
+                return true;
+            }
+            catch (Exception e)
+            {
+                oError = e.Message;
+                return false;
+            }
+        }
+
+        /// <summary>單一純量欄寫入（patch：其餘欄原樣保留）。persona 檔不存在＝錯（建人走 WriteRaw）。</summary>
+        public static bool SetField(string iPersona, string iField, string iValue,
+            string iActor, string iReason, out string oError)
+        {
+            oError = "";
+            if (string.IsNullOrWhiteSpace(iField)) { oError = "field 必填"; return false; }
+            var jd = GetRaw(iPersona);
+            if (jd == null) { oError = $"persona 檔不存在或解析失敗：{iPersona}"; return false; }
+            jd[iField] = new JsonData(iValue ?? "");
+            return WriteRaw(iPersona, jd, iActor, iReason, iField, out oError);
+        }
     }
 }
 #endif

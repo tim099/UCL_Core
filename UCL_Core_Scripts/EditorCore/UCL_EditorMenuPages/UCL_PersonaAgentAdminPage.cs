@@ -826,7 +826,10 @@ namespace UCL.Core.EditorLib.Page
                 SetResult($"❌ {iPersona} 的值不像 email：{aTrimmed}（未儲存）");
                 return;
             }
-            if (UCL_AgentEmailRegistry.SavePersonaOverride(iPersona, aTrimmed, out string aErr))
+            if (UCL_AgentEmailRegistry.SavePersonaOverride(iPersona, aTrimmed,
+                    "Tim@PersonaAgentAdminPage",
+                    string.IsNullOrEmpty(aTrimmed) ? "清除 email override" : "設定 email override",
+                    out string aErr))
                 SetResult(string.IsNullOrEmpty(aTrimmed)
                     ? $"✓ {iPersona} 的 override 已清除（回頭吃 agent 預設）"
                     : $"✓ {iPersona} → {aTrimmed}");
@@ -1376,8 +1379,11 @@ namespace UCL.Core.EditorLib.Page
                 pj["forked_at"] = string.IsNullOrEmpty(forkSource) ? JsonData.ParseJson("null") : new JsonData(now);
                 pj["created_at"] = new JsonData(now);
 
-                AtomicWrite(targetPath, pj.ToJsonBeautify());
-                UCL_PersonaProfile.WriteSnapshot();   // 寫入端動作後刷新快照（§8.7）
+                // 寫入走 §8.6 接縫（actor+reason 必填＋審計＋快照刷新；建檔記 "create"）
+                if (!UCL_PersonaProfile.WriteRaw(name, pj, "Tim@PersonaAgentAdminPage",
+                        string.IsNullOrEmpty(forkSource) ? "建 persona" : $"fork from {forkSource}",
+                        "create", out string aCreateErr))
+                    throw new Exception(aCreateErr);
 
                 string lineageStr = lineage.Count > 0 ? string.Join(" → ", lineage) + " → " + name : "（原生，無血統）";
                 SetResult($"✅ 建立 persona：`{name}` @ {agent}"
@@ -1419,13 +1425,12 @@ namespace UCL.Core.EditorLib.Page
             m_RebindArmedPersona = null;
             try
             {
-                string path = Path.Combine(PersonasDir, persona + ".json");
-                if (!File.Exists(path)) { SetResult($"❌ 換綁失敗：找不到 {persona}.json"); return; }
-                var pj = JsonData.ParseJson(File.ReadAllText(path));
-                string oldAgent = pj.GetString("agent", "");
-                pj["agent"] = new JsonData(newAgent);
-                AtomicWrite(path, pj.ToJsonBeautify());
-                UCL_PersonaProfile.WriteSnapshot();   // 寫入端動作後刷新快照（§8.7）
+                string oldAgent = UCL_PersonaProfile.GetString(persona, "agent", "");
+                // 寫入走 §8.6 接縫（actor+reason 必填＋審計＋快照刷新）
+                if (!UCL_PersonaProfile.SetField(persona, "agent", newAgent,
+                        "Tim@PersonaAgentAdminPage", $"換綁 {(string.IsNullOrEmpty(oldAgent) ? "(未綁)" : oldAgent)} → {newAgent}",
+                        out string aRebindErr))
+                { SetResult($"❌ 換綁失敗：{aRebindErr}"); return; }
 
                 string lockWarn = m_LockedPersonas.Contains(persona)
                     ? "（⚠ 該 persona 目前線上，建議請它重新登入以同步 bank 認知）" : "";

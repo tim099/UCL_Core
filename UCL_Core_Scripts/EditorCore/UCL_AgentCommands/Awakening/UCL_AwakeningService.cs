@@ -784,8 +784,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aRaw["status"] = "online";
             aRaw["availability"] = "idle";
             aRaw["last_active"] = NowIso();
-            AtomicWrite(aPersonaPath, aRaw.ToJsonBeautify());
-            UCL_PersonaProfile.WriteSnapshot();   // 登入 patch-write 後刷新 profile 快照（§8.7）
+            // 寫入走 §8.6 接縫（actor+reason 必填＋審計＋快照刷新）
+            if (!UCL_PersonaProfile.WriteRaw(iPersona, aRaw,
+                    $"Cmd_GoodMorning:{(string.IsNullOrEmpty(iEnvMarker) ? "editor" : iEnvMarker)}",
+                    "morning 登入 patch-write（owned 欄）",
+                    "actual_agent,wake_count,status,availability,last_active,model", out string aWErr))
+                throw new Exception($"[Awakening] 登入 registry 寫入失敗：{aWErr}");
 
             // ⑥ token（同 persona 舊 active 標 expired，audit trail 保留）+ lock + memo
             string aToken = Guid.NewGuid().ToString("N");
@@ -1158,8 +1162,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             var (aPath, aNumber) = WriteWakeLetter(aActor, iPersona, iLetterBody);
             // 信落地後 registry 對齊（wake_count == 這封的號碼）—— 不同步會 stale 一整晚
             aRaw["wake_count"] = aNumber;
-            AtomicWrite(aPersonaPath, aRaw.ToJsonBeautify());
-            UCL_PersonaProfile.WriteSnapshot();   // 登入 patch-write 後刷新 profile 快照（§8.7）
+            // 寫入走 §8.6 接縫（actor+reason 必填＋審計＋快照刷新）
+            if (!UCL_PersonaProfile.WriteRaw(iPersona, aRaw, "Cmd_GoodNight:letter",
+                    "收尾信落地後 registry wake_count 對齊", "wake_count", out string aWErr1))
+                throw new Exception($"[Awakening] wake_count 對齊寫入失敗：{aWErr1}");
             string aLatest = Path.Combine(LettersDir, iPersona, "_latest.md");
             aR.AppendLine("## verify（讀回的事實）");
             aR.AppendLine($"- letter: `{aPath}`（exists={File.Exists(aPath)}，wake #{aNumber}）");
@@ -1224,8 +1230,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aRaw["status"] = "offline";
             aRaw["availability"] = "offline";
             aRaw["last_active"] = NowIso();
-            AtomicWrite(aPersonaPath, aRaw.ToJsonBeautify());
-            UCL_PersonaProfile.WriteSnapshot();   // 登入 patch-write 後刷新 profile 快照（§8.7）
+            // 寫入走 §8.6 接縫（actor+reason 必填＋審計＋快照刷新）
+            if (!UCL_PersonaProfile.WriteRaw(iPersona, aRaw, "Cmd_GoodNight:sleep",
+                    "登出 status→offline", "status,availability,last_active", out string aWErr2))
+                throw new Exception($"[Awakening] 登出 registry 寫入失敗：{aWErr2}");
             aR.AppendLine("📴 status → offline");
 
             // 解鎖（權威狀態，先於廣播）；token 先撈——expire 要等廣播後（enforce ON 時廣播要用活 token）

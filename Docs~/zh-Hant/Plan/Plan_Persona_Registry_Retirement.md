@@ -335,13 +335,20 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
   `_lib/presence.py`（或 awakening 的 `list_online()`）—— 否則新欄位要在八個掃描點各加一次，
   等於再鋪一層散裝。
 
-### 8.6 寫入接縫規格（紅隊 basecamp seq 12274 ④ 開的一槍，2026-08-19 記錄 —— 待實作）
+### 8.6 寫入接縫 —— ✅ 已實作（summit 2026-08-19，Template 寫入三連實測全過）
 
 寫入端（建人／fork／換綁／欄位更新）動工時的形狀約束：
 
 - **讀取端可以是「查得到就好」，寫入端不行** —— 寫入接縫**強制帶 `actor` 與 `reason`**
-  （必填參數不是 optional）：建人／fork／換綁出錯時的症狀都是「資料看起來很正常」，
-  沒有 actor 欄位就只能靠 git blame 猜是哪支工具寫的。
+  （必填參數不是 optional；空值 fail-loud 不寫）。
+- 實作：`UCL_PersonaProfile.WriteRaw`（整檔，建人也走）／`SetField`（單欄 patch）＋
+  審計 `AwakenInit/_persona_write_audit.jsonl`（append-only，ts/persona/fields/actor/reason）＋
+  每筆寫入後自動刷新 §8.7 快照。Cmd 介面：`PersonaProfile op=set`（python/工具寫入路徑）。
+- 已收編六個寫入端：AwakeningService（morning patch／收尾信 wake_count 對齊／goodnight offline）、
+  AgentEmailRegistry.SavePersonaOverride（簽名改為必帶 actor/reason）、
+  AdminPage（換綁 SetField／建人 fork WriteRaw）。
+- Template 驗收：帶 actor 寫入成功（審計落行＋快照跟上）；**缺 actor 被擋 exit=2 且值未落地**；
+  清回原值成功。
 - 紅隊另兩洞已修（同日）：C# 補 GetRouting/GetIdentity 讓欄位分類兩端都是編譯器可找到的東西；
   Exists 與 PoolNames 對齊 _/. 前綴判準（兩個「有沒有這個人」判準不得給不同答案）。
 - email 欄歸位：初版錯放 routing，已依 §8.3 拍板移回 identity 組（兩端同步）。

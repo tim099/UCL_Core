@@ -26,9 +26,11 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             "重寫 persona profile 快照（§8.7 A＋B：C# 單端解析，python 讀快照）。";
 
         public override string ArgsSchema =>
-            "op=refresh（預設，目前唯一）— 重寫 _persona_profile_snapshot.json 並回報路徑/人數/時間戳";
+            "op=refresh（預設）— 重寫 _persona_profile_snapshot.json 並回報路徑/人數 | " +
+            "op=set persona=<name> field=<欄> value=<純量值> actor=<誰寫的> reason=<憑什麼> — " +
+            "§8.6 寫入接縫：單欄 patch（actor/reason 必填，缺了直接擋；附審計 jsonl＋快照刷新）";
 
-        public override string ExampleArgs => "op=refresh";
+        public override string ExampleArgs => "op=set;persona=Template;field=email;value=t@example.com;actor=summit;reason=驗收";
 
         public override string HelpURL =>
             "ucl_core:Docs~/{lang}/Plan/Plan_Persona_Registry_Retirement.md";
@@ -37,8 +39,23 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
         {
             await UniTask.Yield();
             string op = GetArg(args, "op", "refresh").Trim().ToLowerInvariant();
+            if (op == "set")
+            {
+                string persona = GetArg(args, "persona", "").Trim();
+                string field = GetArg(args, "field", "").Trim();
+                string value = GetArg(args, "value", "");
+                string actor = GetArg(args, "actor", "").Trim();
+                string reason = GetArg(args, "reason", "").Trim();
+                string oldVal = UCL_PersonaProfile.GetString(persona, field, "");
+                if (!UCL_PersonaProfile.SetField(persona, field, value, actor, reason, out string setErr))
+                    throw new Exception($"[PersonaProfile] set 失敗：{setErr}");
+                UCL_AgentCommandRunner.ReportOutputValue(args, "old_value", oldVal);
+                UCL_AgentCommandRunner.ReportOutputValue(args, "new_value", value);
+                UnityEngine.Debug.Log($"[PersonaProfile] set {persona}.{field}：'{oldVal}' → '{value}'（actor={actor}）");
+                return;
+            }
             if (op != "refresh")
-                throw new Exception($"[PersonaProfile] 未知 op '{op}'（目前只有 refresh）");
+                throw new Exception($"[PersonaProfile] 未知 op '{op}'（refresh / set）");
 
             var (ok, count, error) = UCL_PersonaProfile.WriteSnapshot();
             if (!ok)

@@ -115,28 +115,10 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         /// <summary>
         /// 寫 persona override。空字串＝清除 override（回頭吃 agent 預設），不是寫入空信箱。
-        /// 只動 email 一個 key，其餘欄位原樣保留 —— persona 檔同時被 awakening.py 寫，整檔覆寫會打架。
+        /// 走 §8.6 寫入接縫（patch 單欄＋actor/reason 必填＋審計＋快照刷新）。
         /// </summary>
-        public static bool SavePersonaOverride(string persona, string email, out string error)
-        {
-            error = "";
-            try
-            {
-                string path = PersonaPath(persona);
-                if (!File.Exists(path)) { error = $"persona 檔不存在：{path}"; return false; }
-                var data = JsonData.ParseJson(File.ReadAllText(path));
-                if (data == null) { error = "persona 檔解析失敗"; return false; }
-                data["email"] = new JsonData(email ?? "");
-                File.WriteAllText(path, data.ToJsonBeautify(), new UTF8Encoding(false));
-                UCL_PersonaProfile.WriteSnapshot();   // 寫入端動作後刷新快照（§8.7）
-                return true;
-            }
-            catch (Exception e)
-            {
-                error = e.Message;
-                return false;
-            }
-        }
+        public static bool SavePersonaOverride(string persona, string email, string actor, string reason, out string error)
+            => UCL_PersonaProfile.SetField(persona, "email", email ?? "", actor, reason, out error);
 
         /// <summary>
         /// 解析某 persona 該用的信箱。順序：persona.email → defaults[actual_agent] → fallback → 哨兵。

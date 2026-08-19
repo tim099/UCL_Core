@@ -1,9 +1,11 @@
 ---
 title: 廢棄 AwakenInit/personas — 必要欄位遷進 letters/<persona>/，路由欄留中央
 slug: persona-registry-retirement
-status: analysis-only（2026-08-18 Tim 要求先分析；**尚未拍板、尚未施工**）
+status: **Phase 0-1 ＋ §8.1 已完工**（2026-08-19）；Phase 2 觀察期進行中，Phase 3-4 未動
 created_at: 2026-08-18T13:55:00Z
 created_by: calli
+last_updated: 2026-08-19
+builders: [summit（Phase 0／§8.5-8.7）, kiara（Phase 1／§8.1／消費端收斂）]
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
@@ -18,7 +20,9 @@ related:
 > **一句話**：23 個欄位裡**只有 11 個有真消費端**；其中 4 個是「別人要查的路由欄」不能搬進 letters，
 > 7 個是「我是誰」該搬；剩下 12 個是可推導的快取或根本沒人讀的死欄 —— **那 12 個要刪，不是搬。**
 >
-> ⚠ 本文是分析，不是施工單。所有「建議」都等拍板。
+> ⚠ **本文已從分析轉為施工紀錄**（2026-08-19）。§1-§3 是 calli 的原始分析，
+> **方向以 §8 的拍板為準**；各期進度見 §4 的分期表（✅／🚧／⬜ 三態）。
+> 未完成的部分一律標 ⬜ 並寫明「為什麼還沒做」—— 只寫「待辦」的清單三天後就沒人看。
 
 ## 0. 先講量出來的數字（掃過的，不是估計）
 
@@ -141,7 +145,10 @@ related:
 
 ## 3. 目標配置
 
-### 3.1 `letters/<persona>/_persona.json` —— 身分欄的新家
+### 3.1 `letters/<persona>/_persona.json` —— 身分欄的新家　⛔ **已被 §8.2 取代（留檔備查）**
+
+> ⛔ **不要照本節施工。** Tim 2026-08-19 拍板改「一欄一檔」（`profile/<field>.md`），
+> 已於 Phase 1 落地。本節保留是為了看得出方向改過 —— 而不是留一份看起來還能用的舊規格。
 
 理由：`identity_vector` 是 64 維數字陣列，markdown frontmatter 表達它只會變難讀難改；
 letters 底下已有先例（`bookshelf/reader.json` 是機器真相、`.md` 是人可讀投影）。
@@ -175,7 +182,13 @@ letters/<persona>/
 3. 21 檔 → 1 檔，`save_registry` 那個「寫一個 persona 卻重寫全部 21 檔」的行為（今天實測波及
    basecamp / gura 兩個無關檔）自然消失。
 
-### 3.3 待拍板的一個小決定
+### 3.3 ~~待拍板的一個小決定~~ —— ✅ **已由 §8.2 拍板解掉（選 C 的變體）**
+
+> Tim 2026-08-19 拍板：`identity_vector` 與 `vector_history` **整份搬進** `profile/`
+> （structured 欄、內文為 JSON），中央不留 hash。
+> ⇒ 下面三選項作廢；**跨 persona 比較會退化成「只比 letters 在手的人」（即選項 A 的代價）**，
+> 而那個代價目前沒有消費端在付 —— `vector_history` 連讀回機制都還沒有（§8.2 備忘）。
+> 真的要做近鄰查詢再另案，別在本案裡順手加功能。
 
 `identity_vector` 的跨 persona 比較怎麼辦（三個選項，本見習生偏 B）：
 - **A**：接受降級 —— 只比 letters 在手的人，且回報「掃了 N/21 位」。
@@ -185,14 +198,57 @@ letters/<persona>/
 
 ## 4. 遷移分期
 
-| 期 | 做什麼 | 為什麼這個順序 |
-|---|---|---|
-| **0** | 收斂讀寫接縫：`persona_profile.py` + `UCL_PersonaProfile.cs`，32 支消費端全走它 | 🚧 **施工中（summit 2026-08-19）**：接縫兩端已落地（`_lib/persona_profile.py`＝pool_names/get_raw/iter_raw/get_routing/get_identity/load_personas_into；`UCL_PersonaProfile.cs`＝PoolNames(dir-mtime 快取)/GetRaw/GetString/GetInt）。已遷：C# ChatTavernIO／RelationshipIO／Cmd_LoginStatus／LoginStatusPage／PersonaInspectorPage；python agent_email／agent_model／registered_mail／mbti。**未遷**：C# 寫入端 PersonaAgentAdminPage、TreasuryAccountResolver／BankAdminPage、ChatTavernPersonaCardAsset／AdminPage、Cmd_GoodMorning／AwakeningService 內部讀；python awakening.load_registry（本身是 py 端次接縫，Phase 1 在它與 persona_profile 之間拉 lazy migration）、session_common、check_letters_layout、sync_letters_gitignore、tavern_catchup.resolve_owning_agent、bank_resolver（吃 reg dict，隨 load_registry 走） |
-| **1** | 雙寫雙讀：寫新家、讀優先新家；讀到舊家時**印一行帶呼叫端**的 log 進 `AwakenInit/_persona_access.log` | 這是唯一能證明「還有誰在讀舊檔」的手段（§5） |
-| **2** | 觀察期（建議 ≥ 一週、且要跨過一次全 persona 登入＋一次晚安＋一次發薪） | 消費端不是每天都跑；只跑一天證明不了 |
-| **3** | log 乾淨後移除舊路徑分支，`personas/` 從 code 裡消失 | 到這一步才叫廢棄 |
-| **4** | 刪檔，**備份靠 git tag 不靠留在樹裡**（§5.3） | — |
+> 狀態圖例：✅ 完工並實測 ／ 🚧 進行中 ／ ⬜ 未動（附「為什麼還沒做」）
 
+| 期 | 狀態 | 做什麼 | 進度與實測讀數 |
+|---|---|---|---|
+| **0** | ✅ | 收斂讀寫接縫，消費端全走它 | summit 2026-08-19。`UCL_PersonaProfile.cs` ⇄ `_lib/persona_profile.py`；§8.7 A+B 快照；§8.6 寫入審計（actor+reason 必填） |
+| **1** | ✅ | read-through lazy migration：identity 欄搬進 `letters/<p>/profile/`（一欄一檔） | kiara 2026-08-19。**21/21 人已遷**；`_field_sources` 分布 **profile 150 / absent 18 / legacy 0**；round-trip **168 格 0 不一致**；legacy identity 合併 sha1 `95f8a615…` **遷移前後逐字相同** |
+| **2** | 🚧 | 觀察期（≥ 一週、且要跨過一次全 persona 登入＋一次晚安＋一次發薪） | **2026-08-19 起算**。§8.4 的收斂判準已改成「`source=legacy` 的欄數歸零」，而它**在遷移當天就歸零**（見上）⇒ 觀察期要看的不再是「遷完了沒」，而是**消費端會不會拿到舊值**（見 §4.1 的殘留清單） |
+| **3** | ⬜ | 移除舊路徑分支，`personas/` 從 code 裡消失 | 卡兩件：① §4.1 還有消費端直讀 legacy ② pool 名單的新真相源（`persona_routing` 的 key 集合）要等 Phase 2 之後才切（summit 拍板：Phase 1 期間 `PoolNames` 不動） |
+| **4** | ⬜ | 刪檔，備份靠 git tag 不靠留在樹裡（§5.3） | 等 Phase 3 |
+
+### 4.1 Phase 1 之後仍直讀 legacy 的消費端（Phase 3 的前置清單）
+
+> ⚠ **這些今天都不出錯**，因為 legacy 從不被回寫（`FreezeLegacyIdentity` ＋ python 對偶
+> `_freeze_legacy_identity`）⇒ legacy 的值＝遷移那一刻的值，實測全庫 168 格與 `profile/` 逐格相同。
+> **它們會在「有人改過 profile/」之後才開始給錯答案**，而那時沒有任何一格會紅。
+> 🩸 那不是假想：2026-08-19 Tim 設 kiara 的 email（落在 `profile/`），
+> 而當時 `agent_email.load_persona` 直讀 legacy ⇒ **commit trailer 掛的是舊信箱**
+> （`4c0f568` 之前兩筆已成既成事實，不可改）。
+
+| 消費端 | 狀態 | 備註 |
+|---|---|---|
+| C# `Cmd_LoginStatus` / `LoginStatusPage` / `PersonaInspectorPage` / `AgentEmailRegistry` | ✅ 走接縫 | Phase 0 |
+| C# `PersonaAgentAdminPage` 建人／fork 來源 | ✅ 走接縫 | kiara `705b6ae`。直讀會**複製到舊值** ⇒ 生一個帶過期血統的孩子 |
+| python `agent_email.load_persona`（＝`agent_model` / `git_commit` / commit-msg hook 的共同瓶頸） | ✅ 走接縫 | kiara `4c0f568`。一處改對四處跟著對 |
+| python `awakening.load_registry` | ✅ 走接縫 | kiara `f8807c5`（Tim 拍板：早安流程本來就走 Cmd，資料由 Cmd 供給；備援只要支援 brief） |
+| python `check_letters_layout` / `sync_letters_gitignore` | ✅ 走 `pool_names()` | kiara `705b6ae`。只讀名單不讀 identity，改的理由是**判準漂移不會有人喊痛** |
+| python `_lib/session_common` | ⬜ | 讀 routing／bank（那幾欄留 legacy 是對的，§8.3）⇒ 正確性上不痛，但入口該統一。收之前要確認呼叫時機是否在 Cmd 內（需 `UCL_PP_SKIP_CMD=1`） |
+| python `tavern_catchup.resolve_owning_agent` | ⬜ | 同上：讀 agent 歸屬，不碰 identity |
+| C# `UCL_TreasuryAccountResolver` / `UCL_BankAdminPage` | ⬜ **刻意擋著** | §8.1 反向登記已落地（見那節），但這兩支的**讀 persona 檔**那部分要跟正向鏈退場一起收，先改只會做一半 |
+
+清單單號：`repo:AgentCommands/BugReports/reports/0018.md`（BUG-18，doc 類，附每項「為什麼今天不痛」）。
+
+### 4.2 Phase 1 的附帶落地（不在原分期表裡）
+
+- **遷移產物入版控**：`UCL_AutoCommitPage` 新增 `profile/` 群（kiara `277483e`，預設勾、在線者不勾）。
+  理由：`profile/` 是**別人的讀取觸發**生成的，落地時該 persona 通常不在線 ⇒ 沒有人會 commit 它，
+  而**身分現在住在那裡** —— 沒進版控等於「這個人是誰」只存在一台機器上。
+- **python 寫入端防護**：`awakening.save_registry` 加 `_freeze_legacy_identity()`（C# 對偶），
+  剝掉接縫推導欄（`_source` / `_snapshot_at` / `_field_sources`）並把 identity 按磁碟原值釘回；
+  `cmd_rename_persona` 另加 `assert_legacy_write_effective()` 守衛（kiara `b91c995`）。
+- **rename 必須搬 `letters/`**（§8.2 的連動，summit 拍板）：`289eae6`。
+  獨立 git repo 直接擋下並印手動 SOP —— 改名動到 `.gitmodules` 是版控結構變更，工具不代拍。
+- **結構值欄的寫入通道**：`op=set` 依欄名決定型別（`1f89740`）—— 見 §8.2 的補充。
+
+### 4.3 已知缺口（有單，不擋 Phase 2）
+
+| 單 | 內容 |
+|---|---|
+| BUG-16 | `op=set` 無法把欄位還原成 **absent**（三態的第三態寫不出來）⇒ 唯一復原是手動刪檔＝繞過審計。建議 `op=unset` |
+| BUG-17 | 接縫 module 被同一行程**載入三份**（awakening / agent_email / wake_brief 各自 `spec_from_file_location`）⇒ 不帶 `UCL_PP_SKIP_CMD` 時是 3 次 Cmd 往返 |
+| BUG-18 | §4.1 那份殘留清單本身 |
 ## 5. 「改資料夾名備份起來，看還有誰在讀」為什麼**驗不出來**
 
 這是本案最重要的一段，因為它是直覺的反面。
@@ -246,19 +302,36 @@ letters 慣例用來標「機械產物／不要當人寫的檔」，這裡要更
 
 ## 7. 驗收標準（施工時照這條驗，不驗「有沒有報錯」）
 
+> 狀態（kiara 2026-08-19 逐條對）：①✅ ②⬜ ③✅ ④➖判死改判準 ⑤✅
+
 1. `bank_resolver` 對全 21 位都解得出 bank，**且在故意把某人 letters 移走的情況下仍然解得出**（證明路由不依賴 letters）。
    ⚠ 兩端（python `bank_resolver` 與 C# `UCL_TreasuryAccountResolver`）**各驗一次** —— 同一條路由兩份實作，
    只驗一端＝驗了安全的那半（summit 2026-08-19 補）。
 2. `wake_brief` 的 §0 血統、§6.5 關係、§6 見林三段**都有實際讀數**，不是空狀態文案。
 3. 登入回傳檔的 `wake_count` / 見林 gap 與磁碟推導一致（BUG-4 的兩條對帳仍在）。
-4. `_persona_access.log` 在完整一輪（登入→晚安→發薪→後台頁全開一次）之後**零筆**。
+4. ~~`_persona_access.log` 在完整一輪之後**零筆**~~ ➖ **判死改判準**（§8.4）：
+   那支 log 已被 §8.6 的 `_persona_write_audit.jsonl` 取代（summit 拍板 Q3）。
+   等價判準改成 **`_field_sources` 裡 `source=legacy` 的欄數歸零**，遷移當天即達成
+   （legacy 0 / absent 18 / profile 150）。⚠ 但那**不代表消費端都跑在新結構上** ——
+   那件事的清單在 §4.1，Phase 2 觀察期要看的正是它。
 5. `git diff` 一筆 persona 身分變更**只有那幾行**（BUG-6 定案的副產物）。
+   ✅ 實測：Tim 設 kiara 的 email ⇒ 變更只落在 `profile/email.md` 一個檔。
+
+逐條狀態：
+
+| # | 狀態 | 讀數 |
+|---|---|---|
+| ① 兩端各解 21 位 | ✅ | python parity 0 不一致；C# SelfTest 62 通過 0 失敗。**letters 移走仍解得出**：反向表住 `_registry_meta.json`（專案層），不依賴 letters checkout —— 這正是 §8.1 反轉方向的附帶好處 |
+| ② `wake_brief` 三段有實際讀數 | ⬜ | 未逐段對過。Template brief 生成正常（255 行）、kiara wake#15 brief 626 行有內容，但**沒有逐段核對「不是空狀態文案」** —— Phase 2 觀察期要補 |
+| ③ wake_count／見林 gap 與磁碟一致 | ✅ | kiara wake#15 登入回傳檔 gap 5/10、書籤換算 0→10 有印出來；Template 反覆跑不膨脹 |
+| ④ access.log 零筆 | ➖ | 判死改判準，見上 |
+| ⑤ 一筆變更只有那幾行 | ✅ | 見上 |
 
 ## 8. Tim 補充方向（2026-08-19 口頭，summit 記錄 —— 修訂 §3 的目標配置）
 
 > 本節是**方向拍板**，細部規格仍待定案。與 §3 衝突之處以本節為準。
 
-### 8.1 錢的綁定留專案層，且**反轉登記方向**（修訂 §3.2）
+### 8.1 錢的綁定留專案層，且**反轉登記方向** —— ✅ **已實作**（kiara 2026-08-19，兩端各驗；唯一未做的一格見本節末）
 
 bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 記自己屬於哪家 bank」，
 改成**銀行系統登記「本 bank 下有哪些 persona」**：
@@ -271,7 +344,47 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
   fallback 要出聲，不出聲的 fallback 就是下一個平行宇宙。
 - persona→agent 綁定仍留專案層（commit trailer／顯示歸屬用）——「說話認 persona、錢認 bank」自此兩條線各自獨立，不再經 agent 中轉推導。
 
-### 8.2 身分欄改「一欄一檔」分散式 .md（修訂 §3.1 的單一 `_persona.json`）
+#### 實作與驗收（kiara 2026-08-19）
+
+- **資料**：`_registry_meta.json` 的 `bank_personas`（bank → persona 清單）＋ `_bank_personas_note`
+  把規矩寫在資料旁邊。初值**從現況逐位導出** ⇒ day-1 不改變任何人的錢（commit `5394fae1e`）。
+  空清單六個（Codex／央行／tavern-keeper／三個舊世代 `-da-xiaojie`）正是本節說的「允許空清單」；
+  **已銷戶帳號刻意不列** —— 不接受金流的帳戶不該有人掛在下面。
+- **解析**：python `bank_resolver.resolve_persona_bank_reverse` ＋
+  C# `UCL_TreasuryAccountResolver` 的 `bank_personas` 載入（commit `f4d823f`）。
+  ⚠ **兩端刻意同一筆 commit** —— 這是 two-end contract，只上一端的後果是
+  同一個 persona 在兩邊解到不同 bank，而**兩邊都不會報錯**。
+- **撞名＝拒絕解析，不挑一個**：python `raise PersonaResolutionError`；
+  C# 回 `Unresolved` 並在 Trace 列出所有衝突 bank。
+  理由是代價不對稱：錢進錯帳戶不會有人喊痛，而挑一個就是替它做決定 ——
+  **寧可停在看得見的 unresolved，也不要進看不見的錯帳戶**。
+- **過渡期退正向鏈不准安靜**：python 印 stderr、C# 的 Trace 加 `⚠` 並寫明「此人尚未登記」。
+  否則「反向表漏一位」與「反向表已完整」在報告裡長得一模一樣。
+
+驗收讀數（§7 要求兩端各驗，兩端都驗了）：
+
+| 端 | 讀數 |
+|---|---|
+| python（21 位逐位） | parity（反向 vs 改動前正向）**0 格不一致**；覆蓋率 **0 位需退正向鏈**；故意雙掛 kiara ⇒ raise 並列出 `['Myth','cc']`；`resolve('KIARA')` → `Myth` |
+| C#（`UCL_TreasuryAccountResolver.SelfTest`） | **✅ 全數通過 62 ／ ✗ 0**；③ 段每位 trace 為 `persona X → bank Y（§8.1 反向登記）`—— **沒有 agent 那一跳**，證明走的是新路；⑥ 唯一 ⚠ 是既有的 `claude-da-xiaojie` 撞名（正式帳號優先，行為未改） |
+
+> 📌 撈 C# SelfTest 報告的方法留給後人：`Cmd_Invoke` **不會印回傳值** ——
+> 用它自己的 `storeAs=st` 存起來，再 `Invoke System.IO.File.WriteAllText`
+> 以 `args=<路徑>;$st` 把字串寫成檔來讀。沒有繞路，用的是它宣告過的功能。
+
+#### ⬜ 唯一未做的一格：未登記 persona 的央行 fallback ＋ 酒保通知
+
+本節上面那條防呆（沒被任何 bank 登記 ⇒ 預設綁央行＋觸發酒保通知）**尚未實作**，
+而且**刻意還沒做**：現況是退正向鏈（會出聲），而正向鏈末端 `resolve_bank_account`
+對未知 agent 會 derive `{agent}-da-xiaojie` ⇒ **央行 fallback 永遠不會被觸發**。
+現在寫它就是加一段沒有消費端的 code —— 而「沒人跑過的路配上最壞的時機」
+正是本案從頭到尾在殺的形狀（同 §8.7 那條「不留沒人驗過的後路」）。
+
+⇒ **它該跟正向鏈退場（Phase 3）一起做**。前置：python 端還沒有央行常數
+（C# 有 `UCL_CentralBankSettings.DefaultCentralBankAccount`）—— 要做得先補對側，
+否則又是一組兩端各講一套的常數。
+
+### 8.2 身分欄改「一欄一檔」分散式 .md —— ✅ **已實作**（kiara 2026-08-19，Phase 1）
 
 參考 `letters/<persona>/cmd/` 的形態：**新增專用資料夾，檔名＝欄位、內文＝值**。
 
@@ -283,6 +396,27 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
   要不要做讀回另案優化，本案只搬不加功能。
 - 好處是把 BUG-6 的解推到底：**一筆欄位變更的 diff 就是那一個檔**，且欄位間永無序列化器互踩。
 
+#### 實作補充：型別由**欄名**決定，不由值的長相決定（summit 2026-08-19 拍板 A）
+
+「內文即值」對純字串成立，但實測 21 人的型別分布不只字串：
+`forked_from` / `forked_at` 是 str×14 ＋ **null×7**、
+`fork_lineage` / `identity_vector` / `vector_history` 是 list×21。
+⇒ 三類判準寫死在接縫（`STRUCTURED_FIELDS_ORDER` 在 C#、快照帶出 `structured_fields` 給 python，
+**對側不准另立一張表**）：
+
+| 類 | 欄 | 編碼 |
+|---|---|---|
+| structured | `identity_vector`／`vector_history`／`fork_lineage` | 內文＝JSON 陣列；寫入時**逐元素驗形狀**（數字／物件／字串），parse 或形狀失敗 **fail-loud，絕不退存字串** |
+| nullable scalar | `forked_from`／`forked_at` | 空檔＝`null`（全庫**沒有空字串的這兩欄**，編碼與現存資料不衝突） |
+| scalar | `layer_role`／`created_at`／`email` | 內文即值；**長得像 JSON 也不猜** |
+
+⚠ 「看起來像 JSON 但被存成字串」是這條路唯一的死法（讀回型別不對，下游做數值運算才炸，
+離現場很遠）—— 焊死在接縫裡（commit `1f89740`）。
+⚠ 空陣列 `[]` 是**合法值**（21 人的 `fork_lineage` 全是 `[]`）；空字串則明確擋下並提示
+「空陣列請顯式給 `[]`」—— 空字串與空陣列是兩件事，不猜。
+
+📌 `vector_history` 的「沒有讀回機制」那條備忘仍然成立（本案只搬不加功能）。
+
 ### 8.3 欄位按「綁不綁專案」分家（新增判準，疊在 §2 的消費端判準之上）
 
 | 歸屬 | 欄位 | 落點 |
@@ -291,7 +425,7 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 | **綁專案** | `agent` / `actual_agent` / `model` | 專案層路由表（本專案的桌面工具配置，換專案可能不同） |
 | **不綁專案** | `layer_role` / `forked_from` / `fork_lineage` / `forked_at` / `created_at` / `identity_vector` / `vector_history` / **`email`** | `letters/<persona>/profile/`（§8.2）—— email 是個人信箱，Tim 2026-08-19 拍板進 persona 層；trailer 取用時缺檔走 agent 預設 fallback |
 
-### 8.4 向下相容策略（Tim 2026-08-19 二輪拍板 —— 修訂 §4 的 Phase 1 雙寫）
+### 8.4 向下相容策略 —— ✅ **已實作**（kiara 2026-08-19；歸零判準已精確化，見末）
 
 **不做雙寫，做 read-through lazy migration**：
 
@@ -304,6 +438,29 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 4. ⚠ 寫入端規則不變：新值寫 profile/，**絕不回寫舊 personas/**（舊源只出不進，
    否則兩邊都是活的，BUG-6 的形狀換個位置重演）。
 
+
+#### 實作紀錄與判準精確化
+
+- **觸發條件是「存取」不是名單**（Tim 2026-08-19 追加拍板：「只要嘗試存取舊資料就會觸發
+  該 persona 的 migration 並改用新資料」）。施工中曾加過一道白名單閘（為了鐵律二
+  「真人不當白老鼠」），Template ＋ kiara 走完全流程後**已拆除**（commit `deadc65`）。
+  拆之前另做**全庫預檢**：21 人 × 150 格 encode→decode 模擬，零損失。
+- **合併層落在 C# `GetRaw` 內部**（summit 拍板 Q1）⇒ 32 支消費端一支都不用改，
+  且 `WriteSnapshot` 走同一入口 ⇒ **python 端不需要知道 Phase 1 存在**。
+  ⚠ 但 `WriteSnapshot` 走 `GetRaw(iAllowMigrate:false)`：**批次匯出不是消費端存取** ——
+  讓 domain reload 的快照重寫去遷移，等於把「誰真的被用到」這個訊號抹掉。
+- **`_field_sources` 記三態 `profile / legacy / absent`**（summit 拍板 Q5）：
+  只遷「legacy 真的有 key」的欄；**不生空檔** —— 那會讓從來不存在的欄長出看似有資料的空檔。
+  ⇒ **歸零判準因此精確化**：不是「log 歸零」，是 **`source=legacy` 的欄數歸零**；
+  `absent` 不擋收斂、也不假裝遷過。實測遷移當天即 **legacy 0 / absent 18 / profile 150**。
+- **審計而非另開 log**（summit 拍板 Q3）：`actor=lazy-migration` 進既有
+  `_persona_write_audit.jsonl`，**`_persona_access.log` 判死**（§4 舊文提的那支，
+  在 §8.6 誕生前寫的，已被取代）。唯讀舊源命中**不進 audit** —— 那不是寫入，
+  它的顯形由 `_source` 標記＋stderr 承擔，別讓審計檔混讀取噪音。
+- **Editor 未開時不遷移**（summit 拍板 Q4）：讀舊源並帶 `_source` 標記，
+  **python 永不寫 `profile/`** —— 一旦開這個口，「寫只走接縫」就破了，而且是最難抓的破法。
+  連帶：python tier-3 `local-parse` 在 Phase 1 之後讀不到 `profile/` 新值，**刻意不修**
+  （給 python 長 profile/ 解析器＝第二解析器還魂）；`_source=local-parse` 已宣告「可能舊」。
 ### 8.5 「現在狀態」欄帶著消費端回歸 —— ✅ 已完成（summit 2026-08-19；前置的 presence 收斂＋過期機制移除亦已落地）
 
 §2.4 把 `availability` 判死的理由是**沒有消費端**；Tim 拍板把「現在狀態」概念加回來，

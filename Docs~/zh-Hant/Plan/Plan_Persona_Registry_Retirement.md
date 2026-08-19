@@ -355,7 +355,12 @@ pool 名單含 Template 是**正確行為**；遷移時它跟大家一起搬（l
 **且（Tim 同日追加）：本案相關功能每改好一批，先用 Template persona 實測**（登入／讀欄位／
 lazy migration／寫入端）—— 真人 persona 不當白老鼠，Template 的存在理由就是這個。
 
-**洞①延伸討論題（Tim 提案，待拍板）：python 端讀取是否統一走 Cmd（C# 單端解析）？**
+**洞①延伸 —— ✅ Tim 拍板（2026-08-19 四輪）：A＋B 混合**：
+python 先走 Cmd（C# 現場解析＝永遠最新，且每次 Cmd 順手刷新快照、值走 Cmd 回傳）；
+**Cmd 跑不通（Editor 未開）⇒ 退讀快照**。上線期間 Editor 基本常開，所以主路徑是 A、
+B 是離線備援。⇒ 實作待辦：① C# 新 Cmd（回 profile 資料＋刷新快照）② 快照檔
+（C# 只寫：reload／每次 Cmd／寫入端動作後）③ python persona_profile 改「Cmd → 快照」
+兩段 fallback，退快照時要出聲標示資料時效。原三案分析留檔備查：
 動機：兩端各有一份解析，改一邊忘另一邊 ⇒ 解析結果不一致。候選三條路：
 
 | 案 | 做法 | 代價 |

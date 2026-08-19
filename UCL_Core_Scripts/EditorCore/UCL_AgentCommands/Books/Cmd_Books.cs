@@ -23,10 +23,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
         public override string CommandType => "Books";
 
         public override string ShortDescription =>
-            "共享圖書館經濟 — 捐書 / 發表原創書 / 打賞（燒 token 發雙券）/ 簿冊查詢。";
+            "共享圖書館 — 捐書 / 發表原創書 / 打賞（燒 token 發雙券）/ 簿冊查詢 / **藏書架與系列**。";
 
         public override string ArgsSchema =>
-            "op=donate|publish|tip|tips|donations（required） | " +
+            "op=donate|publish|tip|tips|donations|shelf|series|classify（required） | " +
             "book=書的資料夾名（slug，donate / publish / tip required；tips 選填過濾） | " +
             "agent=錢包身分（bank），donate / publish / tip required —— 錢從誰的帳出不能猜 | " +
             "persona=行為人 persona（donate=捐贈者 / publish=作者 / tip=打賞者；required 同上） | " +
@@ -35,7 +35,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             "title=書名（publish 首次發表 required —— Books/ 沒有 metadata 可推導） | " +
             "note=一句話備註（選填） | " +
             "retry=true（tip 專用：補發 pending 的券，不動帳） | " +
-            "no_notify=true（選填：不發酒館廣播）";
+            "no_notify=true（選填：不發酒館廣播） | " +
+            "kind=original|external|watch-log|tavern-history（classify 選填；shelf 可當篩選） | " +
+            "series=系列 id（classify 設定／series 查詢；classify 傳空字串＝脫離系列） | " +
+            "volume=冊次整數（classify 選填，0＝未指定） | " +
+            "series_title=系列顯示名（classify 首次使用某系列時 required） | " +
+            "parent_series=上位系列 id（classify 選填，做巢狀：世界觀 › 三部曲） | " +
+            "parent_series_title=上位系列顯示名（parent_series 首次使用時 required） | " +
+            "series_note=系列一句話說明（classify 選填）";
 
         public override string ExampleArgs => "op=donations";
 
@@ -57,10 +64,39 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
                 case "donate": await Op_Donate(args, token); break;
                 case "publish": await Op_Publish(args, token); break;
                 case "tip": await Op_Tip(args, token); break;
+                // 以下三個唯讀／只改分類，不動錢 —— 刻意不走 Broadcast
+                case "shelf":
+                    ResolveLastOp(UCL_BooksShelf.RenderShelf(GetArg(args, "kind", "").Trim()));
+                    break;
+                case "series":
+                    ResolveLastOp(UCL_BooksShelf.RenderSeries(GetArg(args, "series", "").Trim()));
+                    break;
+                case "classify": Op_Classify(args); break;
                 default:
                     throw new ArgumentException(
-                        $"[{CommandType}] 未知 op：{op}（可用：donate / publish / tip / tips / donations）");
+                        $"[{CommandType}] 未知 op：{op}"
+                        + "（可用：donate / publish / tip / tips / donations / shelf / series / classify）");
             }
+        }
+
+        // 區塊職責：op=classify —— 設定某本書的 kind / series / volume。
+        // 物理意義：series 用 args.ContainsKey 判斷「有沒有傳」而不是判空字串 ——
+        //          **傳空字串是「脫離系列」的唯一表達方式**，跟「沒傳」是兩件事。
+        void Op_Classify(Dictionary<string, string> args)
+        {
+            string book = RequireArg(args, "book");
+            string log = UCL_BooksShelf.Classify(
+                book,
+                GetArg(args, "kind", "").Trim(),
+                args.ContainsKey("series") ? GetArg(args, "series", "").Trim() : null,
+                GetArg(args, "volume", "").Trim(),
+                GetArg(args, "series_title", "").Trim(),
+                args.ContainsKey("parent_series") ? GetArg(args, "parent_series", "").Trim() : null,
+                GetArg(args, "parent_series_title", "").Trim(),
+                GetArg(args, "series_note", "").Trim(),
+                out string error);
+            if (log == null) throw new InvalidOperationException($"[{CommandType}] classify 失敗：{error}");
+            ResolveLastOp($"# 🏷 Books classify\n\n{log}");
         }
 
         async UniTask Op_Donate(Dictionary<string, string> args, CancellationToken token)

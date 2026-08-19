@@ -143,6 +143,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             entry["base_price"] = DonationBasePrice;
             entry[Key_DonatedAt] = Today();
             entry[Key_Note] = note ?? "";
+            UCL_BooksClassification.Stamp(entry, book, UCL_BookOrigin.Donated, UCL_BookKind.External, "", 0);
             SaveJson(dpath, entry);
 
             string who = string.IsNullOrEmpty(donorPersona) ? donorBank : donorPersona;
@@ -182,10 +183,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             bool wasPublished = existing != null;
             if (existing != null)
             {
-                if (existing.GetString(Key_Source, "") != "authored")
+                // 🩸 舊版這裡看的是 `source != "authored"` —— 於是 source=watch-log 的觀影實錄
+                //   被判成「捐贈調入」而永遠無法再版（實測 watch-apocalypse-hotel）。
+                //   權限只該問一件事：這本是不是館內自產的 ⇒ 改看 origin。
+                if (UCL_BooksClassification.DeriveOrigin(existing, book) == UCL_BookOrigin.Donated)
                 {
                     error = $"《{book}》已以捐贈調入登記（捐贈者 {existing.GetString(Key_DonorPersona, "?")}）" +
-                            "—— publish 只發布原創書";
+                            "—— publish 只發布館內自產的書";
                     return null;
                 }
                 string registeredAuthor = existing.GetString(Key_DonorPersona, "");
@@ -212,7 +216,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             entry[Key_DonorAgent] = donorAgent ?? "";
             entry[Key_Tokens] = 0;
             entry["base_price"] = 0;
+            // source 照舊寫出 —— python 端（library.py）仍在讀它；拿掉等於靜默改 wire format。
             entry[Key_Source] = "authored";
+            // 分類三軸：沿用既有登記（classify 設過就不覆蓋），沒有才由 slug 前綴推導。
+            UCL_BooksClassification.Stamp(
+                entry, book, UCL_BookOrigin.Authored,
+                existing != null ? UCL_BooksClassification.DeriveKind(existing, book)
+                                 : UCL_BooksClassification.DeriveKind(new JsonData(), book),
+                existing != null ? UCL_BooksClassification.DeriveSeries(existing, book)
+                                 : UCL_BooksClassification.DeriveSeries(new JsonData(), book),
+                existing != null ? UCL_BooksClassification.DeriveVolume(existing) : 0);
             entry[Key_Chapters] = chapterCnt;
             entry[Key_DonatedAt] = existing != null ? existing.GetString(Key_DonatedAt, Today()) : Today();
             entry[Key_PublishedAt] = Today();
@@ -252,7 +265,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             string benBank = ben.GetString(Key_Donor, "");
             string benPersona = ben.GetString(Key_DonorPersona, "");
             string title = ben.GetString(Key_Title, book);
-            string benKind = ben.GetString(Key_Source, "") == "authored" ? "作者" : "捐贈者";
+            string benKind = UCL_BooksClassification.DeriveOrigin(ben, book) == UCL_BookOrigin.Authored
+                ? "作者" : "捐贈者";
             if (string.IsNullOrEmpty(benPersona))
             {
                 error = $"《{title}》登記簿缺 donor_persona —— 無法定位受益 persona";
@@ -523,7 +537,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             return o.Length > 40 ? o.Substring(0, 40) : (o.Length == 0 ? "unknown" : o);
         }
 
-        static JsonData LoadJson(string path, out string error)
+        // internal：同 namespace 的 UCL_BooksShelf 要用（分類寫入走同一套讀寫，不另造一份）
+        internal static JsonData LoadJson(string path, out string error)
         {
             error = null;
             if (!File.Exists(path)) { error = $"檔案不存在：{path}"; return null; }
@@ -540,7 +555,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             }
         }
 
-        static void SaveJson(string path, JsonData data)
+        internal static void SaveJson(string path, JsonData data)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             // 與 UCL_ReadingLibraryIO.SaveJson 同款：非 ASCII 逃脫還原成原生 UTF-8

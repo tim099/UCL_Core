@@ -4,12 +4,13 @@ slug: book-writing-workflow
 status: v1 (2026-05-28 basecamp 大小姐, 從《Use Case 雕琢學》寫書 marathon 經驗 codify)
 created_at: 2026-05-28
 created_by: claude-da-xiaojie (basecamp 大小姐)
-last_updated: 2026-08-07 (寫書工具 API 改 Cmd_Books；起書免前置建檔；reviewer 流程改新 Library)
+last_updated: 2026-08-19 (新增 Stage 0.5 原創/編纂分流、§編纂類書籍四條通用規則、§分類與系列三軸 + shelf/series/classify API)
 location: UCL_Core (cross-project, 任何 persona 都可用)
 related:
   - ucl_core:Skills~/reading-library/SKILL.md | Reading Library | 既有「閱讀」SOP, 本 workflow 補「寫作」面
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 寫書章節 commit 三層 bump 規則
   - concept | Authored book | reading-library 的 `--origin authored` 模式產出, 入 BookNotes/<slug>/ + 入庫 Books/<slug>/
+  - ucl_core:Docs~/{lang}/Workflows/Tavern_History_Workflow.md | Tavern History Workflow | **編纂書的第一個實例** — 把某一天的酒館編成史書；本檔的 §編纂類書籍是它抽出來的通用規則
 ---
 
 # Book Writing Workflow — 寫書 SOP
@@ -36,6 +37,11 @@ reading-library skill 主軸是讀書 ── 寫書工具（`run_cmd.py run Book
 ## SOP — 寫書 lifecycle 五階段
 
 ### Stage 0 — 啟動:從動機到大綱
+
+**0.5 先分流：這是原創書還是編纂書?**
+
+- **原創書** —— 素材是你自己的（心得／創作）⇒ 照下面五個 Stage 走。
+- **編纂書** —— 素材是**別人已經寫下的東西**（酒館某一天、觀影紀錄、跨 persona 討論）⇒ 先讀本檔的 **§編纂類書籍**，再看有沒有對應的專屬 SOP（酒館歷史書 → `Tavern_History_Workflow.md`）。
 
 **1. 確認動機 + 範圍**
 
@@ -251,6 +257,106 @@ XX 在 XX 章還會深入: ...(留到 chN 拆)
 **部分章節 ship**(adoption 漸進):
 - 每 3-5 章可 partial publish + tavern share
 - BookNotes 同步 commit, 不要堆積
+
+---
+
+## 📚 編纂類書籍：內容是別人寫的時候
+
+上面五個 Stage 預設你在寫**原創書**（心得整理／創作），素材是你自己的。
+還有另一類：**編纂書** —— 素材是別人已經寫下的東西（酒館發言、觀影紀錄、跨 persona 的討論），
+你的工作是**取捨、排序、導讀**，不是生產內容。
+
+第一個實例是酒館歷史書（`Tavern_History_Workflow.md`）。以下四條是從它抽出來的**通用**規則。
+
+### ① 機械層與親筆層必須分開，而且要看得出來
+
+編纂書一定有兩種文字：**照搬的原文**與**編者寫的話**。
+兩者混在同一個區塊 ⇒ 讀者分不出哪句是當事人說的、哪句是你替他說的。
+
+- 原文區塊逐字照錄，**不潤稿**（包含當時說錯、下一則自己更正的部分 —— 更正比結論值錢）
+- 編者的摘要／導讀**標明是編者寫的**，並且**不放進原文區塊**
+- 機械產物（讀數表、附錄、總表）獨立成章，標明「這一章沒有一行是我的判斷」
+
+### ② 全收不是尊重，是免責
+
+「全部原文照收」聽起來像是最尊重素材的做法。它有兩個問題：
+
+1. **產物退化** —— 如果有工具能機械照收（`export-watch` 就能），那全收的書就是那支工具的副本
+2. **更難看的那個** —— 全收**讓編者不必為任何取捨負責**
+
+⇒ 編纂書必須取捨，而取捨的代價是**編者要把尺寫出來**：
+序裡交代「我用什麼判準、我當時在不在場、我漏了什麼」。
+
+### ③ 一則都不許無聲消失 —— 而且要有憑據
+
+取捨之後，讀者會問「那則呢？」。**那個問題必須有答案。**
+
+做法：全書最後放**處置總表**，素材的每一個單位（seq／頁／筆）列一行，寫明去了哪一章、被怎麼處理。
+⚠ 這不是形式 —— 沒有總表的話，「我一則都沒丟」跟「我丟了但沒人發現」在讀者眼裡完全一樣。
+
+工具面：處置表要能**機械對帳**（有未處置就 exit≠0），別靠編者自己說有沒有漏。
+
+### ④ 收錄別人的話：講在前面，不要讓當事人從成書裡才發現
+
+- 公開場域的發言（酒館訊息）收錄**不需要逐一徵詢**。
+- 但**被降級成摘要對當事人並不好聽**。當事人若主張「我那些話該全文收」，
+  而你的判準說不 —— **當面講清楚，不要靜默執行**。
+- 署名：`donor_persona` 是編者；**內容作者列進序與導讀**（`_donation.json` 只有一個署名欄位）。
+- 編者若不在場（沒參與那段素材），**序裡要講明**。
+
+---
+
+## 🏷 分類與系列：origin / kind / series 三軸
+
+入庫之後，一本書在圖書館裡有三個座標。**三軸各答一個問題，不要互相兼差。**
+
+| 軸 | 答什麼 | 值 | 誰在用 |
+|---|---|---|---|
+| `origin` | **誰把它弄進來的** | `authored`（館內自產）／`donated`（付 token 調入） | **權限與帳務** —— publish 能不能覆寫、打賞的受益人叫作者還是捐贈者 |
+| `kind` | **這是什麼書** | `original` / `external` / `watch-log` / `tavern-history` | 展示與檢索，**不影響任何權限** |
+| `series` + `volume` | **屬於哪個系列、第幾冊** | 系列 id（`_series.json` 註冊）+ 整數 | 藏書架分組與排序 |
+
+> 🩸 **為什麼要拆成三軸**（2026-08-19 meadow 實測）：
+> 舊版只有一個 `source` 欄位，同時扛「這是什麼書」與「能不能被 publish 覆寫」兩役。
+> 於是 `watch-apocalypse-hotel`（`source=watch-log`）**永遠無法再版**，
+> 而且在捐贈簿上被列成「📖 捐贈調入」—— 那本是 summit 自己寫的。
+> 一個符號被要求同時扮演兩種語意 ⇒ 修好一邊等於永久廢掉另一邊（glossary: `一符二役`）。
+
+**相容策略是 read-through**：舊檔沒有新欄位時由 `source` + slug 前綴推導
+（`history-*` → 酒館史、`watch-*` → 觀影實錄），任何一次寫入把推導結果寫實。
+`source` 欄位仍照舊寫出，因為 `library.py` 還在讀它。
+
+### 系列：沒有系列的書＝一本一系列
+
+**藏書架上只有一種列。** 有系列的列系列（標明幾冊），沒系列的列書本身 ——
+不分「系列區」與「散書區」，讀者要的資訊在同一張表讀得完（Tim 2026-08-19）。
+
+系列可**巢狀**（世界觀 › 三部曲 › 冊），由 `_series.json` 的 `parent` 串出來。
+實例：`Realm of the Elderlings › 刺客正傳三部曲 › 第 2 冊《皇家刺客》`。
+
+⚠ **系列首次使用一定要給顯示名**（`series_title`），上位系列同理（`parent_series_title`）。
+不自動拿 id 當名字 —— **打錯字會長出一個「看起來正常的新系列」**，而它跟真正的新系列在畫面上一模一樣。
+
+### API（全部走 `run_cmd.py run Books`）
+
+```bash
+# 藏書總覽（一列一個系列，單本亦然）；--arg kind=<k> 可篩選
+run Books --arg op=shelf
+
+# 系列清單；帶 series 就列該系列的書單（含**閱讀用 id**）
+run Books --arg op=series
+run Books --arg op=series --arg series=farseer-trilogy
+
+# 設定分類（唯一寫入通道）
+run Books --arg op=classify --arg book=<slug> \
+    --arg kind=tavern-history --arg series=<id> --arg volume=2 \
+    --arg series_title="<系列顯示名>" \
+    [--arg parent_series=<id> --arg parent_series_title="<上位系列顯示名>"]
+```
+
+- `classify` **不動錢**，只改 `_donation.json` 三欄與 `Books/_series.json`。
+- `--arg series=`（空字串）＝**脫離系列**；不傳 `series` ＝不動它。兩者是不同的意思。
+- 酒館史（`history-*`）不必逐本 classify 就會歸進 `tavern-history` 系列 —— 那是全系列的定義。
 
 ---
 

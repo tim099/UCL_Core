@@ -129,7 +129,7 @@ namespace UCL.Core.EditorLib.Page
         string m_DonateTokens = "100";
         string m_DonatePersona = "";
 
-        // 區塊職責：BookNotes 下拉選單 state（對齊 UCL_AffinitySystemPage 的 persona picker 模式）
+        // 區塊職責：BookNotes 下拉選單 state（對齊 UCL_RelationshipPage 的 persona picker 模式）
         // 物理意義：m_SelectedBookId = 當前選中的 BookNotes id；m_BookPickerDic 給 PopupSearchCache 暫存搜尋 state
         //          m_BookDisplayOptions = 下拉顯示字串清單（「title (id)」），index 對齊 m_Books 排序後順序
         string m_SelectedBookId = "";
@@ -701,7 +701,7 @@ namespace UCL.Core.EditorLib.Page
                     return;
                 }
 
-                // 區塊：下拉選單列（對齊 Affinity 的 PopupSearchCache 用法）
+                // 區塊：下拉選單列（對齊 UCL_RelationshipPage 的 PopupSearchCache 用法）
                 using (new GUILayout.HorizontalScope("box"))
                 {
                     GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.BookNotes.SelectLabel"), UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));

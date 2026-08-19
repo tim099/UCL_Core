@@ -3,7 +3,7 @@
 Reading Library CLI — 記錄閱讀心得 / 人物看法 / 章節摘要的圖書館系統。
 
 設計哲學（刻意與本專案既有系統同構）:
-  - 人物看法版本史  ≈ affinity 的 opinion history（看法改觀 = 記新版, 絕不覆寫舊版）
+  - 人物看法版本史  ≈ relationship 的 opinion history（看法改觀 = 記新版, 絕不覆寫舊版）
   - 改觀 fork 新版本 ≈ persona fork（保留「過去的看法」, 像保留過去的自己）
   讀者因此能回溯「我對這個人的看法, 是怎麼一章章演變的」。
 

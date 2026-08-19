@@ -1234,7 +1234,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aLetterLine + "\n" +
                 $"- agent/model: {aAgent}/{aRaw.GetString("model", "")}\n" +
                 $"- bank account: {aActor} (餘額: {aBalance} Token)\n\n" +
-                "⚠️ **[系統提示]** 大小姐，下線前若有特別在意的互動，記得用 affinity 更新好感度喔！";
+                "⚠️ **[系統提示]** 大小姐，下線前若有特別在意的互動，記得走 relationship 記一筆事件喔（skill `ucl-relationship`）！";
             oP = aP;
             aRes.ok = true; aRes.report = aR.ToString();
             return aRes;

@@ -2,7 +2,7 @@
 // 物理意義: 讓 Tim 用 GUI 查看 active / reverted rule + 一鍵 revert (走 Cmd_Rule.Op_Revert 統一路徑)
 // 數值影響: 純 view; revert 透過 Cmd_Rule 統一 ledger / file 改動, 不在 page 內 bypass 業務邏輯
 // 設計取捨:
-//   - 模仿 UCL_AffinitySystemPage 的 layout 慣例 (上 toolbar / 左 list / 右 detail)
+//   - layout 慣例：上 toolbar / 左 list / 右 detail（沿用自已退場的 AffinitySystemPage，接班頁 UCL_RelationshipPage 同款）
 //   - revert 走 Cmd_Rule.ExecuteAsync 同統一路徑 (跟 agent run_cmd.py 完全一致)
 //   - 不做 propose UI — propose 需構造 title/body, 走 CLI 比 GUI 表單合適 (Cmd_Rule --arg)
 //   - 2026-05-13 重構: 移除 UnityEditor namespace 依賴 (EditorStyles / EditorGUILayout / EditorUtility /
@@ -28,7 +28,7 @@ namespace UCL.Core.EditorLib.Page
     {
         public override string WindowName => UCL_CodeLocalize.Get("Rule.Title");
 
-        /// <summary>把此頁面註冊進 EditorMenu 的 Page Picker 下拉選單中 (對齊 UCL_AffinitySystemPage 慣例).</summary>
+        /// <summary>把此頁面註冊進 EditorMenu 的 Page Picker 下拉選單中 (對齊 UCL_RelationshipPage 慣例).</summary>
         public override bool ShowInPageMenu => true;
 
         public static UCL_TavernRulePage Create() => UCL_EditorPage.Create<UCL_TavernRulePage>();
@@ -80,7 +80,7 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // 區塊職責: 上方 toolbar — count + filter 切換 + Refresh button + auto toggle
-        // 物理意義: filter 3 選 1 用 horizontal button row (對齊 UCL_AffinitySystemPage TopBarButtons 風格)
+        // 物理意義: filter 3 選 1 用 horizontal button row (對齊 UCL_RelationshipPage TopBarButtons 風格)
         // 數值影響: 純 UI, filter 改值才觸發 RefreshRules
         void DrawToolbar()
         {

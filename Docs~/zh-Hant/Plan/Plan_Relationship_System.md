@@ -373,6 +373,9 @@ Tim 拍板手動，理由本案同意並補一條：
 | `AgentCommands/_lib/affinity_manager.py` | 同上，或整支移除並讓 import 端明確報錯 |
 | `Skills~/ucl-affinity/` | 從 `_manifest.json` 移除 ＋ 三副本 `--uninstall`；正本刪除 |
 | `Docs~/{lang}/Mechanics/Affinity_System.md` | **8 軸權重與 trigger 對照表要搬進新文件**（那部分沒有過時，過時的只有存放方式） |
+
+> ✅ **退場已於 2026-08-19 執行完畢（summit）**，且 Tim 改拍「不留 stub、不留文件」：上表四項全數刪除
+> （8 軸權重與 trigger 對照表已確認搬進 `Relationship_System.md` §2/§5 後才刪）。史料見 git。
 | `UCL_AffinitySystemPage` | 保留到遷移驗收完成後再移除；移除時 ToolBox 入口與四語系 key 一起清 |
 
 ⚠ **兩個容易漏的**：

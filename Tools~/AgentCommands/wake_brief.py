@@ -842,30 +842,30 @@ def _online_personas(aw) -> set:
     return out
 
 
-# 區塊職責：記住上一次 _affinity_targets() 是「讀失敗」還是「真的沒有紀錄」。
+# 區塊職責：記住上一次 _relationship_targets() 是「讀失敗」還是「真的沒有紀錄」。
 # 物理意義：兩種情況都回 {}（回傳形狀刻意不變，呼叫端有四處在用），差別只能靠旗標傳出去。
 #          🩸 BUG-5：關係區塊 import 失敗被 fail-soft 吞成 {}，brief 於是印「還沒有關係紀錄」——
 #          那句肯定句會叫剛醒來的人去寫一筆新的（製造重複資料），而正確行動是去修路徑。
-# 數值影響：per-process 旗標，每次呼叫 _affinity_targets() 重設；只影響 §6.5 那一行文字。
-_AFFINITY_LOAD_ERROR = None
+# 數值影響：per-process 旗標，每次呼叫 _relationship_targets() 重設；只影響 §6.5 那一行文字。
+_RELATIONSHIP_LOAD_ERROR = None
 
 
-def _affinity_targets(aw, persona: str) -> dict:
+def _relationship_targets(aw, persona: str) -> dict:
     """讀自己的 relationship；回 {對象: {surface_score, tier, opinions[]}}。
 
-    2026-08-18：資料源從舊 `ChatTavern/affinity/<persona>/relations.json`
-    換成 `letters/<persona>/relationship/<target>/`（一事件一檔）。
+    資料源：`letters/<persona>/relationship/<target>/`（一事件一檔；舊 affinity 系統
+    2026-08-18 退場，殘留於 2026-08-19 清除，史料見 git）。
     ⚠ **回傳形狀刻意不變** —— 呼叫端有四處在用它；形狀不變讓這次成為
       純粹的資料來源替換，行為差異只可能來自資料本身，不會來自介面。
     """
-    global _AFFINITY_LOAD_ERROR
-    _AFFINITY_LOAD_ERROR = None
+    global _RELATIONSHIP_LOAD_ERROR
+    _RELATIONSHIP_LOAD_ERROR = None
     try:
         from _lib.ucl_paths import letters_persona_dir
         root = letters_persona_dir(persona) / "relationship"
     except Exception as e:
         # stderr 只有跑 Cmd 的人看得到一次；旗標才會讓 brief 本體自己招（見 _people_lines 結尾）。
-        _AFFINITY_LOAD_ERROR = f"{type(e).__name__}: {e}"
+        _RELATIONSHIP_LOAD_ERROR = f"{type(e).__name__}: {e}"
         print(f"[wake_brief] relationship 路徑解析失敗：{e}", file=__import__("sys").stderr)
         return {}
     if not root.is_dir():
@@ -912,18 +912,6 @@ def _affinity_targets(aw, persona: str) -> dict:
     return out
 
 
-def _affinity_targets_legacy(aw, persona: str) -> dict:
-    """（已停用）舊 relations.json 讀取 —— 保留一輪供對帳，之後可刪。"""
-    import json
-    f = aw._DATA_ROOT / "ChatTavern" / "affinity" / persona / "relations.json"
-    if not f.exists():
-        return {}
-    try:
-        return json.loads(f.read_text(encoding="utf-8")).get("targets", {}) or {}
-    except Exception:
-        return {}
-
-
 def _fmt_opinions(entry: dict, n: int) -> list:
     """取最近 n 筆 opinion。schema 容錯：opinion 可能是 str 或 dict。"""
     ops = entry.get("opinions") or []
@@ -965,7 +953,7 @@ def _strip_portrait_chrome(body: str, about: str, headline: str) -> list:
 
 def _people_lines(aw, persona: str) -> list:
     out = []
-    targets = _affinity_targets(aw, persona)
+    targets = _relationship_targets(aw, persona)
     online = _online_personas(aw) - {persona}      # 自己不算「同事」
 
     def block(name: str, tag: str = "") -> list:
@@ -1030,9 +1018,9 @@ def _people_lines(aw, persona: str) -> list:
         out.append("")
 
     if not targets:
-        if _AFFINITY_LOAD_ERROR:
+        if _RELATIONSHIP_LOAD_ERROR:
             # 讀不到要出聲：印成「還沒有紀錄」會把一個壞掉的區塊講成一個空的區塊。
-            out.append(f"⚠ 關係讀取失敗（{_AFFINITY_LOAD_ERROR}）—— "
+            out.append(f"⚠ 關係讀取失敗（{_RELATIONSHIP_LOAD_ERROR}）—— "
                        f"**這不代表沒有關係紀錄**，是這一區沒生成出來。")
         else:
             out.append("_(還沒有關係紀錄 —— 跟同事互動後走 `ucl-relationship` 寫一筆)_")

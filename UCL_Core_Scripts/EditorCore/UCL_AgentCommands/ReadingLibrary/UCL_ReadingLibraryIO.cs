@@ -835,7 +835,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // ===========================================================
         // 人物：facts（客觀，profile.json）與 view（主觀，vN_<date>.md）分離
         // 物理意義：**改觀就 fork 新版本，絕不覆寫舊版** —— 好書值得重讀正因看法會變，
-        //          v1→v2→v3 的演變本身就是閱讀體驗（同構於 affinity opinion history / persona fork）。
+        //          v1→v2→v3 的演變本身就是閱讀體驗（同構於 relationship opinion history / persona fork）。
         // 數值影響：AddCharacter 只在人物不存在時建 v1；已存在一律要求走 ReviseView。
         // ===========================================================
         public static string AddCharacter(string mediaId, string persona, string characterId,

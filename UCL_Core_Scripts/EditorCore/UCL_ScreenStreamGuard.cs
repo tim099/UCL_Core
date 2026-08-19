@@ -10,7 +10,7 @@ namespace UCL.Core.EditorLib
     //          - _sensitive.flag    (敏感 page 在 foreground 時觸發, daemon 看到→該 frame 黑屏)
     //          - _stop.lock         (Editor 端按「中斷直播」按鈕寫入, daemon 看到→自動 enabled=false + 刪 lock)
     // 設計取捨 (Tim 2026-05-18 拍板 — 短期整合):
-    //          1. 整合前: 散落在每個敏感 page 各抄 3 個 helper (現只 LoginStatusPage, 但未來 Token/Bank/Affinity page 都會敏感)
+    //          1. 整合前: 散落在每個敏感 page 各抄 3 個 helper (現只 LoginStatusPage, 但未來 Token/Bank/Relationship page 都會敏感)
     //          2. 整合後: 共用 static class, page 端 1 行 call. 之後重構走 RCG_ScreenStreamPage event-driven 時換 caller 即可
     //          3. 仍放 UCL_Core (還沒做 cross-project 純化, 屬待重構)— 但至少 helper 集中一個地方
     // T17 — gura ship 2026-05-18 (跟 UCL_LoginStatusPage T13 inline helpers 重構配對)
@@ -22,7 +22,7 @@ namespace UCL.Core.EditorLib
         const string STOP_LOCK_RELATIVE = "AgentCommands/_screenstream/_stop.lock";
 
         // ===========================================================
-        // 公開 API — 給敏感 page 端用 (UCL_LoginStatusPage / 未來 Token/Bank/Affinity page)
+        // 公開 API — 給敏感 page 端用 (UCL_LoginStatusPage / 未來 Token/Bank/Relationship page)
         // ===========================================================
 
         /// <summary>

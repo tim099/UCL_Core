@@ -207,7 +207,6 @@ UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle 
 
 | Tool | 用途 |
 |---|---|
-| ~~`affinity_update.py`~~ | **已退場**（2026-08-18）→ 走 `run_cmd.py run Relationship`，見 skill `ucl-relationship` |
 | `debuglog_query.py` | DebugLog 查 (5 ops: tail / component / errors / search / summary) |
 | `screenshot.py` | 單張截圖（串流 daemon 已搬 UCL_Core `screenstream_*.py`） |
 | `tavern_catchup.py` | 叮 / 早安的酒館 catch-up（在線一覽＋未讀＋inbox） |

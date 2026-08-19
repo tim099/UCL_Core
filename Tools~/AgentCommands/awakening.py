@@ -498,7 +498,7 @@ def save_registry(reg: dict) -> None:
 
 def list_persona_names() -> list:
     """
-    區塊職責: 列當前已建檔的 persona 名單 (給 affinity 等其他 system 反查 cross-persona target 用)
+    區塊職責: 列當前已建檔的 persona 名單 (給 relationship 等其他 system 反查 cross-persona target 用)
     物理意義: 只看 personas/*.json 檔案存在性, 不 parse 內容
     數值影響: 純讀; 不 trigger migration (caller 應已 load_registry 過)
     """
@@ -2349,30 +2349,6 @@ def cmd_set_availability(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_affinity(args: argparse.Namespace) -> int:
-    """退場指路（Tim 2026-08-18）—— 好感度系統改名並改架構為 relationship。
-
-    區塊職責：不再自己讀寫，只告訴呼叫端該走哪裡。
-    物理意義：舊實作直寫 `ChatTavern/affinity/<persona>/relations.json`，那個倉庫已凍結為對照組
-             —— **寫進去不會被任何人看到，而且不會報錯**。
-    ⛔ 保留子命令而不是移除：移除只會得到 argparse 的 invalid choice，
-      那句話不告訴任何人該改用什麼。用一個會說話的失敗換掉一個沉默的失敗。
-    """
-    _msg = [
-        "⛔ awakening.py affinity 已退場（2026-08-18）—— 好感度系統改名為 relationship。",
-        "",
-        "  run_cmd.py --persona <me> run Relationship --arg op=update --arg persona=<me>",
-        "             --arg target=<對誰> --arg reason=<這件事是什麼>",
-        "             --arg trust=0.05 --arg respect=0.03 --arg admiration=0.02",
-        "",
-        "  其餘 op：add-opinion / show / list / rebuild",
-        "  完整說明 → skill `ucl-relationship`",
-        "  規格與維護流程 → ucl_core:Docs~/{lang}/Mechanics/Relationship_System.md",
-    ]
-    print(chr(10).join(_msg), file=sys.stderr)
-    return 2
-
-
 def cmd_whoami(args: argparse.Namespace) -> int:
     """反查身分 — 路徑 A: --token <X>; 路徑 B: 無 arg 走 claim_origin 推當前 process 對到的 lock."""
     # 路徑 A: token 已知
@@ -2668,14 +2644,6 @@ def main():
                      help="idle = 待機可接 task; busy = 動工中; offline = 下線 (一般走 goodnight 設, 不必手動)")
     pav.set_defaults(func=cmd_set_availability)
 
-    pa = sub.add_parser("affinity", help="好感度系統: 查詢或更新好感度")
-    pa.add_argument("--persona", default=None, help="操作的 persona (預設為當前 session)")
-    pa.add_argument("--target", default=None, help="好感度對象")
-    pa.add_argument("--delta", type=int, default=None, help="加減分")
-    pa.add_argument("--reason", default=None, help="加減分理由")
-    pa.add_argument("--add-opinion", default=None, help="新增對 target 的看法")
-    pa.add_argument("--status", action="store_true", help="列出對所有人的好感度")
-    pa.set_defaults(func=cmd_affinity)
 
     # T07 (2026-05-15 apex-two) — Session Token / Memo / Whoami / Enforce
     pw = sub.add_parser("whoami", help="反查 token → identity (失憶救援)")

@@ -240,8 +240,8 @@ letters 慣例用來標「機械產物／不要當人寫的檔」，這裡要更
 | 1 | 只有 7/21 有自己的 letters repo | 其餘 14 位搬過去仍在 AgentCommands 內，**同一份資料兩種家**；但 §3.1 的落點對兩者都成立（路徑一致），只是 commit 邊界不同 |
 | 2 | 7 個 letters submodule 的寫入會變頻繁 | 登入寫 `wake_count` 那類欄若照 §2.3 刪掉，寫入頻率其實**降低**；若照搬則 7 個 submodule 每次登入都 dirty（Tim 的每晚 bump 工作量 ×7） |
 | 3 | `identity_vector` 跨 persona 比較 | §3.3 待拍板 |
-| 4 | BUG-6（兩個序列化器輪流整檔重寫） | 遷移前先定 canonical 格式，否則新檔立刻繼承同一個病 |
-| 5 | `affinity_manager.py` 寫死路徑 | 遷移時要一起收進接縫（它是唯一沒走解析點的） |
+| 4 | BUG-6（兩個序列化器輪流整檔重寫） | ✅ 已解（2026-08-19 `43e2144`）：canonical＝ToJsonBeautify 形狀，python 走 `dump_registry_json` 唯一出口 |
+| 5 | `affinity_manager.py` 寫死路徑 | ✅ 已消滅（2026-08-19）：affinity 殘留全清時整支刪除，不必收進接縫 |
 | 6 | 見叢舊記錄「6 個 letters repo 是 detached HEAD」 | **2026-08-18 實測 7 個全在 `master` 且有 remote** —— 那條記錄已過期，遷移前不必先修 detached |
 
 ## 7. 驗收標準（施工時照這條驗，不驗「有沒有報錯」）

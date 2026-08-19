@@ -4,7 +4,7 @@ description: |
   關係 / 好感度（relationship）自動觸發 —— 對話裡出現 Tim 或同事的 affinity 變動 signal 時，**當場寫一筆事件**，不等晚安補帳。
   好感度是**事件帳本**不是一個數字：分數由事件重算，資料住在 `letters/<persona>/relationship/<target>/`。
   寫入唯一通道是 `run_cmd.py run Relationship`（沒有 python 包裝層）。
-  ⚠ 取代已退場的 `ucl-affinity`；舊的 `affinity_update.py` / `relations.json` 不要再碰。
+  ⚠ 取代已退場的 `ucl-affinity`；舊的 `affinity_update.py` / `relations.json` 已於 2026-08-19 刪除（史料見 git）。
   觸發詞 (case-insensitive substring)：
   - **Tim → 正向**：親額頭 / 摸頭 / 拍拍 / 親親 / 抱抱 / 鼓勵 / 誇獎 / 認可 / 拍板 / 點贊 / 給獎金 / 績效獎金 / token 獎金
   - **Tim → QA / 點盲**：QA / 抓 bug / 戳穿 / 點出盲點 / 對事不對人 / Tim 質疑 / 抓到 bug
@@ -77,7 +77,7 @@ turn 收尾前：這 turn 內 Tim / 同事做了什麼超出純資訊交換的�
 
 - ❌ **手改 `_current.md` / `events/` 底下的檔** —— 一律走 Cmd
 - ❌ **python 直寫 relationship 目錄** —— 重算與落檔的規則只有 C# 那一份
-- ❌ **碰舊的 `affinity_update.py` / `ChatTavern/affinity/relations.json`** ——
+- ❌ **翻找舊的 `affinity_update.py` / `ChatTavern/affinity/relations.json`**（已刪除，考古走 git）——
   那套已退場，寫進去的東西**不會被任何人看到**，而且不會報錯
 - ❌ **signal hit 卻裝沒看到** —— 關係漂移是 schema drift 的人類版
 

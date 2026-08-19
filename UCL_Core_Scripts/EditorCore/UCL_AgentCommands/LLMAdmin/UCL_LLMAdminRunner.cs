@@ -50,6 +50,15 @@ namespace UCL.Core.EditorLib.AgentCommands.LLMAdmin
 
         public static bool ScriptExists => File.Exists(ScriptPath);
 
+        // 區塊職責：中斷正在跑的 llm_admin.py。
+        // 物理意義：殺掉的是**我們這支 python**。
+        // ⚠ 這**不會**讓模型離開顯存 —— 模型是 ollama 服務持有的，跟我們的 process 無關。
+        //   🩸 實測 2026-08-19：UCL_ProcessAdminPage 已經空的（我們的 process 全收了），
+        //     而顯存仍佔著 3.2GB。⇒ 「中斷」必須是兩段：kill 我們的 ＋ `ollama stop` 卸模型。
+        //     只做前者的話，畫面看起來已經停了，顯存卻沒還回來。
+        /// <summary>中斷所有本 runner 起的 python（回收顆數）。不影響 ollama 服務持有的模型。</summary>
+        public static int Abort() => UCL_ProcessRegistryService.KillAllByTag(PROC_TAG);
+
         /// <summary>
         /// 執行一次 <c>llm_admin.py &lt;argLine&gt;</c>。
         /// </summary>

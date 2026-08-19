@@ -17,6 +17,8 @@ namespace UCL.Core.EditorLib.AgentCommands.LLMAdmin
     {
         public string id = "";
         public string size = "";
+        /// <summary>`ollama ps` 的 PROCESSOR 欄（"100% GPU" / "40%/60% CPU/GPU"）—— 只有載入清單才有。</summary>
+        public string processor = "";
     }
 
     /// <summary>目錄裡的一顆候選模型（策展清單 ＋ 對帳出來的安裝狀態）。</summary>
@@ -45,6 +47,7 @@ namespace UCL.Core.EditorLib.AgentCommands.LLMAdmin
         public string version = "";
         public bool service_reachable = false;
         public int installed_count = 0;
+        public int loaded_count = 0;     // 現在佔著顯存的顆數（`ollama ps`）—— 與 installed 是兩件事
         public string error = "";
         public string hint = "";
     }

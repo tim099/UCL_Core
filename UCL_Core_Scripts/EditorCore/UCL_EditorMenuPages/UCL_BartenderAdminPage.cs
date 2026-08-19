@@ -15,6 +15,7 @@ using UCL.Core.UI;
 using Cysharp.Threading.Tasks;
 using System.Threading.Tasks;
 
+// UCL_BartenderLLMSettings / Runner 走完整命名空間（本檔既有慣例：不加新 using）
 namespace UCL.Core.EditorLib.Page
 {
     [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_BartenderAdminPage.md")]
@@ -96,6 +97,8 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("<b>🍺 酒保管理</b>", new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true, fontSize = 18 });
                 DrawDaemonSection();
                 GUILayout.Space(6);
+                DrawLLMSection();
+                GUILayout.Space(6);
                 DrawRemoteWindowSection();
                 GUILayout.Space(6);
                 DrawAutoNotifySection();
@@ -106,6 +109,189 @@ namespace UCL.Core.EditorLib.Page
                 DrawTriggersSection();
                 GUILayout.Space(6);
                 DrawStateSection();
+            }
+        }
+
+        // ===========================================================
+        // 酒保發言來源（罐頭 / 本機 LLM）
+        // ===========================================================
+        // 區塊職責：選酒保用什麼發言 —— 罐頭（預設）或某顆本機模型；以及模型在顯存待多久。
+        // 物理意義：罐頭＝trigger 裡寫死的 message，永遠可用、零成本、零顯存。
+        //          LLM＝同一個觸發改由模型生成一句。**罐頭仍是 fallback** ——
+        //          服務沒開／逾時／輸出空，一律退回罐頭。⇒ 通道上永遠有話可講。
+        // 數值影響：改設定會寫 `ChatTavern/bartender/llm_settings.json`（原子寫入，daemon 讀同一份）。
+        //          keep_alive 隨每次請求送，不改 ollama 服務的全域設定（那會影響其他工具）。
+        // ⚠ 下拉的選項來自**已安裝清單**（`ollama list`），不是策展目錄 ——
+        //   列一顆沒裝的模型給人選，選了才在發言那一刻失敗，而那時沒有人在看畫面。
+        UCL_BartenderLLMSettings m_LLM;
+        string[] m_LLMOptions = new string[0];     // [0] 永遠是「罐頭回應」
+        string[] m_LLMModelIds = new string[0];    // 與 m_LLMOptions 對齊；[0] = ""
+        int m_LLMIdx = 0;
+        bool m_LLMLoaded = false;
+        string m_LLMScanNote = "";
+        readonly UCL.Core.UCL_ObjectDictionary m_LLMDic = new UCL.Core.UCL_ObjectDictionary();
+
+        void DrawLLMSection()
+        {
+            if (!m_LLMLoaded)
+            {
+                m_LLMLoaded = true;
+                m_LLM = UCL_BartenderLLMSettingsIO.Load();
+                RefreshLLMModels().Forget();
+            }
+            m_LLM ??= new UCL_BartenderLLMSettings();
+
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("<b>🤖 發言來源</b>",
+                        new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true },
+                        GUILayout.ExpandWidth(false));
+                    GUILayout.FlexibleSpace();
+                    // 入口：去裝模型／看顯存佔用（雙向互跳）
+                    if (GUILayout.Button("🧠 本地 LLM 模型管理", UCL_GUIStyle.ButtonStyle,
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_LLMModelAdminPage.Create();
+                    }
+                    if (GUILayout.Button("🔄 重讀模型清單", UCL_GUIStyle.ButtonStyle,
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        RefreshLLMModels().Forget();
+                    }
+                }
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("酒保使用", UCL_GUIStyle.LabelStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    if (m_LLMOptions.Length == 0)
+                    {
+                        GUILayout.Label("（清單讀取中…）", UCL_GUIStyle.LabelStyle);
+                    }
+                    else
+                    {
+                        int aNext = UCL.Core.UI.UCL_GUILayout.PopupAuto(m_LLMIdx, m_LLMOptions,
+                            m_LLMDic, "BartenderLLM");
+                        if (aNext != m_LLMIdx)
+                        {
+                            m_LLMIdx = aNext;
+                            m_LLM.model_id = m_LLMModelIds[Mathf.Clamp(aNext, 0, m_LLMModelIds.Length - 1)];
+                            m_LLM.enabled = !string.IsNullOrEmpty(m_LLM.model_id);
+                            SaveLLM();
+                        }
+                    }
+                }
+                if (!string.IsNullOrEmpty(m_LLMScanNote))
+                {
+                    GUILayout.Label(m_LLMScanNote, new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+                }
+
+                if (m_LLM.IsCannedOnly)
+                {
+                    EditorGUILayout.HelpBox(
+                        "目前是**罐頭回應**（預設）—— 行為與接 LLM 之前逐字相同：觸發時發 trigger 裡寫死的訊息。",
+                        MessageType.Info);
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox(
+                        $"目前用 `{m_LLM.model_id}` 生成發言。" +
+                        "⚠ 失敗（服務沒開／逾時／空輸出）一律**退回罐頭** —— 不會變成沉默。",
+                        MessageType.Info);
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("閒置卸載", UCL_GUIStyle.LabelStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                        int aKeep = UCL.Core.UI.UCL_GUILayout.IntField("", m_LLM.keep_alive_seconds, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                        GUILayout.Label("秒沒用就從顯存卸載（0＝用完立刻卸，代價是每次冷啟動）",
+                            UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        GUILayout.FlexibleSpace();
+                        if (aKeep != m_LLM.keep_alive_seconds)
+                        {
+                            m_LLM.keep_alive_seconds = Mathf.Max(0, aKeep);
+                            SaveLLM();
+                        }
+                    }
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        GUILayout.Label("生成上限", UCL_GUIStyle.LabelStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                        int aTok = UCL.Core.UI.UCL_GUILayout.IntField("", m_LLM.max_tokens, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                        GUILayout.Label("token　等待上限", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        int aTo = UCL.Core.UI.UCL_GUILayout.IntField("", m_LLM.timeout_seconds, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
+                        GUILayout.Label("秒（逾時退罐頭）", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        GUILayout.FlexibleSpace();
+                        if (aTok != m_LLM.max_tokens || aTo != m_LLM.timeout_seconds)
+                        {
+                            m_LLM.max_tokens = Mathf.Max(16, aTok);
+                            m_LLM.timeout_seconds = Mathf.Max(5, aTo);
+                            SaveLLM();
+                        }
+                    }
+                    GUILayout.Label("酒保人設（system prompt）", UCL_GUIStyle.LabelStyle);
+                    string aPersona = GUILayout.TextArea(m_LLM.persona_prompt ?? "",
+                        UCL_GUIStyle.TextAreaStyle, GUILayout.MinHeight(UCL_GUIStyle.GetScaledSize(48)));
+                    if (aPersona != m_LLM.persona_prompt)
+                    {
+                        m_LLM.persona_prompt = aPersona;
+                        SaveLLM();
+                    }
+                    EditorGUILayout.HelpBox(
+                        "⚠ thinking 模型（如 qwen3:4b）會先想一大段才回答 —— 實測思考段要 1000+ token，" +
+                        "生成上限不夠時回答會是空的（⇒ 退罐頭）。酒保這種短句建議用 qwen3:0.6b：" +
+                        "實測 12 token 就給乾淨答案。",
+                        MessageType.Warning);
+                }
+                GUILayout.Label($"設定檔：{UCL_BartenderLLMSettingsIO.GetPath()}",
+                    new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+            }
+        }
+
+        void SaveLLM()
+        {
+            try { UCL_BartenderLLMSettingsIO.Save(m_LLM); }
+            catch (System.Exception e) { Debug.LogWarning($"[Bartender] LLM 設定寫入失敗：{e.Message}"); }
+        }
+
+        // 區塊職責：把「已安裝的模型」讀成下拉選項。
+        // 物理意義：走 llm_admin.py 的 status（它的 installed 欄＝`ollama list` 的對帳結果）——
+        //          不自己掃磁碟、不列策展目錄裡沒裝的那些。
+        // ⚠ 讀不到（沒裝 ollama／服務沒開）時**只留「罐頭回應」一個選項**，並說明原因 ——
+        //   給人選一顆不存在的模型，會在發言那一刻才失敗，而那時沒有人在看畫面。
+        async Cysharp.Threading.Tasks.UniTask RefreshLLMModels()
+        {
+            var aOptions = new System.Collections.Generic.List<string> { "罐頭回應（預設，不用模型）" };
+            var aIds = new System.Collections.Generic.List<string> { "" };
+            m_LLMScanNote = "";
+            var aResult = await AgentCommands.LLMAdmin.UCL_LLMAdminRunner.RunAsync("status --format json", 60000);
+            try
+            {
+                var aJson = UCL.Core.JsonLib.JsonData.ParseJson(aResult.Stdout);
+                var aInstalled = AgentCommands.LLMAdmin.LLMAdminParse.Installed(aJson);
+                foreach (var aModel in aInstalled)
+                {
+                    aOptions.Add($"{aModel.id}　（{aModel.size}）");
+                    aIds.Add(aModel.id);
+                }
+                if (aInstalled.Count == 0)
+                {
+                    m_LLMScanNote = "⚠ 沒有已安裝的模型（或 ollama 服務打不到）—— " +
+                        "只能用罐頭。按上面「🧠 本地 LLM 模型管理」去裝一顆。";
+                }
+            }
+            catch (System.Exception e)
+            {
+                m_LLMScanNote = $"⚠ 模型清單讀取失敗（只留罐頭）：{e.Message}";
+            }
+            m_LLMOptions = aOptions.ToArray();
+            m_LLMModelIds = aIds.ToArray();
+            m_LLMIdx = System.Math.Max(0, System.Array.IndexOf(m_LLMModelIds, m_LLM?.model_id ?? ""));
+            if (m_LLMIdx == 0 && !string.IsNullOrEmpty(m_LLM?.model_id))
+            {
+                // 設定裡那顆已經不在磁碟上了 —— 說出來，並退回罐頭（沉默地用一顆不存在的模型最糟）
+                m_LLMScanNote = $"⚠ 設定裡的 `{m_LLM.model_id}` 已不在已安裝清單中 ⇒ 暫以罐頭運作。";
             }
         }
 

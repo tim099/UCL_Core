@@ -36,6 +36,8 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 
 OLLAMA = "ollama"
 
@@ -63,6 +65,9 @@ def ollama_exe() -> tuple[str, bool]:
 DEFAULT_TIMEOUT = 60
 INSTALL_TIMEOUT = 60 * 60          # 模型可能好幾 GB；下載慢不是異常
 TEST_PROMPT = "用繁體中文說一句吧檯招呼，20 字以內。"
+API_BASE = "http://127.0.0.1:11434"      # ollama 的本機 HTTP API（服務預設埠）
+TEST_TIMEOUT = 60                        # 試跑逾時（秒）—— 超過就斷線回報，不無限等
+TEST_NUM_PREDICT = 120                   # 生成上限（token）—— 酒保只要短句，不讓它寫論文
 
 # ─────────────────────────────────────────────────────────────────────────
 # 區塊職責：模型目錄（策展清單）
@@ -172,6 +177,7 @@ def op_status() -> dict:
     have = bool(exe)
     ver_code, ver_out, ver_err = _run(["--version"]) if have else (-1, "", "")
     models, list_err = installed_models() if have else ([], "")
+    ps = op_ps() if have else {"loaded": []}
     # 服務活著 ≠ 執行檔存在：`ollama list` 會去打本機服務，打不到就是沒跑
     serving = have and not list_err
     return {
@@ -182,6 +188,8 @@ def op_status() -> dict:
         "service_reachable": serving,
         "installed_count": len(models),
         "installed": models,
+        "loaded": ps.get("loaded", []),     # 現在佔著顯存的（`ollama ps`）—— 跟「已安裝」是兩件事
+        "loaded_count": len(ps.get("loaded", [])),
         "error": list_err,
         "hint": ("" if serving else
                  ("ollama 未安裝 —— 用管理頁的「一鍵安裝」，或到 https://ollama.com/download。"
@@ -253,13 +261,93 @@ def op_uninstall(model: str) -> dict:
             "stdout": out.strip(), "error": ("" if code == 0 else (err or out).strip())}
 
 
-def op_test(model: str, prompt: str) -> dict:
-    """實跑一句 —— 安裝完的驗收。**「pull 成功」不證明它跑得動**（顯存不夠會退 CPU 或直接失敗）。"""
+# 區塊職責：查「現在有什麼模型被載入顯存、佔多少」（`ollama ps`）。
+# 物理意義：`ollama list` 是**磁碟上有什麼**，`ollama ps` 是**顯存裡有什麼** —— 兩件不同的事。
+#          卡住／變慢的現場需要的是後者：看得到「佔了 5.5GB、而且是 CPU/GPU 混合」才知道發生什麼事。
+def op_ps() -> dict:
+    code, out, err = _run(["ps"])
+    if code != 0:
+        return {"ok": False, "loaded": [], "error": (err or out).strip()}
+    loaded = []
+    for line in out.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 4:
+            # NAME ID SIZE PROCESSOR UNTIL —— PROCESSOR 是「100% GPU」還是「x% CPU」的關鍵欄
+            loaded.append({"id": parts[0], "size": " ".join(parts[2:4]),
+                           "processor": " ".join(parts[4:6]) if len(parts) >= 6 else ""})
+    return {"ok": True, "loaded": loaded, "raw": out.strip(), "error": ""}
+
+
+# 區塊職責：把模型從顯存卸下（`ollama stop`）。
+# 物理意義：這是「中斷」真正該做的事 —— 殺掉發問的那個 process **不會**讓模型離開顯存，
+#          它是 ollama 服務持有的。⇒ 卡住時要停的是**模型**，不是我們這支 python。
+# ⚠ 舊版 ollama 沒有 `stop` 子命令；失敗時原樣回報它的錯誤，不假裝成功。
+def op_stop(model: str) -> dict:
+    code, out, err = _run(["stop", model])
+    return {"ok": code == 0, "model": model, "stdout": out.strip(),
+            "error": ("" if code == 0 else (err or out).strip())}
+
+
+# 區塊職責：試跑一句（走 HTTP API，不走 `ollama run`）。
+# 物理意義：改走 API 是為了拿回三件 CLI 給不了的控制權：
+#            ① **逾時**：連線層 timeout ⇒ 卡住有上限，不會無限等（CLI 版只能靠外層 kill，
+#               而 kill 掉 CLI 也不會把模型從顯存放掉）
+#            ② **生成上限** num_predict ⇒ 酒保只要短句，不讓它一路寫下去
+#            ③ **關掉 thinking**：Qwen3 預設會先吐一大段思考再回答 ——
+#               那正是「按了沒反應、其實還在跑」最常見的原因（think:false 舊版會忽略，無害）
+# 數值影響：不改變模型內容；只影響這一次呼叫的等待上限與長度。
+def op_test(model: str, prompt: str, timeout: int = TEST_TIMEOUT, think: bool = False,
+            keep_alive: int = -1, num_predict: int = TEST_NUM_PREDICT, system: str = "") -> dict:
+    """跑一句。回 {output, thinking, seconds, tokens_per_sec}。
+
+    · `think=True` 時**把思考段一起要回來**（放在 `thinking` 欄）——
+      🩸 2026-08-19 實測：qwen3:4b 就算 think=False，仍會把推理寫進 `response`
+      （「首先，問題是…關鍵點：…」），於是在 CLI 下看起來像卡住。
+      ⇒ 診斷時要看得到那一段，才知道「它在想」而不是「它死了」。
+    · `keep_alive` 秒數隨請求送：用完多久把模型從顯存卸掉（-1＝不指定，用 ollama 預設 5 分鐘）。
+    """
+    body = {
+        "model": model, "stream": False, "think": think,
+        "options": {"num_predict": num_predict},
+        "messages": ([{"role": "system", "content": system}] if system else [])
+                    + [{"role": "user", "content": prompt}],
+    }
+    if keep_alive >= 0:
+        body["keep_alive"] = f"{keep_alive}s"
+    req = urllib.request.Request(f"{API_BASE}/api/chat", data=json.dumps(body).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"})
     t0 = time.time()
-    code, out, err = _run(["run", model, prompt], timeout=180)
-    sec = round(time.time() - t0, 1)
-    return {"ok": code == 0, "model": model, "seconds": sec, "prompt": prompt,
-            "output": out.strip(), "error": ("" if code == 0 else (err or out).strip())}
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            d = json.loads(r.read().decode("utf-8", "replace"))
+        m = d.get("message") or {}
+        sec = round(time.time() - t0, 1)
+        content = (m.get("content") or "").strip()
+        thinking = (m.get("thinking") or "").strip()
+        n = d.get("eval_count") or 0
+        # 🩸 2026-08-19 實測（qwen3:4b）：思考段吃掉 3680 token 才收尾。
+        #   上限不夠時 `content` 是空的、`thinking` 卻很長 —— 那**不是失敗也不是卡死，是被截斷**，
+        #   而 ok=True + 空回答看起來就跟「模型壞了」一樣。⇒ 這裡把原因直接講出來。
+        note = ""
+        if not content and thinking and n >= num_predict:
+            note = (f"⚠ 生成上限 {num_predict} token 用完，思考還沒結束 ⇒ 回答是空的（被截斷，不是失敗）。"
+                    "提高上限，或換一顆不 thinking 的小模型（酒保短句實測 qwen3:0.6b 20 token 就收尾）。")
+        return {"ok": True, "model": model, "seconds": sec, "prompt": prompt, "note": note,
+                "output": content,
+                "thinking": thinking,
+                "eval_count": n,
+                "tokens_per_sec": round((d.get("eval_count") or 0) /
+                                        max((d.get("eval_duration") or 1) / 1e9, 1e-6), 1),
+                "keep_alive": keep_alive, "error": ""}
+    except urllib.error.URLError as e:
+        return {"ok": False, "model": model, "seconds": round(time.time() - t0, 1),
+                "output": "", "thinking": "",
+                "error": f"連線失敗／逾時（{timeout}s）：{e.reason}　"
+                         "⇒ 逾時不代表它死了，thinking 模型可能還在想；"
+                         "用 op=ps 看它載在哪、用 op=stop 把它從顯存放掉。"}
+    except Exception as e:
+        return {"ok": False, "model": model, "seconds": round(time.time() - t0, 1),
+                "output": "", "thinking": "", "error": f"試跑失敗：{e}"}
 
 
 def to_text(op: str, d: dict) -> str:
@@ -271,6 +359,9 @@ def to_text(op: str, d: dict) -> str:
                  f"- 已安裝模型: {d['installed_count']} 個"]
         for m in d["installed"]:
             lines.append(f"    · {m['id']}　{m['size']}")
+        lines.append(f"- 載入顯存中: {d.get('loaded_count', 0)} 個")
+        for m in d.get("loaded", []):
+            lines.append(f"    · {m['id']}　{m['size']}　{m.get('processor', '')}")
         if d["hint"]:
             lines.append(f"- ⚠ {d['hint']}")
         return "\n".join(lines)
@@ -290,13 +381,34 @@ def to_text(op: str, d: dict) -> str:
         if d["error"]:
             lines.append(f"⚠ {d['error']}")
         return "\n".join(lines)
+    if op == "test":
+        lines = [f"# ▶ 試跑 {d.get('model', '')}",
+                 f"- 結果: {'✅ 成功' if d.get('ok') else '❌ 失敗'}　耗時 {d.get('seconds')}s"
+                 f"　{d.get('tokens_per_sec', 0)} tok/s"]
+        if d.get("thinking"):
+            lines += ["", "## 🧠 思考過程（thinking）", d["thinking"]]
+        if d.get("output"):
+            lines += ["", "## 💬 回答", d["output"]]
+        if d.get("note"):
+            lines += ["", d["note"]]
+        if d.get("error"):
+            lines += ["", f"⚠ {d['error']}"]
+        return "\n".join(lines)
     return json.dumps(d, ensure_ascii=False, indent=1)
 
 
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description="本地 LLM 模型管理（ollama 薄層）")
-    ap.add_argument("op", choices=["status", "list", "install", "uninstall", "test", "install-runtime"])
+    ap.add_argument("op", choices=["status", "list", "install", "uninstall", "test",
+                                   "install-runtime", "ps", "stop"])
+    ap.add_argument("--timeout", type=int, default=TEST_TIMEOUT, help="test：等待上限（秒）")
+    ap.add_argument("--think", action="store_true", help="test：把思考段一起要回來（診斷 thinking 模型用）")
+    ap.add_argument("--keep-alive", type=int, default=-1, dest="keep_alive",
+                    help="test：用完幾秒後把模型從顯存卸載（-1＝用 ollama 預設）")
+    ap.add_argument("--num-predict", type=int, default=TEST_NUM_PREDICT, dest="num_predict",
+                    help="test：生成上限（token）")
+    ap.add_argument("--system", default="", help="test：system prompt（酒保人設）")
     ap.add_argument("--hidden", action="store_true",
                     help="install-runtime：不開視窗、等它跑完（預設開視窗，因為可能要 UAC）")
     ap.add_argument("--model", default="")
@@ -304,7 +416,7 @@ def main() -> int:
     ap.add_argument("--format", choices=["json", "text"], default="text")
     a = ap.parse_args()
 
-    if a.op in ("install", "uninstall", "test") and not a.model:
+    if a.op in ("install", "uninstall", "test", "stop") and not a.model:
         print(json.dumps({"ok": False, "error": f"{a.op} 需要 --model"}, ensure_ascii=False))
         return 2
 
@@ -313,7 +425,10 @@ def main() -> int:
     elif a.op == "list":      d = op_list()
     elif a.op == "install":   d = op_install(a.model)
     elif a.op == "uninstall": d = op_uninstall(a.model)
-    else:                     d = op_test(a.model, a.prompt)
+    elif a.op == "ps":        d = op_ps()
+    elif a.op == "stop":      d = op_stop(a.model)
+    else:                     d = op_test(a.model, a.prompt, a.timeout, a.think,
+                                          a.keep_alive, a.num_predict, a.system)
 
     print(json.dumps(d, ensure_ascii=False, indent=1) if a.format == "json" else to_text(a.op, d))
     # 失敗要用 exit code 說 —— 只把錯誤印在 stdout，呼叫端會把它當成正常輸出

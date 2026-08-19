@@ -113,15 +113,12 @@ def resolve_bank(persona: str) -> str | None:
         from _lib import bank_resolver                     # noqa: E402
         reg_path = _ucl_paths_mod().registry_meta_path()
         reg = json.loads(reg_path.read_text(encoding="utf-8")) if reg_path.exists() else {}
-        # personas 資料在別的檔；resolve_persona_bank 需要完整 reg，缺的部分讓它自己 fail-loud
-        p_dir = _ucl_paths_mod().personas_dir()
-        if p_dir.is_dir():
-            reg.setdefault("personas", {})
-            for f in p_dir.glob("*.json"):
-                try:
-                    reg["personas"][f.stem] = json.loads(f.read_text(encoding="utf-8"))
-                except Exception:
-                    continue
+        # personas 資料走 persona_profile 接縫（Phase 0）—— 不自己 glob＋parse
+        import importlib.util as _ilu2
+        _sp = _ilu2.spec_from_file_location(
+            "_ucl_persona_profile_regmail", _HERE / "_lib" / "persona_profile.py")
+        _pp = _ilu2.module_from_spec(_sp); _sp.loader.exec_module(_pp)
+        _pp.load_personas_into(reg)
         return bank_resolver.resolve_persona_bank(reg, persona)
     except Exception as e:
         print(f"⚠ persona → bank 解析失敗（{type(e).__name__}: {e}）", file=sys.stderr)

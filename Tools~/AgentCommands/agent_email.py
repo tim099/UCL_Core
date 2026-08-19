@@ -59,6 +59,15 @@ def _load_ucl_paths():
 _paths = _load_ucl_paths()
 
 
+def _persona_profile():
+    import importlib.util as _ilu
+    from pathlib import Path as _P
+    _spec = _ilu.spec_from_file_location(
+        "_ucl_persona_profile_agent_email", _P(__file__).resolve().parent / "_lib" / "persona_profile.py")
+    _m = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_m)
+    return _m
+
+
 def _data_root() -> Path:
     return _paths.data_root()
 
@@ -143,13 +152,11 @@ def cmd_resolve(args) -> int:
 
 
 def cmd_list(args) -> int:
-    d = _paths.personas_dir()
+    # persona 名單走 persona_profile 接縫（Phase 0）—— 不自己 glob
     rows = []
-    if d.is_dir():
-        for f in sorted(d.glob("*.json")):
-            name = f.stem
-            info = resolve_email(name)
-            rows.append((name, info["actual_agent"] or "-", info["email"], info["source"]))
+    for name in _persona_profile().pool_names():
+        info = resolve_email(name)
+        rows.append((name, info["actual_agent"] or "-", info["email"], info["source"]))
     if args.json:
         print(json.dumps([{"persona": r[0], "actual_agent": r[1], "email": r[2], "source": r[3]}
                           for r in rows], ensure_ascii=False, indent=2))

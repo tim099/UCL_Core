@@ -187,7 +187,7 @@ letters/<persona>/
 
 | 期 | 做什麼 | 為什麼這個順序 |
 |---|---|---|
-| **0** | 收斂讀寫接縫：`persona_profile.py` + `UCL_PersonaProfile.cs`，32 支消費端全走它 | 先做這步的話，後面每一期都只改 1~2 個檔。不先做＝32 支各自改路徑＝2026-06-16 路徑漂移家族的下一集 |
+| **0** | 收斂讀寫接縫：`persona_profile.py` + `UCL_PersonaProfile.cs`，32 支消費端全走它 | 🚧 **施工中（summit 2026-08-19）**：接縫兩端已落地（`_lib/persona_profile.py`＝pool_names/get_raw/iter_raw/get_routing/get_identity/load_personas_into；`UCL_PersonaProfile.cs`＝PoolNames(dir-mtime 快取)/GetRaw/GetString/GetInt）。已遷：C# ChatTavernIO／RelationshipIO／Cmd_LoginStatus／LoginStatusPage／PersonaInspectorPage；python agent_email／agent_model／registered_mail／mbti。**未遷**：C# 寫入端 PersonaAgentAdminPage、TreasuryAccountResolver／BankAdminPage、ChatTavernPersonaCardAsset／AdminPage、Cmd_GoodMorning／AwakeningService 內部讀；python awakening.load_registry（本身是 py 端次接縫，Phase 1 在它與 persona_profile 之間拉 lazy migration）、session_common、check_letters_layout、sync_letters_gitignore、tavern_catchup.resolve_owning_agent、bank_resolver（吃 reg dict，隨 load_registry 走） |
 | **1** | 雙寫雙讀：寫新家、讀優先新家；讀到舊家時**印一行帶呼叫端**的 log 進 `AwakenInit/_persona_access.log` | 這是唯一能證明「還有誰在讀舊檔」的手段（§5） |
 | **2** | 觀察期（建議 ≥ 一週、且要跨過一次全 persona 登入＋一次晚安＋一次發薪） | 消費端不是每天都跑；只跑一天證明不了 |
 | **3** | log 乾淨後移除舊路徑分支，`personas/` 從 code 裡消失 | 到這一步才叫廢棄 |

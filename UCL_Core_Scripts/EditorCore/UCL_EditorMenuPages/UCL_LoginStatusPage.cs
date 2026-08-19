@@ -240,38 +240,26 @@ namespace UCL.Core.EditorLib.Page
                 }
             }
 
-            // 區塊：scan persona pool
-            if (Directory.Exists(m_PersonasDir))
+            // 區塊：scan persona pool —— 走 UCL_PersonaProfile 唯一讀取入口（Phase 0 接縫）
             {
                 var lockedPersonas = new HashSet<string>();
                 foreach (var l in m_Locks) lockedPersonas.Add(l.Persona);
 
-                foreach (var pf in Directory.GetFiles(m_PersonasDir, "*.json"))
+                foreach (var name in UCL_PersonaProfile.PoolNamesSorted())
                 {
-                    string name = Path.GetFileNameWithoutExtension(pf);
-                    if (name.StartsWith("_") || name.StartsWith(".")) continue;
-                    try
+                    var jd = UCL_PersonaProfile.GetRaw(name);
+                    if (jd == null) continue;   // 壞檔接縫已警告
+                    m_Pool.Add(new PersonaEntry
                     {
-                        string json = File.ReadAllText(pf);
-                        var jd = JsonData.ParseJson(json);
-                        if (!jd.IsObject || jd.Dic == null) continue;
-                        var entry = new PersonaEntry
-                        {
-                            Name = name,
-                            Agent = jd.GetString("agent", ""),
-                            ActualAgent = jd.GetString("actual_agent", ""),
-                            Status = jd.GetString("status", ""),
-                            WakeCount = jd.GetInt("wake_count", 0),
-                            LayerRole = jd.GetString("layer_role", ""),
-                            LastActive = jd.GetString("last_active", ""),
-                            HasLock = lockedPersonas.Contains(name),
-                        };
-                        m_Pool.Add(entry);
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogWarning($"[LoginStatus] parse persona {pf} failed: {e.Message}");
-                    }
+                        Name = name,
+                        Agent = jd.GetString("agent", ""),
+                        ActualAgent = jd.GetString("actual_agent", ""),
+                        Status = jd.GetString("status", ""),
+                        WakeCount = jd.GetInt("wake_count", 0),
+                        LayerRole = jd.GetString("layer_role", ""),
+                        LastActive = jd.GetString("last_active", ""),
+                        HasLock = lockedPersonas.Contains(name),
+                    });
                 }
                 // 區塊職責：對 Persona 池進行多級排序
                 // 物理意義：第一優先級為「持有 lock」的 Persona 排最前，第二優先級為 WakeCount 降序，第三優先級為名字升序以保持確定性。

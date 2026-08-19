@@ -215,16 +215,14 @@ def save_record(persona, result):
         json.dump(records, f, ensure_ascii=False, indent=2)
 
 def get_persona_wake_count(persona):
-    root = get_repo_root()
-    p_json = _ucl_paths_mod().persona_file(persona)
-    if p_json.exists():
-        try:
-            with open(p_json, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data.get("wake_count", 1)
-        except Exception:
-            pass
-    return 1
+    # persona 內容走 persona_profile 接縫（Phase 0）—— 不自己讀檔
+    import importlib.util as _ilu
+    from pathlib import Path as _P
+    _sp = _ilu.spec_from_file_location(
+        "_ucl_persona_profile_mbti", _P(__file__).resolve().parent / "_lib" / "persona_profile.py")
+    _pp = _ilu.module_from_spec(_sp); _sp.loader.exec_module(_pp)
+    v = _pp.get_field(persona, "wake_count", 1)
+    return v if isinstance(v, int) else 1
 
 def save_to_letter(persona, result, answers_str):
     wake_count = get_persona_wake_count(persona)

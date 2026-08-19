@@ -85,8 +85,6 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             // 區塊職責: 路徑解析
             // 物理意義: 走可 override 資料根撈 _session 跟 AwakenInit/personas (預設 = RepoRoot/AgentCommands)
             string agentCmdDir = UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot;
-            // persona 目錄走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
-            string personasDir = Awakening.UCL_AwakeningService.PersonasDir;
             string outDir = Path.Combine(agentCmdDir, "AwakenInit");
             try { Directory.CreateDirectory(outDir); }
             catch (Exception ex) { throw new Exception($"[LoginStatus] 建立輸出目錄失敗: {ex.Message}"); }
@@ -108,37 +106,23 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                 });
             }
 
-            // 區塊職責: scan persona registry
-            // 物理意義: AwakenInit/personas/*.json 是 persona pool (full registry, offline + online)
+            // 區塊職責: scan persona registry —— 走 UCL_PersonaProfile 唯一讀取入口（Phase 0 接縫）
             var personas = new List<PersonaEntry>();
             var lockedSet = new HashSet<string>(locks.Select(l => l.Persona));
-            if (Directory.Exists(personasDir))
+            foreach (var name in UCL_PersonaProfile.PoolNamesSorted())
             {
-                foreach (var pf in Directory.GetFiles(personasDir, "*.json"))
+                var jd = UCL_PersonaProfile.GetRaw(name);
+                if (jd == null) continue;   // 壞檔接縫已警告
+                personas.Add(new PersonaEntry
                 {
-                    string name = Path.GetFileNameWithoutExtension(pf);
-                    if (name.StartsWith("_") || name.StartsWith(".")) continue;
-                    try
-                    {
-                        string json = File.ReadAllText(pf);
-                        var jd = JsonData.ParseJson(json);
-                        if (!jd.IsObject || jd.Dic == null) continue;
-                        personas.Add(new PersonaEntry
-                        {
-                            Name = name,
-                            Agent = jd.GetString("agent", ""),
-                            Status = jd.GetString("status", ""),
-                            WakeCount = jd.GetInt("wake_count", 0),
-                            LayerRole = jd.GetString("layer_role", ""),
-                            LastActive = jd.GetString("last_active", ""),
-                            HasLock = lockedSet.Contains(name),
-                        });
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogWarning($"[LoginStatus] parse persona {pf} 失敗: {e.Message}");
-                    }
-                }
+                    Name = name,
+                    Agent = jd.GetString("agent", ""),
+                    Status = jd.GetString("status", ""),
+                    WakeCount = jd.GetInt("wake_count", 0),
+                    LayerRole = jd.GetString("layer_role", ""),
+                    LastActive = jd.GetString("last_active", ""),
+                    HasLock = lockedSet.Contains(name),
+                });
             }
             personas.Sort((a, b) => b.WakeCount.CompareTo(a.WakeCount));
 

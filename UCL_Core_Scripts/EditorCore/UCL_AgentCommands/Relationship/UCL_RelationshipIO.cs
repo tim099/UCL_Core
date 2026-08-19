@@ -102,13 +102,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
                     foreach (var d in Directory.GetDirectories(aLetters))
                         s_Known.Add(Path.GetFileName(d));
 
-                // 🥈 過渡期的次要來源：AwakenInit/personas —— Tim 2026-08-18 說它之後會遷進 letters。
-                //    ⚠ 到那天**把這一段刪掉就好，規則本身不用動** ——
-                //      先寫成兩段而不是混在一起，就是為了讓退場只是刪程式碼不是改邏輯。
-                string aPersonas = Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "personas");
-                if (Directory.Exists(aPersonas))
-                    foreach (var f in Directory.GetFiles(aPersonas, "*.json"))
-                        s_Known.Add(Path.GetFileNameWithoutExtension(f));
+                // 🥈 過渡期的次要來源：persona pool —— 走 UCL_PersonaProfile.PoolNames 唯一讀取入口
+                //    （Phase 0 接縫；registry 退場時只改接縫實作，本段不必動）。
+                foreach (var n in UCL_PersonaProfile.PoolNames())
+                    s_Known.Add(n);
             }
             catch (Exception e)
             {

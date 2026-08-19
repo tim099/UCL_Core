@@ -133,17 +133,13 @@ namespace UCL.Core.EditorLib.Page
             // 走 UCL_ActivePersonaLocks 唯一掃描實作（有 lock ＝ 在線；過期機制已於 2026-08-19 移除）
             var lockedPersonas = UCL_ActivePersonaLocks.LockedNames();
 
-            // 區塊：scan personas — 反序列化全部 metadata
-            if (Directory.Exists(m_PersonasDir))
+            // 區塊：scan personas —— 走 UCL_PersonaProfile 唯一讀取入口（Phase 0 接縫）
             {
-                foreach (var pf in Directory.GetFiles(m_PersonasDir, "*.json"))
+                foreach (var name in UCL_PersonaProfile.PoolNamesSorted())
                 {
-                    string name = Path.GetFileNameWithoutExtension(pf);
-                    if (name.StartsWith("_") || name.StartsWith(".")) continue;
-                    try
+                    var jd = UCL_PersonaProfile.GetRaw(name);
+                    if (jd == null) continue;   // 壞檔接縫已警告
                     {
-                        var jd = JsonData.ParseJson(File.ReadAllText(pf));
-                        if (!jd.IsObject || jd.Dic == null) continue;
                         var info = new PersonaInfo
                         {
                             Name = name,
@@ -196,10 +192,6 @@ namespace UCL.Core.EditorLib.Page
                             }
                         }
                         m_Personas.Add(info);
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogWarning($"[PersonaInspector] parse persona {pf} failed: {e.Message}");
                     }
                 }
                 m_Personas.Sort((a, b) => b.WakeCount.CompareTo(a.WakeCount));

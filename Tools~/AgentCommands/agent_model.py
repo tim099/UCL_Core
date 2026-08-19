@@ -75,6 +75,15 @@ def _norm(value: str) -> str:
     return "".join(ch for ch in (value or "").lower() if ch.isalnum())
 
 
+def _persona_profile():
+    import importlib.util as _ilu
+    from pathlib import Path as _P
+    _spec = _ilu.spec_from_file_location(
+        "_ucl_persona_profile_agent_model", _P(__file__).resolve().parent / "_lib" / "persona_profile.py")
+    _m = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_m)
+    return _m
+
+
 def registry_path() -> Path:
     return _ucl_paths_mod().awaken_init_dir() / "agent_models.json"
 
@@ -94,15 +103,9 @@ def load_agent_names() -> dict:
     # 數值影響：對應關係由現存 persona 檔推導，不另建一張要維護的表；推不出來就不辨識（保留原值）。
     """
     out = {}
-    d = _ucl_paths_mod().personas_dir()
-    if not d.is_dir():
-        return out
     tally = {}
-    for f in d.glob("*.json"):
-        try:
-            p = json.loads(f.read_text(encoding="utf-8"))
-        except Exception:
-            continue
+    # persona 內容走 persona_profile 接縫（Phase 0）—— 不自己 glob＋parse
+    for _name, p in _persona_profile().iter_raw():
         agent = _norm(p.get("agent") or "")
         actual = (p.get("actual_agent") or "").strip()
         if not agent or not actual:
@@ -200,16 +203,15 @@ def cmd_list(args) -> int:
     for a in CANONICAL_AGENTS:
         print(f"  {a:<14} {(reg.get('models') or {}).get(a) or '(未設定)'}")
     print()
-    d = _ucl_paths_mod().personas_dir()
     print("# agent 廠牌（key = actual_agent）")
     for a in CANONICAL_AGENTS:
         print(f"  {a:<14} {(reg.get('vendors') or {}).get(a) or '(未設定)'}")
     print()
     print("# persona trailer 型號欄")
-    for f in sorted(d.glob("*.json")) if d.is_dir() else []:
-        t = format_trailer_model(f.stem)
-        raw = resolve_model(f.stem)["raw"] or "(空)"
-        print(f"   {f.stem:<22} raw={raw:<20} → ({t['text']})   {t['source']}")
+    for name in _persona_profile().pool_names():
+        t = format_trailer_model(name)
+        raw = resolve_model(name)["raw"] or "(空)"
+        print(f"   {name:<22} raw={raw:<20} → ({t['text']})   {t['source']}")
     return 0
 
 

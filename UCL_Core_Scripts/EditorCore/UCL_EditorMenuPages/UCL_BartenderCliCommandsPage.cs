@@ -32,7 +32,32 @@ namespace UCL.Core.EditorLib.Page
             base.Init(iGUIPage);
             Reload();
         }
-
+        protected override void TopBarButtons()
+        {
+            base.TopBarButtons();
+            using (new GUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("💾 存檔", UCL_GUIStyle.ButtonStyle,
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(90))))
+                {
+                    UCL_BartenderCliCommandStore.SaveAll(m_Configs);
+                    Reload();   // 回讀而不是假設寫入成功 —— id 正規化後的樣子要讓使用者看到
+                    m_Status = "已存檔並回讀。";
+                }
+                if (GUILayout.Button("↻ 重新載入（丟棄未存檔變更）", UCL_GUIStyle.ButtonStyle,
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(220))))
+                {
+                    Reload();
+                }
+                // 開設定檔所在資料夾（同 LibraryManagePage 開 BookNotes 的用途；
+                // 走 UCL_ExplorerUtil 而不是 Application.OpenURL —— 外部 Process 要登記）
+                if (GUILayout.Button("📂 開啟設定檔位置", UCL_GUIStyle.ButtonStyle,
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(150))))
+                {
+                    UCL_ExplorerUtil.Open(UCL_BartenderCliCommandStore.GetDir(), "BartenderCliCommandsPage");
+                }
+            }
+        }
         void Reload()
         {
             m_Configs = UCL_BartenderCliCommandStore.LoadAll();
@@ -50,29 +75,7 @@ namespace UCL.Core.EditorLib.Page
                     + "改 id ＝ 改名（存檔時舊檔會被清掉）。行為由上往下依序執行。",
                     UCL_GUIStyle.LabelStyle);
 
-                using (new GUILayout.HorizontalScope())
-                {
-                    if (GUILayout.Button("💾 存檔", UCL_GUIStyle.ButtonStyle,
-                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(90))))
-                    {
-                        UCL_BartenderCliCommandStore.SaveAll(m_Configs);
-                        Reload();   // 回讀而不是假設寫入成功 —— id 正規化後的樣子要讓使用者看到
-                        m_Status = "已存檔並回讀。";
-                    }
-                    if (GUILayout.Button("↻ 重新載入（丟棄未存檔變更）", UCL_GUIStyle.ButtonStyle,
-                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(220))))
-                    {
-                        Reload();
-                    }
-                    // 開設定檔所在資料夾（同 LibraryManagePage 開 BookNotes 的用途；
-                    // 走 UCL_ExplorerUtil 而不是 Application.OpenURL —— 外部 Process 要登記）
-                    if (GUILayout.Button("📂 開啟設定檔位置", UCL_GUIStyle.ButtonStyle,
-                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(150))))
-                    {
-                        UCL_ExplorerUtil.Open(UCL_BartenderCliCommandStore.GetDir(), "BartenderCliCommandsPage");
-                    }
-                    GUILayout.FlexibleSpace();
-                }
+
 
                 if (m_Dirty)
                 {

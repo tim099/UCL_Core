@@ -74,7 +74,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public abstract string Execute(UCL_BartenderCliContext iCtx);
     }
 
+    // 各行為掛 [HelpURL] → DrawObjectData 畫標題列時會自動長出「?」鈕開對應說明
+    // （UCL_GUILayoutDrawObject 讀型別上的 HelpURLAttribute，本頁零客製）。
     /// <summary>列出所有可用指令（清單由指令設定檔生成，不是手寫的）。</summary>
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_BartenderCliCommandsPage.md")]
     public class CliAction_Help : UCL_BartenderCliActionBase
     {
         public override string Execute(UCL_BartenderCliContext iCtx)
@@ -82,6 +85,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
     }
 
     /// <summary>開關遠端視窗協作（on [permanent] / off）。`on permanent` 需二次確認。</summary>
+    [HelpURL("ucl_core:Docs~/{lang}/API/BartenderCli/CliAction_RemoteWindow.md")]
     public class CliAction_RemoteWindow : UCL_BartenderCliActionBase
     {
         public override bool NeedsConfirm(UCL_BartenderCliContext iCtx)
@@ -97,6 +101,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
     }
 
     /// <summary>透過自動通知的遠端輸入群發訊息（一律二次確認）。</summary>
+    [HelpURL("ucl_core:Docs~/{lang}/API/BartenderCli/CliAction_Msg.md")]
     public class CliAction_Msg : UCL_BartenderCliActionBase
     {
         // 會打進別人的視窗並按 Enter —— 沒有不問的版本
@@ -110,6 +115,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
     }
 
     /// <summary>回覆一段固定文字（設定頁可編輯內容 —— 最簡單的自訂指令素材）。</summary>
+    [HelpURL("ucl_core:Docs~/{lang}/API/BartenderCli/CliAction_PostText.md")]
     public class CliAction_PostText : UCL_BartenderCliActionBase
     {
         /// <summary>酒保要回覆的內容（markdown 可用）。</summary>

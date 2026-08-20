@@ -16,6 +16,7 @@ using UCL.Core.UI;
 
 namespace UCL.Core.EditorLib.Page
 {
+    [HelpURL("ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_BartenderCliCommandsPage.md")]
     public class UCL_BartenderCliCommandsPage : UCL_CommonEditorPage
     {
         List<UCL_BartenderCliCommandConfig> m_Configs = new List<UCL_BartenderCliCommandConfig>();

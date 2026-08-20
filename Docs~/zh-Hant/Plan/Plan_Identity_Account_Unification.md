@@ -1,5 +1,5 @@
 ---
-title: identities.json 併入 Bank 系統 —— 一個 id 空間、一張帳號身分表
+title: identities.json 併入 Bank 系統 —— 一個 id 空間、區域銀行 ID、綁定落 letters/<persona>/bank/
 slug: identity-account-unification
 status: **分析階段**（尚未動工；§4 的人工拍板清單未拍完之前不施工）
 created_at: 2026-08-20T02:30:00Z
@@ -21,6 +21,13 @@ related:
 > ③ **之後廢棄 bank id，實際上只有 agent id 這一項**；
 > ④ 綁定資訊改存「persona → agent id」在銀行系統內，**保證 1 對 1**；
 > ⑤ 沒有綁定的**直接報錯**（綁央行，但要有 ErrorLog）。
+>
+> **二次設計（同日追加，取代 ④ 的落點）**：
+> ⑥ 銀行（酒館系統）**每個專案有自己的 ID**（貨幣名，預設 **`Ducat`**），存在該專案 `AgentCommands`，
+> **且要能在 `UCL_BankAdminPage` 編輯**；
+> ⑦ persona 資料夾新增 `bank/`（`letters/<persona>/bank/`），存「在該貨幣（bank）系統下使用的
+> 銀行帳號（agent）」—— **每個不同區域銀行一個獨立檔案**；
+> ⑧ 目前實際上只有兩個專案（另一個在 `D:/Unity/Bar`）；**舊紀錄 ambiguous 的地方人工處理**。
 >
 > 本檔是動工前的分析。**§4 是人工拍板清單 —— 那些格子沒拍完就不要開始搬。**
 
@@ -85,39 +92,110 @@ Bank 缺 17 個 Discord 使用者。**沒有一張表是完整的**，所以「�
 | `Cmd_SeedTavernIdentityAssets`（:54） | roster → 頭像資產 | 改查統一表 |
 | python `tavern_handshake.py` / `tavern_query.py` | 讀 identities | 兩支要一起改（跨端契約） |
 
-## 3. 統一後的資料形狀（提案）
+## 3. 統一後的資料形狀
 
-住在**銀行系統**（`AwakenInit/_registry_meta.json` 已經有 `agent_banks`／`system_accounts`／
-`closed_accounts`／`bank_personas`，是自然落點；若嫌它太雜可另開 `Treasury/accounts.json`）：
+> **Tim 2026-08-20 二次設計（本節為現行方案；前一版的「中央一張 `persona_agents` dict」已被它取代
+> —— 取代理由見 §3.1，那是實測出來的硬需求，不是偏好）。**
+
+### 3.0 三件事
+
+1. **每個專案有自己的「區域銀行 ID」**（可理解為**貨幣名稱**），存在該專案的 `AgentCommands`，
+   預設名 **`Ducat`**，且**必須可在 `UCL_BankAdminPage` 編輯**。
+2. **persona 資料夾多一個 `bank/` 目錄**：`letters/<persona>/bank/<bankId>.md`
+   內容＝該 persona 在**那個區域銀行**底下使用的**銀行帳號（＝agent id）**。
+   **一個區域銀行一個檔**（同 `profile/` 的一欄一檔慣例）。
+3. 缺檔＝沒有綁定 ⇒ **`Debug.LogError` ＋ 落央行**（`UCL_CentralBankSettings.DefaultCentralBankAccount`
+   ＝ `pacific-standard-public-deposit-bank`）。1:1 由「一檔一值」天然保證。
+
+### 3.1 為什麼「一區一檔」是硬需求（實測，不是風格）
+
+**persona 的 letters 資料夾是同一個 git repo，被兩個專案同時掛著。**
+
+    LY  : letters/kiara  root commit 6512bb8d…  HEAD 2e425cb
+    Bar : letters/kiara  root commit 6512bb8d…  HEAD 2e425cb     ⇒ 同一個 repo、當下完全同步
+
+（remote 有兩個位址 —— gitlab `tavern4371824/kiara` 與 github `Persona9999/kiara` ——
+Tim 以工具同時 push 全部 remote 並保持同步，**是鏡像不是分身**。）
+
+⇒ 任何存「單一值」的檔（例如 `bank.md`）會被兩個專案**互相覆寫**，而覆寫的症狀是
+「另一個專案的帳號」—— 一個完全合法的字串。**一區一檔把這個對撞從資料形狀上消滅掉。**
+
+### 3.2 為什麼 `agent` 不能進 `profile/`
+
+`profile/` 存的是**不綁專案**的身分欄（§8.3：`layer_role` / `forked_from` / `email` /
+`identity_vector`…）—— 那些跨專案共用是**正確**的。
+而 `agent` 是**綁專案**的，實測兩專案的 `agent_banks` 根本不同：
+
+| agent | LY 的 bank | Bar 的 bank |
+|---|---|---|
+| `claude-code` | `cc` | `claude-da-xiaojie` |
+| `Zeta` | `zeta` | `Zeta-da-xiaojie` |
+| `antigravity` | `a` | `antigravity-da-xiaojie` |
+| `gemini` | `g` | `gemini` |
+| `Myth` / `Codex` / `Template` | 同名 | 同名 |
+| — | LY 有 `Altair` / `Fed` | Bar 有 `Luna` / `Spectre` / `Sirius` |
+
+⇒ 同一個 persona 在兩個專案可以是不同 agent、不同帳號。存進 `profile/` 就是把
+「綁專案的事實」放進「不綁專案的抽屜」。`bank/<bankId>.md` 是**同時滿足兩者**的形狀：
+檔案跟著 persona 走（換專案 checkout 就有歷史），而鍵把兩個專案隔開。
+
+### 3.3 🩸 這個設計會擋掉的真實事故
+
+同一個帳號名在兩個專案有不同金額：
+
+    LY  : Myth = 2,295
+    Bar : Myth =   453
+
+2026-08-17 `UCL_BartenderDaemon` 的 `dataPath/../..` 走出樹外、命中另一棵資料樹，
+**酒館每個人查餘額都拿到 453**，而 LY 的真實帳本是另一個數字 —— 差額沒有任何一層出聲
+（那次的血證寫在 `Plan_Persona_Registry_Retirement` 與 kiara wake#13 收尾信）。
+
+⇒ **區域銀行 ID 正是讓那次失敗變大聲的東西**：ledger／帳號表帶著它宣告自己屬於哪個貨幣，
+讀到不屬於本專案的資料就是 fail-loud，而不是一個看起來完全正常的數字。
+**這條不是附帶好處，是本設計的主要理由之一。**
+
+### 3.4 資料形狀（提案）
+
+專案層（`AgentCommands`，`UCL_BankAdminPage` 可編輯）：
 
 ```jsonc
+// AwakenInit/_registry_meta.json（或 Treasury/bank_settings.json —— 落點見 §6.6）
 {
-  "accounts": {
-    "claude-code": { "kind": "agent",         "display_name": "", "created_at": "…" },
-    "Myth":        { "kind": "agent",         "display_name": "", "created_at": "…" },
-    "Tim":         { "kind": "human",         "display_name": "Tim" },
+  "bank_id": "Ducat",              // 本專案的區域銀行／貨幣 ID。預設 Ducat；後台可改
+  "accounts": {                    // 統一帳號身分表（取代 identities.json，見 §2）
+    "claude-code": { "kind": "agent",  "display_name": "" },
+    "Tim":         { "kind": "human",  "display_name": "Tim" },
     "discord:383604378185105408": { "kind": "discord-user", "display_name": "Tim" },
-    "tavern-keeper":{ "kind": "npc",          "display_name": "酒保" },
-    "pacific-standard-public-deposit-bank": { "kind": "system", "display_name": "Pacific Standard Public Deposit Bank" },
-    "cc":          { "kind": "closed", "display_name": "", "renamed_to": "claude-code" }
-  },
-  "persona_agents": {            // Tim ④：綁定改存這個方向，dict 形狀天然保證 1:1
-    "kiara": "Myth", "basecamp": "claude-code", "summit": "Zeta"
+    "tavern-keeper": { "kind": "npc", "display_name": "酒保" },
+    "cc": { "kind": "closed", "renamed_to": "claude-code" }
   }
 }
+```
+
+persona 層（`letters/<persona>/bank/`，一區一檔）：
+
+```
+letters/kiara/bank/Ducat.md        →  Myth          （LY 的區域銀行下用哪個帳號）
+letters/kiara/bank/<Bar 的 ID>.md  →  Myth          （Bar 那邊的綁定，互不干擾）
 ```
 
 三個設計決定與理由：
 
 1. **`display_name` 空字串＝用 id 顯示**（不是「沒有名字」）。agent 類一律留空 ⇒
    `claude-code@basecamp`。這樣「只有 agent id 這一項」不需要維護第二份文案。
-2. **`persona_agents` 用 dict 而不是 `bank_personas` 那種反向 list** ——
-   dict 的鍵唯一性**天然保證 1:1**，不需要像現在那樣寫一段「撞名就拒絕解析」的守衛
-   （那段守衛是為了 list 形狀才存在的）。
+2. **綁定用「一檔一值」而不是中央 list** —— 檔案存在性即唯一性，**1:1 由形狀保證**，
+   不必再寫「撞名就拒絕解析」那段守衛（`bank_personas` 的 list 形狀才需要它）。
 3. **舊 bank id 進 `kind: "closed"` 並記 `renamed_to`** —— 歷史 ledger 不重寫（14,159 筆內嵌
    `account_id`，那是稽核軌跡），所以舊名必須永久可解釋，但不再是任何人的 canonical。
 
-### ⑤「沒有綁定就報錯 ＋ 綁央行 ＋ ErrorLog」的落點
+### 3.5 被取代的形狀（留檔備查）
+
+前一版提案是「銀行系統中央一張 `persona_agents` dict」。它的 1:1 保證同樣成立，
+但**跨專案會對撞** —— 兩個專案各有一份中央表時，persona 的綁定要在兩張表各存一次，
+而那兩張表沒有任何機制互相對帳。`bank/<bankId>.md` 把「分區」做進鍵裡，
+所以同一份 persona 資料夾可以同時服務任意多個專案。
+
+### 3.6 「沒有綁定就報錯 ＋ 綁央行 ＋ ErrorLog」的落點（Tim 指示 ⑤）
 
 `UCL_TreasuryAccountResolver.Resolve()` 現在的 ⑥ 分支是
 「查無對應（未歸一，將產生／沿用孤兒帳戶）」—— **不 derive、不 mint，但也不出聲**。
@@ -138,7 +216,7 @@ Bank 缺 17 個 Discord 使用者。**沒有一張表是完整的**，所以「�
 | `closed_accounts` | 7 | `kind=closed` |
 | `identities` 的 `discord-user` | 18 | 原樣搬（`display_name` 只有這裡有） |
 | `identities` 的 `npc` | 2 | 原樣搬 |
-| persona → agent | 21 | 由 `persona.agent` 導出成 `persona_agents`（**已實測 21/21 完整且 1:1**） |
+| persona → agent | 21 | 由 `persona.agent` 導出成 `letters/<p>/bank/<bankId>.md`（**已實測 21/21 完整且 1:1**）。⚠ Bar 那邊要用 **Bar 自己的 `persona.agent`** 導它自己的鍵，不能拿 LY 的值去寫（兩專案 agent 不同，見 §3.2） |
 
 ### 4.2 必須人工拍板的資料問題（**這節沒拍完不要施工**）
 
@@ -229,6 +307,14 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
 `identities` 有 `TEST`（kind=agent，Bank 無帳）；Bank 有 `discord:tim-smoke`（餘額 1，identities 無）。
 ⇒ 拍：測試用身分要不要進統一表（建議 `kind=system` 或直接不遷）。
 
+### 4.2.1 二次設計帶進來的三格新拍板
+
+| # | 事項 | 為什麼要拍 |
+|---|---|---|
+| H | **兩專案的區域銀行 ID 各叫什麼** | 預設 `Ducat`，但**兩個專案不能同名** —— 同名則一區一檔失去分區效果，`bank/Ducat.md` 又變成互相覆寫的單一值檔。建議 LY＝`Ducat`、Bar 另取一個 |
+| I | **`persona.agent` 這一欄的去向** | 綁定搬進 `bank/<bankId>.md` 之後，persona 檔的 `agent` 欄成為第二份 copy ⇒ 必須退場或改為由 `bank/` 導出。⚠ 它今天的消費端不少（`Cmd_Tavern` 顯示身分／`agent_email` trailer／`resolve_owning_agent`／身分後台換綁），**要一批改完**，否則就是 §8.1 那種「只上一端、兩邊各解一個答案而都不報錯」 |
+| J | **`bank_id` 要不要寫進 ledger 每一筆** | 寫了才有 §3.3 的 fail-loud（讀到別的貨幣就報錯）。但那會改 ledger 的 schema ⇒ 舊 14,159 筆沒有這個欄位，判準要定成「缺欄＝視為本專案（歷史）」而不是「缺欄＝不合法」，否則全部舊帳一次變非法 |
+
 ### 4.3 兩表互缺的補齊
 
 - `identities` 缺現行 agent：`Myth`／`Altair`／`Codex`／`Template` ⇒ 由 `agent_banks` 機械補上
@@ -240,7 +326,8 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
 
 | 步 | 做什麼 | 碰錢 | 驗收判準 |
 |---|---|---|---|
-| 1 | 建 `persona_agents`（由現況導出）＋ `Resolve()` 改讀它＋⑥ 分支改 ErrorLog＋央行 | ❌ | 21 位解析結果與現況**逐位相同**；故意刪一位 ⇒ 出現 ErrorLog 且落央行 |
+| 0 | 定 `bank_id`（LY 與 Bar 各一個、不同名）＋ `UCL_BankAdminPage` 加編輯欄 | ❌ | 後台改得動、落檔、重載後仍在 |
+| 1 | 由現況導出 `letters/<p>/bank/<bankId>.md`（21 位）＋ 解析端改讀它 ＋ ⑥ 分支改 ErrorLog＋央行 | ❌ | 21 位解析結果與現況**逐位相同**；故意刪一位的檔 ⇒ 出現 ErrorLog 且落央行；**Bar 那邊不受影響**（不同鍵） |
 | 2 | 建統一 `accounts` 表（§4.1 機械可導的部分）＋消費端逐支改讀它 | ❌ | 31＋48 兩邊的 id 全部有著落；mention 白名單集合**前後相同** |
 | 3 | `identities.json` 退場（agent 那半刪除、Discord/NPC 併入） | ❌ | Discord 顯示名前後相同（`UCL_DiscordIdentityResolver` 抽樣比對） |
 | 4 | §4.2 的人工拍板逐格處理（A/B/C/G） | ⚠ 部分 | 每一筆調整都有一筆 ledger 記錄，**總量守恆 33,692** |
@@ -258,7 +345,14 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
    每次 join 就改寫它並不理想。建議把 `last_seen_at` 拆去別處，或明確接受它。
 3. **`display_name` 空字串的語意** 必須寫進註解：空＝用 id，不是「沒名字」。
    否則下一個人會「順手補上」，於是又長出第二份文案。
-4. **跨端契約**：`persona_agents` 與統一 `accounts` 表都要 C# ／ python 兩端同批改
+4. **跨端契約**：`bank/<bankId>.md` 的讀取與統一 `accounts` 表都要 C# ／ python 兩端同批改
    （§8.1 的血證：只上一端會兩邊各解一個答案而都不報錯）。
 5. **歷史 ledger 永不重寫。** 舊 id 必須永久可解釋 ⇒ `closed` ＋ `renamed_to` 是必要欄位，
    不是裝飾。
+6. **`letters/<p>/bank/` 是共用 repo 裡的檔** —— 兩個專案的 checkout 會看到彼此的檔案。
+   ⇒ 讀取端**只准讀自己 `bank_id` 那一個檔**，看到別的檔名要**當作正常**（那是別的專案的），
+   不可以「清理不認識的檔」。🩸 這條要寫進註解：那種清理會在對方專案下線期間把它的綁定刪掉，
+   而症狀是對方下次登入時「沒有綁定」⇒ 落央行 ＋ ErrorLog（會叫，但錯的原因完全指不到這裡）。
+7. **`UCL_BankAdminPage` 改得動 `bank_id` ＝ 改得動整個專案的貨幣歸屬** ——
+   改名之後所有 persona 的 `bank/<舊 ID>.md` 都對不上 ⇒ 後台那個欄位要有二段確認，
+   並且**同批把 letters 底下的檔一起改名**（否則全員一次落央行）。

@@ -1,11 +1,11 @@
 ---
 title: identities.json 併入 Bank 系統 —— 一個 id 空間、區域銀行 ID、綁定落 letters/<persona>/bank/
 slug: identity-account-unification
-status: **分析階段**（尚未動工；§4 的人工拍板清單未拍完之前不施工）
+status: **階段一施工中**（第 0 步／第 1a 步已完工並實測；1b 解析端與階段二的歸戶未動 —— §4.2 的人工拍板清單未拍完之前不動階段二）
 created_at: 2026-08-20T02:30:00Z
 created_by: kiara
 last_updated: 2026-08-20
-builders: []
+builders: [kiara（第 0 步／第 1a 步／換區重綁）]
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
@@ -177,7 +177,8 @@ Tim 以工具同時 push 全部 remote 並保持同步，**是鏡像不是分身
 ```jsonc
 // AwakenInit/_registry_meta.json（或 Treasury/bank_settings.json —— 落點見 §6.6）
 {
-  "bank_id": "Ducat",              // 本專案的區域銀行／貨幣 ID。預設 Ducat；後台可改
+  // ⚠ 實作落在 Treasury/bank_settings.json，鍵名是 `currency_id`（本節初稿寫 bank_id，已對齊實作）
+  "currency_id": "Ducat",          // 本專案的區域（貨幣）ID。預設 Ducat；UCL_BankAdminPage 可改
   "accounts": {                    // 統一帳號身分表（取代 identities.json，見 §2）
     "claude-code": { "kind": "agent",  "display_name": "" },
     "Tim":         { "kind": "human",  "display_name": "Tim" },
@@ -505,9 +506,25 @@ CLI 對偶：`op=rebind_region from= to= actor= reason= [dry_run=0]`（**預設 
 | `unbind` ＋ 讀回 | 刪掉那個假綁定後：`had_own=1`／`old_account=CONFLICT-ACC`／**`now_source=Florin`** ＋ note「本區無綁定，借用區域 Florin 的帳號」⇒ 刪除之後**自動退回跨區借用**，符合 §3.5.1 |
 | 清理後回到乾淨 | 再跑 dry-run：`copied=21`／`conflicts=0`；`Template/bank/` 只剩 `Florin.md`（內容 `Template`） |
 
-⚠ **未驗**：後台按鈕那條路（arm 預檢 → 三段執行）**沒有點過** —— 我點不了按鈕。
-共用的核心（`CopyBankRegionAll`／`DeleteBankRegionAll`）已由上表的 CLI 讀數覆蓋，
-但「按下去會發生什麼」要人按一次才算驗過。
+#### 後台按鈕實按驗收（Tim 2026-08-20 實測 `Florin` → `BTC`）
+
+先前這裡標著「未驗 —— 我點不了按鈕」。**Tim 按了，所以現在有讀數**：
+
+| 驗什麼 | 讀數 |
+|---|---|
+| 設定 | `bank_settings.json` 的 `currency_id` ＝ **`BTC`** |
+| 檔案 | 21 位 persona 的 `bank/` **只剩 `BTC.md`**（`Florin.md` 全數刪除，段④ 有跑） |
+| **內容守恆** | 逐位比對與改名前相同：kiara=`Myth`／summit=`Zeta`／basecamp=`claude-code`／claude-da-xiaojie=`antigravity`／trailhead=`gemini`／Sirius=`Fed` |
+| 審計 | `bank/BTC` 寫入 **21 行** ＋ `bank/Florin (deleted)` **21 行**；actor＝`Tim@BankAdminPage`、reason＝「區域 ID 改名 Florin → BTC（後台自動換區重綁）」 |
+| 本區讀取 | `get_bank kiara` → `account=Myth`／`source=BTC`／note 空（本區宣告） |
+| 舊區讀取 | `get_bank kiara currency=Florin` → `account=Myth`／**`source=BTC`** ＋ note「本區（Florin）無綁定，借用區域 `BTC` 的帳號」⇒ 改名後舊區自動退成跨區借用，**且出聲** |
+
+⇒ **四段（預檢／複製／翻設定／刪舊區）與審計全部實測通過，內容零漂移。**
+
+⚠ **文件與現況的落差要記著**：本 Plan 與 `Bank_Region_Binding_Migration_Workflow` 多處寫
+「LY ＝ `Florin`」，而**現況是 `BTC`**（測試值）。⇒ 要嘛改回 `Florin`（後台按一次，路徑已驗），
+要嘛把文件裡的 `Florin` 全部換成最終值。**兩者都沒做的話，就是一份說著真話的過時文件** ——
+那正是本 repo 最貴的故障型別（BUG-18 那類）。
 
 ### 📌 釘板：`agent` 是「桌面工具」，不是「模型」（Tim 2026-08-20）
 

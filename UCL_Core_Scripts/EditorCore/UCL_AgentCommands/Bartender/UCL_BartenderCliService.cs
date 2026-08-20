@@ -7,7 +7,7 @@
 // 設計取捨：
 //   · **比對一律轉小寫**（Tim 2026-08-19 指定），但**訊息內容必須用原文** ——
 //     群發的 body 若走小寫化後的 token，英文訊息會被壓成全小寫而**沒有任何錯誤訊息**。
-//     ⇒ CliContext 同時帶「小寫 token」與「原始整行」，比對用前者、內容用後者。
+//     ⇒ UCL_BartenderCliContext 同時帶「小寫 token」與「原始整行」，比對用前者、內容用後者。
 //   · **二次確認只守「拆掉護欄／對外送出」的方向。** `remote-window off` 不問，
 //     `on permanent` 與 `msg`（會打進別人的視窗）要問。反過來設計會訓練人無腦按 Y。
 //   · **確認回覆不以 `cmd` 開頭**（使用者只會打 `y`）⇒ 判斷必須帶發話者與落磁碟的 pending。
@@ -25,67 +25,82 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 {
     public static class UCL_BartenderCliService
     {
-        /// <summary>一次呼叫的上下文。**小寫 token 給比對、原始整行給內容。**</summary>
-        class CliContext
-        {
-            public string[] Args;          // 已小寫、已去掉 prefix 與指令名
-            public string RawLine;         // 使用者原本打的整行（未小寫）
-            public string RawAfterArgs;    // 指令名與第 1 個 arg 之後的**原文**（給訊息內容用）
-            public UCL_ChatMessage Src;
-            public string RoomId;
-        }
-
-        class CliCommand
-        {
-            public string Name;
-            public string Usage;
-            public string Description;
-            public Func<CliContext, bool> NeedsConfirm;
-            public Func<CliContext, string> Summary;
-            public Func<CliContext, string> Run;
-        }
-
         const string ArgPermanent = "permanent";
         const string TargetAll = "all";
 
         // ⚠ 指令表是**唯一真相** —— help 由它生成，不另外維護一份清單。
         //   兩份清單必漂，而漂掉的樣子是「help 列了一個不存在的指令」。
-        static readonly List<CliCommand> s_Commands = new List<CliCommand>
+        //   2026-08-20 起指令表從 hardcode 改為設定檔（bartender/cli_commands/<id>.json，
+        //   Tim 拍板）—— 每次用時重讀（CLI 訊息很稀疏，磁碟成本可忽略；
+        //   快取反而要處理設定頁存檔後的失效問題）。
+        static List<UCL_BartenderCliCommandConfig> LoadCommands()
+            => UCL_BartenderCliCommandStore.LoadAll();
+
+        /// <summary>指令這次呼叫要不要二次確認 —— 任一啟用中的行為要求即要。</summary>
+        static bool CommandNeedsConfirm(UCL_BartenderCliCommandConfig iConfig, UCL_BartenderCliContext iCtx)
         {
-            new CliCommand
+            if (iConfig?.actions == null) return false;
+            for (int i = 0; i < iConfig.actions.Count; i++)
             {
-                Name = "help",
-                Usage = "cmd help",
-                Description = "列出所有可用指令（本清單由指令表生成，不是手寫的）",
-                NeedsConfirm = _ => false,
-                Summary = _ => "",
-                Run = _ => BuildHelp(),
-            },
-            new CliCommand
+                var aAction = iConfig.actions[i];
+                if (aAction == null || !aAction.IsEnable) continue;
+                try { if (aAction.NeedsConfirm(iCtx)) return true; }
+                catch (Exception e)
+                {
+                    // 判斷不了就當「要確認」—— fail-closed：多問一次的代價遠小於漏問一次
+                    UnityEngine.Debug.LogWarning($"[BartenderCli] NeedsConfirm 例外（視同需要確認）：{e.Message}");
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>確認訊息的「會發生什麼」—— 串接每個啟用中行為的 summary。</summary>
+        static string CommandSummary(UCL_BartenderCliCommandConfig iConfig, UCL_BartenderCliContext iCtx)
+        {
+            if (iConfig?.actions == null) return "";
+            var aParts = new List<string>();
+            for (int i = 0; i < iConfig.actions.Count; i++)
             {
-                Name = "remote-window",
-                Usage = "cmd remote-window on [permanent] ／ cmd remote-window off",
-                Description = "開關遠端視窗協作。on 預設只開**本次 Editor session**；"
-                            + "帶 permanent 會連永久開關一起開（跨重編／重啟自動恢復）。"
-                            + "off 同時關掉本次與永久。",
-                NeedsConfirm = c => IsOn(c.Args) && HasPermanent(c.Args),
-                Summary = c => "開啟遠端視窗協作，**並且打開永久開關** —— "
-                             + "之後每次 domain reload / 重開 Editor 都會自動恢復為開啟。"
-                             + "該能力會把指定視窗帶到前景、移動游標並可按 Enter。",
-                Run = c => RunRemoteWindow(c.Args),
-            },
-            new CliCommand
+                var aAction = iConfig.actions[i];
+                if (aAction == null || !aAction.IsEnable) continue;
+                try
+                {
+                    string aPart = aAction.ConfirmSummary(iCtx);
+                    if (!string.IsNullOrWhiteSpace(aPart)) aParts.Add(aPart);
+                }
+                catch (Exception e) { aParts.Add($"⚠ summary 產生失敗：{e.Message}"); }
+            }
+            return string.Join("\n\n", aParts);
+        }
+
+        /// <summary>依序執行指令的全部啟用中行為；單一行為失敗不擋後面的，但一定出現在回覆裡。</summary>
+        static string RunCommand(UCL_BartenderCliCommandConfig iConfig, UCL_BartenderCliContext iCtx)
+        {
+            if (iConfig?.actions == null || iConfig.actions.Count == 0)
+                return $"⚠ 指令 `{iConfig?.id}` 沒有任何行為 —— 去設定頁（酒保管理 → 酒館 CLI → 指令設定）加一個。";
+            var aParts = new List<string>();
+            int aRan = 0;
+            for (int i = 0; i < iConfig.actions.Count; i++)
             {
-                Name = "msg",
-                Usage = "cmd msg <persona|all> <訊息>",
-                Description = "透過自動通知的遠端輸入，把訊息打進對方的輸入框並送出。"
-                            + "`all` ＝ 所有**在線**的 persona。訊息保留原文大小寫。"
-                            + "**一律需要二次確認**（確認訊息會回顯完整內容與收件名單）。",
-                NeedsConfirm = _ => true,     // 會打進別人的視窗並按 Enter —— 沒有不問的版本
-                Summary = BuildMsgSummary,
-                Run = RunMsg,
-            },
-        };
+                var aAction = iConfig.actions[i];
+                if (aAction == null || !aAction.IsEnable) continue;
+                aRan++;
+                try
+                {
+                    string aResult = aAction.Execute(iCtx);
+                    if (!string.IsNullOrWhiteSpace(aResult)) aParts.Add(aResult);
+                }
+                catch (Exception e)
+                {
+                    // 失敗一定要出聲並帶原因 —— 沉默會讓人重打，而重打不會改變結果
+                    UnityEngine.Debug.LogWarning($"[BartenderCli] `{iConfig.id}` 行為 {aAction.GetType().Name} 執行失敗：{e}");
+                    aParts.Add($"❌ 行為 `{aAction.GetType().Name}` 執行失敗：{e.Message}");
+                }
+            }
+            if (aRan == 0) return $"⚠ 指令 `{iConfig.id}` 的行為全被停用 —— 什麼都沒做。";
+            return string.Join("\n\n", aParts);
+        }
 
         // ===========================================================
         // 入口
@@ -97,29 +112,45 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             string aBody = (iMsg.body ?? "").Trim();
             if (aBody.Length == 0) return false;
 
-            bool aLooksLikeAnswer = ParseYesNo(aBody).HasValue;
-            int aSpace = aBody.IndexOfAny(new[] { ' ', '\t', '\n', '\r', '　' });
-            string aFirst = aSpace < 0 ? aBody : aBody.Substring(0, aSpace);
-            bool aLooksLikeCommand = aFirst.Length <= 12;
-
-            if (!aLooksLikeCommand && !aLooksLikeAnswer) return false;
-
             var aSettings = UCL_BartenderCliIO.Load();
             if (!aSettings.enabled) return false;
 
-            if (aLooksLikeCommand
-                && string.Equals(aFirst, aSettings.prefix ?? "cmd", StringComparison.OrdinalIgnoreCase))
+            if (BodyHasCliPrefix(aBody, aSettings))
             {
                 oSettings = aSettings;
                 return true;
             }
-            if (aLooksLikeAnswer)
+            if (ParseYesNo(aBody).HasValue)
             {
                 // 只有「這個人真的有 pending」才算確認回覆 —— 否則酒館裡任何一句 "y" 都會被吃掉
                 var aState = UCL_BartenderCliIO.LoadState();
                 if (FindPending(aState, iMsg) != null) { oSettings = aSettings; return true; }
             }
             return false;
+        }
+
+        /// <summary>
+        /// 這段文字是不是一句 CLI 指令（prefix 命中且 CLI 總開關開著）。
+        /// 給**寫入層**用（Cmd_Tavern post / Discord inbound）：判定為指令的訊息會被打上
+        /// `tag=cli-cmd`，讓 glossary auto-attach 等後續流程分流跳過 ——
+        /// 攔在寫入端而不是在讀取端剝除，附掛就不會發生而不是發生後再擦
+        /// （2026-08-19 詞典污染血證：附掛區塊變成指令的一部分，群發把整本詞典打進別人輸入框）。
+        /// ⚠ 只看 prefix，不驗白名單 —— 白名單是「能不能執行」，這裡問的是「這句話是不是指令」。
+        /// </summary>
+        public static bool LooksLikeCliCommand(string iBody)
+        {
+            string aBody = (iBody ?? "").Trim();
+            if (aBody.Length == 0) return false;
+            var aSettings = UCL_BartenderCliIO.Load();
+            if (!aSettings.enabled) return false;
+            return BodyHasCliPrefix(aBody, aSettings);
+        }
+
+        static bool BodyHasCliPrefix(string iTrimmedBody, UCL_BartenderCliSettings iSettings)
+        {
+            int aSpace = iTrimmedBody.IndexOfAny(s_Sep);
+            string aFirst = aSpace < 0 ? iTrimmedBody : iTrimmedBody.Substring(0, aSpace);
+            return string.Equals(aFirst, iSettings.prefix ?? "cmd", StringComparison.OrdinalIgnoreCase);
         }
 
         public static void Handle(UCL_ChatMessage iMsg, string iRoomId, UCL_BartenderCliSettings iSettings)
@@ -164,7 +195,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                         iMsg, iRoomId, "cli-error");
                     return;
                 }
-                string aResult = SafeRun(aCmd, aCtx);
+                string aResult = RunCommand(aCmd, aCtx);
                 Post($"✅ 已確認並執行：`{aPending.command_line}`\n\n{aResult}", iMsg, iRoomId, "cli-done");
                 return;
             }
@@ -195,7 +226,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 return;
             }
 
-            if (aCommand.NeedsConfirm != null && aCommand.NeedsConfirm(aContext))
+            if (CommandNeedsConfirm(aCommand, aContext))
             {
                 var aExisting = FindPendingByKey(aState, RequesterKey(iMsg));
                 if (aExisting != null && !aExisting.IsExpired(aSettings.confirm_timeout_seconds))
@@ -207,7 +238,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 }
                 if (aExisting != null) aState.pending.Remove(aExisting);
 
-                string aSummary = aCommand.Summary != null ? aCommand.Summary(aContext) : "";
+                string aSummary = CommandSummary(aCommand, aContext);
                 aState.pending.Add(new UCL_BartenderCliPending
                 {
                     command_line = aRaw,
@@ -228,13 +259,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 return;
             }
 
-            Post(SafeRun(aCommand, aContext), iMsg, iRoomId, "cli-done");
+            Post(RunCommand(aCommand, aContext), iMsg, iRoomId, "cli-done");
         }
 
         // ===========================================================
-        // 指令實作
+        // 指令實作（行為的實體 —— 由 UCL_BartenderCliCommandConfig.cs 的 CliAction_* 包裝呼叫）
         // ===========================================================
-        static string RunRemoteWindow(string[] iArgs)
+        public static string RunRemoteWindow(string[] iArgs)
         {
             if (iArgs == null || iArgs.Length == 0)
             {
@@ -243,13 +274,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                      + "　`cmd remote-window on permanent`（連永久開關一起開，需二次確認）\n"
                      + "　`cmd remote-window off`（同時關掉本次與永久）";
             }
-            bool aOn = IsOn(iArgs);
+            bool aOn = IsOnArgs(iArgs);
             bool aOff = iArgs[0] == "off" || iArgs[0] == "0" || iArgs[0] == "false";
             if (!aOn && !aOff) return $"⚠ 認不出 `{iArgs[0]}`；要 `on` 或 `off`。";
 
             if (aOn)
             {
-                bool aPermanent = HasPermanent(iArgs);
+                bool aPermanent = HasPermanentArg(iArgs);
                 UCL_RemoteWindowControl.SetEnabled(true);
                 if (aPermanent) UCL_RemoteWindowControl.PersistEnabled = true;
                 // 回讀而不是回報我寫了什麼 —— 「我設定了」與「它現在是這樣」是兩件事
@@ -271,7 +302,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // 區塊職責：確認訊息裡「會發生什麼」—— 對群發來說，**訊息原文必須完整回顯**。
         // 物理意義：這個確認要擋的不只是「要不要送」，還有「送出去的是不是我想打的那句」。
         //          只寫「將群發給 3 人」的話，錯字與被小寫化的內容都看不出來。
-        static string BuildMsgSummary(CliContext iCtx)
+        public static string BuildMsgSummary(UCL_BartenderCliContext iCtx)
         {
             string aTarget = iCtx.Args.Length > 0 ? iCtx.Args[0] : "";
             string aBody = iCtx.RawAfterArgs ?? "";
@@ -295,7 +326,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                  + (UCL_RemoteWindowControl.Enabled ? "" : " ← **關著，這樣執行會直接被拒**（先 `cmd remote-window on`）");
         }
 
-        static string RunMsg(CliContext iCtx)
+        public static string RunMsg(UCL_BartenderCliContext iCtx)
         {
             string aTarget = iCtx.Args.Length > 0 ? iCtx.Args[0] : "";
             string aBody = (iCtx.RawAfterArgs ?? "").Trim();
@@ -340,7 +371,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                  + "（實體輸入要逐一定位視窗，送完我再回一則逐人結果）";
         }
 
-        static async UniTaskVoid BroadcastAsync(List<UCL_PersonaLockInfo> iTargets, string iBody, CliContext iCtx)
+        static async UniTaskVoid BroadcastAsync(List<UCL_PersonaLockInfo> iTargets, string iBody, UCL_BartenderCliContext iCtx)
         {
             var aLines = new List<string>();
             int aOk = 0;
@@ -380,11 +411,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // ===========================================================
         // 內部
         // ===========================================================
-        static bool IsOn(string[] iArgs)
+        public static bool IsOnArgs(string[] iArgs)
             => iArgs != null && iArgs.Length > 0
                && (iArgs[0] == "on" || iArgs[0] == "1" || iArgs[0] == "true" || iArgs[0] == "enable");
 
-        static bool HasPermanent(string[] iArgs)
+        public static bool HasPermanentArg(string[] iArgs)
         {
             if (iArgs == null) return false;
             for (int i = 0; i < iArgs.Length; i++)
@@ -397,43 +428,38 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             return false;
         }
 
-        static string BuildHelp()
+        public static string BuildHelp()
         {
+            var aConfigs = LoadCommands();
             var aSb = new StringBuilder();
             aSb.AppendLine("🔧 **酒館 CLI 可用指令**（不分大小寫；一律以 `cmd` 開頭）");
             aSb.AppendLine();
-            for (int i = 0; i < s_Commands.Count; i++)
+            for (int i = 0; i < aConfigs.Count; i++)
             {
-                var c = s_Commands[i];
-                aSb.AppendLine($"- `{c.Usage}`");
-                aSb.AppendLine($"　　{c.Description}");
+                var c = aConfigs[i];
+                if (c == null || !c.enabled) continue;
+                aSb.AppendLine($"- `{(string.IsNullOrWhiteSpace(c.usage) ? "cmd " + c.id : c.usage)}`");
+                if (!string.IsNullOrWhiteSpace(c.description)) aSb.AppendLine($"　　{c.description}");
             }
             aSb.AppendLine();
             aSb.AppendLine("⚠ 只有白名單成員可觸發；需要二次確認的指令會由我問一次 **Y／N**。");
             return aSb.ToString().TrimEnd();
         }
 
-        static CliCommand Find(string iLowerName)
+        static UCL_BartenderCliCommandConfig Find(string iLowerName)
         {
             if (string.IsNullOrEmpty(iLowerName)) return null;
-            for (int i = 0; i < s_Commands.Count; i++)
-                if (s_Commands[i].Name == iLowerName) return s_Commands[i];
+            var aConfigs = LoadCommands();
+            for (int i = 0; i < aConfigs.Count; i++)
+            {
+                if (aConfigs[i] == null || !aConfigs[i].enabled) continue;
+                if (aConfigs[i].MatchKey == iLowerName) return aConfigs[i];
+            }
             return null;
         }
 
-        static CliCommand FindByLine(string iRawLine, UCL_BartenderCliSettings iSettings)
+        static UCL_BartenderCliCommandConfig FindByLine(string iRawLine, UCL_BartenderCliSettings iSettings)
             => Find(NameOf(iRawLine, iSettings));
-
-        static string SafeRun(CliCommand iCmd, CliContext iCtx)
-        {
-            try { return iCmd.Run(iCtx); }
-            catch (Exception e)
-            {
-                // 失敗一定要出聲並帶原因 —— 沉默會讓人重打，而重打不會改變結果
-                UnityEngine.Debug.LogWarning($"[BartenderCli] `{iCmd.Name}` 執行失敗：{e}");
-                return $"❌ `{iCmd.Name}` 執行失敗：{e.Message}";
-            }
-        }
 
         static readonly char[] s_Sep = { ' ', '\t', '\r', '\n', '　' };
 
@@ -462,7 +488,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         //          送出去會變成 `free time until 23:50` —— 而**沒有任何一層會報錯**。
         //          所以原文用「在原始字串上依序切掉 prefix / 指令名 / 第一個 arg」取得，
         //          不是把小寫 token 接回去（那接不回大小寫，也接不回換行）。
-        static CliContext BuildContext(string iRaw, UCL_BartenderCliSettings iSettings,
+        static UCL_BartenderCliContext BuildContext(string iRaw, UCL_BartenderCliSettings iSettings,
             UCL_ChatMessage iMsg, string iRoomId)
         {
             var aLower = LowerTokens(iRaw, iSettings);
@@ -478,7 +504,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
             aRest = StripToken(aRest, out _);            // 第 1 個 arg（例如 all / <persona>）
 
-            return new CliContext
+            return new UCL_BartenderCliContext
             {
                 Args = aArgs,
                 RawLine = iRaw,

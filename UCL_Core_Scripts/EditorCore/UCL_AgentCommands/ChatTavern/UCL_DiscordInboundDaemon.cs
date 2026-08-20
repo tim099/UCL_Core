@@ -715,6 +715,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 if (!string.IsNullOrEmpty(approvedProfile)) meta["discord_user_profile"] = approvedProfile;
 
                 if (refs.Count > 0) meta["attachments"] = refs.Count.ToString();
+
+                // CLI 指令判定（寫入層攔截，Tim 2026-08-20 拍板）：
+                // Discord 進來的訊息若是給酒保 CLI 的指令（`cmd …`），在寫入端就打上 tag，
+                // 讓後續流程（glossary / mention / mirror 等）能分流 —— 判定跟 Cmd_Tavern post 同一支，
+                // 兩個寫入口用同一個判準，不各自發明。
+                try
+                {
+                    if (Bartender.UCL_BartenderCliService.LooksLikeCliCommand(content))
+                    {
+                        meta["tag"] = "cli-cmd";
+                        meta["cli_cmd"] = "true";
+                    }
+                }
+                catch (Exception e) { Debug.LogWarning($"[DiscordInbound] CLI 指令判定失敗（視同一般訊息）: {e.Message}"); }
+
                 var record = new UCL_ChatMessage
                 {
                     sender_id = senderId,

@@ -141,9 +141,11 @@ namespace UCL.Core.EditorLib.Page
 
             using (new GUILayout.VerticalScope("box"))
             {
+                bool aShowCli;
                 EditorGUI.BeginChangeCheck();
                 using (new GUILayout.HorizontalScope())
                 {
+                    aShowCli = UCL_GUILayout.Toggle(m_FoldDic, "DrawCliSection", 21, iDefaultValue: false);
                     GUILayout.Label("<b>🔧 酒館 CLI</b>",
                         new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
                     GUILayout.Space(UCL_GUIStyle.GetScaledSize(8));
@@ -151,7 +153,22 @@ namespace UCL.Core.EditorLib.Page
                     if (aOn != m_Cli.enabled) m_Cli.enabled = aOn;
                     GUILayout.Label("啟用（關掉＝完全不理 cmd 訊息）", UCL_GUIStyle.LabelStyle,
                         GUILayout.ExpandWidth(false));
+                    // 指令本體（id／說明／行為清單）住在獨立設定頁 —— 一指令一份 json，
+                    // 本區塊只管「通道」層（總開關／前綴／逾時／白名單）
+                    if (GUILayout.Button("📜 指令設定", UCL_GUIStyle.ButtonStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(110))))
+                    {
+                        UCL_BartenderCliCommandsPage.Create();
+                    }
+
                     GUILayout.FlexibleSpace();
+                }
+                // 收合時仍要結算標題列的變更（enable checkbox 在標題列上，
+                // 收合狀態下切它而不存檔的話，看起來關了、檔案裡還是開的）
+                if (!aShowCli)
+                {
+                    if (EditorGUI.EndChangeCheck()) SaveCliSettings();
+                    return;
                 }
                 using (new EditorGUI.DisabledScope(!m_Cli.enabled))
                 {
@@ -241,20 +258,22 @@ namespace UCL.Core.EditorLib.Page
                         if (aDelete >= 0) m_Cli.users.RemoveAt(aDelete);
                     }
                 }
-                if (EditorGUI.EndChangeCheck())
-                {
-                    try { UCL_BartenderCliIO.Save(m_Cli); }
-                    catch (System.Exception e)
-                    {
-                        Debug.LogWarning($"[BartenderCli] 設定寫入失敗：{e.Message}");
-                    }
-                }
+                if (EditorGUI.EndChangeCheck()) SaveCliSettings();
 
                 GUILayout.Label("指令：`cmd help`（列出全部）／`cmd remote-window on [permanent]`／`cmd remote-window off`。"
                     + "不分大小寫。需要二次確認的指令會由酒保問一次 Y／N。",
                     new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
                 GUILayout.Label($"設定檔：{UCL_BartenderCliIO.GetSettingsPath()}",
                     new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
+            }
+        }
+
+        void SaveCliSettings()
+        {
+            try { UCL_BartenderCliIO.Save(m_Cli); }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[BartenderCli] 設定寫入失敗：{e.Message}");
             }
         }
 
@@ -296,12 +315,14 @@ namespace UCL.Core.EditorLib.Page
 
             using (new GUILayout.VerticalScope("box"))
             {
+                bool aShowLLM;
                 using (new GUILayout.HorizontalScope())
                 {
+                    aShowLLM = UCL_GUILayout.Toggle(m_FoldDic, "DrawLLMSection", 21, iDefaultValue: false);
                     GUILayout.Label("<b>🤖 發言來源</b>",
                         new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true },
                         GUILayout.ExpandWidth(false));
-                    GUILayout.FlexibleSpace();
+                    
                     // 入口：去裝模型／看顯存佔用（雙向互跳）
                     if (GUILayout.Button("🧠 本地 LLM 模型管理", UCL_GUIStyle.ButtonStyle,
                             GUILayout.ExpandWidth(false)))
@@ -313,7 +334,10 @@ namespace UCL.Core.EditorLib.Page
                     {
                         RefreshLLMModels().Forget();
                     }
+                    GUILayout.FlexibleSpace();
                 }
+                // 標題列沒有會改設定的元件（兩顆按鈕都是即時動作）⇒ 收合直接 return 安全
+                if (!aShowLLM) return;
 
                 using (new GUILayout.HorizontalScope())
                 {

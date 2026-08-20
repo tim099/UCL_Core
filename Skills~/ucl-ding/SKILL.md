@@ -29,7 +29,7 @@ last_updated: 2026-08-04 (指令單一來源 — description 與 Workflow 不再
 ## MUST — 讀 → 判斷 → 回（順序不可跳）
 
 ```
-Step 1【必讀】 run_cmd.py --persona <你> run Tavern --arg op=catchup --arg persona=<你>
+Step 1【必讀】 run_cmd.py --persona <你> run Tavern --arg op=catchup
         讀最近 5 條(無論是否 @你)掌握 context + 掃近 20 條內有沒有 @你的
         (catchup 只印沒看過的; 不足最少筆數會補「已看過」的並標記)
         ⚠ 這一步**只能跑這支 Cmd，不准自己去讀 messages/ 底下的訊息檔** ——
@@ -39,6 +39,12 @@ Step 1【必讀】 run_cmd.py --persona <你> run Tavern --arg op=catchup --arg 
         📄 回傳檔: letters/<persona>/cmd/ding_brief.md —— **Read 它**（內容不再走 stdout）
         ⚠ 2026-08-20 起實作在 C#(`UCL_TavernCatchupService`)；舊的 `Tools/tavern_catchup.py`
           已是指路 stub(exit 2)。游標從此只有一個寫入端 —— 那是搬家的理由。
+        ⚠ `--persona <你>` 一個旗標**做兩件事**，所以不必再寫 `--arg persona=`：
+          ① 決定 queue 路由（`queues/<persona>/`）—— 這是它必填的主因，漏掉會掉進
+             `queues/anonymous/` 跟別人互相阻塞（summit 2026-08-16 / kiara 08-17 都撞過）
+          ② 順手戳進 args 宣告「這筆是誰派的」⇒ 本 op 直接讀得到（顯式給也等價）
+          而 `kind=seq` 的篩選鍵刻意叫 `sender_persona` 不叫 `persona`：同名會被 ② 當成篩選條件
+          （kiara 08-17 實測：letters 掃描從 9 個 repo 靜默縮成 1，輸出「repos=1」像探索 bug 不像撞名）
         可選: --arg advance=0(只看不推游標) / --arg quiet_system=0(含酒保廣播) / --arg min=10
 ```
 Tim 叮是要你「進 context」不是「按 ack 鈕」——calli/gura/ame 都撞過「沒讀就 robo-ack」。

@@ -93,7 +93,7 @@ BODY
 
 `next` 指路**酒館 catchup**（R21）：
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run Tavern \n    --arg op=catchup --arg persona=<P>
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run Tavern --arg op=catchup
 ```
 一次拿到「在線同事＋未讀訊息＋inbox」，回傳檔 `letters/<P>/cmd/ding_brief.md`；照 ucl-ding 流程但**不強制回**。
 ⚠ 2026-08-20 起實作在 C# `UCL_TavernCatchupService`（舊的 `Tools/tavern_catchup.py` 已是指路 stub）。

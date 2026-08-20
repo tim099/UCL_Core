@@ -264,6 +264,22 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run <CmdType> -
 >
 > **功能在、路由在、旗標在 —— 沒有人被指向它。規則要長在通道上，不要掛在呼叫端的記憶裡。**
 
+### `--arg persona=` 什麼時候是多餘的（Tim 2026-08-20 提問，實測定案）
+
+`--persona <me>` 會**戳進 args**，所以 `GetArg(args,"persona")` / `RequireId(args,"persona")`
+一律拿得到值 —— 實測 `Cmd_Library op=recall` 不帶 `--arg persona=` 照樣成功。
+⇒ **技術上全部可省。但「能省」不等於「該省」**：
+
+| persona 的語意 | 例 | 判準 |
+|---|---|---|
+| **＝呼叫者自己**（恆等） | `StreamWatch` 各 step、`FreeTime`、`Relationship op=update`、`Tavern op=post/catchup/query` | 可省 —— 寫兩次只是噪音 |
+| **＝指定對象**（可能不是我） | `Library`（讀者可能是別人，補課會讀同事的心得）、`PersonaProfile op=get_bank/set_bank/unbind` | **不可省** —— 省掉會靜默變成「我自己」 |
+| **猜錯代價很大** | `GoodMorning`（登入成別人）、`GoodNight`（**把同事登出**） | **刻意保留顯式** —— `ucl-morning` 的鐵律就是「persona 一律顯式，沒拿到名字就停下來問」 |
+
+⇒ 真正的判準不是「Cmd 讀不讀得到」，是
+**「省掉之後，『這筆算誰的』會不會變成隱式的，而錯了會不會有人喊」**。
+第三類那兩支的錯誤是**別人的 session 被動到**，那種地方寧可多打一次。
+
 ⛔ **`--agent-id` 已移除**（2026-08-17）。它是自由字串、**沒有唯一性保證**
 （打錯會長出 `queues/<那串>/` 而不報錯），而唯一有守衛的身分是 persona
 （同一 persona 不得同時登入兩次）。打到舊旗標會**明確報錯並指路**，不是靜默忽略。

@@ -2763,7 +2763,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             ioR.AppendLine(aBody.TrimEnd());
         }
         static double ReadDouble(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) ? double.Parse(iJd[iKey].ToString(), System.Globalization.CultureInfo.InvariantCulture) : 0; } catch { return 0; } }
-        static bool ReadBool(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) && (bool)iJd[iKey]; } catch { return false; } }
+        static bool ReadBool(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) && iJd.GetBool(iKey); } catch { return false; } }
 
         static DateTime? ParseIsoLocal(string iIso)
         {

@@ -106,7 +106,7 @@ namespace UCL.Core
 
         private Type m_Type = null;
         private Dictionary<string, MethodInfo> m_MethodInfoDic = new();
-        private string m_CachedFunction = null;
+        //private string m_CachedFunction = null;
         public override string ToString()
         {
             return $"{m_TypeSelector}({m_Parameters.ConcatToString()})";

@@ -59,13 +59,29 @@ def _load_ucl_paths():
 _paths = _load_ucl_paths()
 
 
+_PP_MOD = None
+
+
 def _persona_profile():
-    import importlib.util as _ilu
-    from pathlib import Path as _P
-    _spec = _ilu.spec_from_file_location(
-        "_ucl_persona_profile_agent_email", _P(__file__).resolve().parent / "_lib" / "persona_profile.py")
-    _m = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_m)
-    return _m
+    """persona 讀取接縫（走 `_lib/seam` 共用 loader，全行程一份）。
+
+    # 物理意義：接縫的 per-process 快取（`_STATE`）決定「這個行程發幾次 Cmd」，
+    #          而那個快取住在**模組實例**上。
+    # 🩸 BUG-17（2026-08-20 實測）：舊版**每次呼叫**都 `exec_module` 一份新模組
+    #    （三次呼叫三個不同 id、`sys.modules` 裡零筆）⇒ 快取等於不存在
+    #    ⇒ 不帶 `UCL_PP_SKIP_CMD` 時是「每次 `load_persona` 一趟 Cmd」。
+    #    而 `load_persona` 在 `build_trailer` 裡是每位 persona 一次 ——
+    #    症狀只是慢，慢會被歸因到「Editor 忙」，所以它不會叫。
+    """
+    global _PP_MOD
+    if _PP_MOD is None:
+        import importlib.util as _ilu
+        from pathlib import Path as _P
+        _spec = _ilu.spec_from_file_location(
+            "_ucl_seam_loader_agent_email", _P(__file__).resolve().parent / "_lib" / "seam.py")
+        _seam = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_seam)
+        _PP_MOD = _seam.persona_profile()
+    return _PP_MOD
 
 
 def _data_root() -> Path:

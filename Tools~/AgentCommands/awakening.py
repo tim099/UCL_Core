@@ -122,8 +122,9 @@ def _load_ucl_paths():
 _paths = _load_ucl_paths()
 
 
-# 同一個 idiom 載入 persona 讀取接縫（§8.7 單端解析）。module 級快取一次，
-# 之後每次 load_registry 都用同一份 —— 接縫自己也有 per-process 快取，不會重複發 Cmd。
+# persona 讀取接縫（§8.7 單端解析）走 `_lib/seam` 共用 loader ——
+# 本檔的 `_PP_MOD` 只是省一次 seam 載入，**實例唯一性由 seam 的 sys.modules 快取保證**
+# （BUG-17：各檔各自 spec_from_file_location 會造出多份實例，每份各發一次 Cmd）。
 _PP_MOD = None
 # 在此**定義時**就把目錄釘成 Path，不在函式裡讀 `_HERE`（見下方註解的血證）。
 _SEAM_DIR = Path(__file__).resolve().parent
@@ -138,10 +139,12 @@ def _persona_profile():
         #   而真正的錯是 `unsupported operand type(s) for /: 'str' and 'str'` ——
         #   接縫 fail-soft 回空 dict，於是「讀取失敗」長得跟「沒有這個人」一模一樣。
         spec = _ilu_paths.spec_from_file_location(
-            "_ucl_persona_profile_for_awakening", _SEAM_DIR / "_lib" / "persona_profile.py")
-        mod = _ilu_paths.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        _PP_MOD = mod
+            "_ucl_seam_loader_for_awakening", _SEAM_DIR / "_lib" / "seam.py")
+        seam = _ilu_paths.module_from_spec(spec)
+        spec.loader.exec_module(seam)
+        # 這一步才是拿接縫本體；seam 以「絕對路徑」為 key 在 sys.modules 快取
+        # ⇒ 不論本行程有幾個呼叫端、各自載了幾份 seam，接縫都只有一份（BUG-17）。
+        _PP_MOD = seam.persona_profile()
     return _PP_MOD
 
 # 🩸 repo root 的 tier 順序改用 ucl_paths 的語意（Tim 2026-08-17 拍板 A1）：

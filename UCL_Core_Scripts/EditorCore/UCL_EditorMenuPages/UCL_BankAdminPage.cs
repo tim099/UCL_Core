@@ -52,6 +52,17 @@ namespace UCL.Core.EditorLib.Page
         // ==== 顯示用快取（開頁 / 按 Refresh 才重讀檔，不每幀掃磁碟）====
         JsonData m_RegistryMeta;                                    // _registry_meta.json 整份
         readonly List<string> m_BankIds = new List<string>();      // 帳號宇宙 = agent_banks values ∪ system_accounts keys ∪ ledger 內的孤兒帳戶
+        // 「現行帳戶」＝真的有 persona 綁在上面的 agent id（合一後 agent id 就是帳號 id）。
+        // 物理意義：帳號宇宙裡有大量歷史殘留（舊世代 bank、孤兒、已銷戶）——
+        //   日常操作要選的幾乎永遠是現行的那幾個，而把 40 個名字混在一起選，
+        //   選錯的成本是「錢進了一個看起來很像的帳戶」。
+        // ⚠ 但**不能只留現行的** —— 歸戶／補登記／轉帳正是要對孤兒動作，
+        //   所以是預設收窄 ＋ 一個顯式打開的開關，不是永久隱藏。
+        readonly List<string> m_ActiveAccountIds = new List<string>();
+        bool m_ShowAllAccounts = false;   // 預設只顯示現行帳戶（合一之後）
+        List<string> BankPickerList => (UCL_CentralBankSettings.AccountResolveUnified && !m_ShowAllAccounts
+                                        && m_ActiveAccountIds.Count > 0)
+            ? m_ActiveAccountIds : m_BankIds;
         // 區塊職責：只存在於 ledger、卻沒有任何 agent_banks / system_accounts 對應的帳戶。
         // 物理意義：這種帳戶**裡面有真的錢，但沒有主人**，而且後台原本完全看不到它 ——
         //          帳號宇宙是從 registry 建的，ledger 裡冒出來的 account_id 不在其中。
@@ -167,6 +178,15 @@ namespace UCL.Core.EditorLib.Page
         double m_ApproveArmedAt = 0;
         const double APPROVE_ARM_WINDOW_SEC = 5.0;
 
+        // ==== 🏷 帳戶資料（一帳一檔）====
+        // 區塊職責：`Treasury/accounts/<id>.json` 的編輯狀態。
+        // 物理意義：帳戶除了餘額（ledger 算得出來）之外，還有**算不出來的那一半** —— 顯示名稱。
+        //          本區是那一半的唯一編輯入口；設計成可擴充（之後要加欄位就往這個摺疊區加）。
+        readonly Dictionary<string, string> m_AcctNameDrafts = new Dictionary<string, string>(StringComparer.Ordinal);
+        Dictionary<string, UCL_BankAccountProfile> m_CacheProfiles;   // Draw 不逐檔讀，LoadData/操作後失效
+        bool m_SeedNamesArmed = false;
+        double m_SeedNamesArmedAt = 0;
+
         // ==== 🗺 agent_banks 全表編輯（summit 2026-08-20）====
         // 區塊職責：agent→bank 路由表的**列出／刪除／覆蓋**三個此前缺席的操作。
         // 物理意義：`agent_banks` 決定「某個 agent 麾下所有 persona 的薪水流去哪個帳戶」。
@@ -239,7 +259,8 @@ namespace UCL.Core.EditorLib.Page
             m_BalancesDirty = true;
             LoadCentralBankDrafts();   // 央行政策草稿一併回讀（Refresh 也要跟著更新，不留舊值）
             m_RegistryMeta = null;
-            m_BankIds.Clear(); m_AgentKeys.Clear(); m_AgentToBank.Clear();
+            m_BankIds.Clear(); m_AgentKeys.Clear(); m_AgentToBank.Clear(); m_ActiveAccountIds.Clear();
+            m_CacheProfiles = null;
             m_PersonaNames.Clear(); m_PersonaToAgent.Clear();
             m_Aliases.Clear(); m_SystemAccounts.Clear();
             m_OrphanRowsDirty = true;   // 孤兒列（餘額／解析／綁定）跟著資料一起重算
@@ -348,6 +369,15 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
 
+                // 現行帳戶：從 persona 的 registry.agent 收集（合一後那就是帳號 id）。
+                // ⚠ **必須放在 persona 迴圈之後** —— 放前面的話 m_PersonaToAgent 還是空的，
+                //   結果是一個空清單，而空清單會安靜地 fallback 成「顯示全部」，看起來像功能沒開。
+                // 來源刻意不是 agent_banks —— 合一之後那張表已退出解析，是過時殘留。
+                var activeSet = new SortedSet<string>(StringComparer.Ordinal);
+                foreach (var kv in m_PersonaToAgent)
+                    if (!string.IsNullOrEmpty(kv.Value)) activeSet.Add(kv.Value);
+                m_ActiveAccountIds.AddRange(activeSet);
+
                 // draft 預設：開戶 bank 命名慣例跟著 agent draft 走（若使用者還沒改）
                 SyncNewBankDraftFromAgent();
                 // 資料重載 → 餘額快取失效，下輪重算
@@ -448,6 +478,7 @@ namespace UCL.Core.EditorLib.Page
             DrawOrphanPanel();        // 👻 孤兒帳戶：標記遷移 / 銷戶（獨立區，收合時仍顯示可銷戶數）
             GUILayout.Space(6);
             DrawResolveRulesPanel();  // 🧭 帳號解析規則：試算 / alias / 系統帳號 / 已銷戶
+            DrawAccountProfilePanel();// 🏷 帳戶資料：顯示名稱（一帳一檔，可擴充）
             GUILayout.Space(6);
             DrawTokenOpsPanel();      // 開戶 / 打款 / 轉帳
             GUILayout.Space(6);
@@ -520,13 +551,27 @@ namespace UCL.Core.EditorLib.Page
                 // Bank 下拉
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("Bank", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    if (m_BankIds.Count == 0)
+                    // 標籤叫 Agent（Tim 2026-08-20）：合一之後帳號 id 就是 agent id，
+                    // 再叫它 Bank 會讓「bank id」這個已退場的概念繼續活在畫面上。
+                    GUILayout.Label("Agent", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    var pickList = BankPickerList;
+                    if (pickList.Count == 0)
                         GUILayout.Label("(無 bank — 檢查 _registry_meta.json 的 agent_banks)", UCL_GUIStyle.LabelStyle);
                     else
                     {
-                        int newIdx = UCL_GUILayout.PopupSearchCache(m_SelectedBankIdx, m_BankIds, m_Dic, "BankPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
-                        if (newIdx >= 0 && newIdx < m_BankIds.Count) m_SelectedBankIdx = newIdx;
+                        int curIdx = Mathf.Max(0, pickList.IndexOf(SelectedBank ?? ""));
+                        int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, pickList, m_Dic, "BankPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                        if (newIdx >= 0 && newIdx < pickList.Count)
+                            m_SelectedBankIdx = m_BankIds.IndexOf(pickList[newIdx]);
+                    }
+                    // 收窄不是隱藏：孤兒帳戶仍要能被選到（歸戶／補登記／轉帳正是對它們動作）。
+                    if (UCL_CentralBankSettings.AccountResolveUnified && m_ActiveAccountIds.Count > 0)
+                    {
+                        bool showAll = GUILayout.Toggle(m_ShowAllAccounts,
+                            $"顯示全部帳戶（含孤兒／舊世代／已銷戶，共 {m_BankIds.Count}）", UCL_GUIStyle.LabelStyle);
+                        if (showAll != m_ShowAllAccounts) m_ShowAllAccounts = showAll;
+                    }
+                    {
                     }
                 }
             }
@@ -878,6 +923,120 @@ namespace UCL.Core.EditorLib.Page
         // 邊界：agent_banks 唯讀 —— 它已有兩個寫入者（本頁開戶／Persona & Agent 管理頁開 agent），
         //      這裡再加第三個只會讓漂移更難查。要改去那兩處。
         // ===========================================================
+        // ===========================================================
+        // 區塊：🏷 帳戶資料 —— 一帳一檔（Treasury/accounts/<id>.json）
+        // 物理意義：這裡改的是「顯示成什麼」，**不動任何一分錢**，所以不需要二段確認。
+        //          （對照組：同頁改 agent→帳號路由會改變薪水去向，那個有 arm。
+        //            閘門的嚴格度要跟後果對齊，一律加 arm 會讓 arm 變成無意義的儀式。）
+        // 數值影響：零金流。
+        // ===========================================================
+        void DrawAccountProfilePanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                // ⚠ 不在 Draw 裡逐檔讀 —— IMGUI 每 repaint 都跑，40 個帳戶就是每幀 40 次檔案 IO。
+                //   （同 UCL_TreasuryLedger 區塊註解的血證：Draw* 裡的 IO 會變成反覆全掃。）
+                var accounts = BankPickerList;
+                if (m_CacheProfiles == null)
+                {
+                    m_CacheProfiles = new Dictionary<string, UCL_BankAccountProfile>(StringComparer.Ordinal);
+                    foreach (var a in m_BankIds) m_CacheProfiles[a] = UCL_BankAccountProfileIO.Load(a);
+                }
+                int haveProfile = 0;
+                foreach (var a in accounts)
+                    if (m_CacheProfiles.TryGetValue(a, out var pv) && pv != null) haveProfile++;
+                if (!FoldHeader("BankAccountProfileFold", "<b>🏷 帳戶資料</b>",
+                        $"　帳戶 {accounts.Count}｜已建檔 {haveProfile}｜一帳一檔 Treasury/accounts/&lt;id&gt;.json")) return;
+
+                GUILayout.Label("每個帳戶一個檔案，存<b>算不出來的那一半</b>（目前是顯示名稱；之後要加欄位往這區加）。"
+                    + "　<color=#88dd88>改這裡不動任何一分錢。</color>", WrapLabelStyle);
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool armed = m_SeedNamesArmed
+                        && (EditorApplication.timeSinceStartup - m_SeedNamesArmedAt) <= APPROVE_ARM_WINDOW_SEC;
+                    if (GUILayout.Button(armed ? "⚠ 確認：未建檔者以 id 建檔" : "🪄 未建檔者一律以 id 建檔",
+                            UCL_GUIStyle.GetButtonStyle(armed ? new Color(1f, 0.55f, 0.4f) : new Color(0.8f, 0.9f, 1f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        if (armed) DoSeedAccountProfiles();
+                        else
+                        {
+                            m_SeedNamesArmed = true;
+                            m_SeedNamesArmedAt = EditorApplication.timeSinceStartup;
+                            SetResult($"⚠ 待確認：對 {accounts.Count - haveProfile} 個尚未建檔的帳戶，"
+                                + "以 id 當顯示名稱建檔（**已建檔的一律不動**）。5 秒內再按一次生效。");
+                        }
+                    }
+                    GUILayout.Label("　（Tim 2026-08-20：顯示名稱暫時都套 id，之後再逐個改。**已建檔的不會被覆蓋**）",
+                        WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
+
+                GUILayout.Space(4);
+                foreach (var acc in accounts)
+                {
+                    m_CacheProfiles.TryGetValue(acc, out var prof);
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        // 按鈕在 Label 前（守則 L2）
+                        if (!m_AcctNameDrafts.TryGetValue(acc, out string draft))
+                            draft = prof?.display_name ?? "";
+                        if (GUILayout.Button("💾", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)),
+                                GUILayout.ExpandWidth(false)))
+                            DoSaveAccountProfile(acc, draft);
+                        GUILayout.Label($"　<b>{acc}</b>", UCL_GUIStyle.LabelStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(190)));
+                        string nd = GUILayout.TextField(draft, UCL_GUIStyle.TextFieldStyle,
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                        if (nd != draft) m_AcctNameDrafts[acc] = nd;
+                        // 「沒建檔」與「建了檔但名稱留空」是兩種狀態，要看得出差別 ——
+                        // 兩者都會顯示成 id，但後者是有人做過決定的。
+                        GUILayout.Label(prof == null
+                                ? "　<color=#ffcc66>未建檔</color>（顯示會 fallback 成 id）"
+                                : (string.IsNullOrWhiteSpace(prof.display_name)
+                                    ? $"　已建檔・名稱留空（顯示 id）　<size=10>{prof.updated_by}</size>"
+                                    : $"　→ <b>{prof.display_name}</b>　<size=10>{prof.updated_by} {prof.updated_at}</size>"),
+                            WrapLabelStyle);
+                        GUILayout.FlexibleSpace();
+                    }
+                }
+            }
+        }
+
+        void DoSaveAccountProfile(string iAccount, string iName)
+        {
+            if (!UCL_BankAccountProfileIO.Save(iAccount, iName ?? "", "", "BankAdminPage", out string err))
+            { SetResult($"❌ 帳戶資料寫入失敗（{iAccount}）：{err}"); return; }
+            m_AcctNameDrafts.Remove(iAccount);
+            m_CacheProfiles = null;
+            SetResult($"✅ 已寫入 `{iAccount}` 的顯示名稱："
+                + (string.IsNullOrWhiteSpace(iName) ? "（留空 ⇒ 顯示 id）" : $"`{iName}`")
+                + "　（不動任何一分錢）");
+        }
+
+        // 只對**尚未建檔**的帳戶建檔，已建檔的一律不動 ——
+        // 「批次補齊」不該有能力覆蓋別人已經做過的決定。
+        void DoSeedAccountProfiles()
+        {
+            m_SeedNamesArmed = false;
+            int made = 0, skipped = 0, failed = 0;
+            var sb = new System.Text.StringBuilder();
+            foreach (var acc in m_BankIds)
+            {
+                if (!UCL_BankAccountProfileIO.IsValidAccountId(acc))
+                { failed++; sb.AppendLine($"  ✗ {acc}：id 不合法（不可當檔名）"); continue; }
+                if (UCL_BankAccountProfileIO.Load(acc) != null) { skipped++; continue; }
+                if (!UCL_BankAccountProfileIO.Save(acc, acc, "以 id 初始化（Tim 2026-08-20）", "BankAdminPage", out string err))
+                { failed++; sb.AppendLine($"  ✗ {acc}：{err}"); continue; }
+                made++;
+            }
+            SetResult($"🪄 帳戶資料建檔：新建 {made}／已存在跳過 {skipped}／失敗 {failed}"
+                + System.Environment.NewLine + sb);
+            Debug.Log($"[BankAdmin] seed account profiles made={made} skipped={skipped} failed={failed}");
+            LoadData();
+        }
+
         void DrawResolveRulesPanel()
         {
             using (new GUILayout.VerticalScope("box"))
@@ -1547,6 +1706,25 @@ namespace UCL.Core.EditorLib.Page
             { SetResult("❌ 開戶失敗：agent / bank 不可為空"); return; }
             if (!int.TryParse((m_OpenInitAmountDraft ?? "0").Trim(), out int initAmount) || initAmount < 0)
             { SetResult($"❌ 開戶失敗：種子額度需為非負整數（收到 '{m_OpenInitAmountDraft}'）"); return; }
+
+            // ⚠ **帳號 id 的唯一性用全小寫比對**（Tim 2026-08-20 拍板）——
+            //   兩個只差大小寫的帳號在系統裡活不下去：檔案系統（Windows/macOS 檔名不分大小寫）
+            //   會讓 `Treasury/accounts/<id>.json` 撞成同一個檔，而症狀是**查到別人的資料**。
+            //   🩸 2026-08-20 實例：`zeta`（餘額 2792、有 persona 綁定）與 `Zeta`（空戶）
+            //     的帳戶資料檔互相覆蓋，讀 `zeta` 拿到 `Zeta` 的內容，全程零報錯。
+            //   ⇒ 擋在**開戶**這一格，是因為這裡是新名字唯一的入口；擋不住的話後面每一層都得防。
+            foreach (var exist in m_BankIds)
+            {
+                if (string.Equals(exist, bank, StringComparison.Ordinal)) continue;   // 同一個帳號＝覆蓋映射，合法
+                if (string.Equals(exist, bank, StringComparison.OrdinalIgnoreCase))
+                {
+                    m_OpenAccountArmed = false;
+                    SetResult($"❌ 開戶失敗：帳號 `{bank}` 與既有的 `{exist}` **只差大小寫**。"
+                        + "　帳號 id 以全小寫比對唯一性 —— 兩者無法共存（檔案系統會把它們當同一個檔）。"
+                        + $"　要用既有那個請直接填 `{exist}`；要合併請走遷移頁的「同名合併」。");
+                    return;
+                }
+            }
 
             // 覆蓋既有映射 ＝ 改薪水去向，走二段確認（純新增不擋 —— 新增不會改變任何現有的人）。
             // 🩸 此前這裡一按就生效，只在事後的結果字串補一句「（覆蓋既有映射）」——

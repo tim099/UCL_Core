@@ -522,6 +522,46 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
 
         /// <summary>該帳號是否為註冊在案的正式帳號（bank 值或 system_account）。</summary>
+        // ==========================================================
+        // 區塊職責：把一個帳號寫進 `closed_accounts`（銷戶）—— closed_accounts 的**唯一寫入端**。
+        // 物理意義：銷戶＝宣告「這個名字不再接受任何金流」。它是解析層的事實，
+        //          所以寫入端放在解析器旁邊，而不是散在各個後台頁裡。
+        //          `renamed_to` 非空時，代表這不是單純關閉而是**併入另一個帳號** ——
+        //          那句話是給未來查帳的人看的：錢去哪了，而不只是「這裡關了」。
+        // 數值影響：**不動 ledger、不搬任何一分錢。** 搬錢是 transfer，是另一件事、另一個入口。
+        //          ⚠ 呼叫端有責任先把餘額搬走 —— 本函式不檢查餘額，因為「餘額 0 才能銷戶」
+        //          是流程的判準而不是這一層的判準（歷史上有餘額非 0 的已銷戶帳號要留著查）。
+        // ==========================================================
+        public static bool CloseAccount(string accountId, string reason, string renamedTo,
+            string actor, out string oError)
+        {
+            oError = "";
+            if (string.IsNullOrWhiteSpace(accountId)) { oError = "accountId 必填"; return false; }
+            if (string.IsNullOrWhiteSpace(actor)) { oError = "actor 必填 —— 匿名寫入不收（§8.6）"; return false; }
+            try
+            {
+                if (!File.Exists(RegistryMetaPath)) { oError = $"registry 不存在：{RegistryMetaPath}"; return false; }
+                var reg = JsonData.ParseJson(File.ReadAllText(RegistryMetaPath, Encoding.UTF8));
+                if (reg == null) { oError = "registry 解析失敗"; return false; }
+                if (!reg.Contains(ClosedAccountsKey)) reg[ClosedAccountsKey] = JsonData.ParseJson("{}");
+                string stamp = DateTime.UtcNow.ToString("yyyy-MM-dd");
+                string note = $"{stamp} {reason}（by {actor}）";
+                if (!string.IsNullOrWhiteSpace(renamedTo)) note += $" renamed_to={renamedTo}";
+                reg[ClosedAccountsKey][accountId] = note;
+
+                string tmp = RegistryMetaPath + ".tmp";
+                File.WriteAllText(tmp, reg.ToJsonBeautify(), Encoding.UTF8);
+                if (File.Exists(RegistryMetaPath)) File.Delete(RegistryMetaPath);
+                File.Move(tmp, RegistryMetaPath);
+                Invalidate();
+                // 讀回複驗 —— 寫入成功不等於解析器看得到它。
+                if (!IsClosed(accountId, out _))
+                { oError = "寫入後讀回不符：該帳號仍未被判定為已銷戶"; return false; }
+                return true;
+            }
+            catch (Exception e) { oError = e.Message; return false; }
+        }
+
         public static bool IsCanonicalAccount(string accountId)
         {
             if (string.IsNullOrEmpty(accountId)) return false;

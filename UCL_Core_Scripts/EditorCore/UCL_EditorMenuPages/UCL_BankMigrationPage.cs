@@ -83,6 +83,101 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ==========================================================
+        // 區塊職責：大小寫同名帳號的偵測與合併（Tim 2026-08-20 拍板）
+        // 物理意義：帳號 id 的唯一性**以全小寫比對** —— 兩個只差大小寫的帳號在系統裡活不下去：
+        //   `Treasury/accounts/<id>.json` 在 Windows/macOS 上會撞成同一個檔，
+        //   而症狀是「查 A 拿到 B 的資料」，全程零報錯。
+        //   🩸 2026-08-20 實例：`zeta`（2792、有綁定）與 `Zeta`（空戶）的資料檔互相覆蓋。
+        // 數值影響：**可能搬錢**（把被併方的餘額轉到保留方）。本專案 4 組實測全部有一邊為 0，
+        //   所以實際 transfer 筆數是 0 —— 但程式不假設這件事，餘額 > 0 就照樣走 ledger transfer。
+        // ==========================================================
+        public class CaseCollisionGroup
+        {
+            public string LowerKey;
+            public List<string> Members = new List<string>();
+            public string Keeper;                 // 保留下來的那個
+            public Dictionary<string, int> Balances = new Dictionary<string, int>(StringComparer.Ordinal);
+            public Dictionary<string, int> BoundCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            public int MoveAmount;                // 需要搬過去的總額
+        }
+
+        /// <summary>
+        /// 偵測所有「lower 之後相同」的帳號組。純讀。
+        /// </summary>
+        /// <remarks>
+        /// 保留者的選法（順序即優先級，全部可解釋，不用「看起來比較對」）：
+        /// ① 有 persona 綁定的（那是活的身分）→ ② 系統帳戶（已登記在案）→
+        /// ③ 餘額多的 → ④ ledger 筆數多的 → ⑤ 字典序（決定性 tie-break，避免每次跑結果不同）。
+        /// </remarks>
+        public static List<CaseCollisionGroup> DetectCaseCollisions()
+        {
+            var byLower = new Dictionary<string, CaseCollisionGroup>(StringComparer.Ordinal);
+            foreach (var acc in AccountUniverse().Keys)
+            {
+                string k = acc.ToLowerInvariant();
+                if (!byLower.TryGetValue(k, out var g))
+                { g = new CaseCollisionGroup { LowerKey = k }; byLower[k] = g; }
+                if (!g.Members.Contains(acc)) g.Members.Add(acc);
+            }
+            var bound = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var p in UCL_PersonaProfile.PoolNamesSorted())
+            {
+                string a = UCL_PersonaProfile.GetString(p, "agent", "").Trim();
+                if (string.IsNullOrEmpty(a)) continue;
+                bound.TryGetValue(a, out int c); bound[a] = c + 1;
+            }
+            var result = new List<CaseCollisionGroup>();
+            foreach (var g in byLower.Values)
+            {
+                if (g.Members.Count < 2) continue;
+                foreach (var m in g.Members)
+                {
+                    g.Balances[m] = SafeBal(m);
+                    bound.TryGetValue(m, out int bc); g.BoundCounts[m] = bc;
+                }
+                g.Members.Sort(StringComparer.Ordinal);
+                g.Keeper = g.Members
+                    .OrderByDescending(m => g.BoundCounts[m])
+                    .ThenByDescending(m => UCL_TreasuryAccountResolver.IsCanonicalAccount(m) ? 1 : 0)
+                    .ThenByDescending(m => g.Balances[m])
+                    .ThenByDescending(m => LedgerEntryCount(m))
+                    .ThenBy(m => m, StringComparer.Ordinal)
+                    .First();
+                g.MoveAmount = g.Members.Where(m => m != g.Keeper).Sum(m => Math.Max(0, g.Balances[m]));
+                result.Add(g);
+            }
+            result.Sort((a, b) => string.CompareOrdinal(a.LowerKey, b.LowerKey));
+            return result;
+        }
+
+        /// <summary>同名合併的試跑報告（Cmd_Invoke 可直接讀）。</summary>
+        public static string CaseCollisionReport()
+        {
+            var groups = DetectCaseCollisions();
+            var sb = new StringBuilder();
+            sb.AppendLine($"# 大小寫同名帳號　{groups.Count} 組");
+            if (groups.Count == 0)
+            {
+                sb.AppendLine("✓ 沒有任何一組 —— 帳號 id 在全小寫比對下已經是唯一的。");
+                return sb.ToString();
+            }
+            foreach (var g in groups)
+            {
+                sb.AppendLine($"## 【{g.LowerKey}】保留 **`{g.Keeper}`**");
+                foreach (var m in g.Members)
+                {
+                    string role = m == g.Keeper ? "← 保留" : "→ 併入並銷戶";
+                    sb.AppendLine($"  - `{m}`　餘額 {g.Balances[m]}　persona {g.BoundCounts[m]} 位　{role}");
+                }
+                sb.AppendLine($"  ⇒ 需搬 {g.MoveAmount} token" + (g.MoveAmount == 0 ? "（零成本）" : ""));
+            }
+            sb.AppendLine();
+            sb.AppendLine($"⇒ 合計需搬 {groups.Sum(x => x.MoveAmount)} token；"
+                + "被併方會進 closed_accounts 並記 renamed_to。");
+            return sb.ToString();
+        }
+
+        // ==========================================================
         // 區塊職責：算出完整遷移計畫（**純讀**，不寫任何東西）
         // 物理意義：這是試跑與實際執行**共用的唯一計算** —— 試跑看到的就是執行會做的。
         //          兩份各算一次的話，「試跑通過」與「執行正確」之間就沒有邏輯關係了。
@@ -93,7 +188,15 @@ namespace UCL.Core.EditorLib.Page
             var renames = ParseRenameSpec(iRenameSpec);
             var rows = new List<MigrationRow>();
             var meta = LoadRegistryMeta();
-            var agentBanks = ReadAgentBanks(meta);
+            // 計畫的來源要跟「現在誰是真相源」一致：
+            //   · 遷移前 → `agent_banks`（那時它就是路由表）
+            //   · 已合一 → **persona 的實際 agent**（agent_banks 已退出解析，留著的是過時殘留）
+            // 🩸 不分模式一律讀 agent_banks 的話，遷移**跑完之後**這一頁會繼續顯示
+            //   「需改名 5 組」與已經不存在的舊帳號名 —— 一個已完成的流程持續宣稱自己沒做，
+            //   而那比沒有畫面更糟：它會讓人再跑一次。
+            var agentBanks = UCL_CentralBankSettings.AccountResolveUnified
+                ? BuildIdentityMapFromPersonas()
+                : ReadAgentBanks(meta);
 
             // persona → agent（用來顯示「每個 persona 遷移後會用哪個帳號」）
             var personaAgent = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -176,6 +279,12 @@ namespace UCL.Core.EditorLib.Page
             sb.AppendLine($"## 遷移後總共會有這些帳號 id（{finals.Count} 個）");
             sb.AppendLine("　" + string.Join("、", finals.Select(x => "`" + x + "`")));
             sb.AppendLine();
+            // 顯示名稱狀態：合一後署名由這份資料供給，所以它是遷移計畫的一部分而不是附註。
+            int noProf = finals.Count(x => UCL_BankAccountProfileIO.Load(x) == null);
+            sb.AppendLine($"## 帳戶資料（一帳一檔）：已建檔 {finals.Count - noProf}／未建檔 {noProf}");
+            if (noProf > 0)
+                sb.AppendLine($"　⇒ 執行「② 改名＋切換」時會**自動為未建檔者建檔**（顯示名稱先套 id）。");
+            sb.AppendLine();
             sb.AppendLine($"⇒ 需改名 {renameCnt} 組｜需搬錢 {transferCnt} 組（合計 {transferSum} token）｜阻擋 {blocked} 組");
             if (blocked > 0) sb.AppendLine("⛔ 有阻擋項 —— 執行鈕不會開放，先處理上面標 ⛔ 的那幾列。");
             return sb.ToString();
@@ -191,6 +300,19 @@ namespace UCL.Core.EditorLib.Page
                 return JsonData.ParseJson(System.IO.File.ReadAllText(path));
             }
             catch { return null; }
+        }
+
+        // 合一模式下的「agent → 帳號」映射：agent id 就是帳號 id，所以是恆等映射，
+        // 而清單來源是**實際在用的 agent**（從 persona 的 registry 欄收集），不是任何一張表。
+        static Dictionary<string, string> BuildIdentityMapFromPersonas()
+        {
+            var d = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var p in UCL_PersonaProfile.PoolNamesSorted())
+            {
+                string a = UCL_PersonaProfile.GetString(p, "agent", "").Trim();
+                if (!string.IsNullOrEmpty(a)) d[a] = a;
+            }
+            return d;
         }
 
         static Dictionary<string, string> ReadAgentBanks(JsonData iMeta)
@@ -209,12 +331,79 @@ namespace UCL.Core.EditorLib.Page
             return d;
         }
 
-        // 該帳戶在 ledger 裡有幾筆紀錄（0 ＝ 這個名字從來沒被用過）。
-        static int LedgerEntryCount(string account)
+        // ==========================================================
+        // 區塊職責：ledger「每個帳戶有幾筆」的一次性快取。
+        // 🩸 為什麼一定要快取（2026-08-20 summit 當場害 Tim 卡住）：
+        //   本頁原本對每一列各叫一次 `UCL_TreasuryLedger.Audit(account)`，而那支是
+        //   **全帳本 read+parse**（實測 14,000+ 檔）—— 9 列就是 9 次全掃，開頁必卡；
+        //   同名偵測還放在 Draw 裡每幀跑一次，等於每幀重放整本帳。
+        //   ⚠ 這個坑 `UCL_TreasuryLedger` 的區塊註解**早就寫過**
+        //     （「ChatTavernPage 每 2 秒刷餘額 ⇒ 初開 40 秒 + 嚴重卡頓」），我照樣踩。
+        //   ⇒ 判準：**Draw* 裡不准出現任何一次全帳本掃描**；要用就先進快取，
+        //     並在 LoadData／執行動作之後顯式失效。
+        // ==========================================================
+        static Dictionary<string, int> s_AccountUniverse;
+
+        static void InvalidateLedgerCounts() => s_AccountUniverse = null;
+
+        // ==========================================================
+        // 區塊職責：帳戶宇宙（帳戶 → 餘額）—— **不掃 ledger**。
+        // 物理意義：來源是 `accounts/_balances.snapshot.txt`（**單檔**，Treasury 自己維護的餘額快照）
+        //   ∪ registry 的三張表 ∪ persona 的現行 agent。
+        //   🩸 第一版用 `LoadAllEntries()`（全帳本 14,000+ 檔）：改成「只掃一次」之後仍要 51 秒，
+        //     因為問題不是掃幾次，是**根本不該掃**。Treasury 早就把餘額增量維護在那張快照裡了。
+        // ⚠ 快照是衍生檔、可能落後 watermark ⇒ 用它判「有沒有歷史」會把剛建的帳戶判成新的。
+        //   那個誤判方向是**安全的**（多提醒一次「這是新帳戶」，不會漏掉），所以可接受；
+        //   但**不可**拿它當餘額真相 —— 餘額一律走 `UCL_TreasuryLedger.GetBalance`（它有自己的增量快取）。
+        // ==========================================================
+        static Dictionary<string, int> AccountUniverse()
         {
-            try { return UCL_TreasuryLedger.Audit(account)?.Count ?? 0; }
-            catch { return 0; }
+            if (s_AccountUniverse != null) return s_AccountUniverse;
+            var d = new Dictionary<string, int>(StringComparer.Ordinal);
+            try
+            {
+                string snap = System.IO.Path.Combine(UCL_BankAccountProfileIO.AccountsRoot, "_balances.snapshot.txt");
+                if (System.IO.File.Exists(snap))
+                {
+                    foreach (var line in System.IO.File.ReadAllLines(snap))
+                    {
+                        if (string.IsNullOrWhiteSpace(line) || line.StartsWith("watermark=") || line.StartsWith("count=")) continue;
+                        var parts = line.Split('	');
+                        if (parts.Length < 1 || string.IsNullOrEmpty(parts[0])) continue;
+                        d[parts[0]] = 1;
+                    }
+                }
+                var meta = LoadRegistryMeta();
+                foreach (var key in new[] { "agent_banks", "system_accounts", "closed_accounts" })
+                {
+                    if (meta == null || !meta.Contains(key)) continue;
+                    var node = meta[key];
+                    if (!node.IsObject || node.Dic == null) continue;
+                    foreach (var k in node.Dic.Keys)
+                    {
+                        if (k.StartsWith("_")) continue;
+                        d[k] = 1;
+                        if (key == "agent_banks")
+                        {
+                            string v = node.GetString(k, "");
+                            if (!string.IsNullOrEmpty(v)) d[v] = 1;
+                        }
+                    }
+                }
+                foreach (var p in UCL_PersonaProfile.PoolNamesSorted())
+                {
+                    string a = UCL_PersonaProfile.GetString(p, "agent", "").Trim();
+                    if (!string.IsNullOrEmpty(a)) d[a] = 1;
+                }
+            }
+            catch (Exception ex) { Debug.LogWarning($"[BankMigration] 帳戶宇宙建立失敗：{ex.Message}"); }
+            s_AccountUniverse = d;
+            return d;
         }
+
+        // 這個名字在系統裡出現過嗎（0 ＝ 從未出現，是全新帳戶）。
+        static int LedgerEntryCount(string account)
+            => AccountUniverse().ContainsKey(account) ? 1 : 0;
 
         static int SafeBal(string account)
         {
@@ -228,12 +417,15 @@ namespace UCL.Core.EditorLib.Page
         readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();
         readonly Dictionary<string, string> m_RenameDrafts = new Dictionary<string, string>(StringComparer.Ordinal);
         List<MigrationRow> m_Rows;
+        List<CaseCollisionGroup> m_CacheCollisions;   // 同名偵測結果快取（Draw 不重算）
         string m_Report = "";
         string m_LastResult = "";
         bool m_TransferArmed = false;
         double m_TransferArmedAt = 0;
         bool m_RenameArmed = false;
         double m_RenameArmedAt = 0;
+        bool m_MergeArmed = false;          // 同名合併的二段確認（可能搬錢＋銷戶）
+        double m_MergeArmedAt = 0;
         bool m_ModeArmed = false;          // 解析模式切換的二段確認（改的是錢的去向，不能一按就生效）
         double m_ModeArmedAt = 0;
         const double ARM_WINDOW_SEC = 5.0;
@@ -262,6 +454,7 @@ namespace UCL.Core.EditorLib.Page
         {
             DrawHeaderPanel();
             DrawPlanPanel();
+            DrawCaseMergePanel();
             DrawExecutePanel();
             DrawResultPanel();
         }
@@ -363,6 +556,10 @@ namespace UCL.Core.EditorLib.Page
 
         public void RefreshPlan()
         {
+            // 資料可能被別的路徑改過（Cmd／別的頁／git）⇒ 重算前先丟快取，
+            // 但**只在這裡丟**，不在 Draw 裡 —— 那正是卡頓的來源。
+            InvalidateLedgerCounts();
+            m_CacheCollisions = null;
             m_Rows = BuildPlan(ComposeRenameSpec(), UCL_CentralBankSettings.CurrencyId);
             m_Report = BuildPlanReport(ComposeRenameSpec());
         }
@@ -404,6 +601,114 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("<b>試跑結果</b>（這份文字與 CLI `Cmd_Invoke BuildPlanReport` 完全相同）", WrapStyle);
                 GUILayout.Label(m_Report ?? "", WrapStyle);
             }
+        }
+
+        // ==========================================================
+        // 區塊職責：大小寫同名合併的 UI（試跑 → 執行）
+        // 物理意義：這一步讓「帳號 id 在全小寫下唯一」成為系統的事實，而不只是一條約定。
+        //          約定會被下一個開戶的人打破；把它做成資料狀態才擋得住。
+        // ==========================================================
+        void DrawCaseMergePanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                // ⚠ 不在 Draw 裡偵測 —— 那會每幀重算。改用 RefreshPlan 時算好的快取。
+                var groups = m_CacheCollisions ?? (m_CacheCollisions = DetectCaseCollisions());
+                GUILayout.Label($"<b>🔠 大小寫同名帳號</b>　{groups.Count} 組"
+                    + (groups.Count == 0 ? "　<color=#88dd88>✓ 已唯一</color>" : ""), WrapStyle);
+                if (groups.Count == 0)
+                {
+                    GUILayout.Label("　帳號 id 在全小寫比對下已經是唯一的 —— 開戶那一格也擋著同名，"
+                        + "所以這個狀態不會自己壞掉。", WrapStyle);
+                    return;
+                }
+                GUILayout.Label("　兩個只差大小寫的帳號在檔案系統上是**同一個檔**（`Treasury/accounts/&lt;id&gt;.json`），"
+                    + "查 A 會拿到 B 的資料且零報錯。合併＝把被併方的錢搬給保留方，再把它銷戶並記 `renamed_to`。", WrapStyle);
+                foreach (var g in groups)
+                {
+                    GUILayout.Label($"　【{g.LowerKey}】保留 <b>{g.Keeper}</b>"
+                        + "　" + string.Join("　", g.Members.Select(m =>
+                            $"{(m == g.Keeper ? "◎" : "→")}`{m}`({g.Balances[m]}"
+                            + (g.BoundCounts[m] > 0 ? $"，persona {g.BoundCounts[m]}" : "") + ")")),
+                        WrapStyle);
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool armed = m_MergeArmed
+                        && (EditorApplication.timeSinceStartup - m_MergeArmedAt) <= ARM_WINDOW_SEC;
+                    int total = groups.Sum(x => x.MoveAmount);
+                    if (GUILayout.Button(armed ? "⚠ 確認合併" : $"🔠 合併同名（{groups.Count} 組）",
+                            UCL_GUIStyle.GetButtonStyle(armed ? new Color(1f, 0.55f, 0.4f) : new Color(1f, 0.85f, 0.6f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        if (armed) DoMergeCaseCollisions(groups);
+                        else
+                        {
+                            m_MergeArmed = true;
+                            m_MergeArmedAt = EditorApplication.timeSinceStartup;
+                            m_LastResult = $"⚠ 待確認：合併 {groups.Count} 組同名帳號，需搬 {total} token，"
+                                + "被併方會銷戶並記 renamed_to。5 秒內再按一次生效。";
+                        }
+                    }
+                    GUILayout.Label($"　需搬 {total} token" + (total == 0 ? "（零成本 —— 每組都有一邊是空的）" : ""), WrapStyle);
+                    GUILayout.FlexibleSpace();
+                }
+            }
+        }
+
+        // 合併：搬錢（若有）→ 銷戶被併方並記 renamed_to → 刪掉被併方的帳戶資料檔。
+        // ⚠ 順序不可換：先銷戶再搬錢的話，搬錢會被「銷戶帳號禁止金流」擋住而卡在中間。
+        void DoMergeCaseCollisions(List<CaseCollisionGroup> iGroups)
+        {
+            m_MergeArmed = false;
+            var sb = new StringBuilder();
+            int moved = 0, closed = 0, failed = 0;
+            foreach (var g in iGroups)
+            {
+                foreach (var m in g.Members)
+                {
+                    if (m == g.Keeper) continue;
+                    int bal = SafeBal(m);
+                    if (bal > 0)
+                    {
+                        string txId = "tx_" + Guid.NewGuid().ToString("N").Substring(0, 8);
+                        string desc = $"大小寫同名合併 {m} → {g.Keeper}";
+                        try
+                        {
+                            UCL_TreasuryLedger.Debit(m, bal, "account-rename", txId, desc,
+                                "system", txId, idempotencyKey: null, resolveAccount: false);
+                            UCL_TreasuryLedger.Credit(g.Keeper, bal, "account-rename", txId, desc,
+                                "system", txId, idempotencyKey: null, resolveAccount: false);
+                            moved++;
+                            sb.AppendLine($"  💰 {m} → {g.Keeper}：{bal}");
+                        }
+                        catch (Exception ex)
+                        { failed++; sb.AppendLine($"  ✗ {m} 搬錢失敗，**未銷戶**：{ex.Message}"); continue; }
+                    }
+                    if (!UCL_TreasuryAccountResolver.CloseAccount(m,
+                            $"大小寫同名合併，併入 {g.Keeper}", g.Keeper, "BankMigrationPage", out string cErr))
+                    { failed++; sb.AppendLine($"  ✗ {m} 銷戶失敗：{cErr}"); continue; }
+                    closed++;
+                    // 被併方的帳戶資料檔要刪掉，否則它仍佔著保留方的檔名（撞名的根源沒消失）。
+                    try
+                    {
+                        string pf = System.IO.Path.Combine(UCL_BankAccountProfileIO.AccountsRoot, m + ".json");
+                        if (System.IO.File.Exists(pf))
+                        {
+                            var probe = UCL_BankAccountProfileIO.Load(m);
+                            if (probe != null) { System.IO.File.Delete(pf); sb.AppendLine($"  🗑 移除帳戶資料檔 {m}.json"); }
+                            else sb.AppendLine($"  ・{m}.json 內的 id 不是它自己（撞名佔位），保留給保留方，不刪");
+                        }
+                    }
+                    catch (Exception ex) { sb.AppendLine($"  ⚠ {m} 資料檔處理失敗（不影響合併）：{ex.Message}"); }
+                    sb.AppendLine($"  ✓ {m} 已併入 {g.Keeper} 並銷戶（renamed_to={g.Keeper}）");
+                }
+            }
+            UCL_TreasuryAccountResolver.Invalidate();
+            m_LastResult = $"🔠 同名合併：搬錢 {moved} 筆／銷戶 {closed} 個／失敗 {failed}"
+                + System.Environment.NewLine + sb;
+            Debug.Log("[BankMigration] " + m_LastResult);
+            RefreshPlan();
         }
 
         void DrawExecutePanel()
@@ -597,6 +902,24 @@ namespace UCL.Core.EditorLib.Page
             sb.AppendLine(bad == 0
                 ? "  ✓ 切換後逐人複驗：全部解析到預期帳號。"
                 : $"  🔴 切換後有 {bad} 位解析結果不如預期 —— 請立刻切回「遷移前」並查原因。");
+
+            // 帳戶資料一帳一檔：遷移後**所有最終帳號**都建檔（不只改名的那幾組）。
+            // 物理意義：合一之後顯示名稱改由 `Treasury/accounts/<id>.json` 供給，
+            //   而遷移正是「帳號 id 換了一批」的那一刻 —— 不在這裡補，舊 roster 的鍵就對不上，
+            //   症狀是所有人顯示成 id、或更糟：命中舊表裡某個同名的壞資料。
+            // ⚠ 已建檔的一律跳過 —— 遷移沒有資格覆蓋人已經取好的名字。
+            // 顯示名稱先一律套 id（Tim 2026-08-20：之後再逐個改）。
+            int profMade = 0, profSkip = 0, profFail = 0;
+            foreach (var fb in m_Rows.Select(x => x.FinalBank).Distinct())
+            {
+                if (!UCL_BankAccountProfileIO.IsValidAccountId(fb)) { profFail++; continue; }
+                if (UCL_BankAccountProfileIO.Load(fb) != null) { profSkip++; continue; }
+                if (UCL_BankAccountProfileIO.Save(fb, fb, "合一遷移自動建檔", "BankMigrationPage", out string pErr))
+                    profMade++;
+                else { profFail++; sb.AppendLine($"  ✗ 帳戶資料建檔失敗 {fb}：{pErr}"); }
+            }
+            sb.AppendLine($"  🏷 帳戶資料（一帳一檔）：新建 {profMade}／已存在跳過 {profSkip}／失敗 {profFail}"
+                + "　顯示名稱先套 id，之後到銀行後台「🏷 帳戶資料」逐個改。");
             m_LastResult = $"🔀 合一遷移完成（改名 {done.Count} 組 ＋ 已切換解析模式）\n{sb}";
             Debug.Log("[BankMigration] " + m_LastResult);
             RefreshPlan();

@@ -802,12 +802,25 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
             }
 
-            // 從 identities.json 取顯示名稱（找不到 → 用 senderId 當顯示名，但記 warning）
+            // 顯示名稱的解析順序（Tim 2026-08-20 一帳一檔）：
+            //   ① `Treasury/accounts/<id>.json` 的 display_name —— **新的真相源**
+            //   ② `identities.json` 的 roster —— 舊來源，過渡期保留
+            //   ③ senderId 本身
+            // ⚠ 為什麼要有 ①：合一遷移之後 sender 變成新的 agent id（`zeta` / `cc` …），
+            //   而舊 roster 的鍵還是遷移前的名字 ⇒ 大部分查不到、少數**查到別人的**。
+            //   🩸 實例：roster 裡 `cc` 那筆的 display_name 是 `crest-001`（一個 persona 名），
+            //     遷移後 basecamp／meadow／ame 等 7 位都會署名成 crest-001 ——
+            //     那不是「查不到」，是**查到了一個看起來完全正常的錯誤**。
+            string profileName = Treasury.UCL_BankAccountProfileIO.GetDisplayName(senderId);
             var ident = UCL_ChatTavernIO.LoadIdentities().identities.Find(x => x.id == senderId);
-            string senderName = ident?.display_name ?? senderId;
-            if (ident == null)
+            string senderName = profileName;
+            if (string.IsNullOrEmpty(senderName)) senderName = ident?.display_name;
+            if (string.IsNullOrEmpty(senderName)) senderName = senderId;
+            // 只有**兩個來源都沒有**才警告 —— 有其一就不吵，否則遷移過渡期會刷滿 log。
+            if (string.IsNullOrEmpty(profileName) && ident == null)
             {
-                Debug.LogWarning($"[Tavern] post 的 sender '{senderId}' 不在 identities.json — 建議先 op=join 註冊");
+                Debug.LogWarning($"[Tavern] post 的 sender '{senderId}' 既不在 Treasury/accounts/ 也不在 identities.json"
+                    + " — 到銀行後台「🏷 帳戶資料」補一筆，或先 op=join 註冊");
             }
 
             // ===========================================================

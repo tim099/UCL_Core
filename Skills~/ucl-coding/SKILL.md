@@ -189,6 +189,26 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 （直寫會繞過餘額快取與冪等判重，且簽章欄位偽造成本為零）。2026-08-17 券的帳本分裂，
 路徑 bug 是導火線，**能燒起來是因為 grant 那條路徑本來就允許直寫**。
 
+**④-b 銀行／餘額一律走 `UCL_TreasuryLedger` 的 API，不自己解析原檔**（Tim 2026-08-20 拍板）。
+
+`GetBalance(accountId)` 單一帳戶／**`GetAllBalances()` 整批**（要畫一張表就用這個，只同步一次）。
+
+❌ 不准自己重放 `Treasury/ledger/**.json`、不准 parse `accounts/_balances.snapshot.txt`、
+不准在呼叫端另建一份餘額快取。三個理由，全部不會當場叫：
+
+- **正確性**：餘額不是「把檔案加總」—— 它有**關帳基準**（`closing/<日>.json` warm start）、
+  增量 watermark、壞檔處理。自己重放會得到一個看起來合理、但少算或多算一段的數字。
+- **效能**：`GetBalance` 單次便宜（只列舉路徑），但那是**單次**的便宜。
+  🩸 2026-08-20：銀行後台兩個新表格區各自對 40 個帳戶現場查餘額 ⇒ 開頁卡一分鐘、
+  IMGUI 跳 `Getting control 8's position in a group with only 8 controls`、
+  Unity 內部 `PropertyEditor` 連鎖 NullReferenceException，連 `recompile` 都排不進主執行緒。
+- **一致性**：兩份餘額來源遲早給出不同答案，而兩邊都能自圓其說、都不報錯。
+
+> ⛔ **`Draw*`（IMGUI）裡只准讀記憶體。** 任何會碰磁碟的呼叫 —— 餘額、`File.Exists`、
+> 讀設定檔的 property —— 都要先在 `LoadData` 算好存成欄位，並在操作後顯式失效。
+> ⚠ 把**會讀檔的 property** 放進 Draw 還有第二種死法：IMGUI 的 Layout 與 Repaint 是**兩個 pass**，
+> 兩趟看到不同的控制項數量就會拋 `ArgumentException` 並中止該幀繪製。
+
 **⑤ 跑 `run_cmd.py` 一律帶 `--persona <你>`**（Tim 2026-08-17 拍板）。
 
 ```bash

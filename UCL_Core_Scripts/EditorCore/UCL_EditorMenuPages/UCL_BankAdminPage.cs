@@ -60,7 +60,8 @@ namespace UCL.Core.EditorLib.Page
         //   所以是預設收窄 ＋ 一個顯式打開的開關，不是永久隱藏。
         readonly List<string> m_ActiveAccountIds = new List<string>();
         bool m_ShowAllAccounts = false;   // 預設只顯示現行帳戶（合一之後）
-        List<string> BankPickerList => (UCL_CentralBankSettings.AccountResolveUnified && !m_ShowAllAccounts
+        // ⚠ 用**快取的**模式值，不是每次讀檔 —— 見 m_CacheUnifiedMode 的血證。
+        List<string> BankPickerList => (m_CacheUnifiedMode && !m_ShowAllAccounts
                                         && m_ActiveAccountIds.Count > 0)
             ? m_ActiveAccountIds : m_BankIds;
         // 區塊職責：只存在於 ledger、卻沒有任何 agent_banks / system_accounts 對應的帳戶。
@@ -184,6 +185,16 @@ namespace UCL.Core.EditorLib.Page
         //          本區是那一半的唯一編輯入口；設計成可擴充（之後要加欄位就往這個摺疊區加）。
         readonly Dictionary<string, string> m_AcctNameDrafts = new Dictionary<string, string>(StringComparer.Ordinal);
         Dictionary<string, UCL_BankAccountProfile> m_CacheProfiles;   // Draw 不逐檔讀，LoadData/操作後失效
+        // 🩸 2026-08-20（Tim 實際卡住兩次）：Draw* 裡**每一個**會碰磁碟的呼叫都要先進快取。
+        //   `UCL_TreasuryLedger.GetBalance` 註解寫著「只列舉路徑（便宜）」——
+        //   那是**單次**的便宜；40 個帳戶 × 每個 repaint frame，就是每秒列舉幾十萬個路徑。
+        //   同理 `UCL_CentralBankSettings.AccountResolveUnified` 每次讀 bank_settings.json，
+        //   而把它放進 Draw 還會讓 **IMGUI 的 Layout 與 Repaint 兩個 pass 看到不同的控制項數量**
+        //   （症狀：`Getting control 8's position in a group with only 8 controls`，
+        //     然後 Unity 內部 PropertyEditor 跟著 NullReferenceException）。
+        //   ⇒ 判準：**Draw* 只准讀記憶體。** 磁碟一律在 LoadData／操作後算好。
+        Dictionary<string, int> m_CacheAllBalances;
+        bool m_CacheUnifiedMode;
         bool m_SeedNamesArmed = false;
         double m_SeedNamesArmedAt = 0;
 
@@ -261,6 +272,8 @@ namespace UCL.Core.EditorLib.Page
             m_RegistryMeta = null;
             m_BankIds.Clear(); m_AgentKeys.Clear(); m_AgentToBank.Clear(); m_ActiveAccountIds.Clear();
             m_CacheProfiles = null;
+            m_CacheAllBalances = null;
+            m_CacheUnifiedMode = UCL_CentralBankSettings.AccountResolveUnified;
             m_PersonaNames.Clear(); m_PersonaToAgent.Clear();
             m_Aliases.Clear(); m_SystemAccounts.Clear();
             m_OrphanRowsDirty = true;   // 孤兒列（餘額／解析／綁定）跟著資料一起重算
@@ -565,7 +578,7 @@ namespace UCL.Core.EditorLib.Page
                             m_SelectedBankIdx = m_BankIds.IndexOf(pickList[newIdx]);
                     }
                     // 收窄不是隱藏：孤兒帳戶仍要能被選到（歸戶／補登記／轉帳正是對它們動作）。
-                    if (UCL_CentralBankSettings.AccountResolveUnified && m_ActiveAccountIds.Count > 0)
+                    if (m_CacheUnifiedMode && m_ActiveAccountIds.Count > 0)
                     {
                         bool showAll = GUILayout.Toggle(m_ShowAllAccounts,
                             $"顯示全部帳戶（含孤兒／舊世代／已銷戶，共 {m_BankIds.Count}）", UCL_GUIStyle.LabelStyle);
@@ -1137,7 +1150,7 @@ namespace UCL.Core.EditorLib.Page
                             }
                         }
                         GUILayout.Label($"　<b>{kv.Key}</b> → <b>{kv.Value}</b>"
-                            + $"　餘額 {SafeBalance(kv.Value)}　persona {boundCnt} 位"
+                            + $"　餘額 {CachedBalance(kv.Value)}　persona {boundCnt} 位"
                             + (identity ? "　<color=#88dd88>◎ 已合一</color>" : "")
                             + (closedTgt ? "　<color=red>⚠ 目標已銷戶</color>" : ""),
                             WrapLabelStyle);
@@ -1154,7 +1167,7 @@ namespace UCL.Core.EditorLib.Page
                     + "：這些名字**就是帳戶本身**，解析到此為止。舊世代 bank 補登記在這裡 ——"
                     + "登記進 agent_banks 會把該 agent 現行薪水導去舊帳戶（2026-08-04 拍板）。", WrapLabelStyle);
                 foreach (var acc in m_SystemAccounts.OrderBy(x => x, StringComparer.Ordinal))
-                    GUILayout.Label($"　　• <b>{acc}</b>　餘額 {SafeBalance(acc)}", WrapLabelStyle);
+                    GUILayout.Label($"　　• <b>{acc}</b>　餘額 {CachedBalance(acc)}", WrapLabelStyle);
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label($"把目前選定的 bank <b>{SelectedBank ?? "(未選)"}</b> 補登記為系統帳號", WrapLabelStyle,
@@ -1180,7 +1193,7 @@ namespace UCL.Core.EditorLib.Page
                     {
                         // 已銷戶帳號的餘額應恆為 0（銷戶前置條件）。不為 0 = 閘門被繞過或事後有錢進來，
                         // 那是必須當場看見的異常，不是一個可以安靜列在名單裡的狀態。
-                        int cbal = SafeGetTokenBalance(kv.Key);
+                        int cbal = SafeParseCached(kv.Key);
                         // 🩸 按鈕放 Label **前面**（建頁守則 L2）—— 這一列的說明文字是 closed_accounts
                         //   的整段理由（「幽靈帳號銷戶 2026-08-14（…）。ledger 歷史保留，不再接受任何金流。」），
                         //   排在它後面時按鈕會被推到 560px 之外**跑出可見範圍**：
@@ -1199,7 +1212,7 @@ namespace UCL.Core.EditorLib.Page
                     + "寫入端有兩處：本頁「🏦 帳號操作 → 開戶」與「Persona & Agent 管理」頁的開 agent。"
                     + "這裡不開第三個入口，因為同一張表三處可寫的漂移不會報錯。", WrapLabelStyle);
                 foreach (var kv in m_AgentToBank.OrderBy(x => x.Key, StringComparer.Ordinal))
-                    GUILayout.Label($"　　• <b>{kv.Key}</b> → <b>{kv.Value}</b>　餘額 {SafeBalance(kv.Value)}", WrapLabelStyle);
+                    GUILayout.Label($"　　• <b>{kv.Key}</b> → <b>{kv.Value}</b>　餘額 {CachedBalance(kv.Value)}", WrapLabelStyle);
             }
         }
 
@@ -2443,6 +2456,24 @@ namespace UCL.Core.EditorLib.Page
         }
 
         /// <summary>讀餘額給公告用；讀不到回 "?" 而不是丟例外（公告失敗不該讓已完成的金流看起來像失敗）。</summary>
+        // Draw* 專用：從快取取餘額（沒有快取就回 "?"，**不現場查** —— 現場查正是卡頓來源）。
+        string CachedBalance(string account)
+        {
+            // 走 Treasury 的**統一批次 API**（Tim 2026-08-20）——
+            // 不在這裡逐帳戶查，也不自建第二份快取：真相源是 UCL_TreasuryLedger 的餘額快取，
+            // 本頁只是拿它的快照複本來畫表。
+            if (m_CacheAllBalances == null)
+            {
+                try { m_CacheAllBalances = UCL_TreasuryLedger.GetAllBalances("tavern_token"); }
+                catch { m_CacheAllBalances = new Dictionary<string, int>(StringComparer.Ordinal); }
+            }
+            return m_CacheAllBalances.TryGetValue(account, out int v) ? v.ToString() : "?";
+        }
+
+        // Draw* 用的 int 版本（同 CachedBalance，回 0 而非 "?"）。
+        int SafeParseCached(string account)
+            => int.TryParse(CachedBalance(account), out int v) ? v : 0;
+
         static string SafeBalance(string account)
         {
             try { return UCL_TreasuryLedger.GetBalance(account).ToString(); }

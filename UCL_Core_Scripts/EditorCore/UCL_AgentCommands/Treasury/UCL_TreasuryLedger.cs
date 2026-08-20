@@ -1,3 +1,20 @@
+// ⛔⛔ 銀行相關操作**一律走本類的 API，不准自己解析原檔**（Tim 2026-08-20 拍板）⛔⛔
+//   包含**餘額讀取**在內：`GetBalance`（單一帳戶）／`GetAllBalances`（整批，畫表用）。
+//   ❌ 不准自己讀 `Treasury/ledger/**.json` 重放、不准自己 parse `accounts/_balances.snapshot.txt`、
+//     不准在呼叫端另建一份餘額快取。
+//   為什麼是硬規則（三條都出過事，而且都不會當場叫）：
+//     ① **正確性**：餘額不是「把檔案加總」——它有關帳基準（`closing/<日>.json` warm start，
+//        見 TryWarmStartFromClosing_NoLock）、增量 watermark、壞檔處理。自己重放會得到
+//        一個看起來很合理、但少算或多算了一段的數字。
+//     ② **效能**：本類的快取是**唯一**該存在的那份。呼叫端各自重放的代價是
+//        每次列舉／解析整個 ledger（實測 14,000+ 檔）——
+//        🩸 2026-08-20 銀行後台新增兩個表格區，各自對 40 個帳戶現場查餘額 ⇒ 開頁卡一分鐘、
+//          IMGUI 跳 `Getting control 8's position in a group with only 8 controls`、
+//          Unity 內部 PropertyEditor 連鎖 NullReferenceException。
+//     ③ **一致性**：兩份餘額來源遲早會給出不同答案，而兩邊都能自圓其說、都不報錯。
+//   ⇒ 判準：**`Draw*` 只准讀記憶體**；要畫一整張表就叫 `GetAllBalances()` 一次，
+//     把結果存成頁面欄位，並在 LoadData／操作後顯式失效。
+//
 // 區塊職責：T40 Treasury Ledger Static API
 // 物理意義：append-only ledger 三大 op：Credit / Debit / GetBalance；replay 算餘額
 // 數值影響：所有寫操作走本 module；CMD / IMGUI 都是 thin wrapper（per Plan §3 三層架構）
@@ -723,6 +740,36 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         //          與原版「sort by ts 後逐筆累加」結果完全一致。
         // 數值影響：純讀無副作用（除快取熱化 / snapshot 回寫）。
         // ==========================================================
+        // ==========================================================
+        // 區塊職責：**一次取回所有帳戶餘額**（同一份快取，單次同步）。
+        // 物理意義：UI 要畫一張表時需要的是「全部帳戶的餘額」，而不是對每個帳戶各問一次。
+        //   `GetBalance` 單次很便宜，但它每次都會 `SyncBalanceCache_NoLock()`（列舉 ledger 路徑）——
+        //   40 個帳戶 × 每個 repaint frame，就變成每秒列舉幾十萬個路徑。
+        //   🩸 2026-08-20 實例：銀行後台新增兩個表格區之後，開頁卡一分鐘、
+        //     IMGUI 跳 `Getting control 8's position in a group with only 8 controls`，
+        //     Unity 內部 PropertyEditor 跟著 NullReferenceException。
+        //   ⇒ 呼叫端不該各自建自己的快取（那是同一件事的第二份）——
+        //     真相源只有這裡的 `s_BalanceCache`，本 API 就是它的批次出口。
+        // 數值影響：純讀。回傳是**快照複本**，呼叫端拿去畫表不會被後續變動影響；
+        //   要拿最新值就重新叫一次（同步成本只有增量部分）。
+        // ==========================================================
+        public static Dictionary<string, int> GetAllBalances(string currency = "tavern_token")
+        {
+            var result = new Dictionary<string, int>(StringComparer.Ordinal);
+            // 分隔字元與 BalanceKey 一致（'\n' 不可能出現在 id / currency 內）
+            string suffix = "\n" + currency;
+            lock (s_BalanceCacheLock)
+            {
+                SyncBalanceCache_NoLock();   // 整批只同步一次 —— 這就是本 API 存在的全部理由
+                foreach (var kv in s_BalanceCache)
+                {
+                    if (!kv.Key.EndsWith(suffix, StringComparison.Ordinal)) continue;
+                    result[kv.Key.Substring(0, kv.Key.Length - suffix.Length)] = kv.Value;
+                }
+            }
+            return result;
+        }
+
         public static int GetBalance(string accountId, string currency = "tavern_token")
         {
             lock (s_BalanceCacheLock)

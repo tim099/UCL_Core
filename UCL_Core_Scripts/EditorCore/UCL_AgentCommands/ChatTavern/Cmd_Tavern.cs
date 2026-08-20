@@ -802,25 +802,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
             }
 
-            // 顯示名稱的解析順序（Tim 2026-08-20 一帳一檔）：
-            //   ① `Treasury/accounts/<id>.json` 的 display_name —— **新的真相源**
-            //   ② `identities.json` 的 roster —— 舊來源，過渡期保留
-            //   ③ senderId 本身
-            // ⚠ 為什麼要有 ①：合一遷移之後 sender 變成新的 agent id（`zeta` / `cc` …），
+            // 顯示名稱的解析順序（Tim 2026-08-20）：
+            //   ① `Treasury/accounts/<id>.json` 的 display_name —— **唯一真相源**
+            //   ② senderId 本身（沒建檔就顯示 id）
+            // ⚠ `identities.json` 那一層**已移除**（同日拍板廢棄）。
+            // ⚠ 為什麼真相源是 ①：合一遷移之後 sender 變成新的 agent id（`zeta` / `cc` …），
             //   而舊 roster 的鍵還是遷移前的名字 ⇒ 大部分查不到、少數**查到別人的**。
             //   🩸 實例：roster 裡 `cc` 那筆的 display_name 是 `crest-001`（一個 persona 名），
             //     遷移後 basecamp／meadow／ame 等 7 位都會署名成 crest-001 ——
             //     那不是「查不到」，是**查到了一個看起來完全正常的錯誤**。
             string profileName = Treasury.UCL_BankAccountProfileIO.GetDisplayName(senderId);
-            var ident = UCL_ChatTavernIO.LoadIdentities().identities.Find(x => x.id == senderId);
-            string senderName = profileName;
-            if (string.IsNullOrEmpty(senderName)) senderName = ident?.display_name;
-            if (string.IsNullOrEmpty(senderName)) senderName = senderId;
-            // 只有**兩個來源都沒有**才警告 —— 有其一就不吵，否則遷移過渡期會刷滿 log。
-            if (string.IsNullOrEmpty(profileName) && ident == null)
+            string senderName = string.IsNullOrEmpty(profileName) ? senderId : profileName;
+            // 沒有帳戶資料才警告（來源只剩一個，不會再有「另一邊有」這種狀況）。
+            if (string.IsNullOrEmpty(profileName))
             {
-                Debug.LogWarning($"[Tavern] post 的 sender '{senderId}' 既不在 Treasury/accounts/ 也不在 identities.json"
-                    + " — 到銀行後台「🏷 帳戶資料」補一筆，或先 op=join 註冊");
+                Debug.LogWarning($"[Tavern] post 的 sender '{senderId}' 沒有帳戶資料"
+                    + " — 到銀行後台選到該 agent、在「顯示名稱」那一行補一筆（暫時會顯示成 id）");
             }
 
             // ===========================================================
@@ -1655,8 +1652,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string roomId = GetArg(args, "room", "");
             string senderId = GetAgentArg(args, GetArg(args, "id", ""));
             if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(senderId)) { RejectLastOp("leave 需要 room + sender（可用 sender= / sender_id= / id=）"); return; }
-            var ident = UCL_ChatTavernIO.LoadIdentities().identities.Find(x => x.id == senderId);
-            string name = ident?.display_name ?? senderId;
+            // 顯示名稱一律走帳戶資料（Tim 2026-08-20：identities.json 廢棄）——
+            // Op_Post 早就改了、渲染端今天也改了，這裡沒改 ⇒ 同一件事的第三個算點。
+            string name = Treasury.UCL_BankAccountProfileIO.GetDisplayName(senderId);
+            if (string.IsNullOrEmpty(name)) name = senderId;
             UCL_ChatTavernIO.RemoveMember(roomId, senderId);
             int seq = UCL_ChatTavernIO.AppendMessage(roomId, new UCL_ChatMessage
             {
@@ -2785,10 +2784,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             try { UCL_ChatTavernQuestIO.AutoRecoverStaleLeases(roomId); }
             catch (Exception ex) { Debug.LogWarning($"[Quest T19] AutoRecoverStaleLeases 失敗（容忍）：{ex.Message}"); }
 
-            // 抓 agent 的 tags（識別 role）
-            var ident = UCL_ChatTavernIO.LoadIdentities().identities.Find(x => x.id == agentId);
-            // identity 的 tags 由 UCL_ChatTavernIdentityAsset 持久化；輕量 identities.json 不存 tags
-            // MVP: 暫時走 suggested_owner 命中加分為主，role-match 留 Phase B
+            // MVP: 走 suggested_owner 命中加分為主，role-match 留 Phase B。
+            // ⚠ 這裡以前會載 identities.json 去「抓 agent 的 tags」，而**那個變數從未被使用** ——
+            //   註解自己也寫著「輕量 identities.json 不存 tags」。一次 quest 建議讀一次要廢棄的檔，
+            //   讀完就丟。2026-08-20 identities.json 廢棄時一併拆除；role-match 要做時走
+            //   UCL_ChatTavernIdentityAsset（tags 的真正持久化處）。
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
             var candidates = new List<UCL_QuestTaskState>();
             foreach (var st in states.Values)

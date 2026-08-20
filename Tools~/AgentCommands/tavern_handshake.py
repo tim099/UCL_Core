@@ -151,50 +151,15 @@ def reset_bartender_count(room, agent):
 
 
 def _ensure_tavern_keeper_identity():
-    """確保 identities.json 內有 tavern-keeper 一筆，display_name=「酒保」。
+    """（已退場）酒保的顯示名稱現在住在 `Treasury/accounts/tavern-keeper.json`。
 
-    Cmd_Tavern.Op_Post 從 identities.json 撈 display_name，找不到就 fallback 用 sender_id。
-    本 helper 在 bartender post 之前 patch identities.json，避免 jsonl 顯示 sender_name="tavern-keeper"。
-    若已存在但 display_name 錯（過去誤被 lazy-create）→ 一併修正。
+    Tim 2026-08-20 拍板 identities.json 廢棄：顯示名稱只認帳戶資料，
+    而 Cmd_Tavern 的 post／leave 兩處也都改成從帳戶資料撈。
+    這支以前會**寫** identities.json 去 patch「酒保」那一筆 ——
+    留著它等於讓一個要廢棄的檔案繼續被寫入，而**有寫入端的檔案永遠死不掉**。
+    保留空函式而不是刪呼叫端：呼叫端只有一處，但刪掉函式會讓舊分支合併時靜默恢復寫入。
     """
-    identities_path = TAVERN_DIR / "identities.json"
-    try:
-        if identities_path.is_file():
-            data = json.loads(identities_path.read_text(encoding="utf-8"))
-        else:
-            data = {"identities": []}
-        if not isinstance(data, dict) or "identities" not in data:
-            data = {"identities": []}
-
-        existing = next((x for x in data["identities"] if x.get("id") == "tavern-keeper"), None)
-        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        if existing is not None:
-            # 修正既有但 display_name 錯誤的條目（過去誤 lazy-create）
-            need_save = False
-            if existing.get("display_name") != "酒保":
-                existing["display_name"] = "酒保"
-                need_save = True
-            if existing.get("kind") != "npc":
-                existing["kind"] = "npc"
-                need_save = True
-            if not need_save:
-                return
-        else:
-            data["identities"].append({
-                "id": "tavern-keeper",
-                "display_name": "酒保",
-                "kind": "npc",
-                "created_at": now_iso,
-                "last_seen_at": now_iso,
-            })
-
-        TAVERN_DIR.mkdir(parents=True, exist_ok=True)
-        identities_path.write_text(
-            json.dumps(data, indent=4, ensure_ascii=False),
-            encoding="utf-8",
-        )
-    except Exception as e:
-        print(f"  [bartender] identity 確保失敗：{e}")
+    return
 
 
 def maybe_send_bartender(room, agent, wait_start, target_agent=None):

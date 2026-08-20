@@ -188,7 +188,7 @@ namespace UCL.Core.EditorLib.Page
         // 🩸 2026-08-20（Tim 實際卡住兩次）：Draw* 裡**每一個**會碰磁碟的呼叫都要先進快取。
         //   `UCL_TreasuryLedger.GetBalance` 註解寫著「只列舉路徑（便宜）」——
         //   那是**單次**的便宜；40 個帳戶 × 每個 repaint frame，就是每秒列舉幾十萬個路徑。
-        //   同理 `UCL_CentralBankSettings.AccountResolveUnified` 每次讀 bank_settings.json，
+        //   同理當年的 `AccountResolveUnified`（已移除）每次讀 bank_settings.json，
         //   而把它放進 Draw 還會讓 **IMGUI 的 Layout 與 Repaint 兩個 pass 看到不同的控制項數量**
         //   （症狀：`Getting control 8's position in a group with only 8 controls`，
         //     然後 Unity 內部 PropertyEditor 跟著 NullReferenceException）。
@@ -273,7 +273,9 @@ namespace UCL.Core.EditorLib.Page
             m_BankIds.Clear(); m_AgentKeys.Clear(); m_AgentToBank.Clear(); m_ActiveAccountIds.Clear();
             m_CacheProfiles = null;
             m_CacheAllBalances = null;
-            m_CacheUnifiedMode = UCL_CentralBankSettings.AccountResolveUnified;
+            // 解析模式開關已於 2026-08-20 移除（Tim：徹底改用新流程）⇒ 合一是唯一模式。
+            // 欄位留著是因為多處 UI 用它決定「要不要收窄成現行帳戶」，改成常數比逐處拆安全。
+            m_CacheUnifiedMode = true;
             m_PersonaNames.Clear(); m_PersonaToAgent.Clear();
             m_Aliases.Clear(); m_SystemAccounts.Clear();
             m_OrphanRowsDirty = true;   // 孤兒列（餘額／解析／綁定）跟著資料一起重算

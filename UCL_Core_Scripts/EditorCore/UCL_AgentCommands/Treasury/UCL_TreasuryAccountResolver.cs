@@ -265,14 +265,26 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             //     銀行後台顯示「⚠ agent 未註冊於 agent_banks，拒絕 auto-mint」，
             //     而同一時間 `UCL_PersonaAgentAdminPage` 正確顯示 `Sirius → FRS`。
             //     **一個真的在用、裡面有 6253 token 的帳戶，被系統判定為不存在。**
-            if (UCL_CentralBankSettings.AccountResolveUnified)
-            {
-                foreach (var kv in s_PersonaToAgentLower)
-                    if (!string.IsNullOrEmpty(kv.Value)) AddCanonical_NoLock(kv.Value);
-            }
+            //   ⚠ 這一段以前掛在 `account_resolve_unified` 開關底下；開關已於 2026-08-20 拔除
+            //     （Tim：徹底改用新流程）—— 合一是唯一模式，沒有「遷移前」可切回去。
+            foreach (var kv in s_PersonaToAgentLower)
+                if (!string.IsNullOrEmpty(kv.Value)) AddCanonical_NoLock(kv.Value);
 
             s_RegistryStamp = regStamp;
             s_PersonaDirStampKey = personaKey;
+        }
+
+        // 區塊職責：`agent_banks` 這張退場中的表**真的被走到時**喊一聲。
+        // 物理意義：合一之後正常路徑是 persona → agent（一跳），走到這裡代表輸入是舊 agent 名、
+        //          或那個 persona 的 registry.agent 還沒遷移。
+        // 為什麼是警告不是例外：它仍然解析出一個可用的帳戶，擋掉會讓錢停住；
+        //          但沉默會讓「沒人在讀舊表」與「每天都有人在讀」長得一模一樣 ——
+        //          而那正是決定何時能刪掉這張表的唯一讀數。
+        static void WarnLegacyAgentBanksHop(string input, string result, string section)
+        {
+            Debug.LogWarning($"[Treasury] ⚠ 走到 legacy `agent_banks` 跳（{section}）："
+                + $"`{input}` → `{result}`。合一之後這條路應該不會被走到 —— "
+                + "若這行反覆出現，代表該 agent 尚未遷移（或呼叫端傳的是舊 agent 名）。");
         }
 
         static void AddCanonical_NoLock(string account)
@@ -307,12 +319,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 EnsureLoaded_NoLock();
                 string lower = accountId.ToLowerInvariant();
 
-                // ⓪ 合一模式（Tim 2026-08-20；`bank_settings.account_resolve_unified`，**預設 false**）
-                //    物理意義：遷移完成後 agent id 就是帳號 id，`agent_banks` 那一跳不該再參與解析 ——
-                //      留著它會讓「已合一」與「還在過渡」在讀數上長得一模一樣。
-                //    ⚠ 這個分支**只在開關為 true 時存在**；false 時下面每一段的行為與開關出現前逐字相同。
-                //      這是刻意的：解析端是錢的必經路徑，改它的預設行為沒有安全的驗證方式。
-                if (UCL_CentralBankSettings.AccountResolveUnified)
+                // ⓪ 合一解析（Tim 2026-08-20 拍板拔掉開關，徹底改用新流程）
+                //    物理意義：agent id 就是帳號 id ⇒ persona → agent 一跳到底，`agent_banks` 不參與。
+                //    ⚠ 開關（`bank_settings.account_resolve_unified`）已移除 —— 兩專案都遷完了，
+                //      而「還留著一條可切回去的舊鏈」會讓「已合一」與「還在過渡」在讀數上長得一樣。
+                //    ⚠ 底下 ①-⑥ 仍在，但走到那裡代表**這一跳沒命中**；其中會碰 `agent_banks` 的段
+                //      已加上 legacy 警告 —— 那是「舊資料還有沒有人在讀」的讀數，不是猜的。
                 {
                     // 合一後：persona → agent（＝帳號），一跳到底。
                     if (s_PersonaToAgentLower.TryGetValue(lower, out var unifiedAgent))
@@ -349,7 +361,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 {
                     r.AccountId = bankOfAgent;
                     r.Kind = r.Changed ? TreasuryAccountResolveKind.ViaAgent : TreasuryAccountResolveKind.AlreadyCanonical;
-                    r.Trace = $"agent `{accountId}` → bank `{bankOfAgent}`";
+                    r.Trace = $"agent `{accountId}` → bank `{bankOfAgent}`（⚠ legacy agent_banks 跳）";
+                    WarnLegacyAgentBanksHop(accountId, bankOfAgent, "② agent→bank");
                     return r;
                 }
 
@@ -368,7 +381,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 {
                     r.AccountId = bankViaAlias;
                     r.Kind = TreasuryAccountResolveKind.ViaAgent;
-                    r.Trace = $"alias `{accountId}` → agent `{canonicalAgent}` → bank `{bankViaAlias}`";
+                    r.Trace = $"alias `{accountId}` → agent `{canonicalAgent}` → bank `{bankViaAlias}`（⚠ legacy agent_banks 跳）";
+                    WarnLegacyAgentBanksHop(accountId, bankViaAlias, "④ alias→agent→bank");
                     return r;
                 }
 

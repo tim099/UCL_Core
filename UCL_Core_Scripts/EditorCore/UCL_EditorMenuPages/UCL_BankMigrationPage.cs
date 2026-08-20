@@ -194,9 +194,8 @@ namespace UCL.Core.EditorLib.Page
             // 🩸 不分模式一律讀 agent_banks 的話，遷移**跑完之後**這一頁會繼續顯示
             //   「需改名 5 組」與已經不存在的舊帳號名 —— 一個已完成的流程持續宣稱自己沒做，
             //   而那比沒有畫面更糟：它會讓人再跑一次。
-            var agentBanks = UCL_CentralBankSettings.AccountResolveUnified
-                ? BuildIdentityMapFromPersonas()
-                : ReadAgentBanks(meta);
+            // 開關拔除後只剩一種答案：現行身分一律由 persona 的實際 agent 導出。
+            var agentBanks = BuildIdentityMapFromPersonas();
 
             // persona → agent（用來顯示「每個 persona 遷移後會用哪個帳號」）
             var personaAgent = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -426,8 +425,6 @@ namespace UCL.Core.EditorLib.Page
         double m_RenameArmedAt = 0;
         bool m_MergeArmed = false;          // 同名合併的二段確認（可能搬錢＋銷戶）
         double m_MergeArmedAt = 0;
-        bool m_ModeArmed = false;          // 解析模式切換的二段確認（改的是錢的去向，不能一按就生效）
-        double m_ModeArmedAt = 0;
         const double ARM_WINDOW_SEC = 5.0;
 
         GUIStyle m_WrapStyle;
@@ -478,80 +475,6 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.FlexibleSpace();
                 }
             }
-            DrawResolveModePanel();
-        }
-
-        // ==========================================================
-        // 區塊職責：帳號解析模式開關 —— 系統現在用哪一條鏈把身分換成帳號。
-        // 物理意義：這是遷移的**總閘門**（Tim 2026-08-20）。預設「遷移前」，
-        //          跑完遷移才切到「已合一」；切了之後 `agent_banks` 不再參與解析。
-        // 數值影響：**切這個開關會改變錢的去向**，而且不會報錯 ——
-        //          方向錯的症狀是「解析出一個完全合法、但不是那個人的帳號」。
-        //          所以走二段確認，且切換前後都把當下的解析現況印出來給人看。
-        // ==========================================================
-        void DrawResolveModePanel()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                bool unified = UCL_CentralBankSettings.AccountResolveUnified;
-                GUILayout.Label(unified
-                    ? "<b>🔓 帳號解析模式：<color=#88dd88>已合一</color></b>"
-                      + "　—— 綁定值**就是**帳號（一跳）；`agent_banks` 不參與解析。"
-                    : "<b>🔒 帳號解析模式：<color=#ffcc66>遷移前</color></b>（預設）"
-                      + "　—— persona → agent → `agent_banks` → 帳號（**兩跳**）。",
-                    WrapStyle);
-                GUILayout.Label("　⚠ 這個開關決定**錢落到哪個帳號**。順序是：先跑完遷移，再切到「已合一」。"
-                    + "沒遷移就切，等於讓所有人的帳號解析走一條資料還沒準備好的路。", WrapStyle);
-                using (new GUILayout.HorizontalScope())
-                {
-                    bool armed = m_ModeArmed
-                        && (EditorApplication.timeSinceStartup - m_ModeArmedAt) <= ARM_WINDOW_SEC;
-                    string label = armed
-                        ? (unified ? "⚠ 確認切回「遷移前」" : "⚠ 確認切到「已合一」")
-                        : (unified ? "切回「遷移前」" : "切到「已合一」");
-                    if (GUILayout.Button(label,
-                            UCL_GUIStyle.GetButtonStyle(armed ? new Color(1f, 0.55f, 0.4f) : new Color(0.8f, 0.85f, 1f)),
-                            GUILayout.ExpandWidth(false)))
-                    {
-                        if (armed) DoToggleResolveMode(!unified);
-                        else
-                        {
-                            m_ModeArmed = true;
-                            m_ModeArmedAt = EditorApplication.timeSinceStartup;
-                            m_LastResult = $"⚠ 待確認：帳號解析模式要切成「{(unified ? "遷移前" : "已合一")}」。"
-                                + "　5 秒內再按一次生效。**這會改變之後每一筆錢的去向。**";
-                        }
-                    }
-                    GUILayout.Label("　（可逆 —— 切錯再切回來即可，它不搬錢、只改解析走哪條鏈）", WrapStyle);
-                    GUILayout.FlexibleSpace();
-                }
-            }
-        }
-
-        void DoToggleResolveMode(bool iUnified)
-        {
-            m_ModeArmed = false;
-            // 切換前後各解析同一批身分一次 —— 讓「切了之後誰的帳號變了」當場可見，
-            // 而不是等下一次發薪才發現。
-            var probes = new List<string>();
-            if (m_Rows != null) foreach (var r in m_Rows) probes.AddRange(r.Personas);
-            var before = probes.ToDictionary(x => x, x => UCL_TreasuryAccountResolver.Resolve(x).AccountId);
-            UCL_CentralBankSettings.AccountResolveUnified = iUnified;
-            UCL_TreasuryAccountResolver.Invalidate();
-            var sb = new StringBuilder();
-            sb.AppendLine($"🔀 帳號解析模式 → {(iUnified ? "已合一（一跳）" : "遷移前（兩跳）")}");
-            int changed = 0;
-            foreach (var p in probes)
-            {
-                string now = UCL_TreasuryAccountResolver.Resolve(p).AccountId;
-                if (now != before[p]) { changed++; sb.AppendLine($"  ⚠ {p}：`{before[p]}` → `{now}`"); }
-            }
-            sb.AppendLine(changed == 0
-                ? "  ✓ 沒有任何 persona 的帳號因此改變（代表兩條鏈目前給出相同結果）"
-                : $"  ⇒ 共 {changed} 位 persona 的帳號解析結果改變了");
-            m_LastResult = sb.ToString();
-            Debug.Log("[BankMigration] " + m_LastResult);
-            RefreshPlan();
         }
 
         public void RefreshPlan()
@@ -887,10 +810,11 @@ namespace UCL.Core.EditorLib.Page
                 return;
             }
 
-            // ── 全數成功 ⇒ 同一個動作內切換解析模式 ──
-            UCL_CentralBankSettings.AccountResolveUnified = true;
+            // ── 全數成功 ⇒ 讓解析器重新認識磁碟 ──
+            // ⚠ 這裡以前還會把 `account_resolve_unified` 切成 1；那個開關已於 2026-08-20 移除
+            //   （合一是唯一模式）⇒ 改名成功之後不必再切什麼，只要讓快取失效。
             UCL_TreasuryAccountResolver.Invalidate();
-            sb.AppendLine($"🔓 解析模式已切換為**已合一**（一跳到底；`agent_banks` 不再參與解析）。");
+            sb.AppendLine("✅ 改名全數成功（解析一律一跳；`agent_banks` 不參與）。");
             // 切換後逐人複驗：這才是「遷移成功」的讀數，不是「改了幾個檔」。
             int bad = 0;
             foreach (var r in iRows)

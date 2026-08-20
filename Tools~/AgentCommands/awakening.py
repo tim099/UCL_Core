@@ -1236,10 +1236,19 @@ def fork_persona(reg: dict, source: str, target: str,
 #   隨 persona 顯式必填 / explicit-online-fork 廢除一併移除 —— 兩者都是「工具替人選身分」，
 #   而身分決定現在一律由使用者顯式給。fork 命名走顯式 --fork-name。
 
-def tavern_post(sender_id: str, persona: str, body: str, meta: dict | None = None,
+def tavern_post(sender_id: str | None, persona: str, body: str, meta: dict | None = None,
                 room: str = "tavern", session_token: str | None = None,
                 timeout: float | None = None) -> bool:
     """Spawn run_cmd.py Tavern op=post. fail-swallow 不擋 ritual.
+
+    sender_id (2026-08-20, BUG-23/24)：**顯示身分，正確用法是傳 None** ——
+    傳 None 時 TavernClient 會整個丟掉這個參數，由 Cmd_Tavern 從 `persona` 推導
+    （`ResolveDisplaySenderId`：persona → 綁定的 agent），那是唯一的推導點。
+    顯式帶值 = 繞過推導，而繞過的結果不會報錯，只會署錯名字：
+      🩸 `chess.py` 帶 persona 名（BUG-23）／`spend_menu.py` 硬編碼某個 bank（BUG-24，全員同名）。
+    ⚠ 傳 `None` 不是 `""`：只有 None 會被丟棄，空字串會原樣帶成 `sender=`。
+    ⚠ 仍為位置參數而非直接移除，是因為尚有呼叫端未收束（見 BUG-23 描述的同族清單）；
+      收束完成後應整個移除此參數，讓還在傳的呼叫端當場 TypeError（fail-loud > 靜默接受）。
 
     session_token (T07): enforce ON 時必帶，否則 Cmd_Tavern reject。caller (e.g. cmd_goodnight)
     從 lock.session_token 撈來透傳即可；None / "" → 不附（enforce OFF 路徑）.

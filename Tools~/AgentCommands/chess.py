@@ -680,12 +680,19 @@ def broadcast(g, header, sender_persona, say=""):
     #   原本「每局獨立 queue 不互相阻塞」的意圖保留，身分則回到真正下棋的人身上。
     #   sender_persona 缺席（系統代發）→ 不帶 --persona，落 anonymous/queue-chess-N.json，
     #   誠實表示「這局沒有具名發送者」，不假造一個叫 chess-system 的人。
+    #
+    # ⚠ 刻意**不帶 sender_id** —— 顯示身分由 Cmd_Tavern 從 persona 推導（`ResolveDisplaySenderId`）。
+    #   血證（2026-08-20，summit）：本檔原本顯式帶 `sender_id={persona}`，於是 BUG-22 的修法
+    #   （顯示身分改取綁定的 agent）在棋局這條路上**整條被繞過去** —— 同一個人同一分鐘兩個署名：
+    #     `summit@summit`（本檔發的）／`Zeta大小姐@summit`（Cmd 推導的）。
+    #   ⇒ 對應架構拍板「框架統一認 persona，其餘身分資訊一律走統一解析入口」：
+    #     呼叫端只負責說「我是誰（persona）」，不負責算「顯示成什麼」。
     cmd = [sys.executable, str(_RUN_CMD)]
     if sender_persona:
         cmd += ["--persona", sender_persona]
     cmd += ["--lane", f"chess-{g['index']}",
            "run", "Tavern", "--arg", "op=post", "--arg", "room=tavern",
-           "--arg", f"sender_id={sender}", "--arg", f"persona={sender}",
+           "--arg", f"persona={sender}",
            "--arg", f"body={body}", "--arg", f"meta={meta}"]
     try:
         # encoding/errors 必帶: Windows reader thread 預設 cp950 解 run_cmd 的 UTF-8 輸出(♟️/中文)

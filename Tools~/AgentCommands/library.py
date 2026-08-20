@@ -1523,15 +1523,30 @@ def _verify_donation_debit(donor: str, slug: str, amount: int, kind: str = "book
     return False
 
 
-def _run_tavern_post(sender_id: str, persona: str, body: str, tag: str = "book-donation") -> bool:
+# 區塊職責：走 Cmd 廣播（捐書 / 發表 / 打賞），best-effort —— 失敗不影響本體交易。
+# 顯示身分（2026-08-20，summit / BUG-23·24 同族）：**不帶 sender_id**，由 Cmd_Tavern 從 persona
+#   推導（`ResolveDisplaySenderId`）。本檔原本三個呼叫點各自把 **agent id** 塞進 sender_id
+#   （CLI help 逐字：`--donor 捐贈者 agent id`／`--tipper 打賞者 agent id`），
+#   那正是 BUG-22 的原始病症本體：拿錢的 key 當署名。
+# ⚠ persona 是**唯一**的身分來源，所以它無效時廣播必須擋下來（fail-loud）而不是找個東西頂替 ——
+#   頂替出來的結果不會報錯，只會署錯名字，而那正是這一族坑活這麼久的原因。
+#   擋的只是廣播；捐書 / 發表 / 打賞本體此時已經完成，不回滾（原設計即 best-effort）。
+_INVALID_PERSONAS = ("", "?")
+
+
+def _run_tavern_post(persona: str, body: str, tag: str = "book-donation") -> bool:
     # 走 CMD: run_cmd.py run Tavern op=post — 捐書後自動廣播新書入庫
     import subprocess
     import json as _json
+    if not persona or persona.strip() in _INVALID_PERSONAS:
+        print(f"⚠ 廣播已擋下：persona 無效（{persona!r}）—— 署名只能由 persona 推導，"
+              f"不以 bank／帳戶名頂替。本體交易不受影響。", file=sys.stderr)
+        return False
     run_cmd = _HERE / "run_cmd.py"
     meta = _json.dumps({"tag": tag, "category": "chat"}, ensure_ascii=False)
     cmd = [sys.executable, str(run_cmd), "run", "Tavern",
            "--arg", "op=post", "--arg", "room=tavern",
-           "--arg", f"sender_id={sender_id}", "--arg", f"persona={persona}",
+           "--arg", f"persona={persona}",
            "--arg", f"body={body}", "--arg", f"meta={meta}"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True,
@@ -1587,7 +1602,7 @@ def cmd_donate(args):
         notice = (f"📚 新書入庫!\n\n"
                   f"《{title}》由 **{who}** 捐贈進共享圖書館（{tokens} token），全員都能讀了。\n"
                   f"想讀的同事:resume --book {book} 接上進度,或直接看 Books/{book}/ 全文。")
-        sent = _run_tavern_post(donor, entry["donor_persona"] or "", notice, tag="book-donation")
+        sent = _run_tavern_post(entry["donor_persona"] or "", notice, tag="book-donation")
         print(f"📣 酒館新書入庫通知:{'已發送' if sent else '發送失敗(捐贈仍成功)'}")
     return 0
 
@@ -1638,7 +1653,7 @@ def cmd_publish(args):
         notice = (f"✍📖 新書{'連載更新' if was_published else '發表'}!\n\n"
                   f"《{data.get('title')}》由 **{author}** 原創著作（{chapter_cnt} 章，免費入庫），全員可讀。\n"
                   f"想讀的同事: resume --book {book} (可 --reader 開自己的分支筆記)，或直接看 Books/{book}/ 全文。")
-        sent = _run_tavern_post(donor_bank, author, notice, tag="book-published")
+        sent = _run_tavern_post(author, notice, tag="book-published")
         print(f"📣 酒館新書發表通知:{'已發送' if sent else '發送失敗(發布仍成功)'}")
     return 0
 
@@ -1942,7 +1957,7 @@ def cmd_tip(args):
         notice = (f"💰 打賞! **{args.tipper_persona}** 打賞《{title}》 {tokens} token "
                   f"→ @{ben_persona} ({ben_kind}) 收 繪圖券×{entry['vouchers']['canvas']} + "
                   f"酒館券×{entry['vouchers']['tavern']} {note_part}")
-        sent = _run_tavern_post(args.tipper, args.tipper_persona, notice, tag="book-tip")
+        sent = _run_tavern_post(args.tipper_persona, notice, tag="book-tip")
         print(f"📣 酒館打賞廣播:{'已發送' if sent else '發送失敗(打賞仍成功)'}")
     return 0 if entry["voucher_status"] == "issued" else 2
 
@@ -2877,9 +2892,11 @@ def build_parser():
 
     a = sub.add_parser("donate", help="捐贈一本 Books/ 的書(付 token 走 Cmd_Treasury, 全員可讀, 標註捐贈者)")
     a.add_argument("--book", required=True, help="Books/<slug> 的 slug")
-    a.add_argument("--donor", required=True, help="捐贈者 bank id (Treasury caller 必須==此帳戶)")
+    a.add_argument("--donor", required=True, help="捐贈者 agent id (Treasury caller 必須==此帳戶)")
     a.add_argument("--tokens", default=None, help="付多少 token (預設 100/本; Tim 可給優惠價)")
-    a.add_argument("--donor-persona", dest="donor_persona", default=None, help="捐贈者 persona (標註用)")
+    a.add_argument("--donor-persona", dest="donor_persona", required=True,
+                   help="捐贈者 persona（**必填**，Tim 2026-08-20 拍板）—— 酒館署名由它推導，"
+                        "署名由 persona 推導，呼叫端不再塞任何帳戶識別頂替（BUG-22 同族）")
     a.add_argument("--donor-agent", dest="donor_agent", default=None)
     a.add_argument("--note", default=None)
     a.add_argument("--no-notify", dest="no_notify", action="store_true",
@@ -2888,7 +2905,7 @@ def build_parser():
 
     a = sub.add_parser("publish", help="發布原創書 (寫書 Author-as-Donor; draft→published, 免費入庫, 作者署名)")
     a.add_argument("--book", required=True, help="原創書 slug (origin=authored)")
-    a.add_argument("--donor", required=True, help="作者 bank id (署名用, 不扣 token)")
+    a.add_argument("--donor", required=True, help="作者 agent id (署名用, 不扣 token)")
     a.add_argument("--donor-persona", dest="donor_persona", default=None, help="作者 persona (預設讀 book.json author_persona)")
     a.add_argument("--donor-agent", dest="donor_agent", default=None)
     a.add_argument("--note", default=None)
@@ -2931,7 +2948,7 @@ def build_parser():
     # 打賞 (Plan_Reading_Library_Tip v2 — token 燒掉, 受益 persona 收雙券 1+1)
     a = sub.add_parser("tip", help="打賞一本書 (燒 token; 作者/捐贈者 persona 收 繪圖券+酒館券, 匯率 1+1)")
     a.add_argument("--book", help="Books/<slug> 的 slug")
-    a.add_argument("--tipper", help="打賞者 bank id (Treasury caller 必須==此帳戶)")
+    a.add_argument("--tipper", help="打賞者 agent id (Treasury caller 必須==此帳戶)")
     a.add_argument("--tipper-persona", help="打賞者 persona (受益人不可是自己)")
     a.add_argument("--tipper-agent", default=None)
     a.add_argument("--tokens", type=int, default=None, help=f"打賞額 1~{TIP_MAX} (參考檔位: 小賞5/中賞10/大賞50)")
@@ -2990,7 +3007,7 @@ def build_parser():
     a.add_argument("--content-note", dest="content_note", help="內容提醒")
     a.add_argument("--spoiler", action="store_true", help="標記此書評含劇透(預設非劇透)")
     a.add_argument("--tip", type=int, default=None, help="書評+打賞一步糖: 打賞額 (tipper_persona=reviewer, note=pitch)")
-    a.add_argument("--tipper", default=None, help="--tip 用: 打賞者 bank id")
+    a.add_argument("--tipper", default=None, help="--tip 用: 打賞者 agent id")
     a.set_defaults(func=cmd_review)
 
     a = sub.add_parser("reviews", help="顯示讀後書評 (按 persona 分組)")

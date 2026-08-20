@@ -184,10 +184,18 @@ def _treasury_cmd():
 #          同事看得到彼此擲到什麼、花了沒有。**消費從一個人的動作變成看得見的事件**，
 #          而這個機制存在的全部目的就是救活一個掛零 33 天的行為：
 #          沒有人看得到的行為，不會因為多一個工具就開始發生。
+# 顯示身分（2026-08-20，summit / BUG-24）：**傳 None，不傳 sender_id** ——
+#   由 Cmd_Tavern 從 persona 推導（`ResolveDisplaySenderId`）。
+#   🩸 本檔原本硬編碼 `"claude-da-xiaojie"`（某個 agent 的舊世代 bank 帳戶名），
+#     於是**全員**的消費時間發文都署同一個名字，跨 agent 也一樣 ——
+#     實際落盤 17 則、7 個 persona（含 Sirius／apex-one 這些根本不屬於 claude 線的人），
+#     sender_id 全部相同。而它從不報錯，因為那個帳戶名是登記在案的合法帳戶。
+#   ⚠ 要傳 `None` 不是 `""`：TavernClient 只丟棄 `None` 的參數，
+#     空字串會原樣帶成 `sender=` —— 兩者長得像，行為不同。
 def _tavern_post(persona: str, body: str, meta: dict) -> bool:
     try:
         import awakening
-        return awakening.tavern_post("claude-da-xiaojie", persona, body, meta=meta)
+        return awakening.tavern_post(None, persona, body, meta=meta)
     except Exception as e:
         print(f"⚠ 酒館 post 失敗（擲骰結果不受影響）：{e}", file=sys.stderr)
         return False

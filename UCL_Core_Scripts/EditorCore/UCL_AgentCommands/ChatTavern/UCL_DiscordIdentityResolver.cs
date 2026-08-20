@@ -38,7 +38,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         static readonly Dictionary<string, string> s_PersonaAvatar = new Dictionary<string, string>();  // persona → url
         static readonly Dictionary<string, string> s_IdentityAvatar = new Dictionary<string, string>();  // id → avatar_url
         static readonly Dictionary<string, string> s_IdentityUsername = new Dictionary<string, string>(); // id → username override
-        static readonly Dictionary<string, string> s_DisplayName = new Dictionary<string, string>();       // id → identities.json display_name
         static readonly Dictionary<string, string> s_UserMentions = new Dictionary<string, string>();      // name → discord user_id
 
         // 區塊職責：載入 config + identities（5s 快取）
@@ -50,7 +49,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             try
             {
                 LoadTavernMirrorConfig();
-                LoadIdentities();
             }
             catch (Exception e) { Debug.LogWarning($"[DiscordMirror] identity resolver load fail: {e.Message}"); }
         }
@@ -127,24 +125,28 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (!string.IsNullOrEmpty(name) && !s_UserMentions.ContainsKey(name)) s_UserMentions[name] = userId;
         }
 
-        // identities.json = {"identities":[{id, display_name, ...}]}
-        static void LoadIdentities()
+        // ===========================================================
+        // 區塊職責：id → 顯示名稱的**唯一**解析點（渲染端）。
+        // 物理意義：合一之後 sender_id 就是帳戶 id，而「這個身分顯示成什麼」的真相源是
+        //          `Treasury/accounts/<id>.json` 的 display_name（後台 🏷 帳戶資料 可改）。
+        //          `identities.json` **已廢棄**（Tim 2026-08-20）—— 顯示名稱不再有第二個來源。
+        //          廢棄前已把 roster 裡的名字搬進帳戶資料：Claude大小姐／Antigravity大小姐／
+        //          Zeta大小姐／Gemini大小姐／月讀大小姐／酒保／潛意識守夜人／Tim。
+        //          Discord 真人（`discord:<id>`）不是帳戶，他們的 @ 走 notify_config 的
+        //          discord_user_mentions（真 ping），不需要這張表。
+        // 🩸 BUG-25（Tim 2026-08-20 抓）：寫入端已經改成帳戶資料優先，渲染端卻自己又查一次
+        //   identities.json ⇒ 落盤的 sender_name 是對的、畫面上是錯的。
+        //   而 roster 裡 `cc` 那筆 display_name 是 `crest-001`（persona 名塞進 agent 的欄位）——
+        //   不是查不到，是**查到了一個看起來完全正常的別人**。
+        //   ⇒ 同一件事只能有一個算點：渲染端與寫入端從此走同一個順序。
+        // 數值影響：純顯示，不動任何金流。
+        // ===========================================================
+        public static string ResolveDisplayName(string iId)
         {
-            s_DisplayName.Clear();
-            string path = Path.Combine(UCL_RepoPath.AgentCommandsDir, "ChatTavern", "identities.json");
-            if (!File.Exists(path)) return;
-            var jd = UCL.Core.JsonLib.JsonData.ParseJson(File.ReadAllText(path));
-            if (jd == null || !jd.IsObject || !jd.Contains("identities")) return;
-            var arr = jd["identities"];
-            if (arr == null || !arr.IsArray) return;
-            for (int i = 0; i < arr.Count; i++)
-            {
-                var e = arr[i];
-                if (e == null || !e.IsObject) continue;
-                string id = e.GetString("id", "");
-                string dn = e.GetString("display_name", "");
-                if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(dn)) s_DisplayName[id] = dn;
-            }
+            if (string.IsNullOrEmpty(iId)) return null;
+            EnsureLoaded();
+            string fromProfile = Treasury.UCL_BankAccountProfileIO.GetDisplayName(iId);
+            return string.IsNullOrEmpty(fromProfile) ? null : fromProfile;
         }
 
         static void CopyStringMap(UCL.Core.JsonLib.JsonData parent, string key, Dictionary<string, string> dst, bool httpOnly)
@@ -184,13 +186,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return null;
         }
 
-        /// <summary>解析 username：identity 覆寫 > identities display_name > sender_name > id，再清洗成 Discord 合法 username。</summary>
+        /// <summary>解析 username：identity 覆寫 &gt; **帳戶資料 display_name** &gt; identities roster &gt; sender_name &gt; id，再清洗成 Discord 合法 username。</summary>
         public static string ResolveUsername(string senderId, string senderName, string fallbackDisplay, string senderPersona = null)
         {
             EnsureLoaded();
             string username = null;
             if (!string.IsNullOrEmpty(senderId) && s_IdentityUsername.TryGetValue(senderId, out var ov)) username = ov;
-            if (string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(senderId) && s_DisplayName.TryGetValue(senderId, out var dn)) username = dn;
+            // 帳戶資料的 display_name 優先於 identities roster —— 見 ResolveDisplayName 的血證。
+            if (string.IsNullOrEmpty(username)) { var dn = ResolveDisplayName(senderId); if (!string.IsNullOrEmpty(dn)) username = dn; }
             if (string.IsNullOrEmpty(username)) username = !string.IsNullOrEmpty(fallbackDisplay) ? fallbackDisplay : senderName;
             if (string.IsNullOrEmpty(username)) username = senderId;
 
@@ -221,7 +224,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         static Regex s_MentionRe;
 
-        /// <summary>body 內 @&lt;name&gt; rewrite：discord_user_mentions 命中 → &lt;@user_id&gt;（真 ping）；否則 identities display_name → @顯示名；都沒 → 原樣。</summary>
+        /// <summary>body 內 @&lt;name&gt; rewrite：discord_user_mentions 命中 → &lt;@user_id&gt;（真 ping）；否則帳戶資料／identities 的顯示名 → @顯示名；都沒 → 原樣。</summary>
         public static string RewriteMentions(string body)
         {
             if (string.IsNullOrEmpty(body) || body.IndexOf('@') < 0) return body;
@@ -231,7 +234,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 string name = m.Groups[1].Value;
                 if (s_UserMentions.TryGetValue(name, out var uid)) return $"<@{uid}>";          // 真 Discord ping
-                if (s_DisplayName.TryGetValue(name, out var dn)) return $"@{dn}";                 // visual @ 顯示名
+                { var dn = ResolveDisplayName(name); if (!string.IsNullOrEmpty(dn)) return $"@{dn}"; }  // visual @ 顯示名（帳戶資料優先）
                 return m.Value;                                                                   // 沒命中保留原樣
             });
         }

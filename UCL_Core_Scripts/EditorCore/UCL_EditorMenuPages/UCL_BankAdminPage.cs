@@ -617,9 +617,10 @@ namespace UCL.Core.EditorLib.Page
                             $"顯示全部帳戶（含孤兒／舊世代／已銷戶，共 {m_BankIds.Count}）", UCL_GUIStyle.LabelStyle);
                         if (showAll != m_ShowAllAccounts) m_ShowAllAccounts = showAll;
                     }
-                    {
-                    }
                 }
+
+                // 選到的 agent 直接改顯示名稱 —— 不必捲到下面的 🏷 帳戶資料 全表去找那一列。
+                DrawSelectedAgentNameRow();
             }
         }
 
@@ -983,11 +984,7 @@ namespace UCL.Core.EditorLib.Page
                 // ⚠ 不在 Draw 裡逐檔讀 —— IMGUI 每 repaint 都跑，40 個帳戶就是每幀 40 次檔案 IO。
                 //   （同 UCL_TreasuryLedger 區塊註解的血證：Draw* 裡的 IO 會變成反覆全掃。）
                 var accounts = BankPickerList;
-                if (m_CacheProfiles == null)
-                {
-                    m_CacheProfiles = new Dictionary<string, UCL_BankAccountProfile>(StringComparer.Ordinal);
-                    foreach (var a in m_BankIds) m_CacheProfiles[a] = UCL_BankAccountProfileIO.Load(a);
-                }
+                EnsureProfileCache();
                 int haveProfile = 0;
                 foreach (var a in accounts)
                     if (m_CacheProfiles.TryGetValue(a, out var pv) && pv != null) haveProfile++;
@@ -1047,6 +1044,52 @@ namespace UCL.Core.EditorLib.Page
                         GUILayout.FlexibleSpace();
                     }
                 }
+            }
+        }
+
+        // 區塊職責：帳戶資料快取的**唯一**建構點（選取區與 🏷 帳戶資料區共用）。
+        // 物理意義：Draw* 裡不准碰磁碟 —— 每 repaint 逐檔讀，40 個帳戶就是每幀 40 次 IO。
+        //          寫入後把它設成 null 失效即可（DoSaveAccountProfile 已經這樣做）。
+        void EnsureProfileCache()
+        {
+            if (m_CacheProfiles != null) return;
+            m_CacheProfiles = new Dictionary<string, UCL_BankAccountProfile>(StringComparer.Ordinal);
+            foreach (var a in m_BankIds) m_CacheProfiles[a] = UCL_BankAccountProfileIO.Load(a);
+        }
+
+        // 區塊職責：**當前選取 agent** 的顯示名稱編輯（Tim 2026-08-20）。
+        // 物理意義：合一之後 agent id 就是帳戶 id ⇒ 改的就是 `Treasury/accounts/<id>.json` 的
+        //          display_name，而那是酒館／Discord 渲染端唯一的顯示名稱真相源
+        //          （見 UCL_DiscordIdentityResolver.ResolveDisplayName）。
+        //          底下 🏷 帳戶資料 區是全表版本；這裡是「選到誰就改誰」的近路，
+        //          兩邊共用同一份 draft 與同一支寫入（不另開第二個算點）。
+        // 數值影響：零金流，所以不做二段確認。
+        void DrawSelectedAgentNameRow()
+        {
+            string acc = SelectedBank;
+            if (string.IsNullOrEmpty(acc)) return;
+            EnsureProfileCache();
+            m_CacheProfiles.TryGetValue(acc, out var prof);
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("顯示名稱", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                if (!m_AcctNameDrafts.TryGetValue(acc, out string draft))
+                    draft = prof?.display_name ?? "";
+                // 按鈕在 Label 前（守則 L2）—— 長 Label 會把按鈕擠出可見範圍。
+                if (GUILayout.Button("💾 儲存", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)),
+                        GUILayout.ExpandWidth(false)))
+                    DoSaveAccountProfile(acc, draft);
+                string nd = GUILayout.TextField(draft, UCL_GUIStyle.TextFieldStyle,
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                if (nd != draft) m_AcctNameDrafts[acc] = nd;
+                // 「沒建檔」與「建了檔但留空」顯示結果一樣（都是 id），但後者是有人做過決定的。
+                GUILayout.Label(prof == null
+                        ? "　<color=#ffcc66>未建檔</color>（酒館／Discord 會顯示成 id）"
+                        : (string.IsNullOrWhiteSpace(prof.display_name)
+                            ? $"　已建檔・名稱留空（顯示 id）　<size=10>{prof.updated_by}</size>"
+                            : $"　→ 酒館顯示 <b>{prof.display_name}</b>　<size=10>{prof.updated_by} {prof.updated_at}</size>"),
+                    WrapLabelStyle);
+                GUILayout.FlexibleSpace();
             }
         }
 

@@ -226,7 +226,8 @@ letters/<persona>/
 | python `check_letters_layout` / `sync_letters_gitignore` | ✅ 走 `pool_names()` | kiara `705b6ae`。只讀名單不讀 identity，改的理由是**判準漂移不會有人喊痛** |
 | python `_lib/session_common` | ✅ **整支刪除** | kiara 2026-08-20。**不是收進接縫，是它已經沒有存在理由**：這支是「上班模式全面退役」（`4f48884`）時為了不讓 `stream_watch_session.py` 壞掉才抽出來的工具層，而那支唯一消費端已於 `842801e` 退場（陪看改走 C# `Cmd_StreamWatch`）。全樹 grep：**零 .py／.cs 呼叫端**，其 state 檔 `work_sessions.json` 連檔都不存在。<br>⇒ session 相關的狀態擁有者是 C#／Cmd（Tim 2026-08-20 重申：session 只有 Editor 開著才能跑）—— 這支是遷移前的殘影。**它的正向鏈 bank 解析（`_resolve_bank(agent)`）也隨之消失**，那條與 §8.1 反向登記今日實測 0/21 分岔（初值由現況導出），但它會在「銀行端改了誰屬於誰」時開始說謊 |
 | python `tavern_catchup.resolve_owning_agent` | ✅ 走接縫 | kiara 2026-08-20。改走 `persona_profile.get_field(p,"agent")`，並**移除 `PERSONAS_DIR`**（留著就是邀請下一個人再走直讀；同 `agent_email.persona_path()` 的移除理由）。<br>**呼叫時機兩種都實測**：① CLI 直跑 ⇒ `source=live`（走 Cmd 拿現場值）② 模擬被 wake_brief 載進 Cmd 內部（`UCL_PP_SKIP_CMD=1`）⇒ `source=snapshot`，**不再排第二個 Cmd**。21 人 agent 值與 legacy **0 不一致**；不存在的 persona 回空字串不拋；接縫模組**只載一份**（刻意快取，不重演 BUG-17 的每次 exec）|
-| C# `UCL_TreasuryAccountResolver` / `UCL_BankAdminPage` | ⬜ **刻意擋著** | §8.1 反向登記已落地（見那節），但這兩支的**讀 persona 檔**那部分要跟正向鏈退場一起收，先改只會做一半 |
+| C# `UCL_TreasuryAccountResolver` | ⬜ **必須等正向鏈退場** | 它讀 legacy 的**唯一理由就是正向鏈**：`s_PersonaToAgentLower` 只有 `Resolve()` ⑤-b 一個消費者。<br>⚠ 而且**快取失效戳章本身就是那個 legacy 目錄**（`persona 檔數 + 最新 mtime`）⇒ 走接縫要另外發明一個失效訊號，而這是金流路徑上的解析器。先改＝為將要刪掉的東西付遷移成本，還多留一個新機制要維護。詳見 §8.1 補節 |
+| C# `UCL_BankAdminPage` | ⬜ **可以先走，不必等** | kiara 2026-08-20 讀完 code 的拆法修正：它讀 persona 只為了**顯示**與**開戶 draft 命名**（`SyncNewBankDraftFromAgent`），**不碰金流**；而且它是 Editor 頁 —— Cmd 往返在那裡無所謂。<br>⇒ 舊文把兩支寫成一列，讀起來像綁在一起的一件事，**不是** |
 
 清單單號：`repo:AgentCommands/BugReports/reports/0018.md`（BUG-18，doc 類，附每項「為什麼今天不痛」）。
 
@@ -420,6 +421,43 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 ⇒ **它該跟正向鏈退場（Phase 3）一起做**。前置：python 端還沒有央行常數
 （C# 有 `UCL_CentralBankSettings.DefaultCentralBankAccount`）—— 要做得先補對側，
 否則又是一組兩端各講一套的常數。
+
+#### 唯一未做的那一格，以及它背後更大的一格（kiara 2026-08-20 實測）
+
+§8.1 拍板的「無登記 → 預設央行 ＋ 酒保通知」**刻意未做**，理由是正向鏈末端會 derive
+`-da-xiaojie` ⇒ 那條永遠不觸發，現在寫等於加一段沒有消費端的 code。**這個判斷仍然成立。**
+
+但今天量到它底下還有一格，比它重要：
+
+> **`bank_personas` 反向表沒有任何寫入端。C# 零個、python 零個，全樹只有讀取。**
+> 而**舊方向那張表有**：`UCL_PersonaAgentAdminPage.DoCreateAgent()` 落 `agent_banks[agent] = bank`。
+
+⇒ §8.1 只反轉了**讀取**方向，**寫入**方向還在維護舊表。
+反向表今天的內容是 `5394fae1e` 由人逐位從現況導出手抄的 ⇒ 它的正確性是**一次性**的。
+
+實測覆蓋率（唯讀探針）：反向表 14 家 bank／登記 21 人・pool 21 人・未登記 0・重複 0・多餘 0，
+**21/21 都由反向表命中，沒有任何人退到正向鏈**。
+⚠ **全綠正是誤導的部分** —— 那不是「機制健康」，是「那天有人抄了一份，而之後還沒有人加入」。
+從現在起每建一個 agent／每 fork 一個 persona，覆蓋率就掉一格，
+而**第一個壞掉的人一定是最新來的那個**（最不會有人替他複驗的那個）。
+
+⇒ **正向鏈不是死碼，它是「新來的人」的活路。** 這是同一族的形狀：
+半套的遷移看起來跟遷完了一模一樣（§4.1 血證段講的是 email，這裡是錢的歸屬）。
+
+**退場順序（不能顛倒）**：
+
+1. **先給反向表寫入端**（建 persona／建 agent／fork 時登記）。單獨拿出來也是淨賺 ——
+   讓表停止衰減，跟正向鏈何時退場無關。⚠ 放哪待拍：建人流程 vs `Cmd_Treasury`
+   （「錢的歸屬是銀行的宣告」的話該是後者，但那讓建人依賴 Treasury）。
+2. 再裝央行 fallback ＋ 酒保通知（前置：python 端補央行常數；C# 已有 `UCL_CentralBankSettings`）。
+   正向鏈一走，這格就從死碼變成**唯一的網**。
+3. **然後才**刪正向鏈：C# `s_PersonaToAgentLower` ＋ `Resolve()` ⑤-b、
+   python `resolve_persona_bank` ② 段、`agent_banks` 角色降級。
+   ⚠ 刪掉 ⑤-b 之後，未登記者的落點是 ⑥ `Unresolved`
+   ——「查無對應，將產生／沿用孤兒帳戶」：錢還是入帳，但入孤兒戶。
+4. 那一刻 `UCL_TreasuryAccountResolver` 才不再需要 `PersonasDir`（連快取戳章一起換）。
+
+單號：`repo:AgentCommands/BugReports/reports/0021.md`（BUG-21）。詳解：`tavern:2026-08-20#12671`。
 
 ### 8.2 身分欄改「一欄一檔」分散式 .md —— ✅ **已實作**（kiara 2026-08-19，Phase 1）
 

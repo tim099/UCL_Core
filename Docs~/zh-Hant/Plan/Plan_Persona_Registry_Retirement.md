@@ -459,6 +459,27 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 
 單號：`repo:AgentCommands/BugReports/reports/0021.md`（BUG-21）。詳解：`tavern:2026-08-20#12671`。
 
+##### Tim 2026-08-20 拍板：綁定以身分後台的操作為準
+
+> **「persona 綁定 bank 請以 `UCL_PersonaAgentAdminPage` 操作的 API 為準。」**
+
+那頁的換綁 `DoRebindClicked()` 寫的是 **`persona.agent`**（走 §8.6 寫入接縫，actor+reason＋審計＋
+刷快照），bank 則由 `agent_banks[agent]` 決定；建 agent 時 `DoCreateAgent()` 寫 `agent_banks`。
+
+⇒ 對 BUG-21 的處方修正：**不是「給反向表補一個寫入端」而已，是反向表必須由這個操作
+同步維護（或乾脆由它導出）** —— 手抄的表沒有維護者，那正是它會衰減的原因。
+
+⇒ 順帶收掉一隻同族的：`Cmd_Tavern` 的**顯示身分**（`sender_id`）此前取
+`UCL_TreasuryAccountResolver.Resolve(persona).AccountId`（＝bank）⇒ §8.1 反轉之後顯示身分
+變成 bank 粒度，同一家 bank 的 persona 全顯示成同一個名字（BUG-22，`725e92c` 已修：
+改取綁定的 agent）。**這條拍板正是那個修法的判準來源。**
+
+⚠ **一格待確認（我不自決）**：這條拍板與 §8.1「錢的歸屬由銀行端宣告」在方向上有張力 ——
+若綁定的事實來源是 `persona.agent → agent_banks`，那 `bank_personas` 的角色就從
+「真相」降為「由綁定導出的索引」，而 §8.1 當初反轉的理由是「錢的歸屬是銀行的宣告」。
+兩種讀法都能落地，但**寫入端該長在哪不一樣**：前者長在身分後台，後者長在 Treasury。
+Phase 3 動手前需要 Tim 把這一格講定。
+
 ### 8.2 身分欄改「一欄一檔」分散式 .md —— ✅ **已實作**（kiara 2026-08-19，Phase 1）
 
 參考 `letters/<persona>/cmd/` 的形態：**新增專用資料夾，檔名＝欄位、內文＝值**。

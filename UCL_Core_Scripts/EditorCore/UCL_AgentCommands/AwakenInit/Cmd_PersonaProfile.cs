@@ -34,7 +34,12 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             "op=set_bank persona=<name> account=<agent id> actor=<誰> reason=<憑什麼> [currency=<區域ID>] — "
             + "寫 letters/<persona>/bank/<區域ID>.md（一區一檔；附審計） | " +
             "op=migrate_bank actor=<誰> reason=<憑什麼> [currency=<區域ID>] [dry_run=0] [overwrite=1] — "
-            + "由現況 persona.agent 導出全 pool 的綁定檔；**預設 dry_run（只印不寫）**";
+            + "由現況 persona.agent 導出全 pool 的綁定檔；**預設 dry_run（只印不寫）** | " +
+            "op=rebind_region from=<舊區ID> to=<新區ID> actor= reason= [dry_run=0] — "
+            + "把全 pool 的綁定從舊區搬到新區（**新區已有不同值＝衝突，整批不動**）；"
+            + "後台改區域 ID 時會自動跑這一段，本 op 供預跑／跨專案遷移用 | " +
+            "op=unbind persona=<name> actor= reason= [currency=<區域ID>] — 刪掉該 persona 在該區的綁定檔"
+            + "（唯一能把綁定還原成「不存在」的手段；有審計）";
 
         public override string ExampleArgs => "op=set;persona=Template;field=email;value=t@example.com;actor=summit;reason=驗收";
 
@@ -66,6 +71,14 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                 },
                 // migrate 沒有 Required=persona —— 它掃全 pool。actor/reason 仍必填（§8.6 不因批次而放寬）。
                 ["migrate_bank"] = new UCL_CmdOpSpec { Required = new[] { "actor", "reason" } },
+                ["rebind_region"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "from", "to", "actor", "reason" },
+                },
+                ["unbind"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "actor", "reason" },
+                },
             }
         };
 
@@ -104,7 +117,8 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             //          migrate_bank **預設 dry_run** —— 批次寫入的預設值必須是「不寫」，
             //          因為它的破壞面是全 pool，而打錯一個參數的成本不該是 21 個檔。
             // ===========================================================
-            if (op == "get_bank" || op == "set_bank" || op == "migrate_bank")
+            if (op == "get_bank" || op == "set_bank" || op == "migrate_bank"
+                || op == "rebind_region" || op == "unbind")
             {
                 string currency = GetArg(args, "currency", "").Trim();
                 if (string.IsNullOrEmpty(currency))
@@ -149,6 +163,66 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                     UCL_AgentCommandRunner.ReportOutputValue(args, "account", after);
                     UnityEngine.Debug.Log($"[PersonaProfile] set_bank {persona}@{currency}："
                         + $"'{before}'（{beforeSrc}）→ '{after}'（actor={actor}）");
+                    return;
+                }
+
+                if (op == "rebind_region")
+                {
+                    // 區塊職責：換區重綁（後台改區域 ID 時自動跑的同一段邏輯）。
+                    // 物理意義：本 op 只做「複製到新區」——**不刪舊區、不翻設定**。
+                    //          那兩件事的擁有者是後台（它才知道使用者按了確認）；
+                    //          CLI 這條留給「預跑」與「跨專案遷移」用。
+                    // 數值影響：預設 dry_run；衝突（新區已有不同值）大於 0 時**拋例外**，
+                    //          因為呼叫端最可能的下一步是繼續，而繼續會做出半套狀態。
+                    string from = GetArg(args, "from", "").Trim();
+                    string to = GetArg(args, "to", "").Trim();
+                    string actor = GetArg(args, "actor", "").Trim();
+                    string reason = GetArg(args, "reason", "").Trim();
+                    bool dryRun = GetArg(args, "dry_run", "1").Trim() != "0";
+                    if (!Treasury.UCL_CentralBankSettings.IsValidCurrencyId(from)
+                        || !Treasury.UCL_CentralBankSettings.IsValidCurrencyId(to))
+                        throw new Exception($"[PersonaProfile] from／to 必須是合法區域 ID（能當檔名）：'{from}' → '{to}'");
+
+                    string rep2 = UCL_PersonaProfile.CopyBankRegionAll(from, to, actor, reason, dryRun,
+                        out int copied, out int skipped, out int conflicts, out int failed);
+                    UnityEngine.Debug.Log(rep2);
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "from", from);
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "to", to);
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "dry_run", dryRun ? "1" : "0");
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "copied", copied.ToString());
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "skipped", skipped.ToString());
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "conflicts", conflicts.ToString());
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "failed", failed.ToString());
+                    if (conflicts > 0 || failed > 0)
+                        throw new Exception($"[PersonaProfile] rebind_region 有 {conflicts} 筆衝突、"
+                            + $"{failed} 筆失敗 —— 詳見 Editor log（衝突＝新區已有不同綁定，本 op 不覆寫也不挑）");
+                    return;
+                }
+
+                if (op == "unbind")
+                {
+                    string persona = GetArg(args, "persona", "").Trim();
+                    string actor = GetArg(args, "actor", "").Trim();
+                    string reason = GetArg(args, "reason", "").Trim();
+                    string before = UCL_PersonaProfile.GetBankAccount(persona, currency,
+                        out string beforeSrc, out _);
+                    bool hadOwn = UCL_PersonaProfile.HasOwnBankBinding(persona, currency);
+                    if (!UCL_PersonaProfile.DeleteBankBinding(persona, currency, actor, reason,
+                            out string delErr))
+                        throw new Exception($"[PersonaProfile] unbind 失敗：{delErr}");
+                    // 讀回複驗：刪完之後本區不該再有自己的綁定（可能改成跨區借用，那是對的）。
+                    if (UCL_PersonaProfile.HasOwnBankBinding(persona, currency))
+                        throw new Exception($"[PersonaProfile] unbind 後 {persona}@{currency} 仍有本區綁定 —— 未生效");
+                    string after = UCL_PersonaProfile.GetBankAccount(persona, currency,
+                        out string afterSrc, out string afterNote);
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "currency", currency);
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "had_own", hadOwn ? "1" : "0");
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "old_account", before);
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "now_account", after);
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "now_source", afterSrc);
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "now_note", afterNote);
+                    UnityEngine.Debug.Log($"[PersonaProfile] unbind {persona}@{currency}："
+                        + $"'{before}'（{beforeSrc}）→ 現在 '{after}'（{afterSrc}）actor={actor}");
                     return;
                 }
 
@@ -225,7 +299,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
 
             if (op != "refresh")
                 throw new Exception($"[PersonaProfile] 未知 op '{op}'"
-                    + "（refresh / set / get_bank / set_bank / migrate_bank）");
+                    + "（refresh / set / get_bank / set_bank / migrate_bank / rebind_region / unbind）");
 
             var (ok, count, error) = UCL_PersonaProfile.WriteSnapshot();
             if (!ok)

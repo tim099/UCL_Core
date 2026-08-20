@@ -563,6 +563,148 @@ namespace UCL.Core.EditorLib.AgentCommands
         }
 
         // ===========================================================
+        // 區塊職責：**換區重綁** —— 區域 ID 改名時把全體綁定從舊區搬到新區。
+        // 物理意義：Tim 2026-08-20 拍板 —— 後台改貨幣 ID 應**自動觸發**所有人重綁
+        //          （原本綁在 Ducat 的帳號自動綁到 Florin），
+        //          **除非新區已經有綁定 ⇒ 報錯**（那狀況要避免，不是要挑一個）。
+        //   📌 這推翻了我先前寫在 UCL_AutoCommitPage／後台面板註解裡的邊界
+        //     （「這裡不自動改名 letters 底下的檔」）—— Tim 的判準優先：
+        //     改 ID 之後留下一地對不上鍵的檔，等於全員靜默落央行，那比批次寫入危險。
+        // 數值影響：**刻意做成三段、且每一段之後的中間狀態都是可用的**（monotonic）：
+        //          ① 預檢衝突（不寫） ② 複製到新區（舊檔還在 ⇒ 此刻兩邊都有，新區還沒生效）
+        //          ③ 呼叫端翻設定 ④ 刪舊區。
+        //          任何一段失敗都停在「至少有一個檔存在」的狀態，而跨區借用會接住它並出聲。
+        //          ⇒ 最壞情況是「吵」，不是「查不到綁定」。
+        // ⚠ 同值視為**已完成**而不是衝突：批次做一半之後必須能重跑，
+        //   否則它自己成功的那一半會擋住自己的復原路。**不同值才是衝突。**
+        // ===========================================================
+
+        /// <summary>該 persona 在該區域**自己**有沒有綁定（跨區借用不算）。</summary>
+        public static bool HasOwnBankBinding(string iPersona, string iCurrencyId)
+            => !string.IsNullOrEmpty(ReadBankFile(UCL_LettersPath.BankField(iPersona, iCurrencyId)));
+
+        /// <summary>刪一個區域的綁定檔（＋審計）。檔不存在視為成功（idempotent）。</summary>
+        /// <remarks>
+        /// 刪除是**唯一**能把綁定還原成「不存在」的手段（同 BUG-16 的三態問題）——
+        /// 所以它必須有審計，否則「誰把某人的綁定弄掉了」這件事沒有任何紀錄。
+        /// </remarks>
+        public static bool DeleteBankBinding(string iPersona, string iCurrencyId,
+            string iActor, string iReason, out string oError)
+        {
+            oError = "";
+            if (string.IsNullOrWhiteSpace(iPersona)) { oError = "persona 必填"; return false; }
+            if (string.IsNullOrWhiteSpace(iCurrencyId)) { oError = "currencyId 必填"; return false; }
+            if (string.IsNullOrWhiteSpace(iActor) || string.IsNullOrWhiteSpace(iReason))
+            { oError = "actor 與 reason 必填（§8.6）"; return false; }
+            try
+            {
+                string aPath = UCL_LettersPath.BankField(iPersona, iCurrencyId);
+                if (!File.Exists(aPath)) return true;
+                File.Delete(aPath);
+            }
+            catch (Exception e) { oError = e.Message; return false; }
+            AppendAudit(iPersona, UCL_LettersPath.BankDirName + "/" + iCurrencyId + " (deleted)",
+                iActor, iReason);
+            return true;
+        }
+
+        /// <summary>
+        /// 把全 pool 的綁定從 <paramref name="iFrom"/> 區**複製**到 <paramref name="iTo"/> 區。
+        /// 不刪舊檔（刪除是另一支，見 <see cref="DeleteBankRegionAll"/>）。
+        /// </summary>
+        /// <param name="iDryRun">true＝只算不寫（預檢用）。</param>
+        /// <param name="oConflicts">新區已有**不同值**的人數 —— 大於 0 時呼叫端應中止。</param>
+        public static string CopyBankRegionAll(string iFrom, string iTo, string iActor, string iReason,
+            bool iDryRun, out int oCopied, out int oSkipped, out int oConflicts, out int oFailed)
+        {
+            oCopied = oSkipped = oConflicts = oFailed = 0;
+            var aSb = new System.Text.StringBuilder();
+            aSb.AppendLine($"[PersonaProfile] CopyBankRegionAll {iFrom} → {iTo}"
+                + $"（dry_run={(iDryRun ? 1 : 0)}）");
+            if (string.IsNullOrWhiteSpace(iFrom) || string.IsNullOrWhiteSpace(iTo)
+                || iFrom == iTo)
+            {
+                aSb.AppendLine("  ⛔ from／to 必填且不可相同 —— 未動任何檔");
+                oFailed = 1;
+                return aSb.ToString();
+            }
+            foreach (var p in PoolNamesSorted())
+            {
+                string aOld = ReadBankFile(UCL_LettersPath.BankField(p, iFrom));
+                string aNew = ReadBankFile(UCL_LettersPath.BankField(p, iTo));
+                if (string.IsNullOrEmpty(aOld))
+                {
+                    // 舊區本來就沒有 ⇒ 沒有東西可搬。新區有值也不動它（那是別人設的）。
+                    oSkipped++;
+                    aSb.AppendLine($"  ・{p}：舊區（{iFrom}）無綁定 —— 跳過"
+                        + (string.IsNullOrEmpty(aNew) ? "" : $"（新區已有 '{aNew}'，不動）"));
+                    continue;
+                }
+                if (!string.IsNullOrEmpty(aNew))
+                {
+                    if (aNew == aOld)
+                    {
+                        oSkipped++;
+                        aSb.AppendLine($"  ○ {p}：新區已是同值 '{aNew}' —— 視為已完成");
+                        continue;
+                    }
+                    oConflicts++;
+                    aSb.AppendLine($"  ⛔ {p}：**衝突** —— 舊區（{iFrom}）='{aOld}'、"
+                        + $"新區（{iTo}）已有不同值 '{aNew}'。不覆寫、不挑一個。");
+                    continue;
+                }
+                if (iDryRun)
+                {
+                    oCopied++;
+                    aSb.AppendLine($"  → {p}：會寫入 '{aOld}'");
+                    continue;
+                }
+                if (!WriteBankAccount(p, iTo, aOld, iActor, iReason, out string aErr))
+                {
+                    oFailed++;
+                    aSb.AppendLine($"  ✗ {p}：寫入失敗 —— {aErr}");
+                    continue;
+                }
+                string aBack = ReadBankFile(UCL_LettersPath.BankField(p, iTo));
+                if (aBack != aOld)
+                {
+                    oFailed++;
+                    aSb.AppendLine($"  ✗ {p}：寫入後讀回不符（期望 '{aOld}'、實際 '{aBack}'）");
+                    continue;
+                }
+                oCopied++;
+                aSb.AppendLine($"  ✓ {p}：'{aBack}'");
+            }
+            aSb.AppendLine($"  ⇒ 複製 {oCopied}／跳過 {oSkipped}／衝突 {oConflicts}／失敗 {oFailed}");
+            return aSb.ToString();
+        }
+
+        /// <summary>刪掉全 pool 在某區域的綁定檔（換區的最後一段）。</summary>
+        public static string DeleteBankRegionAll(string iRegion, string iActor, string iReason,
+            out int oDeleted, out int oFailed)
+        {
+            oDeleted = oFailed = 0;
+            var aSb = new System.Text.StringBuilder();
+            aSb.AppendLine($"[PersonaProfile] DeleteBankRegionAll {iRegion}");
+            foreach (var p in PoolNamesSorted())
+            {
+                if (!HasOwnBankBinding(p, iRegion)) continue;
+                if (!DeleteBankBinding(p, iRegion, iActor, iReason, out string aErr))
+                {
+                    oFailed++;
+                    // 刪不掉不致命：殘留的舊區檔對別人是「另一個區域的檔」，
+                    // 而規矩就是不去清別人的檔 ⇒ 它只是噪音，不是壞掉。
+                    aSb.AppendLine($"  ⚠ {p}：刪除失敗（殘留舊檔，不致命）—— {aErr}");
+                    continue;
+                }
+                oDeleted++;
+                aSb.AppendLine($"  ✓ {p}：已刪 {iRegion}");
+            }
+            aSb.AppendLine($"  ⇒ 刪除 {oDeleted}／失敗 {oFailed}");
+            return aSb.ToString();
+        }
+
+        // ===========================================================
         // 區塊職責：讓 legacy 舊源在 Phase 1 之後**只出不進**（§8.4 鐵則）。
         // 物理意義：`WriteRaw` 的呼叫端（morning patch-write／goodnight ×2）形狀都是
         //          `GetRaw → 改活體欄 → WriteRaw 整檔`。合併層上線後那個「整檔」裡的

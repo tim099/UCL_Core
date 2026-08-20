@@ -24,6 +24,7 @@ using UCL.Core.EditorLib.AgentCommands.CanvasVoucher; // UCL_CanvasVoucherLedger
 using UCL.Core.EditorLib.AgentCommands.Voucher;       // UCL_TavernVoucherLedger（酒館券 canonical）+ 券共用底層
 using UCL.Core.EditorLib.AgentCommands.ChatTavern; // UCL_ChatTavernIO / UCL_ChatMessage（操作通知發酒館主頻道）
 using UCL.Core.EditorLib.AgentCommands.Mail;       // UCL_RegisteredMailIO（進帳類操作另寄一封免費系統掛號信）
+using UCL.Core.EditorLib.AgentCommands;             // UCL_PersonaProfile（區域綁定讀寫接縫：換區重綁用）
 using UnityEditor;
 using UnityEngine;
 
@@ -1219,8 +1220,15 @@ namespace UCL.Core.EditorLib.Page
                         DoSaveCurrencyId();
                     if (GUILayout.Button("↩ 重讀", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     { m_CurrencyDraft = UCL_CentralBankSettings.CurrencyId; m_CurrencyArmed = false; }
+                    // 開設定檔所在資料夾（同 UCL_BartenderCliCommandsPage 的手勢；
+                    // 走 UCL_ExplorerUtil 而不是 Application.OpenURL —— 外部 Process 要登記）
+                    if (GUILayout.Button("📂 開啟設定檔位置", UCL_GUIStyle.ButtonStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(150))))
+                    {
+                        UCL_ExplorerUtil.Open(UCL_CentralBankSettings.SettingsDir, "BankAdminPage");
+                    }
                 }
-                GUILayout.Label("  ⚠ 改這個 ID 等於<b>把全體 persona 的綁定檔重新定鍵</b>：舊檔不會自動改名，改名完成前所有人都會被視為「沒有綁定」（落央行＋ErrorLog）。二段確認 —— 按一次待確認，5 秒內再按才生效。", WrapLabelStyle);
+                GUILayout.Label("  ⚠ 改這個 ID 會<b>自動把全體 persona 的綁定從舊區搬到新區</b>（複製 → 翻設定 → 刪舊檔，每段都有審計）。<b>若有人在新區已經有不同的綁定 ⇒ 整批中止、ID 不變</b>（那狀況要避免，不是要挑一個）。二段確認 —— 按一次待確認，5 秒內再按才生效。", WrapLabelStyle);
                 GUILayout.Label("  值落 <b>AgentCommands/Treasury/bank_settings.json</b> 的 <b>currency_id</b>，Python 端讀同一份。", WrapLabelStyle);
             }
         }
@@ -1244,23 +1252,67 @@ namespace UCL.Core.EditorLib.Page
             {
                 m_CurrencyArmed = true;
                 m_CurrencyArmedAt = EditorApplication.timeSinceStartup;
-                SetResult($"⏳ 待確認：區域 ID `{old}` → `{v}`。⚠ 既有的 letters/&lt;persona&gt;/bank/{old}.md **不會自動改名** —— 生效後全體視為未綁定（落央行＋ErrorLog），要接著跑遷移改名。5 秒內再按一次生效。");
+                // 待確認時先跑一次**預檢**（dry run）—— 把「按下去會發生什麼」講在按之前，
+                // 而不是按完才發現有人衝突。這是本頁唯一會在 arm 階段做 IO 的地方，值得：
+                // 衝突清單就是使用者要拿去處理的東西。
+                string aPre = UCL_PersonaProfile.CopyBankRegionAll(old, v,
+                    "Tim@BankAdminPage", $"預檢：區域 ID {old} → {v}", true,
+                    out int aPc, out int aPs, out int aPconf, out int aPf);
+                Debug.Log(aPre);
+                m_CurrencyArmed = true;
+                m_CurrencyArmedAt = EditorApplication.timeSinceStartup;
+                if (aPconf > 0 || aPf > 0)
+                {
+                    m_CurrencyArmed = false;
+                    SetResult($"⛔ 不能改：`{old}` → `{v}` 有 **{aPconf} 筆衝突**（新區已有不同綁定）"
+                        + $"{(aPf > 0 ? $"、{aPf} 筆預檢失敗" : "")} —— **ID 未變更**。"
+                        + "清單見 Console；先把那幾位處理掉（改名或刪掉新區那個檔）再回來。");
+                    return;
+                }
+                SetResult($"⏳ 待確認：區域 ID `{old}` → `{v}`。預檢：會搬 **{aPc}** 位、跳過 {aPs} 位、衝突 0。"
+                    + "確認後自動執行「複製到新區 → 翻設定 → 刪舊區」三段（每段有審計）。5 秒內再按一次生效。");
                 return;
             }
 
             m_CurrencyArmed = false;
+            string aActor = "Tim@BankAdminPage";
+            string aReason = $"區域 ID 改名 {old} → {v}（後台自動換區重綁）";
+
+            // ── 段① 複製到新區（舊檔還在 ⇒ 此刻兩邊都有，而新區還沒生效 ⇒ 安全的中間狀態）
+            string aCopyRep = UCL_PersonaProfile.CopyBankRegionAll(old, v, aActor, aReason, false,
+                out int aCopied, out int aSkipped, out int aConflicts, out int aFailed);
+            Debug.Log(aCopyRep);
+            if (aConflicts > 0 || aFailed > 0)
+            {
+                // **ID 不變** —— 寧可停在舊區完整可用，也不要翻了設定卻只搬了一半。
+                SetResult($"⛔ 換區中止：衝突 {aConflicts} 筆、失敗 {aFailed} 筆 —— **ID 仍是 `{old}`**，"
+                    + "已複製的檔留著（新區未生效，不影響現況）。清單見 Console。");
+                return;
+            }
+
+            // ── 段② 翻設定（最後才動的那一格）
             UCL_CentralBankSettings.CurrencyId = v;
             // 印 ✓ 不算數，讀回來才算：setter 對不合法值是「出聲後不寫」，
             // 只看按鈕有沒有被按會把「拒寫」讀成「已存」。
             string now = UCL_CentralBankSettings.CurrencyId;
             if (now != v)
             {
-                SetResult($"❌ 寫入後讀回不符（期望 `{v}`、實際 `{now}`）—— **未生效**，原因看 Console。");
+                SetResult($"❌ 寫入後讀回不符（期望 `{v}`、實際 `{now}`）—— **ID 未生效**。"
+                    + $"新區的綁定檔已寫好 {aCopied} 份（無害，未生效）；原因看 Console。");
                 return;
             }
+
+            // ── 段③ 刪舊區（失敗不致命：殘留的舊檔對別人只是「另一個區域的檔」）
+            string aDelRep = UCL_PersonaProfile.DeleteBankRegionAll(old, aActor, aReason,
+                out int aDeleted, out int aDelFailed);
+            Debug.Log(aDelRep);
+
             m_CurrencyDraft = now;
-            SetResult($"✅ 區域 ID：`{old}` → `{now}`。⚠ 下一步：把每位 persona 的 letters/&lt;persona&gt;/bank/{old}.md 改名成 {now}.md（未改名者視為未綁定）。");
-            Debug.Log($"[BankAdmin] currency_id {old} → {now}");
+            SetResult($"✅ 區域 ID：`{old}` → `{now}`；自動換區重綁完成 —— "
+                + $"搬 {aCopied} 位、跳過 {aSkipped} 位、刪舊檔 {aDeleted} 份"
+                + $"{(aDelFailed > 0 ? $"（{aDelFailed} 份刪除失敗 —— 殘留舊檔，不致命，見 Console）" : "")}。"
+                + "⚠ 這些檔要 commit（自動提交頁的 bank/ 群）。");
+            Debug.Log($"[BankAdmin] currency_id {old} → {now}；copied={aCopied} skipped={aSkipped} deleted={aDeleted} delFailed={aDelFailed}");
         }
 
         // 區塊：🏦 央行 / 保管費 —— Tim 2026-08-01「銀行後台管理頁可以調整保管費%數」

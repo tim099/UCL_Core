@@ -70,6 +70,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         static string SettingsPath =>
             Path.Combine(UCL_AgentCommandsPath.DataRoot, "Treasury", SettingsFileName);
 
+        /// <summary>設定檔所在目錄 —— 給後台「開啟設定檔位置」用（路徑只有一個擁有者，不讓頁面自己拼）。</summary>
+        public static string SettingsDir => Path.GetDirectoryName(SettingsPath);
+
         /// <summary>央行帳號 id。</summary>
         public static string CentralBankAccount
         {

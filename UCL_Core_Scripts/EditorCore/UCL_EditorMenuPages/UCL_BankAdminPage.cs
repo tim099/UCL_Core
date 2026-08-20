@@ -198,6 +198,14 @@ namespace UCL.Core.EditorLib.Page
                     GUI.FocusControl(null);
                 }
             }
+
+            // 開設定檔所在資料夾（同 UCL_BartenderCliCommandsPage 的手勢；
+            // 走 UCL_ExplorerUtil 而不是 Application.OpenURL —— 外部 Process 要登記）
+            if (GUILayout.Button("📂 開啟設定檔位置", UCL_GUIStyle.ButtonStyle,
+                GUILayout.Width(UCL_GUIStyle.GetScaledSize(150))))
+            {
+                UCL_ExplorerUtil.Open(UCL_CentralBankSettings.SettingsDir, "BankAdminPage");
+            }
         }
 
         // ===========================================================
@@ -1220,13 +1228,7 @@ namespace UCL.Core.EditorLib.Page
                         DoSaveCurrencyId();
                     if (GUILayout.Button("↩ 重讀", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     { m_CurrencyDraft = UCL_CentralBankSettings.CurrencyId; m_CurrencyArmed = false; }
-                    // 開設定檔所在資料夾（同 UCL_BartenderCliCommandsPage 的手勢；
-                    // 走 UCL_ExplorerUtil 而不是 Application.OpenURL —— 外部 Process 要登記）
-                    if (GUILayout.Button("📂 開啟設定檔位置", UCL_GUIStyle.ButtonStyle,
-                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(150))))
-                    {
-                        UCL_ExplorerUtil.Open(UCL_CentralBankSettings.SettingsDir, "BankAdminPage");
-                    }
+
                 }
                 GUILayout.Label("  ⚠ 改這個 ID 會<b>自動把全體 persona 的綁定從舊區搬到新區</b>（複製 → 翻設定 → 刪舊檔，每段都有審計）。<b>若有人在新區已經有不同的綁定 ⇒ 整批中止、ID 不變</b>（那狀況要避免，不是要挑一個）。二段確認 —— 按一次待確認，5 秒內再按才生效。", WrapLabelStyle);
                 GUILayout.Label("  值落 <b>AgentCommands/Treasury/bank_settings.json</b> 的 <b>currency_id</b>，Python 端讀同一份。", WrapLabelStyle);

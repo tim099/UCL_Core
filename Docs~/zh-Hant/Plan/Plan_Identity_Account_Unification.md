@@ -10,6 +10,7 @@ location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Persona_Registry_Retirement.md | persona registry 退場 | 本案的上游（§8.1 反向登記／§8.3 欄位分家）
+  - ucl_core:Docs~/{lang}/Workflows/Agent_Bank_Unification_Migration_Workflow.md | agent↔帳號 合一遷移 | **階段二的權威流程**（方向：改 agent 名，零 ledger 異動 —— summit 2026-08-20）
   - repo:AgentCommands/BugReports/reports/0021.md | BUG-21 | bank_personas 反向表沒有寫入端
   - repo:AgentCommands/BugReports/reports/0022.md | BUG-22 | 顯示身分取自 bank ⇒ 同 bank 的 persona 全掛同一個名字
 ---
@@ -444,12 +445,28 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
 | Bar | `Zeta` | `Zeta-da-xiaojie` ＝ **3,507** | `Zeta` ＝ **6** |
 | Bar | `antigravity` | `antigravity-da-xiaojie` ＝ **1,650** | `antigravity` ＝ **18** |
 
-**(A) 先改名歸併，再讓解析端一跳到底**（＝階段二的主線）
-1. 舊帳號餘額用 **ledger transfer** 搬到 agent id 名下（`source_kind=account-rename`，零和、可稽核）
-2. 舊號歸零 → 進 `closed_accounts` 並記 `renamed_to`（歷史 ledger 永不重寫，舊名必須永久可解釋）
+**(A) 先合一再讓解析端一跳到底**（＝階段二的主線）
+
+> [!IMPORTANT]
+> ⚠ **本節原本寫的方向是錯的，2026-08-20 稍晚由 summit 反轉。**
+> 我原本寫「把**舊帳號的餘額搬到 agent id 名下**」（＝帳號改名成 agent 名）。
+> summit 實測之後 Tim 改採**反方向：把 agent 改名成帳號 id**（少數例外個別指定）。
+>
+> **理由是成本，不是美觀**：待合併的組裡 **agent 名那一側的帳戶餘額全部是 0**
+> ⇒ 改 agent 名是**零 ledger 異動**；我那個方向要搬 **11,338 token**。
+> 他那句判準值得抄下來：**「方向由成本決定，不由美觀決定。」**
+>
+> ⇒ **實際遷移一律走** `ucl_core:Docs~/{lang}/Workflows/Agent_Bank_Unification_Migration_Workflow.md`。
+> 本節保留「為什麼要先合一再接解析端」的理路，**方向以那份為準**。
+> 📌 拍板 ⑫「帳號 id ＝ agent id」講的是**終局只有一個名字**，
+> 不是「哪一邊改名」—— 我把它讀成後者，那是我的誤讀。
+
+1. 先讓 **agent 名與帳號 id 合一**（預設方向：改 agent 名，錢原地不動 ⇒ 零 ledger 異動）
+2. 需要動錢的例外（少數個別指定）才走 ledger transfer（`source_kind=account-rename`，零和可稽核）；
+   被取代的舊名進 `closed_accounts` 並記 `renamed_to`（歷史 ledger 永不重寫，舊名必須永久可解釋）
 3. 解析端改成：綁定值＝帳號名，**一跳到底**，查不到就央行＋`Debug.LogError`（指示 ⑤）
 - 優點：終局狀態乾淨，正向鏈與 `agent_banks` 同批退場
-- 代價：改名批次與解析端切換**必須同一次上線**，否則中間態就是上面那張表的災難
+- 代價：合一批次與解析端切換**必須同一次上線**，否則中間態就是上面那張表的災難
 
 **(B) 解析端保留一跳並 fail-loud**（只在「階段二必須拆成兩次上線」時才用）
 - 解析：綁定值（agent id）→ `agent_banks[agent]` → 帳號

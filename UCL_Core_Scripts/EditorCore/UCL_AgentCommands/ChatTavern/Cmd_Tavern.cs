@@ -521,6 +521,32 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          fallback 成不同東西，最後查不出這些訊息是同一種情況產生的。
         const string AnonymousSenderId = "anonymous";
 
+        // 區塊職責：由 persona 推導**顯示身分**（`sender_id`）—— 取它綁定的 agent，不是它的 bank。
+        // 物理意義：`sender_id` 與 bank 是**兩個命名空間**。前者的鍵在 `identities.json`
+        //          （agent 名／`discord:<uid>`／系統 NPC），後者是 Treasury 帳號。
+        //          persona → agent 的綁定由身分後台 `UCL_PersonaAgentAdminPage` 的換綁操作寫入
+        //          （走 §8.6 寫入接縫，actor+reason+審計）⇒ **那是這條綁定的事實來源，本檔只讀它**。
+        //   🩸 2026-08-20 Tim 抓到：此前這裡呼叫 `UCL_TreasuryAccountResolver.Resolve(persona)`
+        //      取 `AccountId`（＝bank）當顯示身分。2026-08-14 寫下時那條解析是 persona→agent→bank，
+        //      而當時的 bank id 剛好也是 `identities.json` 的 id（`zeta`／`cc`）⇒ 看起來對。
+        //      §8.1 反向登記把解析改成「bank 端宣告誰是自己的人」之後，顯示身分就變成 **bank 粒度**：
+        //      同一家 bank 的所有 persona 顯示成同一個名字。
+        //      實測 basecamp 與 meadow（bank `cc`）的訊息 `sender_name` 都是 **`crest-001`**
+        //      —— `identities.json` 的 `cc` 那筆 `display_name` 是個 persona 名
+        //      ⇒ 兩個人的發言被掛在第三個 persona 頭上。
+        //      而 kiara（bank `Myth`）看起來正常，只因為 `Myth` 恰好也是 agent 名、且它在
+        //      identities 裡查不到 ⇒ 退回原字串。**兩種錯在輸出上都不像錯**，這是它沒人喊的原因。
+        // 數值影響：純顯示。**錢不走這裡** —— 計酬一律由 persona 解析（見 TryAutoCreditPostReward），
+        //          兩者刻意分離（c103e1f 的原始拍板即此意；本次修的是它被反方向違反的那半：
+        //          那筆防的是「顯示身分變成金流的路由依據」，這裡是「金流身分變成顯示的來源」）。
+        //          推導不出 agent 時退回 persona 名 —— 不擋發言，與原行為一致。
+        public static string ResolveDisplaySenderId(string iPersona)
+        {
+            if (string.IsNullOrEmpty(iPersona)) return AnonymousSenderId;
+            string aAgent = UCL_PersonaProfile.GetString(iPersona, "agent", "");
+            return string.IsNullOrWhiteSpace(aAgent) ? iPersona : aAgent.Trim();
+        }
+
         async UniTask Op_Post(Dictionary<string, string> args, CancellationToken token)
         {
             string roomId = GetArg(args, "room", "");
@@ -557,12 +583,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             bool anonymousPost = string.IsNullOrEmpty(senderPersona);
             if (string.IsNullOrEmpty(senderId))
             {
-                if (anonymousPost) senderId = AnonymousSenderId;
-                else
-                {
-                    var idres = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryAccountResolver.Resolve(senderPersona);
-                    senderId = idres.IsUnresolved ? senderPersona : idres.AccountId;
-                }
+                // 顯示身分＝persona 綁定的 agent（見 ResolveDisplaySenderId 的血證）。
+                // 匿名與具名兩條都收在同一支推導裡，避免下游各自 fallback 成不同東西。
+                senderId = ResolveDisplaySenderId(senderPersona);
             }
             if (string.IsNullOrEmpty(body)) { RejectLastOp("post 缺少 body"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);

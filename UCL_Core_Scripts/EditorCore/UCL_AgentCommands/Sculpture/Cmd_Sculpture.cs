@@ -209,6 +209,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             UCL_FreeTimeHint.Append(aR, aPersona);
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[Sculpture] op={iOp} {aActual} voxels, charged {aCharge}（f{aUsedFree}/v{aUsedVoucher}/t{aUsedToken}） → {aPath}");
+
+            // 自動分享（Tim 2026-08-20 拍板）：落子成功 → 渲一張全景 view → 發酒館帶圖訊息
+            // → mirror daemon 的附件分支自動上 Discord。--arg share=false 可關；失敗不汙染落子。
+            if (aActual > 0)
+                await TrySharePreview(iArgs, aPersona, aScript,
+                    $"🧊 {aPersona} 雕刻落子（{iOp}）：{aActual} voxels @({aX1}..{aX2},{aY1}..{aY2},{aZ1}..{aZ2})");
         }
 
         // ===========================================================
@@ -411,6 +417,49 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             if (iOp == "stamp2d" && File.Exists(aPreview)) UCL_AgentCommandRunner.ReportOutputFile(iArgs, aPreview);
 
             Debug.Log($"[Sculpture] op={iOp} {aActual} voxels（非透明 {aPainted}）, charged {aCharge}（f{aUsedFree}/v{aUsedVoucher}/t{aUsedToken}） → {aPath}");
+
+            // 自動分享（同 OpPlace）：貼圖成功 → 全景 view → 酒館帶圖訊息 → Discord
+            if (aActual > 0)
+                await TrySharePreview(iArgs, aPersona, aScript,
+                    $"🧊 {aPersona} 貼圖入 3D（{iOp}）：{aActual} voxels @({aAt})");
+        }
+
+        // ===========================================================
+        // 區塊：落子後的自動預覽分享（Tim 2026-08-20 拍板）
+        // 物理意義：產物剛落地是最值得被看見的時刻 —— 渲一張全景 view、以落子者身分發進酒館
+        //          （UCL_TavernImageShare 走完整 Cmd_Tavern 管線），Discord 由 mirror 的附件分支接手。
+        //          預覽檔複製到 previews/share_*.png（獨立檔名）—— _last_view.png 是共用畫布，
+        //          下一次 view 就會蓋掉它，refs 指著它等於指著一張會變的圖。
+        // 數值影響：--arg share=false 顯式關閉；任何失敗只 LogWarning —— 錢已扣、voxel 已落，
+        //          分享失敗不能讓主動作看起來失敗。previews/ 是臨時渲染檔，不入版控。
+        // ===========================================================
+        async UniTask TrySharePreview(Dictionary<string, string> iArgs, string iPersona, string iScript, string iBody)
+        {
+            if (GetArg(iArgs, "share", "true").Trim().ToLowerInvariant() == "false") return;
+            try
+            {
+                var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", $"\"{iScript}\" view", UCL_RepoPath.RepoRoot,
+                    PROC_TAG, nameof(Cmd_Sculpture), ENGINE_TIMEOUT_MS);
+                string aViewPng = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Sculpture", "_last_view.png");
+                if (aExit != 0 || !File.Exists(aViewPng))
+                {
+                    Debug.LogWarning($"[Sculpture] 分享預覽渲染失敗（exit={aExit}，落子不受影響）");
+                    return;
+                }
+                string aDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Sculpture", "previews");
+                Directory.CreateDirectory(aDir);
+                string aSharePng = Path.Combine(aDir, $"share_{DateTime.Now:yyyyMMdd_HHmmssfff}.png");
+                File.Copy(aViewPng, aSharePng, true);
+
+                var aDetail = new ChatTavern.UCL_StringResult();
+                bool aOk = await ChatTavern.UCL_TavernImageShare.PostAsync(
+                    "tavern", iPersona, iBody, aSharePng, "sculpt-share", aDetail);
+                if (!aOk) Debug.LogWarning($"[Sculpture] 預覽分享未發出（落子不受影響）：{aDetail.Value}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Sculpture] 預覽分享例外（落子不受影響）：{e.Message}");
+            }
         }
 
         // ===========================================================

@@ -1053,6 +1053,68 @@ def cmd_place(args):
     print(f"  canvas_latest: {P.latest_png}")
     print(f"  canvas_latest_t: {P.latest_t_png} (透明變體)")
 
+    # 步驟 9：自動分享預覽（Tim 2026-08-20 拍板；--no-share 可關）
+    if not getattr(args, "no_share", False):
+        _share_place_preview(P, persona, pixels, n, event_uuid)
+
+
+# ───────────────────────────── 自動分享 ─────────────────────────────
+# 區塊職責：落點後把預覽圖發進酒館（帶 refs）→ mirror daemon 的附件分支自動上 Discord。
+# 物理意義／設計取捨（每一條都是真坑，不是風格偏好）：
+#   · **fire-and-forget（run_cmd submit，不 wait）** —— canvas.py 常被 FreeTimeActivity
+#     op=step 從 Editor 端代跑：place 若「等」一個 Tavern Cmd 跑完，就是 Editor 等 python、
+#     python 等 Editor 的自鎖。submit 只入列不等執行結果。
+#   · **--lane share** —— 同 persona 的主 lane 可能正被「代跑中的那個 Cmd」佔著，
+#     submit 前置的 ensure_idle 會空等；share 子 lane 有自己的 queue 與 running-lock。
+#   · **預覽存 previews/ 獨立檔名** —— canvas_latest / _last_view 是共用畫布檔，下一次操作
+#     就被蓋掉，refs 指共用檔等於指一張會變的圖。previews/ 是臨時渲染，不入版控。
+#   · **任何失敗只警告不失敗** —— 錢已扣、像素已落，分享失敗不能讓 place 看起來失敗。
+# 數值影響：多一張 ≤512px 的 png、一筆 share lane 的 queue 條目；不動畫布資料與帳。
+def _share_place_preview(P: Paths, persona: str, pixels: list, n: int, event_uuid: str):
+    import subprocess
+    try:
+        from PIL import Image as _Img
+        xs = [px["x"] for px in pixels]
+        ys = [px["y"] for px in pixels]
+        margin = 8
+        x1 = max(0, min(xs) - margin)
+        y1 = max(0, min(ys) - margin)
+        x2 = min(CANVAS_W, max(xs) + margin + 1)
+        y2 = min(CANVAS_H, max(ys) + margin + 1)
+        buf, _mask = build_buffer(P, with_mask=True)   # place 剛更新過快取，這裡是快取路徑
+        img = buffer_to_image(buf).crop((x1, y1, x2, y2))
+        # 放大到最長邊 ~512（NEAREST 保像素硬邊）—— 不放大的話幾顆像素在 Discord 上是一粒沙
+        scale = max(1, min(16, 512 // max(img.width, img.height)))
+        if scale > 1:
+            img = img.resize((img.width * scale, img.height * scale), resample=_Img.NEAREST)
+        prev_dir = P.root / "previews"
+        prev_dir.mkdir(parents=True, exist_ok=True)
+        prev_path = prev_dir / f"share_{utcnow().strftime('%Y%m%dT%H%M%S')}_{event_uuid}.png"
+        img.save(str(prev_path))
+
+        # refs 慣例＝repo 相對路徑；repo root 走共用 resolver（路徑該被傳遞，不該被推導）
+        from _lib.ucl_paths import repo_root
+        rel = prev_path.resolve().relative_to(Path(repo_root()).resolve()).as_posix()
+
+        body = (f"🎨 {persona} 在畫布 ({min(xs)},{min(ys)})–({max(xs)},{max(ys)}) "
+                f"放了 {n} 顆像素（預覽 ×{scale}）")
+        argv = [sys.executable, str(_HERE / "run_cmd.py"),
+                "--persona", persona, "--lane", "share",
+                "submit", "Tavern", "--ack-timeout", "10",
+                "--arg", "op=post", "--arg", "room=tavern",
+                "--arg", f"persona={persona}",
+                "--arg", f"body={body}",
+                "--arg", f"refs={rel}",
+                "--arg", 'meta={"tag":"canvas-share"}']
+        # argv list 直接 exec，不經 shell —— body 含括號/dash 都不會被解讀
+        r = subprocess.run(argv, capture_output=True, encoding="utf-8", errors="replace", timeout=30)
+        if r.returncode != 0:
+            print(f"⚠ 分享未入列（放點不受影響）：{((r.stdout or '') + (r.stderr or ''))[-300:]}", file=sys.stderr)
+            return
+        print(f"  share       : 預覽已入列酒館（{rel}）—— Editor 接手後發文，Discord 由 mirror 附掛")
+    except Exception as e:
+        print(f"⚠ 分享失敗（放點不受影響）：{e}", file=sys.stderr)
+
 
 # ───────────────────────────── cache ─────────────────────────────
 # 區塊職責：讓「快取現在走哪一路、什麼時候會刷新」看得見 —— 不用讀 code 也不用猜。
@@ -1558,6 +1620,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--agent", default=None,
                    help="決定扣哪個 bank（省略＝由 --persona 反推所屬 agent；反推失敗會拒絕，不 default）")
     p.add_argument("--pay", choices=["auto", "freetime", "voucher", "token"], default="auto")
+    p.add_argument("--no-share", action="store_true",
+                   help="不自動發預覽圖進酒館（預設會發：落點 bounding box 裁圖 → 酒館帶 refs → Discord 由 mirror 附掛）")
     p.set_defaults(func=cmd_place)
 
     # view

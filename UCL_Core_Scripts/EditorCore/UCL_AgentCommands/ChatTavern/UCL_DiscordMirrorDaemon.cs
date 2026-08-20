@@ -772,6 +772,41 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 物理意義：多房 mirror 進同頻道時沒 header 分不清來源；超長 body 切 chunk 順序送
         //          （對齊 python：首條帶 title + part 1/N 標記，續條帶「seq X 續 part i/N」標記）。
         // 數值影響：回傳 list（≥1 條）；caller 首條 StartPost、餘下掛 pendingContents 逐條續發。
+        // 區塊職責：從訊息 refs 收出「可以當 Discord 附件上傳」的本地圖檔（絕對路徑清單）。
+        // 物理意義：refs.path 是 repo 相對路徑（inbound 附件落地、繪圖分享都是這個形）——
+        //          只收圖片副檔名、檔案實存、單檔 ≤24MB（Discord 免費上限留餘裕）、每則最多 4 張
+        //          （多圖訊息極罕見；超過的部分 log 出聲不靜默丟）。
+        // 數值影響：回空清單 ⇒ 呼叫端照舊走純文字 StartPost，行為與本功能加入前逐位元相同。
+        static readonly string[] IMAGE_REF_EXTS = { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
+        const long MAX_ATTACH_BYTES = 24L * 1024 * 1024;
+        const int MAX_ATTACH_FILES = 4;
+
+        static List<string> CollectImageRefFiles(UCL_ChatMessage msg)
+        {
+            var aOut = new List<string>();
+            if (msg?.refs == null || msg.refs.Count == 0) return aOut;
+            string aRoot = UCL_RepoPath.RepoRoot;
+            foreach (var aRef in msg.refs)
+            {
+                string aRel = aRef?.path;
+                if (string.IsNullOrWhiteSpace(aRel)) continue;
+                string aExt = System.IO.Path.GetExtension(aRel).ToLowerInvariant();
+                if (Array.IndexOf(IMAGE_REF_EXTS, aExt) < 0) continue;
+                string aAbs;
+                try { aAbs = System.IO.Path.GetFullPath(System.IO.Path.Combine(aRoot, aRel)); }
+                catch { continue; }
+                if (!System.IO.File.Exists(aAbs)) continue;
+                try { if (new System.IO.FileInfo(aAbs).Length > MAX_ATTACH_BYTES) continue; } catch { continue; }
+                if (aOut.Count >= MAX_ATTACH_FILES)
+                {
+                    Debug.LogWarning($"[DiscordMirror] 附件超過 {MAX_ATTACH_FILES} 張上限，略過：{aRel}");
+                    continue;
+                }
+                aOut.Add(aAbs);
+            }
+            return aOut;
+        }
+
         static List<string> BuildContents(MirrorConfigBlock cfg, string room, UCL_ChatMessage msg, string username, string routingTag, string body)
         {
             string header = (cfg.title_template ?? "")
@@ -894,7 +929,24 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         string body = UCL_DiscordIdentityResolver.RewriteMentions(msg.body ?? "");
                         // follow-up#1：超長 body 切 chunk — 首條即發，餘下掛 pendingContents 由 DrainInFlight 順序續發
                         var contents = BuildContents(cfg, room, msg, username, kv.Value, body);
-                        var req = UCL_DiscordWebhookClient.StartPost(url, contents[0], username, avatarUrl, null);
+                        // 帶圖訊息 → 首段改走 multipart 把檔案實體上傳（附件掛首段；續 chunk 仍純文字）。
+                        // 物理意義：refs 是 repo 相對路徑，Discord 端看不到本機檔案 —— 不上傳的話
+                        //          鏡像出去的只有一行路徑字串，圖等於沒到（2026-08-20 Tim 拍板接通）。
+                        // 失敗語意不變：multipart 也是 UnityWebRequest，2xx 才記 cursor，重試會重收檔案清單。
+                        var attachFiles = CollectImageRefFiles(msg);
+                        UnityEngine.Networking.UnityWebRequest req;
+                        if (attachFiles.Count > 0)
+                        {
+                            req = UCL_DiscordWebhookClient.StartPostMultipart(url, contents[0], username, avatarUrl, null,
+                                attachFiles, out var attachSkipped);
+                            // 有圖卻沒帶上的要出聲 —— 靜默少一張圖的樣子跟「本來就沒圖」一樣
+                            foreach (var s in attachSkipped)
+                                Debug.LogWarning($"[DiscordMirror] 附件跳過（{room} uuid={msg.uuid}）：{s}");
+                        }
+                        else
+                        {
+                            req = UCL_DiscordWebhookClient.StartPost(url, contents[0], username, avatarUrl, null);
+                        }
                         if (req != null)
                             s_InFlight.Add(new MirrorInFlight
                             {

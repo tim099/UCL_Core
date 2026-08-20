@@ -433,6 +433,136 @@ namespace UCL.Core.EditorLib.AgentCommands
         }
 
         // ===========================================================
+        // 區塊職責：persona 的**銀行綁定**讀寫（`letters/<persona>/bank/<currencyId>.md`）。
+        // 物理意義：Tim 2026-08-20 拍板 —— 「這個 persona 在某個區域用哪個帳號」是**該區域的宣告**，
+        //          而帳號 id ＝ agent id（「bank id」那套獨立命名空間退場）。
+        //          檔案跟著 persona 走（letters repo），鍵是區域 ID ⇒ 同一份 letters 可以
+        //          同時服務多個專案而不對撞（一區一檔的理由見 UCL_LettersPath.BankDirName 區塊）。
+        // 數值影響：**讀寫刻意不對稱**（指示 ⑪）——
+        //          讀：① 本區檔 ② 本區缺檔則退其他區域的檔（跨區借用，回傳 oSource 標明借自哪一區；
+        //              多個候選**不挑**，回空並標 ambiguous）③ 都沒有 ⇒ 回空（央行＋ErrorLog 由呼叫端做，
+        //              那是 Treasury 的職責，不是本接縫的）。
+        //          寫：**只准寫本區那一個檔**。不清理、不觸碰其他區域的檔 ——
+        //          那是別的專案的綁定，刪掉的症狀是對方下次登入「沒有綁定」，而原因指不到這裡。
+        // ⚠ `iCurrencyId` 由呼叫端提供（`UCL_CentralBankSettings.CurrencyId`），本接縫**不自己去問** ——
+        //   低層接縫反向依賴 Treasury 設定會讓依賴方向反過來，而且測試時無法餵不同區域。
+        // ===========================================================
+
+        /// <summary>`GetBankAccount` 的來源標記：本區命中時＝該區域 ID；跨區借用時＝借出的區域 ID。</summary>
+        public const string BankSourceAbsent = "absent";
+        /// <summary>多個其他區域都有值 —— **不挑一個**，回空並由呼叫端處置。</summary>
+        public const string BankSourceAmbiguous = "ambiguous";
+
+        /// <summary>
+        /// 讀 persona 在指定區域使用的帳號（＝agent id）。找不到回空字串。
+        /// </summary>
+        /// <param name="oSource">
+        /// 命中的區域 ID（本區或借用來源）／<see cref="BankSourceAbsent"/>／<see cref="BankSourceAmbiguous"/>。
+        /// ⚠ **`oSource != iCurrencyId` 就代表這不是本區的宣告** —— 呼叫端必須讓它可見，
+        /// 否則「本區真的綁了」與「借用別區的」在輸出上同形，而前者才是收斂目標。
+        /// </param>
+        /// <param name="oNote">給人看的補充（借用哪一區／有哪幾個候選）。無事時為空字串。</param>
+        public static string GetBankAccount(string iPersona, string iCurrencyId,
+            out string oSource, out string oNote)
+        {
+            oSource = BankSourceAbsent; oNote = "";
+            if (string.IsNullOrWhiteSpace(iPersona) || string.IsNullOrWhiteSpace(iCurrencyId)) return "";
+
+            // ① 本區
+            string aOwn = ReadBankFile(UCL_LettersPath.BankField(iPersona, iCurrencyId));
+            if (!string.IsNullOrEmpty(aOwn)) { oSource = iCurrencyId; return aOwn; }
+
+            // ② 其他區域（跨區借用）
+            string aDir = UCL_LettersPath.BankDir(iPersona);
+            if (!Directory.Exists(aDir)) return "";
+            var aHits = new List<KeyValuePair<string, string>>();
+            string[] aFiles;
+            try { aFiles = Directory.GetFiles(aDir, "*.md"); }
+            catch (Exception e)
+            {
+                // 讀不到要出聲：靜默回空會把「讀取失敗」講成「沒有綁定」，
+                // 而後者的處置是落央行 —— 一個看起來合理的錯誤處置，掛在錯誤的原因上。
+                Debug.LogWarning($"[PersonaProfile] 掃 bank/ 失敗（{iPersona}）：{e.Message}");
+                return "";
+            }
+            foreach (var f in aFiles)
+            {
+                string aRegion = Path.GetFileNameWithoutExtension(f);
+                if (string.Equals(aRegion, iCurrencyId, StringComparison.Ordinal)) continue;
+                string v = ReadBankFile(f);
+                if (!string.IsNullOrEmpty(v)) aHits.Add(new KeyValuePair<string, string>(aRegion, v));
+            }
+            if (aHits.Count == 1)
+            {
+                oSource = aHits[0].Key;
+                oNote = $"本區（{iCurrencyId}）無綁定，借用區域 `{aHits[0].Key}` 的帳號";
+                return aHits[0].Value;
+            }
+            if (aHits.Count > 1)
+            {
+                // 不挑一個 —— 判準同 §8.1 撞名：這裡不替你挑。
+                var aList = new List<string>();
+                foreach (var kv in aHits) aList.Add($"{kv.Key}={kv.Value}");
+                oSource = BankSourceAmbiguous;
+                oNote = $"本區（{iCurrencyId}）無綁定，而其他區域有 {aHits.Count} 個候選："
+                      + string.Join("／", aList.ToArray()) + " —— 拒絕挑選，請顯式指定";
+            }
+            return "";
+        }
+
+        /// <summary>讀一個綁定檔：裸值 ＋ 換行（同 profile/ 的格式）。缺檔／空檔回空字串。</summary>
+        static string ReadBankFile(string iPath)
+        {
+            try
+            {
+                if (!File.Exists(iPath)) return "";
+                return File.ReadAllText(iPath).Trim();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[PersonaProfile] 讀綁定檔失敗（{iPath}）：{e.Message}");
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// 寫 persona 在**本區**的綁定（原子寫）＋審計一行。actor / reason 必填（§8.6 同一條規矩）。
+        /// </summary>
+        public static bool WriteBankAccount(string iPersona, string iCurrencyId, string iAccount,
+            string iActor, string iReason, out string oError)
+        {
+            oError = "";
+            if (string.IsNullOrWhiteSpace(iPersona)) { oError = "persona 必填"; return false; }
+            if (string.IsNullOrWhiteSpace(iCurrencyId)) { oError = "currencyId 必填"; return false; }
+            if (string.IsNullOrWhiteSpace(iAccount)) { oError = "account 必填 —— 要清空綁定請刪檔（同 BUG-16 的三態問題，不在本接縫解）"; return false; }
+            if (string.IsNullOrWhiteSpace(iActor) || string.IsNullOrWhiteSpace(iReason))
+            {
+                oError = "actor 與 reason 必填（§8.6）—— 寫入要能回答「是誰、憑什麼」；匿名寫入不收";
+                return false;
+            }
+            string aAccount = iAccount.Trim();
+            if (aAccount.IndexOf('\n') >= 0 || aAccount.IndexOf('\r') >= 0)
+            { oError = "account 不可含換行 —— 一檔一值"; return false; }
+
+            try
+            {
+                string aPath = UCL_LettersPath.BankField(iPersona, iCurrencyId);
+                Directory.CreateDirectory(Path.GetDirectoryName(aPath));
+                string aTmp = aPath + ".tmp";
+                File.WriteAllText(aTmp, aAccount + "\n", new System.Text.UTF8Encoding(false));
+                if (File.Exists(aPath)) File.Delete(aPath);
+                File.Move(aTmp, aPath);
+            }
+            catch (Exception e)
+            {
+                oError = e.Message;
+                return false;
+            }
+            AppendAudit(iPersona, UCL_LettersPath.BankDirName + "/" + iCurrencyId, iActor, iReason);
+            return true;
+        }
+
+        // ===========================================================
         // 區塊職責：讓 legacy 舊源在 Phase 1 之後**只出不進**（§8.4 鐵則）。
         // 物理意義：`WriteRaw` 的呼叫端（morning patch-write／goodnight ×2）形狀都是
         //          `GetRaw → 改活體欄 → WriteRaw 整檔`。合併層上線後那個「整檔」裡的

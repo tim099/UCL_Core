@@ -78,6 +78,35 @@ namespace UCL.Core.EditorLib
             => Path.Combine(ProfileDir(iPersona), iField + ".md");
 
         // ===========================================================
+        // 區塊職責：persona 的**銀行綁定**目錄（`letters/<persona>/bank/`）—— 一個區域一個檔。
+        // 物理意義：Tim 2026-08-20 拍板 —— 銀行（酒館系統）每個專案有自己的區域 ID（貨幣名，
+        //          `UCL_CentralBankSettings.CurrencyId`），而 persona 在該區域使用的**帳號**
+        //          （＝agent id）存在自己的 letters 底下：`bank/<CurrencyId>.md`。
+        //          🩸 **為什麼一區一檔是硬需求而不是風格**：persona 的 letters 是**同一個 git repo
+        //            被多個專案掛著**（2026-08-20 實測 LY 與 D:/Unity/Bar 的 letters/kiara
+        //            root commit 與 HEAD 完全相同）⇒ 存「單一值」的檔會被兩個專案**互相覆寫**，
+        //            而症狀是「另一個專案的帳號」—— 一個完全合法的字串，沒有任何一層會出聲。
+        // ⚠ 讀寫不對稱（Tim 2026-08-20 指示 ⑪）：**寫**只准寫本專案 `CurrencyId` 那一個檔；
+        //   **讀**在本區缺檔時可以退到 `bank/` 底下其他區域的檔（跨區借用，但要出聲，
+        //   且多個候選時不准挑）。⛔ **絕不清理不認識的檔** —— 那是別的專案的綁定，
+        //   刪掉的症狀是對方下次登入「沒有綁定」（落央行＋ErrorLog），而錯的原因指不到這裡。
+        // ⚠ 對側契約：python 端**刻意沒有對偶**（同 profile/ 的理由，見上一個區塊）。
+        // 數值影響：純字串組合，不碰 IO（建目錄由寫入端負責）。
+        // ===========================================================
+        public const string BankDirName = "bank";
+
+        /// <summary>某 persona 的銀行綁定目錄（`letters/&lt;persona&gt;/bank/`）。</summary>
+        public static string BankDir(string iPersona) => Path.Combine(PersonaDir(iPersona), BankDirName);
+
+        /// <summary>某 persona 在某區域的綁定檔（`letters/&lt;persona&gt;/bank/&lt;currencyId&gt;.md`）。</summary>
+        /// <remarks>
+        /// `iCurrencyId` 是**檔名**，呼叫端必須先過 `UCL_CentralBankSettings.IsValidCurrencyId`。
+        /// 本類不驗 —— 它只負責版面；驗在設定的入口（那裡才有「拒寫並出聲」的語意）。
+        /// </remarks>
+        public static string BankField(string iPersona, string iCurrencyId)
+            => Path.Combine(BankDir(iPersona), iCurrencyId + ".md");
+
+        // ===========================================================
         // 區塊職責：一份 Cmd 回傳檔的完整路徑。
         // 物理意義：檔名 `<cmd>_<step>.md`，**不再帶 `_` 前綴** —— 目錄本身已經說了它是什麼。
         //          「同一個 (persona, cmd, step) 永遠是同一格、每次覆寫」這個語意由**固定檔名**承載

@@ -123,7 +123,7 @@ namespace UCL.Core.EditorLib.Page
         List<string> m_ComicDisplayOptions = new List<string>();
 
         // 區塊職責：捐贈表單 state
-        // 物理意義：Tim 輸入要捐的書 slug + 捐贈者 bank id + token 數，按「捐贈」後 spawn library.py donate
+        // 物理意義：Tim 輸入要捐的書 slug + 捐贈者 agent id + token 數，按「捐贈」後 spawn library.py donate
         string m_DonateBook = "";
         string m_DonateDonor = "claude-da-xiaojie";
         string m_DonateTokens = "100";

@@ -45,7 +45,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string requesterAgent, string requesterPersona,
             string currency = "tavern_token")
         {
-            if (string.IsNullOrWhiteSpace(targetBank)) throw new ArgumentException("target_bank 必填（收款 bank id，不是 persona 名）");
+            if (string.IsNullOrWhiteSpace(targetBank)) throw new ArgumentException("target_bank 必填（收款 agent id，不是 persona 名）");
             if (amount <= 0) throw new ArgumentException($"amount 必 > 0（傳入 {amount}）");
             if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("reason 必填 —— 審批者要有東西可判");
 

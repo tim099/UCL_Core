@@ -1088,13 +1088,13 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label("agent 名", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
                     string newAgent = GUILayout.TextField(m_NewAgentDraft ?? "", UCL_GUIStyle.TextFieldStyle,
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    // agent 名一改就同步建議 bank id（使用者仍可自行覆寫）
+                    // agent 名一改就同步建議 agent id（使用者仍可自行覆寫）
                     if (newAgent != m_NewAgentDraft)
                     {
                         m_NewAgentDraft = newAgent;
                         m_NewAgentBankDraft = newAgent;
                     }
-                    GUILayout.Label("bank id", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
+                    GUILayout.Label("agent id", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
                     m_NewAgentBankDraft = GUILayout.TextField(m_NewAgentBankDraft ?? "", UCL_GUIStyle.TextFieldStyle,
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
                     GUILayout.Label("種子額度", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
@@ -1102,7 +1102,7 @@ namespace UCL.Core.EditorLib.Page
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(60)));
                     GUILayout.FlexibleSpace();
                 }
-                GUILayout.Label("bank id 是 token 帳戶名（現有慣例：claude-code→cc / antigravity→a / Zeta→zeta）。"
+                GUILayout.Label("agent id 是 token 帳戶名（現有慣例：claude-code→cc / antigravity→a / Zeta→zeta）。"
                     + "種子額度 0 = 只登記不注入 token。agent 已存在時會**覆蓋** bank 映射並提示。", WrapLabelStyle);
             }
         }
@@ -1253,7 +1253,7 @@ namespace UCL.Core.EditorLib.Page
             string agent = (m_NewAgentDraft ?? "").Trim();
             string bank = (m_NewAgentBankDraft ?? "").Trim();
             if (string.IsNullOrEmpty(agent) || string.IsNullOrEmpty(bank))
-            { SetResult("❌ 建立 agent 失敗：agent 名 / bank id 不可為空"); return; }
+            { SetResult("❌ 建立 agent 失敗：agent 名 / agent id 不可為空"); return; }
             if (!int.TryParse((m_NewAgentSeedDraft ?? "0").Trim(), out int seed) || seed < 0)
             { SetResult($"❌ 建立 agent 失敗：種子額度需為非負整數（收到 '{m_NewAgentSeedDraft}'）"); return; }
 

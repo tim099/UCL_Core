@@ -447,7 +447,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
         // 物理意義: 走 Cmd_Tavern.Op_Post 統一路徑, 自動繼承 glossary auto-attach / Discord mirror / WriteLastView
         // 數值影響: fire-and-forget UniTask, 不阻塞 Op_Propose / Op_Revert 主流程; 失敗 swallow 不擋 rule 操作
         // 安全: alter-pacing-bypass:true 防被 alter pair 300s 配對延遲拖住; sender 用 revertedBy/createdBy
-        //       (bank id 必在 identities.json — propose/revert 前已驗 balance, 該 bank 必存在)
+        //       (agent id 必在 identities.json — propose/revert 前已驗 balance, 該 bank 必存在)
         // ===========================================================
         private static void BroadcastToTavern(string senderId, string body, string tag)
         {

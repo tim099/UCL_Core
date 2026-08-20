@@ -528,7 +528,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          （走 §8.6 寫入接縫，actor+reason+審計）⇒ **那是這條綁定的事實來源，本檔只讀它**。
         //   🩸 2026-08-20 Tim 抓到：此前這裡呼叫 `UCL_TreasuryAccountResolver.Resolve(persona)`
         //      取 `AccountId`（＝bank）當顯示身分。2026-08-14 寫下時那條解析是 persona→agent→bank，
-        //      而當時的 bank id 剛好也是 `identities.json` 的 id（`zeta`／`cc`）⇒ 看起來對。
+        //      而當時的 agent id 剛好也是 `identities.json` 的 id（`zeta`／`cc`）⇒ 看起來對。
         //      §8.1 反向登記把解析改成「bank 端宣告誰是自己的人」之後，顯示身分就變成 **bank 粒度**：
         //      同一家 bank 的所有 persona 顯示成同一個名字。
         //      實測 basecamp 與 meadow（bank `cc`）的訊息 `sender_name` 都是 **`crest-001`**

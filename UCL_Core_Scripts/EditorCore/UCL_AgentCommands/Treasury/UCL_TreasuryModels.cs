@@ -113,7 +113,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public string status;              // "pending" / "approved" / "rejected" / "cancelled"
 
         // ---- 請款內容（建立後不可變）----
-        public string target_bank;         // 收款帳戶（bank id，例 cc / zeta / Myth）— 顯式宣告，不推斷
+        public string target_bank;         // 收款帳戶（agent id，例 cc / zeta / Myth）— 顯式宣告，不推斷
         public int amount;                 // 正整數
         public string currency = "tavern_token";
         public string reason;              // 為什麼該付這筆（給人看的，核准與否靠它判斷）

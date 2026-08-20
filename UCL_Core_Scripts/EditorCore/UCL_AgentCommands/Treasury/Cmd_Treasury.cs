@@ -308,7 +308,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         //          請款單填補中間：**有單據、可審批、可駁回、可追溯**。
         // 數值影響：op=request / request_cancel 完全不動餘額（純檔案）；
         //          錢只在 Tim 於後台按「核准」時才由 UCL_TreasuryRequestStore.Approve 產生。
-        // 邊界：target_bank 必須是**bank id 不是 persona 名** —— 2026-07-31 血證：
+        // 邊界：target_bank 必須是**agent id 不是 persona 名** —— 2026-07-31 血證：
         //      commit hook 拿貼文 sender 當帳戶，summit 帶 persona 名 `summit`（bank 應為 `zeta`）
         //      → 錢進影子帳戶。這裡改為顯式宣告 + 後台人眼二次確認，不做任何推斷。
         // ===========================================================
@@ -317,7 +317,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string targetBank = GetArg(args, "target_bank", "");
             string reason = GetArg(args, "reason", "");
             string amountRaw = GetArg(args, "amount", "");
-            if (string.IsNullOrEmpty(targetBank)) { Cmd_Tavern_Helpers.RejectLastOp("request 缺少 target_bank（收款 bank id，例 cc / zeta / Myth —— 不是 persona 名）"); return; }
+            if (string.IsNullOrEmpty(targetBank)) { Cmd_Tavern_Helpers.RejectLastOp("request 缺少 target_bank（收款 agent id，例 cc / zeta / Myth —— 不是 persona 名）"); return; }
             if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp("request 缺少 reason —— 審批者要有東西可判，不接受無理由請款"); return; }
             if (!int.TryParse(amountRaw, out int amount) || amount <= 0)
             { Cmd_Tavern_Helpers.RejectLastOp($"request 的 amount 需為正整數（收到 '{amountRaw}'）"); return; }
@@ -361,8 +361,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string toBank = GetArg(args, "to_bank", "");
             string reason = GetArg(args, "reason", "");
             string amountRaw = GetArg(args, "amount", "");
-            if (string.IsNullOrEmpty(fromBank)) { Cmd_Tavern_Helpers.RejectLastOp("transfer_request 缺少 from_bank（出款 bank id，不是 persona 名）"); return; }
-            if (string.IsNullOrEmpty(toBank)) { Cmd_Tavern_Helpers.RejectLastOp("transfer_request 缺少 to_bank（收款 bank id）"); return; }
+            if (string.IsNullOrEmpty(fromBank)) { Cmd_Tavern_Helpers.RejectLastOp("transfer_request 缺少 from_bank（出款 agent id，不是 persona 名）"); return; }
+            if (string.IsNullOrEmpty(toBank)) { Cmd_Tavern_Helpers.RejectLastOp("transfer_request 缺少 to_bank（收款 agent id）"); return; }
             if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp("transfer_request 缺少 reason —— 審批者要有東西可判"); return; }
             if (!int.TryParse(amountRaw, out int amount) || amount <= 0)
             { Cmd_Tavern_Helpers.RejectLastOp($"transfer_request 的 amount 需為正整數（收到 '{amountRaw}'）"); return; }

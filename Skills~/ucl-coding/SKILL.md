@@ -283,6 +283,41 @@ run_cmd.py --persona <me> run Invoke --arg target='$imp' --arg member=Import
 run_cmd.py --persona <me> run Invoke --arg target='$imp' --arg member=Save   # ← 漏掉這步 = 改動只在記憶體
 ```
 
+### 🖱 觸發 Editor 頁的 UI 按鍵（Tim 2026-08-20 拍板）
+
+**後台頁的按鈕動作也能從 CLI 觸發** —— 不必開 Unity 用滑鼠按。
+每個 `UCL_EditorPage` 子類都有靜態 factory `public static XXX Create()`，拿它當入口：
+
+```bash
+# ① 建頁面實例並存成變數
+run_cmd.py --persona <me> run Invoke     --arg type=UCL.Core.EditorLib.Page.UCL_BankAdminPage --arg member=Create --arg storeAs=page
+
+# ② 用 $page 呼叫按鍵背後的方法（多半是 private instance method ⇒ 要 nonPublic=true）
+run_cmd.py --persona <me> run Invoke     --arg target='$page' --arg member=LoadData --arg nonPublic=true
+
+# 有參數的照常帶 paramTypes / args
+run_cmd.py --persona <me> run Invoke --arg target='$page'     --arg member=IsAgentBankRemoveArmed --arg paramTypes=System.String --arg args=Zeta --arg nonPublic=true
+```
+
+實測讀數（2026-08-20，`UCL_BankAdminPage`）：
+`Create` → `OK (UCL.Core.EditorLib.Page.UCL_BankAdminPage)`／`LoadData` → `OK (void / null)`／
+`IsAgentBankRemoveArmed("Zeta")` → `OK (System.Boolean) = False`。
+
+⚠ **static 成員仍然要用 `type=`，不能用 `target=$page`。**
+🩸 血證（同日）：`SafeBalance` 是 static，我用 `target=$page` 呼叫 ⇒ `method not found: …SafeBalance(System.String)`。
+改用 `type=` ⇒ `OK (System.String) = 2765`。**這正是本節下方「踩過的幾條」早就寫過的那一條，我照樣踩了。**
+
+⚠ **限制：依賴輸入框草稿（`m_XxxDraft`）的按鍵無法直接觸發** ——
+`kind=field` 是**讀取**，Cmd_Invoke 沒有寫 private field 的入口。
+⇒ 要讓這種按鍵可測，把邏輯層抽成「吃參數的方法」，UI 那層只負責把 draft 餵進去。
+（那本來就該做：按鍵動作與畫面狀態綁死的話，除了人手按之外沒有任何驗證方式。）
+
+⚠ 而且 **Cmd 回 Success 不代表你讀到的是這一次的回傳值** ——
+回傳印在 Editor log，`grep … | tail -1` 在**這一次失敗**時會安靜地給你**上一次**的那行。
+🩸 血證（同日）：第二次呼叫失敗，我 tail 到的是第一次的 `Boolean=False`，
+而抓到它的唯一線索是**型別對不上**（那個方法該回字串）。
+⇒ 判準：先看 run_cmd 有沒有印 `✓ Cmd completed`，**再**去讀 log 那行；兩者要一起看。
+
 ### 踩過的幾條
 
 - **`Save()` 要自己叫。** 改完記憶體不落盤，下次重載就沒了，而且**不會報錯**。

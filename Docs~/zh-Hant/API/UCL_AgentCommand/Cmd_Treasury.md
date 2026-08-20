@@ -40,7 +40,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Treasury \
 > 附帶提醒（對有 `ArgsSpec` 的 Cmd 才成立）：改過宣告要跑 `run_cmd.py run ExportCmdSchema`，
 > 否則 `source_hash` 不符 → 全鏈預檢**靜默降級為不擋**。
 
-### 1.1 帳戶欄位填 **bank id**，不是 persona 名
+### 1.1 帳戶欄位填 **agent id**，不是 persona 名
 
 > [!IMPORTANT]
 > `account` / `target_bank` / `from_bank` / `to_bank` 的值域是 **bank / 帳戶 id**。

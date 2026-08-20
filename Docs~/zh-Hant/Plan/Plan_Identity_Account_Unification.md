@@ -521,6 +521,19 @@ CLI 對偶：`op=rebind_region from= to= actor= reason= [dry_run=0]`（**預設 
 
 ⇒ **四段（預檢／複製／翻設定／刪舊區）與審計全部實測通過，內容零漂移。**
 
+**而且是 round-trip 過的**：Tim 隨後又按回 `Florin`（`BTC` → `Florin`）。兩次改名之後：
+
+| 驗什麼 | 讀數 |
+|---|---|
+| 檔案 | 21 位的 `bank/` 只剩 `Florin.md`（`BTC.md` 全刪） |
+| 內容 | 逐位與**最初**的 Florin 值相同（kiara=`Myth`／summit=`Zeta`／basecamp=`claude-code`／claude-da-xiaojie=`antigravity`／trailhead=`gemini`／Sirius=`Fed`／Template=`Template`）⇒ **來回一趟零漂移** |
+| 審計鏈完整可對帳 | `bank/Florin` 寫入 **42**（21 首次導出 ＋ 21 搬回）／`bank/Florin ←刪除` **21**／`bank/BTC` 寫入 **21**／`bank/BTC ←刪除` **21**／`bank/_selftest` 1＋1（衝突驗收與清理）⇒ **每一次寫入與刪除都有帳** |
+| 解析端 | `get_bank kiara` → `source=Florin`；問 `BTC` → `source=Florin` ＋ note「本區（BTC）無綁定，借用區域 `Florin` 的帳號」 |
+
+📌 **round-trip 比單向更有鑑別力**：單向只證明「搬得動」，來回一趟證明「搬回來還是原來那個值」——
+而中間經過了兩次「複製 → 翻設定 → 刪舊區」。⇒ 文件裡的「LY ＝ `Florin`」與現況**已重新一致**，
+上一節記的那條落差消滅。
+
 ⚠ **文件與現況的落差要記著**：本 Plan 與 `Bank_Region_Binding_Migration_Workflow` 多處寫
 「LY ＝ `Florin`」，而**現況是 `BTC`**（測試值）。⇒ 要嘛改回 `Florin`（後台按一次，路徑已驗），
 要嘛把文件裡的 `Florin` 全部換成最終值。**兩者都沒做的話，就是一份說著真話的過時文件** ——

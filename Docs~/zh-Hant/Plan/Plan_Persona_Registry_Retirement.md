@@ -4,8 +4,8 @@ slug: persona-registry-retirement
 status: **Phase 0-1 ＋ §8.1 已完工**（2026-08-19）；Phase 2 觀察期進行中，Phase 3-4 未動
 created_at: 2026-08-18T13:55:00Z
 created_by: calli
-last_updated: 2026-08-19
-builders: [summit（Phase 0／§8.5-8.7）, kiara（Phase 1／§8.1／消費端收斂）]
+last_updated: 2026-08-20
+builders: [summit（Phase 0／§8.5-8.7）, kiara（Phase 1／§8.1／消費端收斂／Phase 2 觀察）]
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
@@ -204,8 +204,8 @@ letters/<persona>/
 |---|---|---|---|
 | **0** | ✅ | 收斂讀寫接縫，消費端全走它 | summit 2026-08-19。`UCL_PersonaProfile.cs` ⇄ `_lib/persona_profile.py`；§8.7 A+B 快照；§8.6 寫入審計（actor+reason 必填） |
 | **1** | ✅ | read-through lazy migration：identity 欄搬進 `letters/<p>/profile/`（一欄一檔） | kiara 2026-08-19。**21/21 人已遷**；`_field_sources` 分布 **profile 150 / absent 18 / legacy 0**；round-trip **168 格 0 不一致**；legacy identity 合併 sha1 `95f8a615…` **遷移前後逐字相同** |
-| **2** | 🚧 | 觀察期（≥ 一週、且要跨過一次全 persona 登入＋一次晚安＋一次發薪） | **2026-08-19 起算**。§8.4 的收斂判準已改成「`source=legacy` 的欄數歸零」，而它**在遷移當天就歸零**（見上）⇒ 觀察期要看的不再是「遷完了沒」，而是**消費端會不會拿到舊值**（見 §4.1 的殘留清單） |
-| **3** | ⬜ | 移除舊路徑分支，`personas/` 從 code 裡消失 | 卡兩件：① §4.1 還有消費端直讀 legacy ② pool 名單的新真相源（`persona_routing` 的 key 集合）要等 Phase 2 之後才切（summit 拍板：Phase 1 期間 `PoolNames` 不動） |
+| **2** | 🚧 | 觀察期（≥ 一週、且要跨過一次全 persona 登入＋一次晚安＋一次發薪） | **2026-08-19 起算**。§8.4 的收斂判準已改成「`source=legacy` 的欄數歸零」，而它**在遷移當天就歸零**（見上）⇒ 觀察期要看的不再是「遷完了沒」，而是**消費端會不會拿到舊值**（見 §4.1 的殘留清單）。**首筆實測：2026-08-20 identity 168 格 tier-2 vs tier-3 分岔 5 格、全部是 `email`（BUG-19，Tim 已窄化 —— 見 §4.3）** |
+| **3** | ⬜ | 移除舊路徑分支，`personas/` 從 code 裡消失 | 卡兩件：① §4.1 還有消費端直讀 legacy —— **2026-08-20 起 python 端已清空**（見 §4.1 末的靜態證明），剩下的是刻意擋著的 C# Treasury 兩支 ② pool 名單的新真相源（`persona_routing` 的 key 集合）要等 Phase 2 之後才切（summit 拍板：Phase 1 期間 `PoolNames` 不動） |
 | **4** | ⬜ | 刪檔，備份靠 git tag 不靠留在樹裡（§5.3） | 等 Phase 3 |
 
 ### 4.1 Phase 1 之後仍直讀 legacy 的消費端（Phase 3 的前置清單）
@@ -224,11 +224,27 @@ letters/<persona>/
 | python `agent_email.load_persona`（＝`agent_model` / `git_commit` / commit-msg hook 的共同瓶頸） | ✅ 走接縫 | kiara `4c0f568`。一處改對四處跟著對 |
 | python `awakening.load_registry` | ✅ 走接縫 | kiara `f8807c5`（Tim 拍板：早安流程本來就走 Cmd，資料由 Cmd 供給；備援只要支援 brief） |
 | python `check_letters_layout` / `sync_letters_gitignore` | ✅ 走 `pool_names()` | kiara `705b6ae`。只讀名單不讀 identity，改的理由是**判準漂移不會有人喊痛** |
-| python `_lib/session_common` | ⬜ | 讀 routing／bank（那幾欄留 legacy 是對的，§8.3）⇒ 正確性上不痛，但入口該統一。收之前要確認呼叫時機是否在 Cmd 內（需 `UCL_PP_SKIP_CMD=1`） |
-| python `tavern_catchup.resolve_owning_agent` | ⬜ | 同上：讀 agent 歸屬，不碰 identity |
+| python `_lib/session_common` | ✅ **整支刪除** | kiara 2026-08-20。**不是收進接縫，是它已經沒有存在理由**：這支是「上班模式全面退役」（`4f48884`）時為了不讓 `stream_watch_session.py` 壞掉才抽出來的工具層，而那支唯一消費端已於 `842801e` 退場（陪看改走 C# `Cmd_StreamWatch`）。全樹 grep：**零 .py／.cs 呼叫端**，其 state 檔 `work_sessions.json` 連檔都不存在。<br>⇒ session 相關的狀態擁有者是 C#／Cmd（Tim 2026-08-20 重申：session 只有 Editor 開著才能跑）—— 這支是遷移前的殘影。**它的正向鏈 bank 解析（`_resolve_bank(agent)`）也隨之消失**，那條與 §8.1 反向登記今日實測 0/21 分岔（初值由現況導出），但它會在「銀行端改了誰屬於誰」時開始說謊 |
+| python `tavern_catchup.resolve_owning_agent` | ✅ 走接縫 | kiara 2026-08-20。改走 `persona_profile.get_field(p,"agent")`，並**移除 `PERSONAS_DIR`**（留著就是邀請下一個人再走直讀；同 `agent_email.persona_path()` 的移除理由）。<br>**呼叫時機兩種都實測**：① CLI 直跑 ⇒ `source=live`（走 Cmd 拿現場值）② 模擬被 wake_brief 載進 Cmd 內部（`UCL_PP_SKIP_CMD=1`）⇒ `source=snapshot`，**不再排第二個 Cmd**。21 人 agent 值與 legacy **0 不一致**；不存在的 persona 回空字串不拋；接縫模組**只載一份**（刻意快取，不重演 BUG-17 的每次 exec）|
 | C# `UCL_TreasuryAccountResolver` / `UCL_BankAdminPage` | ⬜ **刻意擋著** | §8.1 反向登記已落地（見那節），但這兩支的**讀 persona 檔**那部分要跟正向鏈退場一起收，先改只會做一半 |
 
 清單單號：`repo:AgentCommands/BugReports/reports/0018.md`（BUG-18，doc 類，附每項「為什麼今天不痛」）。
+
+#### 靜態證明（§5.2 手法①，kiara 2026-08-20 重跑）
+
+全樹 grep `personas_dir|PERSONAS_DIR|PersonasDir|AwakenInit/personas`（`*.py` / `*.cs`）：
+
+- **python 端已收斂完成** —— 命中只剩四類：接縫本身（`_lib/persona_profile.py`）、
+  路徑解析器（`_lib/ucl_paths.py`）、**寫入端 `awakening.py`**（registry 的擁有者，
+  寫入走 `_freeze_legacy_identity` 只出不進）、以及註解／錯誤訊息裡的字面路徑。
+  **沒有任何 python 讀取端還直指 legacy。**
+- **C# 端剩下的命中都有主**：`UCL_BankAdminPage`（§4.1 刻意擋著，跟正向鏈退場一起收）、
+  `UCL_PersonaAgentAdminPage`（建人／改名的**寫入**落點）、
+  `UCL_PersonaInspectorPage`（只用路徑開檔案總管，不讀欄位）、
+  `UCL_ChatTavernAdminPage`（pool 名單 —— 即 Phase 3 卡點②，`PoolNames` 依 summit 拍板不動）。
+
+⚠ 這個手法抓不到反射／字串拼接／外部腳本（§5.2 已載明）—— 它證明的是「寫在 code 裡的路徑」，
+不是「執行期沒人碰」。後者的判準仍是 Phase 2 觀察期。
 
 ### 4.2 Phase 1 的附帶落地（不在原分期表裡）
 
@@ -249,6 +265,7 @@ letters/<persona>/
 | BUG-16 | `op=set` 無法把欄位還原成 **absent**（三態的第三態寫不出來）⇒ 唯一復原是手動刪檔＝繞過審計。建議 `op=unset` |
 | BUG-17 | 接縫 module 被同一行程**載入三份**（awakening / agent_email / wake_brief 各自 `spec_from_file_location`）⇒ 不帶 `UCL_PP_SKIP_CMD` 時是 3 次 Cmd 往返 |
 | BUG-18 | §4.1 那份殘留清單本身 |
+| BUG-19 | **tier-3 local-parse 會讓 commit trailer 寫出別人的信箱**（不可改產物）。實測 identity 168 格 tier-2/tier-3 分岔 5 格全是 `email`；抽樣 5 人 4 人的 trailer 分岔成「格式合法但屬於別人」的地址，零警告。根因＝`resolve_email` 不傳遞接縫的 `_source`。<br>⚠ **Tim 2026-08-20 窄化**：本地備援**在正常流程中不該被讀到** —— tier-3 只在 Editor 不可用時觸發，而正常提交流程（公告領薪）本來就要 Editor。⇒ 唯一活路是 **fresh clone ＋ Unity 從未開過 ＋ 走 `--no-announce` 或裸 `git commit` 觸發 commit-msg hook**，**目前實務上不會遇到**。⇒ 不擋 Phase 2，優先序低；跟 §8.4「tier-3 刻意不修」同一條理路 —— 現在補一段永不觸發的 fail-loud，就是 §8.1 央行 fallback 那個「沒有消費端的 code」的重演。真要收，收在 Phase 3 移除 legacy 分支時一起。 |
 ## 5. 「改資料夾名備份起來，看還有誰在讀」為什麼**驗不出來**
 
 這是本案最重要的一段，因為它是直覺的反面。
@@ -302,7 +319,7 @@ letters 慣例用來標「機械產物／不要當人寫的檔」，這裡要更
 
 ## 7. 驗收標準（施工時照這條驗，不驗「有沒有報錯」）
 
-> 狀態（kiara 2026-08-19 逐條對）：①✅ ②⬜ ③✅ ④➖判死改判準 ⑤✅
+> 狀態（kiara 2026-08-20 逐條對）：①✅ ②✅ ③✅ ④➖判死改判準 ⑤✅
 
 1. `bank_resolver` 對全 21 位都解得出 bank，**且在故意把某人 letters 移走的情況下仍然解得出**（證明路由不依賴 letters）。
    ⚠ 兩端（python `bank_resolver` 與 C# `UCL_TreasuryAccountResolver`）**各驗一次** —— 同一條路由兩份實作，
@@ -322,10 +339,30 @@ letters 慣例用來標「機械產物／不要當人寫的檔」，這裡要更
 | # | 狀態 | 讀數 |
 |---|---|---|
 | ① 兩端各解 21 位 | ✅ | python parity 0 不一致；C# SelfTest 62 通過 0 失敗。**letters 移走仍解得出**：反向表住 `_registry_meta.json`（專案層），不依賴 letters checkout —— 這正是 §8.1 反轉方向的附帶好處 |
-| ② `wake_brief` 三段有實際讀數 | ⬜ | 未逐段對過。Template brief 生成正常（255 行）、kiara wake#15 brief 626 行有內容，但**沒有逐段核對「不是空狀態文案」** —— Phase 2 觀察期要補 |
+| ② `wake_brief` 三段有實際讀數 | ✅ | kiara 2026-08-20 逐段核（wake#17 brief，573 行，tier-2 快照）：**§0 血統**＝`fork from crest-001`／**§6.5 見人**＝calli 70・apex-one 57・gura 42 ＋ 2 篇 sketchbook 全文／**見林**（現為 §4）＝全文 11 行。量法與邊界見下 |
 | ③ wake_count／見林 gap 與磁碟一致 | ✅ | kiara wake#15 登入回傳檔 gap 5/10、書籤換算 0→10 有印出來；Template 反覆跑不膨脹 |
 | ④ access.log 零筆 | ➖ | 判死改判準，見上 |
 | ⑤ 一筆變更只有那幾行 | ✅ | 見上 |
+
+#### ② 的量法與邊界（kiara 2026-08-20 補）
+
+**尺**：三段的「空狀態文案」是 `wake_brief.py` 裡的字面字串 —— §1 見根 `(尚無 fragment…)`、
+§3 見森 `(未達門檻：見林 N/M 份…)`、見林 `(尚無 digest)`。
+判準＝該段不是這些字串，且印出的值在磁碟上真有。
+
+**全庫讀數（21 人，唯讀探針）**：見林＋見人**兩段都有實際讀數 9/21**；其餘 12 位是
+**資料真的還沒到**（見林要 10 夜濃縮），brief 印的是**帶讀數的明確空狀態句**，不是靜默空白。
+`_RELATIONSHIP_LOAD_ERROR=None` ⇒ 那 4 位（Template／pinnacle-one／zenith-one／zenith-two）
+的「沒有關係紀錄」是真的沒有、不是讀取失敗 —— §6.5 在三處把「讀不到」與「沒有」分開講，實測有效。
+
+⚠ **兩個邊界（不擋 ②，但別假裝沒看到）**：
+1. **§0 血統那一行沒有空狀態文案** —— `_identity_card_lines` 是 `if p.get("forked_from")` 才 append
+   ⇒「沒有血統」與「讀不到血統」在 brief 上同形。實測 tier-2／tier-3 對 `forked_from`
+   **完全一致（0 人分岔）**，其中 7 位是真的沒有上游（Template／apex-one／apex-two／basecamp／
+   claude-da-xiaojie／ridge-001／trailhead）⇒ 目前是**理論上的同形，沒有活的退化路徑**。
+   要收就是給那行一個顯式的 `(無 —— 本人是根)`。
+2. **② 天生不能拿 Template 當受測體** —— 它沒有血統、沒有關係紀錄，三段必然落空狀態。
+   「Template 先測」測的是流程跑不跑；**讀數要在真人身上量**。
 
 ## 8. Tim 補充方向（2026-08-19 口頭，summit 記錄 —— 修訂 §3 的目標配置）
 

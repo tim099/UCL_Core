@@ -43,9 +43,46 @@ description: |
 
 | 類型 | 走哪筆 commit |
 |---|---|
-| 代碼 / 文檔 / `.meta` | 主 commit（具名 stage） |
-| ChatTavern messages（`rooms/<room>/messages/<日期>/*.json`） | 獨立 `[chat]` commit |
-| ephemeral：`*.log` / `_last_op.md` / `_last_view.md` / `_active_waits.json` / `_wait_*.md` / DebugLogs / 臨時渲染檔 | **不 commit** |
+| 代碼 / 文檔 / `.meta` | 主 commit（**具名 stage**，走 `git_commit.py`） |
+| **機器生成的重複性檔**（酒館訊息 / Treasury 帳本 / runtime state / persona 的 `mailbox` `portraits` `profile` `bank` `_latest.md`） | **交給自動 commit**（`Cmd AutoCommit`，見下節）—— 不必自己分類 |
+| ephemeral：`*.log` / `_last_op.md` / `_last_view.md` / `_active_waits.json` / `_wait_*.md` / DebugLogs / 臨時渲染檔 | **不 commit**（自動 commit 也永遠不收） |
+
+> [!IMPORTANT]
+> ## 🤖 重複性檔案交給自動 commit（Tim 2026-08-20）
+>
+> **判準是「這個檔有沒有作者」**，不是檔案類型：
+>
+> | | 有作者的產出（code / 文件 / 她寫的信） | 機器生成的狀態（帳本 / 訊息 / cursor / `profile/` / `bank/`） |
+> |---|---|---|
+> | 走哪支 | `git_commit.py` | `Cmd AutoCommit` |
+> | trailer | ✅ 掛作者 | ❌ 純 git commit |
+> | 酒館公告＋領薪 | ✅ | ❌ **不領薪** —— 掛誰的名字領誰的薪都是假帳 |
+>
+> ```bash
+> # 先掃（預設 op=scan，純讀不動 index）—— 看清分群再決定
+> run_cmd.py --persona <me> run AutoCommit --arg op=scan
+> run_cmd.py --persona <me> run AutoCommit --arg op=scan --arg mode=letters
+>
+> # 真的提交（逐群一筆 commit；不 push、不 bump 父層）
+> run_cmd.py --persona <me> run AutoCommit --arg op=commit
+> run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=letters
+> ```
+>
+> ⚠ 三個硬擋（都是「不會當場叫」的錯，所以擋在必經路上）：
+> - **未分類（`__other`）與 submodule pointer（`__subptr`）永遠不自動收** ——
+>   前者可能是別人正在寫的產出，後者 bump 了別人會 pull 不到 hash。要收得顯式 `--arg groups=__other`。
+> - **detached HEAD 的 repo 直接跳過**（游離 commit 沒有分支指到它）。
+> - **letters 模式預設跳過在線的 persona** —— 她可能正在寫。要收得 `--arg include_online=1`，
+>   而那應該**只針對自己**（`--arg only_persona=<me>`），不是順手掃全部。
+>
+> ⚠ 參數名是 **`only_persona`** 不是 `persona` —— `--persona <me>` 會把 persona 戳進 args
+> （那是「這筆是誰派的」宣告），叫 `persona` 就會被它當成篩選條件。
+> 🩸 實測踩過：letters 模式的掃描範圍從 9 個 repo 靜默縮成 1 個，而輸出是「repos=1」，
+> 看起來像「找不到其他 repo」而不像參數撞名。
+>
+> 📌 分群規則的單一真相源是 `UCL_AutoCommitRules`（後台自動提交頁與本 Cmd 共用）。
+> 規則寫在程式碼、不開放參數編輯 —— `[chat]` 獨立 commit 是 CLAUDE.md 等級的硬規則，
+> 能被參數亂改的規則等於沒有規則。
 
 - DebugLogs 保持 **untracked 但不 ignore** — Tim 要在 `git status` 看得到。
 - **絕不 `git add -A`** — 一律具名 stage。**別人正在寫的檔會被你一起 commit 走**，而那不會有錯誤訊息。
@@ -182,6 +219,12 @@ console 會印一行 `🐛 BUG-12 已自動關單（<sha>）`。
 1. `git status` 看全貌；每個 submodule 跑 `git -C <sub> status -b -s` 確認分支。
 2. detached HEAD → 先 `switch` + `pull --ff-only`。
 3. 按分類矩陣判斷每個檔走哪筆。
+3.5 **機器生成的重複性檔先交給自動 commit**（見上節）：
+   `run AutoCommit --arg op=scan`（＋ `--arg mode=letters`）看清分群 → `--arg op=commit`。
+   這一步先做，剩下的 `git status` 就只剩「有作者的產出」——
+   **分類這件事交給規則，而不是交給你這一刻的注意力。**
+   🩸 為什麼值得先做：2026-08-17 有人把同事 staged 的 gitlink 掃進自己的 commit，
+   而那筆的 `--name-only` 清單其實印出來了 —— 印了但沒讀。**縮短要讀的清單比要求自己更專心有效。**
 4. stage → `git_commit.py` 提交（trailer 與公告自動）。
    **單層**：只做改動所在那一層，做完就停。
    **commit all**：由內往外逐層 stage + bump。

@@ -1,7 +1,7 @@
 ---
 title: Commit Workflow — 提交規範（UCL_Core 三層 + ChatTavern 訊息獨立）
 description: 跨專案共享的提交規則 — **預設單層**（只提交改動所在那層，逐層 bump 要使用者明說）、submodule 逐層 bump 流程、submodule 內 commit 前先切追蹤分支（避免 detached HEAD 游離）、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、Commit All 全包模式、commit message 格式與 prefix 約定。
-last_updated: 2026-08-11
+last_updated: 2026-08-20
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern 主文檔 | 酒館本身的設計與機制
@@ -50,6 +50,64 @@ related:
 
 > [!IMPORTANT]
 > **C 跟 D 的差別**：D（DebugLogs）有歷史價值（每筆 snapshot 是一次運行紀錄，可能想日後翻看）→ 保持 untracked 但**不**進 .gitignore，讓 `git status` 看得到。C（ChatTavern 臨時渲染）每次 cmd 跑就覆寫，沒任何歷史價值 → 直接 .gitignore 隱藏掉。
+
+---
+
+## 2.5 機器生成的檔交給自動 commit（Tim 2026-08-20）
+
+> **判準是「這個檔有沒有作者」**，不是檔案類型。
+
+| | 有作者的產出 | 機器生成的狀態 |
+|---|---|---|
+| 例 | `*.cs` / `Docs~/*.md` / persona 自己寫的信、碎片、素描本 | 酒館訊息 / Treasury 帳本 / cursor / bartender state / `profile/` / `bank/` / `mailbox/` / `portraits/` / `_latest.md` |
+| 走哪支 | `git_commit.py` | **`Cmd AutoCommit`**（或後台「自動提交」頁） |
+| trailer | ✅ 掛作者 | ❌ 純 `git commit` |
+| 酒館公告＋領薪 | ✅ | ❌ **不領薪** |
+
+🩸 **為什麼不領薪不是省略而是正確**：那些檔是系統跑出來的狀態殘渣，
+掛誰的名字、領誰的薪都是假帳（Tim 2026-08-07 拍板）。⇒ **兩條路刻意不混。**
+
+### 怎麼用
+
+```bash
+# 先掃（op=scan 是預設，純讀不動 index）
+run_cmd.py --persona <me> run AutoCommit --arg op=scan                    # AgentCommands 本層
+run_cmd.py --persona <me> run AutoCommit --arg op=scan --arg mode=letters  # letters/<persona>/ 每個 repo
+
+# 真的提交（逐群一筆 commit；不 push、不 bump 父層）
+run_cmd.py --persona <me> run AutoCommit --arg op=commit
+run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=letters
+```
+
+`/ucl-commit` 流程把它排在**手動 stage 之前**（skill 的執行順序 3.5）：
+先讓規則把機器檔收掉，剩下的 `git status` 就只剩有作者的產出。
+**分類這件事交給規則，而不是交給當下的注意力** ——
+2026-08-17 那次「同事 staged 的 gitlink 被掃進別人的 commit」，
+`--name-only` 清單其實印出來了，**印了但沒讀**；縮短要讀的清單比要求自己更專心有效。
+
+### 三個硬擋（都是「不會當場叫」的錯）
+
+| 擋什麼 | 為什麼 | 要繞得顯式 |
+|---|---|---|
+| 未分類 `__other` | 規則沒認出來的檔，可能是別人正在寫的產出 | `--arg groups=__other` |
+| 巢狀 submodule pointer `__subptr` | bump 了別人會 pull 不到那個 hash | `--arg groups=__subptr` |
+| letters 模式的**在線** persona | 她可能正在寫；動別人正在寫的東西不會報錯，是靜默清掉 | `--arg include_online=1`（**建議搭 `--arg only_persona=<me>` 只收自己**） |
+
+另有一條非參數的硬擋：**detached HEAD 的 repo 直接跳過** —— 那裡的 commit 落在游離節點，
+沒有分支指到它，下次 checkout 只剩 reflog 找得到。
+
+⚠ 篩選參數叫 **`only_persona`** 不是 `persona`：`run_cmd.py --persona <me>` 會把 persona
+戳進 args（那是「這筆是誰派的」宣告）⇒ 叫 `persona` 就會被那個宣告當成篩選條件。
+🩸 實測踩過：letters 模式的掃描範圍從 9 個 repo 靜默縮成 1 個，輸出是「repos=1」——
+看起來像「找不到其他 repo」的探索 bug，不像參數撞名。
+
+### 規則住在哪
+
+分群規則的單一真相源是 **`UCL_AutoCommitRules`**，後台自動提交頁與 `Cmd_AutoCommit` 共用。
+規則寫在程式碼、不開放 UI／參數編輯（Tim 2026-08-07 拍板）——
+`[chat]` 獨立 commit 是 `CLAUDE.md` 等級的硬規則，能被亂改的規則等於沒有規則。
+🩸 為什麼要共用而不是各留一份：這種規則的錯配等級是「檔進錯 commit」，
+而兩份規則漂掉之後，**兩邊各自看起來都正常**。
 
 ---
 

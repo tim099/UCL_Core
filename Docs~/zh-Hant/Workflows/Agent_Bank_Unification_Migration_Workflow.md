@@ -186,6 +186,37 @@ run_cmd.py --persona <me> run Invoke \
 
 ---
 
+## 6.5 LY 首航實跑紀錄（2026-08-20）—— 本流程第一次真的被跑過
+
+文件寫成時遷移還沒執行，以下是**跑完之後**補上的真實讀數，供 Bar 對照期望值：
+
+| 項目 | 讀數 |
+|---|---|
+| 改名 | 4 組（`claude-code→cc` 7 人／`antigravity→a` 6／`gemini→g` 1／`Zeta→zeta` 1） |
+| 搬錢 | 1 組：`Federal Reserve System` → `FRS`，**6,253**，同一 `tx_1384375f` |
+| 遷移後帳號 | 8 個：`Altair`／`FRS`／`Myth`／`Template`／`a`／`cc`／`g`／`zeta` |
+| 驗收 | 綁定檔 21 vs registry 21 **不一致 0**；C# resolver 實測全部一跳到底 |
+
+### 跑完才發現的三格（Bar 可以直接避開）
+
+1. **`Fed` 被守衛擋下** —— 它在 `closed_accounts` 裡。銷戶帳號不能當 rename 目標，
+   要先在銀行後台「↩ 復戶」。⚠ 而那顆按鈕當時**被長 Label 擠出可見範圍**（已修，守則 L2）。
+2. **新 agent id 不是 canonical** —— `FRS` 不在 `agent_banks` 也不在 `system_accounts`，
+   於是後台顯示「⚠ agent 未註冊於 agent_banks」，而 `UCL_PersonaAgentAdminPage` 同時顯示正確答案。
+   ⇒ 已修：合一模式下**有 persona 綁定的 agent id 本身就是正式帳戶**。
+3. **顯示名稱會斷** —— sender 換成新 agent id 之後，`identities.json` 的鍵全部對不上，
+   而其中 `cc` 那筆的 `display_name` 是 `crest-001`（一個 persona 名塞進 agent 的顯示名欄），
+   **從「沒人查得到」變成「7 位每則訊息都命中」**。
+   ⇒ 已修：帳戶資料改一帳一檔（`Treasury/accounts/<id>.json`），遷移時自動建檔。
+
+### ⚠ 一帳一檔的兩個陷阱（都出過事）
+
+- **大小寫**：`zeta.json` 與 `Zeta.json` 在 Windows/macOS 是**同一個檔**。
+  ⇒ 帳號 id 的唯一性以**全小寫**比對；開戶已擋，既有的走「🔠 合併同名」。
+- **版控**：`Treasury/.gitignore` 原本整行 `accounts/`（那時該目錄只有衍生快照）。
+  把真相源放進去卻沒改 ignore ⇒ 資料檔一度完全不在版控裡，**而 `git status` 對 ignore 的檔是安靜的**。
+  ⇒ 現在只 ignore `accounts/_*`。**Bar 跑之前先確認這一行。**
+
 ## 7. 跨專案（Bar 等）注意事項
 
 - **每個專案各自跑一次**，因為每個專案的 `agent_banks` 內容不同

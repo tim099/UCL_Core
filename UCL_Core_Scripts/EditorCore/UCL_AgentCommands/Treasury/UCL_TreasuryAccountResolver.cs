@@ -257,6 +257,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 Debug.LogWarning($"[Treasury] persona 對照讀取失敗（persona 名將無法歸一）：{ex.Message}");
             }
 
+            // ⓪ 合一模式：**有 persona 綁定的 agent id 本身就是正式帳戶**（Tim 2026-08-20）。
+            //   物理意義：合一之後帳戶 id ＝ agent id，而「誰是現行帳戶」的事實來源是
+            //   persona 的 `registry.agent`，不再是 `agent_banks`（那張表已退出解析）。
+            //   🩸 不補這一段的症狀（2026-08-20 實測）：遷移後新生的 `FRS` 不在 agent_banks
+            //     也不在 system_accounts ⇒ `IsCanonicalAccount("FRS")` 為 false ⇒
+            //     銀行後台顯示「⚠ agent 未註冊於 agent_banks，拒絕 auto-mint」，
+            //     而同一時間 `UCL_PersonaAgentAdminPage` 正確顯示 `Sirius → FRS`。
+            //     **一個真的在用、裡面有 6253 token 的帳戶，被系統判定為不存在。**
+            if (UCL_CentralBankSettings.AccountResolveUnified)
+            {
+                foreach (var kv in s_PersonaToAgentLower)
+                    if (!string.IsNullOrEmpty(kv.Value)) AddCanonical_NoLock(kv.Value);
+            }
+
             s_RegistryStamp = regStamp;
             s_PersonaDirStampKey = personaKey;
         }
@@ -560,6 +574,31 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 return true;
             }
             catch (Exception e) { oError = e.Message; return false; }
+        }
+
+        // ==========================================================
+        // 區塊職責：**persona → 帳戶** 的唯一入口（Tim 2026-08-20 拍板）。
+        // 物理意義：呼叫端只想知道「這個人的錢在哪個帳戶」，**不該知道系統目前走哪條鏈**。
+        //   合一前是 persona → agent → `agent_banks` → 帳戶（兩跳），
+        //   合一後是 persona → agent（＝帳戶，一跳）——
+        //   **兩者的差別在本函式內部處理完，外部一律拿到同一種答案。**
+        // 🩸 為什麼要立這個入口：在此之前 `UCL_BankAdminPage` 自己寫了一份
+        //   「persona → agent → 查 agent_banks」，合一之後那份就壞了 ⇒ 後台顯示
+        //   「⚠ agent 未註冊於 agent_banks」，而 `UCL_PersonaAgentAdminPage` 同時顯示正確答案。
+        //   **同一個事實兩頁各說各話，而兩邊都不報錯。**
+        //   ⇒ 呼叫端每多一份自己的解析，就多一個會在下次改制時悄悄過期的地方。
+        // 數值影響：純讀。查不到回空字串（**不 derive、不 mint**）——
+        //   後台工具權限最高，對未知一律攤給人看，不憑空造帳戶名。
+        // ==========================================================
+        public static string ResolvePersonaAccount(string persona) => ResolvePersonaAccount(persona, out _);
+
+        public static string ResolvePersonaAccount(string persona, out string oTrace)
+        {
+            oTrace = "";
+            if (string.IsNullOrWhiteSpace(persona)) { oTrace = "persona 為空"; return ""; }
+            var r = Resolve(persona);
+            oTrace = r.Trace;
+            return r.IsUnresolved ? "" : (r.AccountId ?? "");
         }
 
         public static bool IsCanonicalAccount(string accountId)

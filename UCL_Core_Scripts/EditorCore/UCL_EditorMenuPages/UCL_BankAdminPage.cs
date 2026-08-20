@@ -415,6 +415,17 @@ namespace UCL.Core.EditorLib.Page
         string ResolveAgentToBank(string agent)
         {
             if (string.IsNullOrEmpty(agent)) return agent;
+            // ⛔ **一律委派統一 resolver**（Tim 2026-08-20：銀行相關操作走統一 API，不自己解析）。
+            //   本頁原本自己查 `m_AgentToBank`（＝`agent_banks` 原表）——
+            //   🩸 合一遷移之後那張表已退出解析，於是這一頁顯示
+            //     「agent FRS → ⚠ 未註冊於 agent_banks，拒絕 auto-mint」，
+            //     而同一時間 `UCL_PersonaAgentAdminPage` 正確顯示 `Sirius → FRS`。
+            //     **兩頁對同一個事實各說各話，而兩邊都不報錯** —— 那正是「同一件事兩份實作」的症狀。
+            //   `UCL_TreasuryAccountResolver.Resolve` 兩種模式都涵蓋（合一＝一跳、遷移前＝走 agent_banks），
+            //   所以委派它就同時修好兩個世界，不必在這裡分支。
+            var res = UCL_TreasuryAccountResolver.Resolve(agent);
+            if (!res.IsUnresolved && !string.IsNullOrEmpty(res.AccountId)) return res.AccountId;
+            // 以下保留原本的查表路徑當**過渡期後備**（resolver 查不到時仍給人看得到的答案）。
             // Step 1: direct hit
             if (m_AgentToBank.TryGetValue(agent, out var direct)) return direct;
             // Step 2: case-insensitive 比對
@@ -456,9 +467,11 @@ namespace UCL.Core.EditorLib.Page
         // persona → bank（兩跳：persona→agent→bank）；查不到 agent 回空字串（caller 顯示 fail-loud 提示）
         string ResolvePersonaToBank(string persona)
         {
-            if (string.IsNullOrEmpty(persona)) return "";
-            if (!m_PersonaToAgent.TryGetValue(persona, out var agent) || string.IsNullOrEmpty(agent)) return "";
-            return ResolveAgentToBank(agent);
+            // ⛔ **純委派統一 API**（Tim 2026-08-20）：新舊流程的差別在 API 內部處理，
+            //   本頁不判斷模式、不留後備查表。
+            //   留一份「自己的 fallback」看起來很安全，實際上是**下次改制時會悄悄過期的那一份** ——
+            //   而它過期的症狀是本頁與其他頁對同一個 persona 給出不同答案，兩邊都不報錯。
+            return UCL_TreasuryAccountResolver.ResolvePersonaAccount(persona);
         }
 
         // 開戶 bank draft 跟著 agent draft 走（使用者沒手動改過才自動帶）
@@ -555,8 +568,12 @@ namespace UCL.Core.EditorLib.Page
                             string.IsNullOrEmpty(ag)
                                 ? "<color=#ff8866>⚠ 此 persona 檔缺 agent 欄，無法解析 bank（fail-loud，不 mint）</color>"
                                 : string.IsNullOrEmpty(bk)
-                                    ? $"→ agent <b>{ag}</b> → <color=#ff8866>⚠ agent 未註冊於 agent_banks，拒絕 auto-mint（先開戶）</color>"
-                                    : $"→ agent <b>{ag}</b> → bank <b>{bk}</b>",
+                                    ? $"→ agent <b>{ag}</b> → <color=#ff8866>⚠ 解析不到帳戶，拒絕 auto-mint（先開戶）</color>"
+                                    // 合一之後 agent id 就是帳戶 id，兩者相同是**正常狀態**不是巧合，
+                                    // 所以不再印成「agent → bank」那種兩段式（會讓人以為還有一跳）。
+                                    : (string.Equals(ag, bk, StringComparison.Ordinal)
+                                        ? $"→ 帳戶 <b>{bk}</b>　<size=10>（agent id 即帳戶 id）</size>"
+                                        : $"→ agent <b>{ag}</b> → 帳戶 <b>{bk}</b>"),
                             WrapLabelStyle);
                     }
                 }
@@ -572,10 +589,26 @@ namespace UCL.Core.EditorLib.Page
                         GUILayout.Label("(無 bank — 檢查 _registry_meta.json 的 agent_banks)", UCL_GUIStyle.LabelStyle);
                     else
                     {
-                        int curIdx = Mathf.Max(0, pickList.IndexOf(SelectedBank ?? ""));
-                        int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, pickList, m_Dic, "BankPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
-                        if (newIdx >= 0 && newIdx < pickList.Count)
-                            m_SelectedBankIdx = m_BankIds.IndexOf(pickList[newIdx]);
+                        // ⚠ 目前選中的帳戶若**不在收窄後的清單裡**（例如它是孤兒／舊世代），
+                        //   不可以用 `Mathf.Max(0, IndexOf)` 把它假裝成第 0 個 ——
+                        //   那會讓**畫面顯示的帳戶**與**操作實際使用的 SelectedBank** 是兩個不同的東西，
+                        //   而打款／轉帳用的是後者。畫面說一套、實際做一套，且不會有任何錯誤訊息。
+                        //   ⇒ 找不到就把它臨時補進顯示清單並標記，讓畫面與事實一致。
+                        var shownList = pickList;
+                        string curBank = SelectedBank ?? "";
+                        int curIdx = pickList.IndexOf(curBank);
+                        if (curIdx < 0 && !string.IsNullOrEmpty(curBank))
+                        {
+                            shownList = new List<string>(pickList) { curBank };
+                            curIdx = shownList.Count - 1;
+                        }
+                        else if (curIdx < 0) curIdx = 0;
+                        int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, shownList, m_Dic, "BankPicker", GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                        if (newIdx >= 0 && newIdx < shownList.Count)
+                        {
+                            int mapped = m_BankIds.IndexOf(shownList[newIdx]);
+                            if (mapped >= 0) m_SelectedBankIdx = mapped;
+                        }
                     }
                     // 收窄不是隱藏：孤兒帳戶仍要能被選到（歸戶／補登記／轉帳正是對它們動作）。
                     if (m_CacheUnifiedMode && m_ActiveAccountIds.Count > 0)

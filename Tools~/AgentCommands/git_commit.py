@@ -114,25 +114,23 @@ def build_trailers(personas: list, allow_unset: bool) -> tuple:
     return lines, problems, notes
 
 
-def resolve_sender(persona: str) -> str:
-    """公告的發文身分（bank account）。lock 有就用 lock 的，沒有就走 agent→bank 對照表。
-
-    # 物理意義：sender 決定錢進誰的帳，猜錯等於把薪水發給別人。lock 是當下真相，
-    #          registry 是靜態對照 —— 兩個都查不到就回空字串，讓 caller 明確失敗而不是亂發。
-    """
-    root = _data_root()
-    try:
-        lock = json.loads((root / "_session" / f"_persona_{persona}.json").read_text(encoding="utf-8"))
-        if lock.get("bank_account"):
-            return lock["bank_account"]
-    except Exception:
-        pass
-    try:
-        agent = (load_persona(persona).get("agent") or "").strip()
-        reg = json.loads(_ucl_paths_mod().registry_meta_path().read_text(encoding="utf-8"))
-        return (reg.get("agent_banks") or {}).get(agent, "") or ""
-    except Exception:
-        return ""
+# ⛔ `resolve_sender()` 已移除（2026-08-20，Tim 拍板「框架統一認 persona，
+#    其餘身分資訊透過 persona 走統一解析入口」）。
+#
+# 它原本回 **bank account** 當公告的 `sender_id`，理由寫著「sender 決定錢進誰的帳」——
+# **那個前提在 `c103e1f`（2026-08-14）之後就失效了**：計酬改由 persona 反解，
+# `sender_id` 從此純粹是**顯示身分**。
+#
+# 🩸 而它沒跟著改的代價是 BUG-22 的另一半：`Cmd_Tavern` 的顯示身分推導修好了
+#    （`ResolveDisplaySenderId`：persona → 綁定的 agent），但本檔**顯式帶 sender_id**
+#    ⇒ commit 公告整條路繞過那個修法，而 commit 公告是最大的呼叫端。
+#    症狀是 `cc` 那家 bank 的所有 persona 在酒館都顯示成 `crest-001`
+#    （identities.json 裡 `cc` 的 display_name 是個 persona 名）。
+#    ⚠ 我自己看不出來，因為我的 bank 名剛好等於 agent 名（都是 `Myth`）——
+#      **修法在自己身上永遠看起來完整**，這是同一個形狀第三次。
+#
+# ⇒ 現在**不傳 sender_id**：Cmd_Tavern 從 `persona` 推導顯示身分（單一推導點）。
+#   錢的部分本來就走 persona（`TryAutoCreditPostReward`），本檔從頭到尾沒碰過。
 
 
 def build_announcement(message: str, sha: str, repo: str, personas: list, intro: str = "",
@@ -208,7 +206,7 @@ def resolve_fixed_bugs(message: str, sha: str, persona: str) -> None:
             print(f"⚠ BUG-{n} 自動關單失敗（{e}）—— 單子還開著，需手動 resolve。", file=sys.stderr)
 
 
-def post_announcement(body: str, sha: str, sender: str, persona: str) -> tuple:
+def post_announcement(body: str, sha: str, persona: str) -> tuple:
     """發酒館公告；回 (成功, 說明)。走 run_cmd.py Tavern，body 經檔案避免引號地獄。"""
     here = Path(__file__).resolve().parent
     run_cmd = here / "run_cmd.py"
@@ -237,7 +235,9 @@ def post_announcement(body: str, sha: str, sender: str, persona: str) -> tuple:
         #          指令搶同一條 lane（上方 ensure_idle 逾時那隻的同族成因）。
         cmd = [sys.executable, str(run_cmd), "--system", "run", "Tavern",
                "--arg", "op=post", "--arg", "room=tavern",
-               "--arg", f"sender_id={sender}", "--arg", f"persona={persona}",
+               # ⚠ 刻意**不帶 sender_id** —— 顯示身分由 Cmd_Tavern 從 persona 推導
+               # （見上方 resolve_sender 移除的理由）。多傳一個就是多一個會漂的來源。
+               "--arg", f"persona={persona}",
                "--arg", f"meta={meta}", "--wait-reply", "0",
                "--ack-timeout", str(ANNOUNCE_ACK_TIMEOUT_SEC),
                "--arg-file", f"body={tmp}"]
@@ -379,11 +379,10 @@ def main() -> int:
         return EXIT_OK
 
     primary = args.persona[0]
-    sender = resolve_sender(primary)
-    if not sender:
-        print(f"⚠ 查不到 {primary} 的 bank（lock 與 registry 都沒有）—— 公告未發，錢沒領到。", file=sys.stderr)
-        print(f"   手動補：meta {{\"tag\":\"commit\",\"sha\":\"{sha}\",\"category\":\"meta\"}}", file=sys.stderr)
-        return EXIT_ANNOUNCE_FAIL
+    # ⛔ 這裡原本先解析 bank 當 sender，查不到就擋下公告（EXIT_ANNOUNCE_FAIL）。
+    #    兩件事都退場：解析交給 Cmd（統一入口），而「查不到 bank 就不發言」也不再成立 ——
+    #    c103e1f 拍板「不計酬不擋發言」：發言權與收款權是兩回事。
+    #    ⇒ 沒有 bank 的 persona 現在照樣公告得出去，只是那則不計酬（由 Cmd 端決定）。
 
     intro = args.announce_body
     if args.bump_of and (args.announce_body or args.announce_body_file):
@@ -395,10 +394,10 @@ def main() -> int:
             print(f"⚠ 讀 --announce-body-file 失敗（改用空開場）：{e}", file=sys.stderr)
     ok, detail = post_announcement(
         build_announcement(message, sha, args.repo, args.persona, intro, args.bump_of),
-        sha, sender, primary)
+        sha, primary)
     if ok:
         if args.verbose:
-            print(f"📣 酒館公告已發（sha={sha} / sender={sender}）—— 不要再手動貼一次，同 SHA 貼兩次會付兩次錢。")
+            print(f"📣 酒館公告已發（sha={sha} / persona={primary}）—— 不要再手動貼一次，同 SHA 貼兩次會付兩次錢。")
         else:
             print(f"✓ {sha} 已提交並公告（{primary}{'／bump of ' + args.bump_of if args.bump_of else ''}）")
         resolve_fixed_bugs(message, sha, primary)

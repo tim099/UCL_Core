@@ -168,6 +168,68 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             set => SetInt("registered_mail_fee", value < 0 ? 0 : value);
         }
 
+        // ===========================================================
+        // 區塊職責：本專案的**區域（貨幣）ID** —— 即 `letters/<persona>/bank/<CurrencyId>.md` 的檔名。
+        // 物理意義：Tim 2026-08-20 拍板 —— 銀行（酒館系統）**每個專案有自己的 ID**（可理解為貨幣名），
+        //          而 persona 在各區域使用的**帳號**存在它自己的 letters 底下、**一區一檔**。
+        //          ⚠ 「bank id」這個舊詞同批退場：**帳號就是 agent id**，
+        //            `cc` / `zeta` / `a` 那套獨立命名不再是任何人的 canonical
+        //            （改名走 ledger transfer，見 Plan_Identity_Account_Unification §4.2 D）。
+        //          🩸 為什麼「一區一檔」是硬需求而不是風格：persona 的 letters 是**同一個 git repo
+        //            被多個專案掛著**（2026-08-20 實測 LY 與 D:/Unity/Bar 的 letters/kiara
+        //            root commit 與 HEAD 完全相同）⇒ 存「單一值」的檔會被兩個專案**互相覆寫**，
+        //            而症狀是「另一個專案的帳號」—— 一個完全合法的字串，沒有任何一層會出聲。
+        // 數值影響：**本值是檔名。** 改它等於把全體 persona 的綁定檔重新定鍵 ⇒
+        //          後台改動走二段確認，且必須同批改名 letters 底下的檔，否則全員一次落央行。
+        //          預設 `Ducat`；本專案（LY）＝ `Florin`
+        //          （Tim 2026-08-20 命名：1252 年由佛羅倫斯共和國鑄造，杜卡特的一生宿敵與前輩）。
+        // ===========================================================
+        public const string DefaultCurrencyId = "Ducat";
+
+        /// <summary>本專案的區域（貨幣）ID。缺值／不合法一律回預設，**不猜**。</summary>
+        public static string CurrencyId
+        {
+            get
+            {
+                var jd = Load();
+                if (jd != null && jd.Contains("currency_id"))
+                {
+                    string v = jd.GetString("currency_id", DefaultCurrencyId);
+                    if (IsValidCurrencyId(v)) return v.Trim();
+                    // 落盤值壞掉要出聲：靜默回預設會讓兩個專案都變成 Ducat，
+                    // 而那正是一區一檔要防的對撞（且症狀是「另一個專案的帳號」）。
+                    Debug.LogError($"[CentralBankSettings] currency_id 落盤值不合法（'{v}'），本次改用預設 " +
+                                   $"'{DefaultCurrencyId}' —— 請到 UCL_BankAdminPage 修正。");
+                }
+                return DefaultCurrencyId;
+            }
+            set
+            {
+                if (!IsValidCurrencyId(value))
+                {
+                    Debug.LogError($"[CentralBankSettings] 區域（貨幣）ID 不合法，**未寫入**：'{value}'");
+                    return;
+                }
+                SetString("currency_id", value.Trim());
+            }
+        }
+
+        /// <summary>合法性＝能安全當檔名。空白／`.`／`..`／路徑分隔／檔名非法字元一律拒。</summary>
+        /// <remarks>
+        /// 它會被組進 `letters/&lt;persona&gt;/bank/&lt;id&gt;.md` ⇒ 含 `/` 或 `..` 就是寫到別的地方去，
+        /// 而寫檔會自動建目錄 ⇒ 症狀是「憑空長出一個資料夾」而不是錯誤（2026-08-17 血證同族）。
+        /// </remarks>
+        public static bool IsValidCurrencyId(string iId)
+        {
+            if (string.IsNullOrWhiteSpace(iId)) return false;
+            string v = iId.Trim();
+            if (v == "." || v == "..") return false;
+            if (v.IndexOf('/') >= 0 || v.IndexOf('\\') >= 0) return false;
+            foreach (char c in Path.GetInvalidFileNameChars())
+                if (v.IndexOf(c) >= 0) return false;
+            return true;
+        }
+
         public static int ClampPermille(int v)
             => v < MinFeePermille ? MinFeePermille : (v > MaxFeePermille ? MaxFeePermille : v);
 
@@ -185,6 +247,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
 
         static void SetInt(string key, int value) => Write(jd => jd[key] = new JsonData(value));
+
+        static void SetString(string key, string value) => Write(jd => jd[key] = new JsonData(value));
 
         static void Write(System.Action<JsonData> mutate)
         {

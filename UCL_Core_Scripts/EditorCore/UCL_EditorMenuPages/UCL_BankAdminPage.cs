@@ -133,6 +133,12 @@ namespace UCL.Core.EditorLib.Page
         string m_MailFeeDraft = "";
         bool m_ExemptCentralDraft = true;
 
+        // 🪙 區域（貨幣）ID 草稿（Tim 2026-08-20）。二段確認狀態獨立一組 ——
+        // 這個欄位改下去會讓全體 persona 的綁定檔一次對不上鍵，不能跟政策參數共用一顆 arm。
+        string m_CurrencyDraft = "";
+        bool m_CurrencyArmed = false;
+        double m_CurrencyArmedAt = 0;
+
         // 操作結果訊息（持久顯示直到下次操作，取代 Editor-only DisplayDialog）
         string m_LastResultMsg = "";
 
@@ -426,6 +432,8 @@ namespace UCL.Core.EditorLib.Page
             DrawPayoutRequestPanel(); // 📨 agent 請款審批（核准 = 央行撥款）
             GUILayout.Space(6);
             DrawTransferRequestPanel(); // 💸 轉帳審批（核准 = A→B 搬錢，總量守恆）
+            GUILayout.Space(6);
+            DrawCurrencyPanel();      // 🪙 區域（貨幣）ID —— letters/<persona>/bank/<ID>.md 的鍵
             GUILayout.Space(6);
             DrawCentralBankPanel();   // 🏦 央行 / 保管費 / 掛號信費用
             GUILayout.Space(6);
@@ -1177,6 +1185,84 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
+        // ===========================================================
+        // 區塊：🪙 區域（貨幣）ID —— Tim 2026-08-20「銀行 ID 要在 UCL_BankAdminPage 可以編輯」
+        // 物理意義：本專案的區域 ID＝`letters/<persona>/bank/<ID>.md` 的**檔名**。
+        //          persona 在各區域用哪個帳號（＝agent id）存在它自己的 letters 底下、一區一檔。
+        //          🩸 一區一檔是硬需求：persona 的 letters 是同一個 git repo 被多個專案掛著
+        //            （實測 LY 與 D:/Unity/Bar 的 letters/kiara root commit 與 HEAD 相同）
+        //            ⇒ 存單一值的檔會被兩個專案互相覆寫，症狀是「另一個專案的帳號」，
+        //            一個完全合法的字串，沒有任何一層會出聲。
+        // 數值影響：改這個 ID **不會**自動改名既有的綁定檔 ⇒ 生效瞬間全體視為未綁定
+        //          （落央行＋ErrorLog）。所以走二段確認，且提示裡明講要接著改名。
+        // 邊界：**這裡不自動改名 letters 底下的檔** —— 那是跨 repo 的批次寫入（7 位 persona 各自
+        //      獨立 git repo），該由遷移流程做並逐位驗，不該掛在一個後台按鈕的副作用裡。
+        // ===========================================================
+        void DrawCurrencyPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                string cur = UCL_CentralBankSettings.CurrencyId;
+                if (!FoldHeader("BankCurrencyFold", "<b>🪙 區域（貨幣）ID</b>", cur)) return;
+
+                GUILayout.Label($"本專案的區域 ID：<b>{cur}</b>（未設定時的預設 <b>{UCL_CentralBankSettings.DefaultCurrencyId}</b>）", WrapLabelStyle);
+                GUILayout.Label("  persona 在本區使用的帳號（＝agent id）存在 <b>letters/&lt;persona&gt;/bank/&lt;本 ID&gt;.md</b> —— <b>一區一檔</b>。同一份 letters 被多個專案掛著，鍵不同才不會互相覆寫。", WrapLabelStyle);
+
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("區域 ID", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    m_CurrencyDraft = GUILayout.TextField(m_CurrencyDraft ?? "", UCL_GUIStyle.TextFieldStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
+                    bool armed = IsCurrencyArmed();
+                    if (GUILayout.Button(armed ? "⚠ 確認變更" : "💾 儲存區域 ID",
+                            UCL_GUIStyle.GetButtonStyle(armed ? new Color(1f, 0.65f, 0.4f) : new Color(0.5f, 1f, 0.5f)),
+                            GUILayout.ExpandWidth(false)))
+                        DoSaveCurrencyId();
+                    if (GUILayout.Button("↩ 重讀", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    { m_CurrencyDraft = UCL_CentralBankSettings.CurrencyId; m_CurrencyArmed = false; }
+                }
+                GUILayout.Label("  ⚠ 改這個 ID 等於<b>把全體 persona 的綁定檔重新定鍵</b>：舊檔不會自動改名，改名完成前所有人都會被視為「沒有綁定」（落央行＋ErrorLog）。二段確認 —— 按一次待確認，5 秒內再按才生效。", WrapLabelStyle);
+                GUILayout.Label("  值落 <b>AgentCommands/Treasury/bank_settings.json</b> 的 <b>currency_id</b>，Python 端讀同一份。", WrapLabelStyle);
+            }
+        }
+
+        bool IsCurrencyArmed() => m_CurrencyArmed
+            && (EditorApplication.timeSinceStartup - m_CurrencyArmedAt) <= APPROVE_ARM_WINDOW_SEC;
+
+        void DoSaveCurrencyId()
+        {
+            string v = (m_CurrencyDraft ?? "").Trim();
+            if (!UCL_CentralBankSettings.IsValidCurrencyId(v))
+            {
+                m_CurrencyArmed = false;
+                SetResult($"❌ 區域 ID 不合法（要能當檔名：不可空白、不可含路徑分隔或檔名非法字元）：'{m_CurrencyDraft}'");
+                return;
+            }
+            string old = UCL_CentralBankSettings.CurrencyId;
+            if (v == old) { m_CurrencyArmed = false; SetResult($"ℹ 區域 ID 已經是 `{v}`，不需變更"); return; }
+
+            if (!IsCurrencyArmed())
+            {
+                m_CurrencyArmed = true;
+                m_CurrencyArmedAt = EditorApplication.timeSinceStartup;
+                SetResult($"⏳ 待確認：區域 ID `{old}` → `{v}`。⚠ 既有的 letters/&lt;persona&gt;/bank/{old}.md **不會自動改名** —— 生效後全體視為未綁定（落央行＋ErrorLog），要接著跑遷移改名。5 秒內再按一次生效。");
+                return;
+            }
+
+            m_CurrencyArmed = false;
+            UCL_CentralBankSettings.CurrencyId = v;
+            // 印 ✓ 不算數，讀回來才算：setter 對不合法值是「出聲後不寫」，
+            // 只看按鈕有沒有被按會把「拒寫」讀成「已存」。
+            string now = UCL_CentralBankSettings.CurrencyId;
+            if (now != v)
+            {
+                SetResult($"❌ 寫入後讀回不符（期望 `{v}`、實際 `{now}`）—— **未生效**，原因看 Console。");
+                return;
+            }
+            m_CurrencyDraft = now;
+            SetResult($"✅ 區域 ID：`{old}` → `{now}`。⚠ 下一步：把每位 persona 的 letters/&lt;persona&gt;/bank/{old}.md 改名成 {now}.md（未改名者視為未綁定）。");
+            Debug.Log($"[BankAdmin] currency_id {old} → {now}");
+        }
+
         // 區塊：🏦 央行 / 保管費 —— Tim 2026-08-01「銀行後台管理頁可以調整保管費%數」
         // 物理意義：這三個數字原本寫死在 UCL_BartenderDaemon 的 const 裡，要動就得改 code + 重編。
         //          它們是**經濟政策參數**不是實作細節 —— 決定權該在後台，不在 C# 檔裡。
@@ -1236,6 +1322,10 @@ namespace UCL.Core.EditorLib.Page
             m_FeeRateDraft = UCL_CentralBankSettings.FeeRateDisplay;
             m_MailFeeDraft = UCL_CentralBankSettings.RegisteredMailFee.ToString();
             m_ExemptCentralDraft = UCL_CentralBankSettings.ExemptCentralBank;
+            // 區域 ID 一併回讀 —— 它不是政策參數，但同樣「顯示的必須是落盤值」；
+            // 不回讀的話 Refresh 之後畫面留著上次打到一半的字，而那看起來像已生效。
+            m_CurrencyDraft = UCL_CentralBankSettings.CurrencyId;
+            m_CurrencyArmed = false;
         }
 
         void DoSaveCentralBankSettings()

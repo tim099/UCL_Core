@@ -29,6 +29,15 @@ related:
 > 銀行帳號（agent）」—— **每個不同區域銀行一個獨立檔案**；
 > ⑧ 目前實際上只有兩個專案（另一個在 `D:/Unity/Bar`）；**舊紀錄 ambiguous 的地方人工處理**。
 >
+> **第三批拍板（2026-08-20，H/I/J 三題的答案）**：
+> ⑨ 遷移時**同時把 `-da-xiaojie` 去掉**（例：`claude-da-xiaojie` → `claude`）；
+> ⑩ **本專案（LY）的區域 ID ＝ `Florin`**（1252 年由佛羅倫斯共和國鑄造，杜卡特的「一生宿敵與前輩」）；
+> 預設名 `Ducat` 留給未設定的專案；
+> ⑪ **H 已答**：見 ⑩。**I 已答**：`agent` 欄位**就等於**帳號 id，看專案環境決定用哪一個 ——
+> 且**若本專案還沒綁，但該 persona 在其他專案已有設定，則預設綁「其他專案設定的那個」，不落央行**；
+> ⑫ **J 不做**：`bank_id` 不寫進 ledger 每一筆 —— 因為之後**帳號 id 就是 agent id**，
+> 「bank id」這個獨立命名空間整個退場（不同地區只是**可以用不同帳號**，不是有另一套 id）。
+>
 > 本檔是動工前的分析。**§4 是人工拍板清單 —— 那些格子沒拍完就不要開始搬。**
 
 ## 0. 先講量出來的數字（2026-08-20，唯讀探針）
@@ -195,6 +204,19 @@ letters/kiara/bank/<Bar 的 ID>.md  →  Myth          （Bar 那邊的綁定，
 而那兩張表沒有任何機制互相對帳。`bank/<bankId>.md` 把「分區」做進鍵裡，
 所以同一份 persona 資料夾可以同時服務任意多個專案。
 
+### 3.5.1 解析順序（Tim 指示 ⑪，取代單純的「缺檔就央行」）
+
+    ① letters/<persona>/bank/<本專案 CurrencyId>.md 存在  ⇒ 用它（正常路徑，無標記）
+    ② 不存在，但 bank/ 底下有**其他區域**的檔        ⇒ 用那個（跨區借用），**且必須出聲**
+    ③ 兩者皆無                                      ⇒ 央行 ＋ Debug.LogError（指示 ⑤）
+
+②「跨區借用」的理由：一個 persona 在別的專案已經有帳號歸屬，那個歸屬**比央行更接近真相** ——
+把它丟給公庫是資訊上的浪費。但它**不是本區的宣告**，所以要有標記／warning：
+不出聲的話「本區真的綁了」與「借用別區的」在輸出上同形，而前者才是收斂的目標。
+
+⚠ 多個其他區域都有檔時**不要挑一個**（那是猜）—— 出聲並落央行，或要求人工指定。
+判準同 §8.1 的撞名處理：**這裡不替你挑一個。**
+
 ### 3.6 「沒有綁定就報錯 ＋ 綁央行 ＋ ErrorLog」的落點（Tim 指示 ⑤）
 
 `UCL_TreasuryAccountResolver.Resolve()` 現在的 ⑥ 分支是
@@ -274,6 +296,59 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
 ⇒ 必須走 **ledger transfer**（debit 舊／credit 新、同額、`source_kind=account-rename`），
 舊號歸零後進 `closed_accounts` 並記 `renamed_to`。
 
+#### ⚠ D.1 `-da-xiaojie` 去除會**撞名**（Tim 指示 ⑨；這是「ambiguous 人工處理」的主體）
+
+含 `-da-xiaojie` 的帳號 **10 個、合計 8,808** token。去掉後綴之後 **7 個撞到既有帳號**：
+
+| 舊名 | 餘額 | 去掉後綴 | 該名現有餘額 | 狀況 |
+|---|---:|---|---:|---|
+| `claude-da-xiaojie` | 4,636 | `claude` | 14 | ⚠ 已存在 ⇒ 合併 |
+| `Zeta-da-xiaojie` | 2,519 | `Zeta` | 0 | ⚠ 而 `zeta` 另有 2,738 —— **只差大小寫** |
+| `antigravity-da-xiaojie` | 1,466 | `antigravity` | 0 | ⚠ 已存在（空殼） |
+| `gemini-da-xiaojie` | 94 | `gemini` | 0 | ⚠ 已存在（空殼） |
+| `zeta-da-xiaojie-bank` | 91 | `zeta-bank` | 31 | ⚠ 已存在 ⇒ 合併；且兩者都是 `-bank` 後綴殘留 |
+| `ClaudeCode-da-xiaojie` | 1 | `ClaudeCode` | (無) | 大小寫變體 |
+| `tim099-da-xiaojie` | 1 | `tim099` | (無) | 測試殘留 |
+| `Gemini-da-xiaojie` | 0 | `Gemini` | (無) | ⚠ 與 `gemini` 只差大小寫 |
+| `antigravity-da-xiaojie-da-xiaojie` | 0 | `antigravity` | 0 | ⚠ **雙後綴**，去一次還剩一個 |
+| `zeta-da-xiaojie` | 0 | `zeta` | 2,738 | ⚠ 已存在 |
+
+🩸 大小寫是這裡最陰的一格：`UCL_TreasuryAccountResolver` 的檔頭明寫
+「`zeta`（現行）與 `Zeta-da-xiaojie`（舊世代）小寫不同，不會撞」——**那是刻意的**。
+去後綴之後變成 `zeta` 與 `Zeta` 兩個只差大小寫的帳號，**看起來像同一個而實際是兩個**。
+
+#### ⚠ D.2 歸併提案（**每一筆都待拍，我不自己合**）
+
+若「帳號 id ＝ agent id」（指示 ⑫）走到底，全部歷史帳號應歸併到 9 個 agent：
+
+| 歸併到 | 合計 | 來源明細 |
+|---|---:|---|
+| `claude-code` | 5,535 | `claude-da-xiaojie` 4,636 ＋ `cc` 884 ＋ `claude` 14 ＋ `ClaudeCode-da-xiaojie` 1 |
+| `Zeta` | 5,379 | `Zeta-da-xiaojie` 2,519 ＋ `zeta` 2,738 ＋ `zeta-bank` 31 ＋ `zeta-da-xiaojie-bank` 91 |
+| `Fed` | 6,253 | `Federal Reserve System` 6,253 |
+| `Myth` | 2,301 | `Myth` |
+| `antigravity` | 1,790 | `antigravity-da-xiaojie` 1,466 ＋ `a` 321 ＋ `antigravity-apex-two` 2 ＋ `antigravity-reserve` 1 |
+| `gemini` | 1,111 | `gemini-da-xiaojie` 94 ＋ `g` 1,017 |
+| `Altair` | 857 | `Altair` 857 ＋ `apex-one` 0 |
+| `Codex` | 240 | `Codex` |
+| `Template` | 54 | `Template` |
+| **小計** | **23,520** | |
+
+未涵蓋（不屬於任何 agent，共 **10,200**）：央行 9,712／`Tim` 371／
+`discord:383604378185105408` 95／`subconscious-daemon` 17／`fake-imposter` 2／
+`discord:295848903494991872` 1／`discord:tim-smoke` 1／`tim099-da-xiaojie` 1。
+
+23,520 ＋ 10,200 ＝ **33,720 ＝ 該次快照總量（守恆 ✓，watermark `/2026-08-20/023834_078_a90273__credit.json`）**。
+
+⚠ **這張表是我的推論，不是事實**：把 `claude-da-xiaojie` 與 `cc` 歸到同一個 agent，
+依據是「它們是同一個 agent 的不同世代命名」（Bar 至今仍用 `claude-da-xiaojie` 當 `claude-code` 的帳號）。
+**那是推論，要人確認。** 尤其 `Zeta` 那組把大小寫兩支合起來，以及 `antigravity-reserve`／
+`antigravity-apex-two` 是否真屬同一人。
+
+📐 **對帳規則**：總量是**移動標的**（commit 每筆都在增發）⇒ 守恆必須**同一次讀取內比對**，
+或明確比對 watermark。🩸 我第一次算就踩了：拿新讀的逐帳號去比舊的總量，差 28 —— 那 28 是
+期間發出的薪水，不是漏帳。**「綠燈要比對時間戳」在對帳上的同族。**
+
 #### ⚠ E. 券帳本的鍵已經漂了一代（要先對帳，不是照搬）
 
 `ChatTavern/agent_bonus_quota.json` 的 `agents` 節點鍵是 **bank id**，而現況是：
@@ -326,7 +401,7 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
 
 | 步 | 做什麼 | 碰錢 | 驗收判準 |
 |---|---|---|---|
-| 0 | 定 `bank_id`（LY 與 Bar 各一個、不同名）＋ `UCL_BankAdminPage` 加編輯欄 | ❌ | 後台改得動、落檔、重載後仍在 |
+| 0 | ✅ **已完成**（kiara 2026-08-20）：`UCL_CentralBankSettings.CurrencyId`（key `currency_id`、預設 `Ducat`、含檔名合法性守衛）＋ `UCL_BankAdminPage` 的「🪙 區域（貨幣）ID」面板（二段確認、寫入後讀回複驗） | ❌ | 編譯 errors=0；`CurrencyId` 讀回 `Ducat`（預設路徑）；`IsValidCurrencyId` 四格實測 `Florin`=True／`a/b`=False／空白=False／`..`=False。⏳ **值尚未設成 `Florin`** —— `Cmd_Invoke` 只呼叫 getter（實測 `getter=True`、args 被忽略）⇒ 無 CLI 寫入路徑，要在後台按一次（那一按同時也驗了面板） |
 | 1 | 由現況導出 `letters/<p>/bank/<bankId>.md`（21 位）＋ 解析端改讀它 ＋ ⑥ 分支改 ErrorLog＋央行 | ❌ | 21 位解析結果與現況**逐位相同**；故意刪一位的檔 ⇒ 出現 ErrorLog 且落央行；**Bar 那邊不受影響**（不同鍵） |
 | 2 | 建統一 `accounts` 表（§4.1 機械可導的部分）＋消費端逐支改讀它 | ❌ | 31＋48 兩邊的 id 全部有著落；mention 白名單集合**前後相同** |
 | 3 | `identities.json` 退場（agent 那半刪除、Discord/NPC 併入） | ❌ | Discord 顯示名前後相同（`UCL_DiscordIdentityResolver` 抽樣比對） |
@@ -350,8 +425,9 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
 5. **歷史 ledger 永不重寫。** 舊 id 必須永久可解釋 ⇒ `closed` ＋ `renamed_to` 是必要欄位，
    不是裝飾。
 6. **`letters/<p>/bank/` 是共用 repo 裡的檔** —— 兩個專案的 checkout 會看到彼此的檔案。
-   ⇒ 讀取端**只准讀自己 `bank_id` 那一個檔**，看到別的檔名要**當作正常**（那是別的專案的），
-   不可以「清理不認識的檔」。🩸 這條要寫進註解：那種清理會在對方專案下線期間把它的綁定刪掉，
+   ⇒ **寫入只准寫自己 `CurrencyId` 那一個檔**；**讀取**在本區缺檔時**可以**退到其他區域的檔
+   （Tim 指示 ⑪ 的跨區借用，見 §3.5.1）—— 但要出聲，且多個候選時不准挑。
+   ⛔ **絕不「清理不認識的檔」。** 那種清理會在對方專案下線期間把它的綁定刪掉，
    而症狀是對方下次登入時「沒有綁定」⇒ 落央行 ＋ ErrorLog（會叫，但錯的原因完全指不到這裡）。
 7. **`UCL_BankAdminPage` 改得動 `bank_id` ＝ 改得動整個專案的貨幣歸屬** ——
    改名之後所有 persona 的 `bank/<舊 ID>.md` 都對不上 ⇒ 後台那個欄位要有二段確認，

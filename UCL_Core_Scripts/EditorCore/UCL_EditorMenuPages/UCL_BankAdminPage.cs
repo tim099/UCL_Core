@@ -1696,6 +1696,52 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label($"<b>🏦 {UCL_CentralBankSettings.CentralBankDisplayName}</b> — 公庫餘額 <b>{(cbBalance < 0 ? "讀取失敗" : cbBalance.ToString())}</b> tavern_token", WrapLabelStyle);
                 GUILayout.Label($"  帳號 <b>{cb}</b>｜跨日保管費全數存入此處（不再蒸發）；請款核准由此撥款（不足即拒絕，不憑空增發）。", WrapLabelStyle);
 
+                // ---- 央行帳戶（可設定，不寫死）----
+                // ⚠ 這一區改的是**錢的來源**，所以走二段確認；上面的政策參數只改費率門檻，不需要。
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label("央行帳戶", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(90)));
+                    var pick = BankPickerList;
+                    if (pick.Count == 0) GUILayout.Label("(無帳戶可選)", UCL_GUIStyle.LabelStyle);
+                    else
+                    {
+                        // 目前值若不在收窄後的清單裡（孤兒／舊世代），臨時補進顯示清單 ——
+                        // 否則畫面會顯示成第 0 個，而那不是實際生效的央行。
+                        var shown = pick;
+                        int idx = pick.IndexOf(m_CentralBankDraft ?? "");
+                        if (idx < 0 && !string.IsNullOrEmpty(m_CentralBankDraft))
+                        { shown = new List<string>(pick) { m_CentralBankDraft }; idx = shown.Count - 1; }
+                        else if (idx < 0) idx = 0;
+                        int ni = UCL_GUILayout.PopupSearchCache(idx, shown, m_Dic, "CentralBankPicker",
+                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
+                        if (ni >= 0 && ni < shown.Count && shown[ni] != m_CentralBankDraft)
+                        { m_CentralBankDraft = shown[ni]; m_CentralBankArmed = false; }
+                    }
+
+                    bool cbArmed = m_CentralBankArmed
+                        && (EditorApplication.timeSinceStartup - m_CentralBankArmedAt) <= APPROVE_ARM_WINDOW_SEC;
+                    using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(m_CentralBankDraft) || m_CentralBankDraft == cb))
+                    {
+                        if (GUILayout.Button(cbArmed ? "⚠ 確認改設央行" : "設為央行",
+                                UCL_GUIStyle.GetButtonStyle(cbArmed ? new Color(1f, 0.55f, 0.4f) : new Color(0.8f, 0.9f, 1f)),
+                                GUILayout.ExpandWidth(false)))
+                        {
+                            if (cbArmed) DoSetCentralBankAccount(m_CentralBankDraft);
+                            else
+                            {
+                                m_CentralBankArmed = true;
+                                m_CentralBankArmedAt = EditorApplication.timeSinceStartup;
+                                SetResult($"⚠ 待確認：央行改成 `{m_CentralBankDraft}`。"
+                                    + "　**之後每一筆撥款都從它扣**（後台打款／請款核准／保管費去處）。"
+                                    + $"　舊央行 `{cb}` 的餘額原地不動，不搬錢。5 秒內再按一次生效。");
+                            }
+                        }
+                    }
+                    GUILayout.Label(m_CentralBankDraft == cb ? "　（就是目前這個）" : "　二段確認：改的是錢的來源",
+                        WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
+
                 // ---- 保管費門檻 ----
                 using (new GUILayout.HorizontalScope())
                 {
@@ -1728,6 +1774,13 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
+        // 央行帳戶切換的草稿與二段確認（Tim 2026-08-20：央行要能選，不要寫死一個帳號）。
+        // 為什麼要 arm：**它決定錢從哪裡撥出來**，而切錯不會報錯 ——
+        // 只會從另一個合法帳戶扣錢，看起來一切正常。
+        string m_CentralBankDraft = "";
+        bool m_CentralBankArmed = false;
+        double m_CentralBankArmedAt = 0;
+
         void LoadCentralBankDrafts()
         {
             m_ThresholdDraft = UCL_CentralBankSettings.OvernightThreshold.ToString();
@@ -1738,6 +1791,36 @@ namespace UCL.Core.EditorLib.Page
             // 不回讀的話 Refresh 之後畫面留著上次打到一半的字，而那看起來像已生效。
             m_CurrencyDraft = UCL_CentralBankSettings.CurrencyId;
             m_CurrencyArmed = false;
+            m_CentralBankDraft = UCL_CentralBankSettings.CentralBankAccount;
+            m_CentralBankArmed = false;
+        }
+
+        // 區塊職責：改設央行帳戶。
+        // 物理意義：只改設定值 —— **不搬任何一分錢**，舊央行的餘額原地不動。
+        // 數值影響：之後所有撥款（後台打款／請款核准）從新帳戶扣，保管費也改存新帳戶。
+        void DoSetCentralBankAccount(string iAccount)
+        {
+            m_CentralBankArmed = false;
+            // ⚠ 判準是「在不在帳號宇宙裡」，**不是** IsCanonicalAccount。
+            // 🩸 血證（2026-08-20 round-trip 當場抓到，改法上線 3 分鐘）：
+            //   現任央行之所以 canonical，正是**因為它是央行**（它不在 agent_banks 也不在
+            //   system_accounts）⇒ 用 canonical 當判準的話，一旦把央行換給別人，
+            //   舊央行就立刻失去 canonical 身分、**再也選不回來** —— 守衛把它自己鎖在門外。
+            //   而那個狀態不會報錯：畫面上它還在下拉裡，按下去只回一句「不是註冊在案的帳戶」。
+            // ⇒ 能被下拉選到的，就要能被設定。兩者共用 m_BankIds（帳號宇宙）。
+            if (!m_BankIds.Contains(iAccount))
+            {
+                SetResult($"❌ 改設央行失敗：`{iAccount}` 不在帳號宇宙裡"
+                    + "（agent_banks ∪ system_accounts ∪ ledger 內出現過的帳戶）。");
+                return;
+            }
+            string before = UCL_CentralBankSettings.CentralBankAccount;
+            if (!UCL_CentralBankSettings.SetCentralBankAccount(iAccount, out string err))
+            { SetResult($"❌ 改設央行失敗：{err}"); return; }
+            LoadData();   // 餘額／canonical 集合／草稿全部重讀 —— 畫面不留舊值
+            SetResult($"🏦 央行已改：`{before}` → `{iAccount}`（顯示名 `{UCL_CentralBankSettings.CentralBankDisplayName}`）。"
+                + "　未搬任何一分錢；之後的撥款從新帳戶扣。");
+            Debug.Log($"[BankAdmin] central_bank_account: '{before}' → '{iAccount}'");
         }
 
         void DoSaveCentralBankSettings()

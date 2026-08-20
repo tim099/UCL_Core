@@ -43,8 +43,25 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         /// <summary>央行帳號 id（Tim 2026-08-01 命名：Pacific Standard Public Deposit Bank）。</summary>
         public const string DefaultCentralBankAccount = "pacific-standard-public-deposit-bank";
 
-        /// <summary>央行顯示名 —— 廣播與後台用，ledger 仍以 account id 為準。</summary>
-        public const string CentralBankDisplayName = "Pacific Standard Public Deposit Bank";
+        /// <summary>預設央行的顯示名 —— 只在「央行仍是預設帳戶、且它沒有帳戶資料」時才用得到。</summary>
+        public const string DefaultCentralBankDisplayName = "Pacific Standard Public Deposit Bank";
+
+        // 區塊職責：央行的顯示名。
+        // 物理意義：真相源是**帳戶資料**（`Treasury/accounts/<id>.json` 的 display_name，
+        //          與酒館／Discord 的署名同一個來源）。
+        // 🩸 為什麼不能是常數：央行帳戶可被設定（見 SetCentralBankAccount）——
+        //   常數會在換了央行之後繼續顯示舊名字，而那是一個**看起來完全正常的錯誤**
+        //   （判準⑤：別造一個名字比事實大的東西）。
+        public static string CentralBankDisplayName
+        {
+            get
+            {
+                string acc = CentralBankAccount;
+                string dn = UCL_BankAccountProfileIO.GetDisplayName(acc);
+                if (!string.IsNullOrEmpty(dn)) return dn;
+                return acc == DefaultCentralBankAccount ? DefaultCentralBankDisplayName : acc;
+            }
+        }
 
         // 預設值＝改版前的既有行為，本次只把硬編搬成可調參數，不偷改數字。
         public const int DefaultThreshold = 1000;
@@ -86,6 +103,28 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 }
                 return DefaultCentralBankAccount;
             }
+        }
+
+        // 區塊職責：改設央行帳戶（Tim 2026-08-20：要能選，不要寫死一個帳號）。
+        // 物理意義：**這個值決定錢從哪裡撥出來** —— 後台打款、請款核准、跨日保管費的去處全看它。
+        // 數值影響：改完之後所有撥款來源立刻換帳戶；不搬任何一分錢（舊央行的餘額原地不動）。
+        // 為什麼寫成帶 out err 的方法而不是 setter：它會**拒絕**不合法的值，
+        //   而 property setter 沒有地方講「為什麼沒寫進去」—— 靜默不寫比寫錯更難查。
+        public static bool SetCentralBankAccount(string iAccount, out string oError)
+        {
+            oError = null;
+            string acc = (iAccount ?? "").Trim();
+            if (string.IsNullOrEmpty(acc)) { oError = "央行帳戶不可為空"; return false; }
+            if (!UCL_BankAccountProfileIO.IsValidAccountId(acc))
+            { oError = $"`{acc}` 含不能當檔名的字元（帳戶 id 要能當一帳一檔的檔名）"; return false; }
+            if (acc == CentralBankAccount) { oError = $"`{acc}` 已經是央行，未變更"; return false; }
+            SetString("central_bank_account", acc);
+            // 印 ✓ 不算數，讀回來才算。
+            string back = CentralBankAccount;
+            if (back != acc) { oError = $"寫入後讀回不符：期望 `{acc}`、實際 `{back}`"; return false; }
+            // 央行依定義是 canonical 帳戶 ⇒ 換人之後解析器要重新認識它，否則新央行會被當孤兒。
+            UCL_TreasuryAccountResolver.Invalidate();
+            return true;
         }
 
         /// <summary>超過這個餘額的部分才收保管費。</summary>

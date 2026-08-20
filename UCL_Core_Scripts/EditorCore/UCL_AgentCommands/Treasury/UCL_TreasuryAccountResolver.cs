@@ -564,7 +564,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 reg[ClosedAccountsKey][accountId] = note;
 
                 string tmp = RegistryMetaPath + ".tmp";
-                File.WriteAllText(tmp, reg.ToJsonBeautify(), Encoding.UTF8);
+                // ⚠ 不可傳 Encoding.UTF8 —— 它的 encoderShouldEmitUTF8Identifier=true，會在檔頭寫 BOM。
+                // 物理意義：本檔的主要讀取端是 python（awakening.load_registry / bank_resolver），
+                //          而 json.load(encoding="utf-8") 撞 BOM 是**直接拋例外**，不是讀成怪值。
+                // 🩸 2026-08-20（Bar 合一遷移）：合併同名寫完這個檔之後，所有走 load_registry() 的 CLI 全掛。
+                //          BOM 是寫入端加的，症狀出在讀取端 —— 中間沒有任何一格會叫。
+                File.WriteAllText(tmp, reg.ToJsonBeautify(), new UTF8Encoding(false));
                 if (File.Exists(RegistryMetaPath)) File.Delete(RegistryMetaPath);
                 File.Move(tmp, RegistryMetaPath);
                 Invalidate();

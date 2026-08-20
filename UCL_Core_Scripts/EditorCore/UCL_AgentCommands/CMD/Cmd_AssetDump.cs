@@ -142,7 +142,9 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
             string outAbs = Path.IsPathRooted(outRel) ? outRel : Path.Combine(ProjectRoot, outRel);
             Directory.CreateDirectory(Path.GetDirectoryName(outAbs));
-            File.WriteAllText(outAbs, sb.ToString(), Encoding.UTF8);
+            // Encoding.UTF8 會吐 BOM（見 UCL_TreasuryAccountResolver.CloseAccount 的血證）；
+            // dump 檔的讀取端是 agent 與 python 工具，一律寫無 BOM。
+            File.WriteAllText(outAbs, sb.ToString(), new UTF8Encoding(false));
 
             Debug.Log($"[Cmd_AssetDump] {typeName}/{id} → {outRel} ({sb.Length} chars)");
             await UniTask.Yield();

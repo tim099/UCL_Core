@@ -293,6 +293,33 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 EnsureLoaded_NoLock();
                 string lower = accountId.ToLowerInvariant();
 
+                // ⓪ 合一模式（Tim 2026-08-20；`bank_settings.account_resolve_unified`，**預設 false**）
+                //    物理意義：遷移完成後 agent id 就是帳號 id，`agent_banks` 那一跳不該再參與解析 ——
+                //      留著它會讓「已合一」與「還在過渡」在讀數上長得一模一樣。
+                //    ⚠ 這個分支**只在開關為 true 時存在**；false 時下面每一段的行為與開關出現前逐字相同。
+                //      這是刻意的：解析端是錢的必經路徑，改它的預設行為沒有安全的驗證方式。
+                if (UCL_CentralBankSettings.AccountResolveUnified)
+                {
+                    // 合一後：persona → agent（＝帳號），一跳到底。
+                    if (s_PersonaToAgentLower.TryGetValue(lower, out var unifiedAgent))
+                    {
+                        r.AccountId = unifiedAgent;
+                        r.Kind = r.Changed ? TreasuryAccountResolveKind.ViaPersona
+                                           : TreasuryAccountResolveKind.AlreadyCanonical;
+                        r.Trace = $"【合一模式】persona `{accountId}` → 帳號 `{unifiedAgent}`（一跳；agent_banks 未參與）";
+                        return r;
+                    }
+                    // 輸入本身就是帳號名 ⇒ 原樣通過（合一後 agent 名即帳號名）。
+                    if (s_CanonicalAccounts.Contains(accountId))
+                    {
+                        r.Kind = TreasuryAccountResolveKind.AlreadyCanonical;
+                        r.Trace = "【合一模式】已是註冊帳號";
+                        return r;
+                    }
+                    // 查不到就往下走既有各段 —— 合一模式不是「不准 fallback」，
+                    // 是「不再優先走 agent_banks」。真的查無對應仍由 ⑥ 標記，不 derive。
+                }
+
                 // ① 已是正式帳號（精確拼法）
                 if (s_CanonicalAccounts.Contains(accountId))
                 {

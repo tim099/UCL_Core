@@ -172,10 +172,42 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
 
         // ===========================================================
+        // ===========================================================
+        // 區塊職責：帳號解析模式開關 —— 系統目前用**哪一條鏈**把身分解析成帳號。
+        // 物理意義：合一遷移（Tim 2026-08-20）有兩個狀態，而**兩者不可同時為真**：
+        //   ① 遷移前（預設）：persona → agent → `agent_banks[agent]` → 帳號（**兩跳**）
+        //   ② 合一後：綁定值本身就是帳號（**一跳**），`agent_banks` 不再參與解析
+        // 數值影響：**這個開關決定錢落到哪個帳號。** 切錯方向不會報錯 ——
+        //          會解析出一個完全合法、但不是那個人的帳號。所以：
+        //          - 預設一律是 ①（遷移前）：**新專案、缺值、壞值都走舊鏈**，因為舊鏈對還沒遷移的資料才是對的
+        //          - 切到 ② 之前必須先跑完遷移；切換點在 UCL_BankMigrationPage，且該頁會顯示現況
+        // ⚠ 命名刻意不叫 `is_pre_migration`：那是**相對時間**的描述，遷移完成後它會變成
+        //   「永遠是 false 的欄位」，而讀到它的人得先知道「遷移」指哪一次。
+        //   `account_resolve_unified` 描述的是**行為**（解析鏈有沒有合一），任何時候讀都成立。
+        // ⚠ 這個值必須被**兩端解析器**真的讀到（C# `UCL_TreasuryAccountResolver` 與
+        //   python `_lib/bank_resolver.py`）—— 只有一端讀就是 split-brain，
+        //   而 split-brain 的症狀是「同一個 persona 在兩條路徑上拿到不同帳號」，兩邊都不報錯。
+        // ===========================================================
+        public const bool DefaultAccountResolveUnified = false;
+
+        /// <summary>帳號解析是否已合一（true＝綁定值即帳號，一跳到底；false＝走 agent_banks 兩跳）。預設 false。</summary>
+        public static bool AccountResolveUnified
+        {
+            get
+            {
+                // 存 0/1 而非 bool —— 同 ExemptCentralBank：只用驗證過的 GetInt 多載。
+                var jd = Load();
+                int v = (jd != null && jd.Contains("account_resolve_unified"))
+                    ? jd.GetInt("account_resolve_unified", 0) : 0;
+                return v != 0;
+            }
+            set => SetInt("account_resolve_unified", value ? 1 : 0);
+        }
+
         // 區塊職責：本專案的**區域（貨幣）ID** —— 即 `letters/<persona>/bank/<CurrencyId>.md` 的檔名。
         // 物理意義：Tim 2026-08-20 拍板 —— 銀行（酒館系統）**每個專案有自己的 ID**（可理解為貨幣名），
         //          而 persona 在各區域使用的**帳號**存在它自己的 letters 底下、**一區一檔**。
-        //          ⚠ 「bank id」這個舊詞同批退場：**帳號就是 agent id**，
+        //          ⚠ 「agent id」這個舊詞同批退場：**帳號就是 agent id**，
         //            `cc` / `zeta` / `a` 那套獨立命名不再是任何人的 canonical
         //            （改名走 ledger transfer，見 Plan_Identity_Account_Unification §4.2 D）。
         //          🩸 為什麼「一區一檔」是硬需求而不是風格：persona 的 letters 是**同一個 git repo

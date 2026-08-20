@@ -39,7 +39,10 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             + "把全 pool 的綁定從舊區搬到新區（**新區已有不同值＝衝突，整批不動**）；"
             + "後台改區域 ID 時會自動跑這一段，本 op 供預跑／跨專案遷移用 | " +
             "op=unbind persona=<name> actor= reason= [currency=<區域ID>] — 刪掉該 persona 在該區的綁定檔"
-            + "（唯一能把綁定還原成「不存在」的手段；有審計）";
+            + "（唯一能把綁定還原成「不存在」的手段；有審計） | " +
+            "op=rename_agent from=<舊 agent id> to=<新 agent id> actor= reason= [currency=<區域ID>] "
+            + "[dry_run=0] [allow_new=1] — agent id 改名：把綁定檔與 persona.agent **兩邊一起**改；"
+            + "**預設 dry_run**；to 必須是 canonical 帳號且未銷戶（allow_new=1 只放寬前者，銷戶一律擋）";
 
         public override string ExampleArgs => "op=set;persona=Template;field=email;value=t@example.com;actor=summit;reason=驗收";
 
@@ -78,6 +81,12 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                 ["unbind"] = new UCL_CmdOpSpec
                 {
                     Required = new[] { "persona", "actor", "reason" },
+                },
+                // rename_agent 同樣掃全 pool（沒有 Required=persona）——
+                // 它的篩選鍵是 from（舊 agent id），不是某一個人。
+                ["rename_agent"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "from", "to", "actor", "reason" },
                 },
             }
         };
@@ -118,7 +127,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             //          因為它的破壞面是全 pool，而打錯一個參數的成本不該是 21 個檔。
             // ===========================================================
             if (op == "get_bank" || op == "set_bank" || op == "migrate_bank"
-                || op == "rebind_region" || op == "unbind")
+                || op == "rebind_region" || op == "unbind" || op == "rename_agent")
             {
                 string currency = GetArg(args, "currency", "").Trim();
                 if (string.IsNullOrEmpty(currency))
@@ -223,6 +232,62 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                     UCL_AgentCommandRunner.ReportOutputValue(args, "now_note", afterNote);
                     UnityEngine.Debug.Log($"[PersonaProfile] unbind {persona}@{currency}："
                         + $"'{before}'（{beforeSrc}）→ 現在 '{after}'（{afterSrc}）actor={actor}");
+                    return;
+                }
+
+                // ==========================================================
+                // 區塊職責：agent id 改名 —— 綁定檔與 persona.agent **同時**改，一邊都不能落單。
+                // 物理意義：agent id 與帳號 id 合一（Tim 2026-08-20 拍板）的執行手段。
+                //          綁定檔（letters/<p>/bank/<區>.md）與 registry 的 persona.agent 是同一件事的兩份
+                //          記載，實測 2026-08-20 為 21/21 一致 —— 只改一邊就是親手製造第一筆不一致，
+                //          而不一致的兩份記載**各自都能運作、都不報錯**。
+                // 數值影響：不碰 ledger、不動任何一分錢。改的只是「綁定值叫什麼」。
+                //          ⚠ 錢的搬遷是 ledger transfer（account-rename），是另一件事、另一個入口。
+                // 守衛（三道，順序即嚴格度）：
+                //   ① to 已銷戶 ⇒ **無條件擋**。銷戶帳號明文禁止金流，改名指過去不會報錯，
+                //      只會讓未來的解析命中一個合法但死掉的帳號 —— 那正是這一族坑的形狀。
+                //   ② to 非 canonical ⇒ 擋，除非顯式 allow_new=1（新帳號要有人負責，不給預設放行）。
+                //   ③ 兩份記載不一致的 persona ⇒ 算 failed 且**不寫**。既然它已經歪了，
+                //      本 op 不猜哪邊才對 —— 猜錯會把歪的那份蓋成「看起來很整齊」。
+                // ==========================================================
+                if (op == "rename_agent")
+                {
+                    string from = GetArg(args, "from", "").Trim();
+                    string to = GetArg(args, "to", "").Trim();
+                    string actor = GetArg(args, "actor", "").Trim();
+                    string reason = GetArg(args, "reason", "").Trim();
+                    bool dryRun = GetArg(args, "dry_run", "1").Trim() != "0";
+                    bool allowNew = GetArg(args, "allow_new", "0").Trim() == "1";
+
+                    if (from == to)
+                        throw new Exception($"[PersonaProfile] rename_agent：from 與 to 相同（'{from}'）—— 沒有要改的東西");
+
+                    // 守衛①：銷戶帳號無條件擋（allow_new 也放寬不了）。
+                    if (Treasury.UCL_TreasuryAccountResolver.IsClosed(to, out string closedReason))
+                        throw new Exception($"[PersonaProfile] rename_agent 拒絕：to='{to}' 是**已銷戶帳號** —— {closedReason}"
+                            + "。改名指向銷戶帳號不會報錯，只會讓解析靜默命中一個禁止金流的合法帳號。");
+
+                    // 守衛②：非 canonical 要顯式放行。
+                    bool canonical = Treasury.UCL_TreasuryAccountResolver.IsCanonicalAccount(to);
+                    if (!canonical && !allowNew)
+                        throw new Exception($"[PersonaProfile] rename_agent 拒絕：to='{to}' 不是 canonical 帳號"
+                            + "（不在 agent_banks／system_accounts）—— 確定要建新帳號請顯式帶 allow_new=1");
+
+                    // ⚠ 實作在 UCL_PersonaProfile.RenameAgent —— 本 Cmd 與後台遷移頁**共用同一支**。
+                    //   兩個入口各寫一份的話，會出現「CLI 驗過了而 UI 走另一條路」的分裂。
+                    UCL_PersonaProfile.RenameAgent(from, to, currency, actor, reason, dryRun,
+                        out int hit, out int renamed, out int failed, out string report);
+                    UnityEngine.Debug.Log($"[PersonaProfile] {report}");
+                    Treasury.UCL_TreasuryAccountResolver.Invalidate();
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "from", from);
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "to", to);
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "currency", currency);
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "dry_run", dryRun ? "1" : "0");
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "hit", hit.ToString());
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "renamed", renamed.ToString());
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "failed", failed.ToString());
+                    if (failed > 0)
+                        throw new Exception($"[PersonaProfile] rename_agent 有 {failed} 筆失敗 —— 詳見 Editor log");
                     return;
                 }
 

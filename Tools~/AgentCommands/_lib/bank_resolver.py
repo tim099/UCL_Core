@@ -77,6 +77,39 @@ def normalize_agent(reg: dict, agent: str) -> str:
     return agent
 
 
+# 區塊職責：讀「帳號解析是否已合一」的開關（C# 後台寫、python 只讀）。
+# 物理意義：合一遷移（Tim 2026-08-20）有兩條互斥的解析鏈 ——
+#     ① 遷移前（預設）：agent →『agent_banks[agent]』→ 帳號（兩跳）
+#     ② 合一後：agent id **就是**帳號 id（一跳），agent_banks 不參與
+#   真相源是 `Treasury/bank_settings.json` 的 `account_resolve_unified`（0/1），
+#   擁有者是 C# `UCL_CentralBankSettings.AccountResolveUnified`（硬規則三：C# 有擁有者 ⇒ python 只讀）。
+# 數值影響：**這個值決定錢落到哪個帳號。** 讀不到／壞值一律回 False（走舊鏈）——
+#   因為舊鏈對「還沒遷移的資料」才是對的，而新專案與缺檔的情況一定是還沒遷移。
+# ⚠ 兩端共讀同一份 JSON ⇒ **改這個 key 的語意必須同步 C# 端**
+#   （`UCL_CentralBankSettings.AccountResolveUnified`，該處也寫了對應的義務註記）。
+#   只改一端的症狀是「同一個 persona 在 C# 與 python 兩條路徑上拿到不同帳號」，兩邊都不報錯。
+def account_resolve_unified() -> bool:
+    try:
+        from . import ucl_paths  # type: ignore
+    except Exception:
+        try:
+            import ucl_paths  # type: ignore
+        except Exception:
+            return False
+    try:
+        f = ucl_paths.data_root() / "Treasury" / "bank_settings.json"
+        if not f.exists():
+            return False
+        with open(f, encoding="utf-8") as fp:
+            return int(json.load(fp).get("account_resolve_unified", 0) or 0) != 0
+    except Exception as e:
+        # fail-soft 要出聲：讀不到就走舊鏈，但不能安靜 —— 「讀不到」與「設定為舊鏈」
+        # 在下游長得一模一樣，而前者可能是路徑壞掉（那會影響的不只這一個值）。
+        print(f"⚠ [bank_resolver] 讀不到 account_resolve_unified（{e}）—— 本次走**遷移前**解析鏈",
+              file=_sys.stderr)
+        return False
+
+
 def resolve_bank_account(reg: dict, agent: str, model: str = None) -> str:
     """
     區塊職責：把 agent 解析成 Treasury bank account id（本系統唯一的 agent→bank 入口）。
@@ -94,6 +127,19 @@ def resolve_bank_account(reg: dict, agent: str, model: str = None) -> str:
     """
     # Step 1: 先 normalize（handle case-insensitive + alias），避免大小寫 split-brain
     canonical = normalize_agent(reg, agent)
+    # Step 1.5（Tim 2026-08-20 合一遷移）：開關為 true ⇒ **agent id 就是帳號 id**，一跳到底。
+    #   ⚠ 這裡回的是**原始輸入**而不是 `canonical` —— 這一格是血證，不是風格：
+    #     `normalize_agent` 會把輸入 case-insensitive 歸一成 `agent_banks` 的 key，
+    #     於是合一模式下 `zeta` 會被歸成 `Zeta`（實測），而 **`Zeta` 是已銷戶帳號** ⇒
+    #     錢會流向一個合法但禁止金流的帳號，全程零報錯。
+    #     合一後 `zeta` 與 `Zeta` 是**兩個不同帳戶**，大小寫歸一在這條鏈上是有害的，
+    #     它是舊鏈（agent 名 → 帳號名）才需要的東西。
+    #   ⚠ 連帶：alias 在合一模式下**不生效**。這是刻意的 —— alias 表映射的是舊 agent 名
+    #     （如 `claude`→`claude-code`），而那些名字在合一後已經不是任何人的帳號。
+    #     遷移後要保留的別名要重新登記成「新帳號名的別名」，不能靠舊表順延。
+    #   ⚠ 這一段只在開關為 true 時存在；false 時以下每一步與開關出現前逐字相同。
+    if account_resolve_unified():
+        return (agent or "").strip()
     # Step 2: Schema v2 — agent_banks dict 為權威映射
     banks = reg.get("agent_banks", {})
     if canonical in banks:

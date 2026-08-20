@@ -107,7 +107,7 @@ namespace UCL.Core.EditorLib.Page
 
         // 開戶
         string m_NewAgentDraft = "";       // 要開戶的 agent key
-        string m_NewBankDraft = "";        // 對應 bank id（預設命名慣例 {agent}-da-xiaojie）
+        string m_NewBankDraft = "";        // 對應 agent id（預設命名慣例 {agent}-da-xiaojie）
         string m_OpenInitAmountDraft = "0";// 開戶初始種子額度（0 = 只註冊不種子）
 
         // 打款 / 轉帳 / 發券的金額 + 描述 draft
@@ -166,6 +166,21 @@ namespace UCL.Core.EditorLib.Page
         string m_ApproveArmedId = null;      // 二段確認：第一次點 arm，第二次才真的打款
         double m_ApproveArmedAt = 0;
         const double APPROVE_ARM_WINDOW_SEC = 5.0;
+
+        // ==== 🗺 agent_banks 全表編輯（summit 2026-08-20）====
+        // 區塊職責：agent→bank 路由表的**列出／刪除／覆蓋**三個此前缺席的操作。
+        // 物理意義：`agent_banks` 決定「某個 agent 麾下所有 persona 的薪水流去哪個帳戶」。
+        //          此前本頁只能**新增／覆蓋**（DoOpenAccount），而且：
+        //            ① 沒有地方看得到全表　② 沒有刪除　③ 覆蓋既有映射**一按就生效**。
+        // 數值影響：本身不動 ledger 一分錢，但它改的是「下一筆錢會流去哪」——
+        //          比直接打款更難察覺，因為錯誤要等到下一次發薪才顯現，而且顯現時看起來像正常入帳。
+        // 為什麼要二段確認：同一頁的其他寫入都比它嚴格（別名只准在 unresolved 時加、補登記明文不搬錢、
+        //          改區域 ID／請款／轉帳皆有 arm）。唯獨改薪水去向沒有閘門 ——
+        //          它至今沒出事是因為沒人常用它，不是因為它安全。
+        string m_AgentBankRemoveArmed = null;   // 待確認刪除的 agent key
+        double m_AgentBankRemoveArmedAt = 0;
+        bool m_OpenAccountArmed = false;        // 覆蓋既有映射才需要 arm（純新增不擋）
+        double m_OpenAccountArmedAt = 0;
 
         GUIStyle m_WrapLabelStyle;
         GUIStyle WrapLabelStyle
@@ -458,7 +473,17 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label("<b>🏦 銀行後台管理</b> — 選 persona / bank 查看與操作（券綁 persona、token 綁 bank）", WrapLabelStyle);
+                // 按鈕放 Label 前面（建頁守則 L2）—— 後面那句說明會隨語系/縮放變長，
+                // 按鈕排在它後面時視窗一窄就被擠出可見範圍。
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("🔀 agent↔帳號 合一遷移",
+                            UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.6f)), GUILayout.ExpandWidth(false)))
+                        UCL_BankMigrationPage.Create();
+                    GUILayout.Label("<b>🏦 銀行後台管理</b> — 選 persona / bank 查看與操作（券綁 persona、token 綁 bank）",
+                        WrapLabelStyle);
+                    GUILayout.FlexibleSpace();
+                }
 
                 // Persona 下拉
                 using (new GUILayout.HorizontalScope())
@@ -923,6 +948,48 @@ namespace UCL.Core.EditorLib.Page
 
                 GUILayout.Space(6);
 
+                // ---- agent_banks：路由表全表（列出／刪除）----
+                // 這張表此前只能新增/覆蓋、看不到全貌 —— 而看不到的表，錯了也沒有人會發現。
+                GUILayout.Label($"<b>🗺 agent → bank 路由表（agent_banks）</b> {m_AgentToBank.Count} 筆"
+                    + "：決定**某 agent 麾下所有 persona 的薪水流向哪個帳戶**。"
+                    + "<color=#ffcc66>改這裡不會動到任何一分現有的錢，但會改變下一筆錢的去向。</color>", WrapLabelStyle);
+                foreach (var kv in m_AgentToBank.OrderBy(x => x.Key, StringComparer.Ordinal))
+                {
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        // 綁在這個 agent 上的 persona 數：改/刪這一列會直接影響這些人。
+                        int boundCnt = 0;
+                        foreach (var pa in m_PersonaToAgent) if (pa.Value == kv.Key) boundCnt++;
+                        bool identity = kv.Key == kv.Value;   // 自映射＝agent id 與帳號 id 已合一
+                        bool closedTgt = UCL_TreasuryAccountResolver.IsClosed(kv.Value, out _);
+                        // 按鈕放 Label 前面（守則 L2，同下方已銷戶清單的血證）。
+                        bool armed = IsAgentBankRemoveArmed(kv.Key);
+                        if (GUILayout.Button(armed ? "⚠ 確認刪除" : "刪除",
+                                UCL_GUIStyle.GetButtonStyle(armed ? new Color(1f, 0.55f, 0.4f) : new Color(1f, 0.7f, 0.7f)),
+                                GUILayout.ExpandWidth(false)))
+                        {
+                            if (armed) DoRemoveAgentBank(kv.Key);
+                            else
+                            {
+                                m_AgentBankRemoveArmed = kv.Key;
+                                m_AgentBankRemoveArmedAt = EditorApplication.timeSinceStartup;
+                                SetResult($"⚠ 待確認：刪除映射 `{kv.Key}` → `{kv.Value}`（{boundCnt} 位 persona 受影響）"
+                                    + " —— 刪除後這些人的薪水會走 fallback，5 秒內再按一次生效。");
+                            }
+                        }
+                        GUILayout.Label($"　<b>{kv.Key}</b> → <b>{kv.Value}</b>"
+                            + $"　餘額 {SafeBalance(kv.Value)}　persona {boundCnt} 位"
+                            + (identity ? "　<color=#88dd88>◎ 已合一</color>" : "")
+                            + (closedTgt ? "　<color=red>⚠ 目標已銷戶</color>" : ""),
+                            WrapLabelStyle);
+                        GUILayout.FlexibleSpace();
+                    }
+                }
+                GUILayout.Label("　（要新增／改對應請用下方「🏦 開戶」；刪除只拿掉路由，"
+                    + "**帳戶與裡面的錢都不會消失**，只是不再有 agent 指向它）", WrapLabelStyle);
+
+                GUILayout.Space(6);
+
                 // ---- system_accounts：把一個帳號本身認定為終點（不再往下解析）----
                 GUILayout.Label($"<b>🏛 系統／舊世代帳號（system_accounts）</b> {m_SystemAccounts.Count} 筆"
                     + "：這些名字**就是帳戶本身**，解析到此為止。舊世代 bank 補登記在這裡 ——"
@@ -955,12 +1022,15 @@ namespace UCL.Core.EditorLib.Page
                         // 已銷戶帳號的餘額應恆為 0（銷戶前置條件）。不為 0 = 閘門被繞過或事後有錢進來，
                         // 那是必須當場看見的異常，不是一個可以安靜列在名單裡的狀態。
                         int cbal = SafeGetTokenBalance(kv.Key);
-                        GUILayout.Label($"　　• <b>{kv.Key}</b>"
-                            + (cbal != 0 ? $"　<color=red>⚠ 餘額 {cbal} ≠ 0，請查金流來源</color>" : "")
-                            + $"　{kv.Value}", WrapLabelStyle,
-                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(560)));
+                        // 🩸 按鈕放 Label **前面**（建頁守則 L2）—— 這一列的說明文字是 closed_accounts
+                        //   的整段理由（「幽靈帳號銷戶 2026-08-14（…）。ledger 歷史保留，不再接受任何金流。」），
+                        //   排在它後面時按鈕會被推到 560px 之外**跑出可見範圍**：
+                        //   Tim 2026-08-20 在畫面上找不到「↩ 復戶」，而版面爆掉不會編譯錯、也不會 log error。
                         if (GUILayout.Button("↩ 復戶", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                             DoReopenAccount(kv.Key);
+                        GUILayout.Label($"　• <b>{kv.Key}</b>"
+                            + (cbal != 0 ? $"　<color=red>⚠ 餘額 {cbal} ≠ 0，請查金流來源</color>" : "")
+                            + $"　{kv.Value}", WrapLabelStyle);
                         GUILayout.FlexibleSpace();
                     }
                 }
@@ -1004,6 +1074,44 @@ namespace UCL.Core.EditorLib.Page
                 LoadData();
             }
             catch (Exception ex) { SetResult($"❌ 新增別名失敗：{ex.Message}"); }
+        }
+
+        bool IsAgentBankRemoveArmed(string agent) => m_AgentBankRemoveArmed == agent
+            && (EditorApplication.timeSinceStartup - m_AgentBankRemoveArmedAt) <= APPROVE_ARM_WINDOW_SEC;
+
+        // 刪一條路由。**不動帳戶、不動錢** —— 帳戶與餘額都留著，只是不再有 agent 指向它。
+        // 為什麼要留一條後路而不是禁止刪：合一完成後整張表會變成恆等映射並退場，
+        // 沒有刪除就只能手改 JSON —— 而手改 JSON 正是這一族坑的起點（2026-08-04 補登記同形）。
+        void DoRemoveAgentBank(string agent)
+        {
+            m_AgentBankRemoveArmed = null;
+            if (string.IsNullOrEmpty(agent)) { SetResult("❌ 刪除失敗：agent 為空"); return; }
+            try
+            {
+                string oldBank = m_AgentToBank.TryGetValue(agent, out var ob) ? ob : "?";
+                var affected = new List<string>();
+                foreach (var pa in m_PersonaToAgent) if (pa.Value == agent) affected.Add(pa.Key);
+                WriteRegistry(reg =>
+                {
+                    if (reg.Contains("agent_banks")) reg["agent_banks"].Remove(agent);
+                });
+                UCL_TreasuryAccountResolver.Invalidate();
+                // 刪完立刻試算：讓「刪掉之後這些人會流去哪」當場可見，而不是等下次發薪才知道。
+                var after = UCL_TreasuryAccountResolver.Resolve(agent);
+                SetResult($"🗑 已刪除路由 `{agent}` → `{oldBank}`（帳戶與 {SafeBalance(oldBank)} 餘額原地不動）。"
+                    + $"　現在 `{agent}` 的解析結果：{after}"
+                    + (affected.Count > 0
+                        ? $"　⚠ 受影響 persona {affected.Count} 位：{string.Join("、", affected)}"
+                        : "　（沒有 persona 綁在它上面）"));
+                NotifyTavern(
+                    $"🗺 **銀行後台｜刪除路由**\n"
+                    + $"`{agent}` → `{oldBank}` 已從 agent_banks 移除（帳戶與餘額**原地不動**，只是不再有 agent 指向它）。\n"
+                    + (affected.Count > 0 ? $"⚠ 受影響 persona {affected.Count} 位：{string.Join("、", affected)}\n" : "")
+                    + $"📝 解析現況：{after}",
+                    "bank-route-remove");
+                LoadData();
+            }
+            catch (Exception ex) { SetResult($"❌ 刪除路由失敗：{ex.Message}"); }
         }
 
         void DoRemoveAlias(string aliasKey)
@@ -1439,6 +1547,29 @@ namespace UCL.Core.EditorLib.Page
             { SetResult("❌ 開戶失敗：agent / bank 不可為空"); return; }
             if (!int.TryParse((m_OpenInitAmountDraft ?? "0").Trim(), out int initAmount) || initAmount < 0)
             { SetResult($"❌ 開戶失敗：種子額度需為非負整數（收到 '{m_OpenInitAmountDraft}'）"); return; }
+
+            // 覆蓋既有映射 ＝ 改薪水去向，走二段確認（純新增不擋 —— 新增不會改變任何現有的人）。
+            // 🩸 此前這裡一按就生效，只在事後的結果字串補一句「（覆蓋既有映射）」——
+            //    而那句話出現時，路由已經改完了。閘門要長在動作之前，不是結果訊息裡。
+            bool existedPre = m_AgentToBank.TryGetValue(agent, out var prevBank);
+            if (existedPre && prevBank != bank)
+            {
+                bool armed = m_OpenAccountArmed
+                    && (EditorApplication.timeSinceStartup - m_OpenAccountArmedAt) <= APPROVE_ARM_WINDOW_SEC;
+                if (!armed)
+                {
+                    m_OpenAccountArmed = true;
+                    m_OpenAccountArmedAt = EditorApplication.timeSinceStartup;
+                    int affected = 0;
+                    foreach (var pa in m_PersonaToAgent) if (pa.Value == agent) affected++;
+                    SetResult($"⚠ 待確認：`{agent}` 的路由要從 `{prevBank}`（餘額 {SafeBalance(prevBank)}）"
+                        + $"改成 `{bank}`（餘額 {SafeBalance(bank)}）。"
+                        + $"　**{affected} 位 persona 的下一筆薪水會改流向**。"
+                        + "　現有的錢不會搬動。5 秒內再按一次生效。");
+                    return;
+                }
+            }
+            m_OpenAccountArmed = false;
 
             try
             {

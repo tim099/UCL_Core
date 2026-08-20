@@ -435,7 +435,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
         // 區塊職責：persona 的**銀行綁定**讀寫（`letters/<persona>/bank/<currencyId>.md`）。
         // 物理意義：Tim 2026-08-20 拍板 —— 「這個 persona 在某個區域用哪個帳號」是**該區域的宣告**，
-        //          而帳號 id ＝ agent id（「bank id」那套獨立命名空間退場）。
+        //          而帳號 id ＝ agent id（「agent id」那套獨立命名空間退場）。
         //          檔案跟著 persona 走（letters repo），鍵是區域 ID ⇒ 同一份 letters 可以
         //          同時服務多個專案而不對撞（一區一檔的理由見 UCL_LettersPath.BankDirName 區塊）。
         // 數值影響：**讀寫刻意不對稱**（指示 ⑪）——
@@ -588,6 +588,76 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// 刪除是**唯一**能把綁定還原成「不存在」的手段（同 BUG-16 的三態問題）——
         /// 所以它必須有審計，否則「誰把某人的綁定弄掉了」這件事沒有任何紀錄。
         /// </remarks>
+        // ==========================================================
+        // 區塊職責：agent id 改名 —— 綁定檔與 persona.agent **同時**改，一邊都不能落單。
+        // 物理意義：agent id 與帳號 id 合一（Tim 2026-08-20 拍板）的執行核心。
+        //          綁定檔（letters/<p>/bank/<區>.md）與 registry 的 persona.agent 是同一件事的兩份記載
+        //          （實測 2026-08-20 為 21/21 一致）—— 只改一邊就是親手製造第一筆不一致，
+        //          而不一致的兩份記載**各自都能運作、都不報錯**。
+        // 數值影響：不碰 ledger、不動任何一分錢。改的只是「綁定值叫什麼」。
+        //          帳戶改名（錢要跟著搬）是 ledger transfer，是另一件事、另一個入口。
+        // ⚠ 這支是 Cmd（op=rename_agent）與後台遷移頁**共用**的唯一實作 ——
+        //   兩個入口各寫一份的話，就會出現「CLI 驗過了而 UI 走另一條路」的經典分裂。
+        // 回傳：是否全數成功（failed==0）；oReport 為逐筆明細，兩個入口都直接顯示它。
+        // ==========================================================
+        public static bool RenameAgent(string iFrom, string iTo, string iCurrencyId,
+            string iActor, string iReason, bool iDryRun,
+            out int oHit, out int oRenamed, out int oFailed, out string oReport)
+        {
+            oHit = 0; oRenamed = 0; oFailed = 0;
+            var sb = new System.Text.StringBuilder();
+            string aFrom = (iFrom ?? "").Trim();
+            string aTo = (iTo ?? "").Trim();
+            var pool = PoolNamesSorted();
+            sb.AppendLine($"rename_agent '{aFrom}' → '{aTo}' currency={iCurrencyId} "
+                + $"dry_run={(iDryRun ? 1 : 0)} pool={pool.Count}");
+            int skipped = 0;
+            foreach (var p in pool)
+            {
+                string regAgent = GetString(p, "agent", "").Trim();
+                string bound = GetBankAccount(p, iCurrencyId, out string boundSrc, out _);
+                bool regHit = regAgent == aFrom;
+                bool bindHit = bound == aFrom && boundSrc == iCurrencyId;
+                if (!regHit && !bindHit) { skipped++; continue; }
+                oHit++;
+                // 兩份記載不一致 —— 不寫，讓它以「失敗」的形狀留在檯面上，不替它猜哪邊才對。
+                if (regHit != bindHit)
+                {
+                    oFailed++;
+                    sb.AppendLine($"  ✗ {p}：兩份記載不一致（registry.agent='{regAgent}'、綁定='{bound}'@{boundSrc}）—— 不寫。");
+                    continue;
+                }
+                if (iDryRun)
+                {
+                    sb.AppendLine($"  → {p}：綁定 '{bound}'→'{aTo}'　registry.agent '{regAgent}'→'{aTo}'");
+                    continue;
+                }
+                if (!WriteBankAccount(p, iCurrencyId, aTo, iActor, iReason, out string bindErr))
+                { oFailed++; sb.AppendLine($"  ✗ {p}：綁定檔寫入失敗 —— {bindErr}"); continue; }
+                if (!SetField(p, "agent", aTo, iActor, iReason, out string regErr))
+                {
+                    oFailed++;
+                    sb.AppendLine($"  ✗ {p}：⚠ **綁定檔已改成 '{aTo}'、registry.agent 寫入失敗** —— {regErr}"
+                        + "　這一筆現在是不一致狀態，要人工收尾。");
+                    continue;
+                }
+                // 兩邊都讀回複驗 —— 寫入成功不等於讀得到同一個值。
+                string backBind = GetBankAccount(p, iCurrencyId, out string backSrc, out _);
+                string backReg = GetString(p, "agent", "").Trim();
+                if (backBind != aTo || backSrc != iCurrencyId || backReg != aTo)
+                {
+                    oFailed++;
+                    sb.AppendLine($"  ✗ {p}：寫入後讀回不符（綁定 '{backBind}'@{backSrc}、registry '{backReg}'，期望皆 '{aTo}'）");
+                    continue;
+                }
+                oRenamed++;
+                sb.AppendLine($"  ✓ {p}：綁定＋registry 皆為 '{aTo}'");
+            }
+            sb.AppendLine($"  ⇒ 命中 {oHit}／改名 {oRenamed}／跳過 {skipped}／失敗 {oFailed}");
+            oReport = sb.ToString();
+            return oFailed == 0;
+        }
+
         public static bool DeleteBankBinding(string iPersona, string iCurrencyId,
             string iActor, string iReason, out string oError)
         {

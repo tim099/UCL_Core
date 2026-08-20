@@ -41,10 +41,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         /// <summary>Bartender 訊息的 meta tag — 自家訊息標記, 防回音 (loop) 用.</summary>
         public const string BartenderRelayTag = "bartender-relay";
-
+        public static bool Initialized { get; private set; } = false;
         static double s_LastCheckTime = 0;
-        static bool s_Initialized = false;
-
         const string TickStateIdle = "Idle";
         const string TickStateCheckKeywordTriggers = nameof(CheckKeywordTriggers);
         const string TickStateCheckTimeRules = nameof(CheckTimeRules);
@@ -160,7 +158,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 EditorApplication.update += Tick;
                 // 訂閱聊天酒館系統重啟事件 — 控制台由 OFF→ON 時重置游標 + 強制立即 tick
                 UCL_ChatTavernSystemControl.OnSystemRestart += OnSystemRestart;
-                s_Initialized = true;
+                Initialized = true;
                 // 不在 ctor 內動 IO (avoid first-load 卡 Editor 啟動)
                 // tick 第一次跑時才 lazy load triggers / rules
             }

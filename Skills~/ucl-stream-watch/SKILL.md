@@ -29,7 +29,7 @@ description: |
 ## 第 0 步 —— **主觀影者的準備階段**（Tim 2026-08-17 拍板；陪同者在這之後才進場）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run StreamWatch     --arg step=prepare --arg persona=<P> --arg title=<片名> --arg episode=<第幾集>     [--arg media_id=<既有媒材 id>] [--arg reference_reader=<persona>]     [--arg catchup_map="0001=summit,0002=gura"] [--arg start_recording=false]
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run StreamWatch     --arg step=prepare --arg title=<片名> --arg episode=<第幾集>     [--arg media_id=<既有媒材 id>] [--arg reference_reader=<persona>]     [--arg catchup_map="0001=summit,0002=gura"] [--arg start_recording=false]
 ```
 
 它一次把**開場前該定的東西全部定死**，然後發一則「準備完成」公告叫陪同者進場：
@@ -54,7 +54,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run StreamWatch 
 ### 陪同者：一份檔案讀完就接上（形狀抄早安 brief）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch     --arg step=catchup --arg persona=<me> --arg media_id=<prepare 公告裡那個 id>
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch     --arg step=catchup --arg media_id=<prepare 公告裡那個 id>
 ```
 
 - 只要給自己的 persona ⇒ 自動算出**我缺哪幾集**，並把那幾集**別人親筆心得的全文**收進一份檔
@@ -72,7 +72,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch
 ### 直播沒開 ⇒ **主觀影者自己用 Cmd 開，不要請 Tim 去按按鈕**（Tim 2026-08-16 拍板）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run StreamWatch --arg step=capture --arg persona=<P> --arg on=1
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run StreamWatch --arg step=capture --arg on=1
 ```
 
 - **沒在錄就沒有畫面可看** —— 與 Editor 頁那顆按鈕同一條規則、同一段邏輯（`ApplyEnabledInto`）。
@@ -96,14 +96,14 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch
 
 ```bash
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch \
-    --arg step=start --arg persona=<P> --arg until=<HH:mm> --arg media=<work-slug>
+    --arg step=start --arg until=<HH:mm> --arg media=<work-slug>
 ```
 
 - 跑完 **Read run_cmd 印出的 `📄 回傳檔：<路徑>`** —— 裡面的 `## next` 就是後續每一步
   （`cycle` → Read 縮圖牆/字幕 → `observe` → …）。**照它走，不用背。**
 - `media` 不給 ⇒ Cmd 會擋下並列出既有 work 清單（命中就用）。
   bilibili 一律 `bilibili-<up主 slug>` ＋ `--arg up=<up主名>`。
-- 陪別人的場：`--arg step=join --arg persona=<P>`（自動繼承 primary 的媒材身分）。
+- 陪別人的場：`--arg step=join`（自動繼承 primary 的媒材身分）。
 - 長內文一律 `--arg-file body=<檔>`，不要 inline。
 
 ## 陪看＝互相補格，**同場的人講的話要讀、要回**（Tim 2026-08-16）

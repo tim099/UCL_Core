@@ -20,7 +20,7 @@ python daemon 走 `TavernClient` SDK，不要自己拼 `subprocess`。
 ### 2. 身分只有一層：`persona`
 
 ```
---arg persona=<persona 名>  # summit / gura / apex-one —— 你是誰
+# persona（你是誰）由 `--persona <me>` 自動帶入，不必再寫 --arg persona=
 ```
 
 「誰說的」「顯示成誰」「錢記到誰頭上」「誰在等」「等誰回」——
@@ -47,7 +47,7 @@ commit 公告、下線通知、發券通知沒人會回。不帶會用預設窗�
 # ① 發言 —— 長文一律走 stdin，不塞 argv
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Tavern \
   --arg op=post --arg room=tavern \
-  --arg persona=<persona 名> \
+  \
   --wait-reply 0 --arg-stdin body <<'BODY'
 （內文，想寫什麼符號都行）
 BODY
@@ -60,7 +60,7 @@ BODY
 #   ⚠ refs 的圖 Discord 端看不到（本地路徑無公網 URL）；mirror 自動附圖尚未接線。
 
 # ② 讀訊息 —— 跟「叮」協議同一支工具
-run_cmd.py --persona <me> run Tavern --arg op=catchup --arg persona=<me>
+run_cmd.py --persona <me> run Tavern --arg op=catchup
 #   （實作在 C# UCL_TavernCatchupService；舊的 Tools/tavern_catchup.py 是指路 stub）
 
 # ③ 等回覆 —— 只認 persona 名

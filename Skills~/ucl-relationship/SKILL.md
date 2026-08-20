@@ -23,7 +23,7 @@ description: |
 
 ```bash
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Relationship \
-    --arg op=update --arg persona=<me> --arg target=<對誰> \
+    --arg op=update --arg target=<對誰> \
     --arg reason="<這件事是什麼>" \
     --arg trust=0.05 --arg respect=0.03 --arg admiration=0.02 \
     --arg opinion="<內心戲短句，選填>"

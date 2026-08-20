@@ -109,6 +109,37 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             set => Set("ding_inbox_show_count", value);
         }
 
+        // 訊息內文顯示截斷（字元）—— catchup / 換骰 未讀段共用。
+        // 物理意義：**顯示**截斷，不影響原文；太小的話短訊息也被切掉，等於看得到有人講話卻讀不到內容
+        //          （Tim 2026-08-21 回報：200 連短訊息都看不完，聊天接不上）。
+        // ⚠ 它的合法區間跟「筆數」不同，所以**不共用 Clamp** —— 共用的話 500 上限會把 600 夾掉，
+        //   而那種夾法不會有人喊：畫面顯示 500、你以為自己設了 600。
+        public const int DefaultMessageBodyClip = 600;
+        public const int MinMessageBodyClip = 80;
+        public const int MaxMessageBodyClip = 4000;
+
+        /// <summary>未讀訊息內文顯示上限（字元）；0 ＝ 不截斷。</summary>
+        public static int MessageBodyClip
+        {
+            get => Get("message_body_clip", DefaultMessageBodyClip, null, ClampBodyClip);
+            set => Set("message_body_clip", value, ClampBodyClip);
+        }
+
+        /// <summary>**有 @ 我**的訊息內文顯示上限（字元）；0 ＝ 不截斷。
+        /// 物理意義：點名我的訊息通常是要我回話的那則，截太短就得再撈一次原文才知道人家問什麼
+        /// （Tim 2026-08-21）。與一般訊息分開設定，因為兩者的閱讀成本與重要性不同。</summary>
+        public const int DefaultMessageBodyClipMentioned = 1500;
+
+        public static int MessageBodyClipMentioned
+        {
+            get => Get("message_body_clip_mentioned", DefaultMessageBodyClipMentioned, null, ClampBodyClip);
+            set => Set("message_body_clip_mentioned", value, ClampBodyClip);
+        }
+
+        /// <summary>內文截斷的專屬夾取 —— 與筆數的 Clamp 分開（區間不同）。0 保留給「不截斷」。</summary>
+        public static int ClampBodyClip(int value)
+            => value <= 0 ? 0 : Mathf.Clamp(value, MinMessageBodyClip, MaxMessageBodyClip);
+
         /// <summary>全部回預設 —— 直接刪檔，讓每個 getter 落回 Default*。</summary>
         public static void ResetAll()
         {
@@ -132,19 +163,25 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return JsonData.ParseJson("{}");
         }
 
-        static int Get(string key, int defaultValue, string legacyPrefKey)
+        // iClamp：夾取規則。預設是**筆數**的 Clamp(1-500)；區間不同的欄位要自己傳
+        // （例：內文截斷 80-4000）。
+        // 🩸 2026-08-21 實測：本函式原本無條件套筆數 Clamp ⇒ 內文截斷設 600 被靜默夾成 500，
+        //   而**預設值那條路徑（下面 return defaultValue）沒有被夾** ⇒ 同一個欄位
+        //   「沒設過是 600、設過就 ≤500」，兩種上限，零報錯。
+        static int Get(string key, int defaultValue, string legacyPrefKey, System.Func<int, int> iClamp = null)
         {
+            var aClamp = iClamp ?? Clamp;
             var jd = Load();
-            if (jd != null && jd.Contains(key)) return Clamp(jd.GetInt(key, defaultValue));
+            if (jd != null && jd.Contains(key)) return aClamp(jd.GetInt(key, defaultValue));
             // JSON 沒這欄 → 讀 legacy PlayerPrefs 當種子（Tim 上午在舊版調過的值不該無聲消失）
             if (!string.IsNullOrEmpty(legacyPrefKey) && PlayerPrefs.HasKey(legacyPrefKey))
-                return Clamp(PlayerPrefs.GetInt(legacyPrefKey, defaultValue));
+                return aClamp(PlayerPrefs.GetInt(legacyPrefKey, defaultValue));
             return defaultValue;
         }
 
-        static void Set(string key, int value)
+        static void Set(string key, int value, System.Func<int, int> iClamp = null)
         {
-            int v = Clamp(value);
+            int v = (iClamp ?? Clamp)(value);
             var jd = Load();
             jd[key] = new JsonData(v);
             try

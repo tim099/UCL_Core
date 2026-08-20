@@ -2220,6 +2220,57 @@ namespace UCL.Core.EditorLib.Page
                     UCL_ChatTavernSettings.DingInboxShowCount, UCL_ChatTavernSettings.DefaultDingInboxShowCount,
                     v => UCL_ChatTavernSettings.DingInboxShowCount = v,
                     "列「最新」幾筆 @你 的待辦（較舊的只報筆數）— 有 backlog 時這個數字決定你看不看得到今天的 @");
+                GUILayout.Space(4);
+                GUILayout.Label("<b>　訊息顯示</b>", WrapLabelStyle);
+                // ⚠ 這一列不能走 DrawParamRow —— 它夾的是「筆數」區間（1-500），
+                //   600 會被靜默夾成 500：畫面顯示 500 而你以為自己設了 600。
+                DrawBodyClipRow();
+
+            }
+        }
+
+        // 區塊職責：未讀訊息內文截斷（字元）—— 與筆數列分開，因為合法區間不同。
+        // 物理意義：**顯示**截斷不改原文；太小會讓短訊息也被切掉（Tim 2026-08-21 回報：
+        //          200 連短訊息都讀不完，聊天接不上）。0 ＝ 不截斷。
+        // 數值影響：catchup／換骰的未讀段共用它；改完下一次跑就生效（不必重編）。
+        void DrawBodyClipRow()
+        {
+            const string aKey = "MessageBodyClip";
+            int aCur = UCL_ChatTavernSettings.MessageBodyClip;
+            if (!m_ParamDraft.ContainsKey(aKey)) m_ParamDraft[aKey] = aCur.ToString();
+            using (new GUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("💾", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)),
+                        GUILayout.ExpandWidth(false)))
+                {
+                    if (int.TryParse(m_ParamDraft[aKey], out int aParsed))
+                    {
+                        int aClamped = UCL_ChatTavernSettings.ClampBodyClip(aParsed);
+                        UCL_ChatTavernSettings.MessageBodyClip = aClamped;
+                        m_ParamDraft[aKey] = aClamped.ToString();
+                        // 夾過就要說 —— 靜默夾取會讓人以為自己設的值生效了。
+                        // 夾過就要說 —— 靜默夾取會讓人以為自己設的值生效了。
+                        if (aClamped != aParsed)
+                            Debug.LogWarning($"[TavernAdmin] 訊息截斷：{aParsed} 超出範圍，已夾為 {aClamped}"
+                                + $"（{UCL_ChatTavernSettings.MinMessageBodyClip}-{UCL_ChatTavernSettings.MaxMessageBodyClip}，0＝不截斷）");
+                        else Debug.Log($"[TavernAdmin] 訊息截斷 → {aClamped}");
+                    }
+                    else Debug.LogWarning($"[TavernAdmin] 訊息截斷：「{m_ParamDraft[aKey]}」不是整數，未套用");
+                }
+                if (GUILayout.Button("↩ 預設", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    UCL_ChatTavernSettings.MessageBodyClip = UCL_ChatTavernSettings.DefaultMessageBodyClip;
+                    m_ParamDraft[aKey] = UCL_ChatTavernSettings.DefaultMessageBodyClip.ToString();
+                    Debug.Log($"[TavernAdmin] 訊息截斷回預設 {UCL_ChatTavernSettings.DefaultMessageBodyClip}");
+                }
+                GUILayout.Label("未讀訊息內文截斷（字元）", UCL_GUIStyle.LabelStyle,
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(190)));
+                m_ParamDraft[aKey] = GUILayout.TextField(m_ParamDraft[aKey], UCL_GUIStyle.TextFieldStyle,
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                GUILayout.Label($"　現值 <b>{aCur}</b>／預設 {UCL_ChatTavernSettings.DefaultMessageBodyClip}"
+                    + $"　區間 {UCL_ChatTavernSettings.MinMessageBodyClip}-{UCL_ChatTavernSettings.MaxMessageBodyClip}（0＝不截斷）"
+                    + "　—— catchup 與自由時間換骰的未讀段共用", WrapLabelStyle);
+                GUILayout.FlexibleSpace();
             }
         }
 

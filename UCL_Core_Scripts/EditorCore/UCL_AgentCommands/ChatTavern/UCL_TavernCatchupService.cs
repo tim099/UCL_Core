@@ -88,12 +88,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (truncated)
                 sb.AppendLine("⚠ **未讀掃到上限** —— 更舊的未讀沒有列出來，這份清單不完整。");
             sb.AppendLine();
-            foreach (var m in shown) AppendMsg(sb, m, "");
+            int clipNormal = UCL_ChatTavernSettings.MessageBodyClip;
+            int clipMention = UCL_ChatTavernSettings.MessageBodyClipMentioned;
+            foreach (var m in shown)
+            {
+                bool mentioned = MentionsMe(m, iPersona);
+                AppendMsg(sb, m, mentioned ? "🔔 **@你**" : "", mentioned ? clipMention : clipNormal);
+            }
             if (backfill.Count > 0)
             {
                 sb.AppendLine();
                 sb.AppendLine($"### 🔁 補足最近 {minCount} 筆（**這些是已看過的**，不是新訊息）");
-                foreach (var m in backfill) AppendMsg(sb, m, "（已讀）");
+                foreach (var m in backfill) AppendMsg(sb, m, "（已讀）", clipNormal);
             }
 
             AppendInbox(sb, iPersona, iInboxShow <= 0 ? DefaultInboxShow : iInboxShow);
@@ -121,6 +127,78 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return sb.ToString();
         }
 
+        // ===========================================================
+        // 區塊職責：「未讀訊息」這一段的**唯一**呈現實作 —— 叮 / 自由時間換骰共用。
+        // 物理意義：在此之前 catchup 與 `Cmd_FreeTime` 各有一份渲染，兩邊的截斷長度、
+        //          排除規則、游標推進時機各自演化 ⇒ 同一批訊息在兩處長得不一樣，而兩邊都不報錯。
+        // ⚠ 順序不可反：**先寫進 ioR、再推游標**。反過來的話回傳檔寫入失敗時訊息已被標成已讀
+        //          ⇒ 那批永遠不再出現在任何人的未讀裡，且沒有錯誤訊息。
+        // 數值影響：iBodyClip 是**顯示**截斷（不影響原文）；iAdvance=false 時完全不寫檔。
+        // ===========================================================
+        public static void AppendUnreadSection(
+            StringBuilder ioR, string iPersona, string iRoom,
+            bool iQuietSystem, bool iIncludeSelf, int iBodyClip, int iBodyClipMentioned, bool iAdvance,
+            out List<UCL_ChatMessage> oShown, out string oNewestTs, out int oHiddenSelf, out int oHiddenSystem)
+        {
+            oShown = new List<UCL_ChatMessage>();
+            oNewestTs = null;
+            oHiddenSelf = 0;
+            oHiddenSystem = 0;
+            string room = string.IsNullOrEmpty(iRoom) ? "tavern" : iRoom;
+            bool truncated = false;
+            try
+            {
+                var unread = UCL_TavernCursor.ReadUnread(iPersona, room, out oNewestTs, out truncated);
+                foreach (var m in unread)
+                {
+                    if (!iIncludeSelf && IsMine(m, iPersona)) { oHiddenSelf++; continue; }
+                    if (iQuietSystem && IsSystem(m)) { oHiddenSystem++; continue; }
+                    oShown.Add(m);
+                }
+            }
+            catch (Exception e)
+            {
+                // 讀不到 ≠ 沒訊息 —— 空白會被讀成「今天很安靜」，那是兩件事。游標不推進。
+                ioR.AppendLine($"## 🍺 酒館未讀：⚠ **讀取失敗**（{e.Message}）—— 這不代表沒人講話；游標未推進");
+                oNewestTs = null;
+                return;
+            }
+
+            ioR.AppendLine($"## 🍺 酒館未讀　**{oShown.Count}** 筆"
+                + (oHiddenSelf > 0 ? $"（排除自己 {oHiddenSelf}）" : "")
+                + (oHiddenSystem > 0 ? $"（隱藏酒保廣播 {oHiddenSystem}　`quiet_system=0` 可見）" : "")
+                + (iAdvance ? "　—— **本段印出後即推進已讀游標**" : "　—— 本次**不推進**游標"));
+            if (truncated)
+                ioR.AppendLine("- ⚠ **掃到上限，更舊的未讀沒列出** —— 這份清單不完整。");
+            if (oShown.Count == 0) ioR.AppendLine("- （沒有未讀）");
+            foreach (var m in oShown)
+            {
+                bool mentioned = MentionsMe(m, iPersona);
+                // 標記不是裝飾：不標的話「同一份清單裡有的長有的短」看起來像截斷壞掉，
+                // 而其實是規則在生效 —— 讓規則在畫面上看得見，才不會有人回頭去查一個不存在的 bug。
+                AppendMsg(ioR, m, mentioned ? "🔔 **@你**" : "",
+                          mentioned ? iBodyClipMentioned : iBodyClip);
+            }
+
+            if (!iAdvance || string.IsNullOrEmpty(oNewestTs)) return;
+            UCL_TavernCursor.WriteCursor(iPersona, oNewestTs);
+            string back = UCL_TavernCursor.ReadCursor(iPersona);
+            ioR.AppendLine(back == oNewestTs
+                ? $"- ✓ 已讀游標推進到 `{back}`（寫入後讀回確認）"
+                : $"- ✗ 游標寫入後讀回不符：期望 `{oNewestTs}`、實際 `{back}`");
+        }
+
+        // 判準：body 裡出現 `@<persona>`（不分大小寫）。
+        // ⚠ 刻意**不**認顯示名或 agent 名 —— 那兩個會變（合一遷移剛改過一輪），
+        //   而 persona 是這套系統裡唯一穩定的識別。漏認的代價是「該長的沒長」（看得到、要再撈一次），
+        //   誤認的代價是「不相干的訊息佔滿版面」—— 前者便宜得多。
+        static bool MentionsMe(UCL_ChatMessage m, string iPersona)
+        {
+            if (string.IsNullOrEmpty(iPersona)) return false;
+            string body = m?.body ?? "";
+            return body.IndexOf("@" + iPersona, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         static bool IsMine(UCL_ChatMessage m, string iPersona)
             => !string.IsNullOrEmpty(iPersona)
                && string.Equals(m?.sender_persona, iPersona, StringComparison.OrdinalIgnoreCase);
@@ -134,7 +212,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 || string.Equals(s, "subconscious-daemon", StringComparison.OrdinalIgnoreCase);
         }
 
-        static void AppendMsg(StringBuilder sb, UCL_ChatMessage m, string iMark)
+        static void AppendMsg(StringBuilder sb, UCL_ChatMessage m, string iMark, int iClip = BODY_CLIP)
         {
             string tag = (m?.meta != null && m.meta.TryGetValue("tag", out var tg) && !string.IsNullOrEmpty(tg))
                 ? $" «{tg}»" : "";
@@ -142,7 +220,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string persona = string.IsNullOrEmpty(m?.sender_persona) ? "" : "@" + m.sender_persona;
             sb.AppendLine($"- **[seq {m.seq}]** {LocalHm(m.ts)} **{name}{persona}**{tag} {iMark}");
             string body = (m?.body ?? "").Replace("\r", "").Replace("\n", " ⏎ ").Trim();
-            if (body.Length > BODY_CLIP) body = body.Substring(0, BODY_CLIP) + $"…（全文 {body.Length} 字）";
+            if (iClip > 0 && body.Length > iClip) body = body.Substring(0, iClip) + $"…（全文 {body.Length} 字）";
             sb.AppendLine($"    {body}");
         }
 

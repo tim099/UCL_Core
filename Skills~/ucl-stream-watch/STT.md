@@ -61,7 +61,7 @@ STT **嚴格耦合錄影**：錄影開關一動，`stt_enabled` 跟著動（whis
 - **agent 自助開播**：
   ```bash
   python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch \
-      --arg step=capture --arg persona=<me> --arg on=1
+      --arg step=capture --arg on=1
   ```
   它**不自己寫 config**，而是串 `UCL_ScreenStreamPage.SetRecordingEnabled` ——
   跟 GUI 那顆按鈕走同一條規則（戳時刻／連動 `stt_enabled`／發酒保公告／要求 daemon 同步）。

@@ -282,6 +282,37 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             //          會讓人開始略過整個 tag，那比沒訊息更糟）。
             // GetArg 吃 Dictionary，本函式收的是 IDictionary —— 直接取，不為了共用去改簽章。
             string aChatBody = (iArgs != null && iArgs.TryGetValue("body", out var aChatRaw) ? aChatRaw : "").Trim();
+
+            // ── roll=0：只讀訊息、不換骰（Tim 2026-08-21）──
+            // 物理意義：「我還在做同一件活動，但想看看有沒有人講話」是高頻需求，
+            //   而換骰會 ①輪次+1 ②重擲清單 ③發一則「換骰」公告 —— 三件都在說謊：
+            //   我沒有換活動，公告卻宣布我換了，而「換骰比開工多」的提醒也會跟著誤報。
+            // 數值影響：不動 rounds、不重擲、不發換骰公告（帶 body 才發，且 tag 是 chat 不是 dice-roll）。
+            bool aKeepDice = (iArgs != null && iArgs.TryGetValue("roll", out var aRollRaw) ? aRollRaw : "1").Trim() == "0";
+            if (aKeepDice)
+            {
+                int aKeepSeq = 0;
+                if (!string.IsNullOrEmpty(aChatBody))
+                    aKeepSeq = await TavernPost(iArgs, iPersona, aChatBody, "chat", iToken);
+
+                AppendTimeFields(aR, aNow, aUntil);
+                aR.AppendLine($"- 輪次: **{aSession.rounds}**（**未換骰** —— `roll=0`，繼續當前活動）"
+                              + $"　活動實作: **{aSession.activities_done}** 件");
+                aR.AppendLine(aKeepSeq > 0
+                    ? $"- 本輪交流: ✅ 已發言 seq **{aKeepSeq}**（tag=chat，不是換骰公告）"
+                    : "- 本輪交流: **未帶訊息** —— 想講話帶 `--arg-file body=<檔>`");
+                AppendOnlineSection(aR, iPersona);
+                AppendTavernCatchupSection(aR, iPersona);
+                aR.AppendLine("## next");
+                aR.AppendLine("1. **繼續當前活動**（`op=step` / 做完 `op=done`）—— 本次沒有新骰面。");
+                aR.AppendLine("2. 想換活動再跑一次 `step=next`（不帶 `roll=0`）。");
+                AppendContinueBlock(aR, iPersona, (int)Math.Max(0, (aUntil - aNow).TotalMinutes));
+                WritePayload(iArgs, aPath, aR.ToString());
+                Debug.Log($"[FreeTime] step=next roll=0（只讀訊息）→ {aPath}");
+                return;
+            }
+
+
             var aDiceBody = new StringBuilder();
             if (!string.IsNullOrEmpty(aChatBody))
             {
@@ -837,53 +868,23 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         //   ① 骰面與訊息要在**同一份檔**（分兩處＝一定有一處不會被讀到）；
         //   ② **要推游標**：換骰是高頻動作，只看不推的話未讀會整場堆積，
         //      下一次真的 catchup 一次倒出來 —— 那等於沒有人在讀。
-        // 順序不可反：**先印進回傳檔、再推游標**。反過來的話回傳檔寫入若失敗，
-        //   那批訊息已被標成已讀 ⇒ 永遠不再出現在任何人的未讀裡，而且不報錯。
-        // 數值影響：讀最近 SCAN_LIMIT 則、寫一次游標檔。長訊息截斷（骰面是主體，不能被洗掉）。
+        // ⚠ 2026-08-21：呈現改**委派** `UCL_TavernCatchupService.AppendUnreadSection`。
+        //   在此之前這裡自帶一份渲染，跟叮那份的截斷長度／排除規則各自演化
+        //   ⇒ 同一批訊息在兩處長得不一樣，而兩邊都不報錯。截斷長度改由後台設定
+        //   （`UCL_ChatTavernSettings.MessageBodyClip`），不再寫死在這裡。
         // ===========================================================
-        const int TAVERN_MSG_BODY_MAX = 200;
-
         static void AppendTavernCatchupSection(StringBuilder ioR, string iPersona)
         {
-            ioR.AppendLine("## 🍺 酒館未讀（比照叮 —— **本段印出後即推進已讀游標**）");
-            string aNewest = null;
-            try
-            {
-                var aUnread = ChatTavern.UCL_TavernCursor.ReadUnread(iPersona, "tavern", out aNewest, out bool aTruncated);
-                if (aUnread.Count == 0)
-                {
-                    ioR.AppendLine("- （沒有未讀）");
-                }
-                else
-                {
-                    ioR.AppendLine($"- **{aUnread.Count} 筆未讀**：");
-                    foreach (var aMsg in aUnread)
-                    {
-                        string aTag = aMsg.meta != null && aMsg.meta.TryGetValue("tag", out var t) ? $" «{t}»" : "";
-                        string aBody = (aMsg.body ?? "").Replace("\r", "").Replace("\n", " ⏎ ");
-                        if (aBody.Length > TAVERN_MSG_BODY_MAX) aBody = aBody.Substring(0, TAVERN_MSG_BODY_MAX) + "…";
-                        ioR.AppendLine($"  - [{aMsg.ts}] **{aMsg.DisplayName}**{aTag}: {aBody}");
-                    }
-                    if (aTruncated)
-                    {
-                        ioR.AppendLine($"  - ⚠ **可能還有更舊的未讀沒列出**（掃描上限 {ChatTavern.UCL_TavernCursor.SCAN_LIMIT} 則已滿）"
-                                       + " —— 游標仍會推進，漏掉的請跑 catchup 對帳");
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                // 讀不到不是「沒訊息」—— 空白會被讀成安靜，那是兩件事。
-                ioR.AppendLine($"- ⚠ 讀取失敗（{e.Message}）—— **這不代表沒人講話**；游標不推進");
-                return;
-            }
-            // 先印後推（見上方順序不可反）
-            if (!string.IsNullOrEmpty(aNewest))
-            {
-                ChatTavern.UCL_TavernCursor.WriteCursor(iPersona, aNewest);
-                ioR.AppendLine($"- ✓ 已讀游標推進到 `{aNewest}`");
-            }
-            ioR.AppendLine("- inbox（@ 我的待處理）不在本段範圍 —— 那仍走 `tavern_catchup.py`／`inbox_ack.py`。");
+            ChatTavern.UCL_TavernCatchupService.AppendUnreadSection(
+                ioR, iPersona, "tavern",
+                iQuietSystem: false,          // 自由時間看得到打款／結算（那也是同事動態）
+                iIncludeSelf: false,
+                iBodyClip: ChatTavern.UCL_ChatTavernSettings.MessageBodyClip,
+                iBodyClipMentioned: ChatTavern.UCL_ChatTavernSettings.MessageBodyClipMentioned,
+                iAdvance: true,
+                out _, out _, out _, out _);
+            ioR.AppendLine("- inbox（@ 我的待處理）不在本段範圍 —— 那走 `run Tavern --arg op=catchup`"
+                           + "（舊的 `tavern_catchup.py` 已是指路 stub）。");
         }
 
         // internal：活動入口 Cmd_FreeTimeActivity 複用同一支發文（含「bank 解析失敗不擋發言」那個修正）——
@@ -951,6 +952,11 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         //          id / how / md 路徑列出來。只印組名的骰面等於把路指到一半 ——
         //          讀的人還得再跑一次 Cmd 才知道能填什麼，而那正是這層要消滅的斷點。
         // 數值影響：純輸出。組員數 1 的項（未分組活動、脫離出來的單獨項）不重複印一層縮排。
+        // 骰面印「這是什麼」，**不印「怎麼做」**（Tim 2026-08-21）。
+        // 物理意義：挑活動時需要的是**一句話認出它**；執行細節（md 全文路徑）在挑之前沒有用，
+        //          每輪重印一次只是把未讀訊息與時間欄擠出視線。
+        //          ⇒ 細節長在**需要它的那一刻**：`op=pick` 的回傳檔會印該活動 md 的全文路徑。
+        // ⚠ 刻意不留 `verbose` 旋鈕 —— 沒有呼叫端會傳 true 的分支等於一條沒人走的路，遲早有人把它接回去。
         static void AppendDiceSection(StringBuilder ioR, List<DiceEntry> iList, string iSource, bool iIsLive)
         {
             ioR.AppendLine("## dice（兩層隨機排序，僅供參考 — 自由意志優先；無明確意圖從前 3 挑）");
@@ -958,6 +964,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             ioR.AppendLine("- 做不成的活動**已隱藏**（例：沒開播時不列「觀看直播」）—— 清單長度會隨當下狀況變動，那是正常的。");
             ioR.AppendLine("- **同組收成同一項**；觸發特殊規則的活動會**脫離分組成單獨一項**排最前（理由跟著印在它旁邊）。");
             ioR.AppendLine("- `op=pick` 要填的是**具體活動 id**（下面反引號裡那個），不是組名。");
+            ioR.AppendLine("- ℹ 這裡只說「是什麼」；**怎麼做**（活動 md 全文路徑）在 `op=pick` 之後才印。");
             for (int i = 0; i < iList.Count; i++)
             {
                 var aEntry = iList[i];
@@ -967,16 +974,15 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     string aFrom = aEntry.hoisted && !string.IsNullOrEmpty(aEntry.fromGroup)
                         ? $"（⭐ 自「{aEntry.fromGroup}」組脫離 —— 此刻特別值得做）" : "";
                     ioR.AppendLine($"{i + 1}. {(aEntry.priority ? "⭐ " : "")}**{a.name}**　`{a.id}`{aFrom}"
-                                   + $"{(string.IsNullOrEmpty(a.how) ? "" : $" — {a.how}")}");
-                    ioR.AppendLine($"   （md: `{a.path}`）");   // 掃描端傳遞實路徑，不讓 agent 拿活動名反推雙層目錄
+                                   + (string.IsNullOrEmpty(a.how) ? "" : $" — {a.how}"));
                     continue;
                 }
                 ioR.AppendLine($"{i + 1}. {(aEntry.priority ? "⭐ " : "")}**{aEntry.label}**"
                                + $"（{aEntry.items.Count} 項{(aEntry.tooLong ? "，本組全員本場時間不夠" : "")}）");
                 foreach (var a in aEntry.items)
                 {
-                    ioR.AppendLine($"   - `{a.id}` **{a.name}**{(string.IsNullOrEmpty(a.how) ? "" : $" — {a.how}")}");
-                    ioR.AppendLine($"     （md: `{a.path}`）");
+                    ioR.AppendLine($"   - `{a.id}` **{a.name}**"
+                                   + (string.IsNullOrEmpty(a.how) ? "" : $" — {a.how}"));
                 }
             }
             ioR.AppendLine($"- [清單來源: {iSource}]");

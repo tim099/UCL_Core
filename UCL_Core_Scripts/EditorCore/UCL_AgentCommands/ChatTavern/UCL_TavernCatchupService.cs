@@ -1,0 +1,239 @@
+#if UNITY_EDITOR
+// ===========================================================
+// 區塊職責：「叮 / 醒來時的酒館 catch-up」—— 在線一覽 ＋ 未讀訊息 ＋ persona inbox，組成一份簡報。
+// 物理意義：agent 被叮或剛醒來時，chat 端**不會**自動把同事的發言推過來。
+//          沒有這一步的症狀不是「看到比較少」，是**看起來一切正常地漏掉別人的交接**。
+// 為什麼是 static class 而不是寫在 Cmd 裡（Tim 2026-08-20 拍板）：
+//          同一份組裝會被 Cmd_Tavern、早安流程、後台頁共用。放進 Cmd 的話第二個呼叫端
+//          只能複製一份，而兩份對「誰在線 / 我還沒看過什麼」給出不同答案時，兩邊都不會報錯。
+// 🩸 本層取代 `AgentCommands/Tools/tavern_catchup.py`（2026-08-20）。搬家的真正理由不是「比較乾淨」，
+//          是**「已讀到哪」原本有三個寫入端**：C# `UCL_TavernCursor`、python `tavern_cmd.py`、
+//          python `tavern_catchup.py`，各自 read-modify-write 同一份 `_inbox_cursor/<persona>.json`。
+//          2026-08-16 觀影 sidecar 的兩隻游標 bug（游標從沒設過 ⇒ 從全庫最舊列起／
+//          0 筆未讀仍前進 ⇒ 跳過同事整段發言）就是這個家族，而兩次「看起來都很正常」。
+// 數值影響：**唯一的寫入是推進游標**（走 UCL_TavernCursor，不自己碰檔），以及落一份回傳檔。
+//          不發訊息、不記帳、不動金流。
+// ⚠ 順序不可反：**先組出簡報、再推游標**。反過來的話，回傳檔寫入失敗時訊息已被標成已讀
+//          ⇒ 那批訊息永遠不會再出現在任何人的未讀裡，而且沒有錯誤訊息。
+// ===========================================================
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
+using UCL.Core.EditorLib.AgentCommands.AwakenInit;
+
+namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
+{
+    public static class UCL_TavernCatchupService
+    {
+        public const int DefaultMinCount = 10;
+        public const int DefaultInboxShow = 10;
+        const int BODY_CLIP = 240;
+
+        // ===========================================================
+        // 區塊職責：組出 catchup 簡報並（可選）推進游標。
+        // 數值影響：oAdvancedTo 是**真的寫進去**的游標值；沒有未讀時為 null 且不寫檔
+        //          —— 「0 筆未讀」不推進是刻意的，推進會跳過還沒落盤的那一段。
+        // ===========================================================
+        public static string Build(
+            string iPersona, string iRoom, int iMinCount, bool iQuietSystem, bool iIncludeSelf,
+            int iInboxShow, bool iAdvanceCursor, out string oAdvancedTo, out int oUnreadCount)
+        {
+            oAdvancedTo = null;
+            oUnreadCount = 0;
+            string room = string.IsNullOrEmpty(iRoom) ? "tavern" : iRoom;
+            int minCount = iMinCount <= 0 ? DefaultMinCount : iMinCount;
+            var sb = new StringBuilder();
+
+            string cursorBefore = UCL_TavernCursor.ReadCursor(iPersona);
+            sb.AppendLine($"# 📬 叮 catchup — {iPersona}　`{room}`");
+            sb.AppendLine();
+            sb.AppendLine($"- 游標（本次之前）：{(string.IsNullOrEmpty(cursorBefore) ? "**（從未設過）** —— 下面會是最近 " + minCount + " 筆，不是全庫" : "`" + cursorBefore + "`")}");
+            sb.AppendLine();
+
+            AppendOnline(sb, iPersona);
+
+            // ── 未讀 ──
+            var unread = UCL_TavernCursor.ReadUnread(iPersona, room, out string newestTs, out bool truncated);
+            var shown = new List<UCL_ChatMessage>();
+            int hiddenSystem = 0, hiddenSelf = 0;
+            foreach (var m in unread)
+            {
+                if (!iIncludeSelf && IsMine(m, iPersona)) { hiddenSelf++; continue; }
+                if (iQuietSystem && IsSystem(m)) { hiddenSystem++; continue; }
+                shown.Add(m);
+            }
+            oUnreadCount = shown.Count;
+
+            // 未讀不足 minCount 時補最近的舊訊息 —— Tim 2026-05-28：「確保會讀到至少最近 10 筆
+            // （無論是否提及自己），已看過的可排除」。⚠ 補進來的那幾筆要**標記**，
+            // 否則「這是新的」與「這是補給你看的」在畫面上長得一樣。
+            var backfill = new List<UCL_ChatMessage>();
+            if (shown.Count < minCount)
+            {
+                var recent = UCL_ChatTavernIO.Tail(room, minCount * 3);
+                for (int i = recent.Count - 1; i >= 0 && backfill.Count < (minCount - shown.Count); i--)
+                {
+                    var m = recent[i];
+                    if (shown.Contains(m)) continue;
+                    if (!iIncludeSelf && IsMine(m, iPersona)) continue;
+                    if (iQuietSystem && IsSystem(m)) continue;
+                    backfill.Insert(0, m);
+                }
+            }
+
+            sb.AppendLine($"## 💬 未看訊息　**{shown.Count}** 筆"
+                + (hiddenSelf > 0 ? $"（已排除自己 {hiddenSelf} 筆）" : "")
+                + (hiddenSystem > 0 ? $"（已隱藏酒保系統廣播 {hiddenSystem} 筆 —— 打款／獎金可能在裡面，`quiet_system=0` 看得到）" : ""));
+            if (truncated)
+                sb.AppendLine("⚠ **未讀掃到上限** —— 更舊的未讀沒有列出來，這份清單不完整。");
+            sb.AppendLine();
+            foreach (var m in shown) AppendMsg(sb, m, "");
+            if (backfill.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"### 🔁 補足最近 {minCount} 筆（**這些是已看過的**，不是新訊息）");
+                foreach (var m in backfill) AppendMsg(sb, m, "（已讀）");
+            }
+
+            AppendInbox(sb, iPersona, iInboxShow <= 0 ? DefaultInboxShow : iInboxShow);
+
+            // ── 推游標（最後一步，且只有真的有未讀才推）──
+            sb.AppendLine();
+            if (!iAdvanceCursor)
+            {
+                sb.AppendLine("- 游標：**未推進**（`advance=0`）—— 這次讀到的下次還會再出現。");
+            }
+            else if (string.IsNullOrEmpty(newestTs))
+            {
+                // 🩸 2026-08-16：0 筆未讀仍前進 ⇒ 跳過了同事後來發言的區間，而回傳檔看起來正常。
+                sb.AppendLine("- 游標：**未推進**（本次 0 筆未讀）—— 沒有讀數就不該移動水位。");
+            }
+            else
+            {
+                UCL_TavernCursor.WriteCursor(iPersona, newestTs);
+                string readBack = UCL_TavernCursor.ReadCursor(iPersona);
+                oAdvancedTo = readBack;
+                sb.AppendLine(readBack == newestTs
+                    ? $"- ✓ 游標已推進到 `{readBack}`（寫入後讀回確認）"
+                    : $"- ✗ 游標寫入後讀回不符：期望 `{newestTs}`、實際 `{readBack}` —— 下次會重讀這一段");
+            }
+            return sb.ToString();
+        }
+
+        static bool IsMine(UCL_ChatMessage m, string iPersona)
+            => !string.IsNullOrEmpty(iPersona)
+               && string.Equals(m?.sender_persona, iPersona, StringComparison.OrdinalIgnoreCase);
+
+        // 系統廣播＝酒保代發的自動訊息（打款／結算／公告）。判準走 sender_id，
+        // 不看內容關鍵字 —— 關鍵字會把同事**談論**打款的訊息一起吃掉。
+        static bool IsSystem(UCL_ChatMessage m)
+        {
+            string s = m?.sender_id ?? "";
+            return string.Equals(s, "tavern-keeper", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(s, "subconscious-daemon", StringComparison.OrdinalIgnoreCase);
+        }
+
+        static void AppendMsg(StringBuilder sb, UCL_ChatMessage m, string iMark)
+        {
+            string tag = (m?.meta != null && m.meta.TryGetValue("tag", out var tg) && !string.IsNullOrEmpty(tg))
+                ? $" «{tg}»" : "";
+            string name = string.IsNullOrEmpty(m?.sender_name) ? (m?.sender_id ?? "?") : m.sender_name;
+            string persona = string.IsNullOrEmpty(m?.sender_persona) ? "" : "@" + m.sender_persona;
+            sb.AppendLine($"- **[seq {m.seq}]** {LocalHm(m.ts)} **{name}{persona}**{tag} {iMark}");
+            string body = (m?.body ?? "").Replace("\r", "").Replace("\n", " ⏎ ").Trim();
+            if (body.Length > BODY_CLIP) body = body.Substring(0, BODY_CLIP) + $"…（全文 {body.Length} 字）";
+            sb.AppendLine($"    {body}");
+        }
+
+        static string LocalHm(string iTs)
+        {
+            if (DateTime.TryParse(iTs, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var t))
+                return t.ToLocalTime().ToString("MM-dd HH:mm:ss");
+            return "??:??:??";
+        }
+
+        // ===========================================================
+        // 區塊職責：在線一覽。
+        // ⚠ 空清單**不是**「沒有人在線」，是「查不到 lock」 —— 兩者必須長得不一樣，
+        //   否則會有人拿空清單當「今天沒人」的證據去 @ 一個其實在線的人（或反之）。
+        // ===========================================================
+        static void AppendOnline(StringBuilder sb, string iMe)
+        {
+            List<UCL_PersonaLockInfo> locks;
+            try { locks = UCL_ActivePersonaLocks.ListOnline(); }
+            catch (Exception e)
+            {
+                sb.AppendLine($"## 🟢 在線：**讀取失敗** —— {e.Message}（空 ≠ 沒人）");
+                sb.AppendLine();
+                return;
+            }
+            sb.AppendLine($"## 🟢 在線（{locks.Count}）");
+            if (locks.Count == 0)
+                sb.AppendLine("- （查不到任何 lock）—— **空不代表沒人**，只代表這裡讀不到。");
+            foreach (var l in locks)
+            {
+                string me = string.Equals(l.Persona, iMe, StringComparison.OrdinalIgnoreCase) ? "　← 你" : "";
+                string status = string.IsNullOrEmpty(l.NowStatus) ? "" : $"　💬 {l.NowStatus}";
+                sb.AppendLine($"- **{l.Persona}**（{l.Agent}）{status}{me}");
+            }
+            sb.AppendLine();
+        }
+
+        // ===========================================================
+        // 區塊職責：persona 層 inbox 摘要（誰 @ 了我、還沒處理的）。
+        // 物理意義：ack 的語意是「已處理」不是「已看過」⇒ 這裡只列，不代為歸檔。
+        // ===========================================================
+        static void AppendInbox(StringBuilder sb, string iPersona, int iShow)
+        {
+            string raw;
+            try { raw = UCL_ChatTavernQuestIO.ReadInbox("tavern", iPersona); }
+            catch (Exception e)
+            {
+                sb.AppendLine($"## 📥 inbox：讀取失敗 —— {e.Message}");
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                sb.AppendLine("## 📥 inbox：（空）");
+                return;
+            }
+            var lines = raw.Replace("\r", "").Split('\n');
+            // 條目的判準是**標題行 `## [seq=…]`**，不是「行首有 -」。
+            // 🩸 首航踩到：用 `- ` 當判準會把 commit 訊息的 bullet 與身分卡欄位一起數進去
+            //   ⇒ 報 42 筆而實際 44 筆條目，**而那個數字看起來完全正常**（判準⑤：名字比事實大）。
+            var titles = new List<string>();
+            var snippets = new List<string>();
+            string curTitle = null;
+            string curFirstBody = null;
+            foreach (var ln in lines)
+            {
+                if (ln.StartsWith("## [seq="))
+                {
+                    if (curTitle != null) { titles.Add(curTitle); snippets.Add(curFirstBody ?? ""); }
+                    curTitle = ln.Substring(3).Trim();
+                    curFirstBody = null;
+                }
+                else if (curTitle != null && curFirstBody == null)
+                {
+                    string t = ln.Trim();
+                    if (t.Length > 0 && !t.StartsWith("_at ") && !t.StartsWith(">") && !t.StartsWith("---"))
+                        curFirstBody = t.Length > 90 ? t.Substring(0, 90) + "…" : t;
+                }
+            }
+            if (curTitle != null) { titles.Add(curTitle); snippets.Add(curFirstBody ?? ""); }
+
+            sb.AppendLine($"## 📥 inbox（persona 層）　**{titles.Count}** 筆待處理"
+                + (titles.Count > iShow ? $"，以下為最新 {iShow} 筆" : ""));
+            for (int i = Math.Max(0, titles.Count - iShow); i < titles.Count; i++)
+            {
+                sb.AppendLine($"- {titles[i]}");
+                if (!string.IsNullOrEmpty(snippets[i])) sb.AppendLine($"    ↳ {snippets[i]}");
+            }
+            sb.AppendLine();
+            sb.AppendLine("　↳ 處理完才歸檔（ack ＝ **已處理**，不是已看過）：`inbox_ack.py --agent " + iPersona + "`");
+        }
+    }
+}
+#endif

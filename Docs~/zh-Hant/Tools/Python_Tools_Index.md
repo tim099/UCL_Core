@@ -207,10 +207,10 @@ UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle 
 
 | Tool | 用途 |
 |---|---|
-| `debuglog_query.py` | DebugLog 查 (5 ops: tail / component / errors / search / summary) |
+| `debuglog_query.py` | DebugLog 查 (5 ops: tail / component / errors / search / summary)　⚠ **依賴 `DebugLogs~/` 目錄，Bar 專案沒有該目錄 ⇒ 在 Bar 無資料可讀**（CardGame 端仍活） |
 | `screenshot.py` | 單張截圖（串流 daemon 已搬 UCL_Core `screenstream_*.py`） |
-| `tavern_catchup.py` | 叮 / 早安的酒館 catch-up（在線一覽＋未讀＋inbox） |
-| `tavern_query.py` | tavern 查工具 |
+| ~~`tavern_catchup.py`~~ | **已退場 2026-08-20** → `Cmd_Tavern op=catchup`（實作 `UCL_TavernCatchupService`）；檔案留指路 stub |
+| ~~`tavern_query.py`~~ | **已退場 2026-08-20** → `Cmd_Tavern op=query --arg kind=…`（實作 `UCL_TavernQueryService`）；檔案留指路 stub |
 | `workflow_patch.py` | workflow-patch register |
 
 → 跨專案搬 UCL_Core 時這些**不會跟著**, 各 project 自己有自己版本。

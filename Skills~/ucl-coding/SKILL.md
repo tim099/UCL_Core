@@ -63,6 +63,41 @@ description: |
 > **不要把「請求被收下」讀成「編譯完成」**。
 > 排查編譯錯誤的完整手勢 → skill `ucl-compile-error`。
 
+> [!WARNING]
+> ## 🐍 用 python 腳本改 C# 的兩個坑（2026-08-20 一天內兩次）
+> 跳脫字元在 `heredoc → python → .cs` 這條鏈上會被多解一次，把 C# 字串 literal 拆斷；
+> 而 `assert s.count(old)==1` 通過**不代表**定義與呼叫端都換了（腳本印成功、code 編不過）。
+> ⇒ 判準與修法（含「內容先落成檔案再插入」與「recompile 要看 errors= 那一行」）寫在
+> `ucl_core:Docs~/{lang}/Agent/Python_Coding_Standards.md` **硬規則四**。
+
+> [!IMPORTANT]
+> ## 🩸 撞到坑之後：把避坑寫回**語言文件**，不要留在對話裡
+>
+> 對話會被 compact 掉，文件不會。**沒寫回去的坑＝下一個人（多半是你自己）會再踩一次。**
+>
+> **什麼樣的坑值得寫**（三選一即可）：會再犯／失敗是**靜默**的／修法本身會長出同族的下一隻。
+> 一次性手誤不用寫。
+>
+> | 坑的性質 | 寫回哪裡 |
+> |---|---|
+> | C# 寫法、Unity API、Editor 行為、IMGUI | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
+> | python 工具、CLI、**用腳本改別的語言的檔** | `ucl_core:Docs~/{lang}/Agent/Python_Coding_Standards.md` |
+> | 註解該寫什麼／不該寫什麼 | `ucl_core:Docs~/{lang}/Agent/Code_Comment_Standards.md` |
+> | 跨語言、跨工作的通用教訓（不是寫法問題） | skill `agent-lessons-log`（`Cmd_NoteLesson`，跨 agent 共享） |
+> | 某支 workflow 的 ad-hoc 修正 | skill `ucl-workflow-patch`（累積 3 筆自動警示該 refactor） |
+> | 這項工作專屬的坑（換人接手才需要知道） | skill `ucl-work-memory`（`--type pitfall`） |
+>
+> **怎麼寫才有用**（三條都是踩出來的）：
+> 1. **寫判準，不要寫願望。**「下次記得 X」等於沒寫 —— 要寫成「**符合什麼形狀就停下來**」。
+> 2. **附血證**：日期 ＋ 當時的讀數（`errors=4` / `5014 則` / `21 筆`）。
+>    沒有讀數的規則沒有射程，下一個人不知道它涵蓋到哪裡。
+> 3. **修法優先序**：讓那格失敗**不可能發生**（換做法／換資料形狀）
+>    ＞ 讓它**當場喊**（守衛、fail-loud、對帳）＞ 才輪到「記得注意」。
+>    第三種只在前兩種都做不到時才寫 —— 🩸 判準⑦入憲當天四犯，而長在路上的裁圖首日四攔，戰績 0:4 對 4:0。
+>
+> ⚠ **本 skill 只說明「怎麼記」，避坑內容一律住上表那些文件。**
+> skill 是索引；把內容搬進來會長成第二份規範，而兩份遲早各說各話、且兩邊都不報錯。
+
 ## 📣 寫 code 前先廣播（now_status，Tim 2026-08-19 拍板）
 
 動手改 code **之前**，到酒館發一則短訊說你要改哪些檔，並帶 `--arg status=`：

@@ -245,6 +245,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "task_state": Op_TaskState(args); break;
                     case "inbox_read": Op_InboxRead(args); break;
                     case "events_since": Op_EventsSince(args); break;
+                    case "query": Op_Query(args); break;
+                    case "catchup": Op_Catchup(args); break;
                     case "session_enter": Op_SessionEnter(args); break;
                     default:
                         RejectLastOp($"未知 op：{op}");
@@ -1567,6 +1569,108 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===========================================================
         // 區塊：op=read — 切片查詢
         // ===========================================================
+        // ===========================================================
+        // 區塊職責：op=catchup —— 叮／醒來的酒館 catch-up 入口（Tim 2026-08-20 拍板取代 tavern_catchup.py）。
+        // 物理意義：本方法只解參數、呼叫 `UCL_TavernCatchupService`、落回傳檔。
+        //          組裝與游標邏輯**一行都不寫在這裡**（Tim：邏輯抽 static class，不放 Cmd 內）。
+        // 數值影響：唯一寫入是游標推進（由 service 走 UCL_TavernCursor）＋一份回傳檔。
+        // ===========================================================
+        void Op_Catchup(Dictionary<string, string> args)
+        {
+            string persona = GetArg(args, "persona", "").Trim();
+            if (string.IsNullOrEmpty(persona))
+            { RejectLastOp("catchup 缺少 persona（要知道是誰的游標與 inbox）"); return; }
+
+            string md = UCL_TavernCatchupService.Build(
+                persona,
+                GetArg(args, "room", "tavern"),
+                ParseIntArg(args, "min", 0),
+                GetArg(args, "quiet_system", "1") != "0",
+                GetArg(args, "include_self", "0") == "1",
+                ParseIntArg(args, "inbox_show", 0),
+                GetArg(args, "advance", "1") != "0",
+                out string advancedTo, out int unread);
+
+            string path = UCL_LettersPath.CmdPayload(persona, "ding", "brief");
+            UCL_LettersPath.EnsurePayloadDir(path);
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, md, new UTF8Encoding(false));
+            if (File.Exists(path)) File.Delete(path);
+            File.Move(tmp, path);
+            UCL_AgentCommandRunner.ReportOutputFile(args, path);
+            UCL_AgentCommandRunner.ReportOutputValue(args, "unread", unread.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "cursor_advanced_to", advancedTo ?? "(未推進)");
+            Debug.Log($"[Tavern] catchup {persona} → unread={unread} cursor={advancedTo ?? "(未推進)"} → {path}");
+        }
+
+        // ===========================================================
+        // 區塊職責：op=query —— 酒館訊息查詢的**入口**（Tim 2026-08-20 拍板取代 tavern_query.py）。
+        // 物理意義：本方法只做三件事：解參數 → 呼叫 `UCL_TavernQueryService` → 落回傳檔。
+        //          **查詢與呈現邏輯一行都不寫在這裡** —— 那一層要能被後台頁與 catchup 共用，
+        //          寫進 Cmd 的話第二個呼叫端只能複製一份（Tim：邏輯抽 static class，不放 Cmd 內）。
+        // 數值影響：純讀。不寫訊息、不推游標、不動金流。
+        // ===========================================================
+        void Op_Query(Dictionary<string, string> args)
+        {
+            string kind = GetArg(args, "kind", "tail").Trim().ToLowerInvariant();
+            string persona = GetArg(args, "persona", "").Trim();
+            string room = GetArg(args, "room", "");
+            string since = GetArg(args, "since", "");
+            int limit = ParseIntArg(args, "limit", 0);
+            string md;
+            switch (kind)
+            {
+                case "rooms":
+                    md = UCL_TavernQueryService.Rooms(string.IsNullOrEmpty(since) ? "24h" : since);
+                    break;
+                case "tail":
+                    md = UCL_TavernQueryService.Tail(room, limit);
+                    break;
+                case "search":
+                    md = UCL_TavernQueryService.Search(GetArg(args, "keyword", ""), room, since,
+                            GetArg(args, "case_sensitive", "0") == "1", limit);
+                    break;
+                case "by_sender":
+                    md = UCL_TavernQueryService.BySender(GetArg(args, "sender", ""), since, limit);
+                    break;
+                case "timeline":
+                    md = UCL_TavernQueryService.Timeline(string.IsNullOrEmpty(since) ? "24h" : since, limit);
+                    break;
+                case "stats":
+                    md = UCL_TavernQueryService.Stats(string.IsNullOrEmpty(since) ? "24h" : since);
+                    break;
+                case "seq":
+                    md = UCL_TavernQueryService.Seq(room,
+                            ParseIntArg(args, "seq", 0), ParseIntArg(args, "from", 0), ParseIntArg(args, "to", 0),
+                            ParseIntArg(args, "last", 0),
+                            GetArg(args, "sender_persona", ""), GetArg(args, "sender", ""),
+                            GetArg(args, "tag", ""), GetArg(args, "grep", ""),
+                            GetArg(args, "full", "0") == "1");
+                    break;
+                default:
+                    RejectLastOp($"未知 query kind：{kind}"
+                        + "（rooms / tail / search / by_sender / timeline / stats / seq）");
+                    return;
+            }
+
+            // 落回傳檔：沒帶 persona 時退回 _last_op.md —— 兩條路都存在，且**回傳檔會說走了哪條**，
+            // 因為「檔案在哪」是下一步要 Read 的東西，猜錯就是讀到別人的或讀到舊的。
+            if (string.IsNullOrEmpty(persona))
+            {
+                UCL_ChatTavernRender.WriteLastOp(md);
+                Debug.Log($"[Tavern] query kind={kind} → _last_op.md（未帶 persona；帶了就落 letters/<persona>/cmd/）");
+                return;
+            }
+            string path = UCL_LettersPath.CmdPayload(persona, "tavern", "query");
+            UCL_LettersPath.EnsurePayloadDir(path);
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, md, new UTF8Encoding(false));
+            if (File.Exists(path)) File.Delete(path);
+            File.Move(tmp, path);
+            UCL_AgentCommandRunner.ReportOutputFile(args, path);
+            Debug.Log($"[Tavern] query kind={kind} → {path}");
+        }
+
         void Op_Read(Dictionary<string, string> args)
         {
             string roomId = GetArg(args, "room", "");

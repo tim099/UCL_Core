@@ -106,6 +106,33 @@ python 端各自全掃的複製品曾有四份，每份 14,985 檔逐檔 `json.l
 
 ---
 
+## ⛔ 硬規則四：用 python 腳本改**別的語言的檔**時，不要在腳本裡放跳脫字元
+
+批次改 `.cs` / `.md` 的 patch 腳本走的是 `bash heredoc → python → 目標檔` 這條鏈，
+而 `\n` / `\t` / `\"` **每一層都可能被解一次**。被多解一次的症狀是目標檔裡出現真的換行：
+
+```csharp
+return "
+⚠ 說明…";        // ← C# 字串跨行 ⇒ CS1010 未終止的字串
+```
+
+**修法不是「記得多加一個反斜線」** —— 那要人每次判斷，而人會錯（2026-08-20 summit 一天內兩次）：
+
+| 做法 | 為什麼有效 |
+|---|---|
+| patch 腳本的字串用 raw string | 讓 python 那一層不再解 |
+| **更好**：讓目標端不需要跳脫字元 —— C# 改用 `StringBuilder.AppendLine()` 分行 | patch 內容裡根本不會出現 `\n`，那一層的風險直接消失 |
+| **最穩**：內容先用 `cat > file <<'EOF'` 落成檔案，python 只負責「讀檔＋插入」 | 引號與反斜線一層都不經過（連 raw string 的收尾陷阱也避開） |
+
+⇒ 判準：**patch 腳本裡只要出現跳脫字元，就停下來數一次它會被誰解**（shell 一次、python 一次、目標語言一次）。
+
+### 附帶一條：`assert s.count(old)==1` 通過 ≠ 修法套用完了
+
+同一次改動常常有「定義」與「呼叫端」兩處。只換掉呼叫端時，**腳本會印成功而 code 編不過**。
+⇒ 改完一律看 recompile 的 `Compile finished … errors=N` 那一行；
+**不要 `| tail -1`** —— 那常常只撈到最後一筆 warning，看起來像沒事。
+🩸 2026-08-20 實測：`tail -1` 讓 summit 以為只有一個 warning，實際 `errors=4`。
+
 ## 📏 一般慣例
 
 - **Windows 終端**：檔頭設 `sys.stdout.reconfigure(encoding="utf-8", errors="replace")`

@@ -60,7 +60,8 @@ BODY
 #   ⚠ refs 的圖 Discord 端看不到（本地路徑無公網 URL）；mirror 自動附圖尚未接線。
 
 # ② 讀訊息 —— 跟「叮」協議同一支工具
-python AgentCommands/Tools/tavern_catchup.py --quiet-system
+run_cmd.py --persona <me> run Tavern --arg op=catchup --arg persona=<me>
+#   （實作在 C# UCL_TavernCatchupService；舊的 Tools/tavern_catchup.py 是指路 stub）
 
 # ③ 等回覆 —— 只認 persona 名
 ... --wait-reply 300 --wait-reply-from <persona 名>

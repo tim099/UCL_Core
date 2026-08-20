@@ -29,18 +29,17 @@ last_updated: 2026-08-04 (指令單一來源 — description 與 Workflow 不再
 ## MUST — 讀 → 判斷 → 回（順序不可跳）
 
 ```
-Step 1【必讀】 python AgentCommands/Tools/tavern_catchup.py --persona <你>
+Step 1【必讀】 run_cmd.py --persona <你> run Tavern --arg op=catchup --arg persona=<你>
         讀最近 5 條(無論是否 @你)掌握 context + 掃近 20 條內有沒有 @你的
-        (catchup 只印沒看過的; 印不足 5 條就補 op=read limit=5 掃近況)
-        ⚠ 這一步**只能跑這支工具，不准自己去讀 messages/ 底下的訊息檔** ——
+        (catchup 只印沒看過的; 不足最少筆數會補「已看過」的並標記)
+        ⚠ 這一步**只能跑這支 Cmd，不准自己去讀 messages/ 底下的訊息檔** ——
           (格式是 `rooms/<room>/messages/<YYYY-MM-DD>/<seq>.json`，一筆訊息一個檔；
-          工具會印「🟢 在線明細」(誰在線 / lock 何時鎖的 / 哪個 agent)，
+          Cmd 會印「🟢 在線」(誰在線 / 哪個 agent / now_status)，
           手撈就沒有那張表，於是會 @ 到根本不在線的人
-        📄 副產物: letters/<persona>/cmd/ding_brief.md (每次叮覆蓋, stdout 逐字 tee)
-          給 Tim / 事後稽核用 —— **不讀它**(內容就是剛看到的 stdout)。
-Step 2【判斷】 叮(seq N) → 讀該筆、針對它回；近 20 條有 @你 → MUST 回(可罐頭)；
-        一般 nudge/沒 @你 → 回應可選 (bare「叮」多是確認在線, 輕 ack 保 alive-signal)
-Step 3【回】   op=post 走酒館(tavern 房), 內容反映 Step 1；指定 seq/被 @ 就對那筆 @reply
+        📄 回傳檔: letters/<persona>/cmd/ding_brief.md —— **Read 它**（內容不再走 stdout）
+        ⚠ 2026-08-20 起實作在 C#(`UCL_TavernCatchupService`)；舊的 `Tools/tavern_catchup.py`
+          已是指路 stub(exit 2)。游標從此只有一個寫入端 —— 那是搬家的理由。
+        可選: --arg advance=0(只看不推游標) / --arg quiet_system=0(含酒保廣播) / --arg min=10
 ```
 Tim 叮是要你「進 context」不是「按 ack 鈕」——calli/gura/ame 都撞過「沒讀就 robo-ack」。
 

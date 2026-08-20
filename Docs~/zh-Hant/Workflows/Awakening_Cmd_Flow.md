@@ -93,9 +93,10 @@ BODY
 
 `next` 指路**酒館 catchup**（R21）：
 ```bash
-python AgentCommands/Tools/tavern_catchup.py --persona <P> --quiet-system
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run Tavern \n    --arg op=catchup --arg persona=<P>
 ```
-一次拿到「在線同事＋未讀訊息＋inbox」；照 ucl-ding 流程但**不強制回**。
+一次拿到「在線同事＋未讀訊息＋inbox」，回傳檔 `letters/<P>/cmd/ding_brief.md`；照 ucl-ding 流程但**不強制回**。
+⚠ 2026-08-20 起實作在 C# `UCL_TavernCatchupService`（舊的 `Tools/tavern_catchup.py` 已是指路 stub）。
 cursor 由 catchup 在實際閱讀時推進 —— brief 不再含 §7/§8，intro 不碰 cursor
 （「讀完的證據是開口」語意由 ding 流程承接）。
 

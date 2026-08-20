@@ -311,7 +311,7 @@ letters 慣例用來標「機械產物／不要當人寫的檔」，這裡要更
 
 | # | 事項 | 現況 |
 |---|---|---|
-| 1 | 只有 7/21 有自己的 letters repo | 其餘 14 位搬過去仍在 AgentCommands 內，**同一份資料兩種家**；但 §3.1 的落點對兩者都成立（路徑一致），只是 commit 邊界不同 |
+| 1 | ~~只有 7/21~~ ⇒ **9/21 有自己的 letters repo**（kiara 2026-08-20 實測：Sirius／Template／apex-one／basecamp／calli／gura／kiara／meadow／summit；舊數字已過期） | 其餘 12 位在 AgentCommands 內，**同一份資料兩種家**；但 §3.1 的落點對兩者都成立（路徑一致），只是 commit 邊界不同（9 個獨立 repo ＋ 主樹 1 筆） |
 | 2 | 7 個 letters submodule 的寫入會變頻繁 | 登入寫 `wake_count` 那類欄若照 §2.3 刪掉，寫入頻率其實**降低**；若照搬則 7 個 submodule 每次登入都 dirty（Tim 的每晚 bump 工作量 ×7） |
 | 3 | `identity_vector` 跨 persona 比較 | §3.3 待拍板 |
 | 4 | BUG-6（兩個序列化器輪流整檔重寫） | ✅ 已解（2026-08-19 `43e2144`）：canonical＝ToJsonBeautify 形狀，python 走 `dump_registry_json` 唯一出口 |

@@ -157,6 +157,27 @@ namespace UCL.Core.EditorLib.Page
                 Message = "[data] 收 profile/ 身分欄（Phase 1 lazy migration 產物）(auto)",
                 DefaultOn = true,
             },
+            // ===========================================================
+            // 區塊職責：`bank/` —— persona 的銀行綁定（Tim 2026-08-20 拍板，一區一檔）。
+            // 物理意義：`bank/<區域ID>.md` 的內容＝該 persona 在那個區域使用的帳號（＝agent id）。
+            //          區域 ID 是本專案的貨幣名（`UCL_CentralBankSettings.CurrencyId`，本專案＝Florin）。
+            //          寫入走接縫 `UCL_PersonaProfile.WriteBankAccount`（actor/reason 必填＋審計），
+            //          批次導出走 `Cmd PersonaProfile op=migrate_bank`。
+            // ⚠ 為什麼預設勾（同 profile/ 的理由，但更硬）：**錢的歸屬現在住在這裡**。
+            //   沒進版控的 bank/ 等於「這個人的薪水該進哪個帳號」只存在這一台機器上，
+            //   而缺綁定的處置是落央行 ⇒ 一次磁碟意外的症狀不是報錯，是薪水靜默轉向。
+            // ⚠ 這一群裡會出現**別的專案的檔**（letters 是同一個 repo 被多專案掛著）——
+            //   那是正常的，照收。⛔ 絕不因為「不認識這個區域」而排除或刪除：
+            //   刪掉的症狀是對方下次登入「沒有綁定」，而錯的原因指不到這裡。
+            // ===========================================================
+            new GroupDef
+            {
+                Key = "bank",
+                Label = "銀行綁定 bank/（區域 → 帳號；一區一檔）",
+                Match = p => p.StartsWith("bank/"),
+                Message = "[data] 收 bank/ 銀行綁定（區域 → 帳號）(auto)",
+                DefaultOn = true,
+            },
             new GroupDef
             {
                 Key = "letters_mech",

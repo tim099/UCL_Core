@@ -402,7 +402,8 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
 | 步 | 做什麼 | 碰錢 | 驗收判準 |
 |---|---|---|---|
 | 0 | ✅ **已完成**（kiara 2026-08-20）：`UCL_CentralBankSettings.CurrencyId`（key `currency_id`、預設 `Ducat`、含檔名合法性守衛）＋ `UCL_BankAdminPage` 的「🪙 區域（貨幣）ID」面板（二段確認、寫入後讀回複驗） | ❌ | 編譯 errors=0；`CurrencyId` 讀回 `Ducat`（預設路徑）；`IsValidCurrencyId` 四格實測 `Florin`=True／`a/b`=False／空白=False／`..`=False。⏳ **值尚未設成 `Florin`** —— `Cmd_Invoke` 只呼叫 getter（實測 `getter=True`、args 被忽略）⇒ 無 CLI 寫入路徑，要在後台按一次（那一按同時也驗了面板） |
-| 1 | 由現況導出 `letters/<p>/bank/<bankId>.md`（21 位）＋ 解析端改讀它 ＋ ⑥ 分支改 ErrorLog＋央行 | ❌ | 21 位解析結果與現況**逐位相同**；故意刪一位的檔 ⇒ 出現 ErrorLog 且落央行；**Bar 那邊不受影響**（不同鍵） |
+| 1a | ✅ **已完成**（kiara 2026-08-20）：`UCL_LettersPath.BankDir/BankField` ＋ 接縫 `GetBankAccount`／`WriteBankAccount` ＋ `Cmd PersonaProfile` 三個 op（`get_bank`／`set_bank`／`migrate_bank`，後者**預設 dry_run**）＋ `UCL_AutoCommitPage` 收 `bank/` 群 ＋ **21 位綁定檔已落盤** | ❌ | 見下方「第 1a 步驗收讀數」 |
+| 1b | ⬜ Treasury 解析端接上：`Resolve()` 改讀綁定檔、⑥ 分支改 `Debug.LogError` ＋ 落央行 | ❌ | 21 位解析結果與現況**逐位相同**；故意刪一位的檔 ⇒ 出現 ErrorLog 且落央行；**Bar 那邊不受影響**（不同鍵） |
 | 2 | 建統一 `accounts` 表（§4.1 機械可導的部分）＋消費端逐支改讀它 | ❌ | 31＋48 兩邊的 id 全部有著落；mention 白名單集合**前後相同** |
 | 3 | `identities.json` 退場（agent 那半刪除、Discord/NPC 併入） | ❌ | Discord 顯示名前後相同（`UCL_DiscordIdentityResolver` 抽樣比對） |
 | 4 | §4.2 的人工拍板逐格處理（A/B/C/G） | ⚠ 部分 | 每一筆調整都有一筆 ledger 記錄，**總量守恆 33,692** |
@@ -411,6 +412,39 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
 
 **總量守恆是本案唯一不可妥協的驗收**：每一步前後 `sum(balances)` 必須是 **33,692**
 （除了刻意的 transfer，而 transfer 是零和）。
+
+### 第 1a 步驗收讀數（kiara 2026-08-20）
+
+| 驗什麼 | 讀數 |
+|---|---|
+| 編譯 | `errors=0`（11:06:46 接縫／11:09:31 Cmd／11:16:18 AutoCommitPage），`check_compile` 對帳非 STALE |
+| dry-run 與實寫 | `pool=21`／`written=21`／`skipped_existing=0`／`skipped_no_agent=0`／`failed=0` |
+| 兩把獨立的尺 | Cmd 的 dry-run 與另寫的 python 探針**逐位同一個答案** |
+| 磁碟複驗 | 21 個 `bank/Florin.md`；格式 `Myth\n`（裸值＋LF、**無 BOM**，同 `profile/`） |
+| 審計 | `_persona_write_audit.jsonl` 新增 **21 行** `fields=bank/Florin`，actor／reason 都在 |
+| 本區讀取 | `get_bank kiara` → `account=Myth`／`source=Florin`／`note=`（本區宣告） |
+| **跨區借用（指示 ⑪）** | `get_bank kiara currency=Ducat` → `account=Myth`／**`source=Florin`**／`note=「本區（Ducat）無綁定，借用區域 Florin 的帳號」` ⇒ **兩態不同形，實測有效** |
+| Cmd schema | ArgsSpec 改動後重跑 `ExportCmdSchema`，三個新 op 都在 schema 內（不跑會讓 python 預檢**靜默降級為不擋**） |
+
+⚠ **未驗分支（誠實標記，不寫成通過）**：`ambiguous`（本區無綁定、而其他區域有 **2 個以上**候選 ⇒ 拒絕挑選）
+**沒有實測**。要造它得先在某位 persona 底下多寫兩個假區域檔，而清掉它們要走「刪檔」——
+那條路不在接縫裡（BUG-16 同族），為了測一個分支在別人的 letters 留垃圾不划算。
+⇒ 這條分支會在 **Bar 設好自己的區域 ID 之後自然被走到**，屆時補讀數。
+
+### 📌 釘板：`agent` 是「桌面工具」，不是「模型」（Tim 2026-08-20）
+
+第 1a 步的清單裡有一格看起來很像錯：**persona `claude-da-xiaojie` 的 agent 是 `antigravity`**
+（名字說 claude、綁定說 antigravity）。我把它當疑點提報，Tim 當場更正：
+
+> **Antigravity 可以開 Claude 的模型，因此這是專用的。**
+
+⇒ `agent` 欄位的物理意義是**承載這個 persona 的桌面工具**（routing enum），
+而那個工具能載哪些模型是另一件事（`model` 欄）。
+`claude-da-xiaojie` 就是「在 Antigravity 裡跑 Claude 模型」的那個專用 persona。
+
+**這格寫進 Plan 是為了讓下一個人不要再把它報成異常一次。**
+（⚠ 但這**不影響** §4.2 D.1 的帳號改名問題：`claude-da-xiaojie` 作為**帳號名**身上有 4,636 token，
+那筆錢的歸屬仍是待拍的 —— persona 名、agent 名、帳號名三者剛好同字串，是不同的三件事。）
 
 ## 6. 風險與已知邊界
 

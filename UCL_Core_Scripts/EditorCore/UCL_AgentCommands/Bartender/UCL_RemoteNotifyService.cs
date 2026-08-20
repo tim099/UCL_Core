@@ -238,6 +238,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // 數值影響：冷卻預設 60s；cap 預設 3, 達標即停戳並發酒館 @Tim（一批只發一次）。
         public static float CooldownSeconds = 60f;
         public static int RetryCap = 3;
+
+        // 區塊職責：流程中的使用者輸入中斷開關（Tim 2026-08-20 拍板，預設開）。
+        // 物理意義：既有的 idle 護欄只擋「流程**開始前**使用者剛動過」；流程一旦跑起來
+        //          （定位 OCR 要數秒、各步之間還有 delay），使用者中途回來動鍵鼠，
+        //          貼上與 Enter 照樣執行 —— 訊息就打進使用者**當下**的輸入框。
+        //          這顆開關讓序列各步之間偵測到使用者輸入即中止，且**視為未觸發**：
+        //          不計 retry、不進冷卻、trace 記 notify_aborted 而不是 notify_failed。
+        public static bool AbortOnUserInput = true;
         // 區塊職責：認列已讀的「往前標」安全邊界（Tim 2026-08-13 提案）。
         // 物理意義：讀取訊號（cursor 推進／她開口）只證明「那個時刻她在讀／在打字」，
         //   不證明她看到了**幾乎同時到達**的那一筆 @。而正在回覆的那幾秒，恰好是新 @ 最容易落地的時候
@@ -296,6 +304,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 data["paste_restore_delay_ms"] = new JsonData(PasteRestoreDelayMs);
                 data["append_context_note"] = new JsonData(AppendContextNote);
                 data["read_credit_margin_sec"] = new JsonData(ReadCreditMarginSeconds);
+                data["abort_on_user_input"] = new JsonData(AbortOnUserInput);
                 File.WriteAllText(ConfigPath, data.ToJsonBeautify(), new UTF8Encoding(false));
                 return true;
             }
@@ -335,6 +344,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 PasteRestoreDelayMs = data.GetInt("paste_restore_delay_ms", PasteRestoreDelayMs);
                 AppendContextNote = data.GetBool("append_context_note", AppendContextNote);
                 ReadCreditMarginSeconds = data.GetFloat("read_credit_margin_sec", ReadCreditMarginSeconds);
+                AbortOnUserInput = data.GetBool("abort_on_user_input", AbortOnUserInput);
             }
             catch (Exception e)
             {
@@ -1076,6 +1086,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
             var chosen = pool[0];
 
+            // 使用者輸入中斷守衛（Tim 2026-08-20）：既有 idle 護欄只擋「開始前」；
+            // 從這裡起（定位 OCR 要數秒、步驟間還有 delay）使用者一動鍵鼠就中止本輪，
+            // 視為未觸發（不計 retry、不進冷卻）。手動按鈕那一下點擊在守衛建立之前，不會誤觸。
+            using var aAbortGuard = AbortOnUserInput ? new UCL_UserInputAbortGuard() : null;
+            bool UserAborted() => aAbortGuard != null && aAbortGuard.Poll();
+
             // 自動流程走 TryActivate —— 它會遵守「使用者剛動過鍵鼠就不搶焦點」的護欄。
             // 手動按鈕才走 TryActivateExplicitly（否則按下按鈕這個動作本身就會把自己擋掉）。
             string windowTarget = UCL_ActualAgentUtility.ToWindowTarget(chosen.Lock.ActualAgent);
@@ -1097,6 +1113,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 return (false, summary);
             }
 
+            if (UserAborted()) return AbortRun(pool, chosen, aAbortGuard.Detail);
+
             var options = new UCL_PersonaLocateOptions();
             UCL_RemotePersonaLocateConfig.Load(options, out _);   // 沿用後台調好的螢幕 / 範圍 / 延遲
             options.MatchIndex = -1;
@@ -1107,6 +1125,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 Finish(pool, chosen, summary, false);
                 return (false, summary);
             }
+            // 定位 OCR 是全流程最長的等待 —— 使用者最可能在這段回到座位上
+            if (UserAborted()) return AbortRun(pool, chosen, aAbortGuard.Detail);
 
             var target = result.Selected;
             if (!UCL_RemoteWindowControl.TryMoveCursor(target.CenterX, target.CenterY, out string moveResult))
@@ -1123,20 +1143,24 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 Finish(pool, chosen, summary, false);
                 return (false, summary);
             }
-            Sleep(options.ClickDelaySec);
+            if (!SleepInterruptible(options.ClickDelaySec, aAbortGuard))
+                return AbortRun(pool, chosen, aAbortGuard.Detail);
             if (!UCL_RemoteWindowControl.TryClickLeft(out string clickResult))
             {
                 summary = $"要通知 {chosen.Persona}，但點擊失敗：{clickResult}";
                 Finish(pool, chosen, summary, false);
                 return (false, summary);
             }
-            Sleep(options.TypeDelaySec);
+            if (!SleepInterruptible(options.TypeDelaySec, aAbortGuard))
+                return AbortRun(pool, chosen, aAbortGuard.Detail);
             if (!UCL_RemoteWindowControl.ForegroundGuardPasses(expected, out string guardNote2))
             {
                 summary = $"通知 {chosen.Persona}：{guardNote2}，不輸入文字";
                 Finish(pool, chosen, summary, false);
                 return (false, summary);
             }
+            // 貼上前最後一次檢查 —— 過了這行就會開始往對方輸入框寫字
+            if (UserAborted()) return AbortRun(pool, chosen, aAbortGuard.Detail);
             // per-agent 前置（Antigravity 需要 Ctrl+L 才會聚焦到輸入框；Codex / ClaudeCode 不需要）。
             string prepare = await UCL_RemoteAgentInput.PrepareInput(chosen.Lock.ActualAgent, options);
             // 輸入路徑：預設剪貼簿貼上（原子、不會被自動完成清單重繪吃字）；
@@ -1156,7 +1180,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             string enterResult;
             if (SendEnter)
             {
-                Sleep(EnterDelaySeconds);
+                // Enter 是不可逆的 —— 中斷檢查與前景驗證兩道都要過才送。
+                // ⚠ 文字此時已在對方輸入框裡：中斷時**不送出但也清不掉**，摘要要照實講。
+                if (!SleepInterruptible(EnterDelaySeconds, aAbortGuard) || UserAborted())
+                {
+                    string aAbortSummary = $"⏸ 偵測到使用者操作，中止通知 {chosen.Persona} —— "
+                        + $"文字已輸入但**未送出 Enter**（視為未觸發：不計 retry、不進冷卻）｜{aAbortGuard.Detail}";
+                    return AbortRunWithSummary(pool, chosen, aAbortSummary);
+                }
                 // 送出前最後一次確認焦點 —— 送出是不可逆的，這是唯一一次「錯了就收不回」的動作。
                 if (!UCL_RemoteWindowControl.ForegroundGuardPasses(expected, out string enterGuard))
                     enterResult = $"未送出（{enterGuard}）";
@@ -1344,11 +1375,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             var aOptions = new UCL_PersonaLocateOptions();
             UCL_RemotePersonaLocateConfig.Load(aOptions, out _);   // 沿用後台調好的螢幕／範圍／延遲
 
+            // 使用者輸入中斷守衛 —— 與 RunOnceCore 同一套（序列重複是已知的債，守衛也要兩邊都有：
+            // 群發打進使用者當前輸入框的傷害跟通知一模一樣）
+            using var aAbortGuard = AbortOnUserInput ? new UCL_UserInputAbortGuard() : null;
+            bool UserAborted() => aAbortGuard != null && aAbortGuard.Poll();
+
             var aResult = await UCL_RemotePersonaLocator.Locate(iLock.SessionToken, aOptions);
             if (!aResult.Ok || aResult.Selected == null)
             {
                 return (false, $"{aWho}：畫面上定位不到 {iLock.SessionToken}（{aResult.Reason}）");
             }
+            if (UserAborted())
+                return (false, $"{aWho}：⏸ 偵測到使用者操作，中止（未點擊未輸入）｜{aAbortGuard.Detail}");
             var aTarget = aResult.Selected;
             if (!UCL_RemoteWindowControl.TryMoveCursor(aTarget.CenterX, aTarget.CenterY, out string aMove))
             {
@@ -1359,12 +1397,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             {
                 return (false, $"{aWho}：{aGuard1}，中止（不往別人的視窗點）");
             }
-            Sleep(aOptions.ClickDelaySec);
+            if (!SleepInterruptible(aOptions.ClickDelaySec, aAbortGuard))
+                return (false, $"{aWho}：⏸ 偵測到使用者操作，中止（未點擊未輸入）｜{aAbortGuard.Detail}");
             if (!UCL_RemoteWindowControl.TryClickLeft(out string aClick))
             {
                 return (false, $"{aWho}：點擊失敗（{aClick}）");
             }
-            Sleep(aOptions.TypeDelaySec);
+            if (!SleepInterruptible(aOptions.TypeDelaySec, aAbortGuard))
+                return (false, $"{aWho}：⏸ 偵測到使用者操作，中止（已點擊、未輸入）｜{aAbortGuard.Detail}");
             if (!UCL_RemoteWindowControl.ForegroundGuardPasses(aExpected, out string aGuard2))
             {
                 return (false, $"{aWho}：{aGuard2}，不輸入文字");
@@ -1386,7 +1426,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             string aEnterResult;
             if (SendEnter)
             {
-                Sleep(EnterDelaySeconds);
+                // Enter 是不可逆的 —— 中斷檢查與前景驗證兩道都要過才送。
+                // ⚠ 文字此時已在對方輸入框裡：中斷時不送出但也清不掉，回報要照實講。
+                if (!SleepInterruptible(EnterDelaySeconds, aAbortGuard))
+                    return (false, $"{aWho}：⏸ 偵測到使用者操作 —— 文字已輸入但**未送出 Enter**｜{aAbortGuard.Detail}");
                 // 送出前最後一次確認焦點 —— 這是唯一一次「錯了就收不回」的動作
                 if (!UCL_RemoteWindowControl.ForegroundGuardPasses(aExpected, out string aGuard3))
                 {
@@ -1402,6 +1445,44 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         static void Sleep(float seconds) =>
             System.Threading.Thread.Sleep(Mathf.Clamp(Mathf.RoundToInt(seconds * 1000f), 0, 10000));
+
+        // 區塊職責：可中斷的睡眠 —— 切片睡、片間 Poll 使用者輸入。
+        // 物理意義：流程的等待窗（點擊延遲／輸入延遲／Enter 延遲）正是使用者「中途回來」
+        //          最常落在的時段；整段 Thread.Sleep 睡死的話，醒來那一刻就直接執行下一步了。
+        // 數值影響：切片 50ms ⇒ 中斷延遲上限 ≈ 50ms；guard 為 null（開關關閉）時行為同 Sleep。
+        static bool SleepInterruptible(float seconds, UCL_UserInputAbortGuard guard)
+        {
+            int total = Mathf.Clamp(Mathf.RoundToInt(seconds * 1000f), 0, 10000);
+            if (guard == null) { if (total > 0) System.Threading.Thread.Sleep(total); return true; }
+            if (guard.Poll()) return false;
+            const int SLICE_MS = 50;
+            for (int waited = 0; waited < total; waited += SLICE_MS)
+            {
+                System.Threading.Thread.Sleep(Math.Min(SLICE_MS, total - waited));
+                if (guard.Poll()) return false;
+            }
+            return true;
+        }
+
+        // 區塊職責：使用者輸入中斷的收尾 —— 與 Finish(notified:false) 分開，因為語意不同：
+        //          失敗＝「戳了沒戳到」，中斷＝「根本沒戳，視為未觸發」。
+        // 數值影響：不寫通知 state（不計 retry、不進冷卻，同失敗路徑），
+        //          但 trace 事件記 `notify_aborted` 而不是 `notify_failed` —— 統計失敗次數的人
+        //          不該把「使用者回來了所以讓路」算成一次失敗。
+        static (bool success, string summary) AbortRun(
+            List<UCL_NotifyCandidate> pool, UCL_NotifyCandidate chosen, string detail)
+            => AbortRunWithSummary(pool, chosen,
+                $"⏸ 偵測到使用者操作，中止通知 {chosen?.Persona}（視為未觸發：不計 retry、不進冷卻）｜{detail}");
+
+        static (bool success, string summary) AbortRunWithSummary(
+            List<UCL_NotifyCandidate> pool, UCL_NotifyCandidate chosen, string summary)
+        {
+            LastRunSummary = summary;
+            LastRunUtc = DateTime.UtcNow;
+            AppendTrace("notify_aborted", chosen?.Persona ?? "", summary);
+            WriteLog(pool, chosen, summary, false);
+            return (false, summary);
+        }
     }
 
     /// <summary>

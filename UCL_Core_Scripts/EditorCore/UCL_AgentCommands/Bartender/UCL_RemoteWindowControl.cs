@@ -102,6 +102,51 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
         }
 
+        // ===========================================================
+        // 使用者輸入中斷（abort-on-user-input）——「自己發的合成輸入」與「使用者輸入」的分帳
+        // ===========================================================
+        // 物理意義：GetLastInputInfo **分不出**輸入是誰發的 —— 本檔用 SendInput 發的點擊／按鍵
+        //          同樣會更新它。所以每次自己發送後立刻蓋一次 s_OwnInputTick 戳記；
+        //          「最後輸入時刻 > max(基準點, 自己最後發送時刻) + 容差」才判定為使用者輸入。
+        // 數值影響：容差吸收「SendInput 入列 → 讀 tick」之間的排程延遲。容差內的真實使用者輸入
+        //          會被當成我們自己的（漏判窗 ≈ 容差長度）—— 這是刻意的取捨：反向誤判
+        //          （把自己的輸入當使用者）會讓中斷功能每次點擊後自己打斷自己，整個不可用。
+        const uint OWN_INPUT_MARGIN_MS = 120;
+        static uint s_OwnInputTick;
+
+        /// <summary>自己剛發了合成輸入 —— 本檔各發送方法自動呼叫；外部若另有發送端也應呼叫。</summary>
+        public static void MarkOwnInput() => s_OwnInputTick = unchecked((uint)Environment.TickCount);
+
+        /// <summary>OS 最後一筆實體輸入的 tick（GetTickCount 基準）；讀取失敗回 0。</summary>
+        public static uint LastInputTick
+        {
+            get
+            {
+                LASTINPUTINFO info = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
+                return GetLastInputInfo(ref info) ? info.dwTime : 0u;
+            }
+        }
+
+        /// <summary>
+        /// 基準點之後（且不是我們自己發的）有沒有使用者輸入。
+        /// tick 比較走 unchecked 減法轉 int —— GetTickCount 每 49.7 天 wrap 一次，
+        /// 直接比大小會在 wrap 邊界誤判（差值法在 wrap 兩側都正確）。
+        /// </summary>
+        public static bool HasUserInputAfter(uint iBaselineTick, out string oDetail)
+        {
+            uint aLast = LastInputTick;
+            uint aReference = iBaselineTick;
+            if (unchecked((int)(s_OwnInputTick - aReference)) > 0) aReference = s_OwnInputTick;
+            int aDeltaMs = unchecked((int)(aLast - aReference));
+            if (aDeltaMs > (int)OWN_INPUT_MARGIN_MS)
+            {
+                oDetail = $"偵測到使用者輸入（晚於基準/最近一次合成輸入 {aDeltaMs}ms）";
+                return true;
+            }
+            oDetail = "";
+            return false;
+        }
+
         /// <summary>設定 runtime 開關；關閉時也中止進行中的輪循，確保不殘留延後切換。</summary>
         public static void SetEnabled(bool enabled)
         {
@@ -154,6 +199,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 return false;
             }
             bool moved = SetCursorPos(x, y);
+            // SetCursorPos 理論上不產生輸入事件（不更新 GetLastInputInfo），但仍防禦性蓋戳記 ——
+            // 誤把自己的移動當使用者輸入會讓中斷功能自斷；代價只是把漏判窗多墊一次容差長度。
+            MarkOwnInput();
             bool got = GetCursorPos(out POINT actual);
             result = moved && got
                 ? $"游標已移到 ({actual.x}, {actual.y})"
@@ -214,7 +262,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             inputs[0].union.mouse.dwFlags = MOUSEEVENTF_LEFTDOWN;
             inputs[1].type = INPUT_MOUSE;
             inputs[1].union.mouse.dwFlags = MOUSEEVENTF_LEFTUP;
-            uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+            uint sent = SendInputOwn((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
             result = sent == inputs.Length ? "已按下左鍵" : $"左鍵送出不完整（{sent}/{inputs.Length}）";
             return sent == inputs.Length;
         }
@@ -246,7 +294,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             {
                 if (c == '\r' || c == '\n') { skipped++; continue; }   // 絕不送出換行
                 var pair = new[] { MakeUnicodeKey(c, false), MakeUnicodeKey(c, true) };
-                if (SendInput((uint)pair.Length, pair, Marshal.SizeOf<INPUT>()) == pair.Length) sentChars++;
+                if (SendInputOwn((uint)pair.Length, pair, Marshal.SizeOf<INPUT>()) == pair.Length) sentChars++;
                 else failedChars++;
                 if (delayMs > 0) System.Threading.Thread.Sleep(delayMs);
             }
@@ -359,7 +407,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 inputs[1].union.keyboard.wVk = VK_RETURN;
                 inputs[1].union.keyboard.wScan = scan;
                 inputs[1].union.keyboard.dwFlags = KEYEVENTF_KEYUP;
-                if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) == inputs.Length) okCount++;
+                if (SendInputOwn((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) == inputs.Length) okCount++;
             }
             result = okCount == presses
                 ? $"已送出 Enter ×{presses}（scan=0x{scan:X2}）— 注意：這只代表 Windows 收下，不代表對方送出了"
@@ -388,7 +436,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             if (shift) list.Add(MakeVirtualKey(VK_SHIFT, true));
             if (ctrl) list.Add(MakeVirtualKey(VK_CONTROL, true));
             var array = list.ToArray();
-            uint sent = SendInput((uint)array.Length, array, Marshal.SizeOf<INPUT>());
+            uint sent = SendInputOwn((uint)array.Length, array, Marshal.SizeOf<INPUT>());
             string label = $"{(ctrl ? "Ctrl+" : "")}{(shift ? "Shift+" : "")}{(alt ? "Alt+" : "")}0x{virtualKey:X2}";
             result = sent == array.Length
                 ? $"已送出 {label}（同樣只代表 Windows 收下）"
@@ -657,6 +705,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         [DllImport("user32.dll", SetLastError = true)]
         static extern uint SendInput(uint count, INPUT[] inputs, int size);
+
+        // 所有合成輸入的唯一出口 —— 發送後立刻蓋 own-input 戳記，
+        // 讓 HasUserInputAfter 不把自己發的輸入誤判成使用者輸入（那會讓中斷功能自己打斷自己）。
+        // ⚠ 新增任何會發 SendInput 的方法，一律走這支，別直接呼叫上面那個 extern。
+        static uint SendInputOwn(uint count, INPUT[] inputs, int size)
+        {
+            uint aSent = SendInput(count, inputs, size);
+            MarkOwnInput();
+            return aSent;
+        }
         [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int maxCount);
@@ -669,6 +727,47 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr window);
         [DllImport("user32.dll")] static extern bool AttachThreadInput(uint sourceThreadId, uint targetThreadId, bool attach);
         [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+    }
+
+    /// <summary>
+    /// 「使用者一動就中斷」守衛（Tim 2026-08-20 拍板，中斷訊號用 CancellationTokenSource）——
+    /// 建立時記下輸入基準點；<see cref="Poll"/> 偵測到基準點之後的**使用者**輸入
+    /// （自己 SendInput 的合成輸入已由 MarkOwnInput 分帳排除）即 Cancel 自己的 CTS。
+    /// ⚠ Poll 是**同步輪詢** —— 通知流程的 Sleep 是 Thread.Sleep（阻塞主執行緒），
+    ///   背景 task 在那期間沒機會跑，所以由呼叫端在步驟之間與切片睡眠中主動 Poll。
+    /// 用法：`using var aGuard = new UCL_UserInputAbortGuard();` → 各步驟間 `aGuard.Poll()`，
+    /// true ＝ 該中止（Detail 帶原因；Token 給要往下傳的 async API）。
+    /// </summary>
+    public class UCL_UserInputAbortGuard : IDisposable
+    {
+        readonly System.Threading.CancellationTokenSource m_Cts = new System.Threading.CancellationTokenSource();
+        readonly uint m_BaselineTick;
+
+        /// <summary>中斷原因（Poll 命中時填入；未中斷是空字串）。</summary>
+        public string Detail { get; private set; } = "";
+        public System.Threading.CancellationToken Token => m_Cts.Token;
+        public bool Aborted => m_Cts.IsCancellationRequested;
+
+        public UCL_UserInputAbortGuard()
+        {
+            // 基準點＝守衛建立那一刻的最後輸入（手動按鈕的那一下點擊在基準點之前，不會誤觸）
+            m_BaselineTick = UCL_RemoteWindowControl.LastInputTick;
+        }
+
+        /// <summary>檢查一次；true ＝ 已（或剛剛）偵測到使用者輸入，流程該中止。</summary>
+        public bool Poll()
+        {
+            if (Aborted) return true;
+            if (UCL_RemoteWindowControl.HasUserInputAfter(m_BaselineTick, out string aDetail))
+            {
+                Detail = aDetail;
+                m_Cts.Cancel();
+                return true;
+            }
+            return false;
+        }
+
+        public void Dispose() => m_Cts.Dispose();
     }
 }
 #endif

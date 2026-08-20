@@ -1072,6 +1072,10 @@ namespace UCL.Core.EditorLib.Page
                                 EditorGUILayout.IntField(UCL_RemoteNotifyService.RetryCap, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40))), 1, 20);
                             UCL_RemoteNotifyService.SendEnter = EditorGUILayout.ToggleLeft("輸入後送出 Enter",
                                 UCL_RemoteNotifyService.SendEnter, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                            // 流程中使用者一動鍵鼠就中止（視為未觸發，不計 retry / 冷卻）——
+                            // 沒有它，使用者中途回來時通知會打進**使用者當下的**輸入框
+                            UCL_RemoteNotifyService.AbortOnUserInput = EditorGUILayout.ToggleLeft("使用者操作即中斷",
+                                UCL_RemoteNotifyService.AbortOnUserInput, GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
                             if (GUILayout.Button("💾 保存", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.9f, 1f)), GUILayout.ExpandWidth(false)))
                                 m_NotifyStatus = UCL_RemoteNotifyService.SaveConfig(out string err) ? "自動通知設定已保存" : $"保存失敗：{err}";
                             GUI.enabled = UCL_RemoteWindowControl.Enabled;

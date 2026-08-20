@@ -265,6 +265,24 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             //     銀行後台顯示「⚠ agent 未註冊於 agent_banks，拒絕 auto-mint」，
             //     而同一時間 `UCL_PersonaAgentAdminPage` 正確顯示 `Sirius → FRS`。
             //     **一個真的在用、裡面有 6253 token 的帳戶，被系統判定為不存在。**
+            // ⓪-a 央行帳戶**依定義就是合法帳戶**（Tim 2026-08-20 叮）。
+            //   物理意義：它是設定值（`bank_settings.central_bank_account`，預設
+            //     `pacific-standard-public-deposit-bank`），而設定值不該還要人去 `system_accounts`
+            //     再登記一次 —— 那是同一件事的第二份資料，而兩份對不上時沒有人會叫。
+            //   🩸 症狀（Tim 實測）：後台打款每撥一次款就噴一次
+            //     「帳號 `pacific-standard-public-deposit-bank` 查無對應 …… 它是**孤兒帳戶**」——
+            //     **系統把自己的央行判定為不存在**，而錢照樣入帳。
+            //     同族第二次：LY 遷移後的 `FRS` 也是「真的在用、裡面有錢、被判定不存在」。
+            try
+            {
+                string cb = UCL_CentralBankSettings.CentralBankAccount;
+                if (!string.IsNullOrEmpty(cb)) AddCanonical_NoLock(cb);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Treasury] 央行帳戶讀取失敗（它將被當成孤兒）：{ex.Message}");
+            }
+
             //   ⚠ 這一段以前掛在 `account_resolve_unified` 開關底下；開關已於 2026-08-20 拔除
             //     （Tim：徹底改用新流程）—— 合一是唯一模式，沒有「遷移前」可切回去。
             foreach (var kv in s_PersonaToAgentLower)

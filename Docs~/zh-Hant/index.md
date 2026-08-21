@@ -97,6 +97,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [UCL_AgentCommandsPage](UCL_EditorPage/UCL_AgentCommandsPage.md) ⭐ | Agent Command 主頁面（隊列管理 / 新增 / Run Pending / Export Catalog）|
 | [UCL_BartenderAdminPage](UCL_EditorPage/UCL_BartenderAdminPage.md) | 集中管理酒保報時、時間提醒、關鍵字留言與 daemon 執行狀態的 Editor 後台。 |
 | [UCL_DiscordSettingsPage](UCL_EditorPage/UCL_DiscordSettingsPage.md) | Discord inbound 白名單、名稱／別名、個人簡介與 Guild 成員候選匯入。 |
+| [UCL_AutoCommitPage](UCL_EditorPage/UCL_AutoCommitPage.md) | **自動提交頁** — 機器生成檔分群→勾選→每群一筆 commit；含「⚙ Submodule 自動提交設定」可編輯區（設定 SOP 見 [AutoCommit_Config_Workflow](Workflows/AutoCommit_Config_Workflow.md)）|
 | [UCL_CommonEditorPage](UCL_EditorPage/UCL_CommonEditorPage.md) | 編輯器頁面共通基底 |
 | [UCL_ModuleEditPage](UCL_EditorPage/UCL_ModuleEditPage.md) | 模組編輯頁面 |
 | [UCL_ModuleServiceEditPage](UCL_EditorPage/UCL_ModuleServiceEditPage.md) | 模組服務編輯頁面 |
@@ -122,6 +123,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | 文件 | 說明 |
 |---|---|
 | [HelpURL_Workflow](Workflows/HelpURL_Workflow.md) | `ucl_core:` / `eov_docs:` 等 prefix 機制 |
+| ⚙ [AutoCommit_Config_Workflow](Workflows/AutoCommit_Config_Workflow.md) | **自動提交設定 SOP** — 把 repo 加入 `mode=submodules` 管理的步驟／`.ucl_autocommit.json` 欄位與判準（群怎麼切、前綴順序）／**設定檔掀不動的地板**（ephemeral 靠判定順序、`__other`／`__subptr` 不自動收）／⚠ 探針驗收法（`repos=1` 與「0 群」讀數同形，不驗分不出來）|
 | [Hardcoded_Localize](Workflows/Hardcoded_Localize.md) | 硬寫本地化字串的處理 |
 | 📖 [Book_Writing_Workflow](Workflows/Book_Writing_Workflow.md) | **寫書 SOP** — 五階段 lifecycle（起書／章節 pattern／cross-persona review／source 整合／publish）／長書 resume packet ／**§編纂類書籍**（素材是別人寫的時候的四條通用規則：機械層與親筆層分開・全收＝免責・處置總表・收錄前講在前面）|
 | 🏛 [Tavern_History_Workflow](Workflows/Tavern_History_Workflow.md) | **酒館歷史書 SOP** — `tavern_history.py` 兩相流程（Phase A 機械匯出當日全文工作稿／Phase B 人工編纂）／**紀傳體章節骨架**（序・紀・傳・志・表・徵・摘要錄・論贊 —— 敘述在前、原文在後，體例取自史記與三國志裴注）／`raw`・`summary`・`appendix`・`drop` 四分類判準／`history-<date>-<slug>` 命名／處置總表與三條讀者承諾／跟 `export-watch` 的分工 |

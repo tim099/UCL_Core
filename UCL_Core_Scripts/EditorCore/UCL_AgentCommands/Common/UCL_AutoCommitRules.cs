@@ -19,6 +19,8 @@
 //     subptr → ephemeral → 分群 ⇒ 設定檔寫什麼前綴都碰不到 ephemeral 與那兩個特殊群。
 //   · 設定檔只吃**前綴清單**，不吃 regex —— 比 code 更受限（理由見下方 GroupDef 的區塊註解：
 //     「錯配是『檔進錯 commit』等級，規則要一眼能驗證」）。
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/AutoCommit_Config_Workflow.md（地板：判定順序 subptr→ephemeral→分群）
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/UCL_EditorPage/UCL_AutoCommitPage.md（兩組寫死分群的表）
 #if UNITY_EDITOR
 using System;
 

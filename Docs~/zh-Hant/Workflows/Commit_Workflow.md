@@ -1,7 +1,7 @@
 ---
 title: Commit Workflow — 提交規範（UCL_Core 三層 + ChatTavern 訊息獨立）
 description: 跨專案共享的提交規則 — **預設單層**（只提交改動所在那層，逐層 bump 要使用者明說）、submodule 逐層 bump 流程、submodule 內 commit 前先切追蹤分支（避免 detached HEAD 游離）、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、Commit All 全包模式、commit message 格式與 prefix 約定。
-last_updated: 2026-08-20
+last_updated: 2026-08-21
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern 主文檔 | 酒館本身的設計與機制
@@ -103,10 +103,21 @@ run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=letters
 
 ### 規則住在哪
 
-分群規則的單一真相源是 **`UCL_AutoCommitRules`**，後台自動提交頁與 `Cmd_AutoCommit` 共用。
-規則寫在程式碼、不開放 UI／參數編輯（Tim 2026-08-07 拍板）——
-`[chat]` 獨立 commit 是 `CLAUDE.md` 等級的硬規則，能被亂改的規則等於沒有規則。
-🩸 為什麼要共用而不是各留一份：這種規則的錯配等級是「檔進錯 commit」，
+分群規則的真相源**分兩層**（2026-08-21 起）：
+
+| 對象 | 規則住哪 | 可否編輯 |
+|---|---|---|
+| AgentCommands 本層、persona 信件庫 | `UCL_AutoCommitRules`（程式碼） | ❌ 不開放 —— `[chat]` 獨立 commit 是 `CLAUDE.md` 等級的硬規則 |
+| **其他 repo**（第一個是 `Chess`） | 該 repo 根的 `.ucl_autocommit.json` | ✅ 由該 repo 自己宣告；後台頁可改可存 |
+
+走 `mode=submodules` 收設定檔那一層；**沒有設定檔的 submodule 不收**（不猜規則）。
+完整步驟（加入管理／欄位判準／地板／驗收）→ [`AutoCommit_Config_Workflow.md`](AutoCommit_Config_Workflow.md)。
+
+⚠ 設定檔為什麼不算「被亂改的規則」：它**入版控、由它管的那個 repo 擁有、改動在 diff 裡看得見**，
+而當年那句針對的是執行期參數（不留痕跡、事後查不到誰改的）。
+地板也還在，且由**判定順序**保證而不是靠記得檢查：`Classify` 走 subptr → ephemeral → 分群。
+
+🩸 為什麼同一層的規則要共用而不是各留一份：這種規則的錯配等級是「檔進錯 commit」，
 而兩份規則漂掉之後，**兩邊各自看起來都正常**。
 
 ---

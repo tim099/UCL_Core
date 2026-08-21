@@ -41,6 +41,8 @@
 //   · 一樣**不 bump 父層 pointer** —— commit 完回 AgentCommands 模式重掃，
 //     submodule pointer 那一群會出現（一次性勾選），bump 與否仍是人的決定。
 // RequiresConstantRepaint：git 在背景跑，進度與報告要即時反映。
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/UCL_EditorPage/UCL_AutoCommitPage.md（本頁的分群表與設定編輯區）
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/AutoCommit_Config_Workflow.md（§5 用後台頁改設定）
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;

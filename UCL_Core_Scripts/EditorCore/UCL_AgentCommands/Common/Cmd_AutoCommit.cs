@@ -19,6 +19,8 @@
 //      沒有分支指到它，下次 checkout 只剩 reflog 找得到。
 //   ③ letters 模式**預設跳過在線的 persona** —— 她可能正在寫，而「動別人正在寫的東西」
 //      的後果不是衝突報錯，是靜默把工作清掉。要收得 `include_online=1`。
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/Commit_Workflow.md（§2.5 機器生成的檔交給自動 commit／規則住在哪）
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/AutoCommit_Config_Workflow.md（mode=submodules 與設定檔）
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;

@@ -43,6 +43,8 @@ last_updated: 2026-08-21
 
 ## Submodule 自動提交設定（`.ucl_autocommit.json`，2026-08-21 Tim 拍板）
 
+> 📖 **完整步驟 SOP**（加入管理／欄位判準／地板／探針驗收）→ [`AutoCommit_Config_Workflow.md`](../Workflows/AutoCommit_Config_Workflow.md)
+
 上面兩組規則寫死在 `UCL_AutoCommitRules`。而**每接一個新的資料 repo 就要回頭改 UCL_Core
 加一組寫死的**，所以改成：該 repo 在自己根目錄放一份設定檔宣告自己的分群。
 

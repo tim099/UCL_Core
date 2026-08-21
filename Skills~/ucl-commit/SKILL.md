@@ -94,6 +94,15 @@ description: |
 > 而當年那句針對的是執行期參數（不留痕跡、事後查不到誰改的）。地板也還在，且由**判定順序**保證
 > 而不是由「記得檢查」保證：`Classify` 走 subptr → ephemeral → 分群 ⇒ 設定檔寫什麼前綴都
 > 碰不到 ephemeral 與 `__other`／`__subptr`。設定檔只吃前綴清單、不吃 regex（比 code 更受限）。
+>
+> 📖 **要把一個 repo 加入管理、或改分群規則 → 走 SOP，不要憑本節猜**：
+> `ucl_core:Docs~/{lang}/Workflows/AutoCommit_Config_Workflow.md`
+> （加入步驟／欄位判準／群怎麼切／地板／⚠ **探針驗收法**）
+> 後台頁（含設定編輯區）→ `ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_AutoCommitPage.md`
+>
+> ⚠ 加入管理時**最容易漏的一步**：`repos=1` 只證明設定檔被讀到 ——
+> **鍵名寫錯導致 0 群時，讀數跟成功時一模一樣。** 一定要放一顆探針再掃一次，
+> 看 Editor log 有沒有印出 `→ <repo> [<群>] N 檔：<訊息>`。看到那行才算通。
 
 - DebugLogs 保持 **untracked 但不 ignore** — Tim 要在 `git status` 看得到。
 - **絕不 `git add -A`** — 一律具名 stage。**別人正在寫的檔會被你一起 commit 走**，而那不會有錯誤訊息。

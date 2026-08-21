@@ -18,6 +18,8 @@
 //   · `__other` / `__subptr` 仍然只在顯式要求時才收，設定檔不能改變這件事。
 //   · 只吃**前綴清單**，不吃 regex。刻意的：`UCL_AutoCommitRules` 的區塊註解自己寫著
 //     「錯配是『檔進錯 commit』等級，規則要一眼能驗證」⇒ 設定檔要比 code **更受限**，不是更自由。
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/AutoCommit_Config_Workflow.md（欄位表／地板表／驗收法）
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/UCL_EditorPage/UCL_AutoCommitPage.md（Submodule 自動提交設定一節）
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;

@@ -371,7 +371,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 string env = Environment.GetEnvironmentVariable("DISCORD_INBOUND_BOT_TOKEN");
                 if (!string.IsNullOrEmpty(env)) return env.Trim();
-                string p = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_secrets", TokenFileName);
+                string p = Path.Combine(UCL_SecretsPath.AbsoluteDir, TokenFileName);
                 if (File.Exists(p))
                 {
                     string v = File.ReadAllText(p).Trim();

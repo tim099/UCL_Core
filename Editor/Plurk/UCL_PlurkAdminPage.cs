@@ -351,8 +351,7 @@ namespace UCL.Core.EditorLib.Plurk
         {
             string aId = (m_CredId ?? "").Trim();
             if (string.IsNullOrEmpty(aId)) return "";
-            return Path.Combine(UCL_AgentCommandsPath.DataRoot, "_secrets", aId + ".enc")
-                .Replace('\\', '/');
+            return Path.Combine(UCL_SecretsPath.AbsoluteDir, aId + ".enc").Replace('\\', '/');
         }
 
         // 區塊職責：把四個欄位組成契約 JSON → 加密 → 落 .enc。

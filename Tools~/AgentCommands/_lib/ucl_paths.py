@@ -27,6 +27,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -322,6 +323,55 @@ def resolve_data_path(default_subpath: str, config_key: str = "") -> Path:
     if default_subpath.startswith("AgentCommands/"):
         return (data_root() / default_subpath[len("AgentCommands/"):]).resolve()
     return (data_root() / default_subpath).resolve()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# API — secrets_dir_name() / secrets_dir()
+# 區塊職責：secrets 資料夾**名稱**的唯一解析點（python 端）。
+# 物理意義：名字 2026-08-21 起由 `<data_root>/secrets_config.json` 決定
+#          （C# 對側 `UCL_SecretsPath`，同一個檔、同一個 key `SecretsDir`）。
+#          原本 `"_secrets"` 這個字面值散在 7 處 code、兩種語言 —— 改名等於七處同步，
+#          而漏一處的症狀是靜默的（Discord daemon 只會說「token 未就緒」，
+#          那句話跟「還沒安裝」長得一模一樣）。
+# ⚠ 跟 2026-08-17 廢除的 `_config/tavern_paths.json` **不是同一種東西**：
+#   那套是 per-machine + gitignored 的細粒度覆寫，症狀正是「兩台機器各看各的目錄且都不報錯」。
+#   本設定**入版控、全機器同值** —— 不是「這台機器把 secrets 放別處」，
+#   而是「這個專案的 secrets 資料夾叫什麼」。前者是漂移的入口，後者是佈局事實。
+# 數值影響：檔案缺席 ⇒ 回預設 `Secret`。壞檔／空值 ⇒ 回預設並印一行 warning（per-process 只印一次）。
+#   刻意**不做「找不到就退回 _secrets」的 fallback** —— 自排 fallback 是
+#   「跑起來了但讀的是另一個宇宙的檔」那族的入口，而它不會叫。
+# ⚠ 對側契約：C# 等價入口 = `UCL_SecretsPath.DirName` / `.AbsoluteDir`。兩端要一起改。
+# ─────────────────────────────────────────────────────────────────────────
+SECRETS_CONFIG_FILE = "secrets_config.json"
+SECRETS_DIR_DEFAULT = "Secret"
+_SECRETS_WARNED = False
+
+
+def secrets_dir_name() -> str:
+    """secrets 資料夾名（相對 data_root）。讀 <data_root>/secrets_config.json，缺席回預設。"""
+    global _SECRETS_WARNED
+    cfg = data_root() / SECRETS_CONFIG_FILE
+    if not cfg.exists():
+        return SECRETS_DIR_DEFAULT
+    try:
+        with open(cfg, encoding="utf-8") as fh:
+            data = json.load(fh)
+        name = str(data.get("SecretsDir") or "").strip().replace(chr(92), "/").strip("/")
+        if name:
+            return name
+        if not _SECRETS_WARNED:
+            print("[ucl_paths] %s 的 SecretsDir 是空的，改用預設 %r" % (cfg, SECRETS_DIR_DEFAULT))
+            _SECRETS_WARNED = True
+    except Exception as exc:                                   # noqa: BLE001
+        if not _SECRETS_WARNED:
+            print("[ucl_paths] 讀 %s 失敗（%s），改用預設 %r" % (cfg, exc, SECRETS_DIR_DEFAULT))
+            _SECRETS_WARNED = True
+    return SECRETS_DIR_DEFAULT
+
+
+def secrets_dir() -> Path:
+    """secrets 資料夾的絕對路徑（已套 data_root override）。"""
+    return (data_root() / secrets_dir_name()).resolve()
 
 
 # ─────────────────────────────────────────────────────────────────────────

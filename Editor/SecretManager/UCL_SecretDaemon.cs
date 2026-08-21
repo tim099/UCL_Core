@@ -25,7 +25,9 @@ namespace UCL.Core.EditorLib.SecretManager
         /// 掃 rootDir 下 need-install 的 secret，逐個 MaybeAutoPopup。
         /// 回傳本次實際彈出的數量。內建 5s 節流 (force=true 可略過)。
         /// </summary>
-        public static int ScanAndMaybePopup(string rootDirRelative = UCL_SecretScanner.DefaultSecretsDir,
+        // ⚠ 預設值改 `null`（`DefaultSecretsDir` 2026-08-21 起是 property，不能當預設參數值）——
+        //   `null` ⇒ 交給 Scan 讀當下設定，行為與原本的「預設目錄」一致。
+        public static int ScanAndMaybePopup(string rootDirRelative = null,
                                             bool force = false)
         {
             double now = EditorApplication.timeSinceStartup;
@@ -49,7 +51,7 @@ namespace UCL.Core.EditorLib.SecretManager
         }
 
         /// <summary>列出 need-install 的 secret (不彈窗) — 給 UI / 摘要用。</summary>
-        public static List<UCL_SecretInfo> ListNeedInstall(string rootDirRelative = UCL_SecretScanner.DefaultSecretsDir)
+        public static List<UCL_SecretInfo> ListNeedInstall(string rootDirRelative = null)
         {
             var need = new List<UCL_SecretInfo>();
             foreach (var info in UCL_SecretScanner.Scan(rootDirRelative))

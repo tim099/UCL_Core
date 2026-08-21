@@ -39,6 +39,53 @@ L:<label 明文單行>\n
 - **Hint 明文**：加密 hint 與「忘密碼救援」目的悖論，故明文存。CLI/UI 強制警告「別寫密碼本身」。
 - **Hint ≤ 256 char**（Tim Q6）；rotate 改 hint **全覆蓋不留軌跡**（Tim Q5）。
 
+## 📁 資料夾位置（2026-08-21 起可設定，不再寫死）
+
+secrets 資料夾**名稱**住設定檔，C# 與 python **共讀同一份**：
+
+| 項目 | 值 |
+|---|---|
+| 設定檔 | `<data_root>/secrets_config.json` |
+| key | `SecretsDir`（相對 `data_root`，正斜線） |
+| 缺席時預設 | `Secret` |
+| C# 解析點 | `UCL_SecretsPath.DirName` / `.AbsoluteDir` |
+| python 解析點 | `ucl_paths.secrets_dir_name()` / `secrets_dir()` |
+| 改哪裡 | Secret Manager 頁的「資料夾名稱 (相對 DataRoot)」→ 💾 套用 |
+
+**為什麼要做**：`"AgentCommands/_secrets"` 這個字面值原本散在 **7 處 code、兩種語言**
+（scanner 常數／3 處 `Path.Combine`／2 支 python／文件）⇒ 改名等於七處同步，
+而**漏一處的症狀是靜默的**：Discord daemon 只會說「token 未就緒」，
+那句話跟「還沒安裝」長得一模一樣。
+
+> ⚠ **這跟 2026-08-17 廢除的 `_config/tavern_paths.json` 不是同一種東西。**
+> 那套是 per-machine + gitignored 的細粒度覆寫，被廢的理由正是
+> 「兩台機器各看各的目錄，且兩邊都不報錯」。
+> 本設定**入版控、全機器同值** —— 不是「這台機器把 secrets 放別處」（那是 DataRoot override 的職責），
+> 而是「這個專案的 secrets 資料夾叫什麼」。前者是漂移的入口，後者是佈局事實。
+
+⚠ **改名不搬檔。** 那一欄只換「去哪裡找」；資料夾要自己搬（或先搬再改）。
+所以改完掃不到東西不是壞掉，是指到了一個空的／不存在的位置。
+⚠ 既有專案**要顯式寫設定檔** —— 靠預設值 `Secret` 會在資料夾還叫 `_secrets` 的機器上當場全斷。
+刻意**不做「找不到 Secret 就退回 _secrets」的 fallback**：自排 fallback 是
+「跑起來了但讀的是另一個宇宙的檔」那族的入口，而它不會叫。
+
+## ⚠ python CLI（`ucl_secret.py`）對**現行** `.enc` 已失效
+
+2026-08-21 實跑 `python ucl_secret.py list` 的讀數：
+
+```
+# Secrets under <data_root>/_secrets (2 found)
+  ✗ discord_bot_token.enc: bad magic: expected b'TKN1' or b'TKN2', got b'UCLS1'
+  ✗ plurk_shared.enc: bad magic: expected b'TKN1' or b'TKN2', got b'UCLS1'
+```
+
+**目錄解析是對的（2 found），格式讀不動。** 現行 `.enc` 是 Tim 2026-07-22「全切 C#」之後的
+**UCLS1**（`UCL_SecretCrypto`），而 python lib 只認舊的 TKN1/TKN2。
+
+⇒ 現況：**加密／解密／安裝一律走 Editor 的 Secret Manager 頁**（C# native）。
+本文件上面那節 CLI 7 op 的用法對 UCLS1 檔**不成立** —— 這一格是既有落差，
+不是本次改動造成的，照實記在這裡免得下一個人照著跑然後以為是自己弄壞的。
+
 ## 🛠 CLI 7 op (`ucl_secret.py`)
 
 ```bash

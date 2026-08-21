@@ -12,6 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using UCL.Core.EditorLib.AgentCommands;
 using UCL.Core.EditorLib.AgentCommands.ChatTavern;
 using UCL.Core.JsonLib;
 using UCL.Core.Page;
@@ -1774,7 +1775,7 @@ namespace UCL.Core.EditorLib.Page
         {
             try
             {
-                string dir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_secrets");
+                string dir = UCL_SecretsPath.AbsoluteDir;
                 string enc = Path.Combine(dir, InboundTokenSecretStem + ".enc");
                 string txt = Path.Combine(dir, InboundTokenSecretStem + ".txt");
                 bool hasEnc = File.Exists(enc), hasTxt = File.Exists(txt);

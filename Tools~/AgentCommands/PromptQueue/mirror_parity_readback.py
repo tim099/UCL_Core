@@ -40,9 +40,11 @@ _repo_root = _probe_repo_root(pathlib.Path.cwd().resolve())
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 from AgentCommands._lib import tavern_paths as _tp  # noqa: E402
+from AgentCommands._lib import ucl_paths as _up  # noqa: E402
 
 STATE_DIR = _tp.PROMPT_QUEUE_DIR
-SECRETS_DIR = _tp.AGENT_COMMANDS_DIR / "_secrets"
+# 資料夾名走唯一解析點（ucl_paths.secrets_dir）—— 不寫死 _secrets
+SECRETS_DIR = _up.secrets_dir()
 
 UA = "Mozilla/5.0 UCL-MirrorParityHarness/1.0"
 

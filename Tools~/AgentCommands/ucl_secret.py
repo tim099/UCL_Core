@@ -256,8 +256,23 @@ def cmd_show_hint(args) -> int:
 # Op: list — 掃 dir 下所有 .enc 一覽
 # ---------------------------------------------------------------------------
 
+
+# 區塊職責：`--root` 沒給時的預設 secrets 目錄。
+# 物理意義：資料夾名 2026-08-21 起住 `<data_root>/secrets_config.json`（C# 對側 UCL_SecretsPath）。
+# ⚠ 本檔檔頭明寫「不依賴任何 UCL_Core C# / 專案特定路徑 — 可獨立跑 + test」——
+#   所以這裡是**惰性 import**：拿得到 ucl_paths 就用它，拿不到就**要求顯式 --root**。
+#   刻意不猜一個目錄名：猜錯的症狀是「掃了一個空目錄然後說沒有 secret」，而那不會報錯。
+def _resolve_default_root() -> str:
+    try:
+        import ucl_paths                                        # _lib 已在 sys.path
+        return str(ucl_paths.secrets_dir())
+    except Exception as exc:                                    # noqa: BLE001
+        print("[err] 沒帶 --root，且無法讀取路徑設定（%s）。"
+              "請顯式帶 --root <secrets 目錄>。" % exc, file=sys.stderr)
+        raise SystemExit(4)
+
 def cmd_list(args) -> int:
-    root = Path(args.root)
+    root = Path(args.root) if args.root else Path(_resolve_default_root())
     if not root.exists():
         print(f"[err] root not found: {root}", file=sys.stderr)
         return 4
@@ -424,7 +439,9 @@ def main():
     sp_sh.set_defaults(func=cmd_show_hint)
 
     sp_ls = sub.add_parser("list", help="List all .enc under a dir with metadata.")
-    sp_ls.add_argument("--root", default="AgentCommands/_secrets", help="Dir to scan (default: AgentCommands/_secrets).")
+    # 預設值改 None ⇒ 由 _resolve_default_root() 惰性解析（資料夾名不再寫死）
+    sp_ls.add_argument("--root", default=None,
+                       help="Dir to scan (default: <data_root>/<secrets_config.json 的 SecretsDir>).")
     sp_ls.add_argument("--json", action="store_true", help="JSON output.")
     sp_ls.set_defaults(func=cmd_list)
 

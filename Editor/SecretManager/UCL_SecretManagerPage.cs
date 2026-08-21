@@ -8,6 +8,7 @@
 using System.Collections.Generic;
 using System.IO;
 using UCL.Core.EditorLib;
+using UCL.Core.EditorLib.AgentCommands;
 using UCL.Core.EditorLib.Page;
 using UCL.Core.UI;
 using UnityEditor;
@@ -31,6 +32,8 @@ namespace UCL.Core.EditorLib.SecretManager
         // 區塊職責：掃描結果快取 + UI 狀態
         List<UCL_SecretInfo> m_Secrets = new List<UCL_SecretInfo>();
         string m_SecretsDir = UCL_SecretScanner.DefaultSecretsDir;
+        // 編輯中的資料夾名（跟已生效的分開存 —— 相同才代表已套用，否則「改了沒按」跟「按了沒生效」分不出來）
+        string m_SecretsDirEdit = UCL_SecretsPath.DirName;
         string m_StatusMsg = "";
         MessageType m_StatusType = MessageType.None;
         bool m_Loaded = false;
@@ -146,7 +149,62 @@ namespace UCL.Core.EditorLib.SecretManager
                 // 顯示解析後的絕對掃描路徑（走 DataRoot，submodule / override aware）— 比只印相對字串更好 debug
                 GUILayout.Label($"掃描資料夾: {UCL_AgentCommandsPath.ResolveData(m_SecretsDir)}  (passphrase-free 讀 .enc metadata)", WrapLabel);
                 GUILayout.Label("🔒=明文缺(待安裝) / ✅=明文已在 / ⚠=解析失敗。忘記密碼？用「📂開資料夾」手動貼明文。", WrapLabel);
+
+                DrawSecretsDirRow();
             }
+        }
+
+
+        // 區塊職責：secrets 資料夾名稱（相對 DataRoot）的設定列。
+        // 物理意義：Tim 2026-08-21：「路徑改為非硬編碼，相對路徑寫檔，Page 上可以改，預設 Secret」。
+        //          真相源是 `UCL_SecretsPath`（設定檔 `secrets_config.json`），**C# 與 python 共讀同一份**。
+        // 數值影響：
+        //   · 改名**不搬檔** —— 這一欄只換「去哪裡找」，資料夾要自己搬（或先搬再改）。
+        //     ⚠ 所以改完若掃不到東西，那不是壞掉，是指到了一個空的／不存在的位置。
+        //   · 存檔後清 `UCL_SecretsPath` 快取並重掃，畫面上的掃描路徑立刻反映新值 ——
+        //     「設定寫了但畫面沒變」會讓人以為沒生效。
+        //   · **只收相對名**：絕對路徑由 `UCL_SecretsPath.Save` 擋下（DataRoot override 才是換位置的入口，
+        //     這裡再開一條會變成兩個地方決定同一件事）。
+        void DrawSecretsDirRow()
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("資料夾名稱 (相對 DataRoot)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                m_SecretsDirEdit = EditorGUILayout.TextField(m_SecretsDirEdit);
+                bool aChanged = m_SecretsDirEdit != UCL_SecretsPath.DirName;
+                using (new EditorGUI.DisabledScope(!aChanged || string.IsNullOrWhiteSpace(m_SecretsDirEdit)))
+                {
+                    if (GUILayout.Button("💾 套用", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        ApplySecretsDir();
+                    }
+                }
+                if (GUILayout.Button("↩", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    m_SecretsDirEdit = UCL_SecretsPath.DirName;
+                    GUI.FocusControl(null);
+                }
+            }
+            GUILayout.Label($"設定檔: {UCL_SecretsPath.ConfigPath}"
+                + $"（缺席時預設 `{UCL_SecretsPath.DefaultDirName}`；此設定入版控，全機器一致）", WrapLabel);
+        }
+
+        void ApplySecretsDir()
+        {
+            try
+            {
+                UCL_SecretsPath.Save(m_SecretsDirEdit);
+                m_SecretsDir = UCL_SecretScanner.DefaultSecretsDir;   // property → 讀到新值
+                m_SecretsDirEdit = UCL_SecretsPath.DirName;
+                Reload();
+                SetStatus($"✓ 已套用資料夾名稱：{UCL_SecretsPath.DirName}"
+                    + "（**沒有搬任何檔** —— 掃不到東西代表指到了空位置）", MessageType.Info);
+            }
+            catch (System.Exception e)
+            {
+                SetStatus($"✗ 套用失敗: {e.Message}", MessageType.Error);
+            }
+            GUI.FocusControl(null);
         }
 
         // ===========================================================

@@ -303,13 +303,29 @@ namespace UCL.Core.EditorLib.Page
                     Scan(fetch: true);
                 }
             }
+            if (GUILayout.Button("Pull（ff-only）", UCL_GUIStyle.GetButtonStyle(new Color(0.55f, 0.8f, 1f)), GUILayout.ExpandWidth(false)))
+            {
+                RunBatch("pull", checkout: false, pull: true, push: false);
+            }
+            // 寫遠端的動作走二次確認（慣例同 FlattenSync 的同步鈕）
+            if (GUILayout.Button("Push", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.35f)), GUILayout.ExpandWidth(false)))
+            {
+                ConfirmAndRun("push", checkout: false, pull: false, push: true);
+            }
+
+            if (GUILayout.Button("一鍵同步（切 → pull → push）",
+                    UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.6f, 0.35f)), GUILayout.ExpandWidth(false)))
+            {
+                ConfirmAndRun("sync", checkout: true, pull: true, push: true);
+            }
         }
 
         protected override void ContentOnGUI()
         {
             DrawSettingsPanel();
-            DrawSubmodules();
             DrawActions();
+            DrawSubmodules();
+            
             DrawReport();
         }
 

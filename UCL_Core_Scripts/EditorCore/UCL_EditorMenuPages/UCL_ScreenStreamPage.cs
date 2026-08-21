@@ -543,23 +543,20 @@ namespace UCL.Core.EditorLib.Page
             {
                 string path = Path.Combine(GetRepoRoot(), MONITORS_RELATIVE);
                 if (!File.Exists(path)) return;
-                string txt = File.ReadAllText(path);
-                JsonData data = JsonData.ParseJson(txt);
-                if (data == null || !data.Contains("monitors")) return;
-                JsonData list = data["monitors"];
-                if (list == null || !list.IsArray) return;
-                for (int i = 0; i < list.Count; i++)
+                var data = AgentCommands.MediaAdmin.UCL_ScreenStreamMonitors.Load(path);
+                if (data == null) return;
+                for (int i = 0; i < data.monitors.Count; i++)
                 {
-                    JsonData m = list[i];
+                    var m = data.monitors[i];
+                    if (m == null) continue;
                     m_Monitors.Add(new MonitorInfo
                     {
-                        Index = m.GetInt("index", i),
-                        X = m.GetInt("x", 0),
-                        Y = m.GetInt("y", 0),
-                        W = m.GetInt("w", 0),
-                        H = m.GetInt("h", 0),
-                        Primary = m.GetBool("primary", false),
-                        Name = m.GetString("name", $"DISPLAY{i + 1}"),
+                        Index = m.index,
+                        X = m.x, Y = m.y, W = m.w, H = m.h,
+                        Primary = m.primary,
+                        // ⚠ 名稱缺席時補 `DISPLAY{i+1}` —— 空字串會讓下拉選單出現一個沒有名字的項目，
+                        //   而那看起來像「讀壞了」而不是「daemon 沒回報名稱」。
+                        Name = string.IsNullOrEmpty(m.name) ? $"DISPLAY{i + 1}" : m.name,
                     });
                 }
             }
@@ -595,7 +592,7 @@ namespace UCL.Core.EditorLib.Page
 
         // ===========================================================
         // Config IO
-        // 物理意義: JsonData parse _config.json; 寫回時保留 daemon-managed 欄位 (frame_count, started_at)
+        // 物理意義: 走 UCL_ScreenStreamConfig（typed model）；寫回時保留 daemon-managed 欄位與未知鍵
         // ===========================================================
         // 區塊職責: 3-way merge 輔助 — 決定單一可編輯欄位 reload 時採 UI 值還是磁碟值
         // 物理意義: ui == baseline 代表 Tim 上次 reload 後沒動過此欄 → 吃磁碟新值 (外部工具改的生效);
@@ -1636,8 +1633,8 @@ namespace UCL.Core.EditorLib.Page
                 long t = new FileInfo(p).LastWriteTimeUtc.Ticks;
                 if (t == m_SttStatusMtime) return;
                 m_SttStatusMtime = t;
-                var d = JsonData.ParseJson(File.ReadAllText(p));
-                m_SttStatusError = d != null ? (d.GetString("error", "") ?? "") : "";
+                var d = AgentCommands.MediaAdmin.UCL_SttStatus.Load(p);
+                m_SttStatusError = d != null ? (d.error ?? "") : "";
             }
             catch { m_SttStatusError = ""; }
         }
@@ -1670,15 +1667,16 @@ namespace UCL.Core.EditorLib.Page
             var result = new List<(double epoch, string text)>();
             try
             {
-                var d = JsonData.ParseJson(File.ReadAllText(path));
-                if (d != null && d.Contains("segments") && d["segments"].IsArray)
+                var d = AgentCommands.MediaAdmin.UCL_SttTranscript.Load(path);
+                if (d != null)
                 {
-                    var segs = d["segments"];
-                    for (int i = 0; i < segs.Count; i++)
+                    foreach (var seg in d.segments)
                     {
-                        string t = (segs[i].GetString("text", "") ?? "").Trim();
+                        if (seg == null) continue;
+                        string t = (seg.text ?? "").Trim();
                         if (t.Length == 0) continue;
-                        double ep = segs[i].GetDouble("end_epoch", segs[i].GetDouble("start_epoch", 0));
+                        // 時間軸取 end_epoch；缺席（0）時退回 start_epoch —— 一段轉錄一定有起點
+                        double ep = seg.end_epoch > 0 ? seg.end_epoch : seg.start_epoch;
                         result.Add((ep, t));
                     }
                 }
@@ -1700,10 +1698,11 @@ namespace UCL.Core.EditorLib.Page
         {
             try
             {
-                var d = JsonData.ParseJson(File.ReadAllText(path));
+                var d = AgentCommands.MediaAdmin.UCL_OcrFrameResult.Load(path);
                 if (d == null) return (0, "");
-                string t = (d.GetString("text", "") ?? "").Trim();
-                double ep = d.GetDouble("ocr_at", d.GetDouble("mtime", 0));
+                string t = (d.text ?? "").Trim();
+                // 時間軸取 ocr_at；缺席（0）時退回來源 frame 的 mtime
+                double ep = d.ocr_at > 0 ? d.ocr_at : d.mtime;
                 return (ep, t);
             }
             catch { return (0, ""); }

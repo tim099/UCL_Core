@@ -51,7 +51,12 @@ namespace UCL.Core.EditorLib.Plurk
         static readonly Regex NoteLineRe = new Regex(@"^[（(][^）)]{2,40}[）)]$", RegexOptions.Compiled);
         static readonly Regex NoteInlineRe = new Regex(@"[（(][^）)]{2,20}[）)]", RegexOptions.Compiled);
         static readonly Regex NoteAllowRe = new Regex(@"^[（(](\d+/\d+|emo\d+)[）)]$", RegexOptions.Compiled);
-        static readonly Regex SentenceEndRe = new Regex(@"[。！？!?]\s*$", RegexOptions.Compiled);
+        // 句末判定：標點之後允許**收尾符號**（粗體標記、引號、括號）——
+        // 🩸 2026-08-21 誤報：`…要被檢查的訊號。**` 被判成「句內手動斷行」，
+        //   因為 `**` 卡在句號與行尾之間。那是**規則自己的邊界沒畫對**，不是文案的錯；
+        //   而誤報的代價跟漏報一樣真：它會讓人去改一個沒問題的地方，然後開始不信這條規則。
+        static readonly Regex SentenceEndRe =
+            new Regex(@"[。！？!?][\*」』）\)】\s]*$", RegexOptions.Compiled);
         static readonly Regex SignRe = new Regex(@"(——|—|--)\s*\S", RegexOptions.Compiled);
         static readonly Regex MentionRe = new Regex(@"@([A-Za-z0-9_\-]{2,20})", RegexOptions.Compiled);
 

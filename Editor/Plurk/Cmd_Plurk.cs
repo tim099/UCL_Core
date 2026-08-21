@@ -39,7 +39,8 @@ namespace UCL.Core.EditorLib.Plurk
             "Plurk 共用帳號流程：resolve 查帳號 / lint 驗交付單 / preview 組 payload 不送 / post 發文（需 confirm=1）。";
 
         public override string ArgsSchema =>
-            "op=resolve|lint|preview|upload|post|whoami（預設 resolve） | "
+            "op=resolve|lint|preview|upload|post|get|whoami（預設 resolve） | "
+            + "plurk_id=<已發出的噗 id>（op=get 用 —— 唯讀回讀驗「它真的在那裡」） | "
             + "image=<圖片絕對路徑>（op=upload 用；⛔ 不吃相對路徑） | " +
             "persona=<誰要發，lint/preview/post 建議給 —— 決定用共用還是個人帳號> | " +
             "slip_file=<交付單檔案路徑>（lint/preview/post 必填；**五欄**格式見 Plurk_Posting_Workflow §2） | " +
@@ -93,9 +94,10 @@ namespace UCL.Core.EditorLib.Plurk
                     case "lint": OpLint(args, aRes, aR); break;
                     case "preview": OpPreview(args, aRes, aR, out _); break;
                     case "upload": await OpUpload(args, aRes, aR, token); break;
+                    case "get": await OpGet(args, aRes, aR, token); break;
                     case "post": await OpPost(args, aRes, aR, token); break;
                     default:
-                        throw new Exception($"[Plurk] 認不得的 op='{aOp}'（resolve|whoami|lint|preview|upload|post）");
+                        throw new Exception($"[Plurk] 認不得的 op='{aOp}'（resolve|whoami|lint|preview|upload|post|get）");
                 }
             }
             finally
@@ -352,6 +354,66 @@ namespace UCL.Core.EditorLib.Plurk
         //          而那個長度決定 lint 該替附圖保留多少字元預算（不是憑估）。
         // 數值影響：對外寫入（CDN 上多一張無主圖片）⇒ 要 `confirm=1`。
         // ===========================================================
+        // ===========================================================
+        // 區塊職責：op=get —— **唯讀回讀**一則已發出的噗（驗「它真的在那裡」）
+        // 物理意義：`post` 回的 200 ＋ `plurk_id` 只證明**送出被接受**。
+        //          「公開度真的生效了嗎」「用哪個帳號發的」「附圖真的被渲染成 `<img>` 嗎」
+        //          —— 這三件都**不是從 plurk_id 推得出來的**，要去問對方。
+        // 🩸 2026-08-21：唯讀診斷 `plurk.py` 移除之後，這條線只剩「送出」那一半有工具，
+        //          當天最後一則（第一次走「所有人」）因此只驗到 200，沒驗到它真的公開。
+        //          ⇒ 把歸路搬進 Cmd（Tim 2026-08-21：「CMD 流程應該可以跑驗證」）。
+        // 數值影響：純唯讀（`/APP/Timeline/getPlurk`），不改任何 Plurk 資料。
+        // ===========================================================
+        async UniTask OpGet(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            string aId = GetArg(iArgs, "plurk_id", "").Trim();
+            if (aId.Length == 0)
+                throw new Exception("[Plurk] op=get 需要 --arg plurk_id=<發文回傳的 id>");
+            var aCred = RequireCredentials(iRes);
+            var (aStatus, aBody) = await CallAsync("/APP/Timeline/getPlurk", aCred,
+                new Dictionary<string, string> { { "plurk_id", aId } }, token);
+
+            ioR.AppendLine();
+            ioR.AppendLine($"## get（唯讀回讀 —— 驗「它真的在那裡」）");
+            ioR.AppendLine($"- http: **{aStatus}**　plurk_id: `{aId}`");
+            if (aStatus != 200)
+            {
+                ioR.AppendLine($"- ✗ body（前 300 字）: {Trunc(aBody, 300)}");
+                throw new Exception($"[Plurk] getPlurk 失敗 http={aStatus}");
+            }
+            // 回應是 { "plurk": {...}, "user": {...} } —— 取內層那顆
+            string aPlurk = ExtractObject(aBody, "plurk");
+            string aOwner = PickJsonValue(aPlurk, "owner_id");
+            string aLimited = PickJsonValue(aPlurk, "limited_to");
+            string aRaw = PickJsonValue(aPlurk, "content_raw") ?? "";
+            string aHtml = PickJsonValue(aPlurk, "content") ?? "";
+            ioR.AppendLine($"- owner_id: **{aOwner ?? "?"}**"
+                + "（比對 `op=whoami` 的 `id` ⇒ 這則到底是哪個帳號發的）");
+            ioR.AppendLine($"- limited_to: **{(string.IsNullOrEmpty(aLimited) ? "(無 ⇒ 公開)" : aLimited)}**"
+                + "　⚠ 存回來的格式與送出的**不同形**（送 `[0]`、存 `|0|`）⇒ 別拿送出的值比對");
+            ioR.AppendLine($"- qualifier: {PickJsonValue(aPlurk, "qualifier") ?? "?"}"
+                + $"　posted: {PickJsonValue(aPlurk, "posted") ?? "?"}");
+            ioR.AppendLine($"- content_raw 首行: {Trunc(UnescapeUnicode(aRaw).Split('\n')[0], 60)}");
+            // 附圖驗的是**渲染**不是字串：content_raw 有 URL 只證明我送進去了
+            bool aHasImg = aHtml.Contains("<img");
+            ioR.AppendLine($"- 渲染成 `<img>`: **{(aHasImg ? "是" : "否")}**"
+                + "（附圖那則要看這格 —— `content_raw` 裡有 URL 只證明我送進去了，Plurk 認不認是另一回事）");
+        }
+
+        // 從 `{"plurk":{...},"user":{...}}` 取出內層物件的原始 JSON，讓 PickJsonValue 能繼續用。
+        // 極簡實作：只服務本檔這一個回應形狀，不做通用 JSON 導覽。
+        static string ExtractObject(string iJson, string iKey)
+        {
+            try
+            {
+                var aJd = UCL.Core.JsonLib.JsonData.ParseJson(iJson);
+                if (aJd == null || !aJd.Contains(iKey)) return iJson;
+                return aJd[iKey].ToJson();
+            }
+            catch { return iJson; }
+        }
+
         async UniTask OpUpload(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
             StringBuilder ioR, CancellationToken token)
         {
@@ -627,6 +689,32 @@ namespace UCL.Core.EditorLib.Plurk
                 return aRaw.Length == 0 || aRaw == "null" ? null : aRaw;
             }
             catch { return null; }
+        }
+
+        // 區塊職責：把 JSON 的 \uXXXX 轉義還原成字元
+        // 物理意義：`JsonData.ToJson()` 會轉義非 ASCII ⇒ 回讀中文內容印出來是一串 引用…，
+        //          人看不出那是不是自己發的那段。
+        // 🩸 2026-08-21 op=get 首跑就撞到：**驗證輸出讀不懂，等於只驗了一半** ——
+        //   我能證明「有東西在那裡」，但不能證明「在那裡的是我那段」。
+        // 數值影響：只影響顯示；解析不出來就原樣留著（不吞掉）。
+        static string UnescapeUnicode(string iText)
+        {
+            if (string.IsNullOrEmpty(iText)) return iText;
+            var sb = new StringBuilder(iText.Length);
+            for (int i = 0; i < iText.Length; i++)
+            {
+                if (iText[i] == '\\' && i + 5 < iText.Length && iText[i + 1] == 'u'
+                    && int.TryParse(iText.Substring(i + 2, 4),
+                        System.Globalization.NumberStyles.HexNumber,
+                        CultureInfo.InvariantCulture, out int aCode))
+                {
+                    sb.Append((char)aCode);
+                    i += 5;
+                    continue;
+                }
+                sb.Append(iText[i]);
+            }
+            return sb.ToString();
         }
 
         static string Trunc(string iText, int iLen)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UCL.Core;
+using UnityEngine;
 
 namespace UCL.Core
 {
@@ -44,7 +45,7 @@ namespace UCL.Core
     /// 的情況: 子類只需指定 scope 型別 (<see cref="ScopeType"/>) 與清單成員名 (<see cref="ScopeMemberName"/>),
     /// 由 reflection 抓出成員值 (欄位或屬性皆可), 逐元素取 ID.
     ///
-    /// ScopeType 可傳具體型別 (typeof(HSceneAsset)) 或 interface (typeof(IInteractions)) — 兩者
+    /// ScopeType 可傳具體型別 (typeof(某個容器 Asset)) 或 interface (typeof(某個容器介面)) — 兩者
     /// IsInstanceOfType 都成立, 後者可一次 cover 同介面的一整族 asset.
     ///
     /// 成本: MemberInfo 靜態快取, 每個 (type, name) 只 reflect 一次; 且上游 SelectIDOnGUI 已對
@@ -54,10 +55,14 @@ namespace UCL.Core
     public abstract class UCL_AssetEntryScopedReflect<T> : UCL_AssetEntryScoped<T>
         where T : class, UCLI_Asset, UCLI_Preview, new()
     {
-        /// <summary>scope 判定型別, 具體型別或 interface 皆可 (e.g. typeof(HSceneAsset) / typeof(IInteractions))</summary>
+        /// <summary>scope 判定型別, 具體型別或 interface 皆可 (具體 Asset 型別 / 該族共用的容器介面)</summary>
         protected abstract System.Type ScopeType { get; }
 
-        /// <summary>scope 清單所在的成員名 (欄位或屬性), e.g. "Interactions"</summary>
+        /// <summary>
+        /// scope 清單所在的成員名 (欄位或屬性), e.g. "Interactions".
+        /// <para>清單被收進子物件時可用 <b>點號路徑</b> 逐層往下, e.g. "Interaction.interactions" —
+        /// 路徑上任一層為 null 就當作沒有 scope (回 fallback), 不丟例外.</para>
+        /// </summary>
         protected abstract string ScopeMemberName { get; }
 
         /// <summary>
@@ -76,10 +81,7 @@ namespace UCL.Core
             System.Type scopeType = ScopeType;
             if (scopeType == null || !scopeType.IsInstanceOfType(iCurAsset)) return null;
 
-            MemberInfo member = ResolveMember(iCurAsset.GetType(), ScopeMemberName);
-            if (member == null) return null;
-
-            object value = GetMemberValue(member, iCurAsset);
+            object value = ResolveMemberPath(iCurAsset, ScopeMemberName);
             if (value is not IEnumerable seq) return null;
 
             string idMemberName = ElementIDMemberName;
@@ -93,6 +95,27 @@ namespace UCL.Core
             return ids;
         }
 
+        // 區塊職責：把 "A.B.C" 這種成員路徑逐層取值（每層可為欄位或屬性）。
+        // 物理意義：清單被收進子物件（e.g. 章節資產的 Interaction.interactions）之後，
+        //          成員不再直接掛在 asset 型別上 —— 單層 ResolveMember 會回 null，
+        //          而 null 的下游是「下拉選單變空」而不是報錯 ⇒ 必須支援逐層往下。
+        // 數值影響：回傳最後一層的值；路徑上任一層是 null 就回 null（不丟例外）。
+        //          某一層「成員名不存在」與「值是 null」是兩件事：前者是打錯字/欄位被改名，
+        //          會 LogWarning 一次（見 ResolveMember）；後者是正常的空狀態，靜默。
+        static object ResolveMemberPath(object iTarget, string iPath)
+        {
+            if (iTarget == null || string.IsNullOrEmpty(iPath)) return null;
+            object aCur = iTarget;
+            foreach (string aName in iPath.Split('.'))
+            {
+                if (aCur == null) return null; // 中途是 null＝正常空狀態，不是設定錯
+                MemberInfo aMember = ResolveMember(aCur.GetType(), aName);
+                if (aMember == null) return null;
+                aCur = GetMemberValue(aMember, aCur);
+            }
+            return aCur;
+        }
+
         static MemberInfo ResolveMember(System.Type iOwnerType, string iMemberName)
         {
             var key = (iOwnerType, iMemberName);
@@ -101,6 +124,13 @@ namespace UCL.Core
             const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
             MemberInfo member = (MemberInfo)iOwnerType.GetProperty(iMemberName, flags)
                                 ?? iOwnerType.GetField(iMemberName, flags);
+            // fail-loud：成員名解析不到＝設定寫錯或欄位被改名，而它的下游是「下拉選單默默變空」。
+            // 只在首次（cache miss）喊一次 —— null 也進 cache，所以不會每幀洗 log。
+            if (member == null)
+            {
+                Debug.LogWarning($"[UCL_AssetEntryScopedReflect] ScopeMemberName 解析不到："
+                    + $"{iOwnerType.Name} 沒有名為 \"{iMemberName}\" 的欄位或屬性 → 此下拉不 scope（退回全體 ID）。");
+            }
             s_MemberCache[key] = member;
             return member;
         }

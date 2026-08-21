@@ -134,15 +134,25 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         static string PreparedPath(string iMediaId)
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "prepared", $"{iMediaId}.json");
 
-        static JsonData LoadPrepared(string iMediaId)
+        /// <summary>讀準備檔；不存在或壞檔回 null（呼叫端據此擋下 join / catchup，並印出要跑 prepare）。</summary>
+        static UCL_StreamWatchPrepared LoadPrepared(string iMediaId)
         {
             try
             {
                 string aP = PreparedPath(iMediaId);
-                return File.Exists(aP) ? JsonData.ParseJson(File.ReadAllText(aP, Encoding.UTF8)) : null;
+                if (!File.Exists(aP)) return null;
+                var aJd = JsonData.ParseJson(File.ReadAllText(aP, Encoding.UTF8));
+                if (aJd == null) return null;
+                var aOut = new UCL_StreamWatchPrepared();
+                aOut.DeserializeFromJson(aJd);
+                return aOut;
             }
             catch { return null; }
         }
+
+        /// <summary>寫回準備檔（**唯一寫入點**）。</summary>
+        static void SavePrepared(UCL_StreamWatchPrepared iP)
+            => AtomicWrite(PreparedPath(iP.media_id), iP.SerializeToJson().ToJsonBeautify());
 
         /// <summary>某 reader 已有哪些章（chapter id 昇冪）。讀目錄本身 —— 不推 reader.json 的 progress
         /// （progress 是「最後讀到哪」，不等於「哪幾章有心得」，兩者曾經不一致）。</summary>
@@ -362,7 +372,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 var kv = part.Split('=');
                 if (kv.Length == 2) aMapArg[kv[0].Trim().PadLeft(4, '0')] = kv[1].Trim();
             }
-            var aMap = new JsonData();
+            var aMap = new Dictionary<string, string>();
             var aUnfilled = new List<string>();
             for (int e = 1; e < aEpisode; e++)
             {
@@ -381,7 +391,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     }
                 }
                 bool aSrcHas = aChaptersOf.TryGetValue(aSrc, out var sc) && sc.Contains(aCh);
-                aMap[aCh] = new JsonData(aSrc);
+                aMap[aCh] = aSrc;
                 aR.AppendLine($"- 第 {e} 話 → `{aSrc}`{(aSrcHas ? "" : "　⚠ **該 reader 其實沒有這章**（指定了也補不出內容）")}");
             }
             if (aEpisode == 1) aR.AppendLine("- （本場是第 1 話，沒有要補的）");
@@ -411,21 +421,23 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             // ── ⑥ 落檔（陪同者的 join / catchup 都讀這份） ────────────────
-            var aP = new JsonData();
-            aP["media_id"] = new JsonData(aMediaId);
-            aP["episode"] = new JsonData(aEpisode);
-            aP["chapter_id"] = new JsonData(aChapterId);
-            aP["show_title"] = new JsonData(aShow);
-            aP["prepared_by"] = new JsonData(iPersona);
-            aP["prepared_at"] = new JsonData(UCL_AwakeningService.NowIso());
-            aP["reference_reader"] = new JsonData(aRefReader);
-            aP["catchup_map"] = aMap;
-            aP["catchup_unfilled"] = UCL_ReadingLibraryIO.ToStringArray(aUnfilled.Select(u => u.Substring(0, 4)).ToList());
-            aP["chapter_title"] = new JsonData(aChapterTitle);
-            aP["export_chapter"] = new JsonData(aExportChapter);
-            aP["export_work_title"] = new JsonData(aExportWorkTitle);
-            aP["auto_export"] = new JsonData(aAutoExport);
-            AtomicWrite(PreparedPath(aMediaId), aP.ToJsonBeautify());
+            var aP = new UCL_StreamWatchPrepared
+            {
+                media_id = aMediaId,
+                episode = aEpisode,
+                chapter_id = aChapterId,
+                show_title = aShow,
+                prepared_by = iPersona,
+                prepared_at = UCL_AwakeningService.NowIso(),
+                reference_reader = aRefReader,
+                catchup_map = aMap,
+                catchup_unfilled = aUnfilled.Select(u => u.Substring(0, 4)).ToList(),
+                chapter_title = aChapterTitle,
+                export_chapter = aExportChapter,
+                export_work_title = aExportWorkTitle,
+                auto_export = aAutoExport,
+            };
+            SavePrepared(aP);
             aR.AppendLine();
             aR.AppendLine($"- 準備檔：`StreamWatch/prepared/{aMediaId}.json`（join / catchup 都讀這份）");
             aR.AppendLine();
@@ -467,8 +479,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (aMediaJson != null && aMediaJson.Contains("work_id")) aWorkId = aMediaJson["work_id"].GetString();
             }
             catch { }
-            aP["work_id"] = new JsonData(aWorkId);
-            AtomicWrite(PreparedPath(aMediaId), aP.ToJsonBeautify());   // work_id 也要進準備檔
+            aP.work_id = aWorkId;
+            SavePrepared(aP);                                          // work_id 也要進準備檔
 
             aR.AppendLine("## next");
             aR.AppendLine($"1. **開場**：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> "
@@ -513,9 +525,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 throw new Exception($"[StreamWatch] step=catchup blocked：無準備檔（詳見 {aPath}）");
             }
 
-            int aEpisode = ReadInt(aP, "episode");
-            string aRef = ReadStr(aP, "reference_reader");
-            string aShow = ReadStr(aP, "show_title");
+            int aEpisode = aP.episode;
+            string aRef = aP.reference_reader;
+            string aShow = aP.show_title;
             var aMine = ReaderChapters(aMediaId, iPersona);
             aR.AppendLine($"> **{aShow}**｜媒材 `{aMediaId}`｜本場第 {aEpisode} 話｜接續基準 `{aRef}`");
             aR.AppendLine($"> 我（`{iPersona}`）已有的章：{(aMine.Count == 0 ? "**無**" : string.Join(" ", aMine))}");
@@ -539,10 +551,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine("> 以下是**別人親筆的心得全文**（來源由主觀影者在 prepare 指定），不是工具生成的摘要。");
                 aR.AppendLine("> 讀完就接得上；⚠ 但那是**他們看到的**，不是我看到的 —— 我自己的心得要寫成自己的觀察。");
                 aR.AppendLine();
-                var aMap = (aP.Contains("catchup_map") ? aP["catchup_map"] : null);
+                var aMap = aP.catchup_map;
                 foreach (var aCh in aGaps)
                 {
-                    string aSrc = (aMap != null && aMap.Contains(aCh)) ? aMap[aCh].GetString() : "";
+                    string aSrc = (aMap != null && aMap.TryGetValue(aCh, out var aFrom)) ? aFrom : "";
                     aR.AppendLine($"### 第 {int.Parse(aCh)} 話（章 `{aCh}`）");
                     if (string.IsNullOrEmpty(aSrc))
                     {
@@ -795,16 +807,16 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             // 守衛③：不疊開（到期殘留自動收掉 —— 沒跑 cycle 的人不該被卡死在沒有出口的房間）
             var aOld = LoadSession(iPersona);
-            if (aOld != null && ReadBool(aOld, "active"))
+            if (aOld != null && aOld.active)
             {
-                DateTime? aOldEnd = ParseIsoLocal(ReadStr(aOld, "end_ts"));
+                DateTime? aOldEnd = ParseIsoLocal(aOld.end_ts);
                 if (aOldEnd.HasValue && aNow <= aOldEnd.Value)
                 {
                     Blocked(iArgs, aR, aPath, $"已有進行中的觀影 session（至 {aOldEnd.Value:HH:mm} 本地）—— 不疊開",
                             $"跑 step=cycle 繼續；到期或 Tim 停錄影時 cycle 會自己判定收工");
                     throw new Exception($"[StreamWatch] step=start blocked：session 已存在（詳見 {aPath}）");
                 }
-                aR.AppendLine($"- ℹ 偵測到過期殘留 session（{ReadStr(aOld, "session_id")}）已自動收掉，開新場。");
+                aR.AppendLine($"- ℹ 偵測到過期殘留 session（{aOld.session_id}）已自動收掉，開新場。");
             }
 
             // 守衛④：media 是共享鍵 —— 不給就 blocked，不猜
@@ -873,32 +885,28 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             // session 註冊（C# 唯一寫入端）
             string aSessionId = $"sw-{DateTime.UtcNow:yyyyMMddTHHmmssZ}-{iPersona}";
-            var aSession = new JsonData();
-            aSession["persona"] = new JsonData(iPersona);
-            aSession["session_id"] = new JsonData(aSessionId);
-            aSession["role"] = new JsonData("primary");
-            aSession["media_id"] = new JsonData(iMedia);
-            aSession["work_id"] = new JsonData(aResolvedWork);          // 解析後的 work（可能與 media_id 不同）
-            aSession["library_media_id"] = new JsonData(aLibMediaId);   // 寫心得要用的那個 id；空＝還沒有對應 media
-            aSession["start_ts"] = new JsonData(UCL_AwakeningService.NowIso());
-            aSession["end_ts"] = new JsonData(aUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
-            aSession["until_local"] = new JsonData(aUntil.ToString("yyyy-MM-dd HH:mm"));
-            aSession["cursor_epoch"] = new JsonData(0);   // 0 = 尚未取材，首輪由 montage 決定窗口
-            aSession["cycles"] = new JsonData(0);
-            aSession["observations"] = new JsonData(0);
-            aSession["tiles_total"] = new JsonData(0);
-            aSession["start_seq"] = new JsonData(0);
-            aSession["end_seq"] = new JsonData(0);
+            var aSession = new UCL_StreamWatchSession
+            {
+                persona = iPersona,
+                session_id = aSessionId,
+                role = "primary",
+                media_id = iMedia,
+                work_id = aResolvedWork,          // 解析後的 work（可能與 media_id 不同）
+                library_media_id = aLibMediaId,   // 寫心得要用的那個 id；空＝還沒有對應 media
+                start_ts = UCL_AwakeningService.NowIso(),
+                end_ts = aUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                until_local = aUntil.ToString("yyyy-MM-dd HH:mm"),
+                cursor_epoch = 0,                 // 0 = 尚未取材，首輪由 montage 決定窗口
+                active = true,
+            };
             // 場次層來源資訊（up 主在 work 那層已經有了，這裡記的是**這一場看的那支**）
-            if (!string.IsNullOrEmpty(iSrc.Up)) aSession["up"] = new JsonData(iSrc.Up);
-            if (!string.IsNullOrEmpty(iSrc.VideoTitle)) aSession["video_title"] = new JsonData(iSrc.VideoTitle);
-            if (!string.IsNullOrEmpty(iSrc.VideoDesc)) aSession["video_desc"] = new JsonData(iSrc.VideoDesc);
-            if (!string.IsNullOrEmpty(iSrc.Url)) aSession["source_url"] = new JsonData(iSrc.Url);
-            aSession["note_written"] = new JsonData(false);
-            aSession["active"] = new JsonData(true);
-            aSession["settled_at"] = new JsonData("");
-            aSession["end_reason"] = new JsonData("");
-            AtomicWrite(SessionPath(iPersona), aSession.ToJsonBeautify());
+            // ⚠ 這四個欄位過去「空就不寫鍵」，typed model 一律寫（空字串）——
+            //   加鍵是相容的（讀取端都用預設值判空），而少一個鍵才是查不出來的那種差異。
+            aSession.up = iSrc.Up;
+            aSession.video_title = iSrc.VideoTitle;
+            aSession.video_desc = iSrc.VideoDesc;
+            aSession.source_url = iSrc.Url;
+            SaveSession(iPersona, aSession);
 
             // 開播公告（記 start_seq —— 匯出區間的左端點，寫入當下就知道，不必事後回頭數）
             int aMinutes = (int)Math.Max(0, (aUntil - aNow).TotalMinutes);
@@ -913,8 +921,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-start", iToken);
             if (aSeq > 0)
             {
-                aSession["start_seq"] = new JsonData(aSeq);
-                AtomicWrite(SessionPath(iPersona), aSession.ToJsonBeautify());
+                aSession.start_seq = aSeq;
+                SaveSession(iPersona, aSession);
             }
 
             // 回傳檔
@@ -949,7 +957,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!string.IsNullOrEmpty(aLibMediaId))
             {
                 var aPrep2 = LoadPrepared(aLibMediaId);
-                string aCh2 = aPrep2 != null ? ReadStr(aPrep2, "chapter_id") : "";
+                string aCh2 = aPrep2 != null ? aPrep2.chapter_id : "";
                 aR.AppendLine($"5. 收工後寫心得（**id 已填好，不要自己打字**）："
                     + $"`run_cmd.py run Library --arg op=note_chapter --arg persona={iPersona} "
                     + $"--arg media_id={aLibMediaId} --arg chapter={(string.IsNullOrEmpty(aCh2) ? "<四位數話號>" : aCh2)} "
@@ -979,7 +987,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine();
 
             var aS = LoadSession(iPersona);
-            if (aS == null || !ReadBool(aS, "active"))
+            if (aS == null || !aS.active)
             {
                 Blocked(iArgs, aR, aPath, "無進行中的觀影 session",
                         $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
@@ -987,7 +995,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             DateTime aNow = DateTime.Now;
-            DateTime? aEnd = ParseIsoLocal(ReadStr(aS, "end_ts"));
+            DateTime? aEnd = ParseIsoLocal(aS.end_ts);
             bool aExpired = aEnd.HasValue && aNow >= aEnd.Value;
             bool aRecordingOff = !IsRecordingEnabled(out string aCfgNote);
 
@@ -1003,7 +1011,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine();
 
                 // 接續點未寫 ⇒ **不擋**（Tim 拍板），但要**吵**：這裡列、收播公告也列
-                if (!ReadBool(aS, "note_written"))
+                if (!aS.note_written)
                 {
                     // ⚠ 接續點**走閱讀心得那條路**（Tim 2026-08-16）——「接續觀影跟接續閱讀走一樣的流程」。
                     //   不另建格式：Cmd_Library 的 media/reader/chapter 模型本來就是為分段觀看設計的
@@ -1015,12 +1023,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     //   照著貼會組出 `anim-anim-apocalypse-hotel` 這種不存在的 id（我 2026-08-17 實跑撞到）。
                     //   ⇒ 改成**用 session 解析好的 library_media_id 與準備階段的章號直接填**；
                     //   查不到才退回要人填，並說清楚是哪一種情況。
-                    string aLibId = ReadStr(aS, "library_media_id");
+                    string aLibId = aS.library_media_id;
                     string aChId = "";
                     if (!string.IsNullOrEmpty(aLibId))
                     {
                         var aPrepS = LoadPrepared(aLibId);
-                        if (aPrepS != null) aChId = ReadStr(aPrepS, "chapter_id");
+                        if (aPrepS != null) aChId = aPrepS.chapter_id;
                     }
                     string aMidArg = string.IsNullOrEmpty(aLibId) ? "<閱讀庫 media_id — 先跑 Cmd_Library op=media_init>" : aLibId;
                     string aChArg = string.IsNullOrEmpty(aChId) ? "<四位數話號>" : aChId;
@@ -1049,7 +1057,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   （Cmd_GoodMorning.cs:86 同樣的坑）。
             string aScript = ResolveMontageScript();
             string aOutPath = MontageOutPath(iPersona);
-            double aCursor = ReadDouble(aS, "cursor_epoch");
+            double aCursor = aS.cursor_epoch;
             // ⚠ 首輪沒有 cursor 會踩到雞生蛋（2026-08-15 自由時間實跑抓到）：
             //   cursor=0 ⇒ 不傳 --after-mtime ⇒ 而 montage 的 --before-mtime 過濾與 next-cursor 回報
             //   **都在 after-mtime 那個分支裡**  ⇒ 夾子不生效、cursor 也永遠設不起來，
@@ -1059,7 +1067,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   且保證每一輪都走 loop 路徑。
             if (aCursor <= 0)
             {
-                DateTime? aSt = ParseIsoLocal(ReadStr(aS, "start_ts"));
+                DateTime? aSt = ParseIsoLocal(aS.start_ts);
                 if (aSt.HasValue) aCursor = ToEpoch(aSt.Value.ToUniversalTime());
             }
 
@@ -1075,8 +1083,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             DateTime aRunStart = DateTime.Now;
             // 酒館已讀游標：優先用 session 記的 `tavern_seq`；沒有就退回 `start_seq`（＝開播那則，本場起點）。
             // ⚠ 退回值**不可以是 -1** —— 那會讓 sidecar 從全庫最舊開始列，正是 2026-08-16 那隻的成因。
-            int aTavernSince = aS != null ? ReadInt(aS, "tavern_seq") : 0;
-            if (aTavernSince <= 0 && aS != null) aTavernSince = ReadInt(aS, "start_seq");
+            int aTavernSince = aS != null ? aS.tavern_seq : 0;
+            if (aTavernSince <= 0 && aS != null) aTavernSince = aS.start_seq;
             var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aCursor, aWatermark, aOutPath, aOcrOn, aSttOn,
                                                             iPersona, Math.Max(0, aTavernSince), iToken);
             // ⚠ **軟條件的訊息在 stdout，不在 stderr**（2026-08-15 實測：`--before-mtime` 夾出空窗口時
@@ -1132,7 +1140,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 推進 cursor（用 report 的 next-cursor —— 不是 wall-clock，抖動下仍首尾嚴絲合縫）
             if (aInfo.NextCursor > 0)
             {
-                aS["cursor_epoch"] = new JsonData(aInfo.NextCursor);
+                aS.cursor_epoch = aInfo.NextCursor;
             }
             // 推進酒館已讀游標 —— montage 印 `tavern_max_seq=<N>`（本輪實際顯示到的最大 seq）。
             // ⚠ **不推進的後果不是「重複看到」，是「永遠看不到新的」**：未讀是從游標往後數、顯示有額度上限，
@@ -1149,7 +1157,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aGlobalCursorTs = null;
             if (aTavernShown > 0 && aTavernMax > 0)
             {
-                aS["tavern_seq"] = new JsonData(Math.Max(aTavernMax, ReadInt(aS, "tavern_seq")));
+                aS.tavern_seq = Math.Max(aTavernMax, aS.tavern_seq);
                 // 區塊職責：本輪 sidecar 顯示過的訊息，一併消化**全域**已讀游標（Tim 2026-08-18 拍板）。
                 // 物理意義：sidecar 水位是 per-session 的 seq（語意＝這場開始以來），
                 //          叮／自由時間的游標是全域 ts —— 兩套原本互不相干。
@@ -1160,11 +1168,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 // ⚠ 不影響 sidecar 自己的顯示範圍 —— 它讀的是 tavern_seq，不是這個游標。
                 aGlobalCursorTs = ChatTavern.UCL_TavernCursor.AdvanceToSeq(iPersona, "tavern", aTavernMax);
             }
-            aS["cycles"] = new JsonData(ReadInt(aS, "cycles") + 1);
-            aS["tiles_total"] = new JsonData(ReadInt(aS, "tiles_total") + aInfo.Tiles);
-            aS["last_tiles"] = new JsonData(aInfo.Tiles);
-            aS["last_span_seconds"] = new JsonData(aInfo.SpanSeconds);
-            AtomicWrite(SessionPath(iPersona), aS.ToJsonBeautify());
+            aS.cycles += 1;
+            aS.tiles_total += aInfo.Tiles;
+            aS.last_tiles = aInfo.Tiles;
+            aS.last_span_seconds = aInfo.SpanSeconds;
+            SaveSession(iPersona, aS);
 
             int aRemain = aEnd.HasValue ? (int)Math.Max(0, (aEnd.Value - aNow).TotalMinutes) : 0;
             string aSubPath = Path.ChangeExtension(aOutPath, ".subtitles.md");
@@ -1197,7 +1205,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             AppendSttLine(aR, aSttOn, aInfo);
             AppendClampAudit(aR, aInfo.NextCursor, aWatermark, aWmNote);
             aR.AppendLine($"- 剩餘     : {aRemain} 分鐘（到 {aEnd:HH:mm}）");
-            aR.AppendLine($"- 本場累計 : cycles={ReadInt(aS, "cycles")}｜observations={ReadInt(aS, "observations")}");
+            aR.AppendLine($"- 本場累計 : cycles={aS.cycles}｜observations={aS.observations}");
             // 單一入口：字幕／語音／同場訊息全部嵌進本檔（Tim 2026-08-16）
             // 游標印本輪實際餵進去的那個（aTavernSince），與 sidecar 標題的 `已讀 seq≤N` 同源 —— 見瑕疵①③。
             AppendSidecar(aR, aSubPath, aHasSub, iPersona, aTavernShown, Math.Max(0, aTavernSince), true);
@@ -1243,7 +1251,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             var aOwn = LoadSession(iPersona);
-            if (aOwn != null && ReadBool(aOwn, "active"))
+            if (aOwn != null && aOwn.active)
             {
                 Blocked(iArgs, aR, aPath, "你已經有進行中的觀影 session —— 不疊開",
                         "跑 step=cycle 繼續你自己那場");
@@ -1251,7 +1259,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             // 找一個進行中的 primary（不是自己）
-            JsonData aPrimary = null; string aPrimaryPersona = "";
+            UCL_StreamWatchSession aPrimary = null; string aPrimaryPersona = "";
             try
             {
                 string aDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "sessions");
@@ -1261,10 +1269,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     {
                         string aWho = Path.GetFileNameWithoutExtension(f);
                         if (aWho == iPersona) continue;
-                        var aJd = JsonData.ParseJson(File.ReadAllText(f, Encoding.UTF8));
-                        if (aJd == null || !ReadBool(aJd, "active")) continue;
-                        if (ReadStr(aJd, "role") != "primary") continue;
-                        aPrimary = aJd; aPrimaryPersona = aWho; break;
+                        var aOther = LoadSessionAt(f);
+                        if (aOther == null || !aOther.active) continue;
+                        if (aOther.role != "primary") continue;
+                        aPrimary = aOther; aPrimaryPersona = aWho; break;
                     }
                 }
             }
@@ -1277,8 +1285,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 throw new Exception($"[StreamWatch] step=join blocked：無 primary 場（詳見 {aPath}）");
             }
 
-            string aMedia = ReadStr(aPrimary, "media_id");
-            string aLibMediaId = ReadStr(aPrimary, "library_media_id");
+            string aMedia = aPrimary.media_id;
+            string aLibMediaId = aPrimary.library_media_id;
 
             // ⛔ 準備階段門檻（Tim 2026-08-17）：**準備完成才輪到陪同者進場。**
             // 物理意義：進場時 media_id / 章號 / 接續基準必須**已經是定值** ——
@@ -1299,53 +1307,48 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         + $"--arg persona={aPrimaryPersona} --arg media_id={aMedia} --arg episode=<第幾集>");
                 throw new Exception($"[StreamWatch] step=join blocked：媒材 {aMedia} 無準備檔（詳見 {aPath}）");
             }
-            string aPrepChapter = ReadStr(aPrep, "chapter_id");
-            string aPrepRef = ReadStr(aPrep, "reference_reader");
+            string aPrepChapter = aPrep.chapter_id;
+            string aPrepRef = aPrep.reference_reader;
             string aLibId = !string.IsNullOrEmpty(aLibMediaId) ? aLibMediaId : aMedia;
             var aMyChapters = ReaderChapters(aLibId, iPersona);
             var aMyGaps = new List<string>();
-            for (int e = 1; e < ReadInt(aPrep, "episode"); e++)
+            for (int e = 1; e < aPrep.episode; e++)
             {
                 string aCh = e.ToString("0000");
                 if (!aMyChapters.Contains(aCh)) aMyGaps.Add(aCh);
             }
 
             string aSessionId = $"sw-{DateTime.UtcNow:yyyyMMddTHHmmssZ}-{iPersona}";
-            var aS = new JsonData();
-            aS["persona"] = new JsonData(iPersona);
-            aS["session_id"] = new JsonData(aSessionId);
-            aS["role"] = new JsonData("companion");
-            aS["media_id"] = new JsonData(aMedia);            // ← 繼承，不自己解析
-            aS["work_id"] = new JsonData(ReadStr(aPrimary, "work_id"));
-            aS["library_media_id"] = new JsonData(aLibMediaId);
-            aS["parent_session_id"] = new JsonData(ReadStr(aPrimary, "session_id"));
-            aS["parent_persona"] = new JsonData(aPrimaryPersona);
-            aS["start_ts"] = new JsonData(UCL_AwakeningService.NowIso());
-            aS["end_ts"] = new JsonData(ReadStr(aPrimary, "end_ts"));   // 沿用 primary 的截止
-            aS["until_local"] = new JsonData(ReadStr(aPrimary, "until_local"));
-            aS["cursor_epoch"] = new JsonData(ReadDouble(aPrimary, "cursor_epoch"));
-            aS["cycles"] = new JsonData(0);
-            aS["observations"] = new JsonData(0);
-            aS["start_seq"] = new JsonData(0);
-            aS["end_seq"] = new JsonData(0);
-            aS["note_written"] = new JsonData(false);
-            aS["active"] = new JsonData(true);
-            aS["settled_at"] = new JsonData("");
-            aS["end_reason"] = new JsonData("");
-            AtomicWrite(SessionPath(iPersona), aS.ToJsonBeautify());
+            var aS = new UCL_StreamWatchSession
+            {
+                persona = iPersona,
+                session_id = aSessionId,
+                role = "companion",
+                media_id = aMedia,                            // ← 繼承，不自己解析
+                work_id = aPrimary.work_id,
+                library_media_id = aLibMediaId,
+                parent_session_id = aPrimary.session_id,
+                parent_persona = aPrimaryPersona,
+                start_ts = UCL_AwakeningService.NowIso(),
+                end_ts = aPrimary.end_ts,                     // 沿用 primary 的截止
+                until_local = aPrimary.until_local,
+                cursor_epoch = aPrimary.cursor_epoch,
+                active = true,
+            };
+            SaveSession(iPersona, aS);
 
             var aBody = new StringBuilder();
             aBody.AppendLine($"🍿 [{iPersona} 大小姐] 加入觀影 — 陪同 @{aPrimaryPersona} 的場｜媒材 `{aMedia}`");
             aBody.AppendLine();
             aBody.AppendLine("陪同觀眾**挑段細看**，主劇情由主觀影者在酒館帶 —— gap 對我是正常的，不是漏看。");
             int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-join", iToken);
-            if (aSeq > 0) { aS["start_seq"] = new JsonData(aSeq); AtomicWrite(SessionPath(iPersona), aS.ToJsonBeautify()); }
+            if (aSeq > 0) { aS.start_seq = aSeq; SaveSession(iPersona, aS); }
 
             aR.AppendLine($"- session : `{aSessionId}`（role=**companion**）");
-            aR.AppendLine($"- 陪同    : @{aPrimaryPersona}（{ReadStr(aPrimary, "session_id")}）");
+            aR.AppendLine($"- 陪同    : @{aPrimaryPersona}（{aPrimary.session_id}）");
             aR.AppendLine($"- media   : `{aMedia}`　←　**繼承 primary，不自己解析**（一場一個鍵）");
-            aR.AppendLine($"- 截止    : {ReadStr(aPrimary, "until_local")}（沿用 primary）");
-            aR.AppendLine($"- primary 進度: 已 {ReadInt(aPrimary, "cycles")} 輪／{ReadInt(aPrimary, "observations")} 筆評論");
+            aR.AppendLine($"- 截止    : {aPrimary.until_local}（沿用 primary）");
+            aR.AppendLine($"- primary 進度: 已 {aPrimary.cycles} 輪／{aPrimary.observations} 筆評論");
             aR.AppendLine($"- 加入公告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
             aR.AppendLine();
             aR.AppendLine("## 你的不變式跟 primary **不一樣**");
@@ -1353,8 +1356,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine("- **你（companion）：自由取樣，gap ＝ 正常** —— 挑段細看，主劇情靠酒館追");
             aR.AppendLine();
             aR.AppendLine("## 準備階段給你的定值（**不要自己打字**，那是漂移的來源）");
-            aR.AppendLine($"- 本場章號: `{aPrepChapter}`（第 {ReadInt(aPrep, "episode")} 話）／節目名 `{ReadStr(aPrep, "show_title")}`");
-            aR.AppendLine($"- 接續基準: `{aPrepRef}`（由 `{ReadStr(aPrep, "prepared_by")}` 在 prepare 指定）");
+            aR.AppendLine($"- 本場章號: `{aPrepChapter}`（第 {aPrep.episode} 話）／節目名 `{aPrep.show_title}`");
+            aR.AppendLine($"- 接續基準: `{aPrepRef}`（由 `{aPrep.prepared_by}` 在 prepare 指定）");
             aR.AppendLine($"- 我的進度: 已有 {aMyChapters.Count} 章"
                 + (aMyGaps.Count == 0 ? "，**本場之前的集數沒有缺**" : $"，⚠ **缺 {aMyGaps.Count} 集：{string.Join(" ", aMyGaps)}**"));
             if (aMyGaps.Count > 0)
@@ -1384,11 +1387,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         const int BASE_MINUTES_PER_TOKEN = 10;
         const int BASE_CAP = 6;
 
-        static async UniTask SettleAsync(IDictionary<string, string> iArgs, string iPersona, JsonData ioS, bool iByInterrupt,
+        static async UniTask SettleAsync(IDictionary<string, string> iArgs, string iPersona, UCL_StreamWatchSession ioS, bool iByInterrupt,
                                          DateTime iNow, DateTime? iEnd, StringBuilder ioR, CancellationToken iToken)
         {
             // 熱路徑判重
-            string aSettledAt = ReadStr(ioS, "settled_at");
+            string aSettledAt = ioS.settled_at;
             if (!string.IsNullOrEmpty(aSettledAt))
             {
                 ioR.AppendLine($"- 結算: **已於 {aSettledAt} 結算過**（熱路徑判重，未重複發薪）");
@@ -1398,10 +1401,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 return;
             }
 
-            string aSessionId = ReadStr(ioS, "session_id");
-            string aMedia = ReadStr(ioS, "media_id");
-            int aObs = ReadInt(ioS, "observations");
-            DateTime? aStart = ParseIsoLocal(ReadStr(ioS, "start_ts"));
+            string aSessionId = ioS.session_id;
+            string aMedia = ioS.media_id;
+            int aObs = ioS.observations;
+            DateTime? aStart = ParseIsoLocal(ioS.start_ts);
             // ⚠ 上限**永遠**是 ends_at —— 兩個終止條件可能同時成立（到期了、Tim 也停了錄影），
             //   而中斷被發現的時刻可以晚於截止。取中斷時刻 ⇒ **回得越晚領越多**，
             //   正是 Plan §6 點名要防的那條。2026-08-15 首次結算實踩：
@@ -1484,28 +1487,28 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aBody = new StringBuilder();
             aBody.AppendLine($"📺 [{iPersona} 大小姐] 收播 — {(iByInterrupt ? "**Tim 停止錄影**" : "**到期**")}｜媒材 `{aMedia}`");
             aBody.AppendLine();
-            aBody.AppendLine($"- 本場：{ReadInt(ioS, "cycles")} 輪 ／ **{aObs} 筆觀戰評論** ／ 在場 {aPaidMin} 分鐘");
+            aBody.AppendLine($"- 本場：{ioS.cycles} 輪 ／ **{aObs} 筆觀戰評論** ／ 在場 {aPaidMin} 分鐘");
             aBody.AppendLine($"- 結算：{aPayNote}");
-            if (!ReadBool(ioS, "note_written"))
+            if (!ioS.note_written)
                 aBody.AppendLine("- ⚠ **本場未寫接續點** —— 下次續看接不回進度（不擋結算，但這件事要看得見）");
-            aBody.AppendLine($"- 場次紀錄：seq {ReadInt(ioS, "start_seq")} → 本則（`tavern` 房；中間混雜其他訊息是刻意的）");
+            aBody.AppendLine($"- 場次紀錄：seq {ioS.start_seq} → 本則（`tavern` 房；中間混雜其他訊息是刻意的）");
             int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-end", iToken);
 
-            ioS["active"] = new JsonData(false);
-            ioS["settled_at"] = new JsonData(UCL_AwakeningService.NowIso());
-            ioS["end_reason"] = new JsonData(iByInterrupt ? "recording-stopped" : "expired");
-            ioS["paid_minutes"] = new JsonData(aPaidMin);
-            ioS["paid_total"] = new JsonData(aTotal);
-            ioS["end_seq"] = new JsonData(aSeq);
-            AtomicWrite(SessionPath(iPersona), ioS.ToJsonBeautify());
+            ioS.active = false;
+            ioS.settled_at = UCL_AwakeningService.NowIso();
+            ioS.end_reason = iByInterrupt ? "recording-stopped" : "expired";
+            ioS.paid_minutes = aPaidMin;
+            ioS.paid_total = aTotal;
+            ioS.end_seq = aSeq;
+            SaveSession(iPersona, ioS);
             AppendSessionLog(ioS, iPersona, aSeq, aPaidMin, aTotal);
 
-            ioR.AppendLine($"- 本場統計: cycles={ReadInt(ioS, "cycles")}｜observations={aObs}｜在場 {aPaidMin} 分鐘");
+            ioR.AppendLine($"- 本場統計: cycles={ioS.cycles}｜observations={aObs}｜在場 {aPaidMin} 分鐘");
             if (!string.IsNullOrEmpty(aStopNote))
                 ioR.AppendLine($"- 計費上限: 付到 {aPaidUntil:HH:mm:ss} {aStopNote}");
             ioR.AppendLine($"- 結算    : {aPayNote}");
             ioR.AppendLine($"- 收播公告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
-            ioR.AppendLine($"- 場次紀錄: seq **{ReadInt(ioS, "start_seq")} → {aSeq}**（匯出區間，`tavern` 房）");
+            ioR.AppendLine($"- 場次紀錄: seq **{ioS.start_seq} → {aSeq}**（匯出區間，`tavern` 房）");
             ioR.AppendLine($"- 實錄台帳: 已 append `StreamWatch/{SESSION_LOG_NAME}`（append-only；per-persona session 檔下一場就被覆寫，台帳不會）");
             // ── 實錄自動匯出（Tim 2026-08-19 拍板；BUG-10）────────────────
             // 區塊職責：把「收工 → 實錄進書」這一步從人的記憶挪到通道上。
@@ -1514,8 +1517,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   （主場 ∪ 其 companions ∪ 已匯進同一章的舊場次），所以自動化不會把第二場漏掉。
             // 數值影響：只有 **primary** 觸發（陪同者收工不觸發，否則同一章會被每個人各匯一次）；
             //   準備檔沒填章名或 auto_export=false ⇒ 完全不跑，退回原本的手動指令。
-            bool aIsPrimary = ReadStr(ioS, "role") != "companion";
-            var (aAutoOn, aAutoWhy) = ReadAutoExportSetting(ReadStr(ioS, "library_media_id"));
+            bool aIsPrimary = ioS.role != "companion";
+            var (aAutoOn, aAutoWhy) = ReadAutoExportSetting(ioS.library_media_id);
             bool aExported = false;
             if (aIsPrimary && aAutoOn)
             {
@@ -1554,7 +1557,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 而章名要親筆 ⇒ 這裡只把可直接貼的指令連同已量到的區間交出去，別讓它變成要人自己記得的事。
             ioR.AppendLine($"3. 本場實錄可匯出成章（章 ≠ 場：一話跨數場就把區間一起給）：");
             ioR.AppendLine($"   `python <UCL_Core>/Tools~/AgentCommands/library.py export-watch --media {aMedia} "
-                + $"--seq-ranges {ReadInt(ioS, "start_seq")}-{aSeq} --title <章名> --work-title <作品 第N話> --sessions {aSessionId}`");
+                + $"--seq-ranges {ioS.start_seq}-{aSeq} --title <章名> --work-title <作品 第N話> --sessions {aSessionId}`");
             ioR.AppendLine($"   （同一話的其它場次區間查 `StreamWatch/{SESSION_LOG_NAME}`；章名與併章判斷是人的事，工具不代取）");
         }
 
@@ -1597,7 +1600,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine();
 
             var aS = LoadSession(iPersona);
-            if (aS == null || !ReadBool(aS, "active"))
+            if (aS == null || !aS.active)
             {
                 Blocked(iArgs, aR, aPath, "無進行中的觀影 session",
                         $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
@@ -1610,8 +1613,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 throw new Exception($"[StreamWatch] step=observe blocked：body 為空（詳見 {aPath}）");
             }
             // 守衛：沒有對應的取材紀錄 ⇒ 拒收（Plan §12 —— 不是靜靜算錢）
-            int aLastTiles = ReadInt(aS, "last_tiles");
-            if (ReadInt(aS, "cycles") <= 0 || aLastTiles <= 0)
+            int aLastTiles = aS.last_tiles;
+            if (aS.cycles <= 0 || aLastTiles <= 0)
             {
                 Blocked(iArgs, aR, aPath, "本場尚無取材紀錄 —— 沒看過就沒有可記的觀察",
                         $"先跑 run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
@@ -1619,11 +1622,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             // ① 先發文
-            double aSpan = ReadDouble(aS, "last_span_seconds");
+            double aSpan = aS.last_span_seconds;
             var aBody = new StringBuilder();
             aBody.AppendLine(iBody.TrimEnd());
             aBody.AppendLine();
-            aBody.AppendLine($"— 本輪素材：{aLastTiles} 格／涵蓋 {aSpan:F0}s（**每格 ≈{(aLastTiles > 0 ? aSpan / aLastTiles : 0):F0}s**）｜媒材 `{ReadStr(aS, "media_id")}`");
+            aBody.AppendLine($"— 本輪素材：{aLastTiles} 格／涵蓋 {aSpan:F0}s（**每格 ≈{(aLastTiles > 0 ? aSpan / aLastTiles : 0):F0}s**）｜媒材 `{aS.media_id}`");
             int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-observe", iToken);
 
             // ② 後記帳（發文失敗就不記 —— 帳上不留沒人看過的評論）
@@ -1635,15 +1638,15 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=observe blocked：發文失敗，未記帳（詳見 {aPath}）");
             }
-            int aObs = ReadInt(aS, "observations") + 1;
-            aS["observations"] = new JsonData(aObs);
-            aS["last_observe_seq"] = new JsonData(aSeq);
-            AtomicWrite(SessionPath(iPersona), aS.ToJsonBeautify());
+            int aObs = aS.observations + 1;
+            aS.observations = aObs;
+            aS.last_observe_seq = aSeq;
+            SaveSession(iPersona, aS);
 
-            DateTime? aEnd = ParseIsoLocal(ReadStr(aS, "end_ts"));
+            DateTime? aEnd = ParseIsoLocal(aS.end_ts);
             int aRemain = aEnd.HasValue ? (int)Math.Max(0, (aEnd.Value - DateTime.Now).TotalMinutes) : 0;
             aR.AppendLine($"- 評論已發: seq **{aSeq}**（先發後記 —— 發文成功才記帳）");
-            aR.AppendLine($"- 本場累計: cycles={ReadInt(aS, "cycles")}｜**observations={aObs}**（計酬上限 {OBSERVATION_CAP}）");
+            aR.AppendLine($"- 本場累計: cycles={aS.cycles}｜**observations={aObs}**（計酬上限 {OBSERVATION_CAP}）");
             aR.AppendLine($"- 剩餘    : {aRemain} 分鐘（到 {aEnd:HH:mm}）");
             aR.AppendLine();
             aR.AppendLine("## next");
@@ -1684,7 +1687,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
                 throw new Exception($"[StreamWatch] step=note blocked：無 session 檔（詳見 {aPath}）");
             }
-            bool aLate = !ReadBool(aS, "active");
+            bool aLate = !aS.active;
             if (string.IsNullOrWhiteSpace(iBody))
             {
                 aR.AppendLine("## blocked");
@@ -1697,10 +1700,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 throw new Exception($"[StreamWatch] step=note blocked：body 為空（詳見 {aPath}）");
             }
 
-            string aMedia = ReadStr(aS, "media_id");
-            // ⚠ 欄位名是 `settled_at`（SettleAsync 寫的），不是 `ended_at` ——
-            //   讀錯欄位時 ReadStr 靜默回空，回傳檔就會印「結束時刻未記」這句**假話**。
-            string aEnded = ReadStr(aS, "settled_at");
+            string aMedia = aS.media_id;
+            // ⚠ 欄位名是 `settled_at`（SettleAsync 寫的），不是 `ended_at`。
+            //   typed model 之後這件事變成編譯期的問題 —— 打錯欄位名編不過，
+            //   而舊寫法 `ReadStr(aS,"ended_at")` 會靜默回空，回傳檔印出「結束時刻未記」這句**假話**。
+            string aEnded = aS.settled_at;
             var aBody = new StringBuilder();
             aBody.AppendLine($"📌 [{iPersona} 大小姐] 觀影接續點 — 媒材 `{aMedia}`"
                            + (aLate ? "　**（補寫：本場已於收工時結算）**" : ""));
@@ -1710,10 +1714,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aBody.AppendLine(iBody.TrimEnd());
             int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-note", iToken);
 
-            aS["note_written"] = new JsonData(true);
-            aS["note_seq"] = new JsonData(aSeq);
-            if (aLate) aS["note_late"] = new JsonData(true);
-            AtomicWrite(SessionPath(iPersona), aS.ToJsonBeautify());
+            aS.note_written = true;
+            aS.note_seq = aSeq;
+            if (aLate) aS.note_late = true;
+            SaveSession(iPersona, aS);
 
             aR.AppendLine($"- 接續點已寫並發布: {(aSeq > 0 ? $"seq **{aSeq}**" : "發文失敗（**接續點仍已記進 session**）")}");
             aR.AppendLine($"- media: `{aMedia}`");
@@ -2069,23 +2073,19 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     ? $"⛔ **已被覆蓋** —— 區間起點 {FromEpochLocal(aFrom):HH:mm:ss} 早於最舊 frame {FromEpochLocal(aOldest):HH:mm:ss}"
                     : $"✅ 仍在 ring buffer 內（最舊 frame {FromEpochLocal(aOldest):HH:mm:ss}）";
 
-            var aJd = LoadHotspots() ?? new JsonData();
-            if (!aJd.Contains("hotspots")) aJd["hotspots"] = JsonData.ParseJson("[]");
-            var aList = aJd["hotspots"];
-            string aId = "h" + (aList.Count + 1);
-            var aH = new JsonData();
-            aH["id"] = new JsonData(aId);
-            aH["from_epoch"] = new JsonData(aFrom);
-            aH["to_epoch"] = new JsonData(aTo);
-            aH["why"] = new JsonData(iWhy.Trim());
-            aH["opened_by"] = new JsonData(iPersona);
-            aH["opened_at"] = new JsonData(UCL_AwakeningService.NowIso());
-            aH["claimed_by"] = new JsonData("");
-            aH["claimed_at"] = new JsonData("");
-            aList.Add(aH);
-            string aDir = Path.GetDirectoryName(HotspotsPath());
-            if (!Directory.Exists(aDir)) Directory.CreateDirectory(aDir);
-            AtomicWrite(HotspotsPath(), aJd.ToJsonBeautify());
+            var aJd = LoadHotspots() ?? new UCL_StreamWatchHotspots();
+            string aId = "h" + (aJd.hotspots.Count + 1);
+            var aH = new UCL_StreamWatchHotspot
+            {
+                id = aId,
+                from_epoch = aFrom,
+                to_epoch = aTo,
+                why = iWhy.Trim(),
+                opened_by = iPersona,
+                opened_at = UCL_AwakeningService.NowIso(),
+            };
+            aJd.hotspots.Add(aH);
+            SaveHotspots(aJd);
 
             aR.AppendLine($"- 熱點   : **[{aId}]** {FromEpochLocal(aFrom):HH:mm:ss}–{FromEpochLocal(aTo):HH:mm:ss}"
                         + $"（{(aTo - aFrom):F0}s）");
@@ -2107,15 +2107,28 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             Debug.Log($"[StreamWatch] step=hotspot {aId} → {aPath}");
         }
 
-        static JsonData LoadHotspots()
+        /// <summary>讀熱點清單；讀不到回 null（**空清單與讀不到是兩件事** —— 回傳檔要印得不一樣）。</summary>
+        static UCL_StreamWatchHotspots LoadHotspots()
         {
             try
             {
                 string aP = HotspotsPath();
                 if (!File.Exists(aP)) return null;
-                return JsonData.ParseJson(File.ReadAllText(aP, Encoding.UTF8));
+                var aJd = JsonData.ParseJson(File.ReadAllText(aP, Encoding.UTF8));
+                if (aJd == null) return null;
+                var aOut = new UCL_StreamWatchHotspots();
+                aOut.DeserializeFromJson(aJd);
+                return aOut;
             }
             catch { return null; }
+        }
+
+        /// <summary>寫回熱點清單（**唯一寫入點**）。</summary>
+        static void SaveHotspots(UCL_StreamWatchHotspots iH)
+        {
+            string aDir = Path.GetDirectoryName(HotspotsPath());
+            if (!Directory.Exists(aDir)) Directory.CreateDirectory(aDir);
+            AtomicWrite(HotspotsPath(), iH.SerializeToJson().ToJsonBeautify());
         }
 
         /// <summary>磁碟上最舊 frame 的 epoch（ring buffer 左界）。讀不到回 0 —— 呼叫端**不可把 0 當成「都還在」**。</summary>
@@ -2166,7 +2179,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   ⇒ 標記人人可（誰看到都能標），但**看熱點是 join 者的工作**。分工不是階級，是覆蓋率：
             //     primary 顧連續性、companion 顧解析度。
             var aMySession = LoadSession(iPersona);
-            if (aMySession != null && ReadBool(aMySession, "active") && ReadStr(aMySession, "role") == "primary")
+            if (aMySession != null && aMySession.active && aMySession.role == "primary")
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: @{iPersona} 是本場**主觀影者** —— 認領熱點是陪看者（`step=join`）的工作");
@@ -2180,11 +2193,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             var aJd = LoadHotspots();
-            var aList = aJd != null && aJd.Contains("hotspots") ? aJd["hotspots"] : null;
-            JsonData aH = null; int aIdx = -1;
-            if (aList != null && aList.IsArray)
-                for (int i = 0; i < aList.Count; i++)
-                    if (ReadStr(aList[i], "id") == (iHotspot ?? "").Trim()) { aH = aList[i]; aIdx = i; break; }
+            var aList = aJd?.hotspots;
+            UCL_StreamWatchHotspot aH = null;
+            if (aList != null)
+                foreach (var h in aList)
+                    if (h != null && h.id == (iHotspot ?? "").Trim()) { aH = h; break; }
 
             if (aH == null)
             {
@@ -2197,18 +2210,18 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             // ⚠ **獨占**（Tim 2026-08-16）：已被領走就擋，並把還沒人領的列出來 ——
             //   目的是把眼睛分散到不同段。擋下時**要給替代選項**，否則使用者只會原地重試。
-            string aBy = ReadStr(aH, "claimed_by");
+            string aBy = aH.claimed_by;
             if (!string.IsNullOrEmpty(aBy))
             {
                 aR.AppendLine("## blocked");
-                aR.AppendLine($"- reason: `{iHotspot}` **已被 @{aBy} 認領**（{ReadStr(aH, "claimed_at")}）");
+                aR.AppendLine($"- reason: `{iHotspot}` **已被 @{aBy} 認領**（{aH.claimed_at}）");
                 aR.AppendLine("- why: 一個熱點只能被領一次 —— 兩個人細看同一段，等於沒人看另一段");
                 AppendHotspots(aR, iPersona);
                 WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[StreamWatch] step=claim blocked：已被認領（詳見 {aPath}）");
             }
 
-            double aFrom = ReadDouble(aH, "from_epoch"), aTo = ReadDouble(aH, "to_epoch");
+            double aFrom = aH.from_epoch, aTo = aH.to_epoch;
             double aOldest = OldestFrameEpoch();
             if (aOldest > 0 && aFrom < aOldest)
             {
@@ -2222,10 +2235,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             // 先落鎖再取材 —— 反過來的話，取材那幾秒會讓第二個人也搶到同一個熱點
-            aH["claimed_by"] = new JsonData(iPersona);
-            aH["claimed_at"] = new JsonData(UCL_AwakeningService.NowIso());
-            aList[aIdx] = aH;
-            AtomicWrite(HotspotsPath(), aJd.ToJsonBeautify());
+            // aH 是 List 裡那個物件本身（參考型別）⇒ 改它就是改清單，不必再寫回索引。
+            aH.claimed_by = iPersona;
+            aH.claimed_at = UCL_AwakeningService.NowIso();
+            SaveHotspots(aJd);
 
             string aScript = ResolveMontageScript();
             string aOutPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream",
@@ -2235,9 +2248,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 區間短時 montage 自然取到接近逐幀（每格 1–2s）。
             var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aFrom, aTo, aOutPath, aOcrOn, aSttOn,
                                                             iPersona, 0, iToken, MAX_TILES * 2);
-            aR.AppendLine($"- 熱點   : **[{ReadStr(aH, "id")}]** {FromEpochLocal(aFrom):HH:mm:ss}–{FromEpochLocal(aTo):HH:mm:ss}"
-                        + $"（{(aTo - aFrom):F0}s）｜開於 @{ReadStr(aH, "opened_by")}");
-            aR.AppendLine($"- 理由   : {ReadStr(aH, "why")}");
+            aR.AppendLine($"- 熱點   : **[{aH.id}]** {FromEpochLocal(aFrom):HH:mm:ss}–{FromEpochLocal(aTo):HH:mm:ss}"
+                        + $"（{(aTo - aFrom):F0}s）｜開於 @{aH.opened_by}");
+            aR.AppendLine($"- 理由   : {aH.why}");
             aR.AppendLine($"- 認領   : ✅ **@{iPersona}**（鎖已落，其他人此後領這個會被擋）");
             if (aOk)
             {
@@ -2256,7 +2269,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine("## next");
             aR.AppendLine("1. Read 上面的縮圖牆與字幕 → 細看");
             aR.AppendLine($"2. 發評論：run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
-            aR.AppendLine("   ⚠ 評論裡註明這是熱點 " + ReadStr(aH, "id") + " 的細看結果 —— 讓開熱點的人知道有人看過了");
+            aR.AppendLine("   ⚠ 評論裡註明這是熱點 " + aH.id + " 的細看結果 —— 讓開熱點的人知道有人看過了");
             aR.AppendLine($"3. 回到一般取材：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=claim {iHotspot} by {iPersona} ok={aOk} → {aPath}");
@@ -2270,23 +2283,22 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             ioR.AppendLine();
             ioR.AppendLine("## 🔍 熱點");
             var aJd = LoadHotspots();
-            var aList = aJd != null && aJd.Contains("hotspots") ? aJd["hotspots"] : null;
+            var aList = aJd?.hotspots;
             double aOldest = OldestFrameEpoch();
             int aShown = 0, aFree = 0;
-            if (aList != null && aList.IsArray)
+            if (aList != null)
             {
-                for (int i = 0; i < aList.Count; i++)
+                foreach (var h in aList)
                 {
-                    var h = aList[i];
-                    double aFrom = ReadDouble(h, "from_epoch");
-                    bool aExpired = aOldest > 0 && aFrom < aOldest;
-                    string aBy = ReadStr(h, "claimed_by");
+                    if (h == null) continue;
+                    bool aExpired = aOldest > 0 && h.from_epoch < aOldest;
+                    string aBy = h.claimed_by;
                     string aState = aExpired ? "⛔ **已被 ring buffer 覆蓋，無法細看**"
                                   : string.IsNullOrEmpty(aBy) ? "**未認領**"
                                   : $"認領 @{aBy}";
                     if (!aExpired && string.IsNullOrEmpty(aBy)) aFree++;
-                    ioR.AppendLine($"- [{ReadStr(h, "id")}] {FromEpochLocal(aFrom):HH:mm:ss}–{FromEpochLocal(ReadDouble(h, "to_epoch")):HH:mm:ss}"
-                        + $"「{ReadStr(h, "why")}」— 開於 @{ReadStr(h, "opened_by")}｜{aState}");
+                    ioR.AppendLine($"- [{h.id}] {FromEpochLocal(h.from_epoch):HH:mm:ss}–{FromEpochLocal(h.to_epoch):HH:mm:ss}"
+                        + $"「{h.why}」— 開於 @{h.opened_by}｜{aState}");
                     aShown++;
                 }
             }
@@ -2303,9 +2315,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 ioR.AppendLine("- ⇒ 全部已認領或已過期 —— 沒有可領的");
         }
 
-        // （ReadDouble 已存在於本檔下方，用 InvariantCulture —— 不重造第二個。
-        //   🩸 我剛才寫了一個，而且沒帶 InvariantCulture ⇒ 在逗號小數點的 locale 上會解析錯。
-        //   「這件事聽起來像不像已經有人做過」—— 答案是有，而且做得比我好。）
+        // （原本這裡指向本檔下方的 `ReadDouble` —— 那支已隨 typed model 退場，
+        //   浮點欄位現在由序列化器處理（它自己帶 InvariantCulture）。
+        //   🩸 留下當初那條教訓：我曾在這裡自己寫過一個 ReadDouble，而且**沒帶 InvariantCulture**
+        //   ⇒ 在逗號小數點的 locale 上會解析錯。「這件事聽起來像不像已經有人做過」——
+        //   答案是有，而且做得比我好。）
 
         static void AppendRetentionLine(StringBuilder ioR)
         {
@@ -2425,22 +2439,20 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 Directory.CreateDirectory(aDir);
 
                 string aTitle = string.IsNullOrEmpty(iSrc.Up) ? iSlug : iSrc.Up;
-                var aJd = new JsonData();
-                aJd["work_id"] = new JsonData(iSlug);
-                aJd["title"] = new JsonData(aTitle);
-                aJd["author"] = new JsonData(string.IsNullOrEmpty(iSrc.Up) ? "" : iSrc.Up);
-                var aAliases = new JsonData();
-                if (!string.IsNullOrEmpty(iSrc.Up)) aAliases.Add(new JsonData(iSrc.Up));
-                aJd["aliases"] = aAliases;
-                var aTags = new JsonData();
+                var aWork = new UCL_StreamWatchWork
+                {
+                    work_id = iSlug,
+                    title = aTitle,
+                    author = string.IsNullOrEmpty(iSrc.Up) ? "" : iSrc.Up,
+                    schema_version = 1,
+                };
+                if (!string.IsNullOrEmpty(iSrc.Up)) aWork.aliases.Add(iSrc.Up);
                 if (iSlug.StartsWith("bilibili", StringComparison.OrdinalIgnoreCase))
                 {
-                    aTags.Add(new JsonData("bilibili"));
-                    aTags.Add(new JsonData("直播/影片頻道"));
+                    aWork.genre_tags.Add("bilibili");
+                    aWork.genre_tags.Add("直播/影片頻道");
                 }
-                aJd["genre_tags"] = aTags;
-                aJd["schema_version"] = new JsonData(1);
-                AtomicWrite(aFile, aJd.ToJsonBeautify());
+                AtomicWrite(aFile, aWork.SerializeToJson().ToJsonBeautify());
                 return $"已建立 `{aFile}`（title=`{aTitle}`）—— 下一場起這個鍵會出現在既有清單裡";
             }
             catch (Exception e)
@@ -2497,11 +2509,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 return (false, $"找不到準備檔 `StreamWatch/prepared/{iLibraryMediaId}.json`（本場沒走 prepare？）");
             try
             {
-                var aP = JsonData.ParseJson(File.ReadAllText(aPath));
+                var aP = LoadPrepared(iLibraryMediaId);
                 if (aP == null) return (false, "準備檔讀不出 JSON");
-                if (aP.Contains("auto_export") && !aP["auto_export"].GetBool())
+                if (!aP.auto_export)
                     return (false, "準備檔 `auto_export=false`（本媒材刻意關掉）");
-                string aTitle = aP.Contains("chapter_title") ? aP["chapter_title"].GetString() : "";
+                string aTitle = aP.chapter_title;
                 if (string.IsNullOrWhiteSpace(aTitle))
                     return (false, "準備檔沒有 `chapter_title` —— 章名要親筆，工具不代取"
                         + "（prepare 可重入：`--arg chapter_title=\"<章名>\"`）");
@@ -2555,32 +2567,35 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
         const string SESSION_LOG_NAME = "sessions_log.jsonl";
 
-        static void AppendSessionLog(JsonData iS, string iPersona, int iEndSeq, int iPaidMin, int iPaidTotal)
+        static void AppendSessionLog(UCL_StreamWatchSession iS, string iPersona, int iEndSeq, int iPaidMin, int iPaidTotal)
         {
             try
             {
                 string aPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", SESSION_LOG_NAME);
                 Directory.CreateDirectory(Path.GetDirectoryName(aPath));
-                var aRec = new JsonData();
-                aRec["session_id"] = new JsonData(ReadStr(iS, "session_id"));
-                aRec["persona"] = new JsonData(iPersona);
-                aRec["role"] = new JsonData(ReadStr(iS, "role"));
-                aRec["media_id"] = new JsonData(ReadStr(iS, "media_id"));
-                // 準備檔是以**閱讀庫 media id** 命名（work slug ≠ media id）——
-                // 台帳沒帶它的話，收工自動匯出就找不到章名，而那個失敗會長得像「沒設定」。
-                aRec["library_media_id"] = new JsonData(ReadStr(iS, "library_media_id"));
-                aRec["parent_session_id"] = new JsonData(ReadStr(iS, "parent_session_id"));
-                aRec["start_ts"] = new JsonData(ReadStr(iS, "start_ts"));
-                aRec["settled_at"] = new JsonData(ReadStr(iS, "settled_at"));
-                aRec["end_reason"] = new JsonData(ReadStr(iS, "end_reason"));
-                aRec["start_seq"] = new JsonData(ReadInt(iS, "start_seq"));
-                aRec["end_seq"] = new JsonData(iEndSeq);
-                aRec["cycles"] = new JsonData(ReadInt(iS, "cycles"));
-                aRec["observations"] = new JsonData(ReadInt(iS, "observations"));
-                aRec["paid_minutes"] = new JsonData(iPaidMin);
-                aRec["paid_total"] = new JsonData(iPaidTotal);
-                aRec["exported_chapter"] = new JsonData("");   // 匯出後由人/工具回填，空＝這一場還沒進任何一章
-                File.AppendAllText(aPath, aRec.ToJson() + "\n", new UTF8Encoding(false));
+                var aRec = new UCL_StreamWatchSessionLogRecord
+                {
+                    session_id = iS.session_id,
+                    persona = iPersona,
+                    role = iS.role,
+                    media_id = iS.media_id,
+                    // 準備檔是以**閱讀庫 media id** 命名（work slug ≠ media id）——
+                    // 台帳沒帶它的話，收工自動匯出就找不到章名，而那個失敗會長得像「沒設定」。
+                    library_media_id = iS.library_media_id,
+                    parent_session_id = iS.parent_session_id,
+                    start_ts = iS.start_ts,
+                    settled_at = iS.settled_at,
+                    end_reason = iS.end_reason,
+                    start_seq = iS.start_seq,
+                    end_seq = iEndSeq,
+                    cycles = iS.cycles,
+                    observations = iS.observations,
+                    paid_minutes = iPaidMin,
+                    paid_total = iPaidTotal,
+                    exported_chapter = "",   // 匯出後由人/工具回填，空＝這一場還沒進任何一章
+                };
+                // ⚠ 一行一場（jsonl）⇒ 用 ToJson 不是 ToJsonBeautify；換行由這裡補。
+                File.AppendAllText(aPath, aRec.SerializeToJson().ToJson() + "\n", new UTF8Encoding(false));
             }
             catch (Exception e)
             {
@@ -2605,15 +2620,26 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             catch { return ""; }
         }
 
-        static JsonData LoadSession(string iPersona)
+        /// <summary>讀本人的觀影 session；不存在或壞檔回 null（**不回空 model** —— 那會讓「沒有場次」看起來像「有一場但什麼都沒做」）。</summary>
+        static UCL_StreamWatchSession LoadSession(string iPersona) => LoadSessionAt(SessionPath(iPersona));
+
+        static UCL_StreamWatchSession LoadSessionAt(string iPath)
         {
             try
             {
-                string aP = SessionPath(iPersona);
-                return File.Exists(aP) ? JsonData.ParseJson(File.ReadAllText(aP, Encoding.UTF8)) : null;
+                if (!File.Exists(iPath)) return null;
+                var aJd = JsonData.ParseJson(File.ReadAllText(iPath, Encoding.UTF8));
+                if (aJd == null) return null;
+                var aS = new UCL_StreamWatchSession();
+                aS.DeserializeFromJson(aJd);
+                return aS;
             }
             catch { return null; }
         }
+
+        /// <summary>寫回 session（**唯一寫入點** —— 落檔格式與路徑各只有一份實作）。</summary>
+        static void SaveSession(string iPersona, UCL_StreamWatchSession iS)
+            => AtomicWrite(SessionPath(iPersona), iS.SerializeToJson().ToJsonBeautify());
 
         static void AtomicWrite(string iPath, string iContent)
         {
@@ -2683,8 +2709,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             return true;
         }
 
+        // ⚠ **只剩一個呼叫端**：`reader.json`（閱讀庫的結構，不是本 Cmd 擁有的）。
+        //   本 Cmd 自己的四份檔（session / prepared / hotspots / 台帳）已全部走 typed model。
+        //   這裡刻意**不**為 reader.json 另立一個 model —— 那份結構的主人是 `UCL_ReadingLibraryIO`，
+        //   在這裡再定義一份就是第二份真相。等那邊 typed 化之後，這三行連同呼叫端一起改走它。
         static string ReadStr(JsonData iJd, string iKey) => iJd != null && iJd.Contains(iKey) ? iJd[iKey].ToString() : "";
-        static int ReadInt(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) ? int.Parse(iJd[iKey].ToString()) : 0; } catch { return 0; } }
 
         // 區塊職責：自 montage stdout 撈 `tavern_max_seq=<N>`（本輪酒館段實際顯示到的最大 seq）。
         // 物理意義：它是**產物回報的讀數**，不是我這邊算的 —— 對齊本檔既有的 next-cursor 鐵律
@@ -2756,8 +2785,6 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             ioR.AppendLine("<!-- 以下自 montage sidecar 原文嵌入；來源：" + iSubPath + " -->");
             ioR.AppendLine(aBody.TrimEnd());
         }
-        static double ReadDouble(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) ? double.Parse(iJd[iKey].ToString(), System.Globalization.CultureInfo.InvariantCulture) : 0; } catch { return 0; } }
-        static bool ReadBool(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) && iJd.GetBool(iKey); } catch { return false; } }
 
         static DateTime? ParseIsoLocal(string iIso)
         {
@@ -2770,6 +2797,200 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
         static string Truncate(string s, int max)
             => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s.Substring(0, max) + "…");
+    }
+
+    // ===========================================================
+    // 區塊職責：觀影模式的四個持久化結構 —— 本 Cmd 是它們的**唯一 C# 寫入端**。
+    // 物理意義：過去這四份檔都用 `JsonData` 逐鍵手搭，於是同一個鍵名在
+    //          start / join / cycle / observe / note / settle 六處各打一次字。
+    //          打錯不會編譯錯、也不會執行錯 —— **只會讀回預設值**，
+    //          而 0 / "" 這種預設值在回傳檔上長得跟「這件事沒發生」一模一樣。
+    //          🩸 本檔既有註解記過同族一次：`settled_at` 被讀成 `ended_at` ⇒
+    //          回傳檔印出「結束時刻未記」這句**假話**。typed model 讓它變成編譯錯。
+    // 數值影響：序列化結果與手搭格式**逐鍵相同**（鍵序可能不同 —— 兩端都按鍵取值）。
+    //          唯一差別：過去「值為空就不寫鍵」的欄位（session 的 up/video_* 等）現在一律寫出來。
+    //          加鍵相容（讀取端本來就用預設值判空），少鍵才是查不出來的那種差異。
+    // ⚠ 欄位名＝JSON 鍵名（`FieldNameUnityVer` 只脫 `m_`）⇒ **刻意不走 `m_PascalCase`**。
+    //   `prepared/*.json` 與 `sessions_log.jsonl` 有 python 讀取端（`library.py export-watch`），
+    //   改名 ＝ 改契約。動任何一個欄位名要同時改那邊。
+    // ===========================================================
+
+    /// <summary>一場觀影 session（`StreamWatch/sessions/&lt;persona&gt;.json`；開下一場就覆寫）。</summary>
+    /// <remarks>
+    /// 刻意**不繼承** <c>UCL_SessionBase</c>：那邊的收工時刻欄位叫 `ended_at`，本檔叫 `settled_at`。
+    /// 繼承會多出一個永遠空著的 `ended_at`，於是同一件事有兩個欄位 ——
+    /// 而「兩份真相」正是這次重構要消滅的東西。共用的只有觀念，不是欄位。
+    /// </remarks>
+    public class UCL_StreamWatchSession : UnityJsonSerializable
+    {
+        public string persona = "";
+        public string session_id = "";
+        /// <summary>`primary`（主觀影者，帶主劇情）／`companion`（陪看者，挑段細看）。</summary>
+        public string role = "";
+        /// <summary>本場的媒材鍵。⚠ 與 `work_id` 是兩種鍵，混用會長出平行宇宙（見 ResolveWatchTarget）。</summary>
+        public string media_id = "";
+        public string work_id = "";
+        /// <summary>寫心得要用的閱讀庫 media id；空＝還沒有對應 media。</summary>
+        public string library_media_id = "";
+
+        /// <summary>陪看場才有：所陪的那一場。</summary>
+        public string parent_session_id = "";
+        public string parent_persona = "";
+
+        public string start_ts = "";
+        /// <summary>預定收工 UTC ISO。</summary>
+        public string end_ts = "";
+        /// <summary>預定收工的本地時刻字串（給人讀的，不參與判定）。</summary>
+        public string until_local = "";
+
+        /// <summary>取材游標（epoch 秒）。0＝尚未取材，首輪窗口由 montage 決定。</summary>
+        public double cursor_epoch = 0;
+        public int cycles = 0;
+        public int observations = 0;
+        public int tiles_total = 0;
+
+        /// <summary>開播公告的 seq＝匯出區間左端點。</summary>
+        public int start_seq = 0;
+        /// <summary>收播公告的 seq＝匯出區間右端點。</summary>
+        public int end_seq = 0;
+        /// <summary>酒館段已讀水位（本場語意）。⚠ 只在真的顯示過訊息時才前進。</summary>
+        public int tavern_seq = 0;
+        public int last_tiles = 0;
+        public double last_span_seconds = 0;
+        public int last_observe_seq = 0;
+
+        // 場次層來源資訊（up 主在 work 那層已經有了，這裡記的是**這一場看的那支**）
+        public string up = "";
+        public string video_title = "";
+        public string video_desc = "";
+        public string source_url = "";
+
+        public bool note_written = false;
+        public int note_seq = 0;
+        /// <summary>接續點是收工之後才補寫的（不冒充當場記的）。</summary>
+        public bool note_late = false;
+
+        public bool active = false;
+        /// <summary>實際收工時刻 UTC ISO。⚠ 欄位名是 `settled_at`，不是 `ended_at`。</summary>
+        public string settled_at = "";
+        /// <summary>`expired`（到期）／`recording-stopped`（Tim 停錄影）。</summary>
+        public string end_reason = "";
+        public int paid_minutes = 0;
+        public int paid_total = 0;
+
+        /// <summary>bool 寫回原生 —— 沿用這份檔既有的形狀（`new JsonData(true)` 寫出來的原生 bool）。
+        /// 不 override 的話會變成 `"True"` 字串：C# 載入端雙接看不出來，但**檔案的形狀被改了**，
+        /// 而日後若有 python 讀取端（台帳與準備檔已經有）就會踩到 truthy 字串那顆雷。</summary>
+        public override JsonData SerializeToJson()
+        {
+            var aData = base.SerializeToJson();
+            aData["note_written"] = new JsonData(note_written);
+            aData["note_late"] = new JsonData(note_late);
+            aData["active"] = new JsonData(active);
+            return aData;
+        }
+    }
+
+    /// <summary>準備階段的產物（`StreamWatch/prepared/&lt;media_id&gt;.json`）—— join / catchup / 收工匯出都讀它。</summary>
+    /// <remarks>⚠ **python 讀取端**：`library.py export-watch` 讀 `export_chapter` / `chapter_id` / `chapter_title`。</remarks>
+    public class UCL_StreamWatchPrepared : UnityJsonSerializable
+    {
+        public string media_id = "";
+        public string work_id = "";
+        /// <summary>本場看第幾集（補課地圖與章號都靠它算）。</summary>
+        public int episode = 0;
+        /// <summary>章號（`episode` 補零成四位）—— 心得一律寫這個章號，別各自打字。</summary>
+        public string chapter_id = "";
+        public string show_title = "";
+        public string prepared_by = "";
+        public string prepared_at = "";
+        /// <summary>接續心得的基準讀者。</summary>
+        public string reference_reader = "";
+
+        /// <summary>補課地圖：章號 → 用誰的心得補。巢狀 Dictionary 由序列化器自動存取。</summary>
+        public Dictionary<string, string> catchup_map = new Dictionary<string, string>();
+        /// <summary>補課地圖還缺的章號（**逐條列明，不靜默跳過** —— 「沒人寫過」與「我沒撈到」必須長得不一樣）。</summary>
+        public List<string> catchup_unfilled = new List<string>();
+
+        /// <summary>收工自動匯出的章名。**必須親筆** —— 空＝不自動匯出（工具不拿影片標題頂替）。</summary>
+        public string chapter_title = "";
+        public string export_chapter = "";
+        public string export_work_title = "";
+        public bool auto_export = true;
+
+        /// <summary>⚠ `auto_export` 必須是**原生 bool**：python 端讀到字串 `"False"` 在 Python 裡是 truthy
+        /// ⇒ 「刻意關掉自動匯出」會被讀成「開著」。同族血證見 UCL_SessionBase。</summary>
+        public override JsonData SerializeToJson()
+        {
+            var aData = base.SerializeToJson();
+            aData["auto_export"] = new JsonData(auto_export);
+            return aData;
+        }
+    }
+
+    /// <summary>一個值得細看的區間（`StreamWatch/hotspots.json` 的 `hotspots[]` 一筆）。</summary>
+    public class UCL_StreamWatchHotspot : UnityJsonSerializable
+    {
+        public string id = "";
+        public double from_epoch = 0;
+        public double to_epoch = 0;
+        /// <summary>為什麼值得細看 —— 空的熱點別人無從判斷要不要領，所以開單時必填。</summary>
+        public string why = "";
+        public string opened_by = "";
+        public string opened_at = "";
+        /// <summary>認領者（空＝未認領）。**一個熱點只能被領一次** —— 目的是把眼睛分散到不同段。</summary>
+        public string claimed_by = "";
+        public string claimed_at = "";
+    }
+
+    /// <summary>熱點清單（`StreamWatch/hotspots.json`）。`List&lt;model&gt;` 的巢狀存取由序列化器負責。</summary>
+    public class UCL_StreamWatchHotspots : UnityJsonSerializable
+    {
+        public List<UCL_StreamWatchHotspot> hotspots = new List<UCL_StreamWatchHotspot>();
+    }
+
+    /// <summary>實錄台帳的一行（`StreamWatch/sessions_log.jsonl`，append-only、**永不覆寫**）。</summary>
+    /// <remarks>
+    /// 為什麼要有它：`sessions/&lt;persona&gt;.json` 是「當前那一場」，開下一場就被蓋掉 ——
+    /// 於是 start_seq/end_seq 這種**只有當下才知道**的事實，過了就再也拿不回來。
+    /// 🩸 血證：apocalypse-hotel 02-04 話的實錄補不出來，不是訊息不見了（都在磁碟上），
+    /// 是沒有任何地方記得那幾場的區間。
+    /// ⚠ **python 讀取端**：`library.py export-watch --from-session`。
+    /// </remarks>
+    public class UCL_StreamWatchSessionLogRecord : UnityJsonSerializable
+    {
+        public string session_id = "";
+        public string persona = "";
+        public string role = "";
+        public string media_id = "";
+        public string library_media_id = "";
+        public string parent_session_id = "";
+        public string start_ts = "";
+        public string settled_at = "";
+        public string end_reason = "";
+        public int start_seq = 0;
+        public int end_seq = 0;
+        public int cycles = 0;
+        public int observations = 0;
+        public int paid_minutes = 0;
+        public int paid_total = 0;
+        /// <summary>匯出後由人/工具回填；空＝這一場還沒進任何一章。</summary>
+        public string exported_chapter = "";
+    }
+
+    /// <summary>作品身分層（`Library/works/&lt;slug&gt;/work.json`）。</summary>
+    /// <remarks>
+    /// ⚠ **只寫 work 身分**（up 主／別名）—— 影片標題與介紹是**場次層**的東西，
+    /// 寫進 work 會讓 work 的 title 隨最後一場漂移。
+    /// </remarks>
+    public class UCL_StreamWatchWork : UnityJsonSerializable
+    {
+        public string work_id = "";
+        public string title = "";
+        public string author = "";
+        public List<string> aliases = new List<string>();
+        public List<string> genre_tags = new List<string>();
+        public int schema_version = 1;
     }
 }
 #endif

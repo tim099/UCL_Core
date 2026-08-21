@@ -41,8 +41,9 @@ namespace UCL.Core.EditorLib.AgentCommands
         public override string ArgsSchema =>
             "op=scan（預設）— 只掃描分群並回報，不動 index | " +
             "op=commit — 逐群 commit（純 git commit，無 trailer／無公告／不領薪；不 push、不 bump 父層） | " +
-            "mode=agent（預設，掃 AgentCommands 本層）｜letters（掃 letters/<persona>/ 每個 repo） | " +
-            "[groups=<key1,key2>] 只做這幾群（預設＝該模式所有 DefaultOn 的群；" +
+            "mode=agent（預設，掃 AgentCommands 本層）｜letters（掃 letters/<persona>/ 每個 repo）" +
+            "｜submodules（掃 .gitmodules，只收自帶 .ucl_autocommit.json 的 repo，分群由該檔宣告） | " +
+            "[groups=<key1,key2>] 只做這幾群（預設＝**每個 repo 各自**所有 DefaultOn 的群；" +
             "`__other` / `__subptr` 只有顯式列出才會做） | " +
             "[only_persona=<name>] letters 模式只做這一位 | " +
             "[include_online=1] letters 模式含在線 persona（預設跳過）";
@@ -73,6 +74,38 @@ namespace UCL.Core.EditorLib.AgentCommands
             public bool Online;
             public string Blocked = "";
             public Dictionary<string, List<string>> Groups = new Dictionary<string, List<string>>();
+            /// <summary>這個 repo 自己宣告的分群（submodules 模式來自 .ucl_autocommit.json）；null ＝ 用模式的預設。</summary>
+            public UCL_AutoCommitRules.GroupDef[] Defs;
+            /// <summary>設定檔路徑（有的話），純顯示用。</summary>
+            public string ConfigPath = "";
+        }
+
+        /// <summary>這個 repo 該用哪一組分群規則：自己宣告的優先，否則用模式預設。</summary>
+        static UCL_AutoCommitRules.GroupDef[] DefsOf(RepoTarget iRepo, UCL_AutoCommitRules.GroupDef[] iFallback)
+            => iRepo.Defs ?? iFallback;
+
+        /// <summary>一組規則裡 DefaultOn 的群 key。`__other`／`__subptr` 不在其中（它們不是 GroupDef）。</summary>
+        static HashSet<string> DefaultOnGroups(UCL_AutoCommitRules.GroupDef[] iDefs)
+        {
+            var aSet = new HashSet<string>();
+            foreach (var aDef in iDefs) if (aDef.DefaultOn) aSet.Add(aDef.Key);
+            return aSet;
+        }
+
+        /// <summary>顯式 `groups=` 參數 → 群集合；沒給回 **null**（呼叫端據此改用各 repo 自己的預設）。
+        /// ⚠ 回 null 而不是回空集合：空集合的語意是「什麼都不要做」，兩者不可同形。</summary>
+        static HashSet<string> ParseExplicitGroups(string iArg)
+        {
+            string a = (iArg ?? "").Trim();
+            if (string.IsNullOrEmpty(a)) return null;
+            var set = new HashSet<string>();
+            foreach (var raw in a.Split(','))
+            {
+                string k = raw.Trim();
+                if (k.Length == 0) continue;
+                set.Add(k);
+            }
+            return set;
         }
 
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
@@ -84,11 +117,16 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             string modeArg = GetArg(args, "mode", "agent").Trim().ToLowerInvariant();
             bool letters = modeArg == "letters";
-            if (modeArg != "letters" && modeArg != "agent")
-                throw new Exception($"[AutoCommit] 未知 mode '{modeArg}'（agent / letters）");
+            bool submodules = modeArg == "submodules";
+            if (modeArg != "letters" && modeArg != "agent" && modeArg != "submodules")
+                throw new Exception($"[AutoCommit] 未知 mode '{modeArg}'（agent / letters / submodules）");
 
-            var defs = UCL_AutoCommitRules.Defs(letters);
-            var wanted = ParseGroups(GetArg(args, "groups", ""), defs);
+            // submodules 模式沒有「全域規則」—— 每個 repo 的分群來自它自己的 .ucl_autocommit.json。
+            // ⇒ defs 只當 agent/letters 的預設，實際用的是 RepoTarget.Defs（見 DefsOf）。
+            var defs = submodules ? new UCL_AutoCommitRules.GroupDef[0] : UCL_AutoCommitRules.Defs(letters);
+            // 顯式指定的群對所有 repo 一體適用；沒指定則**每個 repo 各自取自己的 DefaultOn**
+            //（submodules 模式下各 repo 的群 key 不同，一份全域清單會把別人的群漏掉）。
+            var explicitGroups = ParseExplicitGroups(GetArg(args, "groups", ""));
             // ⚠ 參數名刻意**不叫** `persona`：`run_cmd.py --persona <me>` 會把 persona 戳進 args
             //   （那是「這筆是誰派的」宣告，見 ucl-coding）⇒ 叫 persona 就會被那個宣告當成篩選條件。
             // 🩸 實測踩過：`--persona kiara` 讓 letters 模式的掃描範圍從 9 個 repo 縮成 1 個，
@@ -96,16 +134,16 @@ namespace UCL.Core.EditorLib.AgentCommands
             string personaFilter = GetArg(args, "only_persona", "").Trim();
             bool includeOnline = GetArg(args, "include_online", "0").Trim() == "1";
 
-            var targets = CollectTargets(letters, personaFilter, includeOnline);
+            var targets = CollectTargets(letters, submodules, personaFilter, includeOnline);
             if (targets.Count == 0)
                 throw new Exception("[AutoCommit] 沒有可處理的 repo —— 檢查 mode / persona 參數");
 
             var sb = new StringBuilder();
-            sb.AppendLine($"[AutoCommit] op={op} mode={(letters ? "letters" : "agent")} "
-                + $"repos={targets.Count} groups={string.Join(",", new List<string>(wanted).ToArray())}");
+            sb.AppendLine($"[AutoCommit] op={op} mode={modeArg} repos={targets.Count} "
+                + $"groups={(explicitGroups == null ? "(各 repo 的 DefaultOn)" : string.Join(",", new List<string>(explicitGroups).ToArray()))}");
 
             int ephemeral = 0, scannedFiles = 0;
-            foreach (var t in targets) ephemeral += ScanOne(t, defs, ref scannedFiles);
+            foreach (var t in targets) ephemeral += ScanOne(t, DefsOf(t, defs), ref scannedFiles);
 
             int committed = 0, skippedRepos = 0, emptyGroups = 0;
             var shas = new List<string>();
@@ -118,11 +156,12 @@ namespace UCL.Core.EditorLib.AgentCommands
                     continue;
                 }
                 bool any = false;
-                foreach (var g in wanted)
+                var tDefs = DefsOf(t, defs);
+                foreach (var g in explicitGroups ?? DefaultOnGroups(tDefs))
                 {
                     if (!t.Groups.TryGetValue(g, out var files) || files.Count == 0) { emptyGroups++; continue; }
                     any = true;
-                    string label = MessageOf(g, defs, files.Count);
+                    string label = MessageOf(g, tDefs, files.Count);
                     if (op == "scan")
                     {
                         sb.AppendLine($"  → {t.Name} [{g}] {files.Count} 檔：{label}");
@@ -141,7 +180,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             Debug.Log(sb.ToString());
 
             UCL_AgentCommandRunner.ReportOutputValue(args, "op", op);
-            UCL_AgentCommandRunner.ReportOutputValue(args, "mode", letters ? "letters" : "agent");
+            UCL_AgentCommandRunner.ReportOutputValue(args, "mode", modeArg);
             UCL_AgentCommandRunner.ReportOutputValue(args, "repos", targets.Count.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "candidate_files", scannedFiles.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "ephemeral_skipped", ephemeral.ToString());
@@ -151,26 +190,11 @@ namespace UCL.Core.EditorLib.AgentCommands
                 UCL_AgentCommandRunner.ReportOutputValue(args, "shas", string.Join(" ", shas.ToArray()));
         }
 
-        // 區塊職責：要做哪幾群。
-        // 物理意義：預設＝該模式所有 DefaultOn 的群。`__other`／`__subptr` **不在預設裡**，
-        //          只有顯式列出才會被收（見檔頭硬擋①）。
-        static HashSet<string> ParseGroups(string iArg, UCL_AutoCommitRules.GroupDef[] iDefs)
-        {
-            var set = new HashSet<string>();
-            string a = (iArg ?? "").Trim();
-            if (string.IsNullOrEmpty(a))
-            {
-                foreach (var d in iDefs) if (d.DefaultOn) set.Add(d.Key);
-                return set;
-            }
-            foreach (var raw in a.Split(','))
-            {
-                string k = raw.Trim();
-                if (k.Length == 0) continue;
-                set.Add(k);
-            }
-            return set;
-        }
+        // 區塊職責：要做哪幾群 —— 已拆成兩支（2026-08-21 設定檔化）。
+        // 物理意義：原本一支 ParseGroups 同時做「解析參數」與「取預設」，而設定檔化之後
+        //          「預設」變成 **per-repo**（各 repo 的群 key 不同），兩件事不能再共用一個回傳值。
+        //          ⇒ ParseExplicitGroups（顯式參數，沒給回 null）＋ DefaultOnGroups（單一 repo 的預設）。
+        //          `__other`／`__subptr` 兩者都不含 ⇒ 仍然只有顯式列出才會被收（見檔頭硬擋①）。
 
         static string MessageOf(string iKey, UCL_AutoCommitRules.GroupDef[] iDefs, int iCount)
         {
@@ -183,8 +207,56 @@ namespace UCL.Core.EditorLib.AgentCommands
             return $"chore: sync {iKey} (auto) [{iCount} files]";
         }
 
-        static List<RepoTarget> CollectTargets(bool iLetters, string iPersona, bool iIncludeOnline)
+        // 區塊職責：掃 DataRoot 的 .gitmodules，收「自己帶 .ucl_autocommit.json」的 submodule。
+        // 物理意義：設定檔是**加入的唯一憑據** —— 沒有設定檔就不收（不猜規則）。
+        //          ⚠ 判準刻意是「有沒有設定檔」而不是「是不是 submodule」：後者會把所有 persona
+        //            信件庫與別人的資料庫一起掃進來，而那些 repo 的分群規則不在這裡。
+        static List<RepoTarget> CollectConfiguredSubmodules()
         {
+            var list = new List<RepoTarget>();
+            // 發現邏輯**不在這裡重寫**（見 UCL_AutoCommitConfig.DiscoverRepoPaths 的區塊註解）：
+            // 頁面與本 Cmd 共用同一支，否則兩邊遲早對「有哪些 repo」給出不同答案而都不報錯。
+            string root = UCL_AgentCommandsPath.DataRoot;
+            if (string.IsNullOrEmpty(root)) return list;
+            foreach (string dir in UCL_AutoCommitConfig.DiscoverRepoPaths(root))
+            {
+                string rel = Path.GetFileName(dir.TrimEnd('/'));
+
+                UCL_AutoCommitConfig config;
+                try { config = UCL_AutoCommitConfig.Load(dir); }
+                catch (Exception e)
+                {
+                    // 壞掉的設定檔要**擋下這個 repo 並說為什麼**，不可靜默跳過 ——
+                    // 「設定寫錯」與「這個 repo 沒設定」必須是兩種可分辨的結果。
+                    list.Add(new RepoTarget
+                    {
+                        Root = dir,
+                        Name = rel,
+                        ConfigPath = UCL_AutoCommitConfig.PathOf(dir),
+                        Blocked = $"設定檔讀取失敗：{e.Message}",
+                    });
+                    continue;
+                }
+
+                var errors = config.Validate();
+                var target = new RepoTarget
+                {
+                    Root = dir,
+                    Name = string.IsNullOrEmpty(config.m_Name) ? rel : config.m_Name,
+                    ConfigPath = UCL_AutoCommitConfig.PathOf(dir),
+                    Defs = config.ToGroupDefs(),
+                };
+                if (errors.Count > 0)
+                    target.Blocked = "設定不合法：" + string.Join("；", errors);
+                list.Add(target);
+            }
+            list.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+            return list;
+        }
+
+        static List<RepoTarget> CollectTargets(bool iLetters, bool iSubmodules, string iPersona, bool iIncludeOnline)
+        {
+            if (iSubmodules) return CollectConfiguredSubmodules();
             var list = new List<RepoTarget>();
             if (!iLetters)
             {

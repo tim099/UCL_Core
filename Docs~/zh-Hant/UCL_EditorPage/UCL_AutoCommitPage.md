@@ -1,6 +1,6 @@
 ---
 title: UCL_AutoCommitPage — 自動 Commit 頁
-last_updated: 2026-08-19
+last_updated: 2026-08-21
 ---
 
 # UCL_AutoCommitPage
@@ -34,10 +34,62 @@ last_updated: 2026-08-19
 | 巢狀 submodule pointer | `git submodule status` 的路徑集合 | `chore(submodule): bump nested submodule pointers (auto)` | ⛔（一次性勾選，不持久化） |
 | 未分類 | 其餘全部 | `chore(misc): sync unclassified changes (auto)` | ⛔（一次性勾選，不持久化） |
 
-- `[chat]` 獨立 commit 是專案硬規則（見 ucl-commit skill 的檔案分類）—— 所以規則不開放 UI 編輯。
+- `[chat]` 獨立 commit 是專案硬規則（見 ucl-commit skill 的檔案分類）—— 所以**本層與 persona 信件庫的**
+  規則不開放 UI 編輯。⚠ 2026-08-21 起**其他 repo** 可自帶 `.ucl_autocommit.json` 宣告自己的分群，
+  詳見下方「Submodule 自動提交設定」一節。
 - **submodule pointer 預設不勾**：那些 pointer 指向別人（其他 persona 信件庫）的 commit，
   對方沒 push 就 bump，別人 pull 會拿到拿不到的 hash。確認對方已 push 再勾，且勾選只活一次。
 - **未分類預設不勾**：分類規則沒認出來的檔，不該被「自動」二字順手帶走。
+
+## Submodule 自動提交設定（`.ucl_autocommit.json`，2026-08-21 Tim 拍板）
+
+上面兩組規則寫死在 `UCL_AutoCommitRules`。而**每接一個新的資料 repo 就要回頭改 UCL_Core
+加一組寫死的**，所以改成：該 repo 在自己根目錄放一份設定檔宣告自己的分群。
+
+- **設定檔是加入的唯一憑據** —— `mode=submodules` 掃 `.gitmodules`，只收帶設定檔的 repo，
+  沒有就跳過（**不猜規則**）。判準刻意不是「是不是 submodule」：那會把所有 persona 信件庫
+  一起掃進來，而那些 repo 的分群規則不住這裡。
+- 頁面上多一個 **「⚙ Submodule 自動提交設定」** 折疊區：列出掃到的設定、可直接改欄位、可存檔。
+  存檔前跑 `Validate()`，不合法就**停用存檔按鈕並逐條列出原因**。
+- 讀檔只發生在頁面 `Init` 與「重新載入」按鈕 —— **`Draw` 裡零 IO**（IMGUI 的 Layout/Repaint
+  是兩個 pass，Draw 裡碰磁碟會讓兩趟看到不同東西）。
+
+### 格式
+
+```json
+{
+  "Name": "Chess",
+  "Groups": [
+    {
+      "Key": "games",
+      "Label": "對局狀態（games/<idx>.json）",
+      "MatchPrefixes": [ "games/" ],
+      "Message": "chore(chess): sync game state (auto)",
+      "DefaultOn": true
+    }
+  ]
+}
+```
+
+| 欄位 | 意義 |
+|---|---|
+| `Key` | 群 key（commit 分組用）。不可叫 `__other` / `__subptr`（保留） |
+| `Label` | 畫面顯示名。作者自己寫，不進多語系表 |
+| `MatchPrefixes` | **相對 repo root 的正斜線前綴**清單，任一命中即屬本群。空字串不合法（會吃掉整個 repo） |
+| `Message` | commit 訊息主體（檔數統計由呼叫端補在後面） |
+| `DefaultOn` | 沒指定 `groups=` 時是否納入 |
+
+### 地板（設定檔掀不動的部分）
+
+| 保證 | 靠什麼保證 |
+|---|---|
+| ephemeral 檔永不進候選 | `Classify` 的**判定順序**：subptr → ephemeral → 分群。不是「呼叫端記得先檢查」 |
+| `__other` / `__subptr` 不自動收 | 兩者不是 `GroupDef`，不在任何預設集合裡 |
+| 錯配一眼可驗 | 只吃前綴清單、不吃 regex —— 設定檔比 code **更受限** |
+| 寫入前擋下壞設定 | `Save()` 先跑 `Validate()`，不合法直接丟例外不寫檔 |
+
+⚠ 沒有進任何群的檔會落 `__other` ⇒ **永不自動收**。Chess 的 `RuleBook.md` 就刻意如此：
+它有作者，該走有 trailer 的 commit。
 
 ## Persona 信件庫模式的分群規則（PersonaGroupDefs，順序即優先序）
 

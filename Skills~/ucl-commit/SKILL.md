@@ -80,9 +80,20 @@ description: |
 > 🩸 實測踩過：letters 模式的掃描範圍從 9 個 repo 靜默縮成 1 個，而輸出是「repos=1」，
 > 看起來像「找不到其他 repo」而不像參數撞名。
 >
-> 📌 分群規則的單一真相源是 `UCL_AutoCommitRules`（後台自動提交頁與本 Cmd 共用）。
-> 規則寫在程式碼、不開放參數編輯 —— `[chat]` 獨立 commit 是 CLAUDE.md 等級的硬規則，
-> 能被參數亂改的規則等於沒有規則。
+> 📌 分群規則的真相源分兩層（2026-08-21 起）：
+> - **AgentCommands 本層與 persona 信件庫** → `UCL_AutoCommitRules`（寫死在程式碼，不開放編輯）。
+>   `[chat]` 獨立 commit 是 CLAUDE.md 等級的硬規則，能被參數亂改的規則等於沒有規則。
+> - **其他 repo** → 該 repo 根目錄的 `.ucl_autocommit.json`（自己宣告分群），走 `mode=submodules`：
+>   ```bash
+>   run_cmd.py --persona <me> run AutoCommit --arg op=scan   --arg mode=submodules
+>   run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=submodules
+>   ```
+>   **沒有設定檔的 submodule 不收**（不猜規則）。第一個消費者是 `Chess`（棋局狀態）。
+>
+> ⚠ 設定檔為什麼不算「被參數亂改」：它**入版控、由它管的那個 repo 擁有、改動在 diff 裡看得見**，
+> 而當年那句針對的是執行期參數（不留痕跡、事後查不到誰改的）。地板也還在，且由**判定順序**保證
+> 而不是由「記得檢查」保證：`Classify` 走 subptr → ephemeral → 分群 ⇒ 設定檔寫什麼前綴都
+> 碰不到 ephemeral 與 `__other`／`__subptr`。設定檔只吃前綴清單、不吃 regex（比 code 更受限）。
 
 - DebugLogs 保持 **untracked 但不 ignore** — Tim 要在 `git status` 看得到。
 - **絕不 `git add -A`** — 一律具名 stage。**別人正在寫的檔會被你一起 commit 走**，而那不會有錯誤訊息。

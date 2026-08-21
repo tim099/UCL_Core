@@ -17,8 +17,12 @@
 //     都是假帳。agent 自己的工作 commit 照舊走 ucl-commit skill，兩條路不混。
 //   · 分群規則**已抽到 `UCL_AutoCommitRules`**（2026-08-20，Tim 要求 /ucl-commit 也能用自動 commit
 //     ⇒ 出現第二個消費端 `Cmd_AutoCommit`）。本頁只保留「掃描 / 勾選 / 執行 git」那半。
-//   · 分群規則寫在程式碼（GroupDefs）不開放 UI 編輯 —— 規則是專案慣例的一部分
-//     （[chat] 獨立 commit 是 CLAUDE.md 等級的硬規則），能在 UI 亂改的規則等於沒有規則。
+//   · 分群規則：**AgentCommands 本層與 persona 信件庫仍寫在程式碼**（GroupDefs，不開放編輯）——
+//     那是專案慣例的一部分（[chat] 獨立 commit 是 CLAUDE.md 等級的硬規則）。
+//     ⚠ 2026-08-21 部分撤銷：**其他 repo** 可在自己根目錄放 `.ucl_autocommit.json` 宣告自己的分群，
+//     本頁多一個「⚙ Submodule 自動提交設定」區塊可讀可改可存（Tim 拍板）。
+//     地板不由 UI 守，由 Classify 的判定順序守（subptr → ephemeral → 分群）——
+//     完整撤銷理由見 `UCL_AutoCommitConfig` 檔頭。
 //   · 巢狀 submodule 的 pointer 變更獨立一群、**預設不勾** —— 那些 pointer 指向別人
 //     （其他 persona 的信件庫）的未推 commit，bump 了別人 pull 會拿到拿不到的 hash。
 //   · 未分類檔獨立一群、**預設不勾** —— 分類規則沒認出來的檔不該被「自動」二字順手帶走。
@@ -153,6 +157,7 @@ namespace UCL.Core.EditorLib.Page
         {
             base.Init(p_Controller);
             LoadSettings();
+            LoadConfigs();
             Scan();
         }
 
@@ -205,7 +210,7 @@ namespace UCL.Core.EditorLib.Page
         // persona 模式下同一個特殊群在每個 repo 各自一格，所以 key 帶 repo。
         readonly HashSet<string> m_SessionOn = new HashSet<string>();
 
-        static string SessionKey(RepoScan repo, string key) => repo.Root + " " + key;
+        static string SessionKey(RepoScan repo, string key) => repo.Root + "\0" + key;
 
         bool IsGroupOn(RepoScan repo, string key)
         {
@@ -255,6 +260,7 @@ namespace UCL.Core.EditorLib.Page
         protected override void ContentOnGUI()
         {
             DrawSettingsPanel();
+            DrawSubmoduleConfigs();
             DrawRepos();
             DrawActions();
             DrawReport();
@@ -332,6 +338,137 @@ namespace UCL.Core.EditorLib.Page
                     SaveSettings();
                     GUI.FocusControl(null);
                     Scan();
+                }
+            }
+        }
+
+        // ===========================================================
+        // submodule 自動提交設定（.ucl_autocommit.json）—— 可編輯
+        // ===========================================================
+        // 區塊職責：把各 submodule 自己宣告的分群設定攤在畫面上，並且可以改、可以存。
+        // 物理意義：Tim 2026-08-21 拍板 —— 規則從「寫死在 UCL_Core」改成「由該 repo 自己宣告」。
+        //          ⚠ 這推翻了 2026-08-07「規則不開放編輯」的拍板，撤銷理由寫在
+        //            UCL_AutoCommitConfig 的檔頭（拍板的撤銷要跟拍板放同一個地方）。
+        //          地板仍在 code：ephemeral 在分群**之前**就被 Classify 擋掉（順序保證，
+        //          不是「呼叫端記得檢查」），`__other`／`__subptr` 也不因設定檔而自動收。
+        // 數值影響：讀檔只在 LoadConfigs（Init 與「重新載入」按鈕）—— **Draw 裡一行 IO 都沒有**。
+        //          存檔前跑 Validate；不合法就不寫並把每一條錯誤印出來
+        //          （錯配等級是「檔進錯 commit」，所以寧可擋下也不要寫進去一份看起來正常的設定）。
+        class ConfigEntry
+        {
+            public string Root = "";
+            public string Rel = "";
+            public UCL_AutoCommitConfig Config;
+            public string LoadError = "";
+        }
+
+        readonly List<ConfigEntry> m_Configs = new List<ConfigEntry>();
+        readonly UCL_ObjectDictionary m_ConfigDic = new UCL_ObjectDictionary();
+
+        void LoadConfigs()
+        {
+            m_Configs.Clear();
+            string dataRoot = UCL_AgentCommandsPath.DataRoot;
+            if (string.IsNullOrEmpty(dataRoot)) return;
+            foreach (string dir in UCL_AutoCommitConfig.DiscoverRepoPaths(dataRoot))
+            {
+                var entry = new ConfigEntry
+                {
+                    Root = dir,
+                    Rel = Path.GetFileName(dir.TrimEnd('/')),
+                };
+                try { entry.Config = UCL_AutoCommitConfig.Load(dir); }
+                catch (Exception e)
+                {
+                    // 壞檔要說出來，不可靜默跳過 ——
+                    // 「設定寫錯」與「這個 repo 沒設定」必須是兩種可分辨的結果。
+                    entry.LoadError = e.Message;
+                }
+                m_Configs.Add(entry);
+            }
+        }
+
+        void DrawSubmoduleConfigs()
+        {
+            const string aFoldKey = "__submodule_configs";
+            using (new GUILayout.VerticalScope("box"))
+            {
+                using (new GUILayout.HorizontalScope())
+                {
+                    bool aFold = m_Fold.TryGetValue(aFoldKey, out var f) && f;
+                    bool aNext = UCL_GUILayout.Toggle(aFold);   // ▼/► 全專案統一的折疊語彙
+                    if (aNext != aFold) m_Fold[aFoldKey] = aNext;
+                    GUILayout.Label($"⚙ Submodule 自動提交設定（{m_Configs.Count} 個 repo 自帶設定檔）",
+                        UCL_GUIStyle.LabelStyle);
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("重新載入", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        LoadConfigs();
+                        GUI.FocusControl(null);
+                    }
+                }
+                if (!(m_Fold.TryGetValue(aFoldKey, out var aOpen) && aOpen)) return;
+
+                GUILayout.Label($"檔名 {UCL_AutoCommitConfig.FileName}（放各 repo 根）"
+                    + " —— 有這個檔的 submodule 才會被 mode=submodules 收，沒有就跳過（不猜規則）。",
+                    DimLabelStyle);
+                GUILayout.Label("前綴比對的是「相對該 repo root 的正斜線路徑」；"
+                    + "ephemeral 檔與未分類／submodule pointer 由程式碼擋著，設定檔改不動。",
+                    DimLabelStyle);
+
+                if (m_Configs.Count == 0)
+                {
+                    GUILayout.Label("（沒有任何 submodule 帶設定檔）", DimLabelStyle);
+                    return;
+                }
+
+                foreach (var aEntry in m_Configs)
+                {
+                    using (new GUILayout.VerticalScope("box"))
+                    {
+                        GUILayout.Label($"📦 {aEntry.Rel}", UCL_GUIStyle.LabelStyle);
+                        GUILayout.Label(UCL_AutoCommitConfig.PathOf(aEntry.Root), MonoStyle);
+                        if (!string.IsNullOrEmpty(aEntry.LoadError))
+                        {
+                            GUILayout.Label($"⛔ 讀取失敗：{aEntry.LoadError}", WarnLabelStyle);
+                            continue;
+                        }
+                        if (aEntry.Config == null) continue;
+
+                        // 整個物件交給 DrawObjectData 反射繪製 —— 加欄位時這一頁一行都不用改
+                        UCL_GUILayout.DrawObjectData(aEntry.Config,
+                            m_ConfigDic.GetSubDic(aEntry.Root), aEntry.Rel, false);
+
+                        var aErrors = aEntry.Config.Validate();
+                        foreach (var aError in aErrors) GUILayout.Label($"⚠ {aError}", WarnLabelStyle);
+
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            using (new EditorGUI.DisabledScope(aErrors.Count > 0))
+                            {
+                                if (GUILayout.Button("💾 存檔", UCL_GUIStyle.ButtonStyle,
+                                        GUILayout.ExpandWidth(false)))
+                                {
+                                    try
+                                    {
+                                        aEntry.Config.Save(aEntry.Root);
+                                        m_Report = $"✅ 已寫入 {UCL_AutoCommitConfig.PathOf(aEntry.Root)}";
+                                    }
+                                    catch (Exception e) { m_Report = $"⛔ 寫入失敗：{e.Message}"; }
+                                    GUI.FocusControl(null);
+                                }
+                            }
+                            if (GUILayout.Button("↩ 放棄改動", UCL_GUIStyle.ButtonStyle,
+                                    GUILayout.ExpandWidth(false)))
+                            {
+                                LoadConfigs();
+                                GUI.FocusControl(null);
+                            }
+                            if (aErrors.Count > 0)
+                                GUILayout.Label("（有不合法的欄位，存檔已停用）", WarnLabelStyle);
+                            GUILayout.FlexibleSpace();
+                        }
+                    }
                 }
             }
         }

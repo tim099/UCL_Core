@@ -477,54 +477,17 @@ def _bookshelf_lines(aw, persona: str, p: dict) -> list:
     return out
 
 
-# ─── §0 / §7 / §8 / §9 區塊 ─────────────────────────────────────────────
-def _resolve_mail(persona: str) -> dict:
-    """persona 的信箱（agent 預設 + persona override）。
-
-    # 物理意義：解析邏輯只有一份，在 agent_email.py；本檔只是取用端。
-    # 數值影響：解析器不可用時回哨兵而非空字串 —— frontmatter 少一個值會被當成「這版沒有這欄」，
-    #          一個明顯壞掉的值才會被追。
-    """
-    try:
-        from agent_email import resolve_email
-        return resolve_email(persona)
-    except Exception as e:
-        return {"email": "unset@invalid", "source": f"resolver-error: {e}", "actual_agent": ""}
-
-
-def _identity_card_lines(aw, persona: str, p: dict) -> list:
-    """§0 身分卡 — 取代舊 morning Step 1 的 `awakening.py status` 輸出。"""
-    lock = aw.read_lock(persona)
-    bank = (lock or {}).get("bank_account") or p.get("bank_account") or ""
-    lines = [
-        f"- **persona**：`{persona}` — wake #{p.get('wake_count', 0)}",
-        f"- **agent**：`{p.get('agent', '?')}`（由 persona 綁定反推）",
-    ]
-    mail = _resolve_mail(persona)
-    _src = {"persona-override": "persona 自訂", "agent-default": f"{mail['actual_agent'] or 'agent'} 預設",
-            "fallback": "全域 fallback", "unset": "**未設定**"}.get(mail["source"], mail["source"])
-    lines.append(f"- **mail**：`{mail['email']}`（{_src}）")
-    if bank:
-        # 餘額由 Cmd 流程（C# 增量快取）餵進來；None ＝ 這次沒查（Editor 未開的純讀路）。
-        # ⚠ 不印 0 頂替 —— 「不知道」跟「沒錢」印成同一個字，就是把缺口偽裝成事實。
-        try:
-            bal = aw.get_treasury_balance(bank)
-        except Exception:
-            bal = None
-        lines.append(f"- **bank**：`{bank}`（餘額 {bal} tavern_token）" if bal is not None
-                     else f"- **bank**：`{bank}`（餘額未查詢 —— 需經 Cmd 流程；Editor 未開時銀行操作本就封鎖）")
-    if lock:
-        lines.append(f"- **lock**：`{lock.get('session_key', '?')}` / pid={lock.get('pid', '?')} / "
-                     f"locked_at={lock.get('locked_at', '?')}")
-        tok = lock.get("session_token")
-        if tok:
-            lines.append(f"- **session_token**：`{tok}`（失憶救援：`awakening.py whoami --token {tok}`）")
-    else:
-        lines.append("- **lock**：(無) — 尚未 morning 或已下線")
-    if p.get("forked_from"):
-        lines.append(f"- **血統**：fork from `{p['forked_from']}`")
-    return lines
-
+# ─── §7 / §8 / §9 區塊 ─────────────────────────────────────────────────
+# ⛔ **§0 身分卡已從本檔移除**（Tim 2026-08-21 拍板）。
+#   判準是「這個欄位的真相源在哪一端」：帳號／餘額／信箱／wake_count／lock 全都是
+#   **C# 端查出來的**（Treasury ledger、AgentEmailRegistry、persona profile 接縫），
+#   本檔只是把它們複述一遍 —— 而複述會漂：
+#   🩸 2026-08-21 實測：舊 §0 印 `bank: claude-da-xiaojie（餘額 0）`，
+#      那個帳戶在 `Treasury/accounts/` **不存在**，錢其實在 `claude-code`。
+#      印出來的每個字都「有來源」，只是來源是一條已經退場的正向鏈。
+#   ⇒ 身分卡改由 `Cmd_GoodMorning step=wake` 的回傳檔印（C# 端，見
+#     `UCL_AwakeningService` 的 `## identity` 區塊）。**本檔只保留信件／記憶層的解析**
+#     —— 那才是它存在的理由：Editor 未開時仍讀得到自己的信。
 
 def _inbox_lines(aw, persona: str, p: dict) -> list:
     """§7 待辦收件匣 — 酒保 pending assignments + inbox @mention 標題。
@@ -1140,7 +1103,8 @@ def _bugreport_line(persona: str) -> "str | None":
 def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None) -> tuple:
     """組裝 wake brief → (主檔文字, 續讀檔文字 or None)。
 
-    區塊職責：把 §0 身分 → §1-6 記憶 → §7-9 營運收成一份文本，agent 只 Read 一份。
+    區塊職責：把 §1-6 記憶 → §7-9 營運收成一份文本，agent 只 Read 一份。
+             （§0 身分卡已移到 Cmd 回傳檔 —— 真相源在 C# 端，見本檔 §7 區塊上方的註解。）
     數值影響：主檔上限 BRIEF_LINE_CAP 行；超出的**非必讀**區塊整段移到續讀檔（不砍內容）。
              順序即優先序 —— 營運層排最後且非必讀，所以第一個被移出去的永遠是它們。
     """
@@ -1149,25 +1113,24 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
     st = aw.consolidation_status(persona, reg, threshold)
     fst = aw.forest_status(persona)
     head = ["---", "type: wake_brief", f"persona: {persona}",
-            f"wake_count: {p.get('wake_count', 0)}", f"mail: {_resolve_mail(persona)['email']}",
+            f"wake_count: {p.get('wake_count', 0)}",
             f"generated_at: {aw.utcnow_iso()}",
             "generated: mechanical   # morning 每次重生成 — 手改會被覆寫；事實來源見各層原檔",
             "---", "",
             f"# 🌅 Wake Brief — {persona} wake #{p.get('wake_count', 0)}", "",
-            "> 讀這一份即完成 onboarding：**§0 身分 → §1-6 記憶（見根→見樹→回憶）→ §9 動作清單**。",
+            "> 讀這一份即完成 onboarding：**§1-6 記憶（見根→見樹→回憶）→ §9 動作清單**。",
+            "> 身分卡（帳號／餘額／信箱／lock／session_token）在 **Cmd 回傳檔** `cmd/goodmorning_wake.md` ——",
+            "> 那些欄位的真相源在 C# 端，本檔不複述（複述會漂：2026-08-21 印過一個不存在的帳戶）。",
             "> （§7 收件匣／§8 酒館 catch-up 已退出 brief —— intro 之後跑酒館 catchup 一次補齊，R21）",
             "> 順序即優先序；主檔溢出時先被移進續讀檔的是後面的營運層。",
             "> 各層原檔路徑都附在區塊標題後，需要細節再點進去。", ""]
 
-    # §0.5 憲法／初始風格 —— **緊接 header、在 §0 之前**（Tim 2026-08-04 指定位置）。
+    # §0.5 憲法／初始風格 —— **緊接 header**（Tim 2026-08-04 指定位置；原本在 §0 身分卡之前）。
     # 不走 sections 機制是刻意的：sections 會因主檔溢出被移進續讀檔，
     # 而**一份會被移走的憲法不算憲法**。
     head += _constitution_lines(aw, persona, p)
 
     sections = _TimedSections()   # (title, lines, essential) ＋ 每段自動計時（見該 class）
-
-    # §0 身分卡 — 取代舊 Step 1 的 status 輸出（必讀，最短）
-    sections.append(("🪪 §0 身分卡", _identity_card_lines(aw, persona, p), True))
 
     # §1 見根 — 機械索引 inline（必讀，最短）
     if aw.load_fragments(persona):
@@ -1349,8 +1312,11 @@ def write_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
     main, overflow = build_wake_brief(aw, persona, reg, p, threshold)
     # 落點走版面唯一實作（Plan_Letters_Dir_Layout §8.2 批次⑥）：brief 是機器產物，住 cmd/。
     # ⚠ 對側契約：C# 讀取端 = UCL_LettersPath.CmdPayload(persona, "wake", "brief")。
-    # ⚠ ensure_letters_cmd_dir 會順手補 cmd/.gitignore —— brief 含活 session_token 與信箱，
-    #   而 letters remote 可能是公開的；那份 ignore 不是整潔問題，是外洩防線。
+    # ⚠ ensure_letters_cmd_dir 會順手補 cmd/.gitignore（目錄層 `*`）—— 那份 ignore 不是整潔問題，
+    #   是外洩防線：letters remote 可能是公開的。
+    #   📌 2026-08-21 起 brief 本身**不再含 session_token 與信箱**（§0 身分卡已移到 Cmd 回傳檔），
+    #      但它仍是私密的（見樹＝收尾信全文，含密文區）⇒ ignore 照舊，理由換了不是消失。
+    #      憑證現在住 `cmd/goodmorning_wake.md`，而 ignore 是**目錄層**的，所以那份也蓋得到。
     from _lib.ucl_paths import ensure_letters_cmd_dir, letters_cmd_payload
     ensure_letters_cmd_dir(persona)
     path = letters_cmd_payload(persona, "wake", "brief")

@@ -777,51 +777,11 @@ def get_bonus_balance(bank_account: str) -> int:
         return 0
 
 
-# ─── Treasury 餘額：算法擁有者是 C# 端，本檔只是收件人 ──────────────────────
-# 區塊職責：餘額**不在 python 端算**。唯一擁有者是 UCL_TreasuryLedger（C# 增量快取 +
-#          落盤 snapshot + 每日結帳三層），由 Cmd 流程在 spawn python **之前**查好餵進來。
-# 物理意義：Cmd_GoodMorning step=brief → RunBrief 先在主緒問 GetBalance → 以
-#          --bank-balance <account>=<amount>[:<currency>] 傳進本檔 → 這裡只做查表。
-# 數值影響：沒被餵到（帳號對不上 / 不經 Cmd 直跑的備援路）→ 退回全帳本重放，
-#          數值與舊版逐分等值，只是慢 —— 正確性不依賴有沒有被餵到。
-# 🩸 為什麼改（2026-08-16 basecamp 量測）：舊版每次呼叫全掃 ledger 逐檔 json.load，
-#    14,985 檔在**冷檔案快取**下要近兩分鐘。morning 的 §0 身分卡就靠它印一行餘額，
-#    於是 step=brief 被拖到 112s；08-13 summit 那次更直接撞 120s timeout 被 kill
-#    （UCL_AwakeningService.cs 的血證註解記的就是它，當時只歸因到「brief 撞上限」，
-#    沒往下追是誰吃掉那 120 秒）。⚠ 別在本檔重造一份快取 —— 兩端各養一套同名不變式，
-#    是把「快取錯了」變成「兩邊都以為對方會修」的最短路徑（Tim 2026-08-16 拍板）。
-_INJECTED_BALANCES: dict = {}
-
-
-def set_injected_balance(account_id: str, amount: int, currency: str = "tavern_token") -> None:
-    """由 CLI（--bank-balance）注入 C# 端查好的餘額。key 不命中就當沒餵，不會用錯帳號的數。"""
-    _INJECTED_BALANCES[(account_id, currency)] = int(amount)
-
-
-def parse_injected_balance_arg(raw: str) -> tuple:
-    """
-    區塊職責：解析 --bank-balance 的字面值 → (account, amount, currency)。
-    物理意義：格式 `<account>=<amount>` 或 `<account>=<amount>:<currency>`。
-             帳號帶在值裡（而不是只傳一個數字）是刻意的 —— 兩端各自解析 persona→bank，
-             萬一解析結果不同，這裡會**對不上而退回重算**，不會拿 A 的餘額印在 B 的卡上。
-    """
-    account, _, rest = raw.partition("=")
-    amount_str, _, currency = rest.partition(":")
-    return account.strip(), int(amount_str.strip()), (currency.strip() or "tavern_token")
-
-
-def get_treasury_balance(account_id: str, currency: str = "tavern_token"):
-    """
-    區塊職責：取 Cmd 流程注入的 Treasury 餘額。**本檔不算餘額，也沒有備援算法。**
-    物理意義：Treasury ledger 是 source-of-truth，而讀它的唯一入口是 C# 的 UCL_TreasuryLedger。
-    數值影響：回傳 int，或 **None ＝「這次沒查」**（不是 0 ——「不知道」跟「沒錢」是兩件事，
-             印成 0 就是拿一個假的真值餵給讀 brief 的人）。
-    邊界：Editor 未開時本來就查不到，也**不需要** —— 那條路只保「讀得到早安信」，
-         而銀行操作在 Editor 未開時整條封鎖，沒有餘額可用的場景（Tim 2026-08-16 拍板）。
-         ⚠ 別為了「讓它有值」在這裡補一條重算路：那正是被拿掉的那 112 秒。
-    """
-    return _INJECTED_BALANCES.get((account_id, currency))
-
+# ⛔ 餘額注入機制（`--bank-balance` / `set_injected_balance` / `get_treasury_balance`）已移除
+#    （Tim 2026-08-21）：帳號與餘額改由 `Cmd_GoodMorning` 的回傳檔印 —— 真相源是 C# 的
+#    `UCL_TreasuryLedger`，本檔（brief 備援路）不再複述。
+#    🩸 那條路印過 `bank: claude-da-xiaojie（餘額 0）`，而該帳戶不存在、錢在 `claude-code`：
+#    帳號來自已退場的正向鏈，而「查無此帳戶」被印成「餘額 0」⇒ 沒有人會去追一個 0。
 
 # ─── Session Lock (§Session Identity Consistency Phase 1) ───────────────
 def compute_session_key(agent: str | None = None, persona: str | None = None) -> str:
@@ -2372,14 +2332,6 @@ def cmd_brief(args: argparse.Namespace) -> int:
     if args.persona not in reg.get("personas", {}):
         print(f"❌ persona '{args.persona}' 不存在於 registry", file=sys.stderr)
         return 2
-    # 注入壞掉只讓 brief 少一個顯示欄位，所以印一行就繼續 —— 不讓一個欄位擋掉整個 morning。
-    raw = getattr(args, "bank_balance", None)
-    if raw:
-        try:
-            account, amount, currency = parse_injected_balance_arg(raw)
-            set_injected_balance(account, amount, currency)
-        except (ValueError, AttributeError):
-            print(f"⚠ --bank-balance 格式不對（{raw!r}），本次 brief 的餘額欄改印「未查詢」", file=sys.stderr)
     write_root_index(args.persona)
     path = write_wake_brief(args.persona, reg, reg["personas"][args.persona])
     lines = len(path.read_text(encoding="utf-8").split("\n"))
@@ -2836,10 +2788,6 @@ def main():
     # wake brief: 手動重生成 (morning 會自動生成; 這支給「改完 fragment 想立刻重讀」用)
     pbrief = sub.add_parser("brief", help="重生成 wake brief (身分+記憶+營運單一文本)")
     pbrief.add_argument("--persona", required=True)
-    # 餘額由 Cmd 流程（C# 增量快取）查好餵進來 —— 見 get_treasury_balance 區塊註解。
-    # 不給也能跑：退回全帳本重放，數值一樣、只是慢（Editor 未開的備援路就是這條）。
-    pbrief.add_argument("--bank-balance", default=None, metavar="ACCOUNT=AMOUNT[:CURRENCY]",
-                        help="由呼叫端注入的銀行餘額（帳號對不上會忽略並自行重算）")
     pbrief.set_defaults(func=cmd_brief)
     pcons.add_argument("--threshold", type=int, default=DEFAULT_CONSOLIDATION_THRESHOLD,
                        help=f"overdue 門檻 (預設 {DEFAULT_CONSOLIDATION_THRESHOLD})")

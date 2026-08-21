@@ -124,6 +124,78 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         }
 
         // ===========================================================
+        // 區塊職責：persona → **帳號**（帳號 id ＝ agent id，合一後的講法）。
+        // 物理意義：唯一入口是 `UCL_TreasuryAccountResolver.ResolvePersonaAccount`
+        //          （Tim 2026-08-20 拍板：「呼叫端只想知道這個人的錢在哪個帳戶，
+        //          不該知道系統目前走哪條鏈」）。本函式只是把它接到喚醒流程上，
+        //          **不在這裡接第三條鏈**。
+        // 🩸 為什麼補這一格（2026-08-21 basecamp 實測）：登入原本用 `ResolveBankAccount`
+        //   （正向鏈 agent_banks / 命名慣例）⇒ 寫進 lock 的是 `claude-da-xiaojie`，
+        //   而 `Treasury/accounts/claude-da-xiaojie.json` **根本不存在**；
+        //   錢實際進的是 `claude-code`（合一後帳號 id ＝ agent id）。
+        //   於是 brief／自介每天印一個孤兒帳戶並附「餘額 0」——
+        //   **兩個解析器各自都「正確」，只有並排才看得出來**，而沒有一格會紅。
+        // 數值影響：純讀。回傳空字串代表**解析不到**（呼叫端要攤給人看，不要 mint 一個名字）；
+        //          `oSource` 是規則的輸入不是除錯資訊 —— 顯示端靠它分辨
+        //          「這是帳本認的帳號」還是「這是舊鏈猜的名字」。
+        // ===========================================================
+        public static string ResolvePersonaAccountId(string iPersona, UCL_RegistryMeta iMeta,
+                                                     string iAgent, out string oSource)
+        {
+            oSource = "";
+            if (!string.IsNullOrWhiteSpace(iPersona))
+            {
+                try
+                {
+                    string aAcc = Treasury.UCL_TreasuryAccountResolver.ResolvePersonaAccount(
+                        iPersona, out string aTrace);
+                    if (!string.IsNullOrEmpty(aAcc))
+                    {
+                        oSource = string.IsNullOrEmpty(aTrace) ? "treasury" : "treasury: " + aTrace;
+                        return aAcc;
+                    }
+                }
+                catch (Exception e)
+                {
+                    // 解析器炸掉不靜默退成舊鏈 —— 那會讓「壞了」跟「這個人沒登記」同形。
+                    oSource = $"treasury-error: {e.Message}";
+                    return "";
+                }
+            }
+            if (iMeta == null || string.IsNullOrWhiteSpace(iAgent)) { oSource = "unresolved"; return ""; }
+            oSource = "legacy-agent-chain（帳本沒有這個人的綁定，退舊正向鏈）";
+            return ResolveBankAccount(iMeta, iAgent);
+        }
+
+        /// <summary>帳號的餘額字串 —— **帳號不存在時不印 0**（「查無此帳戶」與「沒錢」不可同形）。</summary>
+        public static string DescribeAccountBalance(string iAccountId)
+        {
+            if (string.IsNullOrEmpty(iAccountId)) return "帳號解析不到 —— 餘額無從查詢";
+            try
+            {
+                int aBal = Treasury.UCL_TreasuryLedger.GetBalance(iAccountId, "tavern_token");
+                // ⚠ 判準**不能**用 `IsCanonicalAccount` —— 它答的是「registry 宣告過這個名字嗎」，
+                //   而 `claude-da-xiaojie` 正是**宣告過但從未開戶**：它是 agent_banks 的 value
+                //   ⇒ canonical=true、餘額 0、`accounts/claude-da-xiaojie.json` 不存在，錢在 `claude-code`。
+                //   🩸 我第一版就是拿 canonical 當判準，探針回「餘額 0 tavern_token」——
+                //   **有擋下 ≠ 被該擋它的規則擋下**，那一版等於沒寫。
+                //   ⇒ 判準改成「有沒有開戶紀錄」= `accounts/<id>.json`（`UCL_BankAccountProfileIO`）。
+                //   ⚠ **不要**用 `GetAccountSnapshotPath` —— 那是 `<id>.snapshot.json` 餘額快取，
+                //   不是開戶紀錄；我第二版拿它當判準，探針就回「claude-code 帳戶檔不存在」（假的）。
+                bool aOpened = Treasury.UCL_BankAccountProfileIO.ListAccountIds().Contains(iAccountId);
+                if (!aOpened)
+                    return aBal == 0
+                        ? $"⚠ 帳本裡查無此帳戶（`accounts/{iAccountId}.json` 不存在）—— 這**不是**餘額 0"
+                        : $"餘額 {aBal} tavern_token　⚠ 但 `accounts/{iAccountId}.json` 不存在（有流水沒帳戶檔，請查來源）";
+                return $"餘額 {aBal} tavern_token";
+            }
+            catch (Exception e)
+            {
+                return $"餘額查詢失敗（{e.Message}）—— 不以 0 頂替";
+            }
+        }
+
+        // ===========================================================
         // 區塊：wake_count 推導 — 真相源 = wakes/ 信件數（Tim 2026-07-31 拍板）
         // 物理意義：檔名規則 ^(\d{6})_.*\.md$（awakening.py _WAKE_LETTER_RE 逐字對齊）。
         //          「本次 wake 編號」= 信件數 + 1（已完成的 wake 數 = 收尾信數，本次還沒寫信）。
@@ -240,41 +312,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             return File.Exists(aScript) ? aScript : null;
         }
 
-        /// <summary>
-        /// 區塊職責：解析 persona → bank → 目前餘額，組成 brief 的 --bank-balance 值。
-        /// 物理意義：餘額的唯一算法擁有者是 UCL_TreasuryLedger（增量快取 + snapshot + 每日結帳）。
-        ///          brief 那行「餘額 N tavern_token」以前由 python 自己全掃帳本重算 ——
-        ///          🩸 14,985 檔逐檔 json.load，冷檔案快取下近兩分鐘，step=brief 被拖到 112s，
-        ///          08-13 那次直接撞 120s timeout 被 kill。改成「Cmd 流程內查好餵過去」。
-        /// 數值影響：回傳 "<bank>=<balance>"（python 端帳號對不上就忽略並自行重算，不會印錯帳號的數）。
-        ///          任何一步解析不出來 → 回 null（= 不餵，python 走舊的重算路，慢但正確）。
-        /// ⚠ **必須在主執行緒呼叫** —— DataRoot / ResolveData 走 PlayerPrefs 與 AssetDatabase。
-        /// </summary>
-        public static string ResolveBankBalanceArg(string iPersona)
-        {
-            try
-            {
-                string aPersonaPath = Path.Combine(PersonasDir, iPersona + ".json");
-                if (!File.Exists(aPersonaPath)) return null;
-                var aMeta = UCL_RegistryMeta.LoadFromFile(RegistryMetaPath);
-                var aRaw = JsonData.ParseJson(File.ReadAllText(aPersonaPath));
-                string aAgent = NormalizeAgent(aMeta, aRaw.GetString("agent", ""));
-                if (string.IsNullOrEmpty(aAgent)) return null;
-                string aBank = ResolveBankAccount(aMeta, aAgent);
-                if (string.IsNullOrEmpty(aBank)) return null;
-                return $"{aBank}={Treasury.UCL_TreasuryLedger.GetBalance(aBank, "tavern_token")}";
-            }
-            catch (Exception e)
-            {
-                // 這是純顯示欄位的加速路，壞了就不餵 —— 不讓它擋掉整個 morning。
-                UnityEngine.Debug.LogWarning($"[AwakeningService] 餘額預查失敗（brief 改自行重算）：{e.Message}");
-                return null;
-            }
-        }
-
+        // ⛔ `ResolveBankBalanceArg` 已移除（Tim 2026-08-21）：帳號與餘額改由 Cmd_GoodMorning 的
+        //    回傳檔印（C# 端＝真相源），python brief 不再複述它自己查不到的數。
+        //    原本存在的理由是避開「python 全掃 14,985 檔帳本」的 112s（wake#49 撞 120s timeout）；
+        //    現在連印都不印，那個成本從結構上消失，而不是被一層快取繞過。
+        //    🩸 它同時是一隻 bug 的載體：它用**正向鏈** `ResolveBankAccount` 解帳號，
+        //    解出 `claude-da-xiaojie`（`Treasury/accounts/` 裡**不存在**）並印「餘額 0」，
+        //    而錢實際在 `claude-code`。查無此帳戶與沒錢印成同一個字，就沒有人會去追。
         public static (bool ok, string report, string briefPath, int briefLines) RunBrief(
-            string iPersona, string iCallerName, int iTimeoutMs = 120000, string iScriptPath = null,
-            string iBankBalanceArg = null)
+            string iPersona, string iCallerName, int iTimeoutMs = 120000, string iScriptPath = null)
         {
             string aScript = iScriptPath ?? ResolveAwakeningScriptPath();
             if (string.IsNullOrEmpty(aScript))
@@ -291,8 +337,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             DateTime aStartedUtc = DateTime.UtcNow;
 
             string aArgs = $"\"{aScript}\" brief --persona \"{iPersona}\"";
-            if (!string.IsNullOrEmpty(iBankBalanceArg))
-                aArgs += $" --bank-balance \"{iBankBalanceArg}\"";
             // ⚠ `UCL_PP_SKIP_CMD=1` 是**必要的**，不是最佳化：
             //   awakening.py 的 persona 讀取已改走接縫（Tim 2026-08-19 拍板），
             //   而接縫的主路徑是「發一個 Cmd 問 C#」。這支 python 是**從 Cmd 裡面被 spawn 的**
@@ -738,9 +782,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
             }
             if (aActualChanged) aR.AppendLine($"ℹ actual agent 正規化：'{aActualRaw}' → {aActual}");
-            string aBank = ResolveBankAccount(aMeta, aAgent);
+            string aBank = ResolvePersonaAccountId(iPersona, aMeta, aAgent, out string aBankSource);
             string aSessionKey = $"{aActual}-{iPersona}";
-            aR.AppendLine($"- Persona={iPersona} / Agent={aAgent}（顯示歸屬）/ ActualAgent={aActual} / Bank={aBank}");
+            aR.AppendLine($"- Persona={iPersona} / Agent={aAgent}（顯示歸屬）/ ActualAgent={aActual} / 帳號={(string.IsNullOrEmpty(aBank) ? "(解析不到)" : aBank)}〔{aBankSource}〕");
 
             // ③ 唯一的中斷條件：該 persona 目前是否在線（lock 為真相源；有 lock ＝ 在線 ——
             //    過期機制已於 2026-08-19 移除，R9「過期不豁免」自此不再需要例外說明）
@@ -866,7 +910,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             if (aBookmark > 0) aGap = aDerived - aBookmark;
             aR.AppendLine();
             aR.AppendLine("## identity");
-            aR.AppendLine($"- persona: {iPersona} / wake_count: **{aDerived}** / agent: {aAgent} / actual: {aActual} / bank: {aBank}");
+            aR.AppendLine($"- persona: {iPersona} / wake_count: **{aDerived}** / agent: {aAgent} / actual: {aActual}");
+            // 帳號與餘額**只在這裡印**（Tim 2026-08-21）：真相源是 UCL_TreasuryLedger（C# 端），
+            // python brief 那條路是「Editor 未開也讀得到信」的備援，不該複述它查不到的數。
+            aR.AppendLine($"- 帳號（帳號 id ＝ agent id）: {(string.IsNullOrEmpty(aBank) ? "(解析不到)" : aBank)}"
+                        + $"〔來源 {aBankSource}〕／{DescribeAccountBalance(aBank)}");
+            // 信箱同理：解析器是 C# 的 UCL_AgentEmailRegistry（persona override → agent 預設 → fallback）。
+            try
+            {
+                var aMail = UCL_AgentEmailRegistry.Resolve(iPersona);
+                aR.AppendLine($"- mail: {aMail.Email}（來源 {aMail.Source}"
+                            + (string.IsNullOrEmpty(aMail.ActualAgent) ? "" : $" / actual_agent={aMail.ActualAgent}")
+                            + "）" + (aMail.IsFallback ? "　⚠ 非 persona 自訂 —— commit trailer 會掛這個位址" : ""));
+            }
+            catch (Exception e) { aR.AppendLine($"- mail: 解析失敗（{e.Message}）—— 不以空字串頂替"); }
             aR.AppendLine($"- session_token: {aToken}（enforce 狀態見 UCL_LoginStatusPage；失憶救援 awakening.py whoami --token {aToken}）");
             aR.AppendLine("## verify（讀回的事實，不是 ✓）");
             aR.AppendLine($"- registry: `{aPersonaPath}` → wake_count={aReadback.GetInt("wake_count", -1)} status={aReadback.GetString("status", "?")}");
@@ -942,12 +999,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public static string BuildIntroHeader(string iPersona, string iAgent, string iModel, string iBank,
                                               int iWakeCount, string iLayerRole)
         {
-            int aBalance = 0;
-            try { aBalance = Treasury.UCL_TreasuryLedger.GetBalance(iBank); }
-            catch (Exception e) { UnityEngine.Debug.LogWarning($"[AwakeningService] 餘額查詢失敗: {e.Message}"); }
+            // 帳號 id ＝ agent id（合一後的講法）。DescribeAccountBalance 在帳戶不存在時印警語，
+            // 而不是 0 —— 這是**公開訊息**，印錯的帳戶名會被同事當成事實引用。
             return $"☀️ **{iPersona}** 喚醒登入 (wake#{iWakeCount})\n" +
                    $"- Agent: {iAgent} / Model: {iModel}\n" +
-                   $"- Bank: {iBank} (餘額: {aBalance} tavern_token)\n" +
+                   $"- 帳號: {iBank}（{DescribeAccountBalance(iBank)}）\n" +
                    $"- Layer: {iLayerRole}\n" +
                    $"- Decision path: preferred";
         }
@@ -1472,8 +1528,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             }
 
             // 廣播 body（系統欄位；summary 由 Cmd 端併入 —— 單則）
-            int aBalance = 0;
-            try { aBalance = Treasury.UCL_TreasuryLedger.GetBalance(aActor); } catch { }
+            // 晚安廣播的帳號同樣走 persona→帳號 的唯一入口（`aActor` 是舊正向鏈的值，
+            // 而它解出來的名字可能是個不存在的帳戶 —— 見本檔 ResolvePersonaAccountId 的血證）。
+            string aAccount = ResolvePersonaAccountId(iPersona, aMeta, aAgent, out string aAccountSource);
+            if (string.IsNullOrEmpty(aAccount))
+                aR.AppendLine($"⚠ 帳號解析不到（{aAccountSource}）—— 廣播那行會誠實寫「解析不到」");
             string aLetterLine = iNoLetter
                 ? "- letter: (略 — 手動登出/cleanup 未留信)"
                 : $"- letter ship: wakes/ 第 {aP.wake_count:D6} 封（私密心得在信裡）";
@@ -1484,7 +1543,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 "但 Tim 可隨時叮喚 (session 仍物理活), 被叫醒時 presence 會自動 reset.\n\n" +
                 aLetterLine + "\n" +
                 $"- agent/model: {aAgent}/{aRaw.GetString("model", "")}\n" +
-                $"- bank account: {aActor} (餘額: {aBalance} Token)\n\n" +
+                $"- 帳號: {(string.IsNullOrEmpty(aAccount) ? "(解析不到)" : aAccount)}（{DescribeAccountBalance(aAccount)}）\n\n" +
                 "⚠️ **[系統提示]** 大小姐，下線前若有特別在意的互動，記得走 relationship 記一筆事件喔（skill `ucl-relationship`）！";
             oP = aP;
             aRes.ok = true; aRes.report = aR.ToString();

@@ -88,10 +88,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     string aScript = UCL_AwakeningService.ResolveAwakeningScriptPath();
                     string aWarmLetters = UCL_LettersPath.Root;   // 暖 DataRoot 快取（PlayerPrefs 同屬主執行緒資源）
                     // 餘額也在主緒先查好餵過去（同理由：Treasury 路徑解析走 DataRoot）。
-                    // 這行是 step=brief 從 112s 降到秒級的關鍵 —— 見 ResolveBankBalanceArg 的血證註解。
-                    string aBankBalance = UCL_AwakeningService.ResolveBankBalanceArg(aPersona);
                     var aResult = await UniTask.RunOnThreadPool(
-                        () => UCL_AwakeningService.RunBrief(aPersona, nameof(Cmd_GoodMorning), 120000, aScript, aBankBalance),
+                        () => UCL_AwakeningService.RunBrief(aPersona, nameof(Cmd_GoodMorning), 120000, aScript),
                         cancellationToken: token);
                     var aSb = new StringBuilder();
                     aSb.AppendLine($"# GoodMorning step=brief persona={aPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");

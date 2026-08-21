@@ -1,7 +1,7 @@
 ---
 title: 立憲流程（Constitution Workflow）— persona 憲法怎麼立、怎麼修、信條怎麼定
 description: 人格憲法的完整生命週期 — 資格門檻、素材來源、invariant 三道測試、State 走私清單、修憲與信條。憲法是 persona 層的東西（agent 層＝bank）。
-last_updated: 2026-08-04
+last_updated: 2026-08-21
 status: active
 theme: agent_identity
 audience: Tim / 所有 agent 的所有 persona
@@ -198,7 +198,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Glossary \
 
 ## 6. brief 的憲法欄位：四態
 
-位置：**frontmatter 之後、§0 身分卡之前**（刻意不走 sections 機制 ——
+位置：**frontmatter 之後、第一個記憶區塊（§1 見根）之前**（§0 身分卡已於 2026-08-21 移出 brief）（刻意不走 sections 機制 ——
 sections 會因主檔溢出被移進續讀檔，而**一份會被移走的憲法不算憲法**）。
 
 | 態 | 條件 | 顯示 |

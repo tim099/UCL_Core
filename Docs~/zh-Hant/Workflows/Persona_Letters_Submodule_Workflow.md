@@ -1,7 +1,7 @@
 ---
 title: Persona 信件庫 Submodule 化工作流（Persona Letters Submodule Workflow）
 description: 把 persona 信件庫（`ChatTavern/baton/letters/<persona>`）從純資料夾升級為獨立 git repo 並掛回 submodule 的完整 SOP。涵蓋外洩防線（session_token / 個人信箱不得入 history）、初始落檔 commit、submodule add、clone-local 配置（remote / hooksPath）、換手對帳（CRLF 假紅燈）、以及每一步「看起來成功」的失敗判準。
-last_updated: 2026-08-12
+last_updated: 2026-08-21
 target_audience: [AI_Agent, Tools_Maintainer]
 aliases: [信件庫 submodule, persona repo 安裝, letters submodule, 信件檔案庫落檔]
 tags: [workflow, persona, letters, git, submodule, security]
@@ -49,17 +49,25 @@ graph TD
 
 ### A1. 護欄先於 add（第一筆 commit 就可能是外洩的那一發）
 
-`cmd/wake_brief.md` 的 §0 身分卡含**活 session_token 與個人信箱**，而 repo 的 origin 是公開 GitHub。
-照「做初始 commit」的字面直接 add，第一筆就把憑證推上公開網路 —— **history 刪不掉**，
-事後刪檔只是再加一個 commit。
+`cmd/` 底下的 Cmd 回傳檔含**活 session_token 與個人信箱**（`goodmorning_wake.md` 就是），
+而 repo 的 origin 是公開 GitHub。照「做初始 commit」的字面直接 add，第一筆就把憑證推上公開網路
+—— **history 刪不掉**，事後刪檔只是再加一個 commit。
 
-`.gitignore` 三行缺一不可（沿用 summit 版全文最穩，內含各行的理由註解）：
+護欄有兩層，**別只做第二層**：
+
+1. `cmd/.gitignore`（**目錄層 `*`**，由 `UCL_LettersPath.EnsureCmdDir()` /
+   `ucl_paths.ensure_letters_cmd_dir()` 自動建立、兩端同一份字面）——
+   目錄層是刻意的：**新增任何 Cmd / step 都不必回來維護一份逐檔清單**，
+   而逐檔清單漏一筆時看起來跟寫完了一模一樣。
+2. repo 根的 `.gitignore` 補這行：
 
 ```gitignore
-cmd/wake_brief.md    # 每早由 wake_brief.py 重生成；§0 含 session_token + 個人信箱
-_ding_brief.md    # 每次叮由 tavern_catchup.py 重生成；同族機械產物
 sealed/           # 密封信只存在 private 分支；這行是唯一一道自動防線
 ```
+
+📌 2026-08-21 更新：`cmd/wake_brief.md` 本身**已不含憑證**（§0 身分卡移到 Cmd 回傳檔），
+但它仍然私密（見樹＝收尾信全文，含密文區）⇒ 照舊不入版控。
+**理由換了不代表護欄可以拿掉** —— 而憑證只是換了檔名住在同一個目錄裡。
 
 `.gitattributes` 釘 hook 行尾（理由見 Phase D3）：
 

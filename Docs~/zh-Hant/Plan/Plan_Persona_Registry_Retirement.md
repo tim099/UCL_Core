@@ -480,6 +480,43 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 兩種讀法都能落地，但**寫入端該長在哪不一樣**：前者長在身分後台，後者長在 Treasury。
 Phase 3 動手前需要 Tim 把這一格講定。
 
+#### ✅ 正向鏈的第一個活體受害者已收（basecamp 2026-08-21）
+
+§8.1 說反向登記上線後「正向鏈會在銀行端改了誰屬於誰時開始說謊」—— 它已經說了，而且說了很久：
+
+| 讀數 | 值 | 誰在讀 |
+|---|---|---|
+| brief §0／自介／晚安廣播印的帳號 | `claude-da-xiaojie` | 登入寫進 lock 的 `bank_account`（**正向鏈** `ResolveBankAccount`） |
+| `Treasury/accounts/claude-da-xiaojie.json` | **不存在** | —— |
+| 錢實際進的帳戶 | `claude-code`（餘額 5650） | 公告領薪走 `UCL_TreasuryAccountResolver`（合一模式，一跳） |
+
+⇒ 每天早上那行「餘額 0 tavern_token」不是窮，是**在一個不存在的帳戶上查餘額**。
+沒有一格會紅，因為兩個解析器各自都「照著自己的真相源做了」。
+
+**修法（都在 C# 端，唯一入口不新增第三條鏈）**：
+- 新增 `UCL_AwakeningService.ResolvePersonaAccountId(persona, meta, agent, out source)`
+  —— 委派 `UCL_TreasuryAccountResolver.ResolvePersonaAccount`（Tim 2026-08-20 拍板的唯一入口），
+  解不到才退舊正向鏈**並把來源印出來**；登入寫 lock／token、晚安廣播、wake 回傳檔全部改走它。
+- `DescribeAccountBalance(id)`：帳戶沒開戶時**印警語不印 0**。
+  ⚠ 判準踩了兩次才對：① `IsCanonicalAccount` 答的是「registry 宣告過嗎」——
+  `claude-da-xiaojie` 正是宣告過但從未開戶（canonical=true）⇒ 那版等於沒寫；
+  ② `GetAccountSnapshotPath` 是 `<id>.snapshot.json` 餘額快取、不是開戶紀錄 ⇒ 反而冤枉了真帳戶。
+  最後用 `UCL_BankAccountProfileIO.ListAccountIds()`。
+  **兩次都是探針抓到的，不是想出來的**（`Cmd_Invoke` 直打，讀 Editor log 的回傳值）。
+- python 端（`wake_brief.py` §0 身分卡、`awakening.py` 的 `--bank-balance` 注入機制）
+  **整段移除**（Tim 2026-08-21：那條路只是複述 C# 查到的值，而複述會漂）。
+  python brief 自此只留信件／記憶層 —— Editor 未開時讀得到自己的信，那才是它存在的理由。
+
+驗收讀數（拿 **Template 測試殼**跑完整流程，真人不當白老鼠）：
+`step=wake` 回傳檔印 `帳號=Template〔treasury: 【合一模式】…一跳；agent_banks 未參與〕／餘額 106`，
+lock 的 `bank_account` 讀回 `Template`（不再是 `<agent>-da-xiaojie`），
+brief 無 §0、frontmatter 無 `mail`，`step=logout` 廣播印 `- 帳號: Template（餘額 106 tavern_token）`，
+Template 已回 offline、lock 已清。三個帳號探針：`claude-code`→餘額 5650、
+`claude-da-xiaojie`→「⚠ 帳本裡查無此帳戶」、`Template`→餘額 106。
+
+⛔ **仍未收**：`aActor`（`ResolveBankAccount` 的值）還被 `Cmd_GoodNight` 當公告 sender 與
+收尾信作者名用，那條在金流路徑上，要跟 §4.1 的 Treasury 正向鏈退場一起收，本次刻意不動。
+
 ### 8.2 身分欄改「一欄一檔」分散式 .md —— ✅ **已實作**（kiara 2026-08-19，Phase 1）
 
 參考 `letters/<persona>/cmd/` 的形態：**新增專用資料夾，檔名＝欄位、內文＝值**。

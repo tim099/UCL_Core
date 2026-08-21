@@ -101,6 +101,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [UCL_AgentCommandsPage](UCL_EditorPage/UCL_AgentCommandsPage.md) ⭐ | Agent Command 主頁面（隊列管理 / 新增 / Run Pending / Export Catalog）|
 | [UCL_BartenderAdminPage](UCL_EditorPage/UCL_BartenderAdminPage.md) | 集中管理酒保報時、時間提醒、關鍵字留言與 daemon 執行狀態的 Editor 後台。 |
 | [UCL_DiscordSettingsPage](UCL_EditorPage/UCL_DiscordSettingsPage.md) | Discord inbound 白名單、名稱／別名、個人簡介與 Guild 成員候選匯入。 |
+| [UCL_PlurkAdminPage](UCL_EditorPage/UCL_PlurkAdminPage.md) | **Plurk 帳號管理** — 只分共用（公用）與個人；帳號 id ＝ secret 檔名 stem，憑證本體走 Secret Manager。解析三段（persona override → 共用預設 → unset）且回值帶 `Source`，**個人／共用由 Source 推導不另存欄位** |
 | [UCL_AutoCommitPage](UCL_EditorPage/UCL_AutoCommitPage.md) | **自動提交頁** — 機器生成檔分群→勾選→每群一筆 commit；含「⚙ Submodule 自動提交設定」可編輯區（設定 SOP 見 [AutoCommit_Config_Workflow](Workflows/AutoCommit_Config_Workflow.md)）|
 | [UCL_CommonEditorPage](UCL_EditorPage/UCL_CommonEditorPage.md) | 編輯器頁面共通基底 |
 | [UCL_ModuleEditPage](UCL_EditorPage/UCL_ModuleEditPage.md) | 模組編輯頁面 |

@@ -1,7 +1,7 @@
 ---
 title: Plurk Bot — 把發文規則從「我要記得」搬到「機器會擋」
 slug: plurk-bot
-status: draft（2026-08-21 Tim 說「先把規劃文件化」—— **一行 code 都還沒動**；現況是 Tim 手動貼）
+status: in-progress（2026-08-21：**帳號層已落地**（§3）；lint / preview / post 未動，現況發文仍是 Tim 手動貼）
 created_at: 2026-08-21T02:40:00Z
 created_by: summit
 location: UCL_Core (cross-project — 發文規則與帳號解析跨專案共用)
@@ -61,7 +61,23 @@ related:
 
 本檔即交付物。
 
+> ⚠ **同日追加**：Tim 隨後指派「接著繼續 plurk 串接部分…先處理帳號相關部分即可」
+> ⇒ §3 帳號層已實作（見該節的落地標記）。§6 的 lint / preview / post **仍未動**。
+
 ## 3. 帳號解析（照 email 的形狀）
+
+> ✅ **本節 2026-08-21 已落地** —— `Editor/Plurk/UCL_PlurkAccounts.cs`（解析）＋
+> `Editor/Plurk/UCL_PlurkAdminPage.cs`（後台頁）。操作與驗收讀數見
+> [`UCL_PlurkAdminPage.md`](../UCL_EditorPage/UCL_PlurkAdminPage.md)。
+>
+> ⚠ 實作與本規劃**有兩處偏離，照實記**：
+> 1. **檔案位置**：規劃沒寫，實作放 `Editor/`（組件 `UCL_CoreEditor`）而不是
+>    `UCL_Core_Scripts/`。理由是組件引用單向（`UCL_CoreEditor → UCL_Core`），
+>    而 `UCL_SecretScanner` 住 `Editor/` ⇒ 放錯邊會 CS0246，或逼我自己再寫一份找 .enc 的邏輯。
+> 2. **入口**：規劃寫「後台頁入口放 ToolBox」，實作**沒有**掛 ToolBox ——
+>    Tim 2026-08-21 更正：頁面選單的下拉本來就用反射掃得到（`ShowInPageMenu`），
+>    而 ToolBox 在 `UCL_Core` 這側，硬接需要字串型別名反射（改名不會編譯錯、只會靜默少一顆按鈕）。
+
 
 email 現行是四段、**回值一律含 `source`**：
 `persona override → agent 預設 → 全域 fallback → 哨兵 unset@invalid`。

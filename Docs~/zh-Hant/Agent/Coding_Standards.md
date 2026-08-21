@@ -1,78 +1,32 @@
 ---
 title: C# Coding Standards
 description: UCL_Core C# 設定資料、字串 key 與外部 Process 的共用撰寫規範。
-last_updated: 2026-08-18
+last_updated: 2026-08-21
 target_audience: [AI_Agent, Gameplay_Programmer, Tools_Maintainer]
 related:
+  - Json_Coding_Standards.md | JSON 讀寫規範 | JsonData / typed model / round-trip 驗收
   - Code_Comment_Standards.md | 程式碼註解規範 | 註解與文件化原則
   - AI_READABILITY_GUIDELINES.md | AI Readability Guidelines | 共用文件規範
 ---
 
 # C# Coding Standards
 
-## 設定與 JSON 資料
+## 設定與 JSON 資料 → **獨立成一份規範**
 
-- 優先以具名 C# model（例如 `UnityJsonSerializable`）承載已知 schema，讓欄位、預設值與使用點可被編譯器檢查。
-- 不要在一般業務流程直接裸用 `JsonData` 的字串索引、`GetString` 或 `GetBool` 來讀寫已知欄位。
-- `JsonData` 可以保留在邊界層：解析外部 JSON、保存未知／可擴充欄位、或需要無損 round-trip 的 migration。使用時須把原因寫在註解中。
-- schema 尚未穩定時，先建立最小的 typed projection；未知欄位必須被保留，不可因一次編輯而靜默遺失。
-
-```csharp
-// Good: known fields use a typed model.
-NotifyConfig config = LoadNotifyConfig();
-if (config.tavern_mirror.enabled) SendMirror();
-
-// Boundary-only: preserve plugin-defined fields not represented by the model.
-JsonData rawUnknownFields = LoadUnknownFieldsForRoundTrip();
-```
-
-### 換成 typed model 時的三個坑（2026-08-18 實測，Cmd_FreeTime session）
-
-改用 `UnityJsonSerializable` **不是純粹的重構** —— 序列化器的行為跟手搭 `JsonData` 不一樣，
-而差異全部落在「編譯過、看起來對、但 wire format 變了」這一格。
-
-**① 欄位名就是 JSON 鍵名。**
-`UnityJsonSerializable` 走 `FieldNameUnityVer`，它**只脫 `m_` 前綴**，其餘原樣輸出。
-所以要沿用既有檔的鍵名（例：`session_id`），欄位就得叫 `session_id` ——
-這時**刻意不走 `m_PascalCase` 慣例**，而且必須在 class 註解裡寫明為什麼，
-否則下一個人會把它「修正」成 `m_SessionId`，然後鍵名跟著改。
-
-**② `bool` 會被寫成 `"True"` / `"False"` 字串，不是原生 JSON bool。**
-UCL_Json 的舊慣例如此（`UCL_JsonLib` 序列化端 `aValue.ToString()`），
-**C# 載入端雙接所以看不出差別** —— 但跨語言讀取端看得出：
-python `json.loads` 拿到字串 `"False"`，而它在 Python 裡是 **truthy**。
-
-> 🩸 實測：`FreeTime/sessions/*.json` 原本是 `new JsonData(true)`（原生 bool），
-> 改 typed model 後變成 `"active":"False"`。後果不是解析失敗（那會喊），
-> 是 `freetime.py` 的 `if not s.get("active")` 通過 ⇒ **提前收工的人會被判成還在自由時間**。
+> [!IMPORTANT]
+> JSON 讀寫的完整規則已搬到 **[`Json_Coding_Standards.md`](Json_Coding_Standards.md)** ——
+> 動任何 JSON 讀寫（`JsonData` / `UnityJsonSerializable` / typed model）**前先讀那一份**。
 >
-> ⇒ 檔案有**非 C# 讀取端**時，在 model 裡 `override SerializeToJson()` 把 bool 改回原生：
-> ```csharp
-> public override JsonData SerializeToJson()
-> {
->     var aData = base.SerializeToJson();
->     aData["active"] = new JsonData(active);   // 原生 bool，不是 "True"/"False"
->     return aData;
-> }
-> ```
-> 純 C# 內部使用的資料不必這樣做（載入端雙接）。**判準是「有沒有別的語言在讀」。**
+> 為什麼搬走：那組規則長到自成一章（`JsonData` 安全 getter 對照、
+> `UnityJsonSerializable` 的六個坑、round-trip 驗收協議），
+> 留在本檔會讓「C# 通用規範」與「JSON 專章」互相稀釋，而讀的人不知道該讀到哪一段為止。
 
-**③ 驗收不是「編譯過」，是把既有檔 round-trip 一次比對。**
-拿一份真實的舊檔讀進 model 再吐回 JSON，逐鍵比對鍵名、型別、值。
-`Cmd_Invoke` 可以直接做（不必開頁面、不必跑完整流程）：
+本檔只留一句摘要：
 
-```bash
-run_cmd.py --persona <me> run Invoke --arg type=<Type> --arg member=<LoadXxx>     --arg nonPublic=true --arg paramTypes='System.String' --arg args='<key>' --arg storeAs=s
-run_cmd.py --persona <me> run Invoke --arg target='$s' --arg member=SerializeToJson
-```
-
-⚠ 順序有陷阱：**改完 .cs 送 recompile 之後，回傳的 `errors=0` 可能是舊快照** ——
-上面那隻 bool 就是在「recompile 回報 0 錯」之後才被 round-trip 抓到的（當時跑的還是舊組件，
-真正的編譯錯誤躺在 ErrorLog 裡）。判準見 `ucl-compile-error`：
-**`check_compile.py` 沒標 STALE 且 ErrorLog 對帳一致，才算編過。**
-
-**④ 欄位順序會變。** base/derived 拆開後，衍生類欄位可能排到最前面。
-鍵序對兩端都不重要（都按鍵取值），但 diff 會整片變 —— 別把它誤讀成內容變了。
+- **已知 schema 一律用具名 model**（繼承 `UnityJsonSerializable`），
+  不要在業務流程裡裸用 `JsonData` 逐鍵讀寫 —— 鍵名打錯不會編譯錯、也不會執行錯，
+  **只會讀回預設值**，而那長得跟「這件事沒發生」一模一樣。
+- `JsonData` 只留在邊界層（解析外部 JSON／保存未知欄位／migration），**且要在註解寫明理由**。
 
 ## letters 目錄底下的路徑（硬規則）
 

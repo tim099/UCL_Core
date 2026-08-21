@@ -8,7 +8,8 @@ description: |
   外部 Process 一律走 UCL_ProcessRegistryService（防屍潮）、設定與 JSON 資料的 typed model 原則、
   字串 key 常數化、註解規範、IMGUI 一律走 UCL 封裝（優先 DrawObjectData 自動繪製），
   以及「該用哪個既有基建而不是自己重造」的指路。
-  ⚠ **要寫 .py 前先讀 Python_Coding_Standards.md**、**要寫 .html 前先讀 Web_Coding_Standards.md**、
+  ⚠ **動任何 JSON 讀寫前先讀 Json_Coding_Standards.md**、
+  **要寫 .py 前先讀 Python_Coding_Standards.md**、**要寫 .html 前先讀 Web_Coding_Standards.md**、
   **要開 CI 前先讀 CI_Standards.md**（本 skill 都有指路）。
   觸發詞（case-insensitive substring，任一命中即 lazy-load）：
   - coding 規範 / coding standard / 撰寫規範 / 程式規範 / code style / 命名規範
@@ -27,6 +28,8 @@ description: |
   - 我要寫網頁 / 改 .html / 靜態頁 / 前端 / index.html / CSS / 版面 / 排版 / 彈窗 / RWD
   - CORS / file:// / fetch 讀不到 / CDN / innerHTML / XSS / 跳脫 / GitHub Pages / 部署網頁
   - CI / GitHub Actions / workflow.yml / 自動建置 / 自動部署 / pre-commit hook / 要不要開 CI / fetch-depth
+- JsonData / UCL_JsonData / typed model / UnityJsonSerializable / 序列化 / 反序列化 / SerializeToJson / DeserializeFromJson
+- 讀 json / 寫 json / json 鍵名 / GetBool / CS0618 / implicit operator bool / round-trip / wire format / 巢狀 class
 ---
 
 # UCL Coding — 撰寫規範入口（C# / Python）
@@ -40,6 +43,7 @@ description: |
 |---|---|---|
 | **`.cs`**（Unity / Editor 頁 / IMGUI / Cmd handler / 反射驗證） | [`CSHARP.md`](CSHARP.md) | 改完 `.cs` **一律送 `Cmd_Recompile`** —— Unity 失焦時不會自動重編，而 agent 寫檔幾乎都在失焦下發生 |
 | **`.py`**（`Tools~` 底下、CLI 工具、**用腳本改別的語言的檔**） | [`PYTHON.md`](PYTHON.md) | 寫任何 `.py` 前先讀 `Python_Coding_Standards.md` —— 尤其**硬規則四**（內容先落成檔案再插入） |
+| **任何 JSON 讀寫**（`JsonData` / typed model / 序列化）—— **跨語言、跨檔案類型** | `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md` | 已知 schema 一律 typed model；鍵名打錯只會讀回預設值，而那長得跟「這件事沒發生」一模一樣 |
 | **`.html` / `.css` / `.js`**（畫廊、報表、看板那類純前端頁） | `ucl_core:Docs~/{lang}/Agent/Web_Coding_Standards.md` | 資料走 `<script src>` 不走 `fetch` —— `file://` 下 fetch 被 CORS 擋，而失敗訊息跟「檔案不存在」一模一樣 |
 | **CI / 建置自動化**（要不要開、開哪一種） | `ucl_core:Docs~/{lang}/Agent/CI_Standards.md` | 判準是「這條規則現在住在誰的記性裡」，不是「能不能自動化」 |
 | **兩邊都會踩的**（路徑／錢／`--persona`／開工廣播／坑寫回哪裡） | **本檔以下全部** | 路徑不該被推導，該被傳遞 |
@@ -63,6 +67,7 @@ description: |
 > | 坑的性質 | 寫回哪裡 |
 > |---|---|
 > | C# 寫法、Unity API、Editor 行為、IMGUI | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
+> | JSON 讀寫（鍵名／預設值／bool 變字串／空 List／未知鍵／round-trip） | `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md` |
 > | python 工具、CLI、**用腳本改別的語言的檔** | `ucl_core:Docs~/{lang}/Agent/Python_Coding_Standards.md` |
 > | 靜態網頁（CORS／CDN／`innerHTML`／版面／只在某種開法下才壞） | `ucl_core:Docs~/{lang}/Agent/Web_Coding_Standards.md` |
 > | CI（該不該開、workflow 寫法、只在 runner 上才現形的坑） | `ucl_core:Docs~/{lang}/Agent/CI_Standards.md` |
@@ -175,7 +180,8 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run <CmdType> -
 |---|---|
 | **C# 章**（Recompile / typed model / IMGUI / Cmd_Invoke / 既有基建） | [`CSHARP.md`](CSHARP.md) |
 | **Python 章**（腳本改別的語言的檔 / ucl_paths / treasury_cmd） | [`PYTHON.md`](PYTHON.md) |
-| C# 撰寫規範（設定/JSON、字串 key、**外部 Process**） | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
+| **JSON 讀寫規範（動任何 JSON 前先讀）** | `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md` |
+| C# 撰寫規範（字串 key、**外部 Process**、letters 路徑） | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
 | **Python 撰寫規範（寫任何 .py 前先讀）** | `ucl_core:Docs~/{lang}/Agent/Python_Coding_Standards.md` |
 | **靜態網頁撰寫規範（寫任何 .html 前先讀）** | `ucl_core:Docs~/{lang}/Agent/Web_Coding_Standards.md` |
 | **CI 使用判準（什麼時候該用 CI、該用哪一種形狀）** | `ucl_core:Docs~/{lang}/Agent/CI_Standards.md` |

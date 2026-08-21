@@ -10,7 +10,8 @@
 
 | 主題 | 文件 |
 |---|---|
-| **C# 撰寫規範**（設定/JSON、字串 key、外部 Process） | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
+| **JSON 讀寫**（`JsonData` / typed model / round-trip 驗收）**動 JSON 前先讀** | `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md` |
+| **C# 撰寫規範**（字串 key、外部 Process、letters 路徑） | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
 | 程式碼註解規範（區塊職責 / 物理意義 / 數值影響） | `ucl_core:Docs~/{lang}/Agent/Code_Comment_Standards.md` |
 | 自動畫出整個物件的編輯介面 | `ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_DrawObjectData.md` |
 | 頁面骨架 / 建新頁的完整流程 | `ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_CommonEditorPage.md`、`ucl_core:Docs~/{lang}/Workflows/Create_EditorPage_Workflow.md` |
@@ -89,16 +90,16 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 > **只會讀回預設值**，而讀回預設值通常長得跟「這筆資料不存在」一模一樣。
 > `JsonData` 只留在邊界層（解析外部 JSON / 保存未知欄位 / migration），且要在註解寫明理由。
 >
-> 換成 typed model 時**有三個坑會讓 wire format 靜默改變**（編譯過、看起來對）：
-> **① 欄位名＝JSON 鍵名**（`FieldNameUnityVer` 只脫 `m_`）⇒ 沿用舊鍵名時刻意不走 `m_PascalCase`，
-> 並在註解寫明；**② `bool` 會被寫成 `"True"`/`"False"` 字串**，C# 載入端雙接看不出來，
-> 但 python 讀到的 `"False"` 是 **truthy** ⇒ 有非 C# 讀取端時要 `override SerializeToJson()`
-> 把 bool 寫回原生；**③ 驗收要拿真實舊檔 round-trip 比對**（`Cmd_Invoke` 可直接做），
-> 不是編譯過就算 —— 那隻 bool 正是在「recompile 回報 0 錯」之後才被 round-trip 抓到的。
+> ⚠ 換 typed model **不是純粹的重構** —— 序列化器的行為跟手搭 `JsonData` 不一樣，
+> 而差異全部落在「編譯過、看起來對、但 wire format 變了」這一格：
+> **bool 會變成 `"True"` 字串**（python 端 truthy ⇒ 停不掉的錄影）、
+> **空 `List<>` 會讓整個鍵消失**、**未知鍵會被靜默吃掉**、巢狀結構**不必手刻解析**。
 >
-> 完整血證與範例 → `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md`「換成 typed model 時的三個坑」。
-> 參考實作：`UCL_SessionBase` / `UCL_FreeTimeSession` / `HSceneSpineImportConfig`。
-
+> ⇒ **完整規則、API 對照與 round-trip 驗收協議在專章**，本 skill 不重抄：
+> `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md`
+>
+> 參考實作：`UCL_ScreenStreamConfig`（跨語言 config ＋ 未知鍵保留）／
+> `UCL_StreamWatchSession` 等五個 model（class 放 Cmd 檔內）／`UCL_SessionBase` / `UCL_FreeTimeSession`。
 ## 🖥 寫 Editor 頁 / 任何 IMGUI
 
 **不要直接堆 `GUILayout` 原生 API** —— UCL_Core 有一整層封裝，處理了 DPI 縮放、樣式一致性、

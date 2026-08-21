@@ -15,7 +15,8 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 | 文件 | 用途 |
 |---|---|
-| [Coding_Standards](Agent/Coding_Standards.md) | C# 設定 model、`JsonData` 邊界與字串 key 規範 |
+| [Json_Coding_Standards](Agent/Json_Coding_Standards.md) | **JSON 讀寫** — typed model、`JsonData` API、序列化的六個坑與 round-trip 驗收 |
+| [Coding_Standards](Agent/Coding_Standards.md) | C# 字串 key、外部 Process 與 letters 路徑規範 |
 | [Code_Comment_Standards](Agent/Code_Comment_Standards.md) | 程式碼註解規範 |
 | [Python_Coding_Standards](Agent/Python_Coding_Standards.md) | Python CLI 硬規則 — 路徑走 `ucl_paths`、錢走 Cmd、失敗要出聲 |
 | [Web_Coding_Standards](Agent/Web_Coding_Standards.md) | 靜態網頁 — `file://` 與 Pages 雙場景、零外部依賴、`innerHTML` 先跳脫 |

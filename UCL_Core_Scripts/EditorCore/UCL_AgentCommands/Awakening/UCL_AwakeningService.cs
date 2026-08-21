@@ -894,6 +894,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aLockJson["actual_agent"] = aActual;
             aLockJson["model"] = aModel;
             aLockJson["bank_account"] = aBank;
+            // 本次 wake 的**期望編號**（＝當時信數+1）—— sleep 端的 letter 閘門要靠它
+            // 才有「期望 vs 既成事實」兩個獨立來源（見 UCL_SessionLockData.wake_expected）。
+            aLockJson["wake_expected"] = aDerived;
             aLockJson["locked_at"] = NowIso();
             aLockJson["session_key"] = aSessionKey;
             aLockJson["claim_origin"] = aClaimOrigin;
@@ -1495,17 +1498,47 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             var aRaw = UCL_PersonaProfile.GetRaw(iPersona);   // 接縫：真相源＝letters/<persona>/
             var aP = new UCL_PersonaData(); aP.DeserializeFromJson(aRaw); aP.name = iPersona;
             // letter-before-sleep 前置守衛。
-            // ⚠ 這道閘的兩邊是**同一把尺量的兩個時刻**：wakes/ 信數（現在）vs wake_count 快取
-            //   （step=wake 時由「當時信數+1」蓋章的期望）——它驗的是「期望的轉移有沒有兌現」。
-            //   **不准簡化成 sleep 端自己重數信數當快取比對**（看起來更簡潔）——兩邊同源同時刻
-            //   = 閘門安靜地永綠，而簡化它的人不會知道自己拆了閘（apex-one 2026-08-13 失效預言，照收）。
+            // ⚠ 這道閘的兩邊必須是**兩個獨立來源**：wakes/ 信數（既成事實）vs **lock 蓋章的期望編號**
+            //   （`wake_expected`，登入時由「當時信數+1」寫進 lock）。它驗的是「期望的轉移有沒有兌現」。
+            // 🩸 2026-08-21 basecamp：我把 `wake_count` 從快取改成**由 wakes/ 信數推導**，
+            //   於是這道閘原本比的兩邊變成同源 —— apex-one 2026-08-13 預言「同源同時刻＝閘門安靜地永綠」，
+            //   而我做出來的是**恆擋**（在線時推導值＝信數+1，寫完信永遠差 1）。同一個病、另一個症狀：
+            //   **拆掉閘門的方式不只有讓它永遠通過，也可以讓它永遠不通過。**
+            //   ⇒ 期望那一半改由 lock 供給；舊 lock（沒這一欄）走 mtime 備援，並**明說走的是備援**。
             int aLetters = WakeLetterCount(iPersona);
-            if (!iNoLetter && aLetters != aP.wake_count)
+            var aLockPre = ReadLock(iPersona);
+            if (!iNoLetter)
             {
-                aR.AppendLine($"## blocked");
-                aR.AppendLine($"- reason: 本次收尾信尚未落地（wakes/ 信數={aLetters}，registry wake_count={aP.wake_count}）—— 沒寫信不讓睡，未來的妳醒來會沒有 framing");
-                aR.AppendLine($"- exits: 先跑 step=letter；手動登出 / cleanup 不寫信 → 改跑 step=logout（會在廣播標明未留信）");
-                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+                int aExpected = aLockPre?.wake_expected ?? 0;
+                if (aExpected > 0)
+                {
+                    if (aLetters != aExpected)
+                    {
+                        aR.AppendLine("## blocked");
+                        aR.AppendLine($"- reason: 本次收尾信尚未落地（wakes/ 信數={aLetters}，lock 蓋章的本次編號={aExpected}）—— 沒寫信不讓睡，未來的妳醒來會沒有 framing");
+                        aR.AppendLine("- exits: 先跑 step=letter；手動登出 / cleanup 不寫信 → 改跑 step=logout（會在廣播標明未留信）");
+                        aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+                    }
+                }
+                else
+                {
+                    // 備援：lock 沒有蓋章（2026-08-21 之前登入的 session）⇒ 改問「最新那封信是不是這次 session 寫的」。
+                    // 判準與 brief 新鮮度那道閘同一把尺（檔案 mtime vs locked_at），不是重數信數。
+                    DateTime aLockedAt = DateTime.MinValue;
+                    DateTime.TryParse(aLockPre?.locked_at ?? "", null,
+                        System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+                        out aLockedAt);
+                    string aNewest = WakeLetterFiles(iPersona).LastOrDefault();
+                    DateTime aLetterAt = aNewest != null ? File.GetLastWriteTimeUtc(aNewest) : DateTime.MinValue;
+                    if (aNewest == null || (aLockedAt != DateTime.MinValue && aLetterAt <= aLockedAt))
+                    {
+                        aR.AppendLine("## blocked");
+                        aR.AppendLine($"- reason: 本次收尾信尚未落地（lock 沒有 wake_expected 蓋章 ⇒ 走 mtime 備援：最新收尾信 {(aNewest == null ? "不存在" : aLetterAt.ToString("u"))} 不晚於 locked_at {aLockedAt:u}）");
+                        aR.AppendLine("- exits: 先跑 step=letter；手動登出 / cleanup 不寫信 → 改跑 step=logout（會在廣播標明未留信）");
+                        aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+                    }
+                    aR.AppendLine($"ℹ letter 閘門走 **mtime 備援**（此 lock 建立於 wake_expected 蓋章上線前）：最新收尾信 {aLetterAt:u} > locked_at {aLockedAt:u} ⇒ 放行。");
+                }
             }
             var aLock = ReadLock(iPersona);
             if (aLock == null)

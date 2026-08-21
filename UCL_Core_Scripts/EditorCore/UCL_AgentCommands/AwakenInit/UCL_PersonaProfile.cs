@@ -189,8 +189,12 @@ namespace UCL.Core.EditorLib.AgentCommands
             if (aLock != null && !string.IsNullOrEmpty(aLock.locked_at))
                 jd["last_active"] = new JsonData(aLock.locked_at);
 
+            // wake_count：`wakes/` 信數是既成事實；「本次編號」由 lock 蓋章的 `wake_expected` 供給。
+            // ⚠ 不可寫成「在線就 +1」：收尾信寫完之後信數已經追上期望，硬加 1 會讓顯示值多一歲，
+            //   而 sleep 端的 letter 閘門就是拿這兩個數在對帳（2026-08-21 實測恆擋）。
             int aLetters = Awakening.UCL_AwakeningService.WakeLetterCount(iPersona);
-            jd["wake_count"] = new JsonData(aLock != null ? aLetters + 1 : aLetters);
+            int aExpected = aLock?.wake_expected ?? 0;
+            jd["wake_count"] = new JsonData(aExpected > aLetters ? aExpected : aLetters);
 
             var (aSpanEnd, aAt) = Awakening.UCL_AwakeningService.MaxDigestSpan(iPersona);
             if (aSpanEnd > 0)

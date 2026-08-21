@@ -69,6 +69,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public string session_token = "";
         public string claim_origin = "";
         public string locked_at = "";
+        /// <summary>登入時蓋章的**本次 wake 期望編號**（＝當時 wakes/ 信數 + 1）。
+        /// 為什麼要存：`wake_count` 2026-08-21 起改成由 wakes/ 信數推導 ⇒ sleep 端的
+        /// letter-before-sleep 閘門若拿它比信數，就是**同源同時刻自己比自己**
+        /// （apex-one 2026-08-13 預言的失效形狀）。這一欄是「期望」那一半的獨立來源。
+        /// 0 ＝ 舊 lock 沒有這一欄（走 mtime 備援判準）。</summary>
+        public int wake_expected = 0;
         public int pid = 0;
 
         public static UCL_SessionLockData LoadFromFile(string iPath)

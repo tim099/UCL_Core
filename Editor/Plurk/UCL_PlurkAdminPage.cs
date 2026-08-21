@@ -15,7 +15,7 @@
 //     Tim 2026-08-21：「目前 page 有下拉選單透過 reflection 可以選取」⇒ 不必動 `UCL_ToolBoxPage`
 //     （它住 `UCL_Core` 組件，看不到 `Editor/` 這側，硬接會生出字串型別名那族的坑）。
 // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/UCL_EditorPage/UCL_PlurkAdminPage.md（本頁的操作與判準）
-// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Plan/Plan_Plurk_Bot.md（§3 帳號解析／§4 token 存放）
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/Plurk_Maintenance.md（§4 帳號與憑證）
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;

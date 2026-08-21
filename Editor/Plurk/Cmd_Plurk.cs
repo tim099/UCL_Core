@@ -12,9 +12,9 @@
 //          真送時寫一筆 audit jsonl（時間／persona／帳號／source／內容雜湊／回傳 plurk id）。
 //
 // ⛔ 發布不可回復，而 Plurk 沒有 history ⇒ 這支永遠不自動發：`confirm=1` 是人打的。
-// ⚠ 端點與參數名：Plan §5 標了「未對照官方文件」（官方頁 403）。目前實測通的是
-//   `/APP/Users/me`（唯讀，200）；`/APP/Timeline/plurkAdd` 的參數以社群慣例為準，
-//   ⇒ 所以 `preview` 印出**完整將送內容**，讓人在送之前用眼睛驗一次。
+// ⚠ 端點與參數的**驗證狀態**：事實來源在 `Docs~/{lang}/Workflows/Plurk_Maintenance.md` §5
+//   （別在這裡另記一份 —— 兩份清單必漂，而漂掉的那份看起來一樣可信）。
+//   ⇒ `preview` 印出**完整將送內容**，讓人在送之前用眼睛驗一次。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -41,14 +41,14 @@ namespace UCL.Core.EditorLib.Plurk
         public override string ArgsSchema =>
             "op=resolve|lint|preview|post|whoami（預設 resolve） | " +
             "persona=<誰要發，lint/preview/post 建議給 —— 決定用共用還是個人帳號> | " +
-            "slip_file=<交付單檔案路徑>（lint/preview/post 必填；四欄格式見 Plurk_Posting_Workflow §二） | " +
+            "slip_file=<交付單檔案路徑>（lint/preview/post 必填；**五欄**格式見 Plurk_Posting_Workflow §2） | " +
             "confirm=1（**只有 post 需要**；沒帶＝dry-run 只印不送） | " +
             "reply_to=<plurk id>（把這則發成該噗的回應 —— 長文拆則的預設形態）";
 
         public override string ExampleArgs =>
             "op=preview;persona=basecamp;slip_file=D:/tmp/slip.txt";
 
-        public override string HelpURL => "ucl_core:Docs~/{lang}/Plan/Plan_Plurk_Bot.md";
+        public override string HelpURL => "ucl_core:Docs~/{lang}/Workflows/Plurk_Posting_Workflow.md";
 
         const string ApiBase = "https://www.plurk.com";
         // plurk.com 在 Cloudflare 後面：預設 .NET/urllib UA 會被 WAF 依瀏覽器簽章擋掉，

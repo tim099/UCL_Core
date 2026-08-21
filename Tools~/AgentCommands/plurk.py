@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # 區塊職責：Plurk 串接的最底層 —— 帳號解析 ＋ OAuth 1.0a 簽章 ＋ **唯讀**端點驗證。
-# 物理意義：Plan_Plurk_Bot §5 標了「精確端點與參數名未驗證（官方 API 頁抓取回 403）」。
+# 物理意義：端點與參數的驗證狀態住 Plurk_Maintenance §5（事實來源只有那一份）。
 #          所以本檔的第一個目的**不是發文**，是回答「憑證與簽章到底通不通」——
 #          而那只能拿唯讀端點實跑，不能靠讀文件推論。
 # 數值影響：`resolve` 不連網、零副作用；`whoami` 只打唯讀端點（不寫任何 Plurk 資料）。
@@ -15,7 +15,7 @@
 #      本專案 2026-08-21 起是 `Secret/` 且已拆成獨立 private submodule）。
 #      ⛔ 不寫死 `_secrets` 或 `Secret` —— 寫死跨專案必壞，而寫檔會自動建目錄 ⇒ 靜默長出平行宇宙。
 #
-# 相關：ucl_core:Docs~/{lang}/Plan/Plan_Plurk_Bot.md（三期分工）
+# 相關：ucl_core:Docs~/{lang}/Workflows/Plurk_Maintenance.md（架構分工／端點驗證狀態）
 #      ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_PlurkAdminPage.md（帳號層與憑證檔契約）
 #      ucl_core:Docs~/{lang}/Workflows/Plurk_Posting_Workflow.md（現行手動發文流程與鐵律）
 from __future__ import annotations

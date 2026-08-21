@@ -23,6 +23,11 @@
       "optional": false
     },
     {
+      "name": "ucl-plurk",
+      "summary": "對外發噗（Plurk）—— 走 Cmd Plurk 的 lint/preview/post 三步（post 需 confirm=1，預設 dry-run）；五欄交付單（含公開度，沒填就擋）。規則本體在 C# UCL_PlurkLint；機器只驗形式，公開度審查與 confirm 永遠是人的。維護面另有 Plurk_Maintenance.md。",
+      "optional": false
+    },
+    {
       "name": "ucl-auto-message",
       "summary": "Auto-Message Trigger (Proposal #26) — key 命中 input 自動 inject 預設訊息; 每 fire 1 token, per-session 防循環",
       "optional": false

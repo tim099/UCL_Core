@@ -16,7 +16,7 @@
 //   · persona override **寫在 persona profile**（`UCL_PersonaProfile.SetField`，actor/reason 必填），
 //     不寫 `AwakenInit/personas/<name>.json` —— 那個舊源 2026-08-19 起**只出不進，寫了不會生效**。
 // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/UCL_EditorPage/UCL_PlurkAdminPage.md（帳號解析三段表）
-// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Plan/Plan_Plurk_Bot.md（§3 帳號解析）
+// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/Plurk_Maintenance.md（§4 帳號與憑證）
 // ⚠ **本檔刻意放 `Editor/`（assembly `UCL_CoreEditor`）而不是 `UCL_Core_Scripts/`**：
 //   組件引用是單向的 —— `UCL_CoreEditor` → `UCL_Core`。SecretManager 住在 `Editor/`，
 //   所以放在 `UCL_Core_Scripts` 的檔案**看不到 `UCL_SecretScanner`**（CS0246）。

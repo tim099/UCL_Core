@@ -14,7 +14,9 @@ status: v1.0（Tim 2026-08-21：「先處理帳號相關部分即可」）
 > 📦 相關
 > - 憑證本體（加密／解密安裝／hint）：[`Secret_Manager_Workflow.md`](../Workflows/Secret_Manager_Workflow.md)（頁面：`UCL_SecretManagerPage`）
 > - 發文規則與交付格式：[`Plurk_Posting_Workflow.md`](../Workflows/Plurk_Posting_Workflow.md)
-> - 整體規劃（lint / preview / post 三期）：[`Plan_Plurk_Bot.md`](../Plan/Plan_Plurk_Bot.md)
+> - **發文流程**：[`Plurk_Posting_Workflow.md`](../Workflows/Plurk_Posting_Workflow.md)（skill `ucl-plurk`）
+> - **維護／擴充**：[`Plurk_Maintenance.md`](../Workflows/Plurk_Maintenance.md)
+> - 設計沿革（已完成）：[`Plan_Plurk_Bot.md`](../Plan/completed/Plan_Plurk_Bot.md)
 > - 實作：`Editor/Plurk/UCL_PlurkAccounts.cs`（解析）／`Editor/Plurk/UCL_PlurkAdminPage.cs`（本頁）
 
 ## 入口
@@ -168,7 +170,13 @@ Tim 2026-08-21 實際照這篇跑完：<https://www.plurk.com/p/nrwtgh>
 | `secrets_config.json` | `{"SecretsDir":"Secret"}` ⇒ secret 目錄 = `AgentCommands/Secret/`（private submodule） |
 | `plurk_accounts.json` | `SharedSecretId = plurk_shared` |
 | `ListSecretIds()` | `[plurk_shared]` |
-| `Resolve("basecamp")` → `Describe()` | **`共用帳號（plurk_shared）—— 末行署名必填`** |
+| `Resolve("basecamp")` → `Describe()`（**當時 basecamp 還沒有個人帳號**） | `共用帳號（plurk_shared）—— 末行署名必填` |
+
+> ⚠ **這一格 2026-08-21 傍晚就過期了** —— Tim 隨後替 basecamp／summit 各裝了個人帳號，
+> 同一支 `Resolve("basecamp")` 現在回 `個人帳號（plurk_basecamp）`。
+> ⇒ **解析結果會隨 profile 變動，所以本文件不再釘死一個值**：
+> 要知道現在走哪個帳號就跑 `run Plurk --arg op=resolve`。
+> 釘死一個會變的值＝製造下一個過期讀數（而過期的讀數不會叫）。
 | 憑證完整度（只量欄位與長度，**不印值**） | 四欄到齊：`consumer_key` 12 / `consumer_secret` 32 / `access_token` 12 / `access_token_secret` 32 |
 | 明文安裝 | **已安裝**（`Secret/plurk_shared.txt` 存在）⇒ 帳號層真的可用，不只是「有 `.enc`」 |
 | 明文是否進版控 | `git ls-files` 只有 `.gitignore` / `README.md` / 兩個 `.enc`；`check-ignore` 確認 `.txt` 命中 `*` 全擋 ⇒ **沒進版控** |

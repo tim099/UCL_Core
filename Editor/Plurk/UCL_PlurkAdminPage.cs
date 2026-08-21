@@ -19,10 +19,12 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UCL.Core.EditorLib;
 using UCL.Core.EditorLib.AgentCommands;
 using UCL.Core.EditorLib.Page;
 using UCL.Core.EditorLib.SecretManager;
+using UCL.Core.JsonLib;
 using UCL.Core.UI;
 using UnityEditor;
 using UnityEngine;
@@ -61,6 +63,22 @@ namespace UCL.Core.EditorLib.Plurk
         readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
         string m_Status = "";
         MessageType m_StatusType = MessageType.None;
+
+        // 區塊職責：憑證輸入欄（產出 .enc 用）。
+        // 物理意義：**這些欄位裡的值是秘密** —— 產出成功後由 ClearCredFields 清空，
+        //          不留在頁面狀態裡（頁面 instance 活著的期間都算殘留面）。
+        // 數值影響：`m_CredId` / hint / label 不是秘密，刻意**不清**（重複建立時省事）。
+        string m_CredId = "plurk_shared";
+        string m_CredConsumerKey = "";
+        string m_CredConsumerSecret = "";
+        string m_CredAccessToken = "";
+        string m_CredAccessSecret = "";
+        string m_CredNote = "";
+        string m_CredPass = "";
+        string m_CredPassConfirm = "";
+        string m_CredHint = "";
+        string m_CredLabel = "";
+        bool m_CredAllowOverwrite = false;
 
         GUIStyle m_WrapLabel;
         GUIStyle WrapLabel => m_WrapLabel ??= new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true };
@@ -146,6 +164,7 @@ namespace UCL.Core.EditorLib.Plurk
             }
 
             DrawShared();
+            DrawCredentialPanel();
             DrawPersonas();
             DrawStatus();
         }
@@ -163,11 +182,8 @@ namespace UCL.Core.EditorLib.Plurk
                 // ⚠ 選項永遠 ≥ 1（第一項是「(未設定)」）—— PopupSearchCache 空清單會 LogError
                 using (new GUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("secret id", UCL_GUIStyle.LabelStyle,
-                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(110)));
-                    m_SharedIdx = UCL_GUILayout.PopupSearchCache(
-                        Mathf.Clamp(m_SharedIdx, 0, m_Options.Count - 1), m_Options, m_Dic, "SharedPicker");
-                    GUILayout.FlexibleSpace();
+                    GUILayout.Label("secret id", UCL_GUIStyle.LabelStyle,GUILayout.ExpandWidth(false));
+                    m_SharedIdx = UCL_GUILayout.PopupSearchCache(Mathf.Clamp(m_SharedIdx, 0, m_Options.Count - 1), m_Options, m_Dic, "SharedPicker");
                 }
 
                 if (m_SecretIds.Count == 0)
@@ -243,6 +259,151 @@ namespace UCL.Core.EditorLib.Plurk
         }
 
         // ===========================================================
+        // 產生憑證（填欄位 → 直接產出 .enc）
+        // ===========================================================
+        // 區塊職責：把「手動編明文 JSON → 存檔 → 去 Secret Manager 選檔加密」收成一個面板。
+        // 物理意義：流程沿用 `UCL_SecretManagerPage.DoEncrypt`（`UCL_SecretCrypto.Encrypt`，
+        //          C# native、PBKDF2 200k + AES-256），**不另造第二套加密**。
+        // 數值影響（兩處刻意比原版嚴）：
+        //   ① **明文不落地**：JSON 在記憶體組好直接加密，`_secrets/*.txt` 全程不產生。
+        //      原版流程是「先有 .txt 再加密」，那份 .txt 會一直留在磁碟上；
+        //      這裡少一份殘留就少一個外洩面（明文雖 gitignored，但 gitignored ≠ 不存在）。
+        //      ⚠ 之後要真的發文仍需明文 —— 那由 Secret Manager 的「解密安裝」產生，
+        //        時機由人決定，而不是在建立憑證的這一刻就攤在磁碟上。
+        //   ② **覆蓋要顯式勾選**：`.enc` 已存在時按鈕停用，勾了「允許覆蓋」才放行。
+        //      覆蓋掉的是一份**再也拿不回來**的憑證（passphrase 不可反推），
+        //      而覆蓋成功跟第一次建立**看起來一模一樣**。
+        //   · 成功後四個憑證欄與 passphrase 全部清空 —— 不在頁面狀態裡留 token。
+        //   · **全程不 log 任何值**（Debug 只印檔名與長度）。
+        void DrawCredentialPanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.Label("🔑 產生憑證（填欄位 → 直接產出 .enc）", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label("OAuth 1.0a 四個值：前兩個認 app、後兩個認「以哪個帳號發文」。"
+                    + "四欄到齊才發得出去 —— 只有 consumer key/secret 是不夠的。", WrapLabel);
+
+                m_CredId = EditorGUILayout.TextField("secret id", m_CredId);
+                if (!string.IsNullOrEmpty(m_CredId)
+                    && !m_CredId.StartsWith(UCL_PlurkAccounts.SecretPrefix, StringComparison.Ordinal))
+                {
+                    // 前綴不是裝飾：本頁的帳號清單就是靠它篩出來的，命名錯了不會報錯，
+                    // 只會「產出了 .enc 但下拉選單裡看不到」。
+                    GUILayout.Label($"⚠ id 必須以 `{UCL_PlurkAccounts.SecretPrefix}` 開頭，"
+                        + "否則本頁的帳號清單掃不到它（產出成功但選單裡沒有）。", WrapLabel);
+                }
+
+                m_CredConsumerKey = EditorGUILayout.TextField("consumer key", m_CredConsumerKey);
+                m_CredConsumerSecret = EditorGUILayout.PasswordField("consumer secret", m_CredConsumerSecret);
+                m_CredAccessToken = EditorGUILayout.TextField("access token", m_CredAccessToken);
+                m_CredAccessSecret = EditorGUILayout.PasswordField("access token secret", m_CredAccessSecret);
+                m_CredNote = EditorGUILayout.TextField("備註 (note, 選填)", m_CredNote);
+
+                GUILayout.Space(4);
+                m_CredPass = EditorGUILayout.PasswordField("Passphrase", m_CredPass);
+                m_CredPassConfirm = EditorGUILayout.PasswordField("再次確認", m_CredPassConfirm);
+                m_CredHint = EditorGUILayout.TextField("提示 (hint, 選填)", m_CredHint);
+                m_CredLabel = EditorGUILayout.TextField("標籤 (label, 選填)", m_CredLabel);
+
+                bool aIdOk = !string.IsNullOrWhiteSpace(m_CredId)
+                    && m_CredId.StartsWith(UCL_PlurkAccounts.SecretPrefix, StringComparison.Ordinal);
+                bool aFieldsOk = !string.IsNullOrWhiteSpace(m_CredConsumerKey)
+                    && !string.IsNullOrWhiteSpace(m_CredConsumerSecret)
+                    && !string.IsNullOrWhiteSpace(m_CredAccessToken)
+                    && !string.IsNullOrWhiteSpace(m_CredAccessSecret);
+                bool aPassOk = !string.IsNullOrEmpty(m_CredPass);
+                bool aMatchOk = m_CredPass == m_CredPassConfirm;
+
+                if (aPassOk && !aMatchOk) GUILayout.Label("⚠ 兩次 passphrase 不一致", WrapLabel);
+                if (!aFieldsOk) GUILayout.Label("⚠ 四個憑證欄都要填 —— 缺 access token 的症狀是"
+                    + "「看起來設好了但發不出去」，而那時分不出缺的是哪一半。", WrapLabel);
+
+                string aEncPath = CredEncPath();
+                bool aExists = !string.IsNullOrEmpty(aEncPath) && File.Exists(aEncPath);
+                if (aExists)
+                {
+                    GUILayout.Label($"⚠ `{Path.GetFileName(aEncPath)}` 已存在。覆蓋掉的憑證"
+                        + "**拿不回來**（passphrase 不可反推），而覆蓋成功跟第一次建立看起來一樣。", WrapLabel);
+                    using (new GUILayout.HorizontalScope())
+                    {
+                        m_CredAllowOverwrite = UCL_GUILayout.CheckBox(m_CredAllowOverwrite);
+                        GUILayout.Label("我確定要覆蓋它", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                        GUILayout.FlexibleSpace();
+                    }
+                }
+
+                bool aCanGo = aIdOk && aFieldsOk && aPassOk && aMatchOk && (!aExists || m_CredAllowOverwrite);
+                using (new EditorGUI.DisabledScope(!aCanGo))
+                {
+                    if (GUILayout.Button("🔐 產出 .enc（明文不落地）",
+                            UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 1f, 0.5f)),
+                            GUILayout.ExpandWidth(false)))
+                    {
+                        GenerateSecret();
+                    }
+                }
+                GUILayout.Label("產出的 `.enc` 可 commit。**但它還不能用** —— 要到「🔐 Secret 管理」"
+                    + "做一次解密安裝產生明文，本頁的 token 狀態才會從「未安裝」變成已安裝。", WrapLabel);
+            }
+        }
+
+        string CredEncPath()
+        {
+            string aId = (m_CredId ?? "").Trim();
+            if (string.IsNullOrEmpty(aId)) return "";
+            return Path.Combine(UCL_AgentCommandsPath.DataRoot, "_secrets", aId + ".enc")
+                .Replace('\\', '/');
+        }
+
+        // 區塊職責：把四個欄位組成契約 JSON → 加密 → 落 .enc。
+        // 物理意義：JSON **用 JsonData 組不用字串串接** —— 憑證裡若含引號或反斜線，
+        //          串接會產出壞掉的 JSON，而那是「寫成功了但讀不回來」那一族
+        //          （今天已經被跳脫層咬過五次，這裡不留第六次的位置）。
+        void GenerateSecret()
+        {
+            try
+            {
+                var aJson = new JsonData();
+                aJson["account"] = new JsonData((m_CredId ?? "").Trim());
+                aJson["note"] = new JsonData(m_CredNote ?? "");
+                aJson["consumer_key"] = new JsonData((m_CredConsumerKey ?? "").Trim());
+                aJson["consumer_secret"] = new JsonData((m_CredConsumerSecret ?? "").Trim());
+                aJson["access_token"] = new JsonData((m_CredAccessToken ?? "").Trim());
+                aJson["access_token_secret"] = new JsonData((m_CredAccessSecret ?? "").Trim());
+
+                byte[] aPlain = new System.Text.UTF8Encoding(false).GetBytes(aJson.ToJsonBeautify());
+                byte[] aEnc = UCL_SecretCrypto.Encrypt(aPlain, m_CredPass,
+                    m_CredHint ?? "", m_CredLabel ?? "");
+
+                string aPath = CredEncPath();
+                string aDir = Path.GetDirectoryName(aPath);
+                if (!string.IsNullOrEmpty(aDir) && !Directory.Exists(aDir)) Directory.CreateDirectory(aDir);
+                File.WriteAllBytes(aPath, aEnc);
+
+                // ⚠ 只報檔名與長度，**不報任何值**
+                SetStatus($"✅ 已產出 {Path.GetFileName(aPath)}（{aEnc.Length} bytes）。"
+                    + "明文全程沒有落地；要真的能用還需到 Secret 管理做一次解密安裝。", MessageType.Info);
+                ClearCredFields();
+                Reload();
+            }
+            catch (ArgumentException ae) { SetStatus($"⛔ 加密參數錯誤：{ae.Message}", MessageType.Error); }
+            catch (Exception e) { SetStatus($"⛔ 產出失敗：{e.Message}", MessageType.Error); }
+            GUI.FocusControl(null);
+        }
+
+        // 成功後不在頁面狀態裡留任何憑證 —— id/hint/label 留著（那些不是秘密，重複建立時省事）
+        void ClearCredFields()
+        {
+            m_CredConsumerKey = "";
+            m_CredConsumerSecret = "";
+            m_CredAccessToken = "";
+            m_CredAccessSecret = "";
+            m_CredPass = "";
+            m_CredPassConfirm = "";
+            m_CredAllowOverwrite = false;
+        }
+
+        // ===========================================================
         // persona 對照（個人帳號 override）
         // ===========================================================
         void DrawPersonas()
@@ -263,28 +424,23 @@ namespace UCL.Core.EditorLib.Plurk
         {
             using (new GUILayout.HorizontalScope("box"))
             {
-                GUILayout.Label(iRow.Persona, UCL_GUIStyle.LabelStyle,
-                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(140)));
+                GUILayout.Label(iRow.Persona, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
 
                 string aKind = iRow.Res.Source == UCL_PlurkAccounts.SourcePersona ? "個人"
                     : iRow.Res.Source == UCL_PlurkAccounts.SourceShared ? "共用" : "—";
-                GUILayout.Label(aKind, UCL_GUIStyle.LabelStyle,
-                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(48)));
+                GUILayout.Label(aKind, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
 
                 // 解析結果一律連 Source 一起顯示 —— 「用哪個」跟「憑什麼」要一起看得到
-                GUILayout.Label(iRow.Res.Describe(), WrapLabel);
+                GUILayout.Label(iRow.Res.Describe(), WrapLabel, GUILayout.ExpandWidth(false));
 
                 string aToken = !iRow.Res.Resolved ? ""
                     : iRow.Secret == null ? "⛔ 無 .enc"
                     : iRow.Secret.PlainExists ? "✅" : "⚠ 未安裝";
-                GUILayout.Label(aToken, UCL_GUIStyle.LabelStyle,
-                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                GUILayout.Label(aToken, UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
 
                 int aCur = iRow.Res.Source == UCL_PlurkAccounts.SourcePersona
                     ? Mathf.Max(0, m_Options.IndexOf(iRow.Res.SecretId)) : 0;
-                int aNext = UCL_GUILayout.PopupSearchCache(
-                    Mathf.Clamp(aCur, 0, m_Options.Count - 1), m_Options, m_Dic, "P_" + iRow.Persona,
-                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                int aNext = UCL_GUILayout.PopupSearchCache(Mathf.Clamp(aCur, 0, m_Options.Count - 1), m_Options, m_Dic, "P_" + iRow.Persona);
                 if (aNext != aCur)
                 {
                     string aId = (aNext <= 0 || aNext >= m_Options.Count) ? "" : m_Options[aNext];

@@ -9,6 +9,7 @@ target_audience: [AI_Agent, Developer]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md | Cmd 架構 | **§8.1 已記載 per-persona queue 隔離**，本案不是發明它，是把它接上
   - ucl_core:Docs~/{lang}/Plan/Plan_RunCmd_Split_And_CSharp_Migration.md | run_cmd 拆分 | `--agent-id` / `--persona` 旗標的來源
+  - ucl_core:Docs~/{lang}/Plan/Plan_AutoCommit_Single_Flight.md | 自動提交單一飛行 | **下游**：本案的 lane 併行一落地，自動提交的互斥閘就從選配變必要（summit 2026-08-21 補的反向連結）
 ---
 
 # Cmd 多人併發強化

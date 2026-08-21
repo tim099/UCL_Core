@@ -66,6 +66,40 @@ status: v1.0（Tim 2026-08-21：「先處理帳號相關部分即可」）
 - 寫入走 `UCL_PersonaProfile.SetField`（`actor` / `reason` 必填、有審計 jsonl），
   **不碰 `AwakenInit/personas/<name>.json`** —— 那個舊源 2026-08-19 起只出不進，寫了不會生效
 
+## 憑證檔長什麼樣（Phase 1 讀取契約）
+
+OAuth 1.0a 一定是**四個值**：前兩個認 app、後兩個認「以哪個帳號發文」。
+所以一份 Plurk secret ＝ 一個 JSON，四欄到齊才算完整：
+
+```json
+{
+  "account": "shared",
+  "note": "自由文字備註",
+  "consumer_key": "…",
+  "consumer_secret": "…",
+  "access_token": "…",
+  "access_token_secret": "…"
+}
+```
+
+⚠ **只有 consumer key/secret（app 層）是不能發文的** —— 那組只認 app，不認帳號。
+access token 要在 Plurk 端對那個帳號做一次授權才拿得到。
+
+### 安裝步驟（**由人做，agent 不碰憑證**）
+
+1. 建 `AgentCommands/_secrets/plurk_<account>.txt`，內容照上面的 JSON
+   （`_secrets/.gitignore` 是 `*` 全擋 ＋ `!*.enc` ⇒ **明文永不進版控，只有 `.enc` 會**）
+2. Secret Manager 頁 →「從明文加密」選該 `.txt` → 填 passphrase／hint／label → 產出 `.enc`
+   - ⚠ hint 不可寫密碼本身
+   - passphrase 只有人知道
+3. 回本頁 →「🔄 重新整理」→ 共用帳號下拉會出現該 id → 選它 → 💾 存檔
+4. 本頁會分開顯示 `.enc 有` 與 `明文已安裝` —— **只有後者代表真的能用**
+
+> ⛔ **agent 不寫入憑證。** 這不是流程偏好，是硬界線：
+> API key / token / passphrase 一律由人自己貼進檔案或彈窗，agent 只讀「已解密的明文」與 secret **id**。
+> ⚠ 若憑證曾以純文字出現在對話、log 或訊息裡 ⇒ 到 Plurk app console **rotate 一組**，
+> 因為那些地方可能被保留或轉述，而**憑證外洩不會有任何錯誤訊息**。
+
 ## 讀寫時機
 
 讀檔只在 `Init` / 「🔄 重新整理」/ 寫入後 —— **`Draw` 裡零 IO**。

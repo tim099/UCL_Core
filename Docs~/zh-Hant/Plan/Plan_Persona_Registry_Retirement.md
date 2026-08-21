@@ -266,7 +266,7 @@ letters/<persona>/
 | BUG-16 | `op=set` 無法把欄位還原成 **absent**（三態的第三態寫不出來）⇒ 唯一復原是手動刪檔＝繞過審計。建議 `op=unset` |
 | BUG-17 | 接縫 module 被同一行程**載入三份**（awakening / agent_email / wake_brief 各自 `spec_from_file_location`）⇒ 不帶 `UCL_PP_SKIP_CMD` 時是 3 次 Cmd 往返 |
 | BUG-18 | §4.1 那份殘留清單本身 |
-| BUG-19 | **tier-3 local-parse 會讓 commit trailer 寫出別人的信箱**（不可改產物）。實測 identity 168 格 tier-2/tier-3 分岔 5 格全是 `email`；抽樣 5 人 4 人的 trailer 分岔成「格式合法但屬於別人」的地址，零警告。根因＝`resolve_email` 不傳遞接縫的 `_source`。<br>⚠ **Tim 2026-08-20 窄化**：本地備援**在正常流程中不該被讀到** —— tier-3 只在 Editor 不可用時觸發，而正常提交流程（公告領薪）本來就要 Editor。⇒ 唯一活路是 **fresh clone ＋ Unity 從未開過 ＋ 走 `--no-announce` 或裸 `git commit` 觸發 commit-msg hook**，**目前實務上不會遇到**。⇒ 不擋 Phase 2，優先序低；跟 §8.4「tier-3 刻意不修」同一條理路 —— 現在補一段永不觸發的 fail-loud，就是 §8.1 央行 fallback 那個「沒有消費端的 code」的重演。真要收，收在 Phase 3 移除 legacy 分支時一起。 |
+| BUG-19 | **tier-3 local-parse 會讓 commit trailer 寫出別人的信箱**（不可改產物）。實測 identity 168 格 tier-2/tier-3 分岔 5 格全是 `email`；抽樣 5 人 4 人的 trailer 分岔成「格式合法但屬於別人」的地址，零警告。根因＝`resolve_email` 不傳遞接縫的 `_source`。<br>⚠ **Tim 2026-08-20 窄化**：本地備援**在正常流程中不該被讀到** —— tier-3 只在 Editor 不可用時觸發，而正常提交流程（公告領薪）本來就要 Editor。⇒ 唯一活路是 **fresh clone ＋ Unity 從未開過 ＋ 走裸 `git commit` 觸發 commit-msg hook**，**目前實務上不會遇到**。⇒ 不擋 Phase 2，優先序低；跟 §8.4「tier-3 刻意不修」同一條理路 —— 現在補一段永不觸發的 fail-loud，就是 §8.1 央行 fallback 那個「沒有消費端的 code」的重演。真要收，收在 Phase 3 移除 legacy 分支時一起。 |
 ## 5. 「改資料夾名備份起來，看還有誰在讀」為什麼**驗不出來**
 
 這是本案最重要的一段，因為它是直覺的反面。

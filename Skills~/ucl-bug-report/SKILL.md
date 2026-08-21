@@ -127,7 +127,7 @@ Fixes BUG-12
 
 ⚠ 幾個邊界：
 - **一則 commit 可以帶多個 `Fixes BUG-a` / `Fixes BUG-b`**，每張各自關掉。
-- **`--no-announce` 的 commit 不會關單**（閉環掛在公告成功之後）⇒ 那種情況要手動 `op=resolve`。
+- **關單掛在公告成功之後** —— 公告失敗（`git_commit.py` exit 6）時單子還開著 ⇒ 手動 `op=resolve`。
 - 關單失敗只警告不致命（commit 已落地）—— 看到 `⚠ BUG-n 自動關單失敗` 就手動補一次。
 
 ### ⑤ 修不動的時候，也要收尾

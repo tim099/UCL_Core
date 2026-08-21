@@ -9,6 +9,11 @@ description: |
 # UCL Commit — 提交規範速查
 
 > 一句話：**你負責判斷「哪些檔走哪一筆」與 stage；提交走 `git_commit.py`，trailer 與領薪公告它自己來。**
+>
+> ⚠ **兩條路，沒有第三條**：
+> **有作者的產出**（code / 文件 / 她寫的信）走 `git_commit.py` —— **一律公告領薪，沒有關閉開關**；
+> **沒有作者的檔**（帳本 / 訊息 / cursor / 狀態快照）走 `Cmd AutoCommit` —— 純 git commit，不掛
+> trailer、不公告、不領薪。**「手動但不公告」不是一個選項** —— 不想公告就表示它不該走手動那條。
 
 > [!IMPORTANT]
 > ## 預設是單層（Tim 2026-08-11 拍板）
@@ -148,7 +153,7 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
 
 它會做而你不必記的事：
 - 每位 `--persona` 各一行 trailer（身分／型號／信箱全部推導自檔案，重複自動去重）
-- **提交後自動發酒館公告領薪**，SHA 與 meta 由它填；`--no-announce` 可關
+- **提交後一律發酒館公告領薪**，SHA 與 meta 由它填（沒有關閉開關）
 - **解析訊息裡的 `Fixes BUG-<n>` 並自動關掉那幾張問題回報單**（見下節）
 - `--announce-body` / `--announce-body-file` 是**可選**開場白，插在標題與 commit 內文之間。
   不帶就只發 commit 資訊。（commit 訊息寫給日後查 history 的人，開場白寫給現在在酒館的同事。）
@@ -158,22 +163,6 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
 - persona 檔不存在 / `agent` 欄空白 —— 打錯名字會靜默生出 `?@nobody(?)`，比失敗難查
 - 沒有 staged 變更 —— 本工具只提交，不 stage
 - 查不到 sender 的 bank —— sender 決定錢進誰的帳，猜錯是把薪水發給別人
-- **`--no-announce` 沒帶 `--no-announce-reason`**（exit 2，**擋在 commit 之前**，不留
-  「已提交但沒領薪」的殘局）
-
-### `--no-announce` 必須帶理由（2026-08-05 Tim 拍板）
-
-```bash
---no-announce --no-announce-reason "為什麼這筆不公告"
-```
-
-> 🩸 血證：summit 2026-08-05 一天三次順手打了 `--no-announce`，造成薪水沒領；
-> **每次都自首、還把「規矩對我自己也一樣，別自己發明例外」寫進公告，然後下一次照樣打上去。**
-> 三次同一個動作就不是失誤，是預設行為。
->
-> 修法刻意不是「再提醒一次」——**寫下來只讓下一個人知道，不讓自己記得。**
-> 現在你得先想出一個理由，而**想不出來的時候你就會發現自己沒有理由**。
-> 理由也會被印在「未公告」提示裡 —— 給了理由卻沒人看得見，那個參數就只是形式。
 
 **exit 6 = commit 成功但公告失敗**（錢沒領到，需手動補）。這兩件事刻意分開回報。
 
@@ -227,8 +216,8 @@ console 會印一行 `🐛 BUG-12 已自動關單（<sha>）`。
 
 ⚠ 邊界，每一條都會咬人：
 - **一則 commit 可以帶多行 `Fixes BUG-a` / `Fixes BUG-b`**，各自關掉。
-- **`--no-announce` 的 commit 不會關單** —— 閉環掛在公告成功之後。
-  那種情況要手動 `run BugReport --arg op=resolve --arg index=<n> --arg commit_sha=<SHA>`。
+- **關單掛在公告成功之後** —— 公告失敗（exit 6）時單子還開著，要手動
+  `run BugReport --arg op=resolve --arg index=<n> --arg commit_sha=<SHA>`。
 - 關單失敗**只警告不致命**（commit 已經落地了，不該讓它看起來失敗）——
   看到 `⚠ BUG-n 自動關單失敗` 就手動補一次，別假設它成功了。
 - ⛔ **別在訊息裡寫沒有真的修好的單號。** 關單是對別人的宣告：
@@ -242,10 +231,12 @@ console 會印一行 `🐛 BUG-12 已自動關單（<sha>）`。
 1. `git status` 看全貌；每個 submodule 跑 `git -C <sub> status -b -s` 確認分支。
 2. detached HEAD → 先 `switch` + `pull --ff-only`。
 3. 按分類矩陣判斷每個檔走哪筆。
-3.5 **機器生成的重複性檔先交給自動 commit**（見上節）：
+3.5 **機器生成的重複性檔一律交給自動 commit，這一步不是選配**（見上節）：
    `run AutoCommit --arg op=scan`（＋ `--arg mode=letters`）看清分群 → `--arg op=commit`。
-   這一步先做，剩下的 `git status` 就只剩「有作者的產出」——
+   先做這步，剩下的 `git status` 就只剩「有作者的產出」——
    **分類這件事交給規則，而不是交給你這一刻的注意力。**
+   ⇒ 之後 `git_commit.py` 收到的每一筆都該公告領薪；**發現有東西「不想公告」＝它站錯隊了**，
+   把它移到這一步，不是去找一個關掉公告的方法。
    🩸 為什麼值得先做：2026-08-17 有人把同事 staged 的 gitlink 掃進自己的 commit，
    而那筆的 `--name-only` 清單其實印出來了 —— 印了但沒讀。**縮短要讀的清單比要求自己更專心有效。**
 4. stage → `git_commit.py` 提交（trailer 與公告自動）。

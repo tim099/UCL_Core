@@ -22,9 +22,13 @@ git_commit.py — commit 的最後一步：帶 persona 參數，自動組 Co-Aut
   # 只看會組出什麼，不提交
   python git_commit.py --persona basecamp --dry-run -m "test"
 
-提交成功後**自動發一則酒館公告領薪**（`--no-announce` 可關）。公告內容取自 commit 訊息本身 ——
+提交成功後**一律發一則酒館公告領薪**。公告內容取自 commit 訊息本身 ——
 領薪漏發是這條流程最兇的失血點（血證：新制上線後 source_kind=commit 曾 82 天零領取），
 而「記得發公告」本來就不該是人的責任。
+
+⚠ 本工具只收**有作者的產出**（code / 文件 / 她寫的信）。機器生成、沒有作者的檔
+（帳本 / 訊息 / cursor / 狀態快照）走 `Cmd AutoCommit` —— 那條路是純 git commit，
+不掛 trailer、不公告、不領薪（掛誰的名字領誰的薪都是假帳）。
 
 exit code: 0 成功 / 2 參數或 persona 有問題 / 3 信箱未設定 / 4 沒有 staged 變更 / 5 git commit 失敗
          / 6 commit 成功但公告發送失敗（**錢沒領到，需手動補**）
@@ -286,11 +290,6 @@ def main() -> int:
     ap.add_argument("--allow-unset", action="store_true",
                     help="信箱未設定仍提交（預設拒絕 —— 假位址進了 history 就改不掉）")
     ap.add_argument("--dry-run", action="store_true", help="只印組出來的訊息，不提交")
-    ap.add_argument("--no-announce", action="store_true",
-                    help="不自動發酒館公告（預設會發 —— 領薪不該靠人記得）。"
-                         "**必須同時給 --no-announce-reason**")
-    ap.add_argument("--no-announce-reason", default="",
-                    help="為什麼這筆不公告。沒有理由就不該關 —— 見 --no-announce 的說明")
     ap.add_argument("--announce-body", default="",
                     help="公告的開場白（插在標題與 commit 內文之間，寫給現在在酒館的同事看）")
     ap.add_argument("--announce-body-file", default="",
@@ -300,23 +299,6 @@ def main() -> int:
     ap.add_argument("--verbose", action="store_true",
                     help="成功時印完整細節（預設只印一行 —— 成功路徑瘦到看不見，異常才佔版面）")
     args = ap.parse_args()
-
-    # 區塊職責：--no-announce 必須帶理由（Tim 2026-08-05 拍板）
-    # 物理意義：**在 commit 發生之前擋下**，不是事後提醒 —— 提醒會被忽略，缺參數不會。
-    #          擋在 parse 之後、git commit 之前：這樣不會留下一筆「已提交但沒領薪」的殘局。
-    # 血證（summit 2026-08-05，同一天四次）：我三次順手打了 --no-announce 造成薪水沒領，
-    #          每次都自首、還把「別自己發明例外」寫進公告，然後第四次照樣打上去。
-    #          **三次同一個動作就不是失誤，是預設行為。**
-    #          而「寫下來只讓下一個人知道，不讓自己記得」—— 有效的修法是讓錯的做法在物理上不可行：
-    #          你得先想出一個理由，而想不出來的時候你就會發現自己沒有理由。
-    #          （同形狀的前例：反引號咬人三次後，有效修法不是記得別用 -m，是改用 --message-file。）
-    if args.no_announce and not args.no_announce_reason.strip():
-        print("✗ --no-announce 必須同時給 --no-announce-reason「為什麼這筆不公告」。\n"
-              "  預設會公告是刻意的：commit 就領薪，別自己發明例外\n"
-              "  （source_kind=commit 曾 82 天零領取，成因是「做完了倒在門外」）。\n"
-              "  想不出理由 = 你沒有理由 → 把 --no-announce 拿掉即可。",
-              file=sys.stderr)
-        return EXIT_BAD_ARGS
 
     if not args.persona:
         print("ERROR: 至少要一個 --persona", file=sys.stderr)
@@ -362,7 +344,7 @@ def main() -> int:
 
     sha = git(args.repo, "rev-parse", "--short", "HEAD").stdout.strip()
     # 成功路徑刻意安靜（Alert Fatigue，apex-one 2026-08-03 命名）：
-    # 每次成功都印同一塊五行，看第八次它就是背景 —— 我今天就是這樣沒看見自己的 --no-announce。
+    # 每次成功都印同一塊五行，看第八次它就是背景 —— 於是真正要看的那一行也被跳過。
     # 所以正常成功只留一行，細節走 --verbose；異常路徑維持大聲。
     if args.verbose:
         print(result.stdout.strip())
@@ -370,13 +352,6 @@ def main() -> int:
             print(f"  {t}")
     for n in notes:
         print(f"⚠ {n}", file=sys.stderr)
-
-    if args.no_announce:
-        # 理由印出來 —— 給了理由卻沒人看得見，那個參數就只是形式（名字比事實大的一種）
-        print(f"💰 未自動公告（--no-announce，理由：{args.no_announce_reason.strip()}）。"
-              f"這筆 SHA `{sha}` 要發一則酒館公告才領得到（一則訊息一個 SHA）：")
-        print(f"   meta: {{\"tag\":\"commit\",\"sha\":\"{sha}\",\"category\":\"meta\"}}   --wait-reply 0")
-        return EXIT_OK
 
     primary = args.persona[0]
     # ⛔ 這裡原本先解析 bank 當 sender，查不到就擋下公告（EXIT_ANNOUNCE_FAIL）。

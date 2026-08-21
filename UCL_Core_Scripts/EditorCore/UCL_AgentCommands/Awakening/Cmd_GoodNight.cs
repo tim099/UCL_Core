@@ -28,13 +28,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public override string CommandType => "GoodNight";
 
         public override string ShortDescription =>
-            "晚安流程 Cmd（step=check/letter/sleep/logout，每步回傳 next 導引並落檔）。logout 可單獨跑（cleanup，不寫信）。";
+            "晚安流程 Cmd（step=check/portrait/letter/sleep/logout，每步回傳 next 導引並落檔）。"
+            + "portrait 會擋 letter（畫像或顯式跳過理由二擇一）；logout 可單獨跑（cleanup，不寫信）。";
 
         public override string ArgsSchema =>
-            "step=check|letter|sleep|logout (必填) — check: 唯讀起手+酒館最後一眼; letter: 收尾信落檔(親筆); " +
+            "step=check|portrait|letter|sleep|logout (必填) — check: 唯讀起手+酒館最後一眼; "
+            + "portrait: 投遞見人畫像(親筆)或顯式跳過; letter: 收尾信落檔(親筆); " +
             "sleep: offline+解鎖+單則下線廣播(需先寫信); logout: 獨立登出(不寫信, 廣播標明未留信) | " +
             "persona=<name> — 全步驟必填(要下線誰不能用猜的) | letter_body=<text> — step=letter 必填(走 --arg-file) | " +
-            "summary=<text> — sleep 選填(公開睡前心得, 併入下線廣播) | " +
+            "summary=<text> — sleep 選填(公開睡前心得, 併入下線廣播) | "
+            + "about=<同事> headline=<一句話標題> body=<公開層,走 --arg-file> private_body=<私層,選填> "
+            + "affinity=<如 11/在意> — step=portrait 投遞時用(about+body 必填, 工具不代筆) | "
+            + "skip_reason=<為什麼今晚不畫> — step=portrait 的顯式跳過(理由會印進下線廣播) | " +
             "回傳落檔 letters/<persona>/cmd/goodnight_<step>.md";
 
         public override string ExampleArgs => "step=check;persona=Template";
@@ -55,6 +60,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 {
                     var aResult = UCL_AwakeningService.StepCheck(aPersona);
                     WriteAndVerdict(args, aPersona, "check", aResult);
+                    return;
+                }
+
+                case "portrait":
+                {
+                    var aResult = UCL_AwakeningService.StepPortrait(
+                        aPersona,
+                        GetArg(args, "about", ""),
+                        GetArg(args, "headline", ""),
+                        GetArg(args, "body", ""),
+                        GetArg(args, "private_body", ""),
+                        GetArg(args, "skip_reason", ""),
+                        GetArg(args, "affinity", ""));
+                    WriteAndVerdict(args, aPersona, "portrait", aResult);
                     return;
                 }
 
@@ -82,6 +101,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     string aSummary = (GetArg(args, "summary", "") ?? "").Trim();
                     string aSummaryBlock = string.IsNullOrEmpty(aSummary) ? "" : $"💭 **今日心得**\n{aSummary}\n\n";
                     string aBody = aBroadcastBody.Replace("{SUMMARY}", aSummaryBlock);
+                    // 本夜顯式跳過畫像的理由要被看見（給了理由卻沒人看得見，那個參數就只是形式）
+                    string aPortraitSkip = UCL_AwakeningService.PortraitSkipReasonToday(aPersona);
+                    if (!aNoLetter && !string.IsNullOrEmpty(aPortraitSkip))
+                        aBody += $"\n- 🖼 本夜未畫像，理由：{aPortraitSkip}";
                     string aNote = GetArg(args, "note", "");
                     if (!string.IsNullOrEmpty(aNote)) aBody += $"\n- Note: {aNote}";
 

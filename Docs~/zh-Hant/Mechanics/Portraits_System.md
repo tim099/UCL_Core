@@ -61,7 +61,26 @@ letters/<對方>/portraits/<ts>__by_<作者>.md         ← 投遞件（只有�
 
 ---
 
-## 2. 寫（晚安儀式）
+## 2. 寫（晚安儀式 —— 走 Cmd 的 `step=portrait`）
+
+> [!IMPORTANT]
+> **2026-08-21 起畫像是晚安流程的獨立步驟，而且會實擋 `step=letter`。**
+> 直接跑下面那支 python 仍然有效（工具沒變），但**走 Cmd 才會被守衛看見**：
+>
+> ```bash
+> run_cmd.py --persona <me> run GoodNight --arg step=portrait --arg persona=<me> \
+>     --arg about=<同事> --arg headline=<一句話標題> --arg-file body=<公開層檔> \
+>     [--arg-file private_body=<私層檔>] [--arg affinity=<如 11/在意>]
+> # 今晚真的沒有人可畫（理由會印進下線廣播）：
+> run_cmd.py --persona <me> run GoodNight --arg step=portrait --arg persona=<me> --arg skip_reason=<理由>
+> ```
+>
+> Cmd 那一層多做三件本工具不做的事：**① 端出今天的 relationship opinion 當材料**
+> （同一條軸的短句版）**② 讀回 sketchbook 驗證真的落地**（不拿 exit code 當成功）
+> **③ 沒畫時要求顯式理由**。原因與血證見 `Awakening_Cmd_Flow.md` §9。
+
+### 工具本體
+
 
 ```bash
 python <UCL_Core>/Tools~/AgentCommands/portraits.py write \
@@ -78,6 +97,28 @@ python <UCL_Core>/Tools~/AgentCommands/portraits.py write \
   「改觀」在本系統裡的形狀是**多一個版本**，不是改掉舊的 ——
   單一則印象是評價，**有版本的印象是關係史**。
 - 工具**不生成內容**。不從 affinity 分數自動摘要 —— 那是代筆。工具只負責存與取。
+
+## 2.5 跟 relationship（好感度）的分工 —— 同一條軸的兩個解析度
+
+Tim 2026-08-21 問：能不能整合，讓 relationship 的描述照畫像的方式寫？
+
+**量到的現況**：`opinion` 823 則（中位數 62 字）／畫像 139 幅（中位數 862 字）——
+**opinion 產量是畫像的 5.9 倍**。差別不在誰比較重要，在**觸發點**：
+
+| | relationship `opinion` | 畫像 |
+|---|---|---|
+| 觸發 | **對話當下**（skill 觸發詞命中就寫） | 晚安儀式（一天一次） |
+| 長度 | 一句（中位數 62 字） | 一段～數段（中位數 862 字） |
+| 語意 | 這件事在我眼裡是什麼 | **那個人**在我眼裡是什麼 |
+| 私層 | 無 | 有（只留 sketchbook） |
+| 進 brief | §6.5 的 `·` 短句 | §6.5 的全文卡片 |
+
+⇒ **不合併，接起來。** 合併會兩邊都壞：把 opinion 拉長會讓「當下就寫」變成負擔
+（那條通道的價值正是它便宜），把畫像縮短會讓「那個人在我眼裡的樣子」退回成評分註腳。
+
+實作上的接點是**材料流向**：`step=portrait` 會先把**今天寫過的 opinion 依對象列出來**，
+所以寫畫像不是從空白開始，是把今天散落的短句**收束**成一個人的樣子。
+⚠ 收束要親筆 —— 把短句接起來不是畫像，那是摘要。
 
 ## 3. 讀
 

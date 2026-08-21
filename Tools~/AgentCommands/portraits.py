@@ -55,6 +55,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
+
+# 區塊職責：把本工具的輸出流綁成 UTF-8。
+# 物理意義：成功訊息含 emoji（🖼 / ✅），而 Windows 預設 console 是 cp950 ——
+#          那一行 print 會 UnicodeEncodeError，且它印在**寫檔之後**：
+#          檔案已經落地，行程卻回 exit=1。⇒ 拿 exit code 判「有沒有寫成功」會判反。
+# 數值影響：只改編碼，不改任何輸出內容。errors="replace" 是最後防線 ——
+#          印不出來的字寧可變成 ?，也不要讓一個 print 決定整支工具的退出碼。
+# 🩸 2026-08-21 Sirius：從 Cmd 呼叫本工具，讀回顯示畫像兩份都落地了，exit 卻是 1。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:      # 非 TextIO（被重導向成別的東西）→ 放過，不讓它變成新的失敗來源
+        pass
+
 PORTRAITS_DIRNAME = "portraits"      # 對方資料夾：投遞件（只有公開層）
 SKETCHBOOK_DIRNAME = "sketchbook"    # 自己資料夾：事實源（公開層 + 私層）
 

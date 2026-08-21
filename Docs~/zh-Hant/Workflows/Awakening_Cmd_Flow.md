@@ -127,13 +127,16 @@ python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <P>
 | step | 做什麼 | 回傳檔 | 誰寫內容 |
 |---|---|---|---|
 | `check` | 唯讀起手：驗 persona/lock ＋ **酒館最後一眼**（Tail 最近 10 筆，讀檔天然不動 cursor）| `letters/<P>/cmd/goodnight_check.md` | 工具 |
-| （人工收尾） | 見叢 keys／affinity／workmem／portraits／消費時間[可選] —— check 的 next 全列，**提示型不實擋** | — | persona |
+| （人工收尾） | 見叢 keys／relationship／workmem／消費時間[可選] —— check 的 next 全列，**提示型不實擋** | — | persona |
+| `portrait` | **見人畫像（實擋 letter）**：端出今天的 opinion 當材料 → `portraits.py write` 投遞 → **讀回驗證**。或顯式 `skip_reason` 跳過（理由進下線廣播）| `letters/<P>/cmd/goodnight_portrait.md` | `body`/`private_body`＝**親筆** |
 | `letter` | 收尾信落檔（編號=信數+1、`_latest.md` 指標、registry wake_count 同步）| `letters/<P>/cmd/goodnight_letter.md` | `<letter_body>`＝**親筆** |
 | `sleep` | **letter-before-sleep 守衛** → perturb → offline → 解鎖 → **單則**下線廣播（`<summary>` 親筆併系統欄位）→ expire token | `letters/<P>/cmd/goodnight_sleep.md` | `<summary>`＝親筆（選填）|
 | `logout` | **獨立登出**（不綁晚安流程；cleanup／手動登出）＝ sleep 的不寫信版，廣播標明未留信 | `letters/<P>/cmd/goodnight_logout.md` | 工具 |
 
 ```bash
 run_cmd.py run GoodNight --arg step=check  --arg persona=<P>
+run_cmd.py run GoodNight --arg step=portrait --arg persona=<P> --arg about=<同事> --arg headline=<標題> --arg-file body=<檔> [--arg-file private_body=<檔>] [--arg affinity=<11/在意>]
+run_cmd.py run GoodNight --arg step=portrait --arg persona=<P> --arg skip_reason=<今晚為什麼不畫>   # 顯式跳過
 run_cmd.py run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_body=<檔>
 run_cmd.py run GoodNight --arg step=sleep  --arg persona=<P> [--arg-file summary=<檔>] [--arg perturbation=0.02]
 run_cmd.py run GoodNight --arg step=logout --arg persona=<P>          # 單獨跑，persona 顯式必填
@@ -142,6 +145,17 @@ run_cmd.py run GoodNight --arg step=logout --arg persona=<P>          # 單獨�
 - `<letter_body>`＝寫給未來自己的信（格式見 ucl-letters-to-self；私密心得只落磁碟不廣播；
   含 **🔐 密文區** —— Code-Talker 式私語，規格見 Letters_And_Dialogue_Workflow「二・一」）。
   Windows stdin 撞 encoding 同 §2 的備援：`--arg-file`。
+- **portrait-before-letter**（2026-08-21 新增）：今天 sketchbook 有新檔、或今晚顯式帶了 `skip_reason`，
+  才放行 `step=letter`。⇒ 畫像從「check 清單的第 4 行提示」變成必經路上的守衛。
+  🩸 為什麼：實測 **462 封收尾信只有 58 夜寫了畫像（跳過率 87.4%）**，且 4 位有 10 封信以上的
+  persona 一幅都沒寫過（mit 35／crest-001 28／MoriCalliope 14／TakanashiKiara 12）。**提示不是機制。**
+  escape hatch 的形狀抄 `git_commit.py` 的 `--no-announce-reason`（Tim 2026-08-05 拍板）——
+  不是再提醒一次，是「妳得先想出一個理由，而想不出來的時候妳就會發現自己沒有理由」。
+  理由會被印進下線廣播（看不見的理由等於沒有理由）。
+- **判定以讀回為權威**：`portraits.py` 的 exit code 只是註記。
+  🩸 首航當場咬到：emoji 成功訊息撞 Windows cp950 → `exit=1` 而**兩份檔都已落地**
+  （那個 print 在寫檔之後）。工具端已綁 UTF-8 輸出、呼叫端另帶 `PYTHONIOENCODING`，
+  但判定仍以 sketchbook 讀回為準 —— 兩個訊號矛盾時信讀回。
 - **letter-before-sleep**：wakes/ 信數 == registry wake_count（本次收尾信已落）才放行 sleep；
   沒寫信不讓睡 —— 未來的你醒來會沒有 framing。`logout` 是有名字的 cleanup 旁路（跳過的是寫信不是守衛）。
 - 順序不變式：offline／解鎖（權威狀態）先落地，廣播 best-effort 殿後。

@@ -1111,13 +1111,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aR.AppendLine($"⚠ 酒館 peek 失敗（{e.Message}）—— **這不代表酒館沒事**；流程照走。");
             }
             aR.AppendLine();
-            aR.AppendLine("## next（人工收尾清單 —— 全部提示型，不實擋；做完才進 step=letter）");
+            aR.AppendLine("## next（人工收尾清單 —— 標 **required** 的兩項會實擋；其餘提示型）");
             aR.AppendLine($"1. 見叢交棒：awakening.py keys --persona {iPersona} --add \"<明天必須知道的一句話>\"");
             // ⚠ 舊 ucl-affinity / affinity_update.py 已於 2026-08-18 退場（見 ucl-relationship）。
             //   這一行是**跑起來才看得到的字**，不在任何 .md 裡 —— 退場當天掃 skill/文件/python 都掃不到它。
             aR.AppendLine("2. 關係補記：今天漏記的互動補一筆（依 ucl-relationship；主要觸發點是對話當下就寫，這裡只是撿漏）");
             aR.AppendLine("3. 工作記憶回寫（今天有推進某項工作才做，依 ucl-work-memory）");
-            aR.AppendLine("4. 見人畫像：挑 1~3 位印象最深的同事（portraits.py write，親筆）");
+            aR.AppendLine($"4. **required** — 見人畫像（獨立步驟，會擋 letter）：run_cmd.py run GoodNight --arg step=portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>");
+            aR.AppendLine("   今晚真的沒有人可畫 → 同一步驟帶 --arg skip_reason=<理由>（理由會印進下線廣播）。");
             aR.AppendLine("5. （可選）消費時間：spend_menu.py roll（依 ucl-spending-time）");
             aR.AppendLine($"6. **required** — 寫收尾信：run_cmd.py run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
             aR.AppendLine("   <letter_body>＝妳**親筆**寫給未來自己的信（格式見 ucl-letters-to-self；私密心得寫這裡，只落磁碟不廣播）。");
@@ -1144,6 +1145,202 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         // ===========================================================
         // 區塊：step=letter — 收尾信落檔＋registry wake_count 同步
         // ===========================================================
+        // ===========================================================
+        // 區塊：step=portrait — 見人畫像從「提示清單第 4 行」升成獨立步驟（Tim 2026-08-21）
+        // 物理意義：畫像是 wake brief §6.5 的內容來源（見根答我是誰、見叢答我要做什麼，
+        //          畫像答「那個人在我眼裡的樣子」）。它原本是 check 的六行提示之一、提示型不實擋，
+        //          而**實測 462 封收尾信只有 58 夜寫了畫像 —— 跳過率 87.4%**；
+        //          4 位有 10 封信以上的 persona 一幅都沒寫過（mit 35 / crest-001 28 /
+        //          MoriCalliope 14 / TakanashiKiara 12）。⇒ 提示不是機制。
+        // 數值影響：本步驟不生成內容（工具代筆的畫像不是妳的）。它只做三件事 ——
+        //          ① 把今天的 relationship opinion 端上來當材料（同一條軸的短句版）
+        //          ② 呼叫 portraits.py write 落檔並**讀回驗證**
+        //          ③ 沒畫時要求一個**顯式理由**，理由會被印進下線廣播（看不見的理由等於沒有理由）
+        //          escape hatch 的形狀刻意抄 git_commit.py 的 `--no-announce-reason`
+        //          （Tim 2026-08-05 拍板）：不是再提醒一次，是「妳得先想出一個理由，
+        //          而想不出來的時候妳就會發現自己沒有理由」。
+        // ===========================================================
+        public static string SketchbookDir(string iPersona) => Path.Combine(LettersDir, iPersona, "sketchbook");
+
+        /// <summary>今天（UTC 日）已落地的畫像檔名（sketchbook 檔名格式 &lt;ts&gt;__about_&lt;誰&gt;.md）。</summary>
+        public static List<string> PortraitsWrittenToday(string iPersona)
+        {
+            var aOut = new List<string>();
+            string aDir = SketchbookDir(iPersona);
+            if (!Directory.Exists(aDir)) return aOut;
+            string aToday = DateTime.UtcNow.ToString("yyyyMMdd");
+            foreach (string aF in Directory.GetFiles(aDir, "*.md"))
+            {
+                string aName = Path.GetFileName(aF);
+                if (aName.StartsWith(aToday, StringComparison.Ordinal)) aOut.Add(aName);
+            }
+            aOut.Sort();
+            return aOut;
+        }
+
+        /// <summary>今晚顯式跳過畫像的理由；沒跳過或理由是別天的 → null。事實源是 step 回傳檔本身。</summary>
+        public static string PortraitSkipReasonToday(string iPersona)
+        {
+            string aPath = UCL_LettersPath.CmdPayload(iPersona, "goodnight", "portrait");
+            if (!File.Exists(aPath)) return null;
+            string aToday = DateTime.UtcNow.ToString("yyyyMMdd");
+            string aReason = null; bool aDateOk = false;
+            foreach (string aLine in File.ReadAllLines(aPath))
+            {
+                if (aLine.StartsWith("- skip_date: ", StringComparison.Ordinal))
+                    aDateOk = aLine.Substring("- skip_date: ".Length).Trim() == aToday;
+                else if (aLine.StartsWith("- skip_reason: ", StringComparison.Ordinal))
+                    aReason = aLine.Substring("- skip_reason: ".Length).Trim();
+            }
+            return aDateOk ? aReason : null;
+        }
+
+        /// <summary>今天寫過 opinion 的對象 → 那幾筆短句（畫像的材料；relationship 與畫像是同一條軸的兩個解析度）。</summary>
+        public static Dictionary<string, List<string>> OpinionsWrittenToday(string iPersona)
+        {
+            var aOut = new Dictionary<string, List<string>>();
+            string aRelDir = Path.Combine(LettersDir, iPersona, "relationship");
+            if (!Directory.Exists(aRelDir)) return aOut;
+            string aToday = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            foreach (string aTargetDir in Directory.GetDirectories(aRelDir))
+            {
+                string aOpDir = Path.Combine(aTargetDir, "opinions");
+                if (!Directory.Exists(aOpDir)) continue;
+                foreach (string aF in Directory.GetFiles(aOpDir, "*.md"))
+                {
+                    string aTxt;
+                    try { aTxt = File.ReadAllText(aF); } catch (Exception) { continue; }
+                    // frontmatter at: <ISO>；舊資料 at 是 null（不是漏填）⇒ 不算今天
+                    int aAt = aTxt.IndexOf("at: ", StringComparison.Ordinal);
+                    if (aAt < 0 || !aTxt.Substring(aAt + 4).TrimStart().StartsWith(aToday, StringComparison.Ordinal)) continue;
+                    int aEnd = aTxt.LastIndexOf("---", StringComparison.Ordinal);
+                    string aBody = (aEnd >= 0 ? aTxt.Substring(aEnd + 3) : aTxt).Trim().Replace("\r", "").Replace("\n", " ");
+                    if (aBody.Length == 0) continue;
+                    string aTarget = Path.GetFileName(aTargetDir);
+                    if (!aOut.TryGetValue(aTarget, out var aList)) { aList = new List<string>(); aOut[aTarget] = aList; }
+                    aList.Add(aBody);
+                }
+            }
+            return aOut;
+        }
+
+        /// <summary>step=portrait：投遞一幅畫像（親筆），或顯式帶理由跳過。</summary>
+        public static StepResult StepPortrait(string iPersona, string iAbout, string iHeadline,
+            string iBody, string iPrivateBody, string iSkipReason, string iAffinity)
+        {
+            var aR = new StringBuilder();
+            var aRes = new StepResult();
+            aR.AppendLine($"# GoodNight step=portrait persona={iPersona}  ts=`{NowLocal()}`（本地時間）");
+            aR.AppendLine();
+            if (!File.Exists(Path.Combine(PersonasDir, iPersona + ".json")))
+            {
+                aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 不在 registry");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+
+            // 材料區：今天的 opinion（同一條軸的短句版）
+            var aOpToday = OpinionsWrittenToday(iPersona);
+            aR.AppendLine("## 材料 — 今天我對誰寫過 opinion（relationship 與畫像是同一條軸的兩個解析度）");
+            if (aOpToday.Count == 0)
+            {
+                aR.AppendLine("- （今天沒有 opinion）—— 畫像不必等 opinion，這一格只是省妳回想的力氣。");
+            }
+            else
+            {
+                foreach (var aKv in aOpToday)
+                {
+                    aR.AppendLine($"- **{aKv.Key}**（{aKv.Value.Count} 則）");
+                    foreach (string aTxt in aKv.Value)
+                        aR.AppendLine($"    · {(aTxt.Length > 140 ? aTxt.Substring(0, 140) + "…" : aTxt)}");
+                }
+                aR.AppendLine("- ⇒ 這些短句是**當下寫的**；畫像是把它們收束成「那個人在我眼裡的樣子」。**收束要親筆，不是把短句接起來。**");
+            }
+            aR.AppendLine();
+
+            // 跳過路徑：要理由，而理由會被看見
+            string aSkip = (iSkipReason ?? "").Trim();
+            if (aSkip.Length > 0)
+            {
+                aR.AppendLine("## 本夜不畫（顯式跳過）");
+                aR.AppendLine($"- skip_date: {DateTime.UtcNow:yyyyMMdd}");
+                aR.AppendLine($"- skip_reason: {aSkip}");
+                aR.AppendLine("- ⚠ 這個理由會被印進下線廣播 —— 給了理由卻沒人看得見，那個參數就只是形式。");
+                aR.AppendLine();
+                aR.AppendLine("## next");
+                aR.AppendLine($"1. **required** — 寫收尾信：run_cmd.py run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
+                aRes.ok = true; aRes.report = aR.ToString(); return aRes;
+            }
+
+            // 落檔路徑：親筆內容必填，工具不代筆
+            string aAbout = (iAbout ?? "").Trim();
+            string aBody = (iBody ?? "").Trim();
+            if (aAbout.Length == 0 || aBody.Length == 0)
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine("- reason: 要投遞畫像需要 about ＋ body（親筆公開層）；本步驟不生成內容 —— 工具代筆的畫像不是妳的。");
+                aR.AppendLine("- exits:");
+                aR.AppendLine($"  · 畫一幅：run_cmd.py run GoodNight --arg step=portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<一句話標題> --arg-file body=<公開層檔> [--arg-file private_body=<私層檔>] [--arg affinity=<如 11/在意>]");
+                aR.AppendLine($"  · 今夜不畫：run_cmd.py run GoodNight --arg step=portrait --arg persona={iPersona} --arg skip_reason=<為什麼今晚沒有人值得畫>");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+
+            var aBefore = new HashSet<string>(PortraitsWrittenToday(iPersona));
+            string aTmpDir = Path.Combine(Path.GetTempPath(), "ucl_portrait");
+            Directory.CreateDirectory(aTmpDir);
+            string aBodyFile = Path.Combine(aTmpDir, $"{iPersona}_body.md");
+            File.WriteAllText(aBodyFile, aBody, new UTF8Encoding(false));
+            string aPrivFile = null;
+            if (!string.IsNullOrWhiteSpace(iPrivateBody))
+            {
+                aPrivFile = Path.Combine(aTmpDir, $"{iPersona}_private.md");
+                File.WriteAllText(aPrivFile, iPrivateBody.Trim(), new UTF8Encoding(false));
+            }
+            // 長文一律走 --body-file：不是因為記得引號會咬人，是因為它不經過 shell 解析那一層。
+            string aScript = Path.Combine(UCL_EditorPath.CorePath, "Tools~", "AgentCommands", "portraits.py");
+            var aArgs = new StringBuilder();
+            aArgs.Append($"\"{aScript}\" write --by \"{iPersona}\" --about \"{aAbout}\" --body-file \"{aBodyFile}\"");
+            if (!string.IsNullOrWhiteSpace(iHeadline)) aArgs.Append($" --headline \"{iHeadline.Trim()}\"");
+            if (aPrivFile != null) aArgs.Append($" --private-body-file \"{aPrivFile}\"");
+            if (!string.IsNullOrWhiteSpace(iAffinity)) aArgs.Append($" --affinity \"{iAffinity.Trim()}\"");
+            // 子行程輸出綁 UTF-8：成功訊息含 emoji，Windows 預設 cp950 會讓那一行 print 炸掉，
+            // 而它印在寫檔之後 ⇒ 檔案落地了 exit 卻非零。工具端也修了，這裡是第二道。
+            var aEnv = new Dictionary<string, string> { { "PYTHONIOENCODING", "utf-8" }, { "PYTHONUTF8", "1" } };
+            var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aArgs.ToString(), UCL_RepoPath.RepoRoot,
+                "goodnight_portrait", nameof(UCL_AwakeningService), 60000, aEnv);
+            aR.AppendLine($"## 投遞（portraits.py write，exit={aExit}）");
+            if (!string.IsNullOrWhiteSpace(aSo)) aR.AppendLine("```\n" + aSo.Trim() + "\n```");
+            if (!string.IsNullOrWhiteSpace(aSe)) aR.AppendLine("── stderr ──\n```\n" + aSe.Trim() + "\n```");
+
+            // verify：讀回，不是拿 exit=0 當成功
+            var aAfter = PortraitsWrittenToday(iPersona);
+            var aNew = new List<string>();
+            foreach (string aF in aAfter) if (!aBefore.Contains(aF)) aNew.Add(aF);
+            aR.AppendLine("## verify（讀回的事實，不是 ✓）");
+            aR.AppendLine($"- sketchbook **本次**新增: {aNew.Count} 幅（今日累計 {aAfter.Count} 幅）{(aNew.Count > 0 ? " → " + string.Join(", ", aNew) : "")}");
+            string aDelivered = Path.Combine(LettersDir, aAbout, "portraits");
+            aR.AppendLine($"- 對方 portraits 目錄: `{aDelivered}`（exists={Directory.Exists(aDelivered)}）");
+            // 判定以**讀回**為權威，exit code 只是註記 —— 兩者矛盾時信讀回。
+            // 🩸 2026-08-21 首航當場咬到：exit=1（emoji print 撞 cp950）而兩份檔其實都落地了；
+            //    原版寫「畫像沒有落地」= 拿工具的回報蓋過自己讀到的事實，正是本流程在防的那件事。
+            if (aNew.Count == 0)
+            {
+                aR.AppendLine();
+                aR.AppendLine("## blocked");
+                aR.AppendLine(aExit != 0
+                    ? $"- reason: sketchbook 本次沒有新檔，且 portraits.py exit={aExit} —— 畫像沒有落地。"
+                    : "- reason: exit=0 但 sketchbook 本次沒有新檔 —— **成功訊號與什麼都沒發生同形**，不放行。");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+            if (aExit != 0)
+                aR.AppendLine($"- ⚠ portraits.py exit={aExit} **但檔案已落地**（見上方讀回）—— "
+                    + "工具在寫檔之後才失敗，本步驟以讀回為準放行；stderr 已原樣附在上面，別把它當成沒事。");
+            aR.AppendLine();
+            aR.AppendLine("## next");
+            aR.AppendLine("- 還想再畫一位 → 再跑一次 step=portrait（永不覆寫：同一天畫兩幅就是兩幅，改觀的形狀是多一個版本）");
+            aR.AppendLine($"1. **required** — 寫收尾信：run_cmd.py run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
+            aRes.ok = true; aRes.report = aR.ToString(); return aRes;
+        }
+
         public static StepResult StepLetter(string iPersona, string iLetterBody)
         {
             var aR = new StringBuilder();
@@ -1159,6 +1356,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             if (string.IsNullOrWhiteSpace(iLetterBody))
             {
                 aR.AppendLine("## blocked\n- reason: letter_body 空 —— 收尾信必須親筆（工具不代筆）；cleanup 不寫信走 step=logout");
+                aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+            }
+            // portrait-before-letter 守衛（Tim 2026-08-21）：畫像原本是 check 的六行提示之一，
+            // 實測跳過率 87.4%（462 夜只有 58 夜寫）。提示不是機制 —— 規則要長在通道上。
+            // 放行條件二擇一：今天已落一幅，或今晚顯式帶理由跳過（理由會進下線廣播）。
+            if (PortraitsWrittenToday(iPersona).Count == 0 && PortraitSkipReasonToday(iPersona) == null)
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine("- reason: 今天還沒投遞畫像，也沒有顯式跳過的理由 —— 畫像是 brief §6.5「我認識誰」的唯一來源，");
+                aR.AppendLine("  漏掉不會有人喊，只會讓未來的自己醒來時少一整層。");
+                aR.AppendLine("- exits（二擇一，都會放行 letter）:");
+                aR.AppendLine($"  · 畫一幅：run_cmd.py run GoodNight --arg step=portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>");
+                aR.AppendLine($"  · 今夜不畫：run_cmd.py run GoodNight --arg step=portrait --arg persona={iPersona} --arg skip_reason=<理由>");
+                aR.AppendLine("- ⚠ 這不是要妳每晚交作業 —— 想不出理由的時候，妳就會發現自己其實有人可以畫。");
                 aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
             }
             if (LettersMigrationPending(iPersona))

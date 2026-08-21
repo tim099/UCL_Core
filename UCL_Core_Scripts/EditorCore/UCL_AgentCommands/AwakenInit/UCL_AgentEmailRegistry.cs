@@ -31,9 +31,8 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static string RegistryPath =>
             Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "agent_emails.json").Replace('\\', '/');
 
-        // persona 檔一律走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
-        static string PersonaPath(string persona) =>
-            Awakening.UCL_AwakeningService.ResolvePersonaFile(persona);
+        // ⛔ 舊的 `PersonaPath` 已移除（2026-08-21）：本檔的 persona 讀取早就走 UCL_PersonaProfile 接縫，
+        //    那支只是還留著的路徑組裝（零呼叫端）。中央 persona json 退場後，留著它＝留一個指向不存在檔案的入口。
 
         /// <summary>預設表（actual_agent → email）。檔案不存在時回三個空欄，讓後台有東西可填。</summary>
         public static Dictionary<string, string> LoadDefaults()
@@ -82,7 +81,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 var sb = new StringBuilder();
                 sb.AppendLine("{");
                 sb.AppendLine("  \"_schema_version\": 1,");
-                sb.AppendLine("  \"_description\": \"agent 預設信箱（key = actual_agent，封閉集合）。persona 層 override 寫在 AwakenInit/personas/<name>.json 的 email 欄。唯一設定入口是 UCL_PersonaAgentAdminPage。\",");
+                sb.AppendLine("  \"_description\": \"agent 預設信箱（key = actual_agent，封閉集合）。persona 層 override 寫在 letters/<persona>/profile/email.md（2026-08-21 起）。唯一設定入口是 UCL_PersonaAgentAdminPage。\",");
                 sb.AppendLine("  \"defaults\": {");
                 int i = 0;
                 foreach (var kv in defaults)

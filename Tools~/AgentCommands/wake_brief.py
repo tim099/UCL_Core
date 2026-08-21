@@ -1235,7 +1235,7 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
     if st["gap"] < 0:
         todo6.append(f"- ⛔ **記錄不一致**：wake_count={st['wake_count']} 但 digest 已整理到 wake "
                      f"{st['last_consolidated_wake']} —— persona 記錄疑似落後於實際歷史（同步遺漏？）。"
-                     f"請人工確認 `AwakenInit/personas/{persona}.json` 的 wake_count。")
+                     f"請人工確認 `letters/{persona}/wakes/` 的收尾信數（wake_count 已改成由它推導）。")
     if st["overdue"]:
         todo6.append(f"- ⚠ **見林 OVERDUE**：gap={st['gap']}/{threshold}，"
                      f"待濃縮 {len(st['pending_letters'])} 封 → "

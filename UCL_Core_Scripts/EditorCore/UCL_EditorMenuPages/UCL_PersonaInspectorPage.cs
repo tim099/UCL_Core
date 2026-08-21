@@ -94,7 +94,6 @@ namespace UCL.Core.EditorLib.Page
 
         // ---- 路徑 ----
         string m_AgentCommandsDir = "";
-        string m_PersonasDir = "";
         string m_LettersDir = "";
 
         public override void Init(UCL_GUIPageController p_Controller)
@@ -105,7 +104,6 @@ namespace UCL.Core.EditorLib.Page
             // ⚠ 同 UCL_LoginStatusPage：persona 目錄改走單一解析點（可 override 的 DataRoot），
             //   原本走 UCL_RepoPath.AgentCommandsDir。設了 override 的機器上本頁與 Cmd 讀不同目錄，
             //   而兩邊都不會報錯。預設模式下兩者逐字相同。
-            m_PersonasDir = AgentCommands.Awakening.UCL_AwakeningService.PersonasDir;
             m_LettersDir = UCL_LettersPath.Root;   // 同 UCL_LoginStatusPage：走唯一解析點（BUG-2）
             LoadData();
         }
@@ -350,7 +348,7 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.FlexibleSpace();
                     if (GUILayout.Button(UCL_CodeLocalize.Get("PersonaInspector.Btn.OpenPersonaJson"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
-                        OpenInExplorer(Path.Combine(m_PersonasDir, p.Name + ".json"));
+                        OpenInExplorer(UCL_LettersPath.ProfileDir(p.Name));   // 2026-08-21：資料住 letters/<p>/profile/
                     }
                 }
                 LabelRow(UCL_CodeLocalize.Get("PersonaInspector.Field.Model"), p.Model);

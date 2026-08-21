@@ -53,8 +53,7 @@ namespace UCL.Core.EditorLib.Page
         // ==== 路徑（與 BankAdminPage 同一套解析根：DataRoot = <RepoRoot>/AgentCommands）====
         static string DataRoot => UCL_AgentCommandsPath.DataRoot;
         static string RegistryMetaPath => Path.Combine(DataRoot, "AwakenInit", "_registry_meta.json");
-        // persona 目錄走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
-        static string PersonasDir => AgentCommands.Awakening.UCL_AwakeningService.PersonasDir;
+        // ⛔ 本頁不再需要 persona 目錄：身分欄住 letters/<p>/profile/、帳號住 bank/<區域>.md（2026-08-21）。
         static string SessionLockDir => Path.Combine(DataRoot, "_session");
 
         // ==== awakening.py 的常數（改動前先確認兩端一致）====
@@ -1296,8 +1295,8 @@ namespace UCL.Core.EditorLib.Page
             if (m_AgentKeys.Count == 0) { SetResult("❌ 建立 persona 失敗：尚無 agent，請先建立 agent"); return; }
 
             string agent = m_AgentKeys[Mathf.Clamp(m_NewPersonaAgentIdx, 0, m_AgentKeys.Count - 1)];
-            string targetPath = Path.Combine(PersonasDir, name + ".json");
-            if (File.Exists(targetPath))
+            // 存在性判準與 pool 同一套（`letters/<p>/profile/`）—— 2026-08-21 中央 json 退場
+            if (UCL_PersonaProfile.Exists(name))
             { SetResult($"❌ 建立 persona 失敗：`{name}` 已存在（不覆蓋既有人格）"); return; }
 
             var forkOptions = ForkOptions();
@@ -1388,6 +1387,13 @@ namespace UCL.Core.EditorLib.Page
                 pj["created_at"] = new JsonData(now);
 
                 // 寫入走 §8.6 接縫（actor+reason 必填＋審計＋快照刷新；建檔記 "create"）
+                // agent（＝帳號 id）不進 profile：它住 `bank/<區域>.md`（一區一檔）。
+                // ⚠ 順序刻意先寫綁定再寫身分欄：先有帳號歸屬，錢才不會在半成品狀態落央行。
+                string aRegion = AgentCommands.Treasury.UCL_CentralBankSettings.CurrencyId;
+                if (!UCL_PersonaProfile.WriteBankAccount(name, aRegion, agent,
+                        "Tim@PersonaAgentAdminPage", "建 persona：登記本區帳號歸屬", out string aBindErr))
+                    throw new Exception($"帳號綁定寫入失敗（{aRegion}）：{aBindErr}");
+
                 if (!UCL_PersonaProfile.WriteRaw(name, pj, "Tim@PersonaAgentAdminPage",
                         string.IsNullOrEmpty(forkSource) ? "建 persona" : $"fork from {forkSource}",
                         "create", out string aCreateErr))

@@ -101,8 +101,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
         static string RegistryMetaPath
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "_registry_meta.json");
-        // persona 路徑一律走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
-        static string PersonasDir => Awakening.UCL_AwakeningService.PersonasDir;
+        // ⛔ 本檔不再需要 persona 目錄：persona → 帳號改讀 letters 的綁定檔（見 EnsureLoaded_NoLock）。
 
         /// <summary>強制下次解析重讀 registry（開戶 / 銷戶 / 手改 JSON 後呼叫）。</summary>
         public static void Invalidate()
@@ -122,16 +121,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string personaKey = "";
             try
             {
-                if (Directory.Exists(PersonasDir))
+                // 戳章改看 letters 根目錄（persona 資料已整合到 letters/<persona>/，2026-08-21）。
+                // ⚠ 只看「有哪些 persona 目錄」這一層：綁定檔內容的改動由呼叫端 Invalidate() 負責，
+                //   不在金流熱路徑上逐檔 stat（一區一檔 × 30 人 = 每次解析都要走檔案系統）。
+                string lettersRoot = UCL_LettersPath.Root;
+                if (Directory.Exists(lettersRoot))
                 {
-                    var files = Directory.GetFiles(PersonasDir, "*.json");
+                    var dirs = Directory.GetDirectories(lettersRoot);
                     DateTime newest = DateTime.MinValue;
-                    foreach (var f in files)
+                    foreach (var d in dirs)
                     {
-                        var t = File.GetLastWriteTimeUtc(f);
+                        var t = Directory.GetLastWriteTimeUtc(d);
                         if (t > newest) newest = t;
                     }
-                    personaKey = files.Length + "|" + newest.Ticks;
+                    personaKey = dirs.Length + "|" + newest.Ticks;
                 }
             }
             catch { personaKey = "?"; }
@@ -238,19 +241,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
             try
             {
-                if (Directory.Exists(PersonasDir))
-                    foreach (var pf in Directory.GetFiles(PersonasDir, "*.json"))
-                    {
-                        try
-                        {
-                            var pj = JsonData.ParseJson(File.ReadAllText(pf, Encoding.UTF8));
-                            string name = Path.GetFileNameWithoutExtension(pf);
-                            string agent = pj != null ? pj.GetString("agent", "") : "";
-                            if (!string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(agent))
-                                s_PersonaToAgentLower[name.ToLowerInvariant()] = agent;
-                        }
-                        catch { /* 單一 persona 檔壞不該讓整個金流解析停擺 */ }
-                    }
+                // persona → 帳號（＝agent id）：真相源是 `letters/<persona>/bank/<本專案區域>.md`
+                // （2026-08-21：中央 persona json 退場）。實測 21/21 與舊 registry 的 agent 欄逐字相同，
+                // 所以這不是換語意，是把「同一件事的第二份」拿掉。
+                // ⚠ 這裡**不能**回頭呼叫 Resolve()（會遞迴）—— 只讀綁定檔，不做解析。
+                string region = UCL_CentralBankSettings.CurrencyId;
+                foreach (var name in UCL_PersonaProfile.PoolNames())
+                {
+                    string agent = UCL_PersonaProfile.GetBankAccount(
+                        name, region, out string bindSrc, out _);
+                    if (string.IsNullOrEmpty(agent)) continue;   // 無綁定：留給 ⑥ 攤成 unresolved，不 mint
+                    s_PersonaToAgentLower[name.ToLowerInvariant()] = agent;
+                }
             }
             catch (Exception ex)
             {

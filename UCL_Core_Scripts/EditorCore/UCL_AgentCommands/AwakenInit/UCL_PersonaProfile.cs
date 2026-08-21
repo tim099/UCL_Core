@@ -19,8 +19,7 @@ namespace UCL.Core.EditorLib.AgentCommands
 {
     public static class UCL_PersonaProfile
     {
-        /// <summary>persona 檔目錄 —— 委派給 UCL_AwakeningService（可 override 的 DataRoot）。</summary>
-        public static string PersonasDir => Awakening.UCL_AwakeningService.PersonasDir;
+        // ⛔ `PersonasDir` 已退場（2026-08-21）：資料住 letters/<persona>/（profile/ ＋ bank/）。
 
         // 欄位分類（§8.3 拍板）—— 與 python _lib/persona_profile.py 的同名常數**兩端同步義務**。
         // 讓分類在兩端都是可被編譯器／搜尋找到的東西，不是註解裡的約定（紅隊 seq 12274 洞①）。
@@ -29,21 +28,37 @@ namespace UCL.Core.EditorLib.AgentCommands
         //   跟著人走、不綁專案。⚠ 加進本清單才會生效：`WriteProfileField` 只收 identity 欄，
         //   非 identity 欄的 `SetField` 會 patch 回 legacy —— 而 `UCL_PlurkAccounts` 的檔頭
         //   早就宣告「不寫 AwakenInit/personas」。清單缺一格 ⇒ 那句宣告是假的（說法比實作大）。
+        // 📌 2026-08-21 起 `personas/<p>.json` 退場，persona 資料整合到 `letters/<persona>/`（Tim 拍板）：
+        //    · `agent` **不再是儲存欄**，改由 `bank/<本專案區域>.md` 推導（帳號 id ＝ agent id；
+        //      實測 21/21 與舊 registry 的 agent 欄逐字相同，所以這不是換語意，是拿掉重複的那一份）。
+        //    · `model` / `actual_agent` 從 routing 轉進 identity ⇒ 改住 `profile/`。
+        //    · `wake_count` / `status` / `last_active` / `last_consolidated_*` 是**推導欄**（見 BuildPersonaRaw），
+        //      不儲存、不接受寫入 —— 搬一個快取過來只是多一個會落後的地方（BUG-4 的家）。
         public static readonly string[] ROUTING_FIELDS = { "agent", "model", "actual_agent" };
         public static readonly string[] IDENTITY_FIELDS = { "layer_role", "forked_from", "fork_lineage",
-            "forked_at", "created_at", "identity_vector", "vector_history", "email", "plurk_account" };
+            "forked_at", "created_at", "identity_vector", "vector_history", "email", "plurk_account",
+            "model", "actual_agent" };
 
         static HashSet<string> s_NamesCache;
         static long s_NamesCacheMtime = -1;
 
-        /// <summary>
-        /// persona pool 名單（檔名去副檔名；跳過 _ / . 前綴）。dir-mtime 快取。
-        /// ⚠「有哪些 persona」目前的權威來源 —— 不要掃 letters/ 目錄（有幽靈目錄）也不要各自 glob。
-        /// 目錄不存在或讀取失敗回空集合（呼叫端自行決定降級行為）。
-        /// </summary>
+        // ===========================================================
+        // 區塊職責：persona pool 名單 —— **判準是 `letters/<p>/profile/` 目錄存在**（Tim 2026-08-21 拍板）。
+        // 物理意義：`AwakenInit/personas/*.json` 退場後，名單只能問 letters。而「掃 letters 目錄」
+        //          本身**不能**當名單：實測 33 個目錄裡有 12 個是幽靈（GawrGura／Tim／apex／
+        //          basecamp0512／tavern-keeper…＝改名或早期實驗的殘骸）。
+        //          `profile/` 是接縫建立的 ⇒ 它的存在等於「這個人被當成 persona 讀寫過」。
+        //          實測判準乾淨：**21/21 真人有、12/12 幽靈沒有**。
+        // ⚠ 已知代價（Tim 選項 A 的明說代價）：letters submodule **沒 init** 時是空目錄 ⇒
+        //   那個人會安靜地從名單上消失（錢與登入都查不到他，而沒有一格會報錯）。
+        //   ⇒ 所以本函式**空名單一定出聲**：一個都掃不到幾乎不可能是真的。
+        // 數值影響：純讀。dir-mtime 快取的鍵改成 letters 根目錄（新增／刪除 persona 目錄會動它；
+        //          目錄內部改動不會 —— 而 pool 名單只關心有哪些目錄）。
+        // ===========================================================
+
         public static HashSet<string> PoolNames()
         {
-            string dir = PersonasDir;
+            string dir = UCL_LettersPath.Root;
             long mtime;
             try { mtime = Directory.Exists(dir) ? Directory.GetLastWriteTimeUtc(dir).Ticks : -1L; }
             catch { mtime = -1L; }
@@ -54,18 +69,24 @@ namespace UCL.Core.EditorLib.AgentCommands
             {
                 if (Directory.Exists(dir))
                 {
-                    foreach (var f in Directory.GetFiles(dir, "*.json"))
+                    foreach (var d in Directory.GetDirectories(dir))
                     {
-                        string name = Path.GetFileNameWithoutExtension(f);
+                        string name = Path.GetFileName(d);
                         if (name.StartsWith("_") || name.StartsWith(".")) continue;
+                        if (!Directory.Exists(Path.Combine(d, UCL_LettersPath.ProfileDirName))) continue;
                         set.Add(name);
                     }
                 }
+                else Debug.LogError($"[PersonaProfile] letters 根目錄不存在：`{dir}` —— pool 名單會是空的");
             }
             catch (Exception e)
             {
                 Debug.LogWarning($"[PersonaProfile] pool 掃描失敗：{e.Message}");
             }
+            if (set.Count == 0)
+                Debug.LogError("[PersonaProfile] pool 名單掃到 **0 位** —— 幾乎不可能是真的："
+                             + $"要嘛 letters 根路徑錯（`{dir}`），要嘛 submodule 沒 init（空目錄沒有 profile/）。"
+                             + "此時錢與登入都會查無此人，而下游多半只會靜靜地少一個人。");
             s_NamesCache = set;
             s_NamesCacheMtime = mtime;
             return set;
@@ -86,7 +107,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static bool Exists(string iPersona)
             => !string.IsNullOrEmpty(iPersona)
                && !iPersona.StartsWith("_") && !iPersona.StartsWith(".")
-               && File.Exists(Path.Combine(PersonasDir, iPersona + ".json"));
+               && Directory.Exists(UCL_LettersPath.ProfileDir(iPersona));
 
         /// <summary>路由欄（§8.3 綁專案組）。查無此人回 null。缺欄回空字串。</summary>
         public static Dictionary<string, string> GetRouting(string iPersona)
@@ -121,27 +142,63 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// </summary>
         public static JsonData GetRaw(string iPersona, bool iAllowMigrate)
         {
-            var jd = ParseLegacy(iPersona);
+            var jd = BuildPersonaRaw(iPersona);
             if (jd == null) return null;
             return MergeProfile(iPersona, jd, iAllowMigrate);
         }
 
-        /// <summary>只讀 legacy 舊源（`AwakenInit/personas/<p>.json`），不疊 profile/、不遷移。</summary>
-        static JsonData ParseLegacy(string iPersona)
+        // ===========================================================
+        // 區塊職責：persona 的**非 profile 欄**組裝 —— 真相源全部在 `letters/<persona>/`。
+        // 物理意義：`AwakenInit/personas/<p>.json` 於 2026-08-21 退場（Tim 拍板：persona 相關資料
+        //          整合到 letters）。本函式回的是「除了 profile/ 以外」那些欄，MergeProfile 再把
+        //          profile/ 疊上去 ⇒ 30 幾個既有讀取端一行都不必改。
+        //   · `agent`（＝帳號 id）← `bank/<本專案區域>.md`。實測 21/21 與舊 registry 的 agent 欄
+        //     逐字相同 ⇒ 這不是換語意，是拿掉重複的那一份。⚠ 沒綁定要出聲：靜默回空會讓錢落央行。
+        //   · `status` / `last_active` ← **lock**（`_session/_persona_<p>.json`）。
+        //     舊 registry 的 status 欄是快取，而登入路徑早就寫著「registry 說 online 但查無 lock
+        //     ⇒ 以 lock 為準」—— 既然結論永遠是 lock，那個欄位就不該存在。
+        //   · `wake_count` ← `wakes/` 的收尾信數（在線＝本次還沒寫信 ⇒ +1）。
+        //   · `last_consolidated_wake` / `_at` ← `longterm/wake_<a>-<b>.md` 檔名與 frontmatter
+        //     （BUG-4 就是那個快取落後而磁碟沒落後）。
+        // 數值影響：純唯讀。`profile/` 不存在 ⇒ 回 null（＝查無此人，與 Exists 同一套判準）。
+        // ===========================================================
+        static JsonData BuildPersonaRaw(string iPersona)
         {
-            if (string.IsNullOrEmpty(iPersona)) return null;
-            string path = Path.Combine(PersonasDir, iPersona + ".json");
-            if (!File.Exists(path)) return null;
-            try
+            if (!Exists(iPersona)) return null;
+            var jd = new JsonData();
+
+            string aRegion = Treasury.UCL_CentralBankSettings.CurrencyId;
+            string aAgent = GetBankAccount(iPersona, aRegion, out string aBankSrc, out string aBankNote);
+            if (!string.IsNullOrEmpty(aAgent))
             {
-                var jd = JsonData.ParseJson(File.ReadAllText(path));
-                return (jd != null && jd.IsObject) ? jd : null;
+                jd["agent"] = new JsonData(aAgent);
+                if (!string.Equals(aBankSrc, aRegion, StringComparison.Ordinal))
+                    Debug.LogWarning($"[PersonaProfile] {iPersona} 的 agent 借用了別區的綁定"
+                                   + $"（本區 {aRegion} 沒有宣告，來源 {aBankSrc}）：{aBankNote}");
             }
-            catch (Exception e)
+            else
             {
-                Debug.LogWarning($"[PersonaProfile] {iPersona}.json 解析失敗：{e.Message}");
-                return null;
+                // 不填空字串頂替：下游 bank 解析拿到空 agent 會落央行，而那是一個看起來合理的處置
+                // 掛在錯誤的原因上（真正的原因是「這個人沒有本區綁定」）。
+                Debug.LogWarning($"[PersonaProfile] {iPersona} 在區域 {aRegion} 查無帳號綁定"
+                                 + $"（bank/{aRegion}.md 不存在）—— agent 欄留缺席，呼叫端請攤給人看。");
             }
+
+            var aLock = Awakening.UCL_AwakeningService.ReadLock(iPersona);
+            jd["status"] = new JsonData(aLock != null ? "online" : "offline");
+            if (aLock != null && !string.IsNullOrEmpty(aLock.locked_at))
+                jd["last_active"] = new JsonData(aLock.locked_at);
+
+            int aLetters = Awakening.UCL_AwakeningService.WakeLetterCount(iPersona);
+            jd["wake_count"] = new JsonData(aLock != null ? aLetters + 1 : aLetters);
+
+            var (aSpanEnd, aAt) = Awakening.UCL_AwakeningService.MaxDigestSpan(iPersona);
+            if (aSpanEnd > 0)
+            {
+                jd["last_consolidated_wake"] = new JsonData(aSpanEnd);
+                if (!string.IsNullOrEmpty(aAt)) jd["last_consolidated_at"] = new JsonData(aAt);
+            }
+            return jd;
         }
 
         public static string GetString(string iPersona, string iField, string iDefault = "")
@@ -778,31 +835,9 @@ namespace UCL.Core.EditorLib.AgentCommands
             return aSb.ToString();
         }
 
-        // ===========================================================
-        // 區塊職責：讓 legacy 舊源在 Phase 1 之後**只出不進**（§8.4 鐵則）。
-        // 物理意義：`WriteRaw` 的呼叫端（morning patch-write／goodnight ×2）形狀都是
-        //          `GetRaw → 改活體欄 → WriteRaw 整檔`。合併層上線後那個「整檔」裡的
-        //          identity 欄**已經是 profile/ 的值** ⇒ 原樣寫回去就是回寫舊源，
-        //          而且完全靜默（兩邊都變成活的，BUG-6 的形狀換個位置重演）。
-        // ⇒ 由接縫強制：寫 legacy 之前把 identity 欄按**磁碟上的 legacy 原值**釘回，
-        //   legacy 沒有那個 key 就從 payload 移除。**不靠呼叫端記得**（記得是會過期的）。
-        // 📌 建人（onDisk == null）原樣放行 —— 那是 legacy 檔的誕生，Phase 1 不改建人路徑
-        //   （routing 表同步登記留給 Phase 2，summit 拍板）。
-        // 數值影響：多一次 legacy 檔解析（只在寫入路徑，不在熱讀路徑）。
-        //          同時剝掉衍生欄 `_field_sources` —— 它是合併層算出來的，不該落地。
-        // ===========================================================
-        static void FreezeLegacyIdentity(string iPersona, JsonData iFull)
-        {
-            iFull.Remove(FIELD_SOURCES_KEY);
-
-            var aOnDisk = ParseLegacy(iPersona);
-            if (aOnDisk == null) return;                         // 建人：legacy 檔還不存在，原樣放行
-            foreach (var f in IDENTITY_FIELDS)
-            {
-                if (aOnDisk.Contains(f)) iFull[f] = aOnDisk[f];
-                else iFull.Remove(f);
-            }
-        }
+        // ⛔ `FreezeLegacyIdentity` 已退場（2026-08-21）：它的職責是「寫 legacy 之前把 identity 欄
+        //    按磁碟原值釘回」，而 **legacy 檔本身已經沒有了** —— persona 資料整合到 letters。
+        //    留一支對著不存在的檔案做防護的函式，比沒有防護更糟：它看起來還在守。
 
         // ===========================================================
         // 區塊職責：profile 快照 —— python 端的唯一資料來源（§8.7 A＋B 拍板）。
@@ -908,10 +943,21 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
         }
 
-        /// <summary>
-        /// 整檔寫入（建人也走這裡：目標檔不存在＝新建）。actor / reason 必填，空值不寫直接回錯。
-        /// <paramref name="iChangedFields"/>＝這次動了哪些欄（審計用；建檔傳 "create"）。
-        /// </summary>
+        // ===========================================================
+        // 區塊職責：**整份 payload 的分流寫入** —— persona 資料整合到 letters 之後，
+        //          「整檔寫」這個動作不存在了（沒有那個檔），所以本函式改成逐欄決定去哪。
+        // 物理意義：三類欄，三種處置，**都要留痕**：
+        //          · identity 欄（含 model / actual_agent）→ `profile/<field>.md`
+        //          · 推導欄（wake_count / status / last_active / last_consolidated_*）→ **不寫**。
+        //            它們的真相源是 wakes/ 信件數、lock、longterm/ 檔名 ⇒ 寫進來只會多一份會落後的快取
+        //            （BUG-4 就是那個快取落後而磁碟沒落後，於是假 OVERDUE 逼人重做已完成的濃縮）。
+        //          · `agent`（＝帳號 id）→ **拒收**，要改走 `op=set_bank`（一區一檔的綁定，有自己的審計）。
+        //            這裡不代收：代收就是第二個寫入端，而錢的欄位不該有第二個寫入端。
+        // 🩸 為什麼不靜默忽略推導欄：呼叫端（登入／晚安）現在的形狀是「GetRaw → 改活體欄 → WriteRaw」，
+        //    它們**以為自己寫進去了**。靜默忽略會讓「寫了沒生效」與「寫成功」同形 ——
+        //    那正是本專案這一族 bug 的標準長相。⇒ 跳過的欄位一律回報在 `oError`／審計裡（不擋主寫入）。
+        // 數值影響：identity 欄逐欄原子寫 + 逐欄審計；全程沒有任何一個中央檔被建立。
+        // ===========================================================
         public static bool WriteRaw(string iPersona, JsonData iFull, string iActor, string iReason,
             string iChangedFields, out string oError)
         {
@@ -923,24 +969,37 @@ namespace UCL.Core.EditorLib.AgentCommands
                 return false;
             }
             if (iFull == null || !iFull.IsObject) { oError = "內容必須是 JSON 物件"; return false; }
-            FreezeLegacyIdentity(iPersona, iFull);
-            try
+
+            iFull.Remove(FIELD_SOURCES_KEY);                 // 合併層算出來的衍生欄，不落地
+            var aWritten = new List<string>();
+            var aSkipped = new List<string>();
+            var aRefused = new List<string>();
+
+            foreach (var f in IDENTITY_FIELDS)
             {
-                string path = Path.Combine(PersonasDir, iPersona + ".json");
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
-                string tmp = path + ".tmp";
-                File.WriteAllText(tmp, iFull.ToJsonBeautify(), new System.Text.UTF8Encoding(false));
-                if (File.Exists(path)) File.Delete(path);
-                File.Move(tmp, path);
-                AppendAudit(iPersona, iChangedFields ?? "", iActor, iReason);
-                WriteSnapshot();
-                return true;
+                if (!iFull.Contains(f)) continue;
+                if (!WriteProfileField(iPersona, f, iFull[f], iActor, iReason, false, out string aErr))
+                { oError = $"profile/{f} 寫入失敗：{aErr}"; return false; }
+                aWritten.Add(f);
             }
-            catch (Exception e)
+            foreach (var f in new List<string>(iFull.Keys))
             {
-                oError = e.Message;
-                return false;
+                if (IsIdentityField(f)) continue;
+                if (string.Equals(f, "agent", StringComparison.Ordinal)) { aRefused.Add(f); continue; }
+                aSkipped.Add(f);
             }
+
+            AppendAudit(iPersona, "profile:[" + string.Join(",", aWritten) + "]"
+                        + (aSkipped.Count > 0 ? " skipped(推導欄):[" + string.Join(",", aSkipped) + "]" : "")
+                        + (aRefused.Count > 0 ? " refused(走 set_bank):[" + string.Join(",", aRefused) + "]" : ""),
+                        iActor, iReason);
+            WriteSnapshot();
+
+            if (aRefused.Count > 0)
+                oError = $"以下欄位**未寫入**（帳號欄要走 op=set_bank）：{string.Join(",", aRefused)}";
+            else if (aWritten.Count == 0 && aSkipped.Count > 0)
+                oError = $"沒有任何 identity 欄可寫；本次 payload 只含推導欄（不儲存）：{string.Join(",", aSkipped)}";
+            return true;
         }
 
         /// <summary>
@@ -952,8 +1011,8 @@ namespace UCL.Core.EditorLib.AgentCommands
         {
             oError = "";
             if (string.IsNullOrWhiteSpace(iField)) { oError = "field 必填"; return false; }
-            if (ParseLegacy(iPersona) == null)
-            { oError = $"persona 檔不存在或解析失敗：{iPersona}"; return false; }
+            if (!Exists(iPersona))
+            { oError = $"查無此 persona（`letters/{iPersona}/profile/` 不存在）：{iPersona}"; return false; }
 
             if (IsIdentityField(iField))
             {
@@ -973,9 +1032,17 @@ namespace UCL.Core.EditorLib.AgentCommands
                 return WriteProfileField(iPersona, iField, aVal, iActor, iReason, true, out oError);
             }
 
-            var jd = ParseLegacy(iPersona);                  // 非 identity 欄：patch legacy（不疊 profile/，避免把合併值寫回去）
-            jd[iField] = new JsonData(iValue ?? "");
-            return WriteRaw(iPersona, jd, iActor, iReason, iField, out oError);
+            // 非 identity 欄＝推導欄或帳號欄，**兩者都沒有儲存位置**（2026-08-21 整合到 letters 之後）。
+            // ⇒ fail-loud。以前這裡會 patch 進中央 json，而那個檔已經不存在；靜默成功是最貴的回答。
+            if (string.Equals(iField, "agent", StringComparison.Ordinal))
+            {
+                oError = "`agent`（＝帳號 id）不由本入口寫 —— 走 `Cmd_PersonaProfile op=set_bank`"
+                       + "（一區一檔的綁定，有自己的審計與跨區借用判準）。";
+                return false;
+            }
+            oError = $"`{iField}` 是推導欄（真相源在 wakes/ 信件數、lock、longterm/ 檔名）"
+                   + "，不接受寫入 —— 要改就去改那個既成事實。";
+            return false;
         }
     }
 }

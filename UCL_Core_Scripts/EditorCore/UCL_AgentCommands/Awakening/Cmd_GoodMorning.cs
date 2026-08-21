@@ -148,9 +148,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     string aLayerRole = "";
                     try
                     {
-                        var aP = UCL_PersonaData.LoadFromFile(
-                            Path.Combine(UCL_AwakeningService.PersonasDir, aPersona + ".json"));
-                        if (aP != null) { aWake = aP.wake_count; aLayerRole = aP.layer_role; }
+                        // 走接縫，不直讀中央檔（BUG-29 ①：那個檔已退場，而 layer_role 的真相在 profile/）
+                        var aPJd = AgentCommands.UCL_PersonaProfile.GetRaw(aPersona);
+                        var aP = new UCL_PersonaData(); if (aPJd != null) aP.DeserializeFromJson(aPJd);
+                        if (aPJd != null) { aWake = aP.wake_count; aLayerRole = aP.layer_role; }
                     }
                     catch (Exception e) { Debug.LogWarning($"[GoodMorning] persona 檔讀取失敗（自介標頭降級）: {e.Message}"); }
                     string aHeader = UCL_AwakeningService.BuildIntroHeader(

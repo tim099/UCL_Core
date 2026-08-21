@@ -104,7 +104,7 @@ namespace UCL.Core.EditorLib.Page
 
         string m_AgentCommandsDir = "";
         string m_SessionDir = "";
-        string m_PersonasDir = "";
+        string m_LettersRoot = "";
         // persona 信件庫根目錄（letters/<persona>/…）。與 UCL_PersonaInspectorPage 的 m_LettersDir 同一個位置，
         // 兩邊都從 UCL_RepoPath.AgentCommandsDir 推導 —— 不寫死安裝路徑（AgentCommands 本身可能是 submodule）。
         string m_LettersDir = "";
@@ -123,7 +123,7 @@ namespace UCL.Core.EditorLib.Page
             //   「持久狀態資料」，依 UCL_AgentCommandsPath 的類別契約該走可 override 的 DataRoot。
             //   ⇒ 設了 DataRoot override 的機器上，本頁與 Cmd_LoginStatus **原本讀不同目錄**，
             //     而兩邊都不會報錯（頁面顯示一組、Cmd 操作另一組）。預設模式下兩者逐字相同。
-            m_PersonasDir = AgentCommands.Awakening.UCL_AwakeningService.PersonasDir;
+            m_LettersRoot = UCL_LettersPath.Root;   // 2026-08-21：pool 判準改成 letters/<p>/profile/
             // letters 走唯一解析點（BUG-2）—— 本頁原本自己拼 `ChatTavern/baton/letters`，
             // 等於把佈局知識複製一份；佈局調整時它不會跟著改，而且**不會報錯**。
             m_LettersDir = UCL_LettersPath.Root;
@@ -573,7 +573,7 @@ namespace UCL.Core.EditorLib.Page
                 if (m_Pool.Count == 0)
                 {
                     // 呼叫 GUILayout.Label 顯示空池提示資訊，並帶入 Personas 目錄路徑。
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LoginStatus.Pool.EmptyFmt"), m_PersonasDir), UCL_GUIStyle.LabelStyle);
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LoginStatus.Pool.EmptyFmt"), m_LettersRoot), UCL_GUIStyle.LabelStyle);
                     // 提早結束函數呼叫。
                     return;
                 }
@@ -744,20 +744,30 @@ namespace UCL.Core.EditorLib.Page
                 return;
             }
             string lockPath = Path.Combine(m_SessionDir, $"_persona_{persona}.json");
-            string personaPath = Path.Combine(m_PersonasDir, persona + ".json");
-            if (!File.Exists(lockPath) || !File.Exists(personaPath))
+            if (!File.Exists(lockPath))
             {
-                Debug.LogWarning($"[LoginStatus] 套用實際 Agent 失敗：lock 或 persona 檔不存在 ({persona})");
+                Debug.LogWarning($"[LoginStatus] 套用實際 Agent 失敗：lock 不存在（{persona} 沒在線）");
+                return;
+            }
+            if (!AgentCommands.UCL_PersonaProfile.Exists(persona))
+            {
+                Debug.LogWarning($"[LoginStatus] 套用實際 Agent 失敗：查無此 persona（{persona}）");
                 return;
             }
             try
             {
                 var lockData = JsonData.ParseJson(File.ReadAllText(lockPath));
-                var personaData = JsonData.ParseJson(File.ReadAllText(personaPath));
                 lockData["actual_agent"] = new JsonData(value);
-                personaData["actual_agent"] = new JsonData(value);
                 AtomicWriteUtf8(lockPath, lockData.ToJsonBeautify());
-                AtomicWriteUtf8(personaPath, personaData.ToJsonBeautify());
+                // persona 側走寫入接縫（actor/reason 必填＋審計 jsonl＋刷快照）——
+                // 🩸 BUG-29 ②：這裡原本直讀直寫中央 json，繞過審計；那個檔 2026-08-21 起也不存在了。
+                if (!AgentCommands.UCL_PersonaProfile.SetField(persona, "actual_agent", value,
+                        "UCL_LoginStatusPage", "後台套用實際承載 agent", out string aErr))
+                {
+                    Debug.LogWarning($"[LoginStatus] lock 已更新但 persona 側寫入失敗（{persona}）：{aErr}");
+                    LoadData();
+                    return;
+                }
                 Debug.Log($"[LoginStatus] {persona} actual_agent → {value}（顯示 Agent / bank 未變）");
                 LoadData();
             }

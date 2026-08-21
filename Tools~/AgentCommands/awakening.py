@@ -304,7 +304,8 @@ def similarity_tier(s: float) -> str:
 
 _REGISTRY_DIR = _REGISTRY_PATH.parent
 _REGISTRY_META_PATH = _REGISTRY_DIR / "_registry_meta.json"
-_PERSONAS_DIR = _paths.personas_dir()   # 委派：persona 目錄的唯一解析點（對側 = C# ResolvePersonaFile）
+# ⛔ `_PERSONAS_DIR` 已退場（2026-08-21）：persona 資料整合到 letters/<persona>/。
+#    名單走 list_persona_names()（判準＝profile/ 存在），欄位走 _lib/persona_profile 接縫。
 _REGISTRY_MIGRATION_MARKER = _REGISTRY_DIR / ".migrated_from_v2_single_file"
 
 
@@ -406,60 +407,17 @@ def _atomic_write_json(path, obj) -> bool:
 
 def _migrate_registry_to_split_if_needed() -> None:
     """
-    區塊職責: 一次性 migration — 舊 persona_registry.json (single file) → per-persona files
-    物理意義: marker file 存在 → skip (idempotent); 舊檔仍存在 → 拆分後 backup → 寫 marker
-    數值影響: 不會自動刪舊 .json (rename 成 .v2.bak); 失敗時保留原狀不刻意 cleanup
+    區塊職責: **已退場的一次性 migration**（單檔 registry → per-persona 檔，2026-05 時代）。
+    物理意義: 那個目標形狀本身已於 2026-08-21 退場（persona 資料整合到 letters/<persona>/）⇒
+              這支若還會跑，就是把一個已經廢棄的中間形狀**重新造出來**（連目錄一起 mkdir）。
+    數值影響: 只在偵測到真正的舊單檔時出聲指路，其餘什麼都不做。
     """
-    if _REGISTRY_MIGRATION_MARKER.exists():
-        return
-    # 沒舊檔也標記為 migrated (新 install 場景)
     if not _REGISTRY_PATH.exists():
-        _REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
-        _PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
-        _REGISTRY_MIGRATION_MARKER.write_text(
-            f"migrated_at={utcnow_iso()}\nlegacy=none (fresh install)\n",
-            encoding="utf-8",
-        )
         return
-
-    try:
-        with open(_REGISTRY_PATH, "r", encoding="utf-8") as f:
-            legacy = json.load(f)
-    except Exception as e:
-        # 老檔壞掉仍標 migrated 防卡住; warning 印 stderr
-        print(f"⚠ legacy registry parse failed ({e}), skipping migration", file=sys.stderr)
-        _REGISTRY_MIGRATION_MARKER.write_text(
-            f"migrated_at={utcnow_iso()}\nlegacy=corrupt\n", encoding="utf-8")
-        return
-
-    personas = (legacy or {}).pop("personas", {}) or {}
-    metadata = legacy  # 拆完 personas 後剩下的就是 metadata
-
-    _PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
-    for name, pdata in personas.items():
-        if not isinstance(pdata, dict):
-            continue
-        _atomic_write_json(_PERSONAS_DIR / f"{name}.json", pdata)
-
-    # metadata 寫 _registry_meta.json
-    _atomic_write_json(_REGISTRY_META_PATH, metadata)
-
-    # 舊檔 rename 成備份 (不刪)
-    backup = _REGISTRY_PATH.with_suffix(".json.v2.bak")
-    try:
-        _REGISTRY_PATH.rename(backup)
-    except Exception as e:
-        print(f"⚠ legacy registry rename to .v2.bak failed: {e}", file=sys.stderr)
-
-    _REGISTRY_MIGRATION_MARKER.write_text(
-        f"migrated_at={utcnow_iso()}\n"
-        f"legacy_file={_REGISTRY_PATH.name}\n"
-        f"backup_to={backup.name}\n"
-        f"personas_migrated={len(personas)}\n",
-        encoding="utf-8",
-    )
-    print(f"✓ persona_registry migrated to per-persona split "
-          f"({len(personas)} personas → {_PERSONAS_DIR})", file=sys.stderr)
+    print(f"⚠ [awakening] 偵測到 2026-05 時代的單檔 registry：{_REGISTRY_PATH}\n"
+          f"   本工具**不再自動拆分**（拆分的目標 personas/ 已退場）。要救那份資料請人工處理：\n"
+          f"   身分欄 → letters/<persona>/profile/，帳號歸屬 → letters/<persona>/bank/<區域>.md。",
+          file=sys.stderr)
 
 
 def load_registry() -> dict:
@@ -471,8 +429,9 @@ def load_registry() -> dict:
     """
     _migrate_registry_to_split_if_needed()
 
-    if not _REGISTRY_META_PATH.exists() and not _PERSONAS_DIR.exists():
-        raise SystemExit(f"❌ registry not found: {_REGISTRY_DIR} (no meta + no personas/)")
+    if not _REGISTRY_META_PATH.exists():
+        raise SystemExit(f"❌ registry meta not found: {_REGISTRY_META_PATH}"
+                         "（persona 資料在 letters/<persona>/，metadata（agent_banks 等）仍住這個檔）")
 
     # Load metadata (含 _schema_version / _constants / agent_banks ...)
     if _REGISTRY_META_PATH.exists():
@@ -526,52 +485,46 @@ def load_registry() -> dict:
 _SEAM_DERIVED_KEYS = ("_source", "_snapshot_at", "_field_sources")
 
 
-def _freeze_legacy_identity(name: str, pdata: dict) -> dict:
-    out = {k: v for k, v in pdata.items() if k not in _SEAM_DERIVED_KEYS}
-
-    aPath = _PERSONAS_DIR / f"{name}.json"
-    if not aPath.exists():
-        return out                                  # 建人：原樣放行
-    try:
-        on_disk = json.loads(aPath.read_text(encoding="utf-8"))
-    except Exception as e:
-        # 讀不到舊值就無法保證「不回寫」⇒ 寧可整批不寫也不要寫一個可能污染舊源的版本
-        raise SystemExit(
-            f"❌ [awakening] 寫入前讀不到 legacy {name}.json（{e}）—— 停手。\\n"
-            f"   理由：讀不到舊值就無法保證 identity 欄不被回寫（§8.4 舊源只出不進），"
-            f"而回寫是靜默的，事後查不出來。")
-
-    for f in _PHASE1_IDENTITY_FIELDS:
-        if f in on_disk:
-            out[f] = on_disk[f]
-        else:
-            out.pop(f, None)
-    return out
+# ⛔ `_freeze_legacy_identity` 已退場（2026-08-21）：它的工作是「寫 legacy 之前把 identity 欄
+#    按磁碟原值釘回」，而 legacy 檔本身已經沒有了。留一支對著不存在的檔做防護的函式，
+#    比沒有防護更糟 —— 它看起來還在守。
 
 
 def save_registry(reg: dict) -> None:
     """
-    區塊職責: 把 in-memory reg dict 拆寫回 per-persona files + metadata file
-    物理意義: 每 persona atomic write (tmp + os.replace); metadata 同樣 atomic
-    數值影響: 不會清掉 personas/ 內既存但 reg["personas"] 沒有的孤兒檔
-              (orphan cleanup 由 caller 顯式呼叫 prune_personas() 處理, 避免誤刪)
+    區塊職責: **不再寫 per-persona 檔** —— persona 資料 2026-08-21 整合到
+              `letters/<persona>/`（Tim 拍板），中央 `AwakenInit/personas/` 已退場。
+    物理意義: metadata（`_registry_meta.json`：agent_banks / system_accounts…）照舊寫；
+              persona 那半邊**沒有落點**，本函式大聲說明它丟掉了什麼，而不是靜靜地成功。
+    數值影響: identity 欄（見 _PHASE1_IDENTITY_FIELDS）出現在 payload ⇒ **停手並指路**，
+              因為那些欄有真正的寫入通道（Cmd_PersonaProfile op=set），走錯通道會靜默失效；
+              其餘（wake_count / status / last_active / availability…）是推導欄或死欄，丟掉即可，
+              但**要印出來** —— 「寫了沒生效」與「寫成功」不可以長得一樣。
     """
     _REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
-    _PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
-
     personas = reg.get("personas", {}) or {}
-    # metadata = reg 去掉 personas 的拷貝 (不 mutate caller 傳入的 dict)
     metadata = {k: v for k, v in reg.items() if k != "personas"}
-
-    # Write metadata atomic（canonical 排版 + 內容沒變不落檔 —— BUG-6）
     _atomic_write_json(_REGISTRY_META_PATH, metadata)
 
-    # Write each persona atomic
+    dropped = {}
     for name, pdata in personas.items():
         if not isinstance(pdata, dict):
             continue
-        _atomic_write_json(_PERSONAS_DIR / f"{name}.json",
-                           _freeze_legacy_identity(name, pdata))
+        ident = [f for f in _PHASE1_IDENTITY_FIELDS if f in pdata]
+        if ident:
+            raise SystemExit(
+                f"❌ [awakening] save_registry 收到 identity 欄（{name}: {ident}）—— 停手。\n"
+                f"   persona 資料已整合到 letters/<persona>/profile/，中央 personas/ 退場（2026-08-21）。\n"
+                f"   身分欄要走：run_cmd.py run PersonaProfile --arg op=set --arg persona={name} "
+                f"--arg field=<欄> --arg value=<值> --arg actor=<誰> --arg reason=<憑什麼>")
+        keys = [k for k in pdata.keys() if k not in _SEAM_DERIVED_KEYS]
+        if keys:
+            dropped[name] = keys
+    if dropped:
+        print("⚠ [awakening] save_registry 不再落 persona 檔，以下欄位**未寫入**（都是推導欄／死欄，"
+              "真相源在 wakes/ 信件數、lock、longterm/ 檔名）：", file=sys.stderr)
+        for name, keys in sorted(dropped.items()):
+            print(f"   · {name}: {', '.join(sorted(keys))}", file=sys.stderr)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -599,7 +552,7 @@ def save_registry(reg: dict) -> None:
 # **三端同步義務**。此處只需要「哪些欄可能被搬走」，不需要值。
 _PHASE1_IDENTITY_FIELDS = ("layer_role", "forked_from", "fork_lineage", "forked_at",
                            "created_at", "identity_vector", "vector_history", "email",
-                           "plurk_account")
+                           "plurk_account", "model", "actual_agent")
 
 
 def _profile_migrated_fields(persona: str, fields) -> list:
@@ -705,16 +658,25 @@ def assert_legacy_write_effective(edits: dict, what: str) -> None:
 
 def list_persona_names() -> list:
     """
-    區塊職責: 列當前已建檔的 persona 名單 (給 relationship 等其他 system 反查 cross-persona target 用)
-    物理意義: 只看 personas/*.json 檔案存在性, 不 parse 內容
-    數值影響: 純讀; 不 trigger migration (caller 應已 load_registry 過)
+    區塊職責: 列當前 persona 名單（給 relationship 等 system 反查 cross-persona target 用）
+    物理意義: 判準＝`letters/<persona>/profile/` 目錄存在（對側 = C# UCL_PersonaProfile.PoolNames）。
+              ⚠ **不能只掃 letters 目錄**：實測 33 個目錄裡有 12 個是幽靈（改名／早期實驗殘骸），
+              而 profile/ 是接縫建立的 ⇒ 它的存在等於「這個人被當成 persona 讀寫過」。
+    數值影響: 純讀。空名單一定出聲 —— letters submodule 沒 init 時是空目錄，
+              而「一個人都沒有」幾乎不可能是真的（那時錢與登入都會查無此人，且不會報錯）。
     """
-    if not _PERSONAS_DIR.exists():
+    root = _paths.letters_root()
+    if not root.exists():
+        print(f"⚠ [awakening] letters 根目錄不存在：{root}", file=sys.stderr)
         return []
-    return sorted([
-        f.stem for f in _PERSONAS_DIR.glob("*.json")
-        if not f.stem.startswith("_") and not f.stem.startswith(".")
+    names = sorted([
+        d.name for d in root.iterdir()
+        if d.is_dir() and not d.name.startswith(("_", ".")) and (d / "profile").is_dir()
     ])
+    if not names:
+        print(f"⚠ [awakening] persona 名單掃到 0 位（{root}）—— 檢查 letters submodule 有沒有 init",
+              file=sys.stderr)
+    return names
 
 
 # 區塊職責：agent → bank 解析改走 UCL_Core 代碼側 _lib/bank_resolver.py 單一 source-of-truth。

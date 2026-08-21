@@ -44,8 +44,7 @@ namespace UCL.Core.EditorLib.Page
         // ==== 路徑（跟 UCL_ChatTavernAdminPage 同一套解析根：DataRoot = <RepoRoot>/AgentCommands）====
         static string DataRoot => UCL_AgentCommandsPath.DataRoot;
         static string RegistryMetaPath => Path.Combine(DataRoot, "AwakenInit", "_registry_meta.json");
-        // persona 目錄走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
-        static string PersonasDir => AgentCommands.Awakening.UCL_AwakeningService.PersonasDir;
+        // ⛔ 本頁不再需要 persona 目錄：persona→帳號改讀 letters 綁定檔（2026-08-21）。
         static string CanvasVouchersDir => Path.Combine(DataRoot, "Canvas", "vouchers");
         static string TavernQuotaPath => Path.Combine(DataRoot, "ChatTavern", "agent_bonus_quota.json");
 
@@ -369,18 +368,16 @@ namespace UCL.Core.EditorLib.Page
                 }
 
                 // ---- persona → agent（讀各 persona 檔的 agent 欄；SOT，不另存一份）----
-                if (Directory.Exists(PersonasDir))
+                // persona → 帳號（＝agent id）：真相源是 letters 的綁定檔（2026-08-21 中央 json 退場）。
+                // 🩸 這一格 kiara 2026-08-20 記過：本頁自己寫過一份「persona→agent→查 agent_banks」，
+                //    合一之後那份就壞了，而 UCL_PersonaAgentAdminPage 同時顯示正確答案 —— 兩頁各說各話。
                 {
-                    foreach (var pf in Directory.GetFiles(PersonasDir, "*.json"))
+                    string aRegion = AgentCommands.Treasury.UCL_CentralBankSettings.CurrencyId;
+                    foreach (var name in AgentCommands.UCL_PersonaProfile.PoolNamesSorted())
                     {
-                        try
-                        {
-                            var pj = JsonData.ParseJson(File.ReadAllText(pf));
-                            string name = Path.GetFileNameWithoutExtension(pf);
-                            string agent = pj != null ? pj.GetString("agent", "") : "";
-                            if (!string.IsNullOrEmpty(agent)) m_PersonaToAgent[name] = agent;
-                        }
-                        catch { /* 單檔壞不擋整體載入 */ }
+                        string agent = AgentCommands.UCL_PersonaProfile.GetBankAccount(
+                            name, aRegion, out _, out _);
+                        if (!string.IsNullOrEmpty(agent)) m_PersonaToAgent[name] = agent;
                     }
                 }
 

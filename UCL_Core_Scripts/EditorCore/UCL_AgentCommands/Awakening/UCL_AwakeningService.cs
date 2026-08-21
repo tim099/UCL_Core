@@ -31,7 +31,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         // ===========================================================
         static string DataRoot => UCL_AgentCommandsPath.DataRoot;
 
-        public static string PersonasDir => Path.Combine(DataRoot, "AwakenInit", "personas");
         public static string RegistryMetaPath => Path.Combine(DataRoot, "AwakenInit", "_registry_meta.json");
 
         // ===========================================================
@@ -50,9 +49,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         //   改成「letters 優先」，那時需要 LettersDir 的 override 語意 —— 本類同時擁有兩者。
         // ⚠ 對側契約：Python 等價入口是 _lib/ucl_paths.py 的 personas_dir() / persona_file()。
         //   兩端要一起改 —— 只改一端的後果是兩邊各看各的目錄，而**兩邊都不會報錯**。
-        // ===========================================================
-        public static string ResolvePersonaFile(string iPersona)
-            => Path.Combine(PersonasDir, iPersona + ".json").Replace('\\', '/');
+        // ⛔ `ResolvePersonaFile` / `PersonasDir` 已退場（2026-08-21，Tim 拍板）：
+        //    persona 資料整合到 `letters/<persona>/`（身分欄 profile/、帳號 bank/<區域>.md），
+        //    中央 `AwakenInit/personas/` 不再存在。名單走 `UCL_PersonaProfile.PoolNames()`
+        //    （判準＝profile/ 目錄存在），欄位走 `UCL_PersonaProfile.GetRaw()`。
+        //    ⚠ 留一支能組出「那個檔的路徑」的函式，就是留一個邀請下一個人去直讀的入口 ——
+        //      而它會 `File.Exists` 失敗後 fail-soft，症狀是「查無此人」，不是「路徑過期」。
         public static string SessionDir => ResolveDataSub("_session");
         public static string LettersDir => ResolveDataSub(Path.Combine("ChatTavern", "baton", "letters"));
 
@@ -115,12 +117,30 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             return iAgent;
         }
 
-        /// <summary>agent → bank account。認不出走命名慣例 fallback（= 隱含開新 bank，對齊 Python 語意）。</summary>
+        // ===========================================================
+        // 區塊職責：agent → 帳號。**合一模式：agent id 就是帳號 id，一跳到底。**
+        // 物理意義：python 端（`_lib/bank_resolver.resolve_bank_account`）2026-08-20 就改成這樣了，
+        //          而這支 C# 對偶**沒跟上** —— 它還在走 `agent_banks` 兩跳。
+        // 🩸 那個落差今天被量到（basecamp 2026-08-21）：它把 `claude-code` 解成
+        //   `claude-da-xiaojie`，而該帳戶在 08-20 13:12 就已經改名歸併成 `claude-code`
+        //   （帳本有 `account-rename` 那筆），`Treasury/accounts/` 裡根本沒有它。
+        //   於是登入寫進 lock 的帳號、brief 印的餘額、晚安廣播、Sculpture 扣款**全指著一個不存在的帳戶**，
+        //   而錢真的進得去（孤兒帳戶照樣入帳）—— 沒有任何一層會出聲。
+        // ⚠ **刻意不走 `NormalizeAgent`**（照 python 那條血證）：大小寫歸一會把 `zeta` 歸成 `Zeta`，
+        //   而合一之後那是**兩個不同帳戶**，其中一個已銷戶 ⇒ 錢流向合法但禁止金流的帳號，全程零報錯。
+        //   alias 表同理不生效：它映射的是舊 agent 名，那些名字合一後已經不是任何人的帳號。
+        // 數值影響：`agent_banks` 只在輸入為空時當備援，並**出聲** —— 那是「舊表還有沒有人在讀」的讀數。
+        // ===========================================================
         public static string ResolveBankAccount(UCL_RegistryMeta iMeta, string iAgent)
         {
+            string aUnified = (iAgent ?? "").Trim();
+            if (!string.IsNullOrEmpty(aUnified)) return aUnified;
+
+            UnityEngine.Debug.LogWarning("[Awakening] ResolveBankAccount 收到空 agent —— 退 legacy agent_banks 兩跳鏈。"
+                           + "合一之後不該走到這裡，看到這行請查呼叫端為什麼沒有 agent。");
             string aCanonical = NormalizeAgent(iMeta, iAgent);
-            if (iMeta.agent_banks.TryGetValue(aCanonical, out string aBank)) return aBank;
-            return $"{aCanonical}-da-xiaojie";
+            if (iMeta != null && iMeta.agent_banks.TryGetValue(aCanonical, out string aBank)) return aBank;
+            return aCanonical;   // ⛔ 不再 derive `<agent>-da-xiaojie`：那是孤兒帳戶製造機（summit 2026-08-14 同修）
         }
 
         // ===========================================================
@@ -243,49 +263,43 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aSb.AppendLine($"- LettersDir: `{LettersDir}`　SessionDir: `{SessionDir}`");
             aSb.AppendLine($"- agent_banks: {aMeta.agent_banks.Count} 筆");
             aSb.AppendLine();
-            aSb.AppendLine("| Persona | agent→canonical | bank | 快取 wake_count | wakes/ 信數 | 下次編號 | Δ判讀 | status | lock |");
-            aSb.AppendLine("|---|---|---|---|---|---|---|---|---|");
+            aSb.AppendLine("| Persona | 帳號（agent id） | 綁定來源 | wakes/ 信數 | 下次編號 | status | lock | profile 缺席欄 |");
+            aSb.AppendLine("|---|---|---|---|---|---|---|---|");
 
-            if (!Directory.Exists(PersonasDir))
-            {
-                aSb.AppendLine($"\n✗ personas 目錄不存在：`{PersonasDir}`");
-                return aSb.ToString();
-            }
+            // 📌 2026-08-21 起「快取 wake_count vs 信數」那兩欄**沒有意義了** —— wake_count 已改成
+            //    由 wakes/ 信數推導（中央 persona json 退場），兩邊同源 ⇒ 永遠相等的比對是裝飾。
+            //    （這正是 summit 那條「恆亮警告」的鏡像：一個恆綠的對帳欄同樣不帶資訊。）
+            //    改對帳**真的還會分岔的東西**：本區有沒有帳號綁定、profile 有哪些欄缺席。
             int aWarn = 0;
-            foreach (var aFile in Directory.GetFiles(PersonasDir, "*.json").OrderBy(f => f, StringComparer.Ordinal))
+            string aRegion = Treasury.UCL_CentralBankSettings.CurrencyId;
+            var aPool = UCL_PersonaProfile.PoolNamesSorted();
+            aSb.AppendLine($"（pool 判準＝`letters/<persona>/profile/` 存在，共 {aPool.Count} 位；區域＝{aRegion}）\n");
+            foreach (var aName in aPool)
             {
-                string aName = Path.GetFileNameWithoutExtension(aFile);
-                if (aName.StartsWith("_") || aName.StartsWith(".")) continue;
-                UCL_PersonaData aP;
-                try { aP = UCL_PersonaData.LoadFromFile(aFile); }
-                catch (Exception e)
+                var aJd = UCL_PersonaProfile.GetRaw(aName, false);
+                if (aJd == null)
                 {
-                    aSb.AppendLine($"| `{aName}` | ✗ 解析失敗: {e.Message} | | | | | | | |");
-                    aWarn++;
-                    continue;
+                    aSb.AppendLine($"| `{aName}` | ✗ 讀不出來（profile/ 壞了？） | | | | | | |");
+                    aWarn++; continue;
                 }
-                if (aP == null) continue;
-                string aCanonical = NormalizeAgent(aMeta, aP.agent);
-                string aBank = ResolveBankAccount(aMeta, aP.agent);
+                var aP = new UCL_PersonaData(); aP.DeserializeFromJson(aJd); aP.name = aName;
+                string aAcc = aJd.GetString("agent", "");
+                UCL_PersonaProfile.GetBankAccount(aName, aRegion, out string aBankSrc, out _);
                 int aLetters = WakeLetterCount(aName);
-                int aDerivedNext = aLetters + 1;
                 var aLock = ReadLock(aName);
-                bool aOnline = aLock != null;
-                // Δ判讀：在線中 快取==信數+1 正常；靜止 快取==信數 正常（收尾信已補齊編號）。
-                // 其餘照 python 四分支語意標記 —— 這裡只報症狀，成因至少兩種的不認領單一結論。
-                int aExpected = aOnline ? aLetters + 1 : aLetters;
-                string aVerdict;
-                if (aP.wake_count == aExpected) aVerdict = "✓";
-                else if (aP.wake_count < aExpected) { aVerdict = $"🔧 快取落後 {aExpected - aP.wake_count}"; aWarn++; }
-                else { aVerdict = $"⚠ 快取超前 {aP.wake_count - aExpected}（收尾信遺失或上次未走完晚安）"; aWarn++; }
-                string aAgentCol = aP.agent == aCanonical ? aP.agent : $"{aP.agent}→{aCanonical}";
-                string aLockCol = aOnline ? $"🔒 {aLock.session_key}" : "";
-                aSb.AppendLine($"| `{aName}` | {aAgentCol} | {aBank} | {aP.wake_count} | {aLetters} | {aDerivedNext} | {aVerdict} | {aP.status} | {aLockCol} |");
+                var aSrcs = UCL_PersonaProfile.GetFieldSources(aName);
+                var aAbsent = new List<string>();
+                if (aSrcs != null)
+                    foreach (var kv in aSrcs) if (kv.Value == UCL_PersonaProfile.SRC_ABSENT) aAbsent.Add(kv.Key);
+                if (string.IsNullOrEmpty(aAcc)) aWarn++;
+                aSb.AppendLine($"| `{aName}` | {(string.IsNullOrEmpty(aAcc) ? "⚠ 無綁定" : aAcc)} | {aBankSrc} | "
+                             + $"{aLetters} | {aLetters + 1} | {aJd.GetString("status", "?")} | "
+                             + $"{(aLock != null ? "🔒 " + aLock.session_key : "")} | {aAbsent.Count} |");
             }
             aSb.AppendLine();
             aSb.AppendLine(aWarn == 0
-                ? "✅ 全綠 —— C# 推導與磁碟/快取一致（判準：在線 快取=信數+1；靜止 快取=信數）。"
-                : $"⚠ {aWarn} 筆需要人工看一眼（判讀欄非 ✓ 者）。");
+                ? $"✅ {aPool.Count} 位都有本區（{aRegion}）帳號綁定，資料讀得出來。"
+                : $"⚠ {aWarn} 筆需要人工看一眼（無綁定的人，錢會落央行）。");
             return aSb.ToString();
         }
 
@@ -601,7 +615,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         ///          不取檔名排序最後一個 —— wake 破百後 wake_099-105 會排在 wake_100-110 之後）。
         /// 數值影響：純唯讀（列目錄 + 讀 frontmatter 一欄）；解析不出來的檔名直接跳過。
         /// </summary>
-        static (int spanEnd, string at) MaxDigestSpan(string iPersona)
+        public static (int spanEnd, string at) MaxDigestSpan(string iPersona)
         {
             string aDir = Path.Combine(LettersDir, iPersona, "longterm");
             if (!Directory.Exists(aDir)) return (0, null);
@@ -747,22 +761,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine();
 
             var aMeta = UCL_RegistryMeta.LoadFromFile(RegistryMetaPath);
-            string aPersonaPath = Path.Combine(PersonasDir, iPersona + ".json");
 
             // ① persona 必須已註冊 —— 打錯字不該變成「幫你建一個新人格」
-            if (!File.Exists(aPersonaPath))
+            if (!UCL_PersonaProfile.Exists(iPersona))
             {
-                var aNames = Directory.Exists(PersonasDir)
-                    ? Directory.GetFiles(PersonasDir, "*.json").Select(Path.GetFileNameWithoutExtension)
-                        .Where(n => !n.StartsWith("_")).OrderBy(n => n, StringComparer.Ordinal).ToList()
-                    : new List<string>();
+                var aNames = UCL_PersonaProfile.PoolNamesSorted();
                 aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 不存在");
                 aR.AppendLine($"- 可選（{aNames.Count}）: {string.Join(", ", aNames)}");
                 aR.AppendLine("- exits: 開新 persona 走後台「🧬 Persona & Agent 管理頁」（不從 ritual 開後門）");
                 aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
             }
 
-            var aRaw = JsonData.ParseJson(File.ReadAllText(aPersonaPath));
+            var aRaw = UCL_PersonaProfile.GetRaw(iPersona);   // 接縫：真相源＝letters/<persona>/
             var aP = new UCL_PersonaData(); aP.DeserializeFromJson(aRaw); aP.name = iPersona;
 
             // ② 顯示歸屬 agent / 實際承載 agent 分離（display agent 決定 bank 與對外身分）
@@ -904,7 +914,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             AtomicWrite(aMemoPath, aMemoBody);
 
             // 回傳 payload：verify 給可讀回的事實（路徑/值），不給 ✓
-            var aReadback = JsonData.ParseJson(File.ReadAllText(aPersonaPath));
+            var aReadback = UCL_PersonaProfile.GetRaw(iPersona);
             int aGap = 0;
             int aBookmark = aReadback.GetInt("last_consolidated_wake", 0);
             if (aBookmark > 0) aGap = aDerived - aBookmark;
@@ -926,7 +936,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             catch (Exception e) { aR.AppendLine($"- mail: 解析失敗（{e.Message}）—— 不以空字串頂替"); }
             aR.AppendLine($"- session_token: {aToken}（enforce 狀態見 UCL_LoginStatusPage；失憶救援 awakening.py whoami --token {aToken}）");
             aR.AppendLine("## verify（讀回的事實，不是 ✓）");
-            aR.AppendLine($"- registry: `{aPersonaPath}` → wake_count={aReadback.GetInt("wake_count", -1)} status={aReadback.GetString("status", "?")}");
+            // ⚠ 這行印的是**讀回的合併值**：wake_count 來自 wakes/ 信件數、status 來自 lock、
+            //   identity 欄來自 profile/ —— 印 profile 目錄才是人要去看的地方。
+            aR.AppendLine($"- 資料源: `{UCL_LettersPath.ProfileDir(iPersona)}` → wake_count={aReadback.GetInt("wake_count", -1)} status={aReadback.GetString("status", "?")}");
             aR.AppendLine($"- lock: `{LockPath(iPersona)}`（exists={File.Exists(LockPath(iPersona))}）");
             aR.AppendLine($"- memo: `{aMemoPath}`（exists={File.Exists(aMemoPath)}）");
             aR.AppendLine("## state");
@@ -1141,7 +1153,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             var aRes = new StepResult();
             aR.AppendLine($"# GoodNight step=check persona={iPersona}  ts=`{NowLocal()}`（本地時間）");
             aR.AppendLine();
-            if (!File.Exists(Path.Combine(PersonasDir, iPersona + ".json")))
+            if (!UCL_PersonaProfile.Exists(iPersona))
             {
                 aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 不在 registry —— 要下線誰不能用猜的");
                 aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
@@ -1293,7 +1305,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             var aRes = new StepResult();
             aR.AppendLine($"# GoodNight step=portrait persona={iPersona}  ts=`{NowLocal()}`（本地時間）");
             aR.AppendLine();
-            if (!File.Exists(Path.Combine(PersonasDir, iPersona + ".json")))
+            if (!UCL_PersonaProfile.Exists(iPersona))
             {
                 aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 不在 registry");
                 aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
@@ -1408,8 +1420,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             var aRes = new StepResult();
             aR.AppendLine($"# GoodNight step=letter persona={iPersona}  ts=`{NowLocal()}`（本地時間）");
             aR.AppendLine();
-            string aPersonaPath = Path.Combine(PersonasDir, iPersona + ".json");
-            if (!File.Exists(aPersonaPath))
+            if (!UCL_PersonaProfile.Exists(iPersona))
             {
                 aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 不在 registry");
                 aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
@@ -1440,7 +1451,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
             }
             var aMeta = UCL_RegistryMeta.LoadFromFile(RegistryMetaPath);
-            var aRaw = JsonData.ParseJson(File.ReadAllText(aPersonaPath));
+            var aRaw = UCL_PersonaProfile.GetRaw(iPersona);   // 接縫：真相源＝letters/<persona>/
             string aActor = ResolveBankAccount(aMeta, NormalizeAgent(aMeta, aRaw.GetString("agent", "")));
             var (aPath, aNumber) = WriteWakeLetter(aActor, iPersona, iLetterBody);
             // 信落地後 registry 對齊（wake_count == 這封的號碼）—— 不同步會 stale 一整晚
@@ -1476,13 +1487,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             string aStepName = iNoLetter ? "logout" : "sleep";
             aR.AppendLine($"# GoodNight step={aStepName} persona={iPersona}  ts=`{NowLocal()}`（本地時間）");
             aR.AppendLine();
-            string aPersonaPath = Path.Combine(PersonasDir, iPersona + ".json");
-            if (!File.Exists(aPersonaPath))
+            if (!UCL_PersonaProfile.Exists(iPersona))
             {
                 aR.AppendLine($"## blocked\n- reason: persona '{iPersona}' 不在 registry —— 要下線誰不能用猜的");
                 aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
             }
-            var aRaw = JsonData.ParseJson(File.ReadAllText(aPersonaPath));
+            var aRaw = UCL_PersonaProfile.GetRaw(iPersona);   // 接縫：真相源＝letters/<persona>/
             var aP = new UCL_PersonaData(); aP.DeserializeFromJson(aRaw); aP.name = iPersona;
             // letter-before-sleep 前置守衛。
             // ⚠ 這道閘的兩邊是**同一把尺量的兩個時刻**：wakes/ 信數（現在）vs wake_count 快取

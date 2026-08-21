@@ -28,9 +28,8 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static string RegistryPath =>
             Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "agent_models.json").Replace('\\', '/');
 
-        // persona 檔一律走單一解析點（見 UCL_AwakeningService.ResolvePersonaFile 的區塊註解）
-        static string PersonaPath(string persona) =>
-            Awakening.UCL_AwakeningService.ResolvePersonaFile(persona);
+        // ⛔ `PersonaPath` 已退場（2026-08-21）：persona 欄位改走 UCL_PersonaProfile 接縫
+        //    （中央 json 退場、model / actual_agent 住 letters/<p>/profile/）。
 
         // 已知會被填進 model 欄的 agent 別名 → 正規 actual_agent。
         // 收的是**人真的會寫出來的字**，不是理論上的正確值；漏一個就翻不出來，多一個沒有代價。
@@ -118,12 +117,9 @@ namespace UCL.Core.EditorLib.AgentCommands
             string actualAgent = "";
             try
             {
-                string path = PersonaPath(persona);
-                if (File.Exists(path))
-                {
-                    var data = JsonData.ParseJson(File.ReadAllText(path));
-                    if (data != null) actualAgent = data.GetString("actual_agent", "");
-                }
+                // 走接縫（2026-08-21：中央 persona json 退場，actual_agent 住 profile/）
+                var data = UCL_PersonaProfile.GetRaw(persona);
+                if (data != null) actualAgent = data.GetString("actual_agent", "");
             }
             catch { /* 讀不到就當沒有 vendor */ }
             if (string.IsNullOrEmpty(actualAgent)) return raw;
@@ -198,15 +194,11 @@ namespace UCL.Core.EditorLib.AgentCommands
             string raw = "", actualAgent = "";
             try
             {
-                string path = PersonaPath(persona);
-                if (File.Exists(path))
+                var data = UCL_PersonaProfile.GetRaw(persona);
+                if (data != null)
                 {
-                    var data = JsonData.ParseJson(File.ReadAllText(path));
-                    if (data != null)
-                    {
-                        raw = (data.GetString("model", "") ?? "").Trim();
-                        actualAgent = data.GetString("actual_agent", "");
-                    }
+                    raw = (data.GetString("model", "") ?? "").Trim();
+                    actualAgent = data.GetString("actual_agent", "");
                 }
             }
             catch (Exception e) { Debug.LogWarning($"[AgentModel] 讀 persona {persona} 失敗：{e.Message}"); }

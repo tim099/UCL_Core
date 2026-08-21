@@ -407,12 +407,24 @@ def registry_meta_path() -> Path:
     return awaken_init_dir() / "_registry_meta.json"
 
 
+# ⛔ `personas_dir()` / `persona_file()` 已退場（2026-08-21，Tim 拍板）：
+#    persona 資料整合到 `letters/<persona>/`（身分欄 profile/、帳號 bank/<區域>.md），
+#    中央 `AwakenInit/personas/` 不再存在。
+#    · 名單 → `awakening.list_persona_names()`（判準＝profile/ 目錄存在）
+#    · 欄位 → `_lib/persona_profile`（接縫；對側 = C# UCL_PersonaProfile）
+#    · 目錄 → `letters_root()`
+#    ⚠ 刻意**不留**「回舊路徑」的相容函式：那種函式的失敗方式是 `File.Exists` 為 False 之後
+#      fail-soft，而症狀會長成「查無此人」而不是「路徑過期」—— 那是本專案最貴的一族錯誤。
 def personas_dir() -> Path:
-    return awaken_init_dir() / "personas"
+    raise RuntimeError(
+        "personas_dir() 已退場（2026-08-21）：persona 資料在 letters/<persona>/。"
+        " 名單走 awakening.list_persona_names()，欄位走 _lib/persona_profile。")
 
 
 def persona_file(persona: str) -> Path:
-    return personas_dir() / f"{persona}.json"
+    raise RuntimeError(
+        f"persona_file({persona!r}) 已退場（2026-08-21）：那個中央 json 不存在了。"
+        " 身分欄在 letters/<persona>/profile/<欄>.md，帳號在 letters/<persona>/bank/<區域>.md。")
 
 
 def letters_root() -> Path:

@@ -189,7 +189,7 @@ def resolve_persona_to_agent(reg: dict, persona: str) -> str:
         raise PersonaResolutionError(
             f"persona '{persona}' 不在 registry personas ({len(personas)} known) — "
             f"無法解析所屬 agent；拒絕 silent-default。"
-            f"請確認 persona 檔存在 (AwakenInit/personas/{persona}.json) 且 reg 已載入 personas。"
+            f"請確認 letters/{persona}/profile/ 存在（2026-08-21 起 persona 資料整合到 letters）且 reg 已載入 personas。"
         )
     # 第二道 fail-loud：persona 檔缺 agent 欄 → SOT 破損，炸
     agent = (personas[persona] or {}).get("agent")

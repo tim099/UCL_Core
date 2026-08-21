@@ -35,7 +35,6 @@ def _ucl_paths():
 
 
 _PATHS = _ucl_paths()
-_PERSONAS_DIR = _PATHS.personas_dir()
 _SNAPSHOT_PATH = _PATHS.awaken_init_dir() / "_persona_profile_snapshot.json"
 
 # ⚠ 常數與 C# UCL_PersonaProfile 同名成員**兩端同步義務**；快照裡也帶一份（單端真相），
@@ -43,7 +42,7 @@ _SNAPSHOT_PATH = _PATHS.awaken_init_dir() / "_persona_profile_snapshot.json"
 ROUTING_FIELDS = ("agent", "model", "actual_agent")
 IDENTITY_FIELDS = ("layer_role", "forked_from", "fork_lineage", "forked_at",
                    "created_at", "identity_vector", "vector_history", "email",
-                   "plurk_account")
+                   "plurk_account", "model", "actual_agent")
 
 # module 級狀態：每 process 解析一次。mode = "live" | "snapshot" | "local-parse"
 _STATE: dict = {"mode": None, "data": None, "snapshot_at": ""}
@@ -82,19 +81,63 @@ def _read_snapshot() -> dict | None:
 
 
 def _local_parse() -> dict:
-    """③ 最後備援：本地解析原始檔（非典範解析器 —— 只在連快照都沒有時用）。"""
+    """③ 最後備援：直接讀 `letters/<persona>/`（非典範解析器 —— 只在連快照都沒有時用）。
+
+    區塊職責：把 C# `UCL_PersonaProfile.BuildPersonaRaw` + `MergeProfile` 的形狀在 python 側**近似**重建。
+    物理意義：2026-08-21 起 persona 資料整合到 letters（中央 `AwakenInit/personas/` 退場）⇒
+             舊版那段 `personas/*.json` glob 在改名之後會回**空 pool**，
+             而空 pool 的下游症狀是「這個人不存在」，不是「我讀不到」。
+    ⚠ 這裡刻意**不算** wake_count／status（要數信、要讀 lock，屬 C# 的活；備援只需要身分欄）。
+      少算的欄位一律缺席，不塞 0／不塞 "offline" —— 缺席與「值是 0」不可同形。
+    """
     personas = {}
-    if _PERSONAS_DIR.is_dir():
-        for f in sorted(_PERSONAS_DIR.glob("*.json")):
-            if f.stem.startswith(("_", ".")):
+    root = _PATHS.letters_root()
+    if not root.is_dir():
+        print(f"⚠ [persona_profile] letters 根目錄不存在：{root}", file=sys.stderr)
+        return {"personas": {}, "pool": [], "generated_at": ""}
+    for d in sorted(root.iterdir()):
+        if not d.is_dir() or d.name.startswith(("_", ".")):
+            continue
+        prof = d / "profile"
+        if not prof.is_dir():
+            continue                       # 幽靈目錄（改名／早期實驗殘骸）不是 persona
+        data = {}
+        for f in sorted(prof.glob("*.md")):
+            body = f.read_text(encoding="utf-8").strip()
+            if f.stem in ("identity_vector", "vector_history", "fork_lineage"):
+                try:
+                    data[f.stem] = json.loads(body) if body else []
+                except Exception as e:
+                    print(f"⚠ [persona_profile] {d.name}/profile/{f.name} 不是合法 JSON：{e}",
+                          file=sys.stderr)
                 continue
-            try:
-                d = json.loads(f.read_text(encoding="utf-8"))
-                if isinstance(d, dict):
-                    personas[f.stem] = d
-            except Exception as e:
-                print(f"⚠ [persona_profile] {f.name} 解析失敗：{e}", file=sys.stderr)
+            if f.stem in ("forked_from", "forked_at"):
+                data[f.stem] = body or None      # 空檔＝null（與 C# NULLABLE_SCALAR_FIELDS 同契約）
+                continue
+            data[f.stem] = body
+        # agent（＝帳號 id）住 bank/<區域>.md；區域是本專案設定，備援路讀不到就跳過該欄
+        bank = d / "bank"
+        if bank.is_dir():
+            region = _project_region()
+            own = bank / f"{region}.md" if region else None
+            if own is not None and own.exists():
+                v = own.read_text(encoding="utf-8").strip()
+                if v:
+                    data["agent"] = v
+        personas[d.name] = data
     return {"personas": personas, "pool": sorted(personas.keys()), "generated_at": ""}
+
+
+def _project_region() -> str:
+    """本專案的區域（貨幣）ID —— 真相源是 C# 的 `UCL_CentralBankSettings`（bank_settings.json）。"""
+    try:
+        p = _PATHS.data_root() / "Treasury" / "bank_settings.json"
+        if not p.exists():
+            return ""
+        return str(json.loads(p.read_text(encoding="utf-8")).get("currency_id") or "")
+    except Exception as e:
+        print(f"⚠ [persona_profile] 讀不到區域 ID（{e}）—— 備援路的 agent 欄會缺席", file=sys.stderr)
+        return ""
 
 
 def _load() -> dict:

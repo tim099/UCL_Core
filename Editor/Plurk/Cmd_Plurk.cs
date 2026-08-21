@@ -39,7 +39,8 @@ namespace UCL.Core.EditorLib.Plurk
             "Plurk 共用帳號流程：resolve 查帳號 / lint 驗交付單 / preview 組 payload 不送 / post 發文（需 confirm=1）。";
 
         public override string ArgsSchema =>
-            "op=resolve|lint|preview|post|whoami（預設 resolve） | " +
+            "op=resolve|lint|preview|upload|post|whoami（預設 resolve） | "
+            + "image=<圖片絕對路徑>（op=upload 用；⛔ 不吃相對路徑） | " +
             "persona=<誰要發，lint/preview/post 建議給 —— 決定用共用還是個人帳號> | " +
             "slip_file=<交付單檔案路徑>（lint/preview/post 必填；**五欄**格式見 Plurk_Posting_Workflow §2） | " +
             "confirm=1（**只有 post 需要**；沒帶＝dry-run 只印不送） | " +
@@ -56,6 +57,8 @@ namespace UCL.Core.EditorLib.Plurk
         // 🩸 basecamp 2026-08-21：那個 403 跟「簽章錯」「端點不存在」長得一樣，而它連應用層都沒碰到。
         const string UserAgent = "UCL-PlurkBot/0.1 (+https://github.com/Persona9999)";
         const string AuditRelative = "Plurk/post_audit.jsonl";
+        // 上傳端點與欄位名取自社群慣例（官方 API 頁抓不到）——「驗證狀態」見 Plurk_Maintenance §5
+        const string UploadEndpoint = "/APP/Timeline/uploadPicture";
 
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {
@@ -71,23 +74,37 @@ namespace UCL.Core.EditorLib.Plurk
                 + $" / source: `{aRes.Source}` / 署名必填: {(aRes.RequiresSignature ? "是" : "否")}");
             aR.AppendLine($"- 說明: {aRes.Describe()}");
 
-            switch (aOp)
-            {
-                case "resolve": OpResolve(aRes, aR); break;
-                case "whoami": await OpWhoAmI(aRes, aR, token); break;
-                case "lint": OpLint(args, aRes, aR); break;
-                case "preview": OpPreview(args, aRes, aR, out _); break;
-                case "post": await OpPost(args, aRes, aR, token); break;
-                default:
-                    throw new Exception($"[Plurk] 認不得的 op='{aOp}'（resolve|whoami|lint|preview|post）");
-            }
-
+            // ===========================================================
+            // 區塊職責：不論成功或失敗，**回傳檔都要寫出來**
+            // 🩸 2026-08-21：`op=lint` 擋下時我直接 throw，而寫檔在 switch 之後 ⇒
+            //   錯誤訊息說「詳見回傳檔」，**而那個回傳檔從來沒被寫出來**。
+            //   指路牌指向一個不存在的東西 —— 而 Cmd 本身「正確地失敗了」，所以沒有任何一層會喊。
+            // ⇒ 判準：報告是**診斷**，失敗的時候比成功的時候更需要它。
+            //   所以 try/finally：先落檔，再把例外丟出去。
+            // ===========================================================
             string aPath = UCL_LettersPath.CmdPayload(
                 string.IsNullOrEmpty(aPersona) ? "basecamp" : aPersona, "plurk", aOp);
-            UCL_LettersPath.EnsurePayloadDir(aPath);
-            File.WriteAllText(aPath, aR.ToString(), new UTF8Encoding(false));
-            UCL_AgentCommandRunner.ReportOutputFile(args, aPath);
-            Debug.Log($"[Plurk] op={aOp} → {aPath}");
+            try
+            {
+                switch (aOp)
+                {
+                    case "resolve": OpResolve(aRes, aR); break;
+                    case "whoami": await OpWhoAmI(aRes, aR, token); break;
+                    case "lint": OpLint(args, aRes, aR); break;
+                    case "preview": OpPreview(args, aRes, aR, out _); break;
+                    case "upload": await OpUpload(args, aRes, aR, token); break;
+                    case "post": await OpPost(args, aRes, aR, token); break;
+                    default:
+                        throw new Exception($"[Plurk] 認不得的 op='{aOp}'（resolve|whoami|lint|preview|upload|post）");
+                }
+            }
+            finally
+            {
+                UCL_LettersPath.EnsurePayloadDir(aPath);
+                File.WriteAllText(aPath, aR.ToString(), new UTF8Encoding(false));
+                UCL_AgentCommandRunner.ReportOutputFile(args, aPath);
+                Debug.Log($"[Plurk] op={aOp} → {aPath}");
+            }
         }
 
         // ===========================================================
@@ -189,6 +206,14 @@ namespace UCL.Core.EditorLib.Plurk
                     ? $"- `content`（{kv.Value.Length} 字元）:\n\n```\n{kv.Value}\n```"
                     : $"- `{kv.Key}`: `{kv.Value}`");
             }
+            if (aSlip.HasImage)
+            {
+                ioR.AppendLine();
+                ioR.AppendLine($"⚠ **本則有附圖**：`{aSlip.Image}`");
+                ioR.AppendLine($"　post 會**先上傳**（`{UploadEndpoint}`）再把回傳的 URL 併進 content 末行"
+                    + $" —— 實測 URL 50 字元，lint 已為此保留 {UCL_PlurkLint.ImageReserve} 字元。"
+                    + "　⛔ 本 op **不上傳**。");
+            }
             if (aErrors.Count > 0)
                 ioR.AppendLine($"\n⛔ lint 有 {aErrors.Count} 個錯誤 ⇒ **post 會拒絕**（先修那些）。");
         }
@@ -219,6 +244,36 @@ namespace UCL.Core.EditorLib.Plurk
             }
 
             var aCred = RequireCredentials(iRes);
+
+            // ===========================================================
+            // 區塊職責：附圖 —— 兩段式的接合處
+            // 物理意義：先上傳拿到圖片 URL，再把那個 URL 併進 content（Plurk 自己渲染成圖）。
+            //          ⇒ 順序不能顛倒：URL 是上傳的**回傳值**，不是可以先算出來的東西。
+            // 數值影響：content 變長（實測 URL 50 字元）⇒ 送出前用**最終長度**再驗一次預算。
+            // ⚠ 上傳成功之後才發現超長 ⇒ 圖片已經在 CDN 上（無主圖片，無害但清不掉），
+            //   所以 lint 的附圖保留額度要夠（見 UCL_PlurkLint.ImageReserve 的實測值）。
+            // ===========================================================
+            if (aSlip.HasImage)
+            {
+                RequireAbsoluteExistingImage(aSlip.Image);
+                var (aUpStatus, aUpBody) = await UploadImageAsync(aSlip.Image, aCred, token);
+                if (aUpStatus != 200)
+                {
+                    ioR.AppendLine($"- ✗ 圖片上傳失敗 http={aUpStatus}：{Trunc(aUpBody, 300)}");
+                    throw new Exception($"[Plurk] 圖片上傳失敗 http={aUpStatus} —— **噗沒有發出去**");
+                }
+                string aImgUrl = PickJsonValue(aUpBody, "full");
+                if (string.IsNullOrEmpty(aImgUrl))
+                    throw new Exception("[Plurk] 圖片上傳回 200 但拿不到 `full` URL —— 噗沒有發出去");
+                ioR.AppendLine($"- 圖片已上傳: `{aImgUrl}`（{aImgUrl.Length} 字元）");
+                aPayload["content"] = aPayload["content"] + "\n" + aImgUrl;
+                int aFinal = aPayload["content"].Length;
+                ioR.AppendLine($"- content 併入圖片後: **{aFinal}** 字元（上限 {UCL_PlurkLint.Limit}）");
+                if (aFinal > UCL_PlurkLint.Limit)
+                    throw new Exception($"[Plurk] 併入圖片 URL 後超出上限（{aFinal} > {UCL_PlurkLint.Limit}）"
+                        + " —— 噗沒有發出去；⚠ 圖片已上傳到 CDN（無主圖片）。請縮短文案再跑一次");
+            }
+
             string aReplyTo = GetArg(iArgs, "reply_to", "").Trim();
             string aEndpoint = aReplyTo.Length > 0 ? "/APP/Responses/responseAdd" : "/APP/Timeline/plurkAdd";
             var (aStatus, aBody) = await CallAsync(aEndpoint, aCred, aPayload, token);
@@ -233,6 +288,117 @@ namespace UCL.Core.EditorLib.Plurk
             ioR.AppendLine($"- plurk_id: **{aPlurkId}**");
             WriteAudit(iRes, aSlip, aPayload, aPlurkId, aReplyTo);
             ioR.AppendLine($"- audit: `{AuditPath()}`（append-only）");
+        }
+
+
+        // ===========================================================
+        // 區塊職責：圖片上傳（兩段式的第一段）—— multipart/form-data
+        // 物理意義：Plurk 的附圖是**兩段式**：先把檔案傳上去拿一個圖片 URL，
+        //          再把那個 URL 併進 `content`（時間軸上由 Plurk 自己渲染成圖）。
+        //          ⇒ 所以「附圖」不是一個 payload 參數，是**兩次請求 ＋ 一段文字**。
+        // ⚠ 與現有請求**不同形**：其餘全部是 form-urlencoded，這支是 multipart。
+        //   OAuth 1.0a 對 multipart **只簽 `oauth_*` 參數**（檔案內容不進簽章基底）——
+        //   把 body 塞進基底會簽出一個看起來正常的簽章，然後回 4xx，
+        //   而那個 4xx 跟「端點不存在」「被 WAF 擋」長得一模一樣。
+        // 數值影響：**這是對外寫入** —— 會在 Plurk 的 CDN 上留下一張圖（即使沒有建立噗）。
+        //          所以 `op=upload` 也要 `confirm=1`。
+        // ===========================================================
+        async UniTask<(int status, string body)> UploadImageAsync(
+            string iPath, Dictionary<string, string> iCred, CancellationToken token)
+        {
+            string aUrl = ApiBase + UploadEndpoint;
+            byte[] aBytes = File.ReadAllBytes(iPath);
+            string aName = Path.GetFileName(iPath);
+
+            using (var aClient = new HttpClient { Timeout = TimeSpan.FromSeconds(60) })
+            using (var aForm = new MultipartFormDataContent("UCLPlurk" + Guid.NewGuid().ToString("N")))
+            {
+                var aFile = new ByteArrayContent(aBytes);
+                aFile.Headers.ContentType =
+                    new System.Net.Http.Headers.MediaTypeHeaderValue(GuessMime(iPath));
+                // 欄位名 `image` 取自社群慣例（官方頁抓不到）—— 驗證狀態見 Plurk_Maintenance §5
+                aForm.Add(aFile, "image", aName);
+
+                var aReq = new HttpRequestMessage(HttpMethod.Post, aUrl) { Content = aForm };
+                // ⚠ 第四參 null：multipart **不把 body 參數放進簽章基底**
+                aReq.Headers.TryAddWithoutValidation("Authorization",
+                    OAuthHeader("POST", aUrl, iCred, null));
+                aReq.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+                var aResp = await aClient.SendAsync(aReq, token);
+                string aBody = await aResp.Content.ReadAsStringAsync();
+                return ((int)aResp.StatusCode, aBody);
+            }
+        }
+
+        // 887 bytes / 1024 == 0 ⇒ 印成「0 KB」會被讀成空檔案。小檔印 bytes。
+        static string FormatSize(long iBytes)
+            => iBytes < 1024 ? $"{iBytes} bytes" : $"{iBytes / 1024} KB";
+
+        static string GuessMime(string iPath)
+        {
+            switch (Path.GetExtension(iPath).ToLowerInvariant())
+            {
+                case ".png": return "image/png";
+                case ".jpg": case ".jpeg": return "image/jpeg";
+                case ".gif": return "image/gif";
+                case ".webp": return "image/webp";
+                default: return "application/octet-stream";
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：op=upload —— 單獨驗上傳端點（不建立噗）
+        // 物理意義：先驗端點再接流程。這一步拿到的是**真實 URL 長度**，
+        //          而那個長度決定 lint 該替附圖保留多少字元預算（不是憑估）。
+        // 數值影響：對外寫入（CDN 上多一張無主圖片）⇒ 要 `confirm=1`。
+        // ===========================================================
+        async UniTask OpUpload(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            string aPath = GetArg(iArgs, "image", "").Trim();
+            if (aPath.Length == 0)
+                throw new Exception("[Plurk] op=upload 需要 --arg image=<圖片的絕對路徑>");
+            RequireAbsoluteExistingImage(aPath);
+            var aCred = RequireCredentials(iRes);
+
+            ioR.AppendLine();
+            ioR.AppendLine("## upload（**對外寫入** —— CDN 上會留下一張圖）");
+            ioR.AppendLine($"- 檔案: `{aPath}`（{FormatSize(new FileInfo(aPath).Length)}, {GuessMime(aPath)}）");
+            if (GetArg(iArgs, "confirm", "").Trim() != "1")
+            {
+                ioR.AppendLine("- **dry-run**：沒帶 `confirm=1` ⇒ 什麼都沒上傳。");
+                return;
+            }
+            var (aStatus, aBody) = await UploadImageAsync(aPath, aCred, token);
+            ioR.AppendLine($"- http: **{aStatus}**　endpoint: `{UploadEndpoint}`");
+            if (aStatus != 200)
+            {
+                ioR.AppendLine($"- ✗ body（前 400 字）: {Trunc(aBody, 400)}");
+                throw new Exception($"[Plurk] 上傳失敗 http={aStatus}"
+                    + "（判準：先確認端點與欄位名，再懷疑 multipart 的簽章 —— 兩者都是 4xx）");
+            }
+            string aFull = PickJsonValue(aBody, "full");
+            string aThumb = PickJsonValue(aBody, "thumbnail");
+            ioR.AppendLine($"- full: `{aFull}`（**{(aFull ?? "").Length} 字元** —— 這個長度會吃掉 content 預算）");
+            if (aThumb != null) ioR.AppendLine($"- thumbnail: `{aThumb}`");
+            if (string.IsNullOrEmpty(aFull))
+            {
+                ioR.AppendLine($"- ⚠ 回應裡沒有 `full` 欄位。body（前 300 字）: {Trunc(aBody, 300)}");
+                throw new Exception("[Plurk] 上傳回 200 但拿不到圖片 URL —— 欄位名可能不是 `full`");
+            }
+        }
+
+        // 區塊職責：圖片路徑的硬性檢查（Tim 2026-08-21：**要完整路徑，不吃相對路徑**）
+        // 物理意義：相對路徑會相對於 Editor 的工作目錄（那是 repo 根，而不是交付單所在的位置）
+        //          ⇒ 同一份交付單在不同地方跑會指到不同檔，而**檔案不存在的失敗發生在上傳那一刻**，
+        //          不是在 lint。所以這條擋在前面。
+        static void RequireAbsoluteExistingImage(string iPath)
+        {
+            if (!Path.IsPathRooted(iPath))
+                throw new Exception($"[Plurk] 圖片要**絕對路徑**：'{iPath}' 是相對路徑"
+                    + "（相對路徑會相對於 Editor 的工作目錄，同一份交付單換個地方跑就指到別的檔）");
+            if (!File.Exists(iPath))
+                throw new Exception($"[Plurk] 圖片不存在：{iPath}");
         }
 
         // ===========================================================

@@ -39,8 +39,13 @@ namespace UCL.Core.EditorLib.Plurk
     {
         /// <summary>字元預算上限（Tim 2026-08-21：300，不是原本記的 360）。</summary>
         public const int Limit = 300;
-        /// <summary>附圖時保留的額度（Plan §7.1；保守值，寧可早擋）。</summary>
-        public const int ImageReserve = 30;
+        // 區塊職責：附圖時要替圖片 URL 保留多少字元
+        // 物理意義：附圖是**兩段式** —— 上傳完拿到的 URL 會被併進 content，所以它吃 content 的預算。
+        // 🩸 首版寫 30 是**估的**；2026-08-21 實測 `https://images.plurk.com/<21 碼>.png` = **50 字元**
+        //   ⇒ 估值比實際少 20，那讓「lint 過了、併入 URL 後超長」變成可能 ——
+        //   而那個失敗發生在**圖片已經上傳到 CDN 之後**（清不掉的無主圖片）。
+        // 數值影響：50（實測）＋ 換行 1 ＋ 餘裕 9 ＝ 60。要改小之前先自己傳一張量一次。
+        public const int ImageReserve = 60;
 
         static readonly Regex EmoRe = new Regex(@"\[emo(\d+)\]", RegexOptions.Compiled);
         static readonly Regex NoteLineRe = new Regex(@"^[（(][^）)]{2,40}[）)]$", RegexOptions.Compiled);
@@ -218,7 +223,21 @@ namespace UCL.Core.EditorLib.Plurk
                 aWarn.Add($"文案點名 @{aName} —— 發前親自去講一聲（mention 會通知，但『已通知 ≠ 已讀』）");
             }
 
-            // ⑧ 逐篇公開度（summit 2026-08-21 補的規劃漏洞）
+            // ⑧ 附圖路徑必須是**絕對路徑**且檔案存在（Tim 2026-08-21：「圖片需要完整路徑」）
+            // 物理意義：相對路徑會相對於 Editor 的工作目錄（repo 根），不是交付單所在的位置
+            //          ⇒ 同一份交付單換個地方跑就指到別的檔，或指到不存在的檔。
+            // 數值影響：擋在 lint —— 不是等到上傳那一刻才炸（那時噗還沒發，但已浪費一次往返）。
+            if (iSlip.HasImage)
+            {
+                string aImg = iSlip.Image.Trim();
+                if (!System.IO.Path.IsPathRooted(aImg))
+                    aErr.Add($"圖片路徑不是絕對路徑：`{aImg}` —— 相對路徑會相對於 Editor 的工作目錄，"
+                        + "同一份交付單換個地方跑就指到別的檔");
+                else if (!System.IO.File.Exists(aImg))
+                    aErr.Add($"圖片檔不存在：`{aImg}`");
+            }
+
+            // ⑨ 逐篇公開度（summit 2026-08-21 補的規劃漏洞）
             // 物理意義：時間軸預設公開，但**每篇可獨立設**。bot 沉默地只發公開噗 ＝
             //          把一個現在就有的控制項拿掉，而那種消失不報錯：發出去的看起來完全正常，
             //          只是本來該鎖的沒鎖。⛔ 所以「沒指定」擋下，不預設「所有人」。

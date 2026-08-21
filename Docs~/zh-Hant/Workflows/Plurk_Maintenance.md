@@ -56,6 +56,13 @@ Cmd handler 住 `Editor/` **有先例**（`Editor/BuildProcessors/Cmd_BuildAddre
 4. **驗收要用真的出事的樣本**，不是乾淨樣本 —— 乾淨樣本不會走進錯誤分支，
    **用它驗證等於沒驗**。
 
+> [!IMPORTANT]
+> **`UCL_PlurkLint.ImageReserve` 是實測值，不是估值。**
+> 🩸 首版寫 30（估的），而圖片 URL 實測 **50 字元** ⇒ 少估 20 會讓
+> 「lint 過了、併入 URL 後超長」變成可能，而那個失敗發生在**圖片已上傳到 CDN 之後**。
+> 現在是 60（50 ＋ 換行 1 ＋ 餘裕 9）。**要改小之前先自己傳一張量一次。**
+> `post` 另外有一道「用最終長度再驗」的閘 —— 保留額度是預估，最終長度才是事實。
+
 > [!CAUTION]
 > ## 🩸 「有擋下」≠「被該擋它的規則擋下」
 >
@@ -142,7 +149,8 @@ persona profile 的 `plurk_account` → registry（`AwakenInit/plurk_accounts.js
 | **個人帳號**那條路（`persona-override`） | ✅ 200，`plurk_id 358451652874022`；回讀比 `owner_id`＝該帳號本人（**不是共用帳號**）|
 | 心情詞完整詞彙表 | ⚠ 只對過 12 個中文詞，表外一律退 `says` |
 | `公開度=本人` 送的 `limited_to=[]` | ⚠ **未驗證** |
-| 附圖上傳端點 | ⚠ **完全沒實作** |
+| `/APP/Timeline/uploadPicture` ＋ 欄位名 `image`（multipart） | ✅ 200，回 `full` / `thumbnail`；**`full` 實測 50 字元** |
+| 附圖兩段式（上傳 → URL 併進 content → 渲染） | ✅ `plurk_id 358451852259674`，回讀後的 `content` 含 `<img>` |
 | `/APP/Responses/responseAdd`（`reply_to` 回應） | ⚠ code 有、**未實跑** |
 
 > [!IMPORTANT]
@@ -166,6 +174,11 @@ persona profile 的 `plurk_account` → registry（`AwakenInit/plurk_accounts.js
    —— 那是簽章材料。
 3. **參數要進簽章**：`plurkAdd` 的 `content` / `qualifier` / `limited_to` 也在正規化字串裡。
    漏掉 body 參數的簽章在唯讀端點會通、在寫入端點才失敗（**它會讓你以為簽章是對的**）。
+4. **但 multipart 反過來** —— 上傳圖片那支（`uploadPicture`）是 `multipart/form-data`，
+   OAuth 1.0a 規範**只簽 `oauth_*` 參數**，檔案內容**不進**簽章基底。
+   ⇒ 同一支 `OAuthHeader()` 兩種用法：form-urlencoded 傳 params、multipart 傳 `null`。
+   把 body 塞進 multipart 的基底會簽出一個看起來正常的簽章然後回 4xx ——
+   **而那個 4xx 跟「端點不存在」「被 WAF 擋」長得一模一樣**。
 
 ⚠ 為什麼不吃 pip：整段約 40 行 stdlib（C# 是 `HMACSHA1` ＋ `HttpClient`）。
 為 40 行引入依賴＝每台機器多一個安裝前提。現成套件當**規格參考**，不當依賴。
@@ -208,6 +221,8 @@ $R --arg op=post    --arg slip_file=<好樣本>   # 無 confirm ⇒ dry-run，�
   **「我送出了」跟「它在那裡」是兩句話。**
 - **要驗「它用哪個帳號發」就比 `owner_id`**（拿 `/APP/Users/me` 的 `id` 對照）——
   「我以為它走個人帳號」跟「它真的用那組憑證發」是兩件事，而**兩者的成功長得一樣**。
+- **附圖要驗渲染，不是驗字串**：回讀後看 `content`（HTML 那個欄位）有沒有 `<img>`。
+  `content_raw` 裡有 URL 只證明我送進去了 —— **Plurk 認不認是另一回事**。
 
 ---
 

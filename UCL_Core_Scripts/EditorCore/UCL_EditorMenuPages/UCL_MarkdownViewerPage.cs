@@ -361,10 +361,17 @@ namespace UCL.Core.EditorLib.Page
                 case UCL_MdBlockType.CodeFence:
                     using (new GUILayout.VerticalScope("box"))
                     {
+                        GUILayout.BeginHorizontal();
+                        if (GUILayout.Button("📋", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            GUIUtility.systemCopyBuffer = b.CodeBody;
+                        }
                         if (!string.IsNullOrEmpty(b.CodeLang))
                         {
                             GUILayout.Label("<color=#888888>" + b.CodeLang + "</color>", m_BodyStyle);
                         }
+                        GUILayout.EndHorizontal();
+
                         GUILayout.Label(b.CodeBody ?? "", m_CodeBlockStyle);
                     }
                     break;

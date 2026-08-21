@@ -426,6 +426,14 @@ namespace UCL.Core.EditorLib.AgentCommands
                             // 例外）就查不動，得請人肉去翻 Editor console。落檔讓 client 端能自己讀 stack。
                             WriteCmdErrorReport(c, e);
                             WriteCmdResult(c, success: false, error: e.Message);
+                            // 區塊職責：多寫一份**可補跑**的結構化紀錄（Tim 2026-08-21 派單）
+                            // 物理意義：上面兩份都不足以重跑 —— result 檔沒有 Args 且 3 天後被 Purge，
+                            //          error 報告有 Args 但是給人讀的 markdown。補跑需要 Type+Mode+Args，
+                            //          所以在失敗當下就把它結構化落檔（見 UCL_AgentCommandFailedStore）。
+                            // 數值影響：_cmd_failed/<id>.json；**不自動重試**（重跑會重放副作用：
+                            //          酒館公告重發、轉帳重轉），補跑一律由人在 UCL_AgentCommandsPage 按下去。
+                            UCL_AgentCommandFailedStore.Record(c, e.Message,
+                                string.IsNullOrEmpty(agentId) ? UCL_AgentCommandQueue.AnonymousQueueId : agentId);
                             // 區塊職責：失敗的 OneShot 即時出隊（Tim 2026-08-07 拍板 —— queue 不堵塞的
                             //          Editor 半邊；python 半邊是 run_cmd 改讀 result 檔，不再消失＝成功）。
                             // 物理意義：舊行為「失敗留在 queue」的災難鏈：caller 沒等到（no-wait / timeout /

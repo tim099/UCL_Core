@@ -3,7 +3,7 @@ title: UCL_AgentCommandsPage
 description: Editor page for queuing, viewing, and triggering agent commands persisted in AgentCommands/queue.json.
 source_file: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_AgentCommandsPage.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-05-04
+last_updated: 2026-08-21
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -63,6 +63,83 @@ It is a thin IMGUI shell over four collaborating types:
 | `Refresh` | Reload `queue.json` from disk into the in-memory cache |
 | `Run Pending Commands` | Call `UCL_AgentCommandRunner.Menu_RunPending()` (async); auto-refresh ~1.5s later |
 | `Open Folder` | Open the `AgentCommands/` folder directly in OS file explorer |
+
+## 3b. Section Folding (Tim, 2026-08-21)
+
+Every major section (queue status / add command / failed records / templates / history / tips) folds
+independently. Fold toggles always go through `UCL_GUILayout.Toggle` (▼/►); the state lives in the
+page instance's `m_FoldDic`.
+
+| Section | Default |
+|---|---|
+| 📋 Queue status (queue path / watcher bar / command list) | expanded |
+| ➕ Add command (picker + form) | expanded |
+| ❌ Failed records | **expanded when there are failures**, collapsed otherwise |
+| Templates / History / 💡 Tips | collapsed |
+
+> [!NOTE]
+> The **queue selector is deliberately not foldable** — it decides which queue every other section is
+> talking about, so hiding it strips the subject from every reading below.
+>
+> Fold headers **keep showing their summary while collapsed** (queue stats, failure count, template /
+> history counts). A fold that hides the summary too forces people to expand just to learn whether
+> anything needs attention — which defeats the point.
+
+## 3c. ❌ Failed-command panel (re-runnable, Tim 2026-08-21)
+
+Since 2026-08-07 a failed OneShot is **dequeued immediately** (so the queue never blocks and side
+effects are not replayed), which means failures are invisible in the queue list. This panel lists
+`<DataRoot>/_cmd_failed/<cmdId>.json` — **every** failed Cmd, not one particular kind.
+
+| File | Content | Retention |
+|---|---|---|
+| `_cmd_results/<id>.json` | machine-readable verdict (**no Args**) | purged after 3 days |
+| `_cmd_errors/<id>.md` | human-readable stack trace + Args | permanent |
+| `_cmd_failed/<id>.json` ★ | **structured and re-runnable**: Type / Mode / Args / error / queueId / retry trail | until re-run or deleted |
+
+★ Written by `UCL_AgentCommandFailedStore` from the Runner's failure branch. Why a third file: neither
+of the first two can drive a re-run — one has no Args, the other is a **human-readable view** (writing
+a parser against a human view creates a second source of truth that breaks silently when the format
+changes).
+
+| Button | Behaviour |
+|---|---|
+| `Re-run` | Enqueues a new cmd (new id) into **the queue it originally ran on** (the record's `QueueId`) and runs it immediately; the original record is kept and its `RetryCount` increments |
+| `Load into form` | Fills Type / Mode / Args back into the Add-command form — the path for failures that need **editing before re-running** |
+| `Delete` / `Clear all records` | Records only; no queue is touched (clear-all asks for confirmation) |
+
+> [!CAUTION]
+> **Re-running executes the command again and replays its side effects** — tavern announcements get
+> re-posted (the same SHA paid twice), transfers repeat. Hence buttons only, and **no automatic retry**:
+> an `ensure_idle` timeout means "never dispatched" (safe to retry), but any failure **after dispatch**
+> may already have taken effect — and the two look identical on screen.
+
+> [!IMPORTANT]
+> **Re-run is blocked while that queue is running.** The Runner loads the queue into an in-memory list
+> and writes the whole list back when it finishes, so any load→add→save in between is overwritten
+> (lost update).
+> 🩸 Measured during first acceptance: calling re-run from inside a Cmd executing on that same queue
+> marked the record as retried and logged a new cmd id, while queue.json came back empty and no verdict
+> or error report existed — **the re-run vanished with zero error messages**.
+> Current behaviour: check `IsRunningForAgent` first, then **read back and verify the new id landed**;
+> if it did not, the record is not marked as retried.
+
+> [!NOTE]
+> This store only exists from 2026-08-21 ⇒ **older failures have no structured record and cannot be
+> re-run**. The header shows that count separately (derived from `_cmd_errors/`), so "cannot re-run"
+> is never drawn as "nothing failed".
+
+## 3d. Example args auto-filled on selection (Tim 2026-08-21)
+
+Switching the command in the Add-command picker **auto-fills the handler's `ExampleArgs`** into the
+Args field (clearing it when the handler declares none). Once the command changes, the args left in
+the field belong to a different command — keeping them is worse than clearing, because they look like
+a valid set. The explicit "fill example" button remains for going back to the sample.
+
+> [!NOTE]
+> Applying a template / history entry / failed record into the form is **not** overwritten by the
+> example: those paths sync the auto-fill's change-detection baseline (otherwise the next frame would
+> overwrite them, which looks like "Apply did nothing").
 
 ## 4. How to Add a New Command Type
 

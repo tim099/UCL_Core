@@ -59,6 +59,33 @@ namespace UCL.Core.EditorLib.Page
         //          症狀是「收不起來 / 一動就全展開」，看起來像 key 撞名，其實是被連坐清掉。
         // 數值影響：key = 條目 Id（唯一），預設 false（收合）；純 UI 狀態，不寫任何檔。
         readonly UCL_ObjectDictionary m_HistoryFoldDic = new UCL_ObjectDictionary();
+        // 區塊職責：大區塊（欄位群）的折疊狀態（Tim 2026-08-21 指派「依欄位做折疊」）
+        // 物理意義：本頁已長到八個區塊（queue 現況／新增表單／失敗紀錄／模板／歷史／提示…），
+        //          全展開時找一個東西要捲三四頁。與 m_HistoryFoldDic 分開的理由同上一段：
+        //          那是「逐筆條目」的折疊，這是「整個區塊」的折疊，兩者的清除時機不同。
+        // 數值影響：每區塊一個 bool，生命週期＝頁面 instance；純 UI，不寫檔。
+        readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();
+
+        // ==== 失敗紀錄面板狀態（Tim 2026-08-21 派單）====
+        // 區塊職責：`_cmd_failed/` 的顯示快取與篩選
+        // 物理意義：失敗紀錄是**待處理清單**（補跑或刪掉才消失），所以要能搜尋、分頁；
+        //          m_LegacyFailedCount 是「改版前沒有結構化紀錄、因此無法補跑」的筆數 ——
+        //          它由 `_cmd_errors/`（**永久保存**的失敗報告）數出來，不是 `_cmd_results/`
+        //          （那個 3 天就被 Purge，拿它當分母會讓舊失敗一天天憑空變少）。
+        //          只在 Refresh / 首次繪製時算一次（Draw 裡不碰磁碟）。
+        // 數值影響：純顯示；-1 = 還沒掃過（**不是 0** —— 沒掃過與掃到零不能長得一樣）。
+        List<UCL_AgentCommandFailedEntry> m_FailedCache;
+        string m_FailedSearch = "";
+        int m_FailedPage = 0;
+        int m_LegacyFailedCount = -1;
+
+        // 區塊職責：記住上一幀選中的指令索引，用來偵測「使用者剛換了指令」
+        // 物理意義：換指令代表舊的 args 已經不屬於當前指令 → 自動填入新指令的 ExampleArgs
+        //          （Tim 2026-08-21：不該還要人再按一次「填入範例」）。
+        // 數值影響：-1 = 尚未初始化（首次繪製也會觸發一次填入，那正是想要的行為）。
+        //          ⚠ Apply（模板／歷史／補跑填回）路徑會顯式同步這個值 ——
+        //          否則下一幀會把剛套用的 args 蓋成範例值，而那看起來像「Apply 沒生效」。
+        int m_LastCmdIdxForExample = -1;
 
         // ==== 顯示用快取（每幀重讀檔太重，只在按下 Refresh 時更新）====
         UCL_AgentCommandQueueData m_Cached;
@@ -144,6 +171,10 @@ namespace UCL.Core.EditorLib.Page
                 // 數值影響：純讀檔，不寫
                 m_HistoryCache = null;
                 m_TemplateCache = null;
+                // 失敗紀錄也一起重抓 —— 它跟 History/Template 同一個理由（外部剛動過檔）。
+                // m_LegacyFailedCount 設 -1（＝還沒掃過），不是 0：0 是「掃過且沒有」。
+                m_FailedCache = null;
+                m_LegacyFailedCount = -1;
                 RefreshQueueOptions();
             }
             if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.RunPending"), UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.ExpandWidth(false)))
@@ -222,9 +253,32 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
+        // ===========================================================
+        // 區塊職責：畫一個區塊的折疊標題列（折疊鈕 + 標題 + 收合時也看得到的摘要）
+        // 物理意義：折疊語彙一律走 UCL_GUILayout.Toggle（▼/►）—— 本頁原本用 GUILayout.Button
+        //          手刻「▼/▶」，那是第二套寫法（而且狀態存在欄位裡、沒有統一容器）。
+        // 數值影響：狀態存 m_FoldDic；**摘要在收合時仍顯示** ——
+        //          收合把資訊藏起來的話，人得先展開才知道「這裡有沒有事」，那等於沒有折疊。
+        // ===========================================================
+        bool FoldHeader(string iKey, string iTitle, string iSummary, bool iDefaultExpanded)
+        {
+            using (new GUILayout.HorizontalScope())
+            {
+                bool aShow = UCL_GUILayout.Toggle(m_FoldDic, iKey, 21, iDefaultValue: iDefaultExpanded);
+                GUILayout.Label($"<b>{iTitle}</b>", WrapLabelStyle, GUILayout.ExpandWidth(false));
+                if (!string.IsNullOrEmpty(iSummary))
+                {
+                    GUILayout.Label($"　{iSummary}", WrapLabelStyle, GUILayout.ExpandWidth(false));
+                }
+                GUILayout.FlexibleSpace();
+                return aShow;
+            }
+        }
+
         protected override void ContentOnGUI()
         {
             // ==== Queue 選擇器（要先於載入 — SelectedAgentId 決定載哪條 queue）====
+            // ⚠ 刻意**不可折疊** —— 它決定下面每一個區塊在講哪條 queue，收起來會讓所有讀數失去主詞。
             DrawQueueSelector();
 
             // 載入 / 刷新
@@ -233,21 +287,8 @@ namespace UCL.Core.EditorLib.Page
                 m_Cached = UCL_AgentCommandQueue.Load(SelectedAgentId);
             }
 
-            // ==== queue.json 路徑提示 ====
-            using (new GUILayout.VerticalScope("box"))
-            {
-                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.QueuePath"), UCL_AgentCommandQueue.GetQueuePath(SelectedAgentId)), UCL_GUIStyle.LabelStyle);
-            }
-
-            // ==== Watcher 狀態列 ====
-            // 區塊職責：顯示 lock-file watcher 啟用狀態 + 當前 trigger 狀態 + 最近一次觸發時間
-            // 物理意義：watcher 啟用時，外部（Python）寫入 pending.trigger 後此 Editor 會自動接手執行；
-            //          停用時則退回為「僅手動 Run Pending」的舊行為
-            // 數值影響：toggle 寫入 EditorPrefs，Watcher 在 OnEditorUpdate 中讀取此值決定是否輪詢
-            DrawWatcherStatusBar();
-
-            // ==== 統計列 ====
-            // 區塊職責：在頂端顯示 queue 內的指令數量分布
+            // ==== 統計（摘要用，收合時也要看得到）====
+            // 區塊職責：queue 內的指令數量分布
             // 物理意義：OneShot 在執行成功後會被 runner 立刻移除，因此這裡的 OneShot 數即為「尚未成功執行的待辦」
             // 數值影響：純顯示，不修改任何狀態
             int total = m_Cached?.Commands?.Count ?? 0;
@@ -260,25 +301,43 @@ namespace UCL.Core.EditorLib.Page
                     else oneshot++;
                 }
             }
-            using (new GUILayout.HorizontalScope("box"))
+
+            // ==== ① 佇列現況（路徑 / Watcher / 清單）====
+            // 預設展開：這一區是「現在發生了什麼」，開頁第一眼要看到的就是它。
+            using (new GUILayout.VerticalScope("box"))
             {
-                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.Stats"), total, oneshot, repeatable),
-                    UCL_GUIStyle.LabelStyle);
+                if (FoldHeader("Fold.Queue", UCL_CodeLocalize.Get("AgentCmd.FoldQueue"),
+                        string.Format(UCL_CodeLocalize.Get("AgentCmd.Stats"), total, oneshot, repeatable), true))
+                {
+                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.QueuePath"),
+                        UCL_AgentCommandQueue.GetQueuePath(SelectedAgentId)), WrapLabelStyle);
+                    // 區塊職責：顯示 lock-file watcher 啟用狀態 + 當前 trigger 狀態 + 最近一次觸發時間
+                    // 物理意義：watcher 啟用時，外部（Python）寫入 pending.trigger 後此 Editor 會自動接手執行
+                    // 數值影響：toggle 寫入 EditorPrefs，Watcher 在 OnEditorUpdate 中讀取此值決定是否輪詢
+                    DrawWatcherStatusBar();
+                    DrawQueueList();
+                }
             }
 
-            //m_Scroll = GUILayout.BeginScrollView(m_Scroll, GUILayout.ExpandHeight(false));
+            GUILayout.Space(4);
 
-            // ==== Queue 中的命令清單 ====
-            DrawQueueList();
+            // ==== ② 新增指令（選單 + 表單）====
+            using (new GUILayout.VerticalScope("box"))
+            {
+                if (FoldHeader("Fold.Add", UCL_CodeLocalize.Get("AgentCmd.FoldAdd"), "", true))
+                {
+                    DrawCommandPicker();
+                }
+            }
 
-            GUILayout.Space(8);
+            GUILayout.Space(4);
 
-            // ==== Command 選擇 + 新增表單（整合在一起） ====
-            DrawCommandPicker();
+            // ==== ③ 失敗紀錄（可補跑）====
+            DrawFailedPanel();
 
-            GUILayout.Space(8);
+            GUILayout.Space(4);
 
-            // ==== Templates / History 兩個可摺疊區塊 ====
+            // ==== ④⑤ Templates / History 兩個可摺疊區塊 ====
             // 區塊職責：把「指令模板」「歷史指令紀錄」兩種重用機制以摺疊面板呈現
             // 物理意義：模板 = 預先存好的 Cmd 範本；歷史 = 過去用過的紀錄；兩者都可一鍵載入到 Add Command 表單
             // 數值影響：Render-only — 載入按鈕會改寫 m_NewMode / m_NewArgsRaw / 表單欄位，但不直接動 queue
@@ -288,9 +347,10 @@ namespace UCL.Core.EditorLib.Page
 
             GUILayout.Space(8);
 
-            // ==== 提示 ====
+            // ==== ⑥ 提示（預設收合 —— 讀過一次就不必每次佔六行）====
             using (new GUILayout.VerticalScope("box"))
             {
+                if (!FoldHeader("Fold.Tips", UCL_CodeLocalize.Get("AgentCmd.FoldTips"), "", false)) return;
                 GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Tips"), UCL_GUIStyle.LabelStyle);
                 GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Tip_OneShot"), UCL_GUIStyle.LabelStyle);
                 GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Tip_Repeatable"), UCL_GUIStyle.LabelStyle);
@@ -406,6 +466,22 @@ namespace UCL.Core.EditorLib.Page
 
                 var selected = handlers[m_SelectedCmdIdx];
 
+                // ===========================================================
+                // 區塊職責：選定指令後自動把該指令的 ExampleArgs 填進 Args 欄位（Tim 2026-08-21 指派）
+                // 物理意義：換了指令，欄位裡的舊 args 就**屬於別的指令**了 —— 留著比清空更糟
+                //          （它看起來像一組有效參數）。範例值是「可直接執行的樣本」，直接給。
+                //          原本要人再按一次「填入範例」，那顆按鈕保留（改完想退回範例時用）。
+                // 數值影響：只在**索引變動的那一幀**寫一次 m_NewArgsRaw；沒有 ExampleArgs 就清空。
+                //          ⚠ Apply（模板／歷史／補跑填回）會顯式同步 m_LastCmdIdxForExample，
+                //          否則它們設好的 args 會在下一幀被範例值蓋掉（而那看起來像 Apply 沒生效）。
+                // ===========================================================
+                if (m_LastCmdIdxForExample != m_SelectedCmdIdx)
+                {
+                    m_LastCmdIdxForExample = m_SelectedCmdIdx;
+                    m_NewArgsRaw = selected.ExampleArgs ?? "";
+                    GUI.FocusControl(null);
+                }
+
                 // 顯示選定 handler 的 metadata — 可折疊（Tim 2026-07-15 拍板）
                 // 物理意義：ArgsSchema 長的 Cmd（如 Tavern 30+ 行）展開會把下方表單擠出視野；
                 //          預設收合，只留一行 Type + 短描述，要查 schema 再展開。
@@ -413,10 +489,9 @@ namespace UCL.Core.EditorLib.Page
                 {
                     using (new GUILayout.HorizontalScope())
                     {
-                        if (GUILayout.Button((m_ShowCmdInfo ? "▼" : "▶") + " " + UCL_CodeLocalize.Get("AgentCmd.CmdInfoToggle"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                        {
-                            m_ShowCmdInfo = !m_ShowCmdInfo;
-                        }
+                        // 折疊走 UCL_GUILayout.Toggle + m_FoldDic（統一語彙，見 FoldHeader 的註解）
+                        m_ShowCmdInfo = UCL_GUILayout.Toggle(m_FoldDic, "Fold.CmdInfo", 21, iDefaultValue: false);
+                        GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.CmdInfoToggle"), WrapLabelStyle, GUILayout.ExpandWidth(false));
                         GUILayout.Label($"<b>{selected.CommandType}</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                         if (!string.IsNullOrEmpty(selected.ShortDescription))
                         {
@@ -517,6 +592,311 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
+        // 區塊：失敗紀錄面板（Tim 2026-08-21 派單）
+        // 職責：列出 `_cmd_failed/*.json`（**所有**失敗的 Cmd，不只公告），可搜尋、補跑、填回表單、刪除
+        // 物理意義：失敗的 OneShot 2026-08-07 起會即時出隊 ⇒ 從 queue 清單上看不到它們，
+        //          而 verdict 檔 3 天後被 Purge ⇒ 沒有這個面板的話，「跑失敗過什麼」只剩 Editor log。
+        // 數值影響：補跑會**把一筆新 cmd 寫進原本那條 queue 並立刻執行**（新 id，非原地重試）；
+        //          刪除只刪紀錄檔，不動任何 queue。
+        // ⚠ 補跑 = 重放副作用：酒館公告會重發（同 SHA 貼兩次＝付兩次錢）、轉帳會重轉。
+        //   所以這裡**只有人按的按鈕，沒有自動重試** —— 同 UCL_AgentCommandRunner 失敗分支的判準。
+        // ===========================================================
+        void DrawFailedPanel()
+        {
+            if (m_FailedCache == null) m_FailedCache = UCL_AgentCommandFailedStore.LoadAll();
+            if (m_LegacyFailedCount < 0) m_LegacyFailedCount = UCL_AgentCommandFailedStore.CountReportsWithoutRecord();
+
+            using (new GUILayout.VerticalScope("box"))
+            {
+                int aCount = m_FailedCache?.Count ?? 0;
+                // 摘要：有失敗就標紅並顯示筆數 —— 收合狀態下也要看得出「這裡有沒有事」
+                string aSummary = aCount > 0
+                    ? $"<color=red>{string.Format(UCL_CodeLocalize.Get("AgentCmd.FailedCount"), aCount)}</color>"
+                    : string.Format(UCL_CodeLocalize.Get("AgentCmd.FailedCount"), 0);
+                if (m_LegacyFailedCount > 0)
+                {
+                    aSummary += $"　<color=grey>{string.Format(UCL_CodeLocalize.Get("AgentCmd.FailedLegacy"), m_LegacyFailedCount)}</color>";
+                }
+                // 有失敗時預設展開 —— 沒事的時候不佔位，有事的時候不用人去找
+                bool aShow = FoldHeader("Fold.Failed", UCL_CodeLocalize.Get("AgentCmd.FailedTitle"), aSummary, aCount > 0);
+                if (!aShow) return;
+                using(new GUILayout.HorizontalScope())
+                {
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.Search"), UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
+                    string aNewSearch = GUILayout.TextField(m_FailedSearch ?? "", UCL_GUIStyle.TextFieldStyle);
+                    if (aNewSearch != m_FailedSearch) { m_FailedSearch = aNewSearch; m_FailedPage = 0; }
+                }
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Clear"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_FailedSearch = "";
+                        m_FailedPage = 0;
+                    }
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_FailedCache = null;
+                        m_LegacyFailedCount = -1;
+                    }
+                    if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.OpenFolder"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        UCL_AgentCommandFailedStore.EnsureDir();
+                        UnityEditor.EditorUtility.RevealInFinder(UCL_AgentCommandFailedStore.GetFailedDir());
+                    }
+                    GUILayout.FlexibleSpace();
+                    // 全部清除：只清紀錄，不影響 queue —— 但清掉就再也不知道失敗過什麼，所以要二段確認
+                    if (aCount > 0 && GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.FailedClearAll"),
+                            UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.55f, 0.2f)), GUILayout.ExpandWidth(false)))
+                    {
+                        if (UnityEditor.EditorUtility.DisplayDialog(
+                                UCL_CodeLocalize.Get("AgentCmd.FailedTitle"),
+                                string.Format(UCL_CodeLocalize.Get("AgentCmd.FailedClearAllConfirm"), aCount),
+                                UCL_CodeLocalize.Get("AgentCmd.FailedClearAll"),
+                                UCL_CodeLocalize.Get("AgentCmd.Cancel")))
+                        {
+                            int aDeleted = UCL_AgentCommandFailedStore.DeleteAll();
+                            Debug.Log($"[UCL_AgentCmd UI] 清除失敗紀錄 {aDeleted} 筆（queue 未受影響）。");
+                            m_FailedCache = null;
+                            m_LegacyFailedCount = -1;
+                        }
+                    }
+                }
+
+                GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.FailedRetryWarning"), UCL_GUIStyle.GetLabelStyle(new Color(1f, 0.8f, 0.3f)));
+
+                if (aCount == 0)
+                {
+                    GUILayout.Label(UCL_CodeLocalize.Get("AgentCmd.FailedEmpty"), WrapLabelStyle);
+                    return;
+                }
+
+                string aKeyword = (m_FailedSearch ?? "").Trim().ToLowerInvariant();
+                var aFiltered = string.IsNullOrEmpty(aKeyword)
+                    ? m_FailedCache
+                    : m_FailedCache.Where(e => MatchesFailed(e, aKeyword)).ToList();
+
+                int aTotalPages = Mathf.Max(1, (aFiltered.Count + PageSize - 1) / PageSize);
+                if (m_FailedPage >= aTotalPages) m_FailedPage = aTotalPages - 1;
+                DrawPagerRow(ref m_FailedPage, aTotalPages, aFiltered.Count);
+
+                string aRetryId = null, aApplyId = null, aDeleteId = null;
+                foreach (var aEntry in aFiltered.Skip(m_FailedPage * PageSize).Take(PageSize))
+                {
+                    using (new GUILayout.VerticalScope("box"))
+                    {
+                        bool aExpanded;   // 折疊鈕畫在標題列裡，但明細畫在標題列外 → 值要活過那個 scope
+                        using (new GUILayout.HorizontalScope())
+                        {
+                            aExpanded = UCL_GUILayout.Toggle(m_HistoryFoldDic, "Failed_" + aEntry.Id, 18, iDefaultValue: false);
+                            GUILayout.Label($"<color=red>●</color> <b>{aEntry.Type ?? "<null>"}</b>",
+                                WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                            GUILayout.Label($"{FormatLocalTime(aEntry.FailedAt)}　queue: {aEntry.QueueId ?? UCL_CodeLocalize.Get("AgentCmd.QueueUnrecorded")}",
+                                WrapLabelStyle, GUILayout.ExpandWidth(false));
+                            if (aEntry.RetryCount > 0)
+                            {
+                                GUILayout.Label($"　<color=grey>{string.Format(UCL_CodeLocalize.Get("AgentCmd.FailedRetried"), aEntry.RetryCount)}</color>",
+                                    WrapLabelStyle, GUILayout.ExpandWidth(false));
+                            }
+                            GUILayout.FlexibleSpace();
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.FailedRetry"),
+                                    UCL_GUIStyle.GetButtonStyle(Color.green), GUILayout.ExpandWidth(false))) aRetryId = aEntry.Id;
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.FailedToForm"),
+                                    UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) aApplyId = aEntry.Id;
+                            if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Delete"),
+                                    UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false))) aDeleteId = aEntry.Id;
+                        }
+                        // 錯誤訊息一律顯示（收合也看得到）—— 這是「該不該補跑」的判斷依據，藏起來就得逐筆展開
+                        GUILayout.Label($"  {aEntry.Error ?? ""}", UCL_GUIStyle.GetLabelStyle(new Color(1f, 0.5f, 0.5f)));
+                        if (aExpanded)
+                        {
+                            GUILayout.Label($"  id: <i>{aEntry.Id}</i>　mode: {aEntry.Mode}", WrapLabelStyle);
+                            if (!string.IsNullOrEmpty(aEntry.Description))
+                            {
+                                GUILayout.Label($"  {aEntry.Description}", WrapLabelStyle);
+                            }
+                            GUILayout.Label($"  Args: {ArgsToRaw(aEntry.Args)}", WrapLabelStyle);
+                            if (!string.IsNullOrEmpty(aEntry.RetryCmdId))
+                            {
+                                GUILayout.Label($"  {string.Format(UCL_CodeLocalize.Get("AgentCmd.FailedRetryCmdId"), aEntry.RetryCmdId, FormatLocalTime(aEntry.RetriedAt))}", WrapLabelStyle);
+                            }
+                            if (!string.IsNullOrEmpty(aEntry.ErrorReportPath))
+                            {
+                                using (new GUILayout.HorizontalScope())
+                                {
+                                    GUILayout.Label($"  {aEntry.ErrorReportPath}", WrapLabelStyle);
+                                    // 報告可能已被手動刪掉 —— 存在才給按鈕，不給一顆按了沒反應的鈕
+                                    if (System.IO.File.Exists(aEntry.ErrorReportPath)
+                                        && GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.FailedOpenReport"),
+                                            UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                                    {
+                                        UnityEditor.EditorUtility.RevealInFinder(aEntry.ErrorReportPath);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 迴圈外處理動作 —— 迴圈內改集合會讓 IMGUI 兩趟 pass 看到不同的控制項數量（ArgumentException）
+                if (aRetryId != null) RetryFailedCommand(aRetryId);
+                if (aApplyId != null) ApplyFailedToForm(UCL_AgentCommandFailedStore.Load(aApplyId));
+                if (aDeleteId != null)
+                {
+                    UCL_AgentCommandFailedStore.Delete(aDeleteId);
+                    m_FailedCache = null;
+                    m_LegacyFailedCount = -1;
+                }
+            }
+        }
+
+        static bool MatchesFailed(UCL_AgentCommandFailedEntry e, string lowerKeyword)
+        {
+            if (Contains(e.Type, lowerKeyword)) return true;
+            if (Contains(e.Error, lowerKeyword)) return true;
+            if (Contains(e.QueueId, lowerKeyword)) return true;
+            if (Contains(e.Description, lowerKeyword)) return true;
+            if (e.Args != null)
+            {
+                foreach (var kv in e.Args)
+                {
+                    if (Contains(kv.Key, lowerKeyword)) return true;
+                    if (Contains(kv.Value, lowerKeyword)) return true;
+                }
+            }
+            return false;
+        }
+
+        // 區塊職責：ISO 時間 → 當地時間字串（顯示用）
+        // 物理意義：紀錄一律存 UTC（跨機器可比），但人看的是自己的時鐘。
+        // 數值影響：解析失敗就**原樣回傳**，不吞掉 —— 空白會讓人以為「沒有時間」。
+        static string FormatLocalTime(string iIso)
+        {
+            if (string.IsNullOrEmpty(iIso)) return "";
+            if (DateTime.TryParse(iIso, null, System.Globalization.DateTimeStyles.RoundtripKind, out var aDt))
+            {
+                return aDt.ToLocalTime().ToString("MM-dd HH:mm:ss");
+            }
+            return iIso;
+        }
+
+        // ===========================================================
+        // 區塊職責：補跑一筆失敗的 cmd
+        // 物理意義：**不是原地重試** —— 產生一筆新 cmd（新 id）寫進「它原本那條 queue」，然後跑那條 queue。
+        //          寫回原 queue 而不是當前選中的 queue：queue 決定路由與併發 lane，
+        //          搬去別條會讓它跟別人搶 lane，而且歷史紀錄的 queue 歸屬會對不上。
+        // 數值影響：寫 queue.json + History 一筆（Source=Retry:<原 id>）+ 更新失敗紀錄的補跑痕跡；
+        //          然後觸發 Runner。原失敗紀錄**保留**（補跑可能又失敗，痕跡不能消失）。
+        // ===========================================================
+        void RetryFailedCommand(string iFailedId)
+        {
+            var aEntry = UCL_AgentCommandFailedStore.Load(iFailedId);
+            if (aEntry == null)
+            {
+                Debug.LogWarning($"[UCL_AgentCmd UI] 找不到失敗紀錄 '{iFailedId}'（可能剛被刪或改名）。");
+                m_FailedCache = null;
+                return;
+            }
+            if (string.IsNullOrEmpty(aEntry.Type))
+            {
+                Debug.LogWarning($"[UCL_AgentCmd UI] 失敗紀錄 '{iFailedId}' 沒有 Type，無法補跑。");
+                return;
+            }
+
+            // anonymous 是「共用 queue」的 id 寫法；Load/Save 端用 null 表示同一條，兩邊不可混用
+            string aQueueId = (string.IsNullOrEmpty(aEntry.QueueId)
+                               || aEntry.QueueId == UCL_AgentCommandQueue.AnonymousQueueId)
+                ? null : aEntry.QueueId;
+
+            var aArgs = aEntry.Args != null
+                ? new Dictionary<string, string>(aEntry.Args)
+                : new Dictionary<string, string>();
+            // `_cmd_id` 是 Runner 為**那一次執行**注入的識別碼 —— 帶著舊值補跑會讓新的一次執行
+            // 對外宣稱自己是舊那一筆（回傳檔／帳目都會掛錯 id），而它不會報錯。
+            aArgs.Remove("_cmd_id");
+
+            // ===========================================================
+            // 區塊職責：擋掉「對正在跑的 queue 寫入」
+            // 物理意義：Runner 開跑時把 queue 讀成記憶體清單，收尾時**整批寫回** ——
+            //          期間任何 load→add→save 都會被那次寫回覆蓋掉（lost update）。
+            // 🩸 實測（basecamp 2026-08-21 首次驗收）：從一個正在該 queue 執行的 Cmd_Invoke 裡呼叫本方法，
+            //   紀錄標成「已補跑」、log 印了新 cmd id，而 queue.json 收尾後是空的、
+            //   `_cmd_results` 與 `_cmd_errors` 都沒有那筆 —— **補跑憑空消失且全程零錯誤訊息**。
+            // 數值影響：擋下時什麼都不寫（紀錄不標記補跑），等那條 queue 空閒再按即可。
+            // ===========================================================
+            if (UCL_AgentCommandRunner.IsRunningForAgent(aQueueId))
+            {
+                Debug.LogWarning($"[UCL_AgentCmd UI] queue '{aQueueId ?? "default"}' 正在執行 —— 補跑暫停。"
+                                 + "現在寫進去會被那一批收尾時的整批寫回吃掉（lost update）。等它跑完再按。");
+                return;
+            }
+
+            var aData = UCL_AgentCommandQueue.Load(aQueueId) ?? new UCL_AgentCommandQueueData();
+            aData.Commands ??= new List<UCL_AgentCommand>();
+            var aCmd = new UCL_AgentCommand
+            {
+                Id = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{aEntry.Type.ToLower()}-retry",
+                Type = aEntry.Type,
+                Mode = aEntry.Mode,
+                RunCount = 0,
+                Args = aArgs,
+                CreatedAt = DateTime.UtcNow.ToString("o"),
+                Description = string.IsNullOrEmpty(aEntry.Description)
+                    ? $"retry of {aEntry.Id}"
+                    : $"{aEntry.Description}（retry of {aEntry.Id}）",
+            };
+            aData.Commands.Add(aCmd);
+            UCL_AgentCommandQueue.Save(aData, aQueueId);
+
+            // 區塊職責：回讀驗證「真的寫進去了」
+            // 物理意義：Save 沒有例外**不等於**檔案裡有這筆（上面那條 lost update 就是這樣消失的）。
+            //          寫入類操作一律回讀 —— 而且要驗欄位值（這裡是「新 id 在不在」），不是只驗沒報錯。
+            // 數值影響：驗不到就不標記補跑、不觸發 Runner —— 讓失敗留在原狀，而不是留下一個假的「已補跑」。
+            var aVerify = UCL_AgentCommandQueue.Load(aQueueId);
+            bool aLanded = aVerify?.Commands != null
+                           && aVerify.Commands.Any(c => c != null && c.Id == aCmd.Id);
+            if (!aLanded)
+            {
+                Debug.LogError($"[UCL_AgentCmd UI] 補跑寫入 queue '{aQueueId ?? "default"}' 後回讀不到 {aCmd.Id} —— "
+                               + "可能有另一個寫入者同時收尾（lost update）。紀錄未標記補跑，請稍後再試。");
+                m_Cached = UCL_AgentCommandQueue.Load(SelectedAgentId);
+                return;
+            }
+
+            UCL_AgentCommandHistory.Record(aEntry.Type, aEntry.Mode, aArgs, aCmd.Description,
+                source: $"Retry:{aEntry.Id}",
+                queueId: aQueueId ?? UCL_AgentCommandQueue.AnonymousQueueId);
+            m_HistoryCache = null;
+
+            UCL_AgentCommandFailedStore.MarkRetried(aEntry.Id, aCmd.Id);
+            m_FailedCache = null;
+
+            Debug.Log($"[UCL_AgentCmd UI] 補跑 '{aEntry.Type}'：新 id={aCmd.Id}，queue={aQueueId ?? "default"}"
+                      + $"（原失敗 {aEntry.Id}；結果看 _cmd_results/{aCmd.Id}.json）");
+
+            if (string.IsNullOrEmpty(aQueueId)) UCL_AgentCommandRunner.Menu_RunPending();
+            else UCL_AgentCommandRunner.RunAsync(aQueueId, default).Forget();
+            DelayedRefresh().Forget();
+        }
+
+        // 區塊職責：把失敗紀錄填回新增表單（要改參數再跑的路徑）
+        // 物理意義：補跑是「原封不動再跑一次」；打錯參數那類失敗需要的是**改完再跑**，那就走這裡。
+        // 數值影響：只改表單欄位，不動 queue 與紀錄。
+        void ApplyFailedToForm(UCL_AgentCommandFailedEntry iEntry)
+        {
+            if (iEntry == null) return;
+            SyncSelectedHandlerByType(iEntry.Type);
+            m_NewMode = iEntry.Mode;
+            m_NewDescription = string.IsNullOrEmpty(iEntry.Description)
+                ? $"retry of {iEntry.Id}" : iEntry.Description;
+            var aArgs = iEntry.Args != null
+                ? new Dictionary<string, string>(iEntry.Args)
+                : new Dictionary<string, string>();
+            aArgs.Remove("_cmd_id");   // 理由同 RetryFailedCommand
+            m_NewArgsRaw = ArgsToRaw(aArgs);
+            GUI.FocusControl(null);
+        }
+
+        // ===========================================================
         // 區塊：Templates 面板
         // 職責：列出 AgentCommands/Templates/*.json，可搜尋、套用到表單、刪除
         // 物理意義：模板 = 凍結的指令配方；按 Apply 會把 Type / Mode / Args / Description 填回表單，
@@ -536,11 +916,11 @@ namespace UCL.Core.EditorLib.Page
                 {
                     // 區塊職責：摺疊開關 — 用 button 形式而非 CheckBox 呈現「▼ / ▶」感覺
                     // 物理意義：把面板往下展開或收起；展開時才掃資料夾
-                    if (GUILayout.Button((m_ShowTemplates ? "▼" : "▶") + " " + UCL_CodeLocalize.Get("AgentCmd.Templates"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        m_ShowTemplates = !m_ShowTemplates;
-                        // 不在這裡 invalidate cache — 計數一直可見，展開只是顯示已快取的內容
-                    }
+                    // 折疊語彙統一走 UCL_GUILayout.Toggle（▼/►）；狀態存 m_FoldDic，
+                    // 不再各區塊自帶一個 bool 欄位＋手刻的「▼/▶」按鈕（那是本頁原本的第二套寫法）。
+                    // 不在這裡 invalidate cache — 計數一直可見，展開只是顯示已快取的內容
+                    m_ShowTemplates = UCL_GUILayout.Toggle(m_FoldDic, "Fold.Templates", 21, iDefaultValue: false);
+                    GUILayout.Label($"<b>{UCL_CodeLocalize.Get("AgentCmd.Templates")}</b>", WrapLabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.TemplatesCount"), m_TemplateCache?.Count ?? 0), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.FlexibleSpace();
                     if (m_ShowTemplates)
@@ -719,11 +1099,10 @@ namespace UCL.Core.EditorLib.Page
             {
                 using (new GUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button((m_ShowHistory ? "▼" : "▶") + " " + UCL_CodeLocalize.Get("AgentCmd.History"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        m_ShowHistory = !m_ShowHistory;
-                        // 不在這裡 invalidate cache — 計數一直可見，展開只是顯示已快取的內容
-                    }
+                    // 同 Templates：折疊走 UCL_GUILayout.Toggle + m_FoldDic（統一語彙）
+                    // 不在這裡 invalidate cache — 計數一直可見，展開只是顯示已快取的內容
+                    m_ShowHistory = UCL_GUILayout.Toggle(m_FoldDic, "Fold.History", 21, iDefaultValue: false);
+                    GUILayout.Label($"<b>{UCL_CodeLocalize.Get("AgentCmd.History")}</b>", WrapLabelStyle, GUILayout.ExpandWidth(false));
                     GUILayout.Label(string.Format(UCL_CodeLocalize.Get("AgentCmd.HistoryCount"), m_HistoryCache?.Count ?? 0), UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                     if (GUILayout.Button(UCL_CodeLocalize.Get("AgentCmd.Refresh"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
@@ -1054,6 +1433,9 @@ namespace UCL.Core.EditorLib.Page
                 if (string.Equals(handlers[i].CommandType, type, StringComparison.Ordinal))
                 {
                     m_SelectedCmdIdx = i;
+                    // ⚠ 同步「範例值自動填入」的偵測基準 —— 呼叫端（Apply 模板／歷史／補跑填回）
+                    //   正要把自己的 args 寫進表單，若不同步，下一幀就會被 ExampleArgs 蓋掉。
+                    m_LastCmdIdxForExample = i;
                     m_Dic.Clear();
                     return;
                 }

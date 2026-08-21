@@ -3,7 +3,7 @@ title: UCL_AgentCommandsPage
 description: 用于排队、查看、触发存储于 AgentCommands/queue.json 的 agent 指令的编辑器页面。
 source_file: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_AgentCommandsPage.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-05-04
+last_updated: 2026-08-21
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -63,6 +63,70 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | `Refresh` | 从硬盘重新加载 `queue.json` 到内存缓存 |
 | `Run Pending Commands` | 调用 `UCL_AgentCommandRunner.Menu_RunPending()`（async）；约 1.5 秒后自动 refresh |
 | `Open Folder` | 直接打开 `AgentCommands/` 文件夹 |
+
+## 3b. 区块折叠（Tim 2026-08-21）
+
+本页的大区块（队列现况 / 新增指令 / 失败记录 / 模板 / 历史 / 提示）各自可折叠，
+折叠钮一律走 `UCL_GUILayout.Toggle`（▼/►），状态存页面 instance 的 `m_FoldDic`。
+
+| 区块 | 默认 |
+|---|---|
+| 📋 队列现况（queue 路径 / Watcher 状态栏 / 指令清单） | 展开 |
+| ➕ 新增指令（指令下拉 + 表单） | 展开 |
+| ❌ 失败记录 | **有失败时展开**，没有就收合 |
+| 模板 / 历史 / 💡 提示 | 收合 |
+
+> [!NOTE]
+> **queue 选择器刻意不可折叠** —— 它决定其他每个区块在讲哪条 queue，收起来会让底下所有读数失去主词。
+> 折叠的标题栏**收合时仍显示摘要**（queue 统计、失败笔数、模板/历史笔数）：
+> 收合把信息一起藏掉的话，人得先展开才知道「这里有没有事」，那等于没有折叠。
+
+## 3c. ❌ 失败记录面板（可补跑，Tim 2026-08-21）
+
+失败的 OneShot 自 2026-08-07 起会**即时出队**（避免 queue 堵塞与副作用重放），
+所以从 queue 清单上看不到它们。本面板列出 `<DataRoot>/_cmd_failed/<cmdId>.json` ——
+**所有**失败的 Cmd，不限于某一种。
+
+| 文件 | 内容 | 保存期 |
+|---|---|---|
+| `_cmd_results/<id>.json` | 机器可读 verdict（**不含 Args**） | 3 天后自动清除 |
+| `_cmd_errors/<id>.md` | 给人读的完整 stack + Args | 永久 |
+| `_cmd_failed/<id>.json` ★ | **结构化、可补跑**：Type / Mode / Args / error / queueId / 补跑痕迹 | 直到补跑或手动删除 |
+
+★ 由 `UCL_AgentCommandFailedStore` 在 Runner 的失败分支写入。
+为什么要第三份：前两份都补跑不了 —— 一份没有 Args，另一份是**给人读的视图**
+（对人类视图写 parser 等于第二份真相源，格式一改就静默坏掉）。
+
+| 按钮 | 行为 |
+|---|---|
+| `补跑` | 以**原本那条 queue**（记录的 `QueueId`）新增一笔新 cmd（新 id）并立刻执行；原记录保留并累加 `RetryCount` |
+| `填回表单` | 把 Type / Mode / Args 填回「新增指令」表单 —— 打错参数那类失败要**改完再跑**就走这里 |
+| `删除` / `清除全部记录` | 只删记录，不动任何 queue（全部清除有二段确认） |
+
+> [!CAUTION]
+> **补跑＝重新执行一次，副作用会重放** —— 酒馆公告会重发（同 SHA 领两次薪）、转账会重转。
+> 所以这里只有人按的按钮，**没有自动重试**：`ensure_idle` 逾时那种失败代表「没送出」（重试安全），
+> 但**送出之后**的失败可能其实已经生效了，而两者在画面上长得一样。
+
+> [!IMPORTANT]
+> **补跑会挡在「那条 queue 正在跑」的情况** —— Runner 开跑时把 queue 读成内存清单、收尾时整批写回，
+> 期间任何 load→add→save 都会被覆盖（lost update）。
+> 🩸 首次验收实测：从一个正在该 queue 执行的 Cmd 里调用补跑，记录标成「已补跑」、log 印了新 cmd id，
+> 而 queue.json 收尾后是空的 —— **补跑凭空消失且零错误信息**。
+> 现在的行为：先检查 `IsRunningForAgent`，写入后**回读验证新 id 在不在**，验不到就不标记补跑。
+
+> [!NOTE]
+> 本 store 是 2026-08-21 才加的 ⇒ **之前的失败没有结构化记录，补跑不了**。
+> 标题栏会另外显示那个笔数（由 `_cmd_errors/` 数出来），刻意不把「不能补」画成「没有失败」。
+
+## 3d. 选定指令后自动填入范例值（Tim 2026-08-21）
+
+在「新增指令」下拉切换指令时，Args 字段会**自动填入该 handler 的 `ExampleArgs`**
+（没有声明范例则清空）—— 换了指令，字段里的旧 args 就属于别的指令了，留着比清空更糟：
+它看起来像一组有效参数。「填入范例」按钮保留。
+
+> [!NOTE]
+> 从模板 / 历史 / 失败记录「填回表单」时**不会**被范例值盖掉 —— 那些路径会同步自动填入的检测基准。
 
 ## 4. 如何新增一个指令类型
 

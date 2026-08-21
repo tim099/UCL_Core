@@ -42,7 +42,8 @@ _SNAPSHOT_PATH = _PATHS.awaken_init_dir() / "_persona_profile_snapshot.json"
 #   讀快照成功時以快照內的清單為準 —— 這兩行只是 ③ 本地解析段的後備。
 ROUTING_FIELDS = ("agent", "model", "actual_agent")
 IDENTITY_FIELDS = ("layer_role", "forked_from", "fork_lineage", "forked_at",
-                   "created_at", "identity_vector", "vector_history", "email")
+                   "created_at", "identity_vector", "vector_history", "email",
+                   "plurk_account")
 
 # module 級狀態：每 process 解析一次。mode = "live" | "snapshot" | "local-parse"
 _STATE: dict = {"mode": None, "data": None, "snapshot_at": ""}

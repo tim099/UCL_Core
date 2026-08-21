@@ -1113,6 +1113,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine();
             aR.AppendLine("## next（人工收尾清單 —— 標 **required** 的兩項會實擋；其餘提示型）");
             aR.AppendLine($"1. 見叢交棒：awakening.py keys --persona {iPersona} --add \"<明天必須知道的一句話>\"");
+            // ⛔ commit／submodule bump 不進見叢（Tim 2026-08-21 拍板）—— 晚安之後他自己收尾全部 commit。
+            //   這一行印在**必經路上**而不是只寫進文件：舊的見叢裡塞了五六條「某層未 commit／父層未 bump」，
+            //   而那些條目隔天讀起來像交棒待辦，實際上是別人已經做完的事 ⇒ 早安時排錯優先序。
+            aR.AppendLine("   ⛔ **commit／push／submodule bump 不要寫進見叢** —— 晚安後 Tim 自己收尾全部 commit；");
+            aR.AppendLine("      寫進來只會讓明天的自己把「已經做完的事」排成第一件。改動本身值得交棒 → 寫那個改動要驗什麼，不寫它要 commit。");
             // ⚠ 舊 ucl-affinity / affinity_update.py 已於 2026-08-18 退場（見 ucl-relationship）。
             //   這一行是**跑起來才看得到的字**，不在任何 .md 裡 —— 退場當天掃 skill/文件/python 都掃不到它。
             aR.AppendLine("2. 關係補記：今天漏記的互動補一筆（依 ucl-relationship；主要觸發點是對話當下就寫，這裡只是撿漏）");

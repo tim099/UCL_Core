@@ -25,9 +25,13 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 欄位分類（§8.3 拍板）—— 與 python _lib/persona_profile.py 的同名常數**兩端同步義務**。
         // 讓分類在兩端都是可被編譯器／搜尋找到的東西，不是註解裡的約定（紅隊 seq 12274 洞①）。
         // email 歸 identity：個人信箱是人的署名不是專案的路由（Tim §8.3 二輪拍板；紅隊題①對出初版錯置）。
+        // plurk_account 歸 identity（Tim 2026-08-21）：「這個人用哪一份 Plurk 憑證」跟信箱同型 ——
+        //   跟著人走、不綁專案。⚠ 加進本清單才會生效：`WriteProfileField` 只收 identity 欄，
+        //   非 identity 欄的 `SetField` 會 patch 回 legacy —— 而 `UCL_PlurkAccounts` 的檔頭
+        //   早就宣告「不寫 AwakenInit/personas」。清單缺一格 ⇒ 那句宣告是假的（說法比實作大）。
         public static readonly string[] ROUTING_FIELDS = { "agent", "model", "actual_agent" };
         public static readonly string[] IDENTITY_FIELDS = { "layer_role", "forked_from", "fork_lineage",
-            "forked_at", "created_at", "identity_vector", "vector_history", "email" };
+            "forked_at", "created_at", "identity_vector", "vector_history", "email", "plurk_account" };
 
         static HashSet<string> s_NamesCache;
         static long s_NamesCacheMtime = -1;

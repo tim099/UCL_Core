@@ -598,7 +598,8 @@ def save_registry(reg: dict) -> None:
 # 與 C# UCL_PersonaProfile.IDENTITY_FIELDS / _lib/persona_profile.IDENTITY_FIELDS
 # **三端同步義務**。此處只需要「哪些欄可能被搬走」，不需要值。
 _PHASE1_IDENTITY_FIELDS = ("layer_role", "forked_from", "fork_lineage", "forked_at",
-                           "created_at", "identity_vector", "vector_history", "email")
+                           "created_at", "identity_vector", "vector_history", "email",
+                           "plurk_account")
 
 
 def _profile_migrated_fields(persona: str, fields) -> list:

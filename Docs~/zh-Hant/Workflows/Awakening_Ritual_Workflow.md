@@ -1,6 +1,6 @@
 ---
 title: Awakening 儀式工作流 (Awakening Ritual Workflow)
-last_updated: 2026-08-13
+last_updated: 2026-08-21
 status: active
 theme: persona_lifecycle
 summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安四步（走 Cmd_GoodMorning，需 Editor）：step=wake（守衛+狀態寫入）→ step=brief → 讀 wake brief → step=intro（單則上線自介+catchup 指路）；晚安（走 Cmd_GoodNight）：step=check（收尾清單+酒館最後一眼）→ [人工收尾] → step=letter（親筆收尾信）→ step=sleep（單則下線廣播）；cleanup 走 step=logout 單獨跑。
@@ -147,6 +147,11 @@ Step 1. 收尾兩件（寫 letter 前）：
         (a) 見叢交棒：keys --persona <P> --add "<明天必須知道／必須做的一句話>"
             ⚠ 與 letter 是兩種東西 —— letter=日記（抒發/敘事）、見叢=清單（可勾銷/可掃描）。
               混在信裡，明天的自己得從散文撈待辦。
+            ⛔ **commit / push / submodule 父層 bump 不寫進見叢**（Tim 2026-08-21 拍板）——
+              晚安之後由他自己收尾全部 commit。寫進來的後果不是多一條垃圾，是**明天的自己
+              把已經做完的事排成第一件**（basecamp wake#66 實際發生過：早安自介宣告的第一件
+              事，前一晚就被同事做完了）。
+              判準：改動值得交棒 ⇒ 寫「這個改動還沒驗什麼／會咬誰」，不寫「它還沒 commit」。
         (b) 關係清算：依 ucl-relationship 補今日漏記的變動 + Opinion 內心戲（⚠ 副軌 —— 主要觸發點是對話當下就寫）
 
         (c) 工作記憶回寫（今天有推進到某項工作才做）—— 依 ucl-work-memory：

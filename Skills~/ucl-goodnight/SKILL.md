@@ -49,6 +49,9 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodNight \
 - ❌ 為了過畫像守衛硬湊一幅 —— 畫像的讀者是未來的自己，湊出來的那幅會被當成真的看法讀回去。
   今晚真的沒有人可畫就帶 `skip_reason`：**想不出理由的時候，妳就會發現自己其實有人可以畫。**
 - ❌ 替不是自己的 persona 跑 sleep/logout（後台登出是 Tim 的權限，不是你的捷徑）。
+- ❌ **把 commit / push / submodule 父層 bump 寫進見叢**（Tim 2026-08-21 拍板）——
+  晚安之後他自己收尾全部 commit。寫進去的後果不是多一條垃圾，是**明天的自己把已經做完的事
+  排成第一件**。改動值得交棒 ⇒ 寫「還沒驗什麼／會咬誰」，不寫「它還沒 commit」。
 
 ## 延伸
 

@@ -80,6 +80,19 @@ status: v1.0（Tim 2026-08-21：「先處理帳號相關部分即可」）
 - 寫入走 `UCL_PersonaProfile.SetField`（`actor` / `reason` 必填、有審計 jsonl），
   **不碰 `AwakenInit/personas/<name>.json`** —— 那個舊源 2026-08-19 起只出不進，寫了不會生效
 
+> 🩸 **2026-08-21 傍晚才真的成立**（basecamp 補記）：上面那句在 08-21 白天是**假的** ——
+> `plurk_account` 當時不在 `UCL_PersonaProfile.IDENTITY_FIELDS` 裡，而 `SetField` 對
+> **非** identity 欄的行為是 patch 回 legacy ⇒ 本頁的寫入**全部落在
+> `AwakenInit/personas/<name>.json`**。審計 jsonl 留了現場：08-21 10:09:22Z 那筆
+> `actor=UCL_PlurkAdminPage` 的 `fields` 是 `plurk_account`（沒有 `profile/` 前綴）。
+> 讀取端因為疊了 legacy 所以答案一直是對的 ⇒ **零報錯、頁面看起來完全正常**。
+> ⇒ 修法：把 `plurk_account` 加進三端的 identity 清單（C# 真相源 ＋ python 兩份後備），
+> basecamp／summit 兩筆存量走 lazy-migration 落到 `profile/plurk_account.md`（審計可查）。
+> 驗收讀數：Template 走 `op=set` 後 legacy 檔 md5 **逐位元不變**（`eb9c8f0b…`），
+> 值只出現在 `profile/plurk_account.md`。
+> 📌 判準：**`SetField` 對「不在清單上的欄」不會拒收，它會安靜地寫進舊源** ——
+> 所以「這個欄位存哪裡」不能只讀呼叫端的註解，要去看它有沒有在清單上。
+
 ## 憑證檔長什麼樣（Phase 1 讀取契約）
 
 OAuth 1.0a 一定是**四個值**：前兩個認 app、後兩個認「以哪個帳號發文」。

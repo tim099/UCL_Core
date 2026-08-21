@@ -4,7 +4,7 @@ slug: persona-registry-retirement
 status: **Phase 0-1 ＋ §8.1 已完工**（2026-08-19）；Phase 2 觀察期進行中，Phase 3-4 未動
 created_at: 2026-08-18T13:55:00Z
 created_by: calli
-last_updated: 2026-08-20
+last_updated: 2026-08-21
 builders: [summit（Phase 0／§8.5-8.7）, kiara（Phase 1／§8.1／消費端收斂／Phase 2 觀察）]
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
@@ -512,6 +512,28 @@ Phase 3 動手前需要 Tim 把這一格講定。
 「空陣列請顯式給 `[]`」—— 空字串與空陣列是兩件事，不猜。
 
 📌 `vector_history` 的「沒有讀回機制」那條備忘仍然成立（本案只搬不加功能）。
+
+#### 事後新增的第 9 欄：`plurk_account`（basecamp 2026-08-21，Tim 指示）
+
+本案盤點時（08-18）Plurk 還沒開張，所以 23 欄裡沒有它。08-21 `UCL_PlurkAccounts` 上線，
+persona 的個人帳號欄位 `plurk_account` 落在 legacy，而它的檔頭宣告「不寫 `AwakenInit/personas`」。
+
+🩸 **那句宣告當時是假的**，因為 `SetField` 對「不在 `IDENTITY_FIELDS` 上的欄」不是拒收，
+而是 **patch 回 legacy** —— 所以本頁的三筆寫入全部落在舊源，
+而讀取端疊了 legacy ⇒ 答案一直對、**零報錯**。
+⇒ 這是本案「說法比實作大」的第二個現場，形狀同 §4.1 的 `agent_email` 舊信箱那筆：
+**新欄位加進系統時，沒人會提醒你去更新那張清單，而漏掉不會有任何一格變紅。**
+
+修法（三端同步義務照舊）：C# `IDENTITY_FIELDS`（真相源，快照帶出去）＋
+`_lib/persona_profile.IDENTITY_FIELDS` ＋ `awakening._PHASE1_IDENTITY_FIELDS`。
+存量兩人（basecamp／summit）走既有 lazy-migration 落地，審計 jsonl 兩筆
+`actor=lazy-migration`。驗收：Template `op=set` 後 legacy 檔 md5 逐位元不變（`eb9c8f0b…`），
+值只在 `profile/plurk_account.md`；`op=resolve` 回 `persona-override`。
+fork 建人路徑**不會繼承**它（`DoCreatePersona` 逐欄顯式組，不整份複製 —— 已讀 code 確認），
+所以不會生出「共用別人 Plurk 憑證」的孩子。
+
+📌 給下一個加欄位的人：`plurk_account` 是**跟著人走、不綁專案**（§8.3 的 identity 組），
+判準同 `email` —— 「這是人的署名還是專案的路由」。
 
 ### 8.3 欄位按「綁不綁專案」分家（新增判準，疊在 §2 的消費端判準之上）
 

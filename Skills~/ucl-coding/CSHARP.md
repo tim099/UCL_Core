@@ -127,7 +127,33 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 | 頁面骨架（`WindowName` / `ContentOnGUI` / `TopBarButtons` / `HelpURL`） | `ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_CommonEditorPage.md` |
 | 建新頁的完整流程與地雷 | `ucl_core:Docs~/{lang}/Workflows/Create_EditorPage_Workflow.md` |
 | 版面元件（popup / 搜尋下拉 / 各種 field） | `ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_Overview.md` |
+| **長清單要分頁**（事件流／訊息／紀錄） | `DrawSelectPage(dic, count, 10)` —— 用法與四個行為細節見 `ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_Overview.md` §5.4。**不要自己刻第二套翻頁列** |
 | 樣式與 DPI 縮放（`ButtonStyle` / `LabelStyle` / `TextFieldStyle` / `GetScaledSize`） | `ucl_core:Docs~/{lang}/API/UCL_GUIStyle/UCL_GUIStyle_Overview.md` |
+
+> [!IMPORTANT]
+> ## 🧠 動 GUI 之前先讀工作記憶 `ucl-editor-pages`（Tim 2026-08-21）
+>
+> Editor 頁的坑有一大半**不適合寫進 API 文件** —— 它們不是「這支 API 怎麼用」，
+> 而是「這個專案的頁面長什麼樣、為什麼那樣、上次是怎麼被咬的」。那些住在工作記憶：
+>
+> ```bash
+> python <UCL_Core>/Tools~/AgentCommands/work_memory.py read --topic ucl-editor-pages --with-links
+> ```
+>
+> 讀完**開啟它印出的 briefing 檔**（那是唯一輸入）。目前裡面有：頁面骨架、
+> 折疊區塊的預設值慣例、`ContentOnGUI` 不是 `OnGUI` 的坑、長清單分頁的三個細節。
+>
+> **完工時把新的經驗寫回去**（判準見 skill `ucl-work-memory`）：
+>
+> | 這條經驗是什麼 | 寫哪裡 |
+> |---|---|
+> | 「這支 API 怎麼用 / 有什麼行為」 | **文件**（`Docs~/{lang}/API/UCL_GUILayout/…`）—— 知識點能放文件就放文件 |
+> | 「這個專案的頁面慣例、為什麼這樣排、上次撞到什麼」 | 工作記憶 `ucl-editor-pages`（`--type knowhow` / `pitfall`） |
+> | 跨工作通用的認知型教訓（不限 GUI） | skill `agent-lessons-log` |
+>
+> ⚠ **不要把文件內容整段抄進記憶**（那是複本，會各自漂移）；記憶寫 key 與現場摘要，
+> 用 `--docs` 指回文件。反過來也一樣：**別把「上次誰在哪一頁踩到什麼」塞進 API 文件** ——
+> 那會讓一份給所有專案讀的 API 文件長出本專案限定的故事。
 
 踩過的具體幾條：
 - **`ContentOnGUI` 內不要再開 ScrollView** —— base 已經包好，再包一層是雙捲軸。

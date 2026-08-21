@@ -357,6 +357,118 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
             return Directory.Exists(d) ? Directory.GetFiles(d, "*.md").Length : 0;
         }
 
+        // ===========================================================
+        // 區塊職責：讀 `_current.md`（存值投影）。
+        // 物理意義：**事實來源是 events/**，本檔只是投影 —— 但投影裡有一樣東西是重算拿不到的：
+        //          `opening_balance`（遷移反推的期初餘額，沒有對應事件）。
+        //          所以要顯示「跟其他工具一致的分數」就得讀它，不能只靠 RebuildCurrent(null)。
+        // 數值影響：純讀；檔不存在或欄位缺 → 回 null / 型別預設，不猜值。
+        //          ⚠ 缺 emotion_vector 的舊檔會回一個全 0 的向量，那跟「真的全 0」長得一樣 ——
+        //          呼叫端要看的話請一併看 event_count（0 筆事件才可能真的全 0）。
+        // ===========================================================
+        public static UCL_RelationshipCurrent LoadCurrent(string iPersona, string iTarget)
+        {
+            string aPath = CurrentPath(iPersona, iTarget);
+            if (!File.Exists(aPath)) return null;
+            var aCur = new UCL_RelationshipCurrent { target = iTarget };
+            foreach (var a in UCL_RelationshipAxes.Names) aCur.emotion_vector[a] = 0f;
+
+            bool aIn = false, aPastFm = false;
+            string aBlock = null;   // 目前在哪個縮排區塊（emotion_vector / opening_balance）
+            foreach (var ln in File.ReadAllLines(aPath, Encoding.UTF8))
+            {
+                if (!aPastFm && ln.StartsWith("---", StringComparison.Ordinal))
+                {
+                    if (!aIn) { aIn = true; continue; }
+                    aPastFm = true; continue;
+                }
+                if (aPastFm) break;   // 正文是給人讀的複述，不解析（那份重複正是 UI 該省掉的東西）
+                if (ln.StartsWith("  ", StringComparison.Ordinal) && aBlock != null)
+                {
+                    int ci = ln.IndexOf(':');
+                    if (ci <= 0) continue;
+                    string ak = ln.Substring(0, ci).Trim();
+                    if (!float.TryParse(StripComment(ln.Substring(ci + 1).Trim()),
+                            NumberStyles.Float, CultureInfo.InvariantCulture, out float av)) continue;
+                    if (aBlock == "emotion_vector") aCur.emotion_vector[ak] = av;
+                    else
+                    {
+                        aCur.opening_balance ??= new Dictionary<string, float>();
+                        aCur.opening_balance[ak] = av;
+                    }
+                    continue;
+                }
+                aBlock = null;
+                int c = ln.IndexOf(':');
+                if (c <= 0) continue;
+                string k = ln.Substring(0, c).Trim();
+                string v = StripComment(ln.Substring(c + 1).Trim());
+                switch (k)
+                {
+                    case "target": if (!string.IsNullOrEmpty(v)) aCur.target = v; break;
+                    case "emotion_vector": aBlock = "emotion_vector"; break;
+                    // `opening_balance: null` 是**顯式的「沒有期初餘額」**，不是漏填 ——
+                    // 只有後面沒跟值時才進縮排區塊模式。
+                    case "opening_balance": if (string.IsNullOrEmpty(v)) aBlock = "opening_balance"; break;
+                    case "surface_score": int.TryParse(v, out aCur.surface_score); break;
+                    case "tier": aCur.tier = v; break;
+                    case "event_count": int.TryParse(v, out aCur.event_count); break;
+                    case "opinion_count": int.TryParse(v, out aCur.opinion_count); break;
+                    case "last_updated": aCur.last_updated = v; break;
+                    case "recomputable": aCur.recomputable = (v == "true"); break;
+                }
+            }
+            return aCur;
+        }
+
+        // ===========================================================
+        // 區塊職責：讀某對象的全部「看法」。
+        // 物理意義：看法與向量解耦（純文字），所以它沒有 axis_deltas；
+        //          遷移進來的舊看法 `at` 是空的（**沒有時戳，不是漏填**）。
+        // 數值影響：純讀；排序交給呼叫端 —— 這裡回磁碟順序，不假裝有時序。
+        // ===========================================================
+        public static List<UCL_RelationshipOpinion> LoadOpinions(string iPersona, string iTarget)
+        {
+            var aOut = new List<UCL_RelationshipOpinion>();
+            string d = OpinionsDir(iPersona, iTarget);
+            if (!Directory.Exists(d)) return aOut;
+            foreach (var f in Directory.GetFiles(d, "*.md"))
+            {
+                var o = new UCL_RelationshipOpinion();
+                bool aIn = false, aPastFm = false;
+                var aBody = new StringBuilder();
+                foreach (var ln in File.ReadAllLines(f, Encoding.UTF8))
+                {
+                    if (!aPastFm && ln.StartsWith("---", StringComparison.Ordinal))
+                    {
+                        if (!aIn) { aIn = true; continue; }
+                        aPastFm = true; continue;
+                    }
+                    if (aPastFm) { aBody.Append(ln).Append('\n'); continue; }
+                    int c = ln.IndexOf(':');
+                    if (c <= 0) continue;
+                    string k = ln.Substring(0, c).Trim();
+                    string v = StripComment(ln.Substring(c + 1).Trim());
+                    switch (k)
+                    {
+                        // "null" 是顯式的「舊資料沒有時戳」—— 存成空字串，別讓它變成字面上的 "null"
+                        case "at": o.at = (v == "null") ? "" : v; break;
+                        case "migrated_at": o.migrated_at = v; break;
+                        case "origin":
+                            foreach (var s in v.Trim('[', ']').Split(','))
+                            {
+                                string t = s.Trim();
+                                if (!string.IsNullOrEmpty(t)) o.origin.Add(t);
+                            }
+                            break;
+                    }
+                }
+                o.text = aBody.ToString().Trim();
+                aOut.Add(o);
+            }
+            return aOut;
+        }
+
         static string StripComment(string v)
         {
             int i = v.IndexOf('#');

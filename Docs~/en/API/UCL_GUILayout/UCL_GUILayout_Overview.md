@@ -11,7 +11,7 @@ source_files: |
   Assets/UCL/UCL_Core/UCL_Core_Scripts/UICore/UCL_GUILayoutDrawableTexture.cs
   Assets/UCL/UCL_Core/UCL_Core_Scripts/UICore/UCL_GUILayoutPainter.cs
 namespace: UCL.Core.UI
-last_updated: 2026-05-07
+last_updated: 2026-08-21
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [UCL_GUILayout, GUILayout 工具集, IMGUI helpers, DrawObject, Popup, DrawableTexture]
 tags: [api, ui, imgui, editor]
@@ -161,7 +161,7 @@ Supported attribute extensions: `[Header]` (auto-localized), `[SerializeReferenc
 
 ---
 
-## 5. Three Less-Known Helpers Worth Remembering
+## 5. Four Less-Known Helpers Worth Remembering
 
 Downstream pages usually only use `DrawObjectData` / `DrawList` / basic fields. The three below are **genuine time-savers** that are easy to overlook:
 
@@ -190,6 +190,39 @@ if (UCL_GUILayout.DrawCopyPaste(ref o, m_DataDic, typeof(GameConfig)))
 }
 ```
 **Mechanism**: backed by `UCL.Core.CopyPaste` + JSON; type mismatches are blocked.
+
+---
+
+### 5.4 `DrawSelectPage(dic, itemsCount, maxItemsPerPage)`
+
+**When to use**: paging a long list **you draw yourself** (event streams, messages, records).
+`DrawList` / `DrawDictionary` / `DrawHashSet` already use it internally (10 items per page), so hand-rolled
+lists should go through the same call rather than growing a second set of pager buttons — one pager shape
+across the project means nobody has to learn a second one.
+
+```csharp
+const int ItemsPerPage = 10;
+var aPage = UCL_GUILayout.DrawSelectPage(m_FoldDic.GetSubDic("EventsPage"), m_Events.Count, ItemsPerPage);
+int aEnd = Mathf.Min(m_Events.Count, aPage.startIndex + ItemsPerPage);
+for (int i = aPage.startIndex; i < aEnd; i++) { /* draw item i */ }
+```
+
+Returns `(pageIndex, startIndex)`; renders `|<  <  n / N  >  >|`.
+
+Four behaviours to know up front — each one changes how you write the calling code:
+
+| Behaviour | Meaning |
+|---|---|
+| **Draws nothing when there is only one page** | `itemsCount <= maxItemsPerPage` returns `(0, 0)` immediately ⇒ small lists don't grow a useless button row |
+| **Page state lives in the `dic` you pass in** | Convention is `GetSubDic(nameof(DrawSelectPage))` or your own key; ⚠ **do not share that dic with `PopupSearchCache`** — a `Clear()` on the data-reload path wipes the page index too |
+| **It clamps, it does not reset** | An out-of-range page is clamped to the last page, but **switching data sources does not return to page 1** |
+| **≥ 10 pages switches to a typed page number** | `n / N` becomes an int field (`IntFieldAuto`) instead of 30 clicks on `>` |
+
+> [!IMPORTANT]
+> **Clear the page index yourself when the "which dataset am I looking at" changes.**
+> 🩸 2026-08-21, `UCL_RelationshipPage`: switching from A's page 4 to B (which also has 4 pages) left the view
+> on B's page 4 — not "where I just navigated to" but leftover state from the previous dataset, and it looks
+> **exactly** like normal paging. Fix: `dic.GetSubDic("<your key>").Clear()` where the new data is loaded.
 
 ---
 

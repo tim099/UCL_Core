@@ -11,7 +11,7 @@ source_files: |
   Assets/UCL/UCL_Core/UCL_Core_Scripts/UICore/UCL_GUILayoutDrawableTexture.cs
   Assets/UCL/UCL_Core/UCL_Core_Scripts/UICore/UCL_GUILayoutPainter.cs
 namespace: UCL.Core.UI
-last_updated: 2026-05-07
+last_updated: 2026-08-21
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [UCL_GUILayout, GUILayout 工具集, IMGUI helpers, DrawObject, Popup, DrawableTexture]
 tags: [api, ui, imgui, editor]
@@ -161,7 +161,7 @@ tags: [api, ui, imgui, editor]
 
 ---
 
-## 5. 覚えておく価値のある 3 つの目立たない helper
+## 5. 覚えておく価値のある 4 つの目立たない helper
 
 下流ページが普段使うのは `DrawObjectData` / `DrawList` / 基本フィールドだけですが、以下の 3 つは**本当に手間を省ける**のに見落とされがちです：
 
@@ -190,6 +190,38 @@ if (UCL_GUILayout.DrawCopyPaste(ref o, m_DataDic, typeof(GameConfig)))
 }
 ```
 **仕組み**：内部で `UCL.Core.CopyPaste` + JSON を使用。型不一致はブロックされます。
+
+---
+
+### 5.4 `DrawSelectPage(dic, itemsCount, maxItemsPerPage)`
+
+**いつ使うか**：**自分で描く**長いリストのページ送り（イベント列／メッセージ／記録）。
+`DrawList` / `DrawDictionary` / `DrawHashSet` は内部で既にこれを使っています（1 ページ 10 件）。
+手書きリストでも同じ呼び出しを使い、ページャを別に作らないこと —— プロジェクト全体で同じ形なら覚え直す必要がありません。
+
+```csharp
+const int ItemsPerPage = 10;
+var aPage = UCL_GUILayout.DrawSelectPage(m_FoldDic.GetSubDic("EventsPage"), m_Events.Count, ItemsPerPage);
+int aEnd = Mathf.Min(m_Events.Count, aPage.startIndex + ItemsPerPage);
+for (int i = aPage.startIndex; i < aEnd; i++) { /* i 番目を描画 */ }
+```
+
+戻り値は `(pageIndex, startIndex)`、表示は `|<  <  n / N  >  >|`。
+
+先に知っておくべき 4 つの挙動：
+
+| 挙動 | 意味 |
+|---|---|
+| **1 ページしかない時は何も描かない** | `itemsCount <= maxItemsPerPage` なら即 `(0, 0)` ⇒ 少量データで無駄なボタン列が増えない |
+| **ページ状態は渡した `dic` に入る** | 慣例は `GetSubDic(nameof(DrawSelectPage))` か独自キー。⚠ **`PopupSearchCache` と同じ dic を共有しない** —— データ再読込経路の `Clear()` がページ番号も消します |
+| **clamp するだけで reset しない** | 範囲外のページは最終ページに丸められますが、**データ切替でページ 1 に戻りません** |
+| **ページ数 ≥ 10 で入力欄に変わる** | `n / N` が数値入力（`IntFieldAuto`）になり、`>` を 30 回押す必要がなくなります |
+
+> [!IMPORTANT]
+> **「どのデータを見ているか」が変わる時は自分でページ番号を消すこと。**
+> 🩸 2026-08-21 `UCL_RelationshipPage`：A の 4 ページ目から、同じく 4 ページある B に切り替えると B の
+> 4 ページ目が表示されました —— 「今そこへ送った」のではなく前のデータの残留で、通常のページ送りと
+> **見分けがつきません**。対処は新データを読む場所で `dic.GetSubDic("<キー>").Clear()`。
 
 ---
 

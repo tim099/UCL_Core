@@ -11,7 +11,7 @@ source_files: |
   Assets/UCL/UCL_Core/UCL_Core_Scripts/UICore/UCL_GUILayoutDrawableTexture.cs
   Assets/UCL/UCL_Core/UCL_Core_Scripts/UICore/UCL_GUILayoutPainter.cs
 namespace: UCL.Core.UI
-last_updated: 2026-05-07
+last_updated: 2026-08-21
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [UCL_GUILayout, GUILayout 工具集, IMGUI helpers, DrawObject, Popup, DrawableTexture]
 tags: [api, ui, imgui, editor]
@@ -161,7 +161,7 @@ tags: [api, ui, imgui, editor]
 
 ---
 
-## 5. 三个值得记住的少见 helper
+## 5. 四个值得记住的少见 helper
 
 下游页面通常只会用到 `DrawObjectData` / `DrawList` / 基本字段，下面三个是**真正会省事**但容易被忽略的：
 
@@ -190,6 +190,38 @@ if (UCL_GUILayout.DrawCopyPaste(ref o, m_DataDic, typeof(GameConfig)))
 }
 ```
 **机制**：底层走 `UCL.Core.CopyPaste` + JSON；类型不符会被挡下。
+
+---
+
+### 5.4 `DrawSelectPage(dic, itemsCount, maxItemsPerPage)`
+
+**何时用**：**自己画的**长列表要分页（事件流／消息／记录）。
+`DrawList` / `DrawDictionary` / `DrawHashSet` 内部已经在用它（每页 10 笔），
+所以自己手写列表时**也走这一支**，不要另刻一组翻页按钮 —— 全项目的翻页栏长同一个样子才不用重新学。
+
+```csharp
+const int ItemsPerPage = 10;
+var aPage = UCL_GUILayout.DrawSelectPage(m_FoldDic.GetSubDic("EventsPage"), m_Events.Count, ItemsPerPage);
+int aEnd = Mathf.Min(m_Events.Count, aPage.startIndex + ItemsPerPage);
+for (int i = aPage.startIndex; i < aEnd; i++) { /* 画第 i 笔 */ }
+```
+
+返回 `(pageIndex, startIndex)`；画出来的是 `|<  <  n / N  >  >|`。
+
+四个要先知道的行为：
+
+| 行为 | 意思 |
+|---|---|
+| **只有一页时什么都不画** | `itemsCount <= maxItemsPerPage` 直接返回 `(0, 0)` ⇒ 少量数据不会多出一排没用的按钮 |
+| **翻页状态存在你传进去的 `dic`** | 惯例是 `GetSubDic(nameof(DrawSelectPage))` 或自定义键；⚠ **不要跟 `PopupSearchCache` 共用同一个 dic** —— 数据重载路径上的 `Clear()` 会把页码一起清掉 |
+| **它只 clamp，不 reset** | 页码超过总页数会被夹回最后一页，但**切换数据来源时不会回第一页** |
+| **页数 ≥ 10 时自动换成可输入页码** | `n / N` 变成一个数字输入框（`IntFieldAuto`） |
+
+> [!IMPORTANT]
+> **切换「在看哪一组数据」时要自己清页码。**
+> 🩸 2026-08-21 `UCL_RelationshipPage`：从 A 的第 4 页切到同样有 4 页的 B，画面停在 B 的第 4 页 ——
+> 那不是「我刚翻到那里」，是上一组的残留，而它看起来跟正常翻页**一模一样**。
+> 修法是在加载新数据的地方 `dic.GetSubDic("<你的键>").Clear()`。
 
 ---
 

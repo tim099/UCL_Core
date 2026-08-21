@@ -41,7 +41,7 @@ group: 遊戲
   - 找局加入：`lobby` → `join <idx> --persona <me>`
   - 走子：`move <idx> e2e4 --persona <me> --say "…"`
 - 規則書: `<UCL_Core>/Tools~/AgentCommands/rulebooks/chess.yaml`；
-  總覽 [`Mechanics/Chess_RuleBook.md`](../../Mechanics/Chess_RuleBook.md)
+  總覽 `repo:AgentCommands/Chess/RuleBook.md`（2026-08-21 隨對局資料遷入 Chess repo）
 - 對局 state: `<repo>/AgentCommands/Chess/games/<index>.json`
 
 ## 禮貌

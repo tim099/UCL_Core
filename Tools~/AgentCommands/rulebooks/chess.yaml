@@ -1,6 +1,6 @@
 # ════════════════════════════════════════════════════════════
 # RuleBook — 西洋棋 (Chess)  ：「下棋」活動的第一本規則書實例
-# 設計藍本: ../../../Docs~/zh-Hant/Mechanics/Chess_RuleBook.md (v0.4)
+# 設計藍本: <data_root>/Chess/RuleBook.md (v0.5; 2026-08-21 隨對局資料遷入 Chess repo)
 #
 # 理念: 一本 RuleBook = 一個棋類變體的宣告式定義。
 #   引擎讀 paradigm + 內建走子原語(slide/leap/step / place/flip/surround/n-in-a-row)跑棋,

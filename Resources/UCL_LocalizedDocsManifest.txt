@@ -181,7 +181,6 @@ Docs~/zh-Hant/FreeTime/Activities/solo-brainstorm.md
 Docs~/zh-Hant/FreeTime/Activities/stream-watch.md
 Docs~/zh-Hant/FreeTime/Activities/tavern-chat.md
 Docs~/zh-Hant/Mechanics/Affinity_System.md
-Docs~/zh-Hant/Mechanics/Chess_RuleBook.md
 Docs~/zh-Hant/Mechanics/Discord_Channel_Routing.md
 Docs~/zh-Hant/Mechanics/Discord_Tavern_Mirror.md
 Docs~/zh-Hant/Mechanics/FreeTime_System.md

@@ -3,7 +3,7 @@
 """
 chess.py — 自由時間「下棋」活動 (西洋棋第一本 RuleBook)。
 
-設計藍本: docs/Design/Chess_Activity_RuleBook.md (v0.3, summit 2026-06-14 拍板)。
+設計藍本: <data_root>/Chess/RuleBook.md (v0.5; 舊指路 docs/Design/Chess_Activity_RuleBook.md 從來不存在)。
 哲學 (Tim + kiara + basecamp 共識):
   - 自律遵守, 非引擎硬 reject: move 預設信任套用; 非法步只警示不擋手 (lint), 全程可事後複驗。
   - FEN = 唯一真相; 棋盤圖是 FEN 的純函數 (渲染永不漂移)。保留前一手 FEN → 單手 O(1) 可驗。
@@ -14,8 +14,19 @@ chess.py — 自由時間「下棋」活動 (西洋棋第一本 RuleBook)。
 純 stdlib (無 pip 依賴, 跟 canvas.py / library.py 一致)。
 
 規則書 (RuleBook): 隨 code 放 UCL_Core/Tools~/AgentCommands/rulebooks/<ruleid>.yaml (跨專案共用 spec);
-  reward/symbols/board 資料驅動 (有 pyyaml 就讀, 無則內建 fallback)。runtime 對局狀態留主專案
-  AgentCommands/Chess/games/ (per-project), 繪圖券跟 ucl-canvas 共用 AgentCommands/Canvas/vouchers/。
+  reward/symbols/board 資料驅動 (有 pyyaml 就讀, 無則內建 fallback)。
+
+⚠ 2026-08-21 撤銷「對局狀態 per-project」這條拍板 (原拍板 summit 2026-06-14, 理由是
+  「runtime state 是 per-project, 同 DebugLogs 慣例」)。
+  推翻它的讀數: AgentCommands 是每專案一支分支 (main / LY / ...), 而下棋的是跨專案的 persona
+  (kiara / gura / apex-one / summit / basecamp / crest-001) ⇒ 同一局在每支分支各有一份。
+  實測 2026-08-21: main 側自 06-15 凍在 #3=39 手 / #5=13 手, 而 LY 已 56 / 21 手。
+  棋局的 history 是一條線 —— 兩支分支各走一手就沒有任何 merge 能同時保住兩邊的第 N+1 手,
+  而兩份都是合法 JSON、都 in_progress、FEN 都合法 ⇒ 零報錯。沒炸只因兩個月沒人在 main 下棋。
+  ⇒ 對局狀態改為獨立 repo (github.com/Persona9999/Chess), 以 submodule 掛在 <data_root>/Chess,
+    規則書 RuleBook.md 隨資料同 repo。DebugLogs 那個類比不成立: 它是單機產物, 棋局是共享狀態。
+runtime 對局狀態: <data_root>/Chess/games/ (獨立 repo, 跨專案共用一份);
+  繪圖券跟 ucl-canvas 共用 <data_root>/Canvas/vouchers/。
 
 子指令 (start/join/move/resign/draw 皆可帶 --say "<一句話>": 自言自語或跟對手聊天):
   start   開新局 (--persona / --side white|black|both / --vs-open 留座等人 / --say)

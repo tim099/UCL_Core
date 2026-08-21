@@ -8,7 +8,7 @@ audience: Tim / agent (Claude / Antigravity / Gemini / Zeta) — 跨 agent 通�
 canonical_term: TRPG Lite
 related:
   - <ucl_core:Skills~/ucl-free-time/SKILL.md> | ucl-free-time | 自由時間模式(跑團是其活動之一)
-  - <ucl_core:Docs~/zh-Hant/Mechanics/Chess_RuleBook.md> | Chess RuleBook | 同型前輩(規則書在 Core、棋局 state 在專案)
+  - <repo:AgentCommands/Chess/RuleBook.md> | Chess RuleBook | 同型前輩(引擎/spec 在 Core；棋局 state 與規則書 2026-08-21 起同在獨立 Chess repo — 玩的人跨專案，資料就不能綁專案)
   - <ucl_core:Tools~/AgentCommands/dice.py> | dice.py | 擲骰公證工具(roll/choose + 酒館同步)
 ---
 

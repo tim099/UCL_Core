@@ -88,6 +88,7 @@ namespace UCL.Core.EditorLib.Plurk
                 if (aCur == "body") aBody.Add(aRaw);
             }
             aSlip.Body = string.Join("\n", aBody).Trim('\n');
+            if (string.IsNullOrWhiteSpace(aSlip.Privacy)) aSlip.Privacy = "所有人";
             return aSlip;
         }
 
@@ -237,14 +238,14 @@ namespace UCL.Core.EditorLib.Plurk
                     aErr.Add($"圖片檔不存在：`{aImg}`");
             }
 
-            // ⑨ 逐篇公開度（summit 2026-08-21 補的規劃漏洞）
-            // 物理意義：時間軸預設公開，但**每篇可獨立設**。bot 沉默地只發公開噗 ＝
-            //          把一個現在就有的控制項拿掉，而那種消失不報錯：發出去的看起來完全正常，
-            //          只是本來該鎖的沒鎖。⛔ 所以「沒指定」擋下，不預設「所有人」。
-            if (string.IsNullOrWhiteSpace(iSlip.Privacy))
+            // ⑨ 逐篇公開度（Tim 2026-08-21 拍板：預設為所有人，方便認識更多朋友）
+            if (!string.IsNullOrWhiteSpace(iSlip.Privacy) &&
+                iSlip.Privacy != "所有人" && iSlip.Privacy != "只限朋友" && iSlip.Privacy != "本人" &&
+                !iSlip.Privacy.Equals("public", StringComparison.OrdinalIgnoreCase) &&
+                !iSlip.Privacy.Equals("friends", StringComparison.OrdinalIgnoreCase) &&
+                !iSlip.Privacy.Equals("self", StringComparison.OrdinalIgnoreCase))
             {
-                aErr.Add("交付單沒有『公開度：』欄 —— ⛔ 不預設「所有人」。"
-                    + "選項：所有人 / 只限朋友 / 本人（逐篇設定，不是靠時間軸整體鎖）");
+                aErr.Add($"公開度『{iSlip.Privacy}』不合法。選項：所有人 / 只限朋友 / 本人（未填則預設為「所有人」）");
             }
 
             // ⑨ 超限時的拆則形態（Tim 2026-08-21：自主判斷、**預設走回應**）

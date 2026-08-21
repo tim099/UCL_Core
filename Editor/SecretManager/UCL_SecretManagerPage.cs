@@ -1,6 +1,6 @@
 ﻿// 區塊職責：加密檔 (secret) 集中管理 Page — 列 _secrets/*.enc + metadata + per-row 操作按鈕
 // 物理意義：取代「散落的 install window + 要記 CLI 才查 secret 狀態」。掃描走 UCL_SecretScanner
-//          (ucl_secret.py list --json, passphrase-free)，操作重用 UCL_SecretInstallWindow + reveal。
+//          （C# native 掃檔 + UCL_SecretCrypto.ReadMetadata，passphrase-free），操作重用 UCL_SecretInstallWindow + reveal。
 // 數值影響：UI 顯示純 read；Decrypt 開既有 install window；Rotate 印 CLI 指令 (互動 passphrase 不適合 IMGUI)。
 // 設計取捨：參考 UCL_LoginStatusPage 範式 (掃檔 + 表格 + per-row 按鈕 + ScreenStreamGuard)。
 
@@ -299,7 +299,7 @@ namespace UCL.Core.EditorLib.SecretManager
                 }
                 if (m_Secrets.Count == 0)
                 {
-                    GUILayout.Label($"(在 {m_SecretsDir} 下找不到 .enc — 用 ucl_secret.py encrypt 建立)", WrapLabel);
+                    GUILayout.Label($"(在 {m_SecretsDir} 下找不到 .enc — 用下方「🔐 明文加密」面板建立)", WrapLabel);
                     return;
                 }
 

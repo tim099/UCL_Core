@@ -110,7 +110,8 @@ Plurk 帳號不是那種東西，它是「某個人的」或「大家共用的�
 Plurk API 2.0 用 **OAuth 1.0a**，一個帳號四個值（consumer key/secret ＋ access token/secret）。
 
 - 一帳一份 `.enc`，命名 `plurk_<account>`：`plurk_shared` / `plurk_zeta_summit` / `plurk_cc_basecamp`
-- 走既有 5 層（`ucl_secrets_crypto.py` TKN2 ／ `ucl_secret.py` 7 op ／ 安裝彈窗 ／ registry ／ 管理頁）
+- 走既有 C# native 那套（`UCL_SecretCrypto` UCLS1 ／ 安裝彈窗 ／ registry ／ 管理頁）
+  ⚠ 原本這裡寫的是「python 5 層（TKN2 / ucl_secret.py 7 op）」—— 那兩支 2026-08-21 已移除，因為它們只認舊格式、對現行 `.enc` 一律 bad magic。
 - `UCL_SecretDaemon` 已會掃「有密文缺明文」並彈窗安裝 ⇒ 缺 token 的失敗會**當場喊**，不是靜默
 
 ⛔ **agent 不碰 passphrase。** 安裝由 Tim 在 Editor 彈窗做；工具只讀已解密的明文。

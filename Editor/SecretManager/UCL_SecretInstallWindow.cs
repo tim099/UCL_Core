@@ -1,8 +1,8 @@
 ﻿// 區塊職責：通用 secret 解密安裝視窗 — 偵測 .enc 存在但本機明文缺時引導輸入 passphrase 解密落地
 // 物理意義：抽 EOV 端 RCG_DiscordTokenInstallWindow 的硬編碼路徑為 UCL_SecretEntry 參數化，
 //          跨機器同步時 .enc 跟 repo 走、明文 .txt 永遠 gitignored，新 clone 必須跑一次解密還原。
-// 數值影響：解密走 ucl_secret.py decrypt --stdin-passphrase (passphrase 經 stdin pipe 不留 argv)；
-//          hint 顯示走 ucl_secret.py show-hint --json (passphrase-free)；開資料夾走 EditorUtility.RevealInFinder。
+// 數值影響：解密與 hint 顯示都走 C# native（UCL_SecretCrypto.Decrypt / ReadMetadata，passphrase-free 讀 metadata）；
+//          開資料夾走 EditorUtility.RevealInFinder。passphrase 只在記憶體，不進 argv 也不落檔。
 
 #if UNITY_EDITOR
 using System;
@@ -244,7 +244,7 @@ namespace UCL.Core.EditorLib.SecretManager
         }
 
         // ===========================================================
-        // 開資料夾 — ⭐ 路徑 B 救援 (對齊 ucl_secret.py reveal)
+        // 開資料夾 — ⭐ 路徑 B 救援（連 hint 都救不回時，手動貼明文）
         // 物理意義：RevealInFinder 對不存在的檔會定位到 parent 資料夾, 正是手動貼上場景所需
         // ===========================================================
         void RevealPlainFolder(string plainPath)

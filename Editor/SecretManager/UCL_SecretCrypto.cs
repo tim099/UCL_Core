@@ -1,4 +1,6 @@
-﻿// 區塊職責：secret 對稱加解密的 C# native 實作（UCLS1 格式）— 取代 python ucl_secret.py + cryptography 套件
+﻿// 區塊職責：secret 對稱加解密的 C# native 實作（UCLS1 格式）— 本專案**唯一**的加解密實作。
+//          （2026-07-22 全切 C#；舊的 python CLI 已於 2026-08-21 移除 —— 它只認舊格式 TKN1/TKN2，
+//           對 UCLS1 一律 bad magic。歷史見 git。）
 // 物理意義：Tim 2026-07-22 拍板「全切 C#」— SecretManagerPage 不再 shell-out python / 不需裝 cryptography 插件。
 //          純 .NET BCL（System.Security.Cryptography）：PBKDF2-SHA256 導 key + AES-256-CBC 加密 +
 //          HMAC-SHA256 Encrypt-then-MAC 防竄改。Unity 6（.NET Standard 2.1）原生支援，零外部相依。

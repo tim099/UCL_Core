@@ -3,7 +3,7 @@ title: UCL Secret Manager Workflow — passphrase 加密 + hint 提示 + 雙重�
 slug: secret-manager-workflow
 status: active
 created_at: 2026-05-20T09:30:00Z
-last_updated: 2026-05-20T09:30:00Z
+last_updated: 2026-08-21
 location: UCL_Core (cross-project tool); state files (.enc/.txt) 由 consumer project 提供
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_UCL_Secret_Manager.md | Secret Manager Design Plan | 5 層設計 spec + Q1-Q6 拍板
@@ -18,13 +18,13 @@ related:
 
 | Layer | 檔案 | 職責 |
 |---|---|---|
-| 1 | `Tools~/AgentCommands/_lib/ucl_secrets_crypto.py` | TKN2 格式 + encrypt/decrypt/read_metadata 純加解密 |
-| 2 | (同上, lib) | KDF(PBKDF2 200k) + Fernet, hint/label/created metadata |
-| 3 | `Tools~/AgentCommands/ucl_secret.py` | CLI 7 op |
+| 1 | `Editor/SecretManager/UCL_SecretCrypto.cs` | UCLS1 格式 + Encrypt/Decrypt/ReadMetadata（**唯一**加解密實作，C# native） |
+| 2 | (同上) | KDF(PBKDF2 200k) + AES-256，hint/label/created metadata |
+| 3 | `UCL_Core_Scripts/EditorCore/UCL_AgentCommands/UCL_SecretsPath.cs` | 資料夾名解析（設定檔驅動；python 對側 `ucl_paths.secrets_dir()`） |
 | 4 | `Editor/SecretManager/UCL_SecretInstallWindow.cs` | 解密安裝彈窗 (Unity) |
 | 5 | `Editor/SecretManager/UCL_SecretRegistry.cs` + `UCL_SecretManagerPage.cs` | registry + 集中管理 Page |
 
-## 🔐 .enc 檔格式 (TKN2)
+## 🔐 .enc 檔格式（現行 **UCLS1**；下方 TKN2 說明保留為舊格式參考）
 
 ```
 TKN2\n                          ← magic (區分 TKN1)
@@ -69,53 +69,24 @@ secrets 資料夾**名稱**住設定檔，C# 與 python **共讀同一份**：
 刻意**不做「找不到 Secret 就退回 _secrets」的 fallback**：自排 fallback 是
 「跑起來了但讀的是另一個宇宙的檔」那族的入口，而它不會叫。
 
-## ⚠ python CLI（`ucl_secret.py`）對**現行** `.enc` 已失效
+## 🛠 怎麼操作（全部在 Editor，沒有 python 入口）
 
-2026-08-21 實跑 `python ucl_secret.py list` 的讀數：
+| 要做什麼 | 走哪裡 |
+|---|---|
+| 從明文產出 `.enc` | `UCL_SecretManagerPage` →「🔐 明文加密」面板（選 `.txt` → passphrase／hint／label） |
+| Plurk 憑證（四欄直接產出，明文不落地） | `UCL_PlurkAdminPage` →「🔑 產生憑證」 |
+| 解密安裝（產出明文供工具讀） | 該列的「解密安裝」→ `UCL_SecretInstallWindow` |
+| 看 hint（忘記 passphrase，救援路徑 A） | 該列的「顯示提示」（passphrase-free 讀 metadata） |
+| 手動貼明文（救援路徑 B） | 該列的「開資料夾」→ 直接貼 `<name>.txt` |
+| 換 passphrase / 改 hint | 重新加密一次（覆蓋同名 `.enc`） |
 
-```
-# Secrets under <data_root>/_secrets (2 found)
-  ✗ discord_bot_token.enc: bad magic: expected b'TKN1' or b'TKN2', got b'UCLS1'
-  ✗ plurk_shared.enc: bad magic: expected b'TKN1' or b'TKN2', got b'UCLS1'
-```
+> ⛔ **舊的 python CLI `ucl_secret.py` 已於 2026-08-21 移除**（連同它唯一的 lib
+> `_lib/ucl_secrets_crypto.py`）。理由不是精簡：2026-07-22「全切 C#」把格式換成 **UCLS1**，
+> 而那兩支只認舊的 TKN1/TKN2 ⇒ 對現行 `.enc` 一律 `bad magic`，**7 個 op 全部失效**，
+> 而文件還在教人用。歷史留在 git。
+>
+> ⚠ 所以「加解密只有一份實作」現在是**事實**而不是原則：`UCL_SecretCrypto`（C# native）。
 
-**目錄解析是對的（2 found），格式讀不動。** 現行 `.enc` 是 Tim 2026-07-22「全切 C#」之後的
-**UCLS1**（`UCL_SecretCrypto`），而 python lib 只認舊的 TKN1/TKN2。
-
-⇒ 現況：**加密／解密／安裝一律走 Editor 的 Secret Manager 頁**（C# native）。
-本文件上面那節 CLI 7 op 的用法對 UCLS1 檔**不成立** —— 這一格是既有落差，
-不是本次改動造成的，照實記在這裡免得下一個人照著跑然後以為是自己弄壞的。
-
-## 🛠 CLI 7 op (`ucl_secret.py`)
-
-```bash
-PY="python <UCL_Core>/Tools~/AgentCommands/ucl_secret.py"
-
-# 加密 (互動兩次 confirm; 帶 hint/label)
-$PY encrypt _secrets/discord_bot_token.txt --hint "生日後三碼+貓名" --label "EOV Discord Bot"
-
-# 解密 (可先印 hint 輔助記憶)
-$PY decrypt _secrets/discord_bot_token.enc --show-hint
-echo -n "<pw>" | $PY decrypt _secrets/discord_bot_token.enc --stdin-passphrase   # 非互動
-
-# status (給 Editor/hook): exit 0=ok 1=need-install 2=no-enc 3=stale
-$PY status _secrets/discord_bot_token
-
-# ⭐ show-hint — passphrase-free 印 metadata (失憶救援路徑 A)
-$PY show-hint _secrets/discord_bot_token.enc          # 人讀
-$PY show-hint _secrets/discord_bot_token.enc --json   # Page/自動化
-
-# list — 掃資料夾所有 .enc
-$PY list --root _secrets [--json]
-
-# rotate — 換 passphrase 或改 hint (舊 pw → 新 pw)
-$PY rotate _secrets/discord_bot_token.enc --hint "新提示"
-
-# ⭐ reveal — 印明文路徑 + 開檔案總管 (失憶救援路徑 B: 手動貼上)
-$PY reveal _secrets/discord_bot_token [--no-open]
-```
-
-Exit code: `0=OK / 1=need-install / 2=no-enc(或reveal無法定位) / 3=stale / 4=file-not-found / 5=decrypt-failed`。
 
 ## 🆘 雙重失憶救援路徑
 

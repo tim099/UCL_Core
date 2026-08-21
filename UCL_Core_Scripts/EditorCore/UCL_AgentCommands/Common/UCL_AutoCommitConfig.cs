@@ -59,6 +59,13 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// <summary>設定檔檔名（放 repo 根）。</summary>
         public const string FileName = ".ucl_autocommit.json";
 
+        /// <summary>這個 repo 的自動提交是否啟用。
+        /// ⚠ **欄位缺席＝視為啟用**（`true`）—— 相容 2026-08-21 之前寫的設定檔，
+        /// 那時的語意是「有設定檔就納管」，改成 false 會讓既有設定**靜默停止被收**。
+        /// 而**新建的檔一律顯式寫 `false`**（見 <see cref="CreateDefault"/>）：
+        /// 「選了一個 submodule」不等於「同意開始自動 commit 它」，那兩件事必須分開按。</summary>
+        public bool m_Enabled = true;
+
         /// <summary>顯示用的 repo 名稱；空的話呼叫端用目錄名。</summary>
         public string m_Name = "";
         /// <summary>這個 repo 的分群（順序即優先序，第一個命中的收走）。</summary>
@@ -74,6 +81,10 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          一起掃進來，而那些 repo 的分群規則不住這裡。
         // ⚠ 這支是**唯一的發現實作**（Cmd_AutoCommit 與 UCL_AutoCommitPage 共用）。
         //   頁面自己再寫一份掃描的話，兩邊遲早對「有哪些 repo」給出不同答案，而兩邊都不報錯。
+        // 註：`letters/<persona>/` 也會被下面兩支發現函式列出（可建設定檔、可啟用）。
+        //     letters 模式的「跳過在線 persona」硬擋不涵蓋 `mode=submodules` 這條路，
+        //     而**刻意不在程式層擋**（Tim 2026-08-21 拍板：自動 commit 由人觸發且錯開，不會並發）。
+
         public static List<string> DiscoverRepoPaths(string iDataRoot)
         {
             var aList = new List<string>();
@@ -92,6 +103,54 @@ namespace UCL.Core.EditorLib.AgentCommands
                 string aDir = (aRoot + "/" + aRel).Replace(BackSlash, '/');
                 if (!Directory.Exists(aDir)) continue;
                 if (!Exists(aDir)) continue;
+                aList.Add(aDir);
+            }
+            aList.Sort(StringComparer.Ordinal);
+            return aList;
+        }
+
+        // ⚠ bool 經 SaveFieldsToJsonUnityVer 會寫成 "True"/"False" **字串**，
+        //   而 python 讀到 "False" 是 truthy ⇒ 有非 C# 讀取端時要寫回原生 bool。
+        public override JsonData SerializeToJson()
+        {
+            var aData = base.SerializeToJson();
+            aData["Enabled"] = new JsonData(m_Enabled);
+            return aData;
+        }
+
+        /// <summary>替還沒有設定檔的 repo 造一份**預設停用**的骨架（不寫檔，呼叫端決定何時 Save）。
+        /// 預設停用是刻意的：自動創建若順便啟用，等於「點一下下拉選單」就讓一個 repo 開始被自動 commit ——
+        /// 而那種同意應該是顯式的，不是選取的副作用。</summary>
+        public static UCL_AutoCommitConfig CreateDefault(string iName)
+        {
+            return new UCL_AutoCommitConfig
+            {
+                m_Name = iName ?? "",
+                m_Enabled = false,
+                m_Groups = new List<UCL_AutoCommitGroupConfig>(),
+            };
+        }
+
+        /// <summary>列出 `<data_root>/.gitmodules` 宣告的**所有** submodule 路徑（不管有沒有設定檔）。
+        /// 供 UI 的下拉選單用 —— 使用者要能選到「還沒有設定檔」的那些。
+        /// ⚠ 跟 <see cref="DiscoverRepoPaths"/> 是兩件事：那支只回「有設定檔」的（執行用）。</summary>
+        public static List<string> ListSubmodulePaths(string iDataRoot)
+        {
+            var aList = new List<string>();
+            if (string.IsNullOrEmpty(iDataRoot) || !Directory.Exists(iDataRoot)) return aList;
+            string aRoot = iDataRoot.Replace(BackSlash, '/');
+            string aGitModules = Path.Combine(aRoot, ".gitmodules");
+            if (!File.Exists(aGitModules)) return aList;
+            foreach (string aRawLine in File.ReadAllLines(aGitModules))
+            {
+                string aLine = aRawLine.Trim();
+                if (!aLine.StartsWith("path")) continue;
+                int aEq = aLine.IndexOf('=');
+                if (aEq < 0) continue;
+                string aRel = aLine.Substring(aEq + 1).Trim();
+                if (aRel.Length == 0) continue;
+                string aDir = (aRoot + "/" + aRel).Replace(BackSlash, '/');
+                if (!Directory.Exists(aDir)) continue;
                 aList.Add(aDir);
             }
             aList.Sort(StringComparer.Ordinal);
@@ -162,6 +221,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                 }
                 if (aValidPrefix == 0) aErrors.Add($"{aWhere}：至少要一個前綴");
             }
+            if (m_Enabled && m_Groups.Count == 0)
+                aErrors.Add("已啟用但沒有任何分群 —— 那會是「開著卻永遠收不到東西」，"
+                    + "跟停用不可分辨。要嘛加一群，要嘛把 Enabled 關掉");
             return aErrors;
         }
 

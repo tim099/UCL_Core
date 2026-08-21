@@ -88,7 +88,10 @@ description: |
 >   run_cmd.py --persona <me> run AutoCommit --arg op=scan   --arg mode=submodules
 >   run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=submodules
 >   ```
->   **沒有設定檔的 submodule 不收**（不猜規則）。第一個消費者是 `Chess`（棋局狀態）。
+>   **沒有設定檔、或設定停用的 submodule 都不收**（不猜規則）。第一個消費者是 `Chess`（棋局狀態）。
+   ⚠ 兩個條件缺一不可：**有 `.ucl_autocommit.json`** ＋ **`Enabled=true`**。
+   後台頁的下拉選單可以選到還沒設定的 submodule 並幫你建一份，但**預設停用** ——
+   「加了設定檔卻什麼都沒收」多半就是這一格，看回傳值 `disabled_repos`。
 >
 > ⚠ 設定檔為什麼不算「被參數亂改」：它**入版控、由它管的那個 repo 擁有、改動在 diff 裡看得見**，
 > 而當年那句針對的是執行期參數（不留痕跡、事後查不到誰改的）。地板也還在，且由**判定順序**保證

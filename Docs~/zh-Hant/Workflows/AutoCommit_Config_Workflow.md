@@ -8,7 +8,10 @@ status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔
 
 # ⚙ 自動提交設定 — 把 repo 加入管理與設定分群規則
 
-> 一句話：**在該 repo 根目錄放一份 `.ucl_autocommit.json` 宣告自己的分群，它就會被 `mode=submodules` 收；沒有這個檔就不收（不猜規則）。**
+> 一句話：**在該 repo 根目錄放一份 `.ucl_autocommit.json` 宣告自己的分群、並把 `Enabled` 打開，它才會被 `mode=submodules` 收。**
+>
+> ⚠ 兩個條件，缺一不可：**有設定檔** ＋ **已啟用**。後台頁選一個還沒有設定檔的 submodule 時
+> 會幫你建一份，但**預設停用** —— 「選了它」不等於「同意開始自動 commit 它」。
 
 > 📦 相關文件
 > - 提交總流程（人工／自動的分工、領薪）：[`Commit_Workflow.md`](Commit_Workflow.md)
@@ -35,8 +38,11 @@ status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔
 
 ### Step 1 — 在該 repo **根目錄**放 `.ucl_autocommit.json`
 
+兩條路：**（A）後台頁**「⚙ Submodule 自動提交設定」→ 下拉選單選目標 →「➕ 建立設定檔（預設停用）」；**（B）手寫**下面這份。
+
 ```json
 {
+  "Enabled": true,
   "Name": "Chess",
   "Groups": [
     {
@@ -50,15 +56,19 @@ status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔
 }
 ```
 
-### Step 2 — 確認它被發現
+### Step 2 — 把 `Enabled` 打開，並確認它被發現
+
+建立出來的設定是停用的（`Enabled: false`）。開啟方式：後台頁把 `Enabled` 打勾後存檔，或直接改檔案。
 
 ```bash
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run AutoCommit \
     --arg op=scan --arg mode=submodules
 ```
 
-回傳值要看 **`repos`** 與 **`blocked_repos`**：
+回傳值要看 **`repos`**、**`disabled_repos`** 與 **`blocked_repos`**：
 - `repos` 沒有 +1 ⇒ 檔案位置不對，或該 repo 不在 `<data_root>/.gitmodules` 裡
+- **`disabled_repos` +1 ⇒ 設定還是停用的**（`Enabled=false`）。這不是錯誤，所以刻意**不計入** `blocked_repos` —— 但也不會靜默消失，Editor log 會印
+  `・<repo>：設定為停用（Enabled=false）`。⚠ 自動建立的設定就是這個狀態，「我明明加了設定檔卻什麼都沒發生」多半是這一格
 - `blocked_repos` +1 ⇒ 被發現但**設定不合法或讀不出來**，原因印在 Editor log（壞檔會明說，不會靜默跳過）
 
 ### Step 3 — ⚠ 確認「真的照設定分群」（**這步不可省**）
@@ -98,6 +108,7 @@ run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=submodules
 
 | 欄位 | 意義 | 判準 |
 |---|---|---|
+| `Enabled` | 這個 repo 的自動提交是否啟用 | **欄位缺席＝視為啟用**（相容 2026-08-21 之前的檔）；**新建的檔一律顯式 `false`** |
 | `Name` | 顯示名 | 空的話用目錄名 |
 | `Groups[].Key` | 群 key（commit 分組單位） | 不可叫 `__other` / `__subptr`（保留）；不可重複 |
 | `Groups[].Label` | 畫面顯示名 | 作者自己寫，**不進多語系表** |
@@ -120,6 +131,8 @@ run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=submodules
 | detached HEAD 的 repo 跳過 | `ScanOne` 擋下並說原因（游離 commit 沒有分支指到它） |
 | 錯配一眼可驗 | 設定檔只吃**前綴清單、不吃 regex** —— 比程式碼更受限 |
 | 壞設定不會被寫進去 | `Save()` 先跑 `Validate()`，不合法丟例外不寫檔；後台的存檔按鈕也會停用並逐條列出原因 |
+| 建立設定檔不會順便開始自動 commit | `CreateDefault()` 顯式寫 `Enabled=false` ——同意必須是另一個動作，不是選取的副作用 |
+| 「開著卻永遠收不到東西」被擋下 | `Validate()`：`Enabled=true` 但零分群 ⇒ 不合法。那種狀態跟停用不可分辨，所以不准存在 |
 
 > ⚠ **AgentCommands 本層與 persona 信件庫不吃設定檔** —— 那兩組分群仍寫死在 `UCL_AutoCommitRules`
 > （`[chat]` 獨立 commit 是 `CLAUDE.md` 等級的硬規則）。設定檔只管**其他 repo**。
@@ -143,6 +156,7 @@ ToolBox →「自動提交」頁 →「⚙ Submodule 自動提交設定」折疊
 | `repos` 增加但沒有任何群命中 | 鍵名拼錯（大小寫敏感：`Key` / `Label` / `MatchPrefixes` / `Message` / `DefaultOn`）⇒ **讀數與成功時同形**，靠 Step 3 的探針才分辨得出來 |
 | 前綴寫成 `\` 開頭或含反斜線 | 比對用的是**正斜線相對路徑**；`Validate()` 會擋 |
 | 一個群吃掉整個 repo | 前綴是空字串（`StartsWith("")` 命中每一個檔）；`Validate()` 會擋 |
+| 加了設定檔卻什麼都沒收 | `Enabled` 還是 `false`（自動建立的預設值）⇒ 看 `disabled_repos` |
 | 設定檔自己出現在候選清單 | 正常 —— 它沒被任何群命中 ⇒ 落 `__other` ⇒ 不會被自動收 |
 | `blocked_repos` 有數字 | 設定壞掉或讀取失敗。**「設定寫錯」與「這個 repo 沒設定」刻意是兩種可分辨的結果** |
 

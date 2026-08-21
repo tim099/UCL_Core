@@ -347,47 +347,64 @@ namespace UCL.Core.EditorLib.Page
         // ===========================================================
         // submodule 自動提交設定（.ucl_autocommit.json）—— 可編輯
         // ===========================================================
-        // 區塊職責：把各 submodule 自己宣告的分群設定攤在畫面上，並且可以改、可以存。
-        // 物理意義：Tim 2026-08-21 拍板 —— 規則從「寫死在 UCL_Core」改成「由該 repo 自己宣告」。
-        //          ⚠ 這推翻了 2026-08-07「規則不開放編輯」的拍板，撤銷理由寫在
-        //            UCL_AutoCommitConfig 的檔頭（拍板的撤銷要跟拍板放同一個地方）。
-        //          地板仍在 code：ephemeral 在分群**之前**就被 Classify 擋掉（順序保證，
-        //          不是「呼叫端記得檢查」），`__other`／`__subptr` 也不因設定檔而自動收。
-        // 數值影響：讀檔只在 LoadConfigs（Init 與「重新載入」按鈕）—— **Draw 裡一行 IO 都沒有**。
-        //          存檔前跑 Validate；不合法就不寫並把每一條錯誤印出來
-        //          （錯配等級是「檔進錯 commit」，所以寧可擋下也不要寫進去一份看起來正常的設定）。
+        // 區塊職責：把各 submodule 自己宣告的分群設定攤在畫面上，並且可以選、可以改、可以存、可以開關。
+        // 物理意義：Tim 2026-08-21 拍板兩段 —— ① 規則由該 repo 自己宣告（不再寫死在 UCL_Core）
+        //          ② 下拉選單選目標 submodule；**沒有設定檔的選了就自動建一份，預設停用**。
+        //          ⚠ 預設停用是刻意的：「選了一個 submodule」不等於「同意開始自動 commit 它」。
+        //            若自動創建順便啟用，那個同意就變成了選取的副作用 —— 而副作用不會有人記得撤銷。
+        // 數值影響：讀檔只在 LoadConfigs（Init／重新載入／建立／存檔後）——**Draw 裡一行 IO 都沒有**
+        //          （IMGUI 的 Layout 與 Repaint 是兩個 pass，Draw 裡碰磁碟會讓兩趟看到不同東西）。
+        //          存檔前跑 Validate；不合法就不寫並逐條印出原因（錯配等級是「檔進錯 commit」）。
+        //          地板仍在 code：ephemeral 在分群**之前**就被 Classify 擋掉（順序保證，不是記得檢查）。
         class ConfigEntry
         {
             public string Root = "";
             public string Rel = "";
-            public UCL_AutoCommitConfig Config;
+            public UCL_AutoCommitConfig Config;      // null ＝ 這個 repo 還沒有設定檔
             public string LoadError = "";
         }
 
         readonly List<ConfigEntry> m_Configs = new List<ConfigEntry>();
         readonly UCL_ObjectDictionary m_ConfigDic = new UCL_ObjectDictionary();
+        readonly List<string> m_ConfigOptions = new List<string>();
+        int m_SelectedConfigIdx = 0;
 
+        // 區塊職責：掃出**所有** submodule（不只有設定檔的那些）——
+        //          使用者要能在下拉選單裡選到「還沒有設定檔」的那一個，否則沒有入口去建立它。
         void LoadConfigs()
         {
             m_Configs.Clear();
-            string dataRoot = UCL_AgentCommandsPath.DataRoot;
-            if (string.IsNullOrEmpty(dataRoot)) return;
-            foreach (string dir in UCL_AutoCommitConfig.DiscoverRepoPaths(dataRoot))
+            m_ConfigOptions.Clear();
+            string aDataRoot = UCL_AgentCommandsPath.DataRoot;
+            if (string.IsNullOrEmpty(aDataRoot)) return;
+            foreach (string aDir in UCL_AutoCommitConfig.ListSubmodulePaths(aDataRoot))
             {
-                var entry = new ConfigEntry
+                var aEntry = new ConfigEntry
                 {
-                    Root = dir,
-                    Rel = Path.GetFileName(dir.TrimEnd('/')),
+                    Root = aDir,
+                    Rel = Path.GetFileName(aDir.TrimEnd('/')),
                 };
-                try { entry.Config = UCL_AutoCommitConfig.Load(dir); }
-                catch (Exception e)
+                if (UCL_AutoCommitConfig.Exists(aDir))
                 {
-                    // 壞檔要說出來，不可靜默跳過 ——
-                    // 「設定寫錯」與「這個 repo 沒設定」必須是兩種可分辨的結果。
-                    entry.LoadError = e.Message;
+                    try { aEntry.Config = UCL_AutoCommitConfig.Load(aDir); }
+                    catch (Exception e)
+                    {
+                        // 壞檔要說出來，不可靜默跳過 ——
+                        // 「設定寫錯」與「這個 repo 沒設定」必須是兩種可分辨的結果。
+                        aEntry.LoadError = e.Message;
+                    }
                 }
-                m_Configs.Add(entry);
+                m_Configs.Add(aEntry);
             }
+            foreach (var aEntry in m_Configs) m_ConfigOptions.Add(ConfigOptionLabel(aEntry));
+            if (m_SelectedConfigIdx >= m_Configs.Count) m_SelectedConfigIdx = 0;
+        }
+
+        static string ConfigOptionLabel(ConfigEntry iEntry)
+        {
+            if (!string.IsNullOrEmpty(iEntry.LoadError)) return "⛔ " + iEntry.Rel + "（設定壞掉）";
+            if (iEntry.Config == null) return "— " + iEntry.Rel + "（尚無設定檔）";
+            return (iEntry.Config.m_Enabled ? "✅ " : "⏸ ") + iEntry.Rel;
         }
 
         void DrawSubmoduleConfigs()
@@ -397,11 +414,14 @@ namespace UCL.Core.EditorLib.Page
             {
                 using (new GUILayout.HorizontalScope())
                 {
-                    bool aFold = m_Fold.TryGetValue(aFoldKey, out var f) && f;
+                    bool aFold = m_Fold.TryGetValue(aFoldKey, out var aF) && aF;
                     bool aNext = UCL_GUILayout.Toggle(aFold);   // ▼/► 全專案統一的折疊語彙
                     if (aNext != aFold) m_Fold[aFoldKey] = aNext;
-                    GUILayout.Label($"⚙ Submodule 自動提交設定（{m_Configs.Count} 個 repo 自帶設定檔）",
-                        UCL_GUIStyle.LabelStyle);
+                    int aEnabledCount = 0;
+                    foreach (var aItem in m_Configs)
+                        if (aItem.Config != null && aItem.Config.m_Enabled) ++aEnabledCount;
+                    GUILayout.Label("⚙ Submodule 自動提交設定（" + m_Configs.Count
+                        + " 個 submodule／" + aEnabledCount + " 個已啟用）", UCL_GUIStyle.LabelStyle);
                     GUILayout.FlexibleSpace();
                     if (GUILayout.Button("重新載入", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                     {
@@ -411,66 +431,92 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (!(m_Fold.TryGetValue(aFoldKey, out var aOpen) && aOpen)) return;
 
-                GUILayout.Label($"檔名 {UCL_AutoCommitConfig.FileName}（放各 repo 根）"
-                    + " —— 有這個檔的 submodule 才會被 mode=submodules 收，沒有就跳過（不猜規則）。",
-                    DimLabelStyle);
-                GUILayout.Label("前綴比對的是「相對該 repo root 的正斜線路徑」；"
-                    + "ephemeral 檔與未分類／submodule pointer 由程式碼擋著，設定檔改不動。",
+                GUILayout.Label("檔名 " + UCL_AutoCommitConfig.FileName + "（放各 repo 根）——"
+                    + " 有這個檔**且已啟用**才會被 mode=submodules 收。設定 SOP 見本頁 HelpURL 指的文件。",
                     DimLabelStyle);
 
+                // ⚠ 選項為 0 時整區隱藏 —— PopupSearchCache 在空清單會 LogError（既有地雷）
                 if (m_Configs.Count == 0)
                 {
-                    GUILayout.Label("（沒有任何 submodule 帶設定檔）", DimLabelStyle);
+                    GUILayout.Label("（.gitmodules 裡沒有任何 submodule）", DimLabelStyle);
                     return;
                 }
 
-                foreach (var aEntry in m_Configs)
+                using (new GUILayout.HorizontalScope())
                 {
-                    using (new GUILayout.VerticalScope("box"))
+                    GUILayout.Label("目標 submodule", UCL_GUIStyle.LabelStyle,
+                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                    m_SelectedConfigIdx = UCL_GUILayout.PopupSearchCache(
+                        m_SelectedConfigIdx, m_ConfigOptions, m_ConfigDic, "SubmodulePicker");
+                    GUILayout.FlexibleSpace();
+                }
+                if (m_SelectedConfigIdx < 0 || m_SelectedConfigIdx >= m_Configs.Count) return;
+                var aSelected = m_Configs[m_SelectedConfigIdx];
+
+                GUILayout.Label(UCL_AutoCommitConfig.PathOf(aSelected.Root), MonoStyle);
+
+                if (!string.IsNullOrEmpty(aSelected.LoadError))
+                {
+                    GUILayout.Label("⛔ 讀取失敗：" + aSelected.LoadError, WarnLabelStyle);
+                    GUILayout.Label("修好檔案再按「重新載入」。**不會**自動覆蓋壞檔 ——"
+                        + " 覆蓋掉的是別人寫的設定，而那筆改動沒有任何地方留得住。", DimLabelStyle);
+                    return;
+                }
+
+                if (aSelected.Config == null)
+                {
+                    GUILayout.Label("尚無設定檔。建立之後**預設停用** ——"
+                        + " 要開始自動 commit 這個 repo，得再顯式打開 Enabled。", DimLabelStyle);
+                    if (GUILayout.Button("➕ 建立設定檔（預設停用）", UCL_GUIStyle.ButtonStyle,
+                            GUILayout.ExpandWidth(false)))
                     {
-                        GUILayout.Label($"📦 {aEntry.Rel}", UCL_GUIStyle.LabelStyle);
-                        GUILayout.Label(UCL_AutoCommitConfig.PathOf(aEntry.Root), MonoStyle);
-                        if (!string.IsNullOrEmpty(aEntry.LoadError))
+                        try
                         {
-                            GUILayout.Label($"⛔ 讀取失敗：{aEntry.LoadError}", WarnLabelStyle);
-                            continue;
+                            var aNew = UCL_AutoCommitConfig.CreateDefault(aSelected.Rel);
+                            aNew.Save(aSelected.Root);
+                            m_Report = "✅ 已建立 " + UCL_AutoCommitConfig.PathOf(aSelected.Root)
+                                + "（Enabled=false、尚未分群）";
+                            LoadConfigs();
                         }
-                        if (aEntry.Config == null) continue;
+                        catch (Exception e) { m_Report = "⛔ 建立失敗：" + e.Message; }
+                        GUI.FocusControl(null);
+                    }
+                    return;
+                }
 
-                        // 整個物件交給 DrawObjectData 反射繪製 —— 加欄位時這一頁一行都不用改
-                        UCL_GUILayout.DrawObjectData(aEntry.Config,
-                            m_ConfigDic.GetSubDic(aEntry.Root), aEntry.Rel, false);
+                // 整個物件交給 DrawObjectData 反射繪製（Enabled 開關也在裡面）——
+                // 加欄位時這一頁一行都不用改
+                UCL_GUILayout.DrawObjectData(aSelected.Config,
+                    m_ConfigDic.GetSubDic(aSelected.Root), aSelected.Rel, false);
 
-                        var aErrors = aEntry.Config.Validate();
-                        foreach (var aError in aErrors) GUILayout.Label($"⚠ {aError}", WarnLabelStyle);
+                var aErrors = aSelected.Config.Validate();
+                foreach (var aError in aErrors) GUILayout.Label("⚠ " + aError, WarnLabelStyle);
 
-                        using (new GUILayout.HorizontalScope())
+                using (new GUILayout.HorizontalScope())
+                {
+                    using (new EditorGUI.DisabledScope(aErrors.Count > 0))
+                    {
+                        if (GUILayout.Button("💾 存檔", UCL_GUIStyle.ButtonStyle,
+                                GUILayout.ExpandWidth(false)))
                         {
-                            using (new EditorGUI.DisabledScope(aErrors.Count > 0))
+                            try
                             {
-                                if (GUILayout.Button("💾 存檔", UCL_GUIStyle.ButtonStyle,
-                                        GUILayout.ExpandWidth(false)))
-                                {
-                                    try
-                                    {
-                                        aEntry.Config.Save(aEntry.Root);
-                                        m_Report = $"✅ 已寫入 {UCL_AutoCommitConfig.PathOf(aEntry.Root)}";
-                                    }
-                                    catch (Exception e) { m_Report = $"⛔ 寫入失敗：{e.Message}"; }
-                                    GUI.FocusControl(null);
-                                }
-                            }
-                            if (GUILayout.Button("↩ 放棄改動", UCL_GUIStyle.ButtonStyle,
-                                    GUILayout.ExpandWidth(false)))
-                            {
+                                aSelected.Config.Save(aSelected.Root);
+                                m_Report = "✅ 已寫入 " + UCL_AutoCommitConfig.PathOf(aSelected.Root);
                                 LoadConfigs();
-                                GUI.FocusControl(null);
                             }
-                            if (aErrors.Count > 0)
-                                GUILayout.Label("（有不合法的欄位，存檔已停用）", WarnLabelStyle);
-                            GUILayout.FlexibleSpace();
+                            catch (Exception e) { m_Report = "⛔ 寫入失敗：" + e.Message; }
+                            GUI.FocusControl(null);
                         }
                     }
+                    if (GUILayout.Button("↩ 放棄改動", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        LoadConfigs();
+                        GUI.FocusControl(null);
+                    }
+                    if (aErrors.Count > 0)
+                        GUILayout.Label("（有不合法的欄位，存檔已停用）", WarnLabelStyle);
+                    GUILayout.FlexibleSpace();
                 }
             }
         }

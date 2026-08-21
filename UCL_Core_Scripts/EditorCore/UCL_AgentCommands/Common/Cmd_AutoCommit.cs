@@ -80,6 +80,8 @@ namespace UCL.Core.EditorLib.AgentCommands
             public UCL_AutoCommitRules.GroupDef[] Defs;
             /// <summary>設定檔路徑（有的話），純顯示用。</summary>
             public string ConfigPath = "";
+            /// <summary>設定檔把自己標為停用（`Enabled=false`）。**不是錯誤**，所以不計入 blocked。</summary>
+            public bool Disabled;
         }
 
         /// <summary>這個 repo 該用哪一組分群規則：自己宣告的優先，否則用模式預設。</summary>
@@ -147,10 +149,16 @@ namespace UCL.Core.EditorLib.AgentCommands
             int ephemeral = 0, scannedFiles = 0;
             foreach (var t in targets) ephemeral += ScanOne(t, DefsOf(t, defs), ref scannedFiles);
 
-            int committed = 0, skippedRepos = 0, emptyGroups = 0;
+            int committed = 0, skippedRepos = 0, emptyGroups = 0, disabledRepos = 0;
             var shas = new List<string>();
             foreach (var t in targets)
             {
+                if (t.Disabled)
+                {
+                    disabledRepos++;
+                    sb.AppendLine($"  ・{t.Name}：{t.Blocked}");
+                    continue;
+                }
                 if (!string.IsNullOrEmpty(t.Blocked))
                 {
                     skippedRepos++;
@@ -188,6 +196,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             UCL_AgentCommandRunner.ReportOutputValue(args, "ephemeral_skipped", ephemeral.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "commits", committed.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "blocked_repos", skippedRepos.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "disabled_repos", disabledRepos.ToString());
             if (shas.Count > 0)
                 UCL_AgentCommandRunner.ReportOutputValue(args, "shas", string.Join(" ", shas.ToArray()));
         }
@@ -247,7 +256,15 @@ namespace UCL.Core.EditorLib.AgentCommands
                     Name = string.IsNullOrEmpty(config.m_Name) ? rel : config.m_Name,
                     ConfigPath = UCL_AutoCommitConfig.PathOf(dir),
                     Defs = config.ToGroupDefs(),
+                    Disabled = !config.m_Enabled,
                 };
+                if (target.Disabled)
+                {
+                    // 停用**不是**錯誤 ⇒ 不進 blocked（那個數字的語意是「設定壞了」）。
+                    // 但也不可靜默消失：自動創建的設定預設停用，若不回報就會變成
+                    //「我明明加了設定檔，為什麼什麼都沒發生」——而那跟「沒被發現」同形。
+                    target.Blocked = "設定為停用（Enabled=false）—— 到後台頁或設定檔開啟";
+                }
                 if (errors.Count > 0)
                     target.Blocked = "設定不合法：" + string.Join("；", errors);
                 list.Add(target);

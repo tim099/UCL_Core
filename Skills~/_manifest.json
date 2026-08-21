@@ -54,7 +54,7 @@
     },
     {
       "name": "ucl-coding",
-      "summary": "C# 撰寫規範入口（外部 Process 一律走 UCL_ProcessRegistryService / typed model / 字串 key / 既有基建指路）",
+      "summary": "撰寫規範入口（依語言分章：SKILL.md 跨語言硬規則＋索引 / CSHARP.md / PYTHON.md）",
       "optional": false
     },
     {

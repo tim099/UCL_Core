@@ -2,6 +2,7 @@
 name: ucl-coding
 description: |
   UCL_Core 撰寫規範入口（C# 與 Python）— 動 code 之前該知道的硬規則與慣例。
+  **內容依語言分章**：C# 走 `CSHARP.md`、python 走 `PYTHON.md`，SKILL.md 只留跨語言硬規則與索引。
   涵蓋：**路徑一律走既有解析器不自己推導**（三端對照；自推導的失敗是靜默的）、
   **錢一律走 Cmd**（token 與券，python 不直寫帳本）、
   外部 Process 一律走 UCL_ProcessRegistryService（防屍潮）、設定與 JSON 資料的 typed model 原則、
@@ -24,51 +25,26 @@ description: |
   - UCL_Asset.Util / GetAllIDs / GetData / ContainsAsset / 取得資產實際資料 / 資產存不存在 / 資產沒存檔
 ---
 
-# UCL Coding — C# 撰寫規範入口
+# UCL Coding — 撰寫規範入口（C# / Python）
 
-> 一句話：**動 C# 之前先確認「這件事有沒有既有基建」** —— UCL_Core 最常見的錯不是寫錯，
+> 一句話：**動 code 之前先確認「這件事有沒有既有基建」** —— UCL_Core 最常見的錯不是寫錯，
 > 是自己重造一套已經存在的東西，而重造出來的那套通常少了原版踩過坑之後補上的防護。
 
-> [!IMPORTANT]
-> ## 🔨 改完 .cs **一律觸發 `Cmd_Recompile`**（Tim 2026-08-16 拍板）
->
-> **Unity 失焦時不會自動重編，而 agent 寫檔幾乎都在失焦下發生** —— 所以「改完等它自己編」
-> 在 agent 的工作流裡是不存在的事。改完 .cs ⇒ **一律送 `Cmd_Recompile`**，這是確保有編到的唯一手勢。
->
-> 而要**等到編完並拿到錯誤清單**，用 python 子命令（不是 `run Recompile`）：
->
-> ```bash
-> python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> recompile
-> ```
->
-> 它會：記下 pre-mtime → 送 Cmd → **等 `.compile_status.json` 推進且 `in_progress=false`** → 印 errors/warnings。
-> 而 `run_cmd.py run Recompile` 只是**丟出請求就返回**（Cmd_Recompile 刻意這樣設計 —— domain reload 會殺掉
-> in-flight 的 async Cmd，所以它不能自己 await 編譯完成）。
->
-> ⚠ **`Cmd 回 Success` 只證明「請求被 Unity 收下」，不證明編譯發生過。**
->
-> 🩸 **為什麼這支 Cmd 特別重要**：**Unity 失焦時不會自動重編** —— 而 agent 直接寫檔的場景
-> 幾乎都在失焦下發生。`Cmd_Recompile` 正是為此存在的入口（**失焦狀態下也能觸發編譯**，
-> 這是它的設計目的，不是副作用）。⇒「改完 .cs 不做任何事、等 Unity 自己編」在 agent 的
-> 工作流裡是**不會發生的事**。
->
-> ⚠ basecamp 2026-08-16 實測到的另一格：**送出請求到 `.compile_status.json` 真的推進，曾經超過 120s**
-> —— `recompile` 子命令的等待窗口跑完了才編到，而那段期間 `check_compile.py` 一路標 STALE，
-> 看起來就像「完全沒編」。
-> ⛔ 我當時把工具印的提示（「切到前景再試」）當成量到的真因寫進本 skill —— **那是錯的，Tim 當場更正**。
-> 提示是候選解釋，不是讀數；**沒量過的因果不要寫成血證**。
->
-> ⇒ 判準：**編譯過了的唯一憑據是 `check_compile.py` 沒標 STALE**（時間戳晚於你最後一次存檔）。
-> 還標著就是還沒編到 —— 再送一次 `recompile`，或直接讀 `.compile_status.json` 的時間戳，
-> **不要把「請求被收下」讀成「編譯完成」**。
-> 排查編譯錯誤的完整手勢 → skill `ucl-compile-error`。
+## 📖 先分流：你要動哪個語言
 
-> [!WARNING]
-> ## 🐍 用 python 腳本改 C# 的兩個坑（2026-08-20 一天內兩次）
-> 跳脫字元在 `heredoc → python → .cs` 這條鏈上會被多解一次，把 C# 字串 literal 拆斷；
-> 而 `assert s.count(old)==1` 通過**不代表**定義與呼叫端都換了（腳本印成功、code 編不過）。
-> ⇒ 判準與修法（含「內容先落成檔案再插入」與「recompile 要看 errors= 那一行」）寫在
-> `ucl_core:Docs~/{lang}/Agent/Python_Coding_Standards.md` **硬規則四**。
+| 你要動的東西 | 讀哪一章 | 那章的第一條硬規則 |
+|---|---|---|
+| **`.cs`**（Unity / Editor 頁 / IMGUI / Cmd handler / 反射驗證） | [`CSHARP.md`](CSHARP.md) | 改完 `.cs` **一律送 `Cmd_Recompile`** —— Unity 失焦時不會自動重編，而 agent 寫檔幾乎都在失焦下發生 |
+| **`.py`**（`Tools~` 底下、CLI 工具、**用腳本改別的語言的檔**） | [`PYTHON.md`](PYTHON.md) | 寫任何 `.py` 前先讀 `Python_Coding_Standards.md` —— 尤其**硬規則四**（內容先落成檔案再插入） |
+| **兩邊都會踩的**（路徑／錢／`--persona`／開工廣播／坑寫回哪裡） | **本檔以下全部** | 路徑不該被推導，該被傳遞 |
+
+> [!IMPORTANT]
+> **本檔只放「兩個語言都成立」的規則。** 單一語言的寫法、API、血證一律住上表那兩章。
+> 搬回本檔會長成第三份規範 —— 而三份規範遲早各說各話，且三邊都不報錯。
+>
+> ⚠ **舊編號對照**（本次拆檔前是一份 `## ⛔ 三條最常被違反的硬規則`，實際列了五條）：
+> 舊 ③④⑤（路徑／錢／`--persona`）＝本檔的 ①②③；
+> 舊 ①②④-b（外部 Process／`UCL_Asset<T>`／銀行餘額 API）＝ [`CSHARP.md`](CSHARP.md) 的 ①②③。
 
 > [!IMPORTANT]
 > ## 🩸 撞到坑之後：把避坑寫回**語言文件**，不要留在對話裡
@@ -114,91 +90,12 @@ BODY
   分不出「這半邊有人正在寫」）—— 在線清單看得到「誰正在改什麼」，這種對撞就不會發生。
 - 換工作目標時再發一則帶新 `status` 即可；登出後 lock 消滅，狀態不殘留。
 
-## 規範本體（本 skill 只是指路，細節不在這裡重抄）
+## ⛔ 跨語言硬規則（兩個語言都成立）
 
-> [!IMPORTANT]
-> ## 🧱 JSON 一律定義具體 class 並繼承 `UnityJsonSerializable`（Tim 2026-08-18 拍板）
->
-> 已知 schema 不准用裸 `JsonData` 逐鍵讀寫 —— 鍵名打錯不會編譯錯、也不會執行錯，
-> **只會讀回預設值**，而讀回預設值通常長得跟「這筆資料不存在」一模一樣。
-> `JsonData` 只留在邊界層（解析外部 JSON / 保存未知欄位 / migration），且要在註解寫明理由。
->
-> 換成 typed model 時**有三個坑會讓 wire format 靜默改變**（編譯過、看起來對）：
-> **① 欄位名＝JSON 鍵名**（`FieldNameUnityVer` 只脫 `m_`）⇒ 沿用舊鍵名時刻意不走 `m_PascalCase`，
-> 並在註解寫明；**② `bool` 會被寫成 `"True"`/`"False"` 字串**，C# 載入端雙接看不出來，
-> 但 python 讀到的 `"False"` 是 **truthy** ⇒ 有非 C# 讀取端時要 `override SerializeToJson()`
-> 把 bool 寫回原生；**③ 驗收要拿真實舊檔 round-trip 比對**（`Cmd_Invoke` 可直接做），
-> 不是編譯過就算 —— 那隻 bool 正是在「recompile 回報 0 錯」之後才被 round-trip 抓到的。
->
-> 完整血證與範例 → `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md`「換成 typed model 時的三個坑」。
-> 參考實作：`UCL_SessionBase` / `UCL_FreeTimeSession` / `HSceneSpineImportConfig`。
+> 各語言自己的硬規則在 [`CSHARP.md`](CSHARP.md)（外部 Process／`UCL_Asset<T>`／銀行餘額 API）
+> 與 [`PYTHON.md`](PYTHON.md)（`Python_Coding_Standards.md` 硬規則一～四）。
 
-| 主題 | 文件 |
-|---|---|
-| C# 撰寫規範（設定/JSON、字串 key、**外部 Process**） | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
-| **Python 撰寫規範（寫任何 .py 前先讀）** | `ucl_core:Docs~/{lang}/Agent/Python_Coding_Standards.md` |
-| 程式碼註解規範（區塊職責 / 物理意義 / 數值影響） | `ucl_core:Docs~/{lang}/Agent/Code_Comment_Standards.md` |
-| 文件撰寫與 AI 可讀性 | `ucl_core:Docs~/{lang}/Agent/AI_READABILITY_GUIDELINES.md` |
-| UCL_Core 路徑解析（不要寫死安裝路徑） | skill `ucl-core-paths` |
-| 新 Asset（持久化資料一律 `UCL_Asset<T>`） | skill `ucl-create-asset` |
-| 新 AgentCommand handler | skill `ucl-create-cmd` |
-| 改完 .cs 怎麼確認真的編過 | skill `ucl-compile-error` |
-
-## 🖥 寫 Editor 頁 / 任何 IMGUI
-
-**不要直接堆 `GUILayout` 原生 API** —— UCL_Core 有一整層封裝，處理了 DPI 縮放、樣式一致性、
-搜尋式下拉、折疊狀態快取等等，而那些是原生 API 沒有的。
-
-> [!IMPORTANT]
-> **先問「能不能整個交給 `DrawObjectData` 畫」，再考慮手刻欄位。**
-> `UCL_GUILayout.DrawObjectData(obj, dic, name, false)` 用反射走訪欄位自動畫出整個編輯介面 ——
-> 巢狀物件、`List` / `Dictionary`、`[SerializeReference]` 多型下拉、折疊狀態全部內建。
-> 資料類別加欄位時，頁面**一行都不用改**。
->
-> 顯示不滿意時**也不要退回手刻**，改實作對應介面只接管那一層：
->
-> | 介面 | 接管範圍 |
-> |---|---|
-> | `UCLI_ShortName` | 顯示名稱（List 元素尤其該實作，否則每個元素都顯示型別名） |
-> | `UCLI_IsEnable` | 名稱前多一個 CheckBox（接到既有 enable 欄位，別另開狀態） |
-> | `UCLI_NameOnGUI` | 整條標題列 |
-> | `UCLI_FieldOnGUI` | 整個欄位的繪製（慣例：先呼叫 `DrawField` 再往下追加） |
->
-> 用法、繪製順序與互斥陷阱 → `ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_DrawObjectData.md`
-
-| 要做什麼 | 走哪裡 |
-|---|---|
-| **自動畫出整個物件的編輯介面** | `ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_DrawObjectData.md` |
-| 頁面骨架（`WindowName` / `ContentOnGUI` / `TopBarButtons` / `HelpURL`） | `ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_CommonEditorPage.md` |
-| 建新頁的完整流程與地雷 | `ucl_core:Docs~/{lang}/Workflows/Create_EditorPage_Workflow.md` |
-| 版面元件（popup / 搜尋下拉 / 各種 field） | `ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_Overview.md` |
-| 樣式與 DPI 縮放（`ButtonStyle` / `LabelStyle` / `TextFieldStyle` / `GetScaledSize`） | `ucl_core:Docs~/{lang}/API/UCL_GUIStyle/UCL_GUIStyle_Overview.md` |
-
-踩過的具體幾條：
-- **`ContentOnGUI` 內不要再開 ScrollView** —— base 已經包好，再包一層是雙捲軸。
-- 寬度用 `UCL_GUIStyle.GetScaledSize(n)`，不要寫死像素（高 DPI 下會壞）。
-- `TextField` 用 `UCL_GUIStyle.TextFieldStyle`，不是 `LabelStyle`（外觀對但行為不對）。
-- `UCL_GUILayout.PopupSearchCache` **選項為 0 時會 LogError** → 沒選項就整區隱藏。
-- 折疊狀態的 `UCL_ObjectDictionary` **不要跟 PopupSearchCache 共用** ——
-  資料重載路徑上的 `Clear()` 會把折疊值一併清掉（症狀是「收不起來」，看起來像 key 撞名）。
-- `UCLI_NameOnGUI` 與 `UCLI_IsEnable` **互斥** —— 實作前者，後者的 CheckBox（以及 Icon、
-  名稱 Label、多型下拉）就不會被畫（原始碼是 if / else）。症狀是「加了 NameOnGUI 之後 CheckBox 不見了」。
-- `DrawObjectData` 的 `iIsAlwaysShowDetail: true` **會跳過整條標題列** ——
-  `UCLI_NameOnGUI` / `UCLI_IsEnable` 都畫在那裡，設 true 等於兩個介面同時失效。
-- 多型欄位（`List<基底型別>`）**一定要加 `[SerializeReference]`** —— 那是 UCL 判定多型的唯一訊號，
-  少了它存檔會丟掉子類資料，**而且不會報錯**。
-
-## ⛔ 三條最常被違反的硬規則
-
-**① 開外部 Process 一律登記 `UCL_ProcessRegistryService`。**
-domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會跟著死** ——
-每次重編再生一顆，舊的變孤兒，累積起來就是**屍潮**（重複開 process 直到電腦卡死）。
-`KillAllByTag` → `Start` → `Register` → 結束時 `Unregister`。
-參考實作 `UCL_ScreenStreamDaemon`。細節見 Coding_Standards.md「外部 Process」。
-
-**② 持久化資料一律繼承 `UCL_Asset<T>`**，禁止裸 `ScriptableObject` 或自寫存檔（見 `ucl-create-asset`）。
-
-**③ 路徑一律走既有解析器，不要自己推導。**
+**① 路徑一律走既有解析器，不要自己推導。**
 各專案掛載位置與佈局不同，自推導跨專案必壞，而且**幾乎都是靜默壞**。
 
 | 端 | 用什麼 | ❌ 不要 |
@@ -220,31 +117,11 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 >
 > 細節與三端對照 → skill `ucl-core-paths`；Python 端完整規範 → `Python_Coding_Standards.md`。
 
-**④ 錢一律走 Cmd** —— token 與券都是。python 端用 `_lib/treasury_cmd.py`，**不直寫帳本**
+**② 錢一律走 Cmd** —— token 與券都是。python 端用 `_lib/treasury_cmd.py`，**不直寫帳本**
 （直寫會繞過餘額快取與冪等判重，且簽章欄位偽造成本為零）。2026-08-17 券的帳本分裂，
 路徑 bug 是導火線，**能燒起來是因為 grant 那條路徑本來就允許直寫**。
 
-**④-b 銀行／餘額一律走 `UCL_TreasuryLedger` 的 API，不自己解析原檔**（Tim 2026-08-20 拍板）。
-
-`GetBalance(accountId)` 單一帳戶／**`GetAllBalances()` 整批**（要畫一張表就用這個，只同步一次）。
-
-❌ 不准自己重放 `Treasury/ledger/**.json`、不准 parse `accounts/_balances.snapshot.txt`、
-不准在呼叫端另建一份餘額快取。三個理由，全部不會當場叫：
-
-- **正確性**：餘額不是「把檔案加總」—— 它有**關帳基準**（`closing/<日>.json` warm start）、
-  增量 watermark、壞檔處理。自己重放會得到一個看起來合理、但少算或多算一段的數字。
-- **效能**：`GetBalance` 單次便宜（只列舉路徑），但那是**單次**的便宜。
-  🩸 2026-08-20：銀行後台兩個新表格區各自對 40 個帳戶現場查餘額 ⇒ 開頁卡一分鐘、
-  IMGUI 跳 `Getting control 8's position in a group with only 8 controls`、
-  Unity 內部 `PropertyEditor` 連鎖 NullReferenceException，連 `recompile` 都排不進主執行緒。
-- **一致性**：兩份餘額來源遲早給出不同答案，而兩邊都能自圓其說、都不報錯。
-
-> ⛔ **`Draw*`（IMGUI）裡只准讀記憶體。** 任何會碰磁碟的呼叫 —— 餘額、`File.Exists`、
-> 讀設定檔的 property —— 都要先在 `LoadData` 算好存成欄位，並在操作後顯式失效。
-> ⚠ 把**會讀檔的 property** 放進 Draw 還有第二種死法：IMGUI 的 Layout 與 Repaint 是**兩個 pass**，
-> 兩趟看到不同的控制項數量就會拋 `ArgumentException` 並中止該幀繪製。
-
-**⑤ 跑 `run_cmd.py` 一律帶 `--persona <你>`**（Tim 2026-08-17 拍板）。
+**③ 跑 `run_cmd.py` 一律帶 `--persona <你>`**（Tim 2026-08-17 拍板）。
 
 ```bash
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run <CmdType> --arg k=v
@@ -284,141 +161,20 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run <CmdType> -
 （打錯會長出 `queues/<那串>/` 而不報錯），而唯一有守衛的身分是 persona
 （同一 persona 不得同時登入兩次）。打到舊旗標會**明確報錯並指路**，不是靜默忽略。
 
-## 🔌 不開 Editor 頁也能操作 C# —— `Cmd_Invoke` 反射呼叫
+## 📚 文件索引
 
-> [!IMPORTANT]
-> **要驗證一段 C#「真的做了什麼」，不要讀磁碟檔案推導，直接呼叫它的 API。**
-> `Cmd_Invoke` 讓 agent 從 CLI 反射呼叫 Editor 端任何 public（或加 `nonPublic=true` 的非 public）
-> 靜態／實例成員 —— 這是「事實有產物就去讀產物」在 C# 這一端的具體手勢。
-
-```bash
-# 靜態方法（最常用：自我檢查）
-run_cmd.py --persona <me> run Invoke --arg type=<Namespace.Type> --arg member=<Method>
-
-# 靜態屬性 → 存成變數（storeAs），供後續 invoke 當 target
-run_cmd.py --persona <me> run Invoke --arg type=UCL.Core.UCL_SpriteAsset --arg member=Util \
-    --arg kind=property --arg storeAs=spriteUtil
-
-# 實例方法：target=$變數；有多載或帶預設參數時要給 paramTypes + args
-run_cmd.py --persona <me> run Invoke --arg target='$spriteUtil' --arg member=GetData \
-    --arg paramTypes='System.String;System.Boolean' --arg args='<ID>;false'
-```
-
-| 參數 | 用途 |
+| 主題 | 文件 |
 |---|---|
-| `type` | 完整型別名（含 namespace，大小寫精確）；有 `target` 時可省 |
-| `member` / `kind` | 成員名 / `method`(預設)｜`property`｜`field` |
-| `paramTypes` / `args` | `;` 分隔。**帶預設值的參數也要顯式給** —— 反射不會自動補預設值 |
-| `storeAs` / `target` | 把回傳值存成變數 / 以 `$變數` 當實例呼叫，可跨多次 invoke 串起來 |
-| `nonPublic=true` | 打到 private / internal 成員 |
-
-**回傳值在哪看**：`_cmd_results/*.json` 只記 Success/Fail，**不含回傳內容**。
-實際回傳印在 Unity Editor log 的 `[AgentCmd:Invoke] OK (型別) = 值`：
-
-```bash
-grep -n "AgentCmd:Invoke\] OK" ~/AppData/Local/Unity/Editor/Editor.log | tail -1
-```
-
-⚠ **`Cmd 回 Success` 只證明反射呼叫沒有拋例外**，不證明那個方法做對了事 ——
-要看結果就去讀上面那行，或再 invoke 一次查詢用的 API 對帳。
-
-### 搭配 `UCL_Asset` API：資產的事實來源是 API，不是 JSON 檔
-
-每個 `UCL_Asset<T>` 都有靜態單例 `T.Util`，拿到它就能操作整組資產：
-
-| 成員 | 用途 | 備註 |
-|---|---|---|
-| `Util`（static property） | 取工具實例 | 第一步一律 `storeAs` 存起來 |
-| `GetAllIDs(bool iUseCache)` | 全部資產 ID | 這是「有哪些資產」的**唯一**事實來源 |
-| `GetData(string iID, bool iUseCache)` | 取實際資料物件 | 再 `storeAs` 就能呼叫它自己的方法 |
-| `ContainsAsset(string iID)` | 存不存在 | 比 `File.Exists` 可信 —— 快取／註冊層都算進去了 |
-| `Delete(string iID)` | 刪資產 | ⚠ 不可逆，先確認 |
-| `Save()` | 落盤 | **改完記憶體不會自己存** |
-
-> 為什麼不掃磁碟 JSON：資產有快取層與註冊表，磁碟上有檔 ≠ 系統看得到它，
-> 系統看得到 ≠ 磁碟上那份是當前值。用 `ls` / 讀 JSON 得到的是**平行索引**，
-> 而平行索引跟事實不一致時**兩邊都能各自運作、都不報錯**。
-
-實例（本專案 2026-08-14 實跑）：
-```bash
-# ① 資料層自我檢查（不開遊戲）
-run_cmd.py --persona <me> run Invoke --arg type=LittleYellow.ClickAreaAsset --arg member=SelfTest
-
-# ② 三段式串接：Util → 取某份資產 → 呼叫它的方法 → 存檔
-run_cmd.py --persona <me> run Invoke --arg type=LittleYellow.SpriteAssetImporter --arg member=Util \
-    --arg kind=property --arg storeAs=impUtil
-run_cmd.py --persona <me> run Invoke --arg target='$impUtil' --arg member=GetData \
-    --arg paramTypes='System.String;System.Boolean' --arg args='ClickAreas_Scene2;false' \
-    --arg storeAs=imp
-run_cmd.py --persona <me> run Invoke --arg target='$imp' --arg member=Import
-run_cmd.py --persona <me> run Invoke --arg target='$imp' --arg member=Save   # ← 漏掉這步 = 改動只在記憶體
-```
-
-### 🖱 觸發 Editor 頁的 UI 按鍵（Tim 2026-08-20 拍板）
-
-**後台頁的按鈕動作也能從 CLI 觸發** —— 不必開 Unity 用滑鼠按。
-每個 `UCL_EditorPage` 子類都有靜態 factory `public static XXX Create()`，拿它當入口：
-
-```bash
-# ① 建頁面實例並存成變數
-run_cmd.py --persona <me> run Invoke     --arg type=UCL.Core.EditorLib.Page.UCL_BankAdminPage --arg member=Create --arg storeAs=page
-
-# ② 用 $page 呼叫按鍵背後的方法（多半是 private instance method ⇒ 要 nonPublic=true）
-run_cmd.py --persona <me> run Invoke     --arg target='$page' --arg member=LoadData --arg nonPublic=true
-
-# 有參數的照常帶 paramTypes / args
-run_cmd.py --persona <me> run Invoke --arg target='$page'     --arg member=IsAgentBankRemoveArmed --arg paramTypes=System.String --arg args=Zeta --arg nonPublic=true
-```
-
-實測讀數（2026-08-20，`UCL_BankAdminPage`）：
-`Create` → `OK (UCL.Core.EditorLib.Page.UCL_BankAdminPage)`／`LoadData` → `OK (void / null)`／
-`IsAgentBankRemoveArmed("Zeta")` → `OK (System.Boolean) = False`。
-
-⚠ **static 成員仍然要用 `type=`，不能用 `target=$page`。**
-🩸 血證（同日）：`SafeBalance` 是 static，我用 `target=$page` 呼叫 ⇒ `method not found: …SafeBalance(System.String)`。
-改用 `type=` ⇒ `OK (System.String) = 2765`。**這正是本節下方「踩過的幾條」早就寫過的那一條，我照樣踩了。**
-
-⚠ **限制：依賴輸入框草稿（`m_XxxDraft`）的按鍵無法直接觸發** ——
-`kind=field` 是**讀取**，Cmd_Invoke 沒有寫 private field 的入口。
-⇒ 要讓這種按鍵可測，把邏輯層抽成「吃參數的方法」，UI 那層只負責把 draft 餵進去。
-（那本來就該做：按鍵動作與畫面狀態綁死的話，除了人手按之外沒有任何驗證方式。）
-
-⚠ 而且 **Cmd 回 Success 不代表你讀到的是這一次的回傳值** ——
-回傳印在 Editor log，`grep … | tail -1` 在**這一次失敗**時會安靜地給你**上一次**的那行。
-🩸 血證（同日）：第二次呼叫失敗，我 tail 到的是第一次的 `Boolean=False`，
-而抓到它的唯一線索是**型別對不上**（那個方法該回字串）。
-⇒ 判準：先看 run_cmd 有沒有印 `✓ Cmd completed`，**再**去讀 log 那行；兩者要一起看。
-
-### 踩過的幾條
-
-- **`Save()` 要自己叫。** 改完記憶體不落盤，下次重載就沒了，而且**不會報錯**。
-- **匯入類 API 通常只新增不刪舊。** `SpriteAssetImporter.Import()` 會 `Clear()` 自己的清單重建，
-  但**磁碟上舊 ID 的資產檔不會被刪** —— 素材改名後跑重匯入，會得到「新舊兩套同時註冊」。
-  改名情境要先 `Delete` 舊 ID，否則下游看到的是兩份都存在（實測：`ContainsAsset` 新舊皆回 `True`）。
-- **帶 `EditorUtility.DisplayDialog` 的方法不要盲目 invoke** —— modal 對話框會卡住 Editor 主執行緒，
-  CLI 端只會看到 timeout。這種要嘛請人按，要嘛把邏輯層與對話框層拆開再呼叫邏輯層。
-- **靜態方法用 `type=`，實例方法用 `target=$var`** —— 兩者混用會得到「找不到成員」，
-  而錯誤訊息會提示 `try nonPublic=true`，那是誤導（真正的問題是 static/instance 選錯）。
-
-## 判準：什麼時候該停下來找既有基建
-
-動手前先問一次：**「這件事聽起來像不像已經有人做過？」** 以下全部都有既有基建，
-自己寫一套的代價是少掉原版踩坑後補的防護：
-
-| 你想做的事 | 既有基建 |
-|---|---|
-| 開外部 process | `UCL_ProcessRegistryService` |
-| 找 repo root / Unity project root / AgentCommands 目錄 | `UCL_RepoPath` |
-| **組 letters 底下的路徑**（信 / Cmd 回傳檔） | `UCL_LettersPath`（python 對側：`ucl_paths.letters_cmd_payload()`）—— 別自己 `Path.Combine`，2026-08-18 那次搬家就是因為四種算法各在一處 |
-| 用檔案管理器開啟路徑 | `UCL_ExplorerUtil` |
-| 存持久化資料 | `UCL_Asset<T>` |
-| 頁面設定記住上次的值 | `EditorPrefs`（key 用 `const string`） |
-| **畫一個資料物件的編輯介面** | `UCL_GUILayout.DrawObjectData`（別手刻欄位；客製化走四個 `UCLI_*` 介面） |
-| 畫一個 List（含新增／刪除／搬移／多型下拉） | `UCL_GUILayout.DrawList` |
-| 搜尋式下拉選單 | `UCL_GUILayout.PopupSearchCache`（⚠ 選項為 0 時會 LogError，要先擋） |
-| 二次確認彈窗 | `UCL_OptionPage.Create(title, msg, ButtonData…)` |
-| 多語系字串 | `UCL_CodeLocalize.Get(key)`（**四語系檔都要加**；少鍵不會編譯錯，只會顯示成鍵名） |
-| 非阻塞跑外部工具 | `Task.Run` + `BeginOutputReadLine`/`BeginErrorReadLine`（單讀一個 stream 會 deadlock） |
+| **C# 章**（Recompile / typed model / IMGUI / Cmd_Invoke / 既有基建） | [`CSHARP.md`](CSHARP.md) |
+| **Python 章**（腳本改別的語言的檔 / ucl_paths / treasury_cmd） | [`PYTHON.md`](PYTHON.md) |
+| C# 撰寫規範（設定/JSON、字串 key、**外部 Process**） | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
+| **Python 撰寫規範（寫任何 .py 前先讀）** | `ucl_core:Docs~/{lang}/Agent/Python_Coding_Standards.md` |
+| 程式碼註解規範（區塊職責 / 物理意義 / 數值影響） | `ucl_core:Docs~/{lang}/Agent/Code_Comment_Standards.md` |
+| 文件撰寫與 AI 可讀性 | `ucl_core:Docs~/{lang}/Agent/AI_READABILITY_GUIDELINES.md` |
+| UCL_Core 路徑解析（不要寫死安裝路徑） | skill `ucl-core-paths` |
+| 新 Asset（持久化資料一律 `UCL_Asset<T>`） | skill `ucl-create-asset` |
+| 新 AgentCommand handler | skill `ucl-create-cmd` |
+| 改完 .cs 怎麼確認真的編過 | skill `ucl-compile-error` |
 
 ## 延伸
 

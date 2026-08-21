@@ -44,7 +44,14 @@ status: v1.0（Tim 2026-08-21：「先處理帳號相關部分即可」）
 
 ## 帳號 id 是什麼
 
-**secret 的檔名 stem** —— `_secrets/plurk_shared.enc` ⇒ id 是 `plurk_shared`。
+**secret 的檔名 stem** —— `<secrets_dir>/plurk_shared.enc` ⇒ id 是 `plurk_shared`。
+
+> ⚠ **secret 資料夾名不要寫死。** 它由 `<data_root>/secrets_config.json` 的 `SecretsDir` 決定
+> （本專案 2026-08-21 起是 **`Secret/`，且已拆成獨立 private submodule**；舊名 `_secrets` 已不存在）。
+> 解析一律走既有入口：C# `UCL_SecretsPath.DirName` / `.AbsoluteDir`、
+> python `_lib/ucl_paths.py` 的 `secrets_dir_name()` —— 兩端讀同一個設定檔。
+> 🩸 寫死會怎麼咬人：**寫檔會自動建目錄** ⇒ 照舊名手編明文的人憑空長出一個資料夾、
+> 檔案寫成功、而 `UCL_SecretScanner` 掃不到它 —— 全程零錯誤訊息。
 
 - 只有 `plurk_` 前綴的 `.enc` 會被列出（清單來源是 `UCL_SecretScanner`，不是本頁自己找檔）
 - 一個帳號四個值（consumer key/secret ＋ access token/secret）打包成一份 secret
@@ -102,7 +109,7 @@ Tim 2026-08-21 實際照這篇跑完：<https://www.plurk.com/p/nrwtgh>
 
 本頁「🔑 產生憑證」面板：填 secret id ＋ 四個憑證欄 ＋ passphrase／hint／label → 按產出。
 
-- ⭐ **明文不落地**：JSON 在記憶體組好直接加密，`_secrets/*.txt` 全程不產生。
+- ⭐ **明文不落地**：JSON 在記憶體組好直接加密，`<secrets_dir>/*.txt` 全程不產生。
   少一份殘留就少一個外洩面 —— **gitignored ≠ 不存在**。
 - **產出成功後四個憑證欄與 passphrase 立刻清空**，不留在頁面狀態裡。
 - `.enc` 已存在時按鈕停用，要勾「我確定要覆蓋它」才放行 ——
@@ -113,8 +120,10 @@ Tim 2026-08-21 實際照這篇跑完：<https://www.plurk.com/p/nrwtgh>
 
 ### 安裝步驟 B：手編明文再加密（原路，仍可用）
 
-1. 建 `AgentCommands/_secrets/plurk_<account>.txt`，內容照上面的 JSON
-   （`_secrets/.gitignore` 是 `*` 全擋 ＋ `!*.enc` ⇒ **明文永不進版控，只有 `.enc` 會**）
+1. 建 `<data_root>/<secrets_dir>/plurk_<account>.txt`，內容照上面的 JSON
+   （本專案現況：`AgentCommands/Secret/`。該資料夾的 `.gitignore` 是 `*` 全擋 ＋ `!*.enc`
+   ⇒ **明文永不進版控，只有 `.enc` 會**；2026-08-21 起它是獨立 private submodule ——
+   `private` 降低的是曝光面，不是曝光的後果，所以判準不變：**密文旅行、明文不旅行**）
 2. Secret Manager 頁 →「從明文加密」選該 `.txt` → 填 passphrase／hint／label → 產出 `.enc`
 
 ### 兩條路都要做的最後兩步
@@ -134,12 +143,14 @@ Tim 2026-08-21 實際照這篇跑完：<https://www.plurk.com/p/nrwtgh>
 （IMGUI 的 Layout 與 Repaint 是兩個 pass，Draw 裡碰磁碟會讓兩趟看到不同的東西，
 症狀是 `ArgumentException` 中止該幀繪製。）
 
-## 驗收讀數（2026-08-21 實跑，非推論）
+## 驗收讀數
+
+### 帳號層落地當天（2026-08-21 上午，**還沒有任何 plurk secret**）
 
 | 驗什麼 | 讀數 |
 |---|---|
 | `RegistryPath()` | `<data_root>/AwakenInit/plurk_accounts.json` |
-| `ListSecretIds()`（還沒有任何 plurk secret） | `[]` |
+| `ListSecretIds()` | `[]` |
 | `Resolve("summit")` → `Describe()` | `未設定 —— 沒有共用預設、也沒有個人 override` |
 | 頁面 `Create()` ＋ private `Reload()` | 皆 OK，無例外 |
 | **去路**：`PersonaProfile op=set plurk_account=plurk_roundtrip_probe` → `Resolve` | `個人帳號（plurk_roundtrip_probe）` |
@@ -147,7 +158,26 @@ Tim 2026-08-21 實際照這篇跑完：<https://www.plurk.com/p/nrwtgh>
 
 ⚠ round-trip 兩個方向都驗過 —— **多數守衛只擋去路不擋歸路**，而那種缺陷會活到真的要清設定的那天。
 
-## 尚未做（誠實標記）
+### 共用帳號設好之後（2026-08-21 下午，接手時重量的現況）
 
-本頁**只有帳號**。發文、lint、preview、post 都還沒實作，OAuth 端點也還沒對照官方文件驗過
-（見 `Plan_Plurk_Bot.md` §5 的未驗證標記）。
+上面那張是「**還沒設定**」的讀數。設定完就不是那樣了 ——
+留著舊讀數會讓下一個人以為這條線還沒接（過期的讀數不會叫）。
+
+| 驗什麼 | 讀數 |
+|---|---|
+| `secrets_config.json` | `{"SecretsDir":"Secret"}` ⇒ secret 目錄 = `AgentCommands/Secret/`（private submodule） |
+| `plurk_accounts.json` | `SharedSecretId = plurk_shared` |
+| `ListSecretIds()` | `[plurk_shared]` |
+| `Resolve("basecamp")` → `Describe()` | **`共用帳號（plurk_shared）—— 末行署名必填`** |
+| 憑證完整度（只量欄位與長度，**不印值**） | 四欄到齊：`consumer_key` 12 / `consumer_secret` 32 / `access_token` 12 / `access_token_secret` 32 |
+| 明文安裝 | **已安裝**（`Secret/plurk_shared.txt` 存在）⇒ 帳號層真的可用，不只是「有 `.enc`」 |
+| 明文是否進版控 | `git ls-files` 只有 `.gitignore` / `README.md` / 兩個 `.enc`；`check-ignore` 確認 `.txt` 命中 `*` 全擋 ⇒ **沒進版控** |
+
+## 本頁的範圍（與發文的分工）
+
+本頁**只有帳號**：誰用哪一份 secret。**發文不在這裡** ——
+2026-08-21 起走 `Cmd Plurk`（`op=lint` / `preview` / `post`，實作 `Editor/Plurk/Cmd_Plurk.cs`），
+流程見 [`Plurk_Posting_Workflow.md`](../Workflows/Plurk_Posting_Workflow.md) §0。
+首航實跑：`plurk_id 358451487782338`（朋友限定，回讀 `getPlurk` 驗過）。
+
+⚠ **仍未驗**：心情詞完整詞彙表、`公開度=本人`、附圖上傳端點、`reply_to`（回應）那條路。

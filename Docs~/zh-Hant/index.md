@@ -1,7 +1,7 @@
 ---
 title: UCL_Core 文件索引
 description: UCL_Core 框架的多語系文件入口 — 含 Agent Command 系統、UCL_Asset 資產系統、編輯器頁面、模組服務等四大主題分類
-last_updated: 2026-08-02
+last_updated: 2026-08-21
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -17,6 +17,9 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 |---|---|
 | [Coding_Standards](Agent/Coding_Standards.md) | C# 設定 model、`JsonData` 邊界與字串 key 規範 |
 | [Code_Comment_Standards](Agent/Code_Comment_Standards.md) | 程式碼註解規範 |
+| [Python_Coding_Standards](Agent/Python_Coding_Standards.md) | Python CLI 硬規則 — 路徑走 `ucl_paths`、錢走 Cmd、失敗要出聲 |
+| [Web_Coding_Standards](Agent/Web_Coding_Standards.md) | 靜態網頁 — `file://` 與 Pages 雙場景、零外部依賴、`innerHTML` 先跳脫 |
+| [CI_Standards](Agent/CI_Standards.md) | 什麼時候該用 CI、該用哪一種形狀、GitHub Actions 已踩過的坑 |
 | [AI_READABILITY_GUIDELINES](Agent/AI_READABILITY_GUIDELINES.md) | 文件與 AI 可讀性規範 |
 
 ## ⭐ 重點：Agent Command 系統

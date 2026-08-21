@@ -133,7 +133,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 if (File.Exists(aCfgPath))
                 {
                     var aCfg = JsonData.ParseJson(File.ReadAllText(aCfgPath, Encoding.UTF8));
-                    if (aCfg != null && aCfg.Contains("enabled") && !(bool)aCfg["enabled"]) return false;
+                    if (aCfg != null && aCfg.Contains("enabled") && !aCfg.GetBool("enabled", false)) return false;
                 }
                 var aInfo = JsonData.ParseJson(File.ReadAllText(aInfoPath, Encoding.UTF8));
                 if (aInfo != null && aInfo.Contains("stream_title")) oTitle = aInfo["stream_title"].ToString();

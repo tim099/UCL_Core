@@ -1973,16 +1973,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         /// <summary>讀 _config.json 的感官開關 —— 開著就自動供給，呼叫端不必傳旗標。</summary>
         static (bool ocr, bool stt) ReadSensorFlags()
         {
-            try
-            {
-                string aCfg = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json");
-                var aJd = JsonData.ParseJson(File.ReadAllText(aCfg, Encoding.UTF8));
-                bool aOcr = aJd != null && aJd.Contains("ocr_enabled") && (bool)aJd["ocr_enabled"];
-                bool aStt = aJd != null && aJd.Contains("stt_enabled") && (bool)aJd["stt_enabled"];
-                return (aOcr, aStt);
-            }
-            catch { return (false, false); }
+            var aCfg = LoadStreamConfig();
+            return aCfg == null ? (false, false) : (aCfg.ocr_enabled, aCfg.stt_enabled);
         }
+
+        /// <summary>錄影設定（走共用 model —— 鍵名與預設值只有一份；讀不到回 null，呼叫端自己決定怎麼說）。</summary>
+        static MediaAdmin.UCL_ScreenStreamConfig LoadStreamConfig()
+            => MediaAdmin.UCL_ScreenStreamConfig.Load(
+                   Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json"));
 
         /// <summary>
         /// 錄影最後一次 enabled 翻轉的時刻（寫入端戳的顯式欄位 `enabled_changed_at`）。
@@ -1994,11 +1992,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             try
             {
-                string aCfg = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json");
-                if (!File.Exists(aCfg)) return null;
-                var aJd = JsonData.ParseJson(File.ReadAllText(aCfg, Encoding.UTF8));
-                if (aJd == null || !aJd.Contains("enabled_changed_at")) return null;
-                return ParseIsoLocal(aJd["enabled_changed_at"].ToString());
+                var aCfg = LoadStreamConfig();
+                if (aCfg == null || string.IsNullOrEmpty(aCfg.enabled_changed_at)) return null;
+                return ParseIsoLocal(aCfg.enabled_changed_at);
             }
             catch { return null; }
         }
@@ -2008,12 +2004,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             oNote = "";
             try
             {
-                string aCfg = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json");
-                if (!File.Exists(aCfg)) { oNote = $"找不到 {aCfg}（視為未錄影）"; return false; }
-                var aJd = JsonData.ParseJson(File.ReadAllText(aCfg, Encoding.UTF8));
-                bool aEn = aJd != null && aJd.Contains("enabled") && (bool)aJd["enabled"];
-                oNote = $"`{aCfg}` enabled={aEn.ToString().ToLowerInvariant()}";
-                return aEn;
+                string aPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json");
+                var aCfg = MediaAdmin.UCL_ScreenStreamConfig.Load(aPath);
+                if (aCfg == null) { oNote = $"讀不到 {aPath}（視為未錄影）"; return false; }
+                oNote = $"`{aPath}` enabled={aCfg.enabled.ToString().ToLowerInvariant()}";
+                return aCfg.enabled;
             }
             catch (Exception e) { oNote = $"讀 _config.json 失敗：{e.Message}（視為未錄影）"; return false; }
         }
@@ -2316,11 +2311,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             try
             {
-                string aCfg = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json");
-                var aJd = JsonData.ParseJson(File.ReadAllText(aCfg, Encoding.UTF8));
-                int aMax = aJd.Contains("max_frames") ? int.Parse(aJd["max_frames"].ToString()) : 0;
-                int aFps = aJd.Contains("fps") ? int.Parse(aJd["fps"].ToString()) : 1;
-                if (aFps <= 0) aFps = 1;
+                var aCfg = LoadStreamConfig();
+                if (aCfg == null) { ioR.AppendLine("- 保存期   : ⚠ 讀不到 `_config.json` —— **別把它當成沒有上限**"); return; }
+                int aMax = aCfg.max_frames;
+                int aFps = aCfg.fps <= 0 ? 1 : aCfg.fps;
                 string aHave = ActualBufferSpan();
                 ioR.AppendLine($"- 保存期   : 名目 {aMax / aFps}s（{aMax} frames / {aFps} fps，**讀自後台設定不寫死**）"
                              + (string.IsNullOrEmpty(aHave) ? "" : $"｜{aHave}"));

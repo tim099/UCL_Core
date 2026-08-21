@@ -82,7 +82,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             try
             {
                 var aCfg = ReadConfig();
-                bool aWant = aCfg != null && aCfg.Contains("stt_enabled") && (bool)aCfg["stt_enabled"];
+                bool aWant = aCfg != null && aCfg.stt_enabled;
                 string aSig = Signature(aCfg);
                 bool aAlive = s_Proc != null && !s_Proc.HasExited;
 
@@ -107,7 +107,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
                     s_StallRestarts = 0;
                     s_ProducedSinceSpawn = true;
                 }
-                double aChunk = ReadDouble(aCfg, "stt_chunk_sec", 15.0);
+                double aChunk = aCfg.stt_chunk_sec;
                 // 冷啟動（尚未產出過）走寬限門檻 —— 首跑可能正在下載 GB 級權重（見 COLD_START_LIMIT_SEC）
                 double aLimit = s_ProducedSinceSpawn
                     ? Math.Max(aChunk * STALL_CHUNKS, STALL_FLOOR_SEC)
@@ -171,7 +171,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             catch { return 0; }
         }
 
-        static void Spawn(JsonData iCfg, string iSig, string iWhy)
+        static void Spawn(UCL_ScreenStreamConfig iCfg, string iSig, string iWhy)
         {
             // 每次啟動都重置 —— 上一顆有沒有產出過與這一顆無關（重起後又是一次冷啟動）
             s_ProducedSinceSpawn = false;
@@ -185,25 +185,25 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             if (aKilled > 0) Debug.LogWarning($"[UCL_STT] singleton guard：收掉 {aKilled} 顆殘留（防兩顆併寫同一份 cache）");
 
             // 後端：認不得的值不猜，交給 python 端落回現行後端（見 audio_transcribe.DEFAULT_BACKEND）。
-            string aBackend = ReadStr(iCfg, "stt_backend", "openai-whisper");
-            string aModel = ReadStr(iCfg, "stt_model", "small");
-            string aLang = ReadStr(iCfg, "stt_lang", "");
-            string aPrompt = ReadStr(iCfg, "stt_prompt", "");
-            double aChunk = ReadDouble(iCfg, "stt_chunk_sec", 15.0);
+            string aBackend = iCfg.stt_backend;
+            string aModel = iCfg.stt_model;
+            string aLang = iCfg.stt_lang;
+            string aPrompt = iCfg.stt_prompt;
+            double aChunk = iCfg.stt_chunk_sec;
             var aArgs = new System.Text.StringBuilder();
             aArgs.Append('"').Append(aScript).Append("\" serve");
             aArgs.Append(" --backend ").Append(aBackend);
             // VAD 只在 faster-whisper 帶 —— openai-whisper 端沒有這個參數，
             // 帶了不會報錯只會被忽略，而「被忽略的旗標」正是讓人以為設定生效的那種東西。
-            if (aBackend == "faster-whisper" && ReadBool(iCfg, "stt_vad_filter", false))
+            if (aBackend == "faster-whisper" && iCfg.stt_vad_filter)
                 aArgs.Append(" --vad");
             aArgs.Append(" --model ").Append(aModel);
             if (!string.IsNullOrEmpty(aLang)) aArgs.Append(" --lang ").Append(aLang);
             if (!string.IsNullOrEmpty(aPrompt)) aArgs.Append(" --prompt \"").Append(aPrompt.Replace("\"", "'")).Append('"');
             aArgs.Append(" --chunk ").Append(aChunk.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
-            aArgs.Append(" --rms-gate ").Append(ReadDouble(iCfg, "stt_rms_gate", 0.005).ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
-            aArgs.Append(" --no-speech-max ").Append(ReadDouble(iCfg, "stt_no_speech_max", 0.6).ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
-            aArgs.Append(" --logprob-min ").Append(ReadDouble(iCfg, "stt_logprob_min", -1.0).ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+            aArgs.Append(" --rms-gate ").Append(((double)iCfg.stt_rms_gate).ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
+            aArgs.Append(" --no-speech-max ").Append(((double)iCfg.stt_no_speech_max).ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+            aArgs.Append(" --logprob-min ").Append(((double)iCfg.stt_logprob_min).ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
 
             try
             {
@@ -261,42 +261,27 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
 
         // 設定簽章 —— 只放「改了就必須重起」的欄位。放太多會變成一直重起，放太少會靜默沿用舊值
         // （🩸 血證：換片後 stt_lang/stt_prompt 殘留上一場，whisper 幻聽出舊片人名）。
-        static string Signature(JsonData iCfg)
+        static string Signature(UCL_ScreenStreamConfig iCfg)
             // ⚠ 後端也要進簽章 —— 少了它，改後端不會重起 worker，於是「選了新後端」
             //   與「仍在跑舊後端」在畫面上長得一模一樣（設定顯示新值、實際跑舊值）。
-            => $"{ReadStr(iCfg, "stt_backend", "")}|{ReadBool(iCfg, "stt_vad_filter", false)}|{ReadStr(iCfg, "stt_model", "")}|{ReadStr(iCfg, "stt_lang", "")}|"
-             + $"{ReadStr(iCfg, "stt_prompt", "")}|{ReadDouble(iCfg, "stt_chunk_sec", 15.0):F1}";
+            // ⚠ 缺鍵時的字串從 "" 變成 model 的預設值（如 `openai-whisper`）——
+            //   簽章只是**比對用的不透明鍵**，值變了最多讓 worker 多重起一次；
+            //   而現行 config 這些鍵都在，實際字串不變。
+            => iCfg == null ? ""
+             : $"{iCfg.stt_backend}|{iCfg.stt_vad_filter}|{iCfg.stt_model}|{iCfg.stt_lang}|"
+             + $"{iCfg.stt_prompt}|{(double)iCfg.stt_chunk_sec:F1}";
 
-        static JsonData ReadConfig()
-        {
-            string aPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json");
-            if (!File.Exists(aPath)) return null;
-            return JsonData.ParseJson(File.ReadAllText(aPath, System.Text.Encoding.UTF8));
-        }
-
-        static string ReadStr(JsonData d, string k, string def)
-            => d != null && d.Contains(k) ? (d[k].ToString() ?? def) : def;
-
-        // 區塊職責：讀 config 的 bool 欄。
-        // 物理意義：JsonLib 的值可能是原生 true/false，也可能是字串 "True"/"true"（兩端寫入者不同）。
-        // ⚠ 這裡刻意用 bool.TryParse（大小寫不敏感）而不是 == "True" 字面比較 ——
-        //   🩸 2026-07 Discord Mirror 那隻就是 `GetString()=="True"` 寫死，python 寫的原生 true
-        //   永遠對不上，於是**所有 config flag 靜默變 false**，一行修好救活兩條命。
-        static bool ReadBool(JsonData d, string k, bool def)
-        {
-            try
-            {
-                if (d == null || !d.Contains(k)) return def;
-                return bool.TryParse(d[k].ToString(), out bool v) ? v : def;
-            }
-            catch { return def; }
-        }
-
-        static double ReadDouble(JsonData d, string k, double def)
-        {
-            try { return d != null && d.Contains(k) ? double.Parse(d[k].ToString(), System.Globalization.CultureInfo.InvariantCulture) : def; }
-            catch { return def; }
-        }
+        /// <summary>讀 `_screenstream/_config.json`（走共用 model —— 鍵名與預設值只有一份）。</summary>
+        /// <remarks>
+        /// 原本這裡有一組自己的 ReadStr/ReadBool/ReadDouble。其中 ReadBool 的**雙接**
+        /// （原生 true/false ＋ 字串 "True"/"true"）現在住在 `JsonConvert.LoadFieldFromJson`
+        /// 的 bool 分支裡 —— 同一條紀律只留一份，不再各 supervisor 抄一次。
+        /// 🩸 那條紀律的來由：2026-07 Discord Mirror 用 `GetString()=="True"` 寫死，
+        /// python 寫的原生 true 永遠對不上 ⇒ **所有 config flag 靜默變 false**。
+        /// </remarks>
+        static UCL_ScreenStreamConfig ReadConfig()
+            => UCL_ScreenStreamConfig.Load(
+                   Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json"));
 
         static DateTime FromEpochLocal(double iEp)
             => new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(iEp).ToLocalTime();

@@ -1007,7 +1007,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
         static string ReadStr(JsonData iJd, string iKey) => iJd != null && iJd.Contains(iKey) ? iJd[iKey].ToString() : "";
         static int ReadInt(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) ? int.Parse(iJd[iKey].ToString()) : 0; } catch { return 0; } }
-        static bool ReadBool(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) && (bool)iJd[iKey]; } catch { return false; } }
+        static bool ReadBool(JsonData iJd, string iKey) { try { return iJd != null && iJd.GetBool(iKey, false); } catch { return false; } }
 
         static DateTime? ParseIsoLocal(string iIso)
         {

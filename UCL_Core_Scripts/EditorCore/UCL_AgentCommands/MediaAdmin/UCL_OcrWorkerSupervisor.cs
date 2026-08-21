@@ -55,8 +55,8 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             try
             {
                 var aCfg = ReadConfig();
-                bool aRec = aCfg != null && aCfg.Contains("enabled") && (bool)aCfg["enabled"];
-                bool aOcr = aCfg != null && aCfg.Contains("ocr_enabled") && (bool)aCfg["ocr_enabled"];
+                bool aRec = aCfg != null && aCfg.enabled;
+                bool aOcr = aCfg != null && aCfg.ocr_enabled;
                 bool aWant = aRec && aOcr;
                 string aSig = Signature(aCfg);
                 bool aAlive = s_Proc != null && !s_Proc.HasExited;
@@ -129,7 +129,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             catch { return 0; }
         }
 
-        static void Spawn(JsonData iCfg, string iSig, string iWhy)
+        static void Spawn(UCL_ScreenStreamConfig iCfg, string iSig, string iWhy)
         {
             string aScript = UCL_RepoPath.CoreTool("subtitle_ocr.py");
             if (!File.Exists(aScript)) { s_LastNote = $"⚠ 找不到 {aScript}"; Debug.LogWarning($"[UCL_OCR] {s_LastNote}"); return; }
@@ -140,8 +140,12 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             if (aKilled > 0) Debug.LogWarning($"[UCL_OCR] singleton guard：收掉 {aKilled} 顆殘留（防兩顆併寫同一份 cache）");
 
             string aRoot = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream");
-            double aYb = ReadDouble(iCfg, "ocr_y_bottom_pct", 0.0);
-            double aH = ReadDouble(iCfg, "ocr_h_pct", 0.12);
+            // ⚠ `ocr_y_bottom_pct` 由 model 統一解析 —— 舊檔只有 `ocr_y_pct`（距頂端）時，
+            //   model 會換算成距底部。本 supervisor 過去**不做這個換算**（直接落 0.0），
+            //   於是同一份舊 config 在 Page 上顯示的辨識帶與 worker 實際吃的不是同一條。
+            //   改讀 model ＝ 兩端收斂到同一個換算（現行 config 已有此鍵，實際值不變）。
+            double aYb = iCfg.ocr_y_bottom_pct;
+            double aH = iCfg.ocr_h_pct;
             string aExtra = BuildExtraRegionsJson(iCfg);
             var aArgs = new System.Text.StringBuilder();
             aArgs.Append('"').Append(aScript).Append("\" --serve");
@@ -150,9 +154,9 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             aArgs.Append(" --y-bottom-pct ").Append(Inv(aYb));
             aArgs.Append(" --h-pct ").Append(Inv(aH));
             if (!string.IsNullOrEmpty(aExtra)) aArgs.Append(" --extra-regions \"").Append(aExtra.Replace("\"", "\\\"")).Append('"');
-            aArgs.Append(" --min-confidence ").Append(Inv(ReadDouble(iCfg, "ocr_min_conf", 0.5)));
-            aArgs.Append(" --workers ").Append((int)ReadDouble(iCfg, "ocr_workers", 2));
-            bool aAdaptive = !iCfg.Contains("ocr_adaptive") || (bool)iCfg["ocr_adaptive"];
+            aArgs.Append(" --min-confidence ").Append(Inv(iCfg.ocr_min_conf));
+            aArgs.Append(" --workers ").Append(iCfg.ocr_workers);
+            bool aAdaptive = iCfg.ocr_adaptive;   // 缺席＝開啟（model 的預設值就是 true）
             if (!aAdaptive) aArgs.Append(" --no-adaptive");
 
             try
@@ -174,7 +178,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
                 s_SpawnedAt = EditorApplication.timeSinceStartup;
                 s_LastProgressAt = EditorApplication.timeSinceStartup;
                 UCL_ProcessRegistryService.Register(aProc, TAG,
-                    $"字幕 OCR 常駐 worker（subtitle_ocr.py --serve, workers={(int)ReadDouble(iCfg, "ocr_workers", 2)}）",
+                    $"字幕 OCR 常駐 worker（subtitle_ocr.py --serve, workers={iCfg.ocr_workers}）",
                     nameof(UCL_OcrWorkerSupervisor));
                 Debug.Log($"[UCL_OCR] spawned PID={aProc.Id}（{iWhy}）");
                 s_LastNote = $"OCR 已啟動 PID={aProc.Id}（{iWhy}）";
@@ -201,28 +205,30 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         }
 
         // 只放「改了就必須重起」的欄位（pool 的 regions/conf/workers 綁建構子，中途不可熱改）
-        static string Signature(JsonData c)
-            => $"{ReadDouble(c, "ocr_y_bottom_pct", 0):F4}|{ReadDouble(c, "ocr_h_pct", 0):F4}|"
-             + $"{ReadDouble(c, "ocr_min_conf", 0.5):F4}|{(int)ReadDouble(c, "ocr_workers", 2)}|"
-             + $"{(c != null && c.Contains("ocr_adaptive") ? ((bool)c["ocr_adaptive"]).ToString() : "True")}|"
+        static string Signature(UCL_ScreenStreamConfig c)
+            => c == null ? ""
+             : $"{(double)c.ocr_y_bottom_pct:F4}|{(double)c.ocr_h_pct:F4}|"
+             + $"{(double)c.ocr_min_conf:F4}|{c.ocr_workers}|{c.ocr_adaptive}|"
              + BuildExtraRegionsJson(c);
 
         /// <summary>把 config 的 `ocr_extra_regions` 轉成 python 端吃的 `[[y,h],…]`。
         /// ⚠ 只帶 y/h —— 目前 CLI 的 extra-regions 是兩元素格式；x/w 由主帶參數決定。</summary>
-        static string BuildExtraRegionsJson(JsonData c)
+        static string BuildExtraRegionsJson(UCL_ScreenStreamConfig c)
         {
             try
             {
-                if (c == null || !c.Contains("ocr_extra_regions")) return "";
-                var aArr = c["ocr_extra_regions"];
-                if (aArr == null || aArr.Count <= 0) return "";
+                var aList = c?.ocr_extra_regions;
+                if (aList == null || aList.Count <= 0) return "";
                 var aSb = new System.Text.StringBuilder("[");
-                for (int i = 0; i < aArr.Count; i++)
+                for (int i = 0; i < aList.Count; i++)
                 {
-                    var e = aArr[i];
+                    var e = aList[i];
                     if (i > 0) aSb.Append(',');
-                    aSb.Append('[').Append(Inv(ReadDouble(e, "y_bottom_pct", 0)))
-                       .Append(',').Append(Inv(ReadDouble(e, "h_pct", 0.12))).Append(']');
+                    // ⚠ `h_pct <= 0` 視為「沒設定」而退 0.12（沿用本檔原本的預設值）——
+                    //   高度 0 的辨識帶是**一條沒有面積的帶**：worker 照跑、永遠零產出，
+                    //   而那看起來跟「這段沒字幕」一模一樣。
+                    double aH = e.h_pct > 0 ? e.h_pct : 0.12;
+                    aSb.Append('[').Append(Inv(e.y_bottom_pct)).Append(',').Append(Inv(aH)).Append(']');
                 }
                 return aSb.Append(']').ToString();
             }
@@ -231,18 +237,10 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
 
         static string Inv(double v) => v.ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
 
-        static JsonData ReadConfig()
-        {
-            string aPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json");
-            if (!File.Exists(aPath)) return null;
-            return JsonData.ParseJson(File.ReadAllText(aPath, System.Text.Encoding.UTF8));
-        }
-
-        static double ReadDouble(JsonData d, string k, double def)
-        {
-            try { return d != null && d.Contains(k) ? double.Parse(d[k].ToString(), System.Globalization.CultureInfo.InvariantCulture) : def; }
-            catch { return def; }
-        }
+        /// <summary>讀 `_screenstream/_config.json`（走共用 model —— 鍵名與預設值只有一份）。</summary>
+        static UCL_ScreenStreamConfig ReadConfig()
+            => UCL_ScreenStreamConfig.Load(
+                   Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json"));
 
         static DateTime FromEpochLocal(double iEp)
             => new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(iEp).ToLocalTime();

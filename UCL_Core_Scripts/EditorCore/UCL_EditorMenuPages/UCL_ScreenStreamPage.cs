@@ -648,27 +648,15 @@ namespace UCL.Core.EditorLib.Page
             return sb.ToString();
         }
 
-        // 讀 config.ocr_extra_regions — 接受物件 {"y_bottom_pct","h_pct"[,"x_center_pct","w_pct"]}
-        // 或陣列 [y,h] / [y,h,xc,w] (對齊 python normalize_regions)。
-        // 水平兩欄缺席一律落回 0.5 / 1.0 = 滿寬, 所以舊 config 讀進來行為不變。
-        static List<OcrBand> ParseRegions(JsonData iData)
+        // config 的 `ocr_extra_regions` → Page 的 OcrBand。
+        // ⚠ **寬容解析（物件形／舊陣列形 [y,h]）已搬進 UCL_ScreenStreamConfig** ——
+        //   解析屬於格式，不屬於畫面；留在這裡會變成「Page 一份、supervisor 一份」的第二種解讀。
+        static List<OcrBand> ToOcrBands(List<AgentCommands.MediaAdmin.UCL_ScreenStreamOcrRegion> iRegions)
         {
             var list = new List<OcrBand>();
-            if (iData == null || !iData.IsArray) return list;
-            for (int i = 0; i < iData.Count; i++)
-            {
-                JsonData e = iData[i];
-                if (e == null) continue;
-                if (e.IsObject)
-                    list.Add(new OcrBand(e.GetFloat("y_bottom_pct", 0f), e.GetFloat("h_pct", 0f),
-                                         e.GetFloat("x_center_pct", DEFAULT_X_CENTER_PCT),
-                                         e.GetFloat("w_pct", DEFAULT_W_PCT))
-                             { Enable = e.GetBool("enable", true) });   // 缺席=開啟（舊 config 行為不變）
-                else if (e.IsArray && e.Count >= 2)
-                    list.Add(new OcrBand(e[0].GetFloat(0f), e[1].GetFloat(0f),
-                                         e.Count >= 4 ? e[2].GetFloat(DEFAULT_X_CENTER_PCT) : DEFAULT_X_CENTER_PCT,
-                                         e.Count >= 4 ? e[3].GetFloat(DEFAULT_W_PCT) : DEFAULT_W_PCT));
-            }
+            if (iRegions == null) return list;
+            foreach (var r in iRegions)
+                list.Add(new OcrBand(r.y_bottom_pct, r.h_pct, r.x_center_pct, r.w_pct) { Enable = r.enable });
             return list;
         }
 
@@ -688,64 +676,56 @@ namespace UCL.Core.EditorLib.Page
                 long mtime = new FileInfo(path).LastWriteTime.Ticks;
                 if (!m_ConfigLoaded || mtime != m_ConfigMtime)
                 {
-                    string json = File.ReadAllText(path);
-                    JsonData data = JsonData.ParseJson(json);
+                    // 走共用 model —— 鍵名、預設值與兩個舊檔遷移（ocr_y_pct→bottom、
+                    // stt_setting 缺席沿用 stt_enabled）都住在 UCL_ScreenStreamConfig，本頁不再各算一次。
+                    var data = AgentCommands.MediaAdmin.UCL_ScreenStreamConfig.Load(path);
                     if (data != null)
                     {
                         // daemon-managed / 狀態欄位: 無條件採磁碟值 (Page 從不擁有這些欄位)
-                        m_Enabled = data.GetBool("enabled", false);
-                        m_FrameCount = data.GetInt("frame_count", 0);
-                        m_StartedAt = data.GetString("started_at", "");
+                        m_Enabled = data.enabled;
+                        m_FrameCount = data.frame_count;
+                        m_StartedAt = data.started_at;
                         // 可編輯欄位 → 走 3-way merge (skill 寫入會生效, Tim 編輯中不被蓋)
-                        m_SttPrompt = MergeField(m_SttPrompt, ref m_BaseSttPrompt, data.GetString("stt_prompt", ""));
+                        m_SttPrompt = MergeField(m_SttPrompt, ref m_BaseSttPrompt, data.stt_prompt);
                         // daemon 實效開關 (staleness 警示用): 沒開的功能本來就不會有新資料, 不該警告
-                        m_SttEnabledCfg = data.GetBool("stt_enabled", false);
-                        m_OcrEnabledCfg = data.GetBool("ocr_enabled", false);
+                        m_SttEnabledCfg = data.stt_enabled;
+                        m_OcrEnabledCfg = data.ocr_enabled;
                         // 可編輯欄位: 3-way merge — Tim 沒動過的欄位吃磁碟新值, 編輯中的保留
-                        m_Fps = MergeField(m_Fps, ref m_BaseFps, data.GetInt("fps", 1));
-                        m_MaxFrames = MergeField(m_MaxFrames, ref m_BaseMaxFrames, data.GetInt("max_frames", 600));
-                        m_Recording = data.GetBool("recording_enabled", false);
-                        m_RecordingName = data.GetString("recording_name", "");
-                        m_Resolution = MergeField(m_Resolution, ref m_BaseResolution, data.GetString("resolution", "1080p"));
-                        m_AudioViz = data.GetBool("audio_viz_enabled", false);
-                        m_AudioVizMode = data.GetString("audio_viz_mode", "stereo_eq");
-                        m_AudioVizPosition = data.GetString("audio_viz_position", "bottom-stretch");
-                        m_Quality = MergeField(m_Quality, ref m_BaseQuality, data.GetInt("quality", 65));
-                        m_Monitor = MergeField(m_Monitor, ref m_BaseMonitor, data.GetString("monitor", "primary"));
-                        // STT: stt_setting 是 Page 意圖; 舊 config 只有 stt_enabled → fallback 讀它做遷移
-                        m_SttSetting = MergeField(m_SttSetting, ref m_BaseSttSetting,
-                            data.GetBool("stt_setting", data.GetBool("stt_enabled", false)));
-                        m_SttBackend = MergeField(m_SttBackend, ref m_BaseSttBackend,
-                            data.GetString("stt_backend", "openai-whisper"));
-                        m_SttVadFilter = MergeField(m_SttVadFilter, ref m_BaseSttVadFilter,
-                            data.GetBool("stt_vad_filter", false));
-                        m_SttModel = MergeField(m_SttModel, ref m_BaseSttModel, data.GetString("stt_model", "small"));
-                        m_SttRmsGate = (float)data.GetDouble("stt_rms_gate", 0.005);
-                        m_SttNoSpeechMax = (float)data.GetDouble("stt_no_speech_max", 0.6);
-                        m_SttLogprobMin = (float)data.GetDouble("stt_logprob_min", -1.0);
-                        m_SttLang = MergeField(m_SttLang, ref m_BaseSttLang, data.GetString("stt_lang", ""));
-                        m_StreamTitle = MergeField(m_StreamTitle, ref m_BaseStreamTitle, data.GetString("stream_title", ""));
+                        m_Fps = MergeField(m_Fps, ref m_BaseFps, data.fps);
+                        m_MaxFrames = MergeField(m_MaxFrames, ref m_BaseMaxFrames, data.max_frames);
+                        m_Recording = data.recording_enabled;
+                        m_RecordingName = data.recording_name;
+                        m_Resolution = MergeField(m_Resolution, ref m_BaseResolution, data.resolution);
+                        m_AudioViz = data.audio_viz_enabled;
+                        m_AudioVizMode = data.audio_viz_mode;
+                        m_AudioVizPosition = data.audio_viz_position;
+                        m_Quality = MergeField(m_Quality, ref m_BaseQuality, data.quality);
+                        m_Monitor = MergeField(m_Monitor, ref m_BaseMonitor, data.monitor);
+                        // STT: stt_setting 是 Page 意圖; 舊 config 只有 stt_enabled 時的 fallback 由 model 做
+                        m_SttSetting = MergeField(m_SttSetting, ref m_BaseSttSetting, data.stt_setting);
+                        m_SttBackend = MergeField(m_SttBackend, ref m_BaseSttBackend, data.stt_backend);
+                        m_SttVadFilter = MergeField(m_SttVadFilter, ref m_BaseSttVadFilter, data.stt_vad_filter);
+                        m_SttModel = MergeField(m_SttModel, ref m_BaseSttModel, data.stt_model);
+                        m_SttRmsGate = data.stt_rms_gate;
+                        m_SttNoSpeechMax = data.stt_no_speech_max;
+                        m_SttLogprobMin = data.stt_logprob_min;
+                        m_SttLang = MergeField(m_SttLang, ref m_BaseSttLang, data.stt_lang);
+                        m_StreamTitle = MergeField(m_StreamTitle, ref m_BaseStreamTitle, data.stream_title);
                         // OCR 欄位 (Tim 2026-07-28 整合自影音管理頁) — 底部原點語意, 同套 3-way merge
-                        m_OcrEnabled = MergeField(m_OcrEnabled, ref m_BaseOcrEnabled, data.GetBool("ocr_enabled", false));
-                        m_OcrWorkers = MergeField(m_OcrWorkers, ref m_BaseOcrWorkers, data.GetInt("ocr_workers", 2));
-                        float diskOcrH = data.GetFloat("ocr_h_pct", 0.12f);
-                        // 舊 config 遷移: 只有頂部原點 ocr_y_pct → 換算 y_bottom = 1 - y_top - h (帶底離下緣)
-                        float diskOcrYBottom = data.Contains("ocr_y_bottom_pct")
-                            ? data.GetFloat("ocr_y_bottom_pct", 0f)
-                            : (data.Contains("ocr_y_pct")
-                                ? Mathf.Clamp01(1f - data.GetFloat("ocr_y_pct", 0.78f) - diskOcrH)
-                                : 0f);
+                        m_OcrEnabled = MergeField(m_OcrEnabled, ref m_BaseOcrEnabled, data.ocr_enabled);
+                        m_OcrWorkers = MergeField(m_OcrWorkers, ref m_BaseOcrWorkers, data.ocr_workers);
+                        // 舊 config 的 ocr_y_pct（頂部原點）換算成 y_bottom 由 model 負責，這裡直接讀結果
+                        float diskOcrH = data.ocr_h_pct;
+                        float diskOcrYBottom = data.ocr_y_bottom_pct;
                         m_OcrBand.Enable = MergeField(m_OcrBand.Enable, ref m_BaseOcrMainEnable,
-                            data.GetBool("ocr_main_enable", true));   // 缺席=開啟（舊 config 行為不變）
+                            data.ocr_main_enable);                    // 缺席=開啟（model 預設值即 true）
                         m_OcrBand.YBottomPct = MergeField(m_OcrBand.YBottomPct, ref m_BaseOcrYBottomPct, diskOcrYBottom);
                         m_OcrBand.HPct = MergeField(m_OcrBand.HPct, ref m_BaseOcrHPct, diskOcrH);
-                        m_OcrBand.XCenterPct = MergeField(m_OcrBand.XCenterPct, ref m_BaseOcrXCenterPct,
-                            data.GetFloat("ocr_x_center_pct", DEFAULT_X_CENTER_PCT));
-                        m_OcrBand.WPct = MergeField(m_OcrBand.WPct, ref m_BaseOcrWPct,
-                            data.GetFloat("ocr_w_pct", DEFAULT_W_PCT));
-                        m_OcrMinConf = MergeField(m_OcrMinConf, ref m_BaseOcrMinConf, data.GetFloat("ocr_min_conf", 0.5f));
+                        m_OcrBand.XCenterPct = MergeField(m_OcrBand.XCenterPct, ref m_BaseOcrXCenterPct, data.ocr_x_center_pct);
+                        m_OcrBand.WPct = MergeField(m_OcrBand.WPct, ref m_BaseOcrWPct, data.ocr_w_pct);
+                        m_OcrMinConf = MergeField(m_OcrMinConf, ref m_BaseOcrMinConf, data.ocr_min_conf);
                         // 額外區域: list 整體視為單一欄位 — UI 沒動過 (序列化 == baseline) 才吃磁碟值
-                        var diskRegions = ParseRegions(data.Contains("ocr_extra_regions") ? data["ocr_extra_regions"] : null);
+                        var diskRegions = ToOcrBands(data.ocr_extra_regions);
                         string diskRegionsSer = SerializeRegions(diskRegions);
                         if (SerializeRegions(m_OcrExtraRegions) == m_BaseOcrExtraRegions)
                         {
@@ -802,15 +782,10 @@ namespace UCL.Core.EditorLib.Page
         // ⚠ 這三件若在兩個地方各寫一次，遲早給出不同答案 —— 那是本專案今天已經栽過兩次的形狀。
         // 數值影響：同值重複寫入**不重戳時刻**（否則「一直在停」會被讀成「剛剛才停」）。
         // ===========================================================
-        public static void ApplyEnabledInto(JsonData ioCfg, bool iOn)
-        {
-            bool aPrev = ioCfg.Contains("enabled") && (bool)ioCfg["enabled"];
-            if (aPrev != iOn)
-                ioCfg["enabled_changed_at"] = new JsonData(System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
-            ioCfg["enabled"] = new JsonData(iOn);
-            bool aSetting = ioCfg.Contains("stt_setting") && (bool)ioCfg["stt_setting"];
-            ioCfg["stt_enabled"] = new JsonData(iOn && aSetting);
-        }
+        // ⚠ 實作已搬進 <see cref="AgentCommands.MediaAdmin.UCL_ScreenStreamConfig.ApplyEnabled"/> ——
+        //   規則要跟著資料走，不是跟著畫面走（Cmd 端也要用同一份，而它不該依賴一個 Page 的靜態方法）。
+        public static void ApplyEnabledInto(AgentCommands.MediaAdmin.UCL_ScreenStreamConfig ioCfg, bool iOn)
+            => ioCfg?.ApplyEnabled(iOn);
 
         /// <summary>
         /// 錄影開關的**程式入口**（Cmd_StreamWatch step=capture 用）—— 與 GUI 按鈕同一條規則。
@@ -824,14 +799,14 @@ namespace UCL.Core.EditorLib.Page
             {
                 string aPath = Path.Combine(GetRepoRoot(), CONFIG_RELATIVE);
                 if (!File.Exists(aPath)) return $"⚠ 找不到 {aPath} —— 先開一次 ScreenStream 頁初始化";
-                var aCfg = JsonData.ParseJson(File.ReadAllText(aPath, System.Text.Encoding.UTF8));
+                var aCfg = AgentCommands.MediaAdmin.UCL_ScreenStreamConfig.Load(aPath);
                 if (aCfg == null) return "⚠ _config.json 解析失敗";
-                bool aPrev = aCfg.Contains("enabled") && (bool)aCfg["enabled"];
+                bool aPrev = aCfg.enabled;
                 if (aPrev == iOn)
                     return $"已經是「{(iOn ? "錄影中" : "已停止")}」—— 未動作（`enabled` 讀值 {aPrev.ToString().ToLowerInvariant()}）";
 
-                ApplyEnabledInto(aCfg, iOn);
-                File.WriteAllText(aPath, aCfg.ToJsonBeautify(), new System.Text.UTF8Encoding(false));
+                aCfg.ApplyEnabled(iOn);
+                aCfg.Save(aPath);
                 PostStreamAnnounceStatic(iOn, aCfg);
                 AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.RequestSyncNow();
 
@@ -850,7 +825,7 @@ namespace UCL.Core.EditorLib.Page
                     { Debug.LogWarning($"[ScreenStream] 停播收攤 montage 失敗（不擋停播）：{e2.Message}"); }
                 }
 
-                bool aStt = aCfg.Contains("stt_enabled") && (bool)aCfg["stt_enabled"];
+                bool aStt = aCfg.stt_enabled;
                 return $"{(iOn ? "▶ 已開始錄影" : "⏹ 已停止錄影")}（by {iBy}）"
                      + $"｜`enabled`={iOn.ToString().ToLowerInvariant()}｜`stt_enabled`={aStt.ToString().ToLowerInvariant()}"
                      + $"｜已戳 `enabled_changed_at`｜已發酒保公告並要求 daemon 同步"
@@ -875,22 +850,22 @@ namespace UCL.Core.EditorLib.Page
             {
                 string aPath = Path.Combine(GetRepoRoot(), CONFIG_RELATIVE);
                 if (!File.Exists(aPath)) return $"⚠ 找不到 {aPath} —— 先開一次 ScreenStream 頁初始化";
-                var aCfg = JsonData.ParseJson(File.ReadAllText(aPath, System.Text.Encoding.UTF8));
+                var aCfg = AgentCommands.MediaAdmin.UCL_ScreenStreamConfig.Load(aPath);
                 if (aCfg == null) return "⚠ _config.json 解析失敗";
 
-                string aPrev = aCfg.Contains("stream_title") ? aCfg["stream_title"].GetString() : "";
-                aCfg["stream_title"] = new JsonData(iTitle ?? "");
+                string aPrev = aCfg.stream_title;
+                aCfg.stream_title = iTitle ?? "";
                 bool aPromptSet = false;
                 if (iSttPrompt != null)                     // null = 不動；空字串 = 明確清空
                 {
-                    aCfg["stt_prompt"] = new JsonData(iSttPrompt);
+                    aCfg.stt_prompt = iSttPrompt;
                     aPromptSet = true;
                 }
-                File.WriteAllText(aPath, aCfg.ToJsonBeautify(), new System.Text.UTF8Encoding(false));
+                aCfg.Save(aPath);
                 AgentCommands.MediaAdmin.UCL_ScreenStreamDaemon.RequestSyncNow();
 
-                var aBack = JsonData.ParseJson(File.ReadAllText(aPath, System.Text.Encoding.UTF8));
-                string aNow = (aBack != null && aBack.Contains("stream_title")) ? aBack["stream_title"].GetString() : "";
+                var aBack = AgentCommands.MediaAdmin.UCL_ScreenStreamConfig.Load(aPath);
+                string aNow = aBack != null ? aBack.stream_title : "";
                 return $"📺 本場節目已設為「{aNow}」（by {iBy}；前值「{aPrev}」）"
                      + (aPromptSet ? $"｜`stt_prompt` 已更新（{(string.IsNullOrEmpty(iSttPrompt) ? "清空" : $"{iSttPrompt.Length} 字")}）" : "")
                      + "｜已回讀 config 確認";
@@ -900,18 +875,20 @@ namespace UCL.Core.EditorLib.Page
 
         /// <summary>公告的靜態版 —— 標題/解析度/fps/monitor 一律**讀 config**，不讀 GUI 欄位
         /// （頁面沒開時 GUI 欄位是空的，而公告內容不該取決於有沒有人開著那一頁）。</summary>
-        static void PostStreamAnnounceStatic(bool iStart, JsonData iCfg)
+        static void PostStreamAnnounceStatic(bool iStart, AgentCommands.MediaAdmin.UCL_ScreenStreamConfig iCfg)
         {
             try
             {
                 string body, ev;
                 if (iStart)
                 {
-                    string aTitle = iCfg.Contains("stream_title") ? (iCfg["stream_title"].ToString() ?? "") : "";
+                    // ⚠ 這些值一律讀 config（不讀 GUI 欄位）—— 頁面沒開時 GUI 欄位是空的，
+                    //   而公告內容不該取決於有沒有人開著那一頁。iCfg==null 時落 "?"（不冒充讀到值）。
+                    string aTitle = iCfg != null ? (iCfg.stream_title ?? "") : "";
                     string aTitleLine = string.IsNullOrEmpty(aTitle.Trim()) ? "" : $"📺 本場節目: {aTitle}\n";
-                    string aRes = iCfg.Contains("resolution") ? iCfg["resolution"].ToString() : "?";
-                    string aFps = iCfg.Contains("fps") ? iCfg["fps"].ToString() : "?";
-                    string aMon = iCfg.Contains("monitor") ? iCfg["monitor"].ToString() : "?";
+                    string aRes = iCfg != null ? iCfg.resolution : "?";
+                    string aFps = iCfg != null ? iCfg.fps.ToString() : "?";
+                    string aMon = iCfg != null ? iCfg.monitor : "?";
                     body = "🍺📹 *咳咳, 諸位.* ScreenStream 直播開始啦!\n" + aTitleLine
                          + $"每秒一張快照 ({aRes} @ {aFps} fps, monitor={aMon}).\n"
                          + "想看在播什麼就 Read AgentCommands/_screenstream/_latest.jpg 吧.\n"
@@ -953,73 +930,64 @@ namespace UCL.Core.EditorLib.Page
                 string dir = Path.GetDirectoryName(path);
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-                // 讀現有 (preserve frame_count / started_at 等 daemon 寫的欄位)
-                JsonData existing = null;
-                if (File.Exists(path))
-                {
-                    try { existing = JsonData.ParseJson(File.ReadAllText(path)); }
-                    catch { existing = null; }
-                }
-                if (existing == null) existing = new JsonData();
+                // 讀現有 (preserve frame_count / started_at 等 daemon 寫的欄位；
+                //  model 連**未宣告的未知鍵**也一併保留 —— 見 UCL_ScreenStreamConfig 的說明)
+                var existing = AgentCommands.MediaAdmin.UCL_ScreenStreamConfig.Load(path)
+                               ?? new AgentCommands.MediaAdmin.UCL_ScreenStreamConfig();
 
                 // 錄影開關的寫入規則**只有一份**（ApplyEnabledInto）—— GUI 按鈕與 Cmd 都套它。
                 // 🩸 昨天才因為「同一件事兩個寫入端、責任邊界只存在於註解裡」栽過（PersistEnabled vs LoadConfig）。
-                ApplyEnabledInto(existing, m_Enabled);
-                existing["fps"] = new JsonData(m_Fps);
-                existing["max_frames"] = new JsonData(m_MaxFrames);
-                existing["recording_enabled"] = new JsonData(m_Recording);
-                existing["recording_name"] = new JsonData(m_RecordingName ?? "");
-                existing["resolution"] = new JsonData(m_Resolution);
-                existing["audio_viz_enabled"] = new JsonData(m_AudioViz);
-                existing["audio_viz_mode"] = new JsonData(m_AudioVizMode ?? "stereo_eq");
-                existing["audio_viz_position"] = new JsonData(m_AudioVizPosition ?? "bottom-stretch");
-                existing["quality"] = new JsonData(m_Quality);
-                existing["monitor"] = new JsonData(m_Monitor);
+                existing.ApplyEnabled(m_Enabled);
+                existing.fps = m_Fps;
+                existing.max_frames = m_MaxFrames;
+                existing.recording_enabled = m_Recording;
+                existing.recording_name = m_RecordingName ?? "";
+                existing.resolution = m_Resolution;
+                existing.audio_viz_enabled = m_AudioViz;
+                existing.audio_viz_mode = m_AudioVizMode ?? "stereo_eq";
+                existing.audio_viz_position = m_AudioVizPosition ?? "bottom-stretch";
+                existing.quality = m_Quality;
+                existing.monitor = m_Monitor;
                 // STT: stt_setting = Tim 意圖 (持久化); stt_enabled = 實效值 (錄影中且開了才真啟動 worker)
                 // → 開始錄影 (m_Enabled=true) 且 stt_setting=on → daemon 下次 reload 起 whisper; 停錄影自動關.
-                existing["stt_setting"] = new JsonData(m_SttSetting);
-                existing["stt_enabled"] = new JsonData(m_Enabled && m_SttSetting);
-                existing["stt_backend"] = new JsonData(m_SttBackend);
-                existing["stt_vad_filter"] = new JsonData(m_SttVadFilter);
-                existing["stt_model"] = new JsonData(m_SttModel);
-                existing["stt_rms_gate"] = new JsonData(m_SttRmsGate);
-                existing["stt_no_speech_max"] = new JsonData(m_SttNoSpeechMax);
-                existing["stt_logprob_min"] = new JsonData(m_SttLogprobMin);
-                existing["stt_lang"] = new JsonData(m_SttLang);
+                existing.stt_setting = m_SttSetting;
+                existing.stt_enabled = m_Enabled && m_SttSetting;
+                existing.stt_backend = m_SttBackend;
+                existing.stt_vad_filter = m_SttVadFilter;
+                existing.stt_model = m_SttModel;
+                existing.stt_rms_gate = m_SttRmsGate;
+                existing.stt_no_speech_max = m_SttNoSpeechMax;
+                existing.stt_logprob_min = m_SttLogprobMin;
+                existing.stt_lang = m_SttLang;
                 // 人名詞彙偏置 — Page 擁有此欄 (Tim 2026-08-11), 每次 save 一律寫回 UI 當前值。
                 // 清除 = 把欄位清空再存 (見下方 clearSttPrompt), 不再由「開始錄影」代勞。
-                existing["stt_prompt"] = new JsonData(m_SttPrompt ?? "");
-                existing["stream_title"] = new JsonData(m_StreamTitle ?? "");
+                existing.stt_prompt = m_SttPrompt ?? "";
+                existing.stream_title = m_StreamTitle ?? "";
                 // OCR 欄位 (底部原點語意) — daemon 每 loop reload, band 改動走 T-OCR-AutoRestart 自動重起 pool
-                existing["ocr_enabled"] = new JsonData(m_OcrEnabled);
-                existing["ocr_workers"] = new JsonData(m_OcrWorkers);
-                existing["ocr_y_bottom_pct"] = new JsonData(m_OcrBand.YBottomPct);
-                existing["ocr_h_pct"] = new JsonData(m_OcrBand.HPct);
-                existing["ocr_x_center_pct"] = new JsonData(m_OcrBand.XCenterPct);
-                existing["ocr_w_pct"] = new JsonData(m_OcrBand.WPct);
-                existing["ocr_main_enable"] = new JsonData(m_OcrBand.Enable);
-                existing["ocr_min_conf"] = new JsonData(m_OcrMinConf);
-                var regionsArr = new JsonData().ToArray();
+                existing.ocr_enabled = m_OcrEnabled;
+                existing.ocr_workers = m_OcrWorkers;
+                existing.ocr_y_bottom_pct = m_OcrBand.YBottomPct;
+                existing.ocr_h_pct = m_OcrBand.HPct;
+                existing.ocr_x_center_pct = m_OcrBand.XCenterPct;
+                existing.ocr_w_pct = m_OcrBand.WPct;
+                existing.ocr_main_enable = m_OcrBand.Enable;
+                existing.ocr_min_conf = m_OcrMinConf;
+                existing.ocr_extra_regions.Clear();
                 foreach (var r in m_OcrExtraRegions)
-                {
-                    var o = new JsonData();
-                    o["y_bottom_pct"] = new JsonData(r.YBottomPct);
-                    o["h_pct"] = new JsonData(r.HPct);
-                    o["x_center_pct"] = new JsonData(r.XCenterPct);
-                    o["w_pct"] = new JsonData(r.WPct);
-                    o["enable"] = new JsonData(r.Enable);
-                    regionsArr.Add(o);
-                }
-                existing["ocr_extra_regions"] = regionsArr;
+                    existing.ocr_extra_regions.Add(new AgentCommands.MediaAdmin.UCL_ScreenStreamOcrRegion
+                    {
+                        y_bottom_pct = r.YBottomPct, h_pct = r.HPct,
+                        x_center_pct = r.XCenterPct, w_pct = r.WPct, enable = r.Enable,
+                    });
                 // 「清除偏置」鈕走這條 (Tim 2026-08-11 起僅此一處呼叫; 開始錄影已不再自動清空 —— 原因見
                 //  m_SttPrompt 宣告處的沿革註解: 自動清空與可編輯欄位互斥)
                 if (clearSttPrompt)
                 {
-                    existing["stt_prompt"] = new JsonData("");
+                    existing.stt_prompt = "";
                     m_SttPrompt = "";
                 }
 
-                string newJson = existing.ToJsonBeautify();
+                string newJson = existing.SerializeToJson().ToJsonBeautify();
                 string tmp = path + ".tmp";
                 File.WriteAllText(tmp, newJson + "\n");
                 if (File.Exists(path)) File.Delete(path);

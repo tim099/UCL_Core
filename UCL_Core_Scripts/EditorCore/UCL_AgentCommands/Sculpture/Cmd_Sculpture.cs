@@ -185,9 +185,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             }
 
             // 結算：只對實際落地收費（禁覆蓋 skip 不收）
-            int aActual = ReadInt(aResult, iOp == "box" ? "placed_count" : "carved_count");
-            int aSkipped = ReadInt(aResult, "skipped_count");
-            string aEventFile = ReadStr(aResult, "event_file");
+            int aActual = aResult.PlacedOrCarved(iOp);
+            int aSkipped = aResult.skipped_count;
+            string aEventFile = aResult.event_file;
             int aCharge = aActual > 0 ? CeilDiv(aActual, VOXELS_PER_UNIT) : 0;
             var (aUsedFree, aUsedVoucher, aUsedToken) = ConsumePayment(aPersona, aBank, aCharge, aPay, aEventFile,
                 UCL_AgentCmdContexts.FromArgs(iArgs)?.CmdId);
@@ -359,10 +359,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aCli, UCL_RepoPath.RepoRoot,
                 PROC_TAG, nameof(Cmd_Sculpture), ENGINE_TIMEOUT_MS);
             var aResult = ParseEngineJson(aSo);
-            if (aExit != 0 || aResult == null || ReadStr(aResult, "status") != "success")
+            if (aExit != 0 || aResult == null || aResult.status != "success")
             {
-                string aStatus = aResult != null ? ReadStr(aResult, "status") : "";
-                string aReason = aResult != null ? ReadStr(aResult, "reason") : "";
+                string aStatus = aResult != null ? aResult.status : "";
+                string aReason = aResult != null ? aResult.reason : "";
                 aR.AppendLine($"## blocked\n- reason: 引擎未貼（exit={aExit}{(string.IsNullOrEmpty(aStatus) ? "" : $", status={aStatus}")}）—— 未扣任何費用");
                 if (!string.IsNullOrEmpty(aReason)) aR.AppendLine($"- engine: {aReason}");
                 if (aStatus == "mismatch")
@@ -375,12 +375,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             }
 
             // 結算：只對實際落地收費
-            int aActual = ReadInt(aResult, "placed_count");
-            int aPainted = ReadInt(aResult, "painted_source_pixels");
-            int aSkipped = ReadInt(aResult, "skipped_occupied");
-            int aOob = ReadInt(aResult, "out_of_bounds");
-            int aBlack = ReadInt(aResult, "remapped_black");
-            string aEventFile = ReadStr(aResult, "event_file");
+            int aActual = aResult.placed_count;
+            int aPainted = aResult.painted_source_pixels;
+            int aSkipped = aResult.skipped_occupied;
+            int aOob = aResult.out_of_bounds;
+            int aBlack = aResult.remapped_black;
+            string aEventFile = aResult.event_file;
             int aCharge = aActual > 0 ? CeilDiv(aActual, VOXELS_PER_UNIT) : 0;
             var (aUsedFree, aUsedVoucher, aUsedToken) = ConsumePayment(aPersona, aBank, aCharge, aPay, aEventFile,
                 UCL_AgentCmdContexts.FromArgs(iArgs)?.CmdId);
@@ -394,21 +394,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             aR.AppendLine($"- pay_breakdown: freetime={aUsedFree} voucher={aUsedVoucher} token={aUsedToken}（pay={aPay}）");
             aR.AppendLine($"- event: `{aEventFile}`");
             // 展品登錄結果（引擎回報＝事實；沒給 exhibit_id 時這段不存在）
-            var aEx = aResult.Contains("exhibit") ? aResult["exhibit"] : null;
-            if (aEx != null && aEx.IsObject)
+            var aEx = aResult.exhibit;          // 引擎沒回 exhibit ⇒ null（缺席與空物件在此不必分辨）
+            if (aEx != null)
             {
-                string aExMode = ReadStr(aEx, "mode") == "created" ? "新建" : "擴充";
-                aR.AppendLine($"- exhibit: **{aExMode}** `{ReadStr(aEx, "id")}`《{ReadStr(aEx, "title")}》" +
-                              $" by {ReadStr(aEx, "author")} — region `{ReadStr(aEx, "region")}`（依實際落地 voxel 反推，多刀 union 不覆蓋）");
-                string aWarn = ReadStr(aEx, "warning");
-                if (!string.IsNullOrEmpty(aWarn)) aR.AppendLine($"- ⚠ {aWarn}");
-                string aPhoto = ReadStr(aEx, "photo");
-                if (!string.IsNullOrEmpty(aPhoto) && File.Exists(aPhoto))
-                    UCL_AgentCommandRunner.ReportOutputFile(iArgs, aPhoto);
+                string aExMode = aEx.mode == "created" ? "新建" : "擴充";
+                aR.AppendLine($"- exhibit: **{aExMode}** `{aEx.id}`《{aEx.title}》" +
+                              $" by {aEx.author} — region `{aEx.region}`（依實際落地 voxel 反推，多刀 union 不覆蓋）");
+                if (!string.IsNullOrEmpty(aEx.warning)) aR.AppendLine($"- ⚠ {aEx.warning}");
+                if (!string.IsNullOrEmpty(aEx.photo) && File.Exists(aEx.photo))
+                    UCL_AgentCommandRunner.ReportOutputFile(iArgs, aEx.photo);
             }
             aR.AppendLine("## next");
             aR.AppendLine($"- 看成品：run_cmd.py run Sculpture --arg op=view [--arg region=…]（免費）" +
-                          (aEx != null && aEx.IsObject ? $"；或 --arg exhibit={ReadStr(aEx, "id")} 一鍵載入本作品 preset" : ""));
+                          (aEx != null ? $"；或 --arg exhibit={aEx.id} 一鍵載入本作品 preset" : ""));
             aR.AppendLine("- 下次貼圖：先 `canvas.py view --region x,y,w,h` 看預覽 → 把它印的 non_transparent_pixels 當 expect_pixels 帶回來。");
             WritePayload(iArgs, aPath, aR.ToString());
 
@@ -521,7 +519,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             else if (iOp == "slice")
             {
                 // 引擎把實際落檔路徑印在 output_path（--out 可覆寫預設）—— 讀它，不重推路徑
-                string aOutPng = ReadStr(ParseEngineJson(aSo), "output_path");
+                string aOutPng = ParseEngineJson(aSo)?.output_path ?? "";
                 if (string.IsNullOrEmpty(aOutPng))
                     aOutPng = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Sculpture", "_last_slice.png");
                 if (File.Exists(aOutPng)) UCL_AgentCommandRunner.ReportOutputFile(iArgs, aOutPng);
@@ -605,16 +603,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             return File.Exists(aScript) ? aScript : null;
         }
 
-        /// <summary>從引擎 stdout 撈第一個頂層 JSON 物件（引擎成功時印 pretty JSON；失敗印人話 → 回 null）。</summary>
-        static JsonData ParseEngineJson(string iStdout)
-        {
-            if (string.IsNullOrEmpty(iStdout)) return null;
-            int aStart = iStdout.IndexOf('{');
-            int aEnd = iStdout.LastIndexOf('}');
-            if (aStart < 0 || aEnd <= aStart) return null;
-            try { return JsonData.ParseJson(iStdout.Substring(aStart, aEnd - aStart + 1)); }
-            catch (Exception) { return null; }
-        }
+        /// <summary>從引擎 stdout 撈第一個頂層 JSON 物件並解析成 <see cref="UCL_SculptEngineResult"/>
+        /// （引擎成功時印 pretty JSON；失敗印人話 → 回 null，由呼叫端 blocked，**不回一個空結果**）。</summary>
+        static UCL_SculptEngineResult ParseEngineJson(string iStdout)
+            => UCL_SculptEngineResult.ParseStdout(iStdout);
 
         static int ClampedVolume(ref int x1, ref int x2, ref int y1, ref int y2, ref int z1, ref int z2)
         {
@@ -679,10 +671,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
         static bool TryGetInt(Dictionary<string, string> iArgs, string iKey, out int oVal)
             => int.TryParse(iArgs != null && iArgs.TryGetValue(iKey, out var s) ? s : "", out oVal);
 
-        static string ReadStr(JsonData iJd, string iKey) => iJd != null && iJd.Contains(iKey) ? iJd[iKey].ToString() : "";
-        static int ReadInt(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) ? int.Parse(iJd[iKey].ToString()) : 0; } catch { return 0; } }
-        static bool ReadBool(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) && (bool)iJd[iKey]; } catch { return false; } }
-
         // 落點走版面唯一實作（Plan_Letters_Dir_Layout §8）—— 原本自己 Combine 一次是第 N 種算法。
         static string PayloadPath(string iPersona, string iOp)
             => UCL_LettersPath.CmdPayload(iPersona, "sculpture", iOp);
@@ -700,6 +688,91 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                 Debug.LogWarning($"[Sculpture] 回傳落檔失敗 {iPath}: {e.Message}");
             }
         }
+    }
+
+    // ===========================================================
+    // 區塊職責：`sculpt.py` 的 stdout JSON 契約 —— 這支引擎回報什麼，就是這個 class 寫的。
+    // 物理意義：**引擎的回報就是結算依據**（收費看 placed_count/carved_count），
+    //          所以「鍵名打錯」在這裡不是顯示瑕疵，是**帳算錯**：
+    //          逐鍵 `ReadInt(jd,"placed_cont")` 打錯字不會編譯錯、不會執行錯，只會回 0 ⇒
+    //          看起來像「一個 voxel 都沒放下」，而錢已經花了。typed model 讓打錯字變成編譯錯。
+    // 數值影響：純讀取（本 class 不寫檔）—— 因此**不需要** bool 原生化 override
+    //          （那條規則是給「C# 會寫回去、而 python 會讀」的檔用的，本 class 反向）。
+    // ⚠ 欄位名＝JSON 鍵名（`FieldNameUnityVer` 只脫 `m_`）⇒ 刻意不走 `m_PascalCase`。
+    //   改名等於改契約，要同時改 `Tools~/AgentCommands/sculpt.py` 的輸出端。
+    // ===========================================================
+    /// <summary>`sculpt.py` 單次執行的回報（place / carve / stamp2d / view / slice 共用一份）。</summary>
+    public class UCL_SculptEngineResult : UCL.Core.JsonLib.UnityJsonSerializable
+    {
+        /// <summary>`success` / `mismatch` / `out_of_bounds` / …（空＝這個 op 不回報 status）。</summary>
+        public string status = "";
+        /// <summary>失敗原因（人話），成功時為空。</summary>
+        public string reason = "";
+
+        /// <summary>box / stamp2d 實際放下的 voxel 數。</summary>
+        public int placed_count = 0;
+        /// <summary>carve 實際挖掉的 voxel 數。</summary>
+        public int carved_count = 0;
+        /// <summary>因禁覆蓋而跳過的數量（**不收費**）。</summary>
+        public int skipped_count = 0;
+
+        /// <summary>stamp2d：來源圖的非透明像素數（透明＝未繪製，不放 voxel）。</summary>
+        public int painted_source_pixels = 0;
+        /// <summary>stamp2d：位置已有人佔而跳過的數量。</summary>
+        public int skipped_occupied = 0;
+        /// <summary>stamp2d：超出 256³ 而被裁掉的數量。</summary>
+        public int out_of_bounds = 0;
+        /// <summary>stamp2d：純黑 index 0（3D 代表「空」）被重映到最近非零暗色的數量。</summary>
+        public int remapped_black = 0;
+
+        /// <summary>本次落帳的事件檔路徑（付款 ledger 綁它）。</summary>
+        public string event_file = "";
+        /// <summary>view / slice 實際落檔的 PNG 路徑（`--out` 可覆寫預設 ⇒ **讀它，不重推路徑**）。</summary>
+        public string output_path = "";
+
+        /// <summary>展品登錄結果；引擎沒登錄時為 **null**（缺席即 null —— 不要用空物件冒充「沒有」）。</summary>
+        public UCL_SculptExhibitInfo exhibit = null;
+
+        /// <summary>box 看 placed、carve 看 carved —— 兩個 op 的「實際落地數」在同一個位置回答。</summary>
+        public int PlacedOrCarved(string iOp) => iOp == "box" ? placed_count : carved_count;
+
+        /// <summary>
+        /// 從引擎 stdout 撈第一個頂層 JSON 物件並解析。
+        /// <para>撈不到／解析失敗一律回 **null** —— 呼叫端據此 blocked。
+        /// 刻意不回一個 all-zero 的實例：那會讓「引擎沒印 JSON」看起來像「引擎說什麼都沒放下」。</para>
+        /// </summary>
+        public static UCL_SculptEngineResult ParseStdout(string iStdout)
+        {
+            if (string.IsNullOrEmpty(iStdout)) return null;
+            int aStart = iStdout.IndexOf('{');
+            int aEnd = iStdout.LastIndexOf('}');
+            if (aStart < 0 || aEnd <= aStart) return null;
+            try
+            {
+                var aJd = UCL.Core.JsonLib.JsonData.ParseJson(iStdout.Substring(aStart, aEnd - aStart + 1));
+                if (aJd == null) return null;
+                var aResult = new UCL_SculptEngineResult();
+                aResult.DeserializeFromJson(aJd);
+                return aResult;
+            }
+            catch (Exception) { return null; }
+        }
+    }
+
+    /// <summary>展品登錄回報（`UCL_SculptEngineResult.exhibit`）。</summary>
+    public class UCL_SculptExhibitInfo : UCL.Core.JsonLib.UnityJsonSerializable
+    {
+        /// <summary>`created`＝新建；其餘視為擴充。</summary>
+        public string mode = "";
+        public string id = "";
+        public string title = "";
+        public string author = "";
+        /// <summary>依**實際落地 voxel** 反推的範圍（多刀 union，不覆蓋）。</summary>
+        public string region = "";
+        /// <summary>引擎的提醒（空＝沒有）。</summary>
+        public string warning = "";
+        /// <summary>成品照路徑（空或檔案不存在時不端出去）。</summary>
+        public string photo = "";
     }
 }
 #endif

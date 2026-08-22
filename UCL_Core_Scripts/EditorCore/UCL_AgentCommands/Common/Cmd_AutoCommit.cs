@@ -19,6 +19,13 @@
 //      沒有分支指到它，下次 checkout 只剩 reflog 找得到。
 //   ③ letters 模式**預設跳過在線的 persona** —— 她可能正在寫，而「動別人正在寫的東西」
 //      的後果不是衝突報錯，是靜默把工作清掉。要收得 `include_online=1`。
+//   ④ **呼叫前 index 已有 staged 檔的 repo，op=commit 直接擋下**（BUG-30）——
+//      分群只決定「我 stage 哪些檔」，index 裡本來就有的東西會被併進第一個成功的群，
+//      掛上那個群的訊息。🩸 2026-08-21：`git mv` 21 個 persona 檔後直接跑 op=commit，
+//      那批改名落進 `[chat] sync tavern messages (auto) [3 files]` ——
+//      訊息說 3 個檔、實際 24 個，而 `[chat] 獨立 commit` 是 CLAUDE.md 級硬規則。
+//      ⇒ 這一族**不會叫**：commit 成功，而 `[N files]` 是分群自己算的，從不跟實際 diff 對帳。
+//      三層一起上：擋 index（本條）＋ pathspec 提交（CommitGroup）＋ 提交後對帳（ReconcileCommit）。
 // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/Commit_Workflow.md（§2.5 機器生成的檔交給自動 commit／規則住在哪）
 // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/AutoCommit_Config_Workflow.md（mode=submodules 與設定檔）
 #if UNITY_EDITOR
@@ -42,7 +49,8 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         public override string ArgsSchema =>
             "op=scan（預設）— 只掃描分群並回報，不動 index | " +
-            "op=commit — 逐群 commit（純 git commit，無 trailer／無公告／不領薪；不 push、不 bump 父層） | " +
+            "op=commit — 逐群 commit（純 git commit，無 trailer／無公告／不領薪；不 push、不 bump 父層；" +
+            "⛔ 呼叫前 index 已有 staged 檔的 repo 會被擋下 —— 先自己 commit 或 unstage，見 BUG-30） | " +
             "mode=agent（預設，掃 AgentCommands 本層）｜letters（掃 letters/<persona>/ 每個 repo）" +
             "｜submodules（掃 .gitmodules，只收自帶 .ucl_autocommit.json 的 repo，分群由該檔宣告） | " +
             "[groups=<key1,key2>] 只做這幾群（預設＝**每個 repo 各自**所有 DefaultOn 的群；" +
@@ -82,6 +90,9 @@ namespace UCL.Core.EditorLib.AgentCommands
             public string ConfigPath = "";
             /// <summary>設定檔把自己標為停用（`Enabled=false`）。**不是錯誤**，所以不計入 blocked。</summary>
             public bool Disabled;
+            /// <summary>呼叫本 Cmd **之前**就已經 staged 的檔（`git diff --cached --name-only`）。
+            /// 非空 ⇒ op=commit 擋下這個 repo（檔頭硬擋④）。scan 只警告，因為 scan 不動 index。</summary>
+            public List<string> PreStaged = new List<string>();
         }
 
         /// <summary>這個 repo 該用哪一組分群規則：自己宣告的優先，否則用模式預設。</summary>
@@ -149,7 +160,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             int ephemeral = 0, scannedFiles = 0;
             foreach (var t in targets) ephemeral += ScanOne(t, DefsOf(t, defs), ref scannedFiles);
 
-            int committed = 0, skippedRepos = 0, emptyGroups = 0, disabledRepos = 0;
+            int committed = 0, skippedRepos = 0, emptyGroups = 0, disabledRepos = 0, preStagedRepos = 0;
             var shas = new List<string>();
             foreach (var t in targets)
             {
@@ -164,6 +175,25 @@ namespace UCL.Core.EditorLib.AgentCommands
                     skippedRepos++;
                     sb.AppendLine($"  ⛔ {t.Name}：{t.Blocked} —— 跳過");
                     continue;
+                }
+                // 檔頭硬擋④：index 不是空的 ⇒ 這裡不猜「那些是不是也該收」，把選擇還給呼叫端。
+                // ⚠ scan 只警告不擋：scan 純讀，擋了就看不到分群結果 —— 而「先 scan 再決定」
+                //   正是這條擋下之後唯一的出路，把它一起關掉等於只留一條死巷。
+                if (t.PreStaged.Count > 0)
+                {
+                    string aHint = $"呼叫前 index 已有 {t.PreStaged.Count} 個 staged 檔"
+                        + " —— 它們會被併進第一個群並掛上那個群的訊息（BUG-30）；"
+                        + "請先自己 commit 或 unstage，再跑本 Cmd";
+                    preStagedRepos++;
+                    if (op == "commit")
+                    {
+                        skippedRepos++;
+                        sb.AppendLine($"  ⛔ {t.Name}：{aHint} —— 跳過");
+                        foreach (string f in PreviewPaths(t.PreStaged)) sb.AppendLine($"      {f}");
+                        continue;
+                    }
+                    sb.AppendLine($"  ⚠ {t.Name}：{aHint}（op=commit 會擋下這個 repo）");
+                    foreach (string f in PreviewPaths(t.PreStaged)) sb.AppendLine($"      {f}");
                 }
                 bool any = false;
                 var tDefs = DefsOf(t, defs);
@@ -196,6 +226,8 @@ namespace UCL.Core.EditorLib.AgentCommands
             UCL_AgentCommandRunner.ReportOutputValue(args, "ephemeral_skipped", ephemeral.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "commits", committed.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "blocked_repos", skippedRepos.ToString());
+            // 這個數字要**一直印**（0 也印）：只在非零時才出現的欄位，讀者分不出「乾淨」與「沒量」。
+            UCL_AgentCommandRunner.ReportOutputValue(args, "prestaged_repos", preStagedRepos.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "disabled_repos", disabledRepos.ToString());
             if (shas.Count > 0)
                 UCL_AgentCommandRunner.ReportOutputValue(args, "shas", string.Join(" ", shas.ToArray()));
@@ -333,6 +365,15 @@ namespace UCL.Core.EditorLib.AgentCommands
                 return 0;
             }
 
+            // 呼叫前的 index 快照 —— 在 stage 任何東西**之前**問，之後就分不出「誰放的」了。
+            var staged = Git(iRepo.Root, "diff --cached --name-only");
+            if (staged.exit == 0)
+                foreach (string line in staged.stdout.Split('\n'))
+                {
+                    string s = line.Trim();
+                    if (s.Length > 0) iRepo.PreStaged.Add(s);
+                }
+
             var st = Git(iRepo.Root, "status --porcelain=v1 --untracked-files=all");
             if (st.exit != 0)
             {
@@ -376,10 +417,15 @@ namespace UCL.Core.EditorLib.AgentCommands
             return set;
         }
 
-        // 區塊職責：一群一筆 commit —— 具名 stage（分批）→ commit。
+        // 區塊職責：一群一筆 commit —— 具名 stage（分批）→ **pathspec 提交** → 提交後對帳。
         // 物理意義：stage 用 `git add -- <files>` 逐批餵，**絕不 git add -A**
         //          （別人正在寫的檔會被一起帶走，而那不會有錯誤訊息）。
         //          訊息走 `-F <檔>` —— 長文一律走檔案，不賭引號（判準不是「含不含特殊字元」）。
+        //          提交走 `--pathspec-from-file`（BUG-30 修法之二）：只提交這一群的路徑，
+        //          index 裡的其他東西**在物理上不可能**被順手帶走 —— 擋 index 那條是「請你先處理」，
+        //          這條是「就算擋漏了也帶不走」。⚠ 路徑清單走檔案而非命令列：一群可能上千檔，
+        //          而 32k 命令列上限砍下來的形狀是「這筆少了幾個檔」，不是報錯。
+        //          （`--pathspec-from-file` 需 git ≥ 2.25 —— 2020 年的版本；本機 2.39.2。）
         string CommitGroup(RepoTarget iRepo, List<string> iFiles, string iMessage, StringBuilder oLog)
         {
             for (int i = 0; i < iFiles.Count; i += CHUNK)
@@ -395,10 +441,13 @@ namespace UCL.Core.EditorLib.AgentCommands
                 }
             }
             string tmp = Path.Combine(Path.GetTempPath(), $"ucl_autocommit_{Guid.NewGuid():N}.txt");
+            string spec = Path.Combine(Path.GetTempPath(), $"ucl_autocommit_spec_{Guid.NewGuid():N}.txt");
             try
             {
                 File.WriteAllText(tmp, iMessage + "\n", new UTF8Encoding(false));
-                var c = Git(iRepo.Root, $"commit -F \"{tmp}\"");
+                // 一行一路徑，**不加引號、不留尾行**：尾行的空字串會被 git 當成空 pathspec 而整筆拒絕。
+                File.WriteAllText(spec, string.Join("\n", iFiles.ToArray()), new UTF8Encoding(false));
+                var c = Git(iRepo.Root, $"commit -F \"{tmp}\" --pathspec-from-file=\"{spec}\"");
                 if (c.exit != 0)
                 {
                     oLog.AppendLine($"  ✗ {iRepo.Name}：git commit 失敗 —— "
@@ -409,16 +458,67 @@ namespace UCL.Core.EditorLib.AgentCommands
             finally
             {
                 try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+                try { if (File.Exists(spec)) File.Delete(spec); } catch { }
             }
             // 印 ✓ 不算數，讀回來才算：SHA 從 git 自己撈，不從 commit 的 stdout 猜。
             var head = Git(iRepo.Root, "rev-parse --short HEAD");
             string sha = head.exit == 0 ? head.stdout.Trim() : "?";
             oLog.AppendLine($"  ✓ {iRepo.Name} [{sha}] {iMessage}");
+            ReconcileCommit(iRepo, iFiles, sha, oLog);
             return sha;
         }
 
+        // 區塊職責：提交後對帳 —— 這一筆**實際**含哪些路徑，跟我挑的那份清單並排。
+        // 物理意義：BUG-30 修法之三。前兩條是預防，這條是**讀數**：
+        //          「我挑了哪些檔」與「這一筆實際提交了哪些檔」是兩件事，而工具原本只認得前者
+        //          （訊息尾巴那個 `[N files]` 是分群自己算的，從不回頭問 git）。
+        // ⚠ 只報「多出來的」不報「少了的」：少了通常是合法的（挑到的檔內容其實沒變 ⇒ 不進 diff），
+        //   而誤報的代價跟漏報一樣真 —— 它會讓下一個人開始不信這條對帳。
+        static void ReconcileCommit(RepoTarget iRepo, List<string> iFiles, string iSha, StringBuilder oLog)
+        {
+            var r = Git(iRepo.Root, "show --pretty=format: --name-only HEAD");
+            if (r.exit != 0)
+            {
+                // 對帳跑不起來本身要說出來：靜默的「沒有多出來的檔」跟「沒量過」同形。
+                oLog.AppendLine($"  ⚠ {iRepo.Name} [{iSha}] 提交後對帳失敗（git show：{r.stderr.Trim()}）—— 這筆沒有對帳讀數");
+                return;
+            }
+            var picked = new HashSet<string>(iFiles);
+            var extra = new List<string>();
+            foreach (string line in r.stdout.Split('\n'))
+            {
+                string s = line.Trim();
+                if (s.Length == 0 || picked.Contains(s)) continue;
+                extra.Add(s);
+            }
+            if (extra.Count == 0) return;
+            oLog.AppendLine($"  ✗ {iRepo.Name} [{iSha}] **對帳不符**：這筆多帶了 {extra.Count} 個不在分群清單裡的檔");
+            foreach (string f in PreviewPaths(extra)) oLog.AppendLine($"      {f}");
+            Debug.LogError($"[AutoCommit] {iRepo.Name} [{iSha}] 提交內容與分群清單不符："
+                + $"多出 {extra.Count} 檔（{string.Join(", ", PreviewPaths(extra).ToArray())}）"
+                + " —— 分群訊息與實際內容已經脫鉤，這筆要人看（BUG-30 同族）");
+        }
+
+        /// <summary>列路徑用的節流：最多 20 筆，其餘只報數。洗版會讓人不讀，而不讀＝這些字等於沒寫。</summary>
+        static List<string> PreviewPaths(List<string> iPaths)
+        {
+            const int LIMIT = 20;
+            var list = new List<string>();
+            for (int i = 0; i < iPaths.Count && i < LIMIT; i++) list.Add(iPaths[i]);
+            if (iPaths.Count > LIMIT) list.Add($"…另有 {iPaths.Count - LIMIT} 筆未列");
+            return list;
+        }
+
+        // 區塊職責：本 Cmd 的所有 git 呼叫都經這裡 —— 順手把 `core.quotepath=false` 釘在每一次呼叫上。
+        // 物理意義：預設 quotepath=true 會把非 ASCII 路徑印成 C 風格的八進位轉義（一個中文字＝三段反斜線碼），
+        //          而本檔剝的只是外層引號、不解轉義 ⇒ 兩處會安靜地壞：
+        //          ① `git add -- <那串轉義>` 找不到檔（報成「git add 失敗」，看起來像 git 的錯）
+        //          ② 提交後對帳把 `git show` 的轉義路徑跟自己的原始路徑比 ⇒ **每個中文檔名都誤報成「多帶」**
+        //             —— 而誤報會讓下一個人開始不信這條對帳，代價跟漏報一樣真。
+        //          🩸 實測（basecamp wake#68，scratch repo）：`git show --name-only` 把「c 空白 檔.txt」印成轉義串，
+        //          帶 `-c core.quotepath=false` 才印回原字。含空白的路徑仍會被加外層引號（那層本檔本來就剝）。
         static (int exit, string stdout, string stderr) Git(string iWorkDir, string iArgs)
-            => UCL_ProcessCli.Run("git", iArgs, iWorkDir, PROC_TAG, nameof(Cmd_AutoCommit),
+            => UCL_ProcessCli.Run("git", "-c core.quotepath=false " + iArgs, iWorkDir, PROC_TAG, nameof(Cmd_AutoCommit),
                 GIT_TIMEOUT_MS,
                 // git 在非互動環境不該彈認證視窗 —— 彈了就是卡到 timeout 才有人發現
                 new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" });

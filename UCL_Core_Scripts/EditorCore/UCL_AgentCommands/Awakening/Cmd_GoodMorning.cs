@@ -194,8 +194,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     aSb.AppendLine($"- message: `{aMsgPath}`（exists={File.Exists(aMsgPath)}）");
                     aSb.AppendLine($"- brief 前置: `{aCheck.briefPath}`（{aCheck.briefLines} 行，mtime 晚於 locked_at）");
                     aSb.AppendLine("## next");
+                    // 🩸 指路只寫「現在還活著的入口」：`tavern_catchup.py` 2026-08-20 已退場（邏輯搬進
+                    //    UCL_TavernCatchupService，游標只留一個寫入端）。它自己會印指路訊息所以不會壞事，
+                    //    但**回傳檔的 next 是可直接照跑的指令** —— 這個預期是 R16/R17 整套流程的地基，
+                    //    破一次，下一個人就得開始懷疑每一條 next（BUG-31，basecamp wake#68 實撞）。
                     aSb.AppendLine($"1. **required** — 酒館 catchup（知道在線同事＋追上訊息；照 ucl-ding 流程但**不強制回**）：");
-                    aSb.AppendLine($"   python AgentCommands/Tools/tavern_catchup.py --persona {aPersona} --quiet-system");
+                    aSb.AppendLine($"   run_cmd.py --persona {aPersona} run Tavern --arg op=catchup");
+                    aSb.AppendLine($"   （回傳檔 `letters/{aPersona}/cmd/ding_brief.md`；`--persona` 同時決定 queue 路由並戳進 args，不必再寫 --arg persona=）");
                     aSb.AppendLine("2. 之後照 brief §9 的今日動作清單走（見林 OVERDUE / 見森待折是 morning 的一部分，不是選配）。");
                     WritePayload(args, aPath, aSb.ToString());
                     Debug.Log($"[GoodMorning] step=intro 完成 seq={aSeq} → {aPath}");

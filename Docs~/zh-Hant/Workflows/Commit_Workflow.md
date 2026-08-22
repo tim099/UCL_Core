@@ -1,7 +1,7 @@
 ---
 title: Commit Workflow — 提交規範（UCL_Core 三層 + ChatTavern 訊息獨立）
 description: 跨專案共享的提交規則 — **預設單層**（只提交改動所在那層，逐層 bump 要使用者明說）、submodule 逐層 bump 流程、submodule 內 commit 前先切追蹤分支（避免 detached HEAD 游離）、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、Commit All 全包模式、commit message 格式與 prefix 約定。
-last_updated: 2026-08-21
+last_updated: 2026-08-22
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern 主文檔 | 酒館本身的設計與機制
@@ -85,16 +85,34 @@ run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=letters
 2026-08-17 那次「同事 staged 的 gitlink 被掃進別人的 commit」，
 `--name-only` 清單其實印出來了，**印了但沒讀**；縮短要讀的清單比要求自己更專心有效。
 
-### 三個硬擋（都是「不會當場叫」的錯）
+### 四個硬擋（都是「不會當場叫」的錯）
 
 | 擋什麼 | 為什麼 | 要繞得顯式 |
 |---|---|---|
 | 未分類 `__other` | 規則沒認出來的檔，可能是別人正在寫的產出 | `--arg groups=__other` |
 | 巢狀 submodule pointer `__subptr` | bump 了別人會 pull 不到那個 hash | `--arg groups=__subptr` |
 | letters 模式的**在線** persona | 她可能正在寫；動別人正在寫的東西不會報錯，是靜默清掉 | `--arg include_online=1`（**建議搭 `--arg only_persona=<me>` 只收自己**） |
+| 呼叫前 index 已有 staged 檔的 repo（`op=commit`） | 分群只決定「工具 stage 哪些檔」，index 裡本來就有的會被併進**第一個群**、掛上那個群的訊息 | ⛔ **沒有繞法**：自己先 commit 或 unstage 再跑（BUG-30） |
 
 另有一條非參數的硬擋：**detached HEAD 的 repo 直接跳過** —— 那裡的 commit 落在游離節點，
 沒有分支指到它，下次 checkout 只剩 reflog 找得到。
+
+🩸 **BUG-30（2026-08-21 現場，2026-08-22 修）**：`git mv` 改名 21 個檔（進了 index）後直接跑
+`op=commit`，那批改名落進 `[chat] sync tavern messages & inbox (auto) [3 files]` ——
+**訊息說 3 個檔、實際 24 個**，而 `[chat]` 獨立 commit 是 `CLAUDE.md` 等級的硬規則。
+它不會叫：commit 成功，而訊息尾巴那個 `[N files]` 是分群自己算的，從不跟實際 diff 對帳。
+⇒ 修法三層一起上，**預防兩層＋讀數一層**：
+
+| 層 | 做什麼 | 擋掉什麼 |
+|---|---|---|
+| 擋 index | `op=commit` 前先問 `git diff --cached --name-only`，非空就跳過該 repo 並列出那些檔（`op=scan` 只警告，因為「先 scan 再決定」是被擋之後唯一的出路） | 呼叫端「先 stage 再跑工具」這個天然順序 |
+| pathspec 提交 | `git commit --pathspec-from-file=<檔>` —— 只提交這一群的路徑（清單走檔案，不走命令列：32k 上限砍下來的形狀是「這筆少了幾個檔」，不是報錯） | 就算擋漏了也**帶不走** |
+| 提交後對帳 | `git show --pretty=format: --name-only HEAD` 跟分群清單並排，多出來的檔 → `LogError` | 「我挑了哪些檔」與「這一筆實際提交了哪些檔」脫鉤而沒人知道 |
+
+⚠ 對帳**只報多出來的，不報少了的**：少了通常合法（挑到的檔內容其實沒變 ⇒ 不進 diff），
+而誤報會讓下一個人開始不信這條對帳。
+⚠ 所有 git 呼叫釘 `-c core.quotepath=false`：預設會把非 ASCII 路徑印成八進位轉義，
+那會讓 `git add` 找不到檔、也讓對帳把**每個中文檔名都誤報成「多帶」**。
 
 ⚠ 篩選參數叫 **`only_persona`** 不是 `persona`：`run_cmd.py --persona <me>` 會把 persona
 戳進 args（那是「這筆是誰派的」宣告）⇒ 叫 `persona` 就會被那個宣告當成篩選條件。

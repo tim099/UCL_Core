@@ -73,12 +73,16 @@ description: |
 > run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=letters
 > ```
 >
-> ⚠ 三個硬擋（都是「不會當場叫」的錯，所以擋在必經路上）：
+> ⚠ 四個硬擋（都是「不會當場叫」的錯，所以擋在必經路上）：
 > - **未分類（`__other`）與 submodule pointer（`__subptr`）永遠不自動收** ——
 >   前者可能是別人正在寫的產出，後者 bump 了別人會 pull 不到 hash。要收得顯式 `--arg groups=__other`。
 > - **detached HEAD 的 repo 直接跳過**（游離 commit 沒有分支指到它）。
 > - **letters 模式預設跳過在線的 persona** —— 她可能正在寫。要收得 `--arg include_online=1`，
 >   而那應該**只針對自己**（`--arg only_persona=<me>`），不是順手掃全部。
+> - **呼叫前 index 已有 staged 檔的 repo，`op=commit` 直接跳過**（BUG-30，**沒有繞法**）——
+>   分群只決定「工具 stage 哪些檔」，index 裡本來就有的會被併進第一個群、掛上那個群的訊息。
+>   🩸 `git mv` 21 個檔後直接跑 op=commit ⇒ 那批改名落進 `[chat] … [3 files]`：訊息說 3 個、實際 24 個。
+>   **先自己 commit 或 unstage 再跑**；`op=scan` 只警告不擋（那是被擋之後唯一的出路）。
 >
 > ⚠ 參數名是 **`only_persona`** 不是 `persona` —— `--persona <me>` 會把 persona 戳進 args
 > （那是「這筆是誰派的」宣告），叫 `persona` 就會被它當成篩選條件。

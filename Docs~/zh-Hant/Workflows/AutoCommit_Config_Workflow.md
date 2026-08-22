@@ -1,7 +1,7 @@
 ---
 title: 自動提交設定 — 把 repo 加入管理與設定分群規則
 description: 把一個 submodule（或任何 repo）加入 AutoCommit 管理的步驟、`.ucl_autocommit.json` 的欄位與判準、設定檔掀不動的地板、以及「怎麼確認真的照設定分群」的驗收法。
-last_updated: 2026-08-21
+last_updated: 2026-08-22
 target_audience: [AI_Agent, Tools_User]
 status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔宣告)
 ---
@@ -129,6 +129,8 @@ run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=submodules
 | `__other`（未分類）不自動收 | 它不是 `GroupDef`，不在任何預設集合裡；要收得顯式 `--arg groups=__other` |
 | `__subptr`（巢狀 submodule pointer）不自動收 | 同上 —— bump 了別人會 pull 不到 hash |
 | detached HEAD 的 repo 跳過 | `ScanOne` 擋下並說原因（游離 commit 沒有分支指到它） |
+| 呼叫前就 staged 的檔不會被併進任何一群 | 兩層：`op=commit` 遇到非空 index **直接跳過該 repo**（BUG-30）＋ 提交走 `--pathspec-from-file`，只提交這一群的路徑 ⇒ 擋漏了也帶不走 |
+| 「這筆實際提交了什麼」有讀數 | 提交後 `git show --name-only` 跟分群清單並排，多出來的檔 `LogError`（只報多、不報少 —— 誤報會讓人開始不信對帳） |
 | 錯配一眼可驗 | 設定檔只吃**前綴清單、不吃 regex** —— 比程式碼更受限 |
 | 壞設定不會被寫進去 | `Save()` 先跑 `Validate()`，不合法丟例外不寫檔；後台的存檔按鈕也會停用並逐條列出原因 |
 | 建立設定檔不會順便開始自動 commit | `CreateDefault()` 顯式寫 `Enabled=false` ——同意必須是另一個動作，不是選取的副作用 |

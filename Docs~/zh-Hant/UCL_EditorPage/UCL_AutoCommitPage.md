@@ -1,6 +1,6 @@
 ---
 title: UCL_AutoCommitPage — 自動 Commit 頁
-last_updated: 2026-08-21
+last_updated: 2026-08-22
 ---
 
 # UCL_AutoCommitPage
@@ -110,7 +110,7 @@ last_updated: 2026-08-21
 她自己寫的信、碎片、見叢、素描本要掛她的名字、走她自己的收尾 commit ——
 被別人的自動化順手帶走等於**替她簽名**。
 
-### 兩道守衛
+### 三道守衛
 
 - **在線的 persona 預設不勾**（判準是 `_session/_persona_*.json` lock 未過期，
   不是 registry 的 `status` 欄 —— 登出沒走完時 status 會停在 online）。
@@ -118,6 +118,10 @@ last_updated: 2026-08-21
   勾選**不持久化、每次掃描重算**（上一次的「我認了」不延續到這一次）。
 - **detached HEAD 硬擋**（勾不動）—— 那裡 commit 出來沒有分支指到它，
   下次 checkout 只剩 reflog 找得到。與 ucl-commit skill 同一條規矩。
+- **呼叫前 index 已有 staged 檔 → 該 repo 硬擋**（BUG-30，2026-08-22）。分群只決定
+  「工具 stage 哪些檔」；index 裡本來就有的會被併進第一個群、掛上那個群的訊息，
+  而 commit 會成功 ⇒ 沒有人會知道。**先自己 commit 或 unstage 再來**。
+  另外提交本身走 `--pathspec-from-file`（只提交該群路徑）＋提交後與分群清單對帳。
 
 ### 父層 pointer 不會自己動
 

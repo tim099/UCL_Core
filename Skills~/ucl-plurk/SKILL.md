@@ -30,6 +30,12 @@ $R --arg op=post    --arg slip_file=<交付單路徑> --arg confirm=1
 $R --arg op=lint    --arg slip_file=<交付單路徑>  # 形式檢查
 $R --arg op=preview --arg slip_file=<交付單路徑>  # 預覽 payload 不發送
 $R --arg op=resolve                              # 檢查帳號與憑證狀態
+
+# 社交面（見 §5）
+$R --arg op=timeline --arg limit=20              # 好友＋自己的噗（唯讀）
+$R --arg op=responses --arg plurk_id=<id>        # 某則底下的回應（唯讀）
+$R --arg op=friends                              # 好友清單（唯讀）
+$R --arg op=like --arg plurk_id=<id> --arg confirm=1   # 按讚（對外動作）
 ```
 
 - ⛔ **交付單一律走 `slip_file=<路徑>` 傳入**（不要塞進 inline arg，避免引號與特殊符號被 shell 吃掉）。
@@ -64,6 +70,65 @@ persona：apex-one
 ### ③ 附圖處理
 - `圖片路徑` 填**絕對路徑**，`op=post` 會自動兩段式完成上傳與 URL 併入。
 - 若圖片包含同事共創或特意致敬內容，發布後順道在酒館打聲招呼交流。
+
+## 5. 社交面：看別人在說什麼、跟人互動（2026-08-23 新增）
+
+在這之前這支 Cmd 只有「送出」與「回讀自己那則」—— 它能發文，但**不能參與**。
+而 Plurk 是雙向的：別人回了什麼、誰在講話，沒有入口就等於不存在。
+
+```bash
+# 唯讀（不會動到任何東西）
+$R --arg op=timeline  [--arg limit=20] [--arg filter=only_user|only_responded|only_private|only_favorite]
+$R --arg op=responses --arg plurk_id=<噗 id> [--arg from_response=0]
+$R --arg op=friends   [--arg user_id=<誰的>] [--arg limit=30] [--arg offset=0]
+
+# 互動（**對別人的東西動手** ⇒ 跟 op=post 同一條規矩，要 confirm=1）
+$R --arg op=like   --arg plurk_id=<噗 id> --arg confirm=1
+$R --arg op=unlike --arg plurk_id=<噗 id> --arg confirm=1
+```
+
+### ① 回應別人：**走既有的發文路，不另開短回應路**
+
+```bash
+$R --arg op=post --arg slip_file=<交付單> --arg reply_to=<對方的 plurk id> --arg confirm=1
+```
+
+⚠ 這是刻意的：**兩條發文路就是兩套規則**，而字數 lint 與末行署名只會套用在其中一條。
+「回應比較短所以不用檢查」正是那種一開始成立、三個月後沒人記得的例外。
+
+### ② `like` 的三道守衛（都不是裝飾）
+
+| 守衛 | 擋什麼 |
+|---|---|
+| 送出前先 `getPlurk` **把那則印出來**（owner_id ＋ 內容首行） | **id 打錯**。數字錯一位不會有任何一層喊，而它會按到一個陌生人的噗 |
+| `confirm=1` 才真的送 | 「我只是想看看」與「我要按下去」不得同形 |
+| 送出後**回讀** `favorite` / `favorite_count` | 200 只證明對方收到請求 |
+
+⚠ `favorite_count` 是**總數**不是「我按了沒」—— 同時有別人按或收回時它不是乾淨的證據。
+真正的直接證據是 `favorite` 欄位；**它不存在時回傳檔會明說「這一格沒有讀數」**，
+而不是印一個看起來成功的 ✓。
+
+### ③ 本地快取：**預設不讀它**
+
+唯讀的三個 op 每次都會把回應落一份到 `AgentCommands/Plurk/cache/`（⛔ **不入 git**）。
+
+```bash
+$R --arg op=timeline --arg cache=1      # 改讀快取而不是現抓
+```
+
+| 判準 | 為什麼 |
+|---|---|
+| **預設一律打 API**，`cache=1` 才讀快取 | 反過來的話「現況」與「三小時前的快照」在回傳檔上長得一樣 |
+| 讀快取時回傳檔印 **`fetched_at` ＋ 年齡 ＋「這不是現況」** | 快照要看得出自己是快照 |
+| **不做自動過期判斷** | 「新鮮」會變成一個推論；印出年齡，讓看的人自己判 |
+| 要讀快取但檔案不存在 ⇒ **印一行說它降級了**再打 API | 靜默降級會讓「我讀的是快取」變成一個沒人知道的事 |
+| 快取**不入 git** | ① 它是某一刻的快照，入版控讓「現況」與「三天前」在 diff 裡同形<br>② 裡面是**別人的**發文 —— 他們沒有同意過被釘進我們的 git 歷史 |
+
+### ④ 讀取層共通的兩格
+
+- **「取滿」與「取完」同形** ⇒ `friends` 拿到剛好 `limit` 筆時會印一行提醒還有下一頁。
+- 回應格式跟預期不一樣時，回傳檔說的是「**格式跟我預期的不一樣**」而不是「沒有資料」——
+  那兩件事的處置完全不同。
 
 ## 4. 延伸參考
 - 完整維護與端點規範：`ucl_core:Docs~/{lang}/Workflows/Plurk_Maintenance.md`

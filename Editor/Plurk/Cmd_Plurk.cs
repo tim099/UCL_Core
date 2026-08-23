@@ -36,10 +36,17 @@ namespace UCL.Core.EditorLib.Plurk
         public override string CommandType => "Plurk";
 
         public override string ShortDescription =>
-            "Plurk 共用帳號流程：resolve 查帳號 / lint 驗交付單 / preview 組 payload 不送 / post 發文（需 confirm=1）。";
+            "Plurk 共用帳號流程：resolve 查帳號 / lint 驗交付單 / preview 組 payload 不送 / post 發文（需 confirm=1）"
+            + " / timeline·responses·friends 看別人在說什麼（唯讀）/ like·unlike 互動（需 confirm=1）。";
 
         public override string ArgsSchema =>
-            "op=resolve|lint|preview|upload|post|get|whoami（預設 resolve） | "
+            "op=resolve|lint|preview|upload|post|get|whoami|timeline|responses|friends|like|unlike（預設 resolve） | "
+            + "limit=<筆數>（timeline 預設 20／friends 預設 30；夾在 1-100） | "
+            + "preview=<摘要字數>（timeline 預設 90，夾在 20-400） | "
+            + "filter=only_user|only_responded|only_private|only_favorite（timeline 選填） | "
+            + "user_id=<誰的好友>（friends 選填；不給就問 /APP/Users/me） | "
+            + "offset=<第幾筆起>（friends 選填） | from_response=<第幾則回應起>（responses 選填） | "
+            + "cache=1（**唯讀 op 才有意義**：改讀本地快取而不是現抓；回傳檔會標來源與年齡） | "
             + "plurk_id=<已發出的噗 id>（op=get 用 —— 唯讀回讀驗「它真的在那裡」） | "
             + "image=<圖片絕對路徑>（op=upload 用；⛔ 不吃相對路徑） | " +
             "persona=<誰要發，lint/preview/post 建議給 —— 決定用共用還是個人帳號> | " +
@@ -96,8 +103,16 @@ namespace UCL.Core.EditorLib.Plurk
                     case "upload": await OpUpload(args, aRes, aR, token); break;
                     case "get": await OpGet(args, aRes, aR, token); break;
                     case "post": await OpPost(args, aRes, aR, token); break;
+                    // ── 社交面（讀）──
+                    case "timeline": await OpTimeline(args, aRes, aR, token); break;
+                    case "responses": await OpResponses(args, aRes, aR, token); break;
+                    case "friends": await OpFriends(args, aRes, aR, token); break;
+                    // ── 社交面（寫，對別人動手 ⇒ 要 confirm=1）──
+                    case "like": await OpFavorite(args, aRes, aR, token, true); break;
+                    case "unlike": await OpFavorite(args, aRes, aR, token, false); break;
                     default:
-                        throw new Exception($"[Plurk] 認不得的 op='{aOp}'（resolve|whoami|lint|preview|upload|post|get）");
+                        throw new Exception($"[Plurk] 認不得的 op='{aOp}'"
+                            + "（resolve|whoami|lint|preview|upload|post|get|timeline|responses|friends|like|unlike）");
                 }
             }
             finally
@@ -394,11 +409,431 @@ namespace UCL.Core.EditorLib.Plurk
                 + "　⚠ 存回來的格式與送出的**不同形**（送 `[0]`、存 `|0|`）⇒ 別拿送出的值比對");
             ioR.AppendLine($"- qualifier: {PickJsonValue(aPlurk, "qualifier") ?? "?"}"
                 + $"　posted: {PickJsonValue(aPlurk, "posted") ?? "?"}");
-            ioR.AppendLine($"- content_raw 首行: {Trunc(UnescapeUnicode(aRaw).Split('\n')[0], 60)}");
+            // 🩸 2026-08-23：本 op 原本只印首行 —— 那對「驗它在不在」夠用，
+            //   但要**回應別人**時，只讀首行等於對著一句話的開頭講話。
+            //   ⇒ 全文印出來（截 800 字，而且截了會說）。
+            string aFull = UnescapeJson(aRaw);
+            ioR.AppendLine($"- content_raw（{aFull.Length} 字元）:");
+            ioR.AppendLine();
+            ioR.AppendLine("```");
+            ioR.AppendLine(aFull.Length <= 800 ? aFull
+                : aFull.Substring(0, 800) + "\n…（截斷 —— 全文比這長，別拿這段當全部）");
+            ioR.AppendLine("```");
             // 附圖驗的是**渲染**不是字串：content_raw 有 URL 只證明我送進去了
             bool aHasImg = aHtml.Contains("<img");
             ioR.AppendLine($"- 渲染成 `<img>`: **{(aHasImg ? "是" : "否")}**"
                 + "（附圖那則要看這格 —— `content_raw` 裡有 URL 只證明我送進去了，Plurk 認不認是另一回事）");
+        }
+
+
+        // ===========================================================
+        // 區塊職責：**唯讀的社交面** —— 看好友在說什麼、看一則噗底下的回應、看好友清單。
+        // 物理意義：在這之前這支 Cmd 只有「送出」與「回讀自己那則」——
+        //          也就是說它能發文，但**不能參與**。而 Plurk 是雙向的：
+        //          別人回了什麼、誰在講話，沒有入口就等於不存在。
+        // 數值影響：純唯讀，不改任何 Plurk 資料。可選寫一份本地快取（見 CacheDir，⛔ 不入 git）。
+        // ⚠ 預設**一律打 API**，`--arg cache=1` 才吃快取 —— 反過來的話，
+        //   「現況」與「三小時前的快照」在回傳檔上會長得一樣，而那正是這個 repo 最貴的錯誤形狀。
+        // ===========================================================
+        async UniTask OpTimeline(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            var aCred = RequireCredentials(iRes);
+            int aLimit = ParseIntArg(iArgs, "limit", 20, 1, 100);
+            int aPreview = ParseIntArg(iArgs, "preview", 90, 20, 400);
+            string aFilter = GetArg(iArgs, "filter", "").Trim();
+
+            var aParams = new Dictionary<string, string>
+                { { "limit", aLimit.ToString(CultureInfo.InvariantCulture) } };
+            // filter 是 Plurk 端的既有語彙（only_user / only_responded / only_private / only_favorite）；
+            // 認不得的值我不猜、原樣送出 —— 讓對方回錯，而不是我這裡靜默丟掉它
+            if (aFilter.Length > 0) aParams["filter"] = aFilter;
+
+            string aBody = await FetchAsync(iArgs, "timeline_" + (aFilter.Length == 0 ? "all" : aFilter),
+                "/APP/Timeline/getPlurks", aParams, aCred, iRes, ioR, token);
+
+            // 「哪一則是我自己發的」問一次就好 —— 不猜，也不寫死 id
+            string aMeId = "";
+            var (aMeSt, aMeBody) = await CallAsync("/APP/Users/me", aCred, null, token);
+            if (aMeSt == 200) aMeId = PickJsonValue(aMeBody, "id") ?? "";
+
+            ioR.AppendLine();
+            ioR.AppendLine("## 河道（好友＋自己的噗）");
+            var aRoot = SafeParse(aBody);
+            var aPlurks = (aRoot != null && aRoot.Contains("plurks")) ? aRoot["plurks"] : null;
+            var aUsers = (aRoot != null && aRoot.Contains("plurk_users")) ? aRoot["plurk_users"] : null;
+            if (aPlurks == null || !aPlurks.IsArray)
+            {
+                ioR.AppendLine("- ⚠ 回應裡沒有 `plurks` 陣列 —— 這不是「沒有噗」，是**格式跟我預期的不一樣**。");
+                ioR.AppendLine("- body（前 300 字）: " + Trunc(aBody, 300));
+                return;
+            }
+            ioR.AppendLine($"- **{aPlurks.Count}** 則（limit={aLimit}"
+                + (aFilter.Length == 0 ? "" : $"　filter=`{aFilter}`")
+                + $"　摘要 {aPreview} 字）"
+                + (aMeId.Length == 0 ? "　⚠ 問不到自己的 id ⇒ 🪞 標記這一輪不可信" : ""));
+            ioR.AppendLine();
+            ioR.AppendLine("> 形狀取自酒館 catchup：**先短摘要掃一遍，再挑要細看的那幾則**。");
+            ioR.AppendLine("> 摘要是「開頭 N 字」不是「首行」—— 首行可能只有兩個字，那掃不出東西。");
+            ioR.AppendLine();
+
+            for (int i = 0; i < aPlurks.Count; i++)
+            {
+                var aP = aPlurks[i];
+                string aId = JsonScalar(aP, "plurk_id");
+                string aOwner = JsonScalar(aP, "owner_id");
+                string aRaw = UnescapeJson(JsonScalar(aP, "content_raw"));
+                string aFlat = OneLine(aRaw).Trim();
+
+                var aTags = new List<string>();
+                if (aMeId.Length > 0 && aOwner == aMeId) aTags.Add("🪞我");
+                if (aRaw.Contains("images.plurk.com") || UnescapeJson(JsonScalar(aP, "content")).Contains("<img"))
+                    aTags.Add("🖼");
+                if (aFlat.StartsWith("http", StringComparison.OrdinalIgnoreCase)) aTags.Add("🔗");
+                string aRc = JsonScalar(aP, "response_count");
+                string aFc = JsonScalar(aP, "favorite_count");
+
+                ioR.AppendLine($"- **[{aId}]** {ShortTime(JsonScalar(aP, "posted"))} "
+                    + $"**{UserName(aUsers, aOwner)}** «{JsonScalar(aP, "qualifier")}»"
+                    + (aRc == "0" || aRc.Length == 0 ? "" : $" 💬{aRc}")
+                    + (aFc == "0" || aFc.Length == 0 ? "" : $" ❤{aFc}")
+                    + (aTags.Count == 0 ? "" : "　" + string.Join(" ", aTags)));
+                ioR.AppendLine("    " + (aFlat.Length == 0 ? "(沒有文字內容)" : Trunc(aFlat, aPreview)));
+            }
+
+            ioR.AppendLine();
+            ioR.AppendLine("### ▶ 挑一則細看／互動（id 抄上面那個）");
+            ioR.AppendLine("```bash");
+            ioR.AppendLine("--arg op=get       --arg plurk_id=<id>                    # 全文（不是首行）");
+            ioR.AppendLine("--arg op=responses --arg plurk_id=<id>                    # 底下的回應");
+            ioR.AppendLine("--arg op=like      --arg plurk_id=<id> --arg confirm=1    # 按讚");
+            ioR.AppendLine("--arg op=post --arg slip_file=<交付單> --arg reply_to=<id> --arg confirm=1   # 回應");
+            ioR.AppendLine("```");
+            ioR.AppendLine("⚠ 回應**走既有發文路**，刻意不另開一條短回應路 ——");
+            ioR.AppendLine("　 兩條發文路就是兩套規則，而字數 lint 與末行署名只會套用在其中一條。");
+            ioR.AppendLine("⚠ 摘要是**截斷過的**：要回應誰之前先 `op=get` 讀全文。");
+            ioR.AppendLine("　 對著一段開頭講話，跟讀完再講，在對方那邊看起來完全不一樣。");
+        }
+
+        /// <summary>
+        /// `Sun, 23 Aug 2026 09:03:42 GMT` → `08-23 17:03`（本地）。
+        /// 解析不了就**原樣回**（不吞掉，也不假裝知道時間）。
+        /// </summary>
+        static string ShortTime(string iRfc)
+        {
+            if (string.IsNullOrEmpty(iRfc)) return "(無時間)";
+            if (!DateTime.TryParse(iRfc, CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AdjustToUniversal
+                    | System.Globalization.DateTimeStyles.AssumeUniversal, out DateTime aUtc))
+                return iRfc;
+            return aUtc.ToLocalTime().ToString("MM-dd HH:mm", CultureInfo.InvariantCulture);
+        }
+
+        async UniTask OpResponses(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            string aId = GetArg(iArgs, "plurk_id", "").Trim();
+            if (aId.Length == 0) throw new Exception("[Plurk] op=responses 需要 --arg plurk_id=<噗 id>");
+            var aCred = RequireCredentials(iRes);
+            int aFrom = ParseIntArg(iArgs, "from_response", 0, 0, 100000);
+
+            var aParams = new Dictionary<string, string>
+            {
+                { "plurk_id", aId },
+                { "from_response", aFrom.ToString(CultureInfo.InvariantCulture) },
+            };
+            string aBody = await FetchAsync(iArgs, "responses_" + aId, "/APP/Responses/get",
+                aParams, aCred, iRes, ioR, token);
+
+            ioR.AppendLine();
+            ioR.AppendLine($"## responses（`{aId}` 底下的回應）");
+            var aRoot = SafeParse(aBody);
+            var aList = (aRoot != null && aRoot.Contains("responses")) ? aRoot["responses"] : null;
+            var aFriends = (aRoot != null && aRoot.Contains("friends")) ? aRoot["friends"] : null;
+            if (aList == null || !aList.IsArray)
+            {
+                ioR.AppendLine("- ⚠ 回應裡沒有 `responses` 陣列 —— 不是「沒人回」，是格式跟我預期的不一樣。");
+                ioR.AppendLine("- body（前 300 字）: " + Trunc(aBody, 300));
+                return;
+            }
+            ioR.AppendLine($"- **{aList.Count}** 則回應"
+                + (aRoot.Contains("responses_seen")
+                    ? $"　（對方記錄的已讀數: {JsonScalar(aRoot, "responses_seen")}）" : ""));
+            for (int i = 0; i < aList.Count; i++)
+            {
+                var aRp = aList[i];
+                ioR.AppendLine($"- **{UserName(aFriends, JsonScalar(aRp, "user_id"))}**"
+                    + $"　`{JsonScalar(aRp, "id")}`　{JsonScalar(aRp, "posted")}");
+                ioR.AppendLine("    " + Trunc(OneLine(UnescapeJson(JsonScalar(aRp, "content_raw"))), 200));
+            }
+        }
+
+        async UniTask OpFriends(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            var aCred = RequireCredentials(iRes);
+            string aUserId = GetArg(iArgs, "user_id", "").Trim();
+            if (aUserId.Length == 0)
+            {
+                // 不猜「我是誰」—— 去問一次 /APP/Users/me，並且把那個讀數印出來
+                var (aSt, aMe) = await CallAsync("/APP/Users/me", aCred, null, token);
+                if (aSt != 200)
+                    throw new Exception($"[Plurk] 問不到自己的 user_id（http={aSt}）⇒ 請顯式帶 --arg user_id=");
+                aUserId = PickJsonValue(aMe, "id") ?? "";
+                if (aUserId.Length == 0)
+                    throw new Exception("[Plurk] /APP/Users/me 沒有 id 欄位 ⇒ 請顯式帶 --arg user_id=");
+                ioR.AppendLine($"- user_id 未給 ⇒ 由 `/APP/Users/me` 讀回 **{aUserId}**（讀的，不是推的）");
+            }
+            int aLimit = ParseIntArg(iArgs, "limit", 30, 1, 100);
+            int aOffset = ParseIntArg(iArgs, "offset", 0, 0, 100000);
+
+            var aParams = new Dictionary<string, string>
+            {
+                { "user_id", aUserId },
+                { "offset", aOffset.ToString(CultureInfo.InvariantCulture) },
+                { "limit", aLimit.ToString(CultureInfo.InvariantCulture) },
+            };
+            string aBody = await FetchAsync(iArgs, "friends_" + aUserId,
+                "/APP/FriendsFans/getFriendsByOffset", aParams, aCred, iRes, ioR, token);
+
+            ioR.AppendLine();
+            ioR.AppendLine($"## friends（`{aUserId}` 的好友，offset={aOffset} limit={aLimit}）");
+            var aRoot = SafeParse(aBody);
+            if (aRoot == null || !aRoot.IsArray)
+            {
+                ioR.AppendLine("- ⚠ 回應不是陣列 —— 格式跟我預期的不一樣（不是「沒有好友」）。");
+                ioR.AppendLine("- body（前 300 字）: " + Trunc(aBody, 300));
+                return;
+            }
+            ioR.AppendLine($"- **{aRoot.Count}** 位");
+            for (int i = 0; i < aRoot.Count; i++)
+            {
+                var aU = aRoot[i];
+                ioR.AppendLine($"- `{JsonScalar(aU, "id")}`"
+                    + $"　**{UnescapeJson(JsonScalar(aU, "display_name"))}**"
+                    + $"（{JsonScalar(aU, "nick_name")}）");
+            }
+            if (aRoot.Count == aLimit)
+                ioR.AppendLine($"- ⚠ 剛好取滿 {aLimit} 筆 ⇒ **後面可能還有**"
+                    + $"（`--arg offset={aOffset + aLimit}` 續取）。取滿與取完在這裡同形，所以這行一定要印。");
+        }
+
+        // ===========================================================
+        // 區塊職責：按讚／取消讚 —— **對別人的東西動手**，所以守衛比讀取那幾個嚴。
+        // 物理意義：這是一個對外、別人看得到、而且掛在我們帳號名下的動作。
+        // 數值影響：改 Plurk 上的 favorite 狀態。三道守衛：
+        //   ① `confirm=1` 才真的送（跟 op=post 同一條規矩）
+        //   ② 送之前先 **getPlurk 把那則印出來** —— 「我要按的是這則」要看得見，防 id 打錯
+        //      （數字打錯不會有任何一層喊，而它會按到一個陌生人的噗）
+        //   ③ 送之後 **回讀** —— 印 ✓ 不算數，讀回來才算
+        // ===========================================================
+        async UniTask OpFavorite(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token, bool iOn)
+        {
+            string aVerb = iOn ? "like" : "unlike";
+            string aId = GetArg(iArgs, "plurk_id", "").Trim();
+            if (aId.Length == 0) throw new Exception($"[Plurk] op={aVerb} 需要 --arg plurk_id=<噗 id>");
+            var aCred = RequireCredentials(iRes);
+
+            ioR.AppendLine();
+            ioR.AppendLine($"## {aVerb}（對外動作 —— 別人看得到，而且掛在這個帳號名下）");
+
+            // ① 先看清楚要動的是哪一則
+            var (aSt0, aBefore) = await CallAsync("/APP/Timeline/getPlurk", aCred,
+                new Dictionary<string, string> { { "plurk_id", aId } }, token);
+            if (aSt0 != 200)
+            {
+                ioR.AppendLine($"- ✗ 讀不到 `{aId}`（http={aSt0}）⇒ **不動作**。" + Trunc(aBefore, 200));
+                throw new Exception($"[Plurk] {aVerb} 前置讀取失敗 http={aSt0}");
+            }
+            string aObj = ExtractObject(aBefore, "plurk");
+            string aFavBefore = PickJsonValue(aObj, "favorite_count") ?? "?";
+            ioR.AppendLine($"- 目標: `{aId}`　owner_id: {PickJsonValue(aObj, "owner_id") ?? "?"}"
+                + $"　目前 favorite_count: **{aFavBefore}**");
+            ioR.AppendLine("- 內容首行: "
+                + Trunc(FirstLine(UnescapeJson(PickJsonValue(aObj, "content_raw") ?? "")), 60));
+
+            // ② confirm 守衛
+            if (GetArg(iArgs, "confirm", "") != "1")
+            {
+                ioR.AppendLine();
+                ioR.AppendLine("- 🛑 **dry-run（沒有送出）** —— 這是對別人的東西動手，跟 `op=post` 同一條規矩。");
+                ioR.AppendLine("  要真的做請加 `--arg confirm=1`。");
+                return;
+            }
+
+            string aEndpoint = iOn ? "/APP/Timeline/favoritePlurks" : "/APP/Timeline/unfavoritePlurks";
+            var (aSt, aBody) = await CallAsync(aEndpoint, aCred,
+                new Dictionary<string, string> { { "ids", "[" + aId + "]" } }, token);
+            ioR.AppendLine($"- endpoint: `POST {aEndpoint}`　http: **{aSt}**");
+            if (aSt != 200)
+            {
+                ioR.AppendLine("- ✗ body（前 300 字）: " + Trunc(aBody, 300));
+                throw new Exception($"[Plurk] {aVerb} 失敗 http={aSt}");
+            }
+
+            // ③ 回讀 —— 200 只證明對方收到請求
+            var (aSt2, aAfter) = await CallAsync("/APP/Timeline/getPlurk", aCred,
+                new Dictionary<string, string> { { "plurk_id", aId } }, token);
+            string aObj2 = aSt2 == 200 ? ExtractObject(aAfter, "plurk") : null;
+            string aFavAfter = aObj2 == null ? "(回讀失敗)" : (PickJsonValue(aObj2, "favorite_count") ?? "?");
+            ioR.AppendLine($"- 回讀 favorite_count: **{aFavBefore} → {aFavAfter}**"
+                + "　⚠ 這是**總數**不是「我按了沒」—— 同時有別人按或收回時它不是乾淨的證據");
+            string aFavFlag = aObj2 == null ? null : PickJsonValue(aObj2, "favorite");
+            ioR.AppendLine(aFavFlag == null
+                ? "- ⚠ 回應裡沒有 `favorite` 這個欄位 ⇒ **「我按了沒」這一格沒有讀數**（不是「沒按到」）"
+                : $"- `favorite`（就這個帳號而言）: **{aFavFlag}**　← 這才是直接證據");
+        }
+
+        // ── 讀取層：API ／ 本地快取 ────────────────────────────────
+        // ⛔ 快取目錄不入 git（`AgentCommands/.gitignore` 有 `Plurk/cache/`）——
+        //    那裡面是**別人的**發文內容，而且是某一刻的快照。
+        //    入版控等於把別人的時間軸釘進我們的歷史，而他們沒有同意過。
+        const string CacheRelative = "Plurk/cache";
+
+        static string CacheDir() => Path.Combine(UCL_AgentCommandsPath.DataRoot, CacheRelative);
+
+        static string CacheFile(string iAccount, string iKey)
+            => Path.Combine(CacheDir(), SafeName(iAccount) + "__" + SafeName(iKey) + ".json");
+
+        static string SafeName(string iText)
+        {
+            if (string.IsNullOrEmpty(iText)) return "_";
+            var sb = new StringBuilder(iText.Length);
+            foreach (char c in iText)
+                sb.Append(char.IsLetterOrDigit(c) || c == '-' || c == '_' ? c : '_');
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 取資料：**預設打 API 並落快取**；`--arg cache=1` 才改讀快取。
+        /// <para>⚠ 不論走哪一條，回傳檔一定印**資料來源與年齡** ——
+        /// 「現況」與「快照」不可以同形，而它們天生就同形。</para>
+        /// </summary>
+        async UniTask<string> FetchAsync(Dictionary<string, string> iArgs, string iCacheKey,
+            string iEndpoint, Dictionary<string, string> iParams, Dictionary<string, string> iCred,
+            UCL_PlurkAccountResolution iRes, StringBuilder ioR, CancellationToken token)
+        {
+            string aAccount = iRes.SecretId ?? "_";
+            string aFile = CacheFile(aAccount, iCacheKey);
+
+            if (GetArg(iArgs, "cache", "") == "1")
+            {
+                if (File.Exists(aFile))
+                {
+                    var aCached = SafeParse(File.ReadAllText(aFile, Encoding.UTF8));
+                    string aAt = aCached == null ? null : JsonScalar(aCached, "fetched_at");
+                    ioR.AppendLine($"- 📦 **資料來源：本地快取**（`{(string.IsNullOrEmpty(aAt) ? "?" : aAt)}`，"
+                        + $"**{AgeText(aAt)}前**）—— 這不是現況");
+                    ioR.AppendLine($"  · 檔案 `{aFile}`　要現抓就拿掉 `--arg cache=1`");
+                    if (aCached != null && aCached.Contains("body")) return aCached["body"].GetString();
+                    ioR.AppendLine("  · ⚠ 快取檔在但沒有 `body` 欄位 ⇒ 當成沒有，改打 API");
+                }
+                else
+                {
+                    ioR.AppendLine($"- 📦 要求讀快取但**檔案不存在**（`{aFile}`）⇒ 改打 API"
+                        + " —— 沒有靜默降級，這一行就是那個降級的讀數");
+                }
+            }
+
+            var (aStatus, aBody) = await CallAsync(iEndpoint, iCred, iParams, token);
+            ioR.AppendLine($"- 🌐 **資料來源：API 現抓**　`POST {iEndpoint}`　http: **{aStatus}**");
+            if (aStatus != 200)
+            {
+                ioR.AppendLine("- ✗ body（前 300 字）: " + Trunc(aBody, 300));
+                ioR.AppendLine("  · ⚠ 403 ＋ `error code: 1010` ＝ Cloudflare 依 UA 擋，"
+                    + "不是簽章錯也不是端點不存在（三種失敗都是 4xx，長得一樣）");
+                throw new Exception($"[Plurk] {iEndpoint} 失敗 http={aStatus}");
+            }
+            TryWriteCache(aFile, aAccount, iEndpoint, aBody, ioR);
+            return aBody;
+        }
+
+        static void TryWriteCache(string iFile, string iAccount, string iEndpoint,
+            string iBody, StringBuilder ioR)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(iFile));
+                var aJd = new UCL.Core.JsonLib.JsonData();
+                aJd["fetched_at"] = new UCL.Core.JsonLib.JsonData(DateTime.UtcNow.ToString("o"));
+                aJd["account"] = new UCL.Core.JsonLib.JsonData(iAccount);
+                aJd["endpoint"] = new UCL.Core.JsonLib.JsonData(iEndpoint);
+                aJd["body"] = new UCL.Core.JsonLib.JsonData(iBody);
+                File.WriteAllText(iFile, aJd.ToJson(), new UTF8Encoding(false));
+                ioR.AppendLine($"  · 已落快取 `{iFile}`（⛔ 不入 git）");
+            }
+            catch (Exception ex)
+            {
+                // 快取寫不進去不影響這一次的讀數 —— 但要說出來，
+                // 不然下次 `cache=1` 讀不到會變成一個沒有人解釋得了的謎
+                ioR.AppendLine($"  · ⚠ 快取寫入失敗（不影響本次讀數）：{ex.Message}");
+            }
+        }
+
+        static string AgeText(string iIso)
+        {
+            if (string.IsNullOrEmpty(iIso)) return "年齡不明";
+            if (!DateTime.TryParse(iIso, CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out DateTime aAt))
+                return "年齡不明";
+            var aSpan = DateTime.UtcNow - aAt.ToUniversalTime();
+            if (aSpan.TotalMinutes < 1) return "不到 1 分鐘";
+            if (aSpan.TotalHours < 1) return $"約 {(int)aSpan.TotalMinutes} 分鐘";
+            if (aSpan.TotalDays < 1) return $"約 {aSpan.TotalHours:0.#} 小時";
+            return $"約 {aSpan.TotalDays:0.#} 天";
+        }
+
+        // ── 小工具 ────────────────────────────────────────────────
+        static UCL.Core.JsonLib.JsonData SafeParse(string iJson)
+        {
+            try { return UCL.Core.JsonLib.JsonData.ParseJson(iJson); }
+            catch { return null; }
+        }
+
+        /// <summary>取純量欄位；字串或數字都拿得到（同 <see cref="PickJsonValue"/> 那條血證）。</summary>
+        static string JsonScalar(UCL.Core.JsonLib.JsonData iNode, string iKey)
+        {
+            if (iNode == null || !iNode.Contains(iKey)) return "";
+            string aRaw = (iNode[iKey].ToJson() ?? "").Trim();
+            if (aRaw.Length >= 2 && aRaw[0] == '"' && aRaw[aRaw.Length - 1] == '"')
+                aRaw = aRaw.Substring(1, aRaw.Length - 2);
+            return aRaw == "null" ? "" : aRaw;
+        }
+
+        /// <summary>
+        /// user id → 顯示名。查不到就回 id 本身並標記 —— **不回空字串**：
+        /// 空的那格會讓人以為「這則沒有作者」，而事實是「我沒查到作者」。
+        /// </summary>
+        static string UserName(UCL.Core.JsonLib.JsonData iUsers, string iId)
+        {
+            if (string.IsNullOrEmpty(iId)) return "(無 id)";
+            if (iUsers == null || !iUsers.Contains(iId)) return iId + "(查無名稱)";
+            var aU = iUsers[iId];
+            string aName = UnescapeJson(JsonScalar(aU, "display_name"));
+            if (aName.Length == 0) aName = JsonScalar(aU, "nick_name");
+            return aName.Length == 0 ? iId + "(查無名稱)" : aName;
+        }
+
+        static string FirstLine(string iText)
+        {
+            if (string.IsNullOrEmpty(iText)) return "";
+            int i = iText.IndexOf('\n');
+            return i < 0 ? iText : iText.Substring(0, i);
+        }
+
+        static string OneLine(string iText)
+            => string.IsNullOrEmpty(iText) ? "" : iText.Replace("\r", " ").Replace("\n", " ");
+
+        static int ParseIntArg(Dictionary<string, string> iArgs, string iKey,
+            int iDefault, int iMin, int iMax)
+        {
+            string aRaw = GetArg(iArgs, iKey, "").Trim();
+            if (aRaw.Length == 0) return iDefault;
+            if (!int.TryParse(aRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int aVal))
+                throw new Exception($"[Plurk] --arg {iKey}={aRaw} 不是整數"
+                    + "（不靜默取預設值 —— 打錯字要當場知道）");
+            return aVal < iMin ? iMin : (aVal > iMax ? iMax : aVal);
         }
 
         // 從 `{"plurk":{...},"user":{...}}` 取出內層物件的原始 JSON，讓 PickJsonValue 能繼續用。
@@ -697,13 +1132,21 @@ namespace UCL.Core.EditorLib.Plurk
         // 🩸 2026-08-21 op=get 首跑就撞到：**驗證輸出讀不懂，等於只驗了一半** ——
         //   我能證明「有東西在那裡」，但不能證明「在那裡的是我那段」。
         // 數值影響：只影響顯示；解析不出來就原樣留著（不吞掉）。
-        static string UnescapeUnicode(string iText)
+        // 🩸 2026-08-23 同族第二隻：本函式原本**只**處理 \uXXXX，於是 `content_raw` 裡的換行
+        //   回來是**字面兩個字元**（反斜線 ＋ n）。timeline 那張表的欄位叫「內容首行」，
+        //   而 FirstLine 找的是真正的換行字元 ⇒ 切不到 ⇒ 那一格印的其實是整段的前 40 字。
+        //   **欄位名說「首行」而內容不是首行** —— 名字比事實大，而且不會報錯。
+        //   ⇒ 修在這一層而不是修 timeline：`op=get` 的「content_raw 首行」是同一個病，
+        //     只修看得見的那半邊就是又留一隻同族的下一個。
+        static string UnescapeJson(string iText)
         {
             if (string.IsNullOrEmpty(iText)) return iText;
             var sb = new StringBuilder(iText.Length);
             for (int i = 0; i < iText.Length; i++)
             {
-                if (iText[i] == '\\' && i + 5 < iText.Length && iText[i + 1] == 'u'
+                if (iText[i] != '\\' || i + 1 >= iText.Length) { sb.Append(iText[i]); continue; }
+                char aNext = iText[i + 1];
+                if (aNext == 'u' && i + 5 < iText.Length
                     && int.TryParse(iText.Substring(i + 2, 4),
                         System.Globalization.NumberStyles.HexNumber,
                         CultureInfo.InvariantCulture, out int aCode))
@@ -712,7 +1155,18 @@ namespace UCL.Core.EditorLib.Plurk
                     i += 5;
                     continue;
                 }
-                sb.Append(iText[i]);
+                switch (aNext)
+                {
+                    case 'n': sb.Append('\n'); i++; break;
+                    case 'r': sb.Append('\r'); i++; break;
+                    case 't': sb.Append('\t'); i++; break;
+                    case '"': sb.Append('"'); i++; break;
+                    case '/': sb.Append('/'); i++; break;
+                    case '\\': sb.Append('\\'); i++; break;
+                    // 認不得的轉義**原樣留著**（含那個反斜線）—— 吞掉的話它會變成一個
+                    // 「看起來正常但少了一個字元」的字串，而那比看得見的怪符號難查十倍
+                    default: sb.Append(iText[i]); break;
+                }
             }
             return sb.ToString();
         }

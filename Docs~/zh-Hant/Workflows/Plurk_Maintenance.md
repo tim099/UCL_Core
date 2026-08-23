@@ -1,7 +1,7 @@
 ---
 title: Plurk 串接維護指南
 description: Plurk 發文機制的維護面 —— 四個檔的分工、怎麼加一條 lint 規則、怎麼加心情詞、帳號與憑證安裝、OAuth 實作的三個坑、端點驗證狀態、audit 對帳。
-last_updated: 2026-08-21
+last_updated: 2026-08-23
 target_audience: [AI_Agent, Tools_Maintainer]
 status: v1.0（2026-08-21 從 Plurk_Posting_Workflow 拆出 —— Tim：「維護部分單獨一份文件」）
 ---
@@ -151,7 +151,12 @@ persona profile 的 `plurk_account` → registry（`AwakenInit/plurk_accounts.js
 | `公開度=本人` 送的 `limited_to=[]` | ⚠ **未驗證** |
 | `/APP/Timeline/uploadPicture` ＋ 欄位名 `image`（multipart） | ✅ 200，回 `full` / `thumbnail`；**`full` 實測 50 字元** |
 | 附圖兩段式（上傳 → URL 併進 content → 渲染） | ✅ `plurk_id 358451852259674`，回讀後的 `content` 含 `<img>` |
-| `/APP/Responses/responseAdd`（`reply_to` 回應） | ⚠ code 有、**未實跑** |
+| `/APP/Responses/responseAdd`（`reply_to` 回應） | ✅ 2026-08-23 實跑 ×2（回 `cc@basecamp` / `大小姐們的觀測所`），http 200 |
+| `/APP/Timeline/getPlurks`（河道） | ✅ 200，回 `plurks[]` ＋ `plurk_users{}`；`filter` 未逐一驗（原樣送出，不猜） |
+| `/APP/Responses/get`（讀回應） | ✅ 200，回 `responses[]` ＋ `friends{}` ＋ `responses_seen` |
+| `/APP/FriendsFans/getFriendsByOffset` | ✅ 200，回**陣列**（不是物件）；`offset`/`limit` 生效 |
+| `/APP/Timeline/favoritePlurks` ＋ `ids=[<id>]` | ✅ 2026-08-23 實跑 ×2，`favorite_count 1→2` **且** 回讀 `favorite=true` |
+| `/APP/Timeline/unfavoritePlurks` | ⚠ code 有、**未實跑**（跟 favorite 共用同一段，但那是推論不是讀數） |
 
 > [!IMPORTANT]
 > ## 🩸 那個 403 不是「他們擋 agent」
@@ -163,6 +168,57 @@ persona profile 的 `plurk_account` → registry（`AwakenInit/plurk_accounts.js
 > ⇒ 判準：**「簽章算錯」「端點不存在」「被 WAF 擋」三種失敗都是 4xx，長得一樣。**
 > 排查順序：先確認端點存在 → 再懷疑簽章 → 最後才是 WAF（而 WAF 那格看 body，不看 status）。
 > ⇒ 附帶推論：規劃文件裡「官方 API 頁抓取回 403、agent 讀不到」很可能是同一隻，**是可修的**。
+
+---
+
+## 5.5 社交面（2026-08-23 新增）：讀河道／讀回應／按讚，以及本地快取
+
+在這之前這支 Cmd 只有「送出」與「回讀自己那則」—— **它能發文，但不能參與**。
+
+| op | 端點 | 性質 |
+|---|---|---|
+| `timeline` | `/APP/Timeline/getPlurks` | 唯讀 |
+| `responses` | `/APP/Responses/get` | 唯讀 |
+| `friends` | `/APP/FriendsFans/getFriendsByOffset` | 唯讀 |
+| `like` / `unlike` | `/APP/Timeline/(un)favoritePlurks` | **對外**，要 `confirm=1` |
+
+### 河道的形狀：先摘要掃一遍，再挑要細看的（Tim 2026-08-23 指定）
+
+概念取自酒館 catchup：`op=timeline` 印的是**每則一行摘要**（作者／心情／💬回應數／❤讚數／
+`🪞我` `🖼` `🔗` 標記／開頭 N 字），後面接一段「挑一則細看／互動」的指令。
+
+- 摘要是**開頭 N 字**（`--arg preview=`，預設 90）**不是首行** ——
+  🩸 首版用「首行」，而河道上很多噗的首行只有兩個字（例：`姑奈`），掃不出東西。
+- `🪞我` 靠 `/APP/Users/me` 現問，**不寫死 id**；問不到時那一行會說「這一輪 🪞 不可信」。
+- ⚠ 回傳檔明說「摘要是截斷過的，要回應誰之前先 `op=get` 讀全文」——
+  🩸 而 `op=get` 原本也只印首行：**對著一段開頭講話，跟讀完再講，在對方那邊看起來完全不一樣。**
+
+### 為什麼回應不另開一條「短回應」op
+
+回應走既有的 `op=post --arg reply_to=<id>`。**兩條發文路就是兩套規則**，
+而字數 lint 與末行署名只會套用在其中一條 ——
+「回應比較短所以不用檢查」是那種一開始成立、三個月後沒人記得的例外。
+
+### `like` 的三道守衛
+
+1. 送出前先 `getPlurk` **把那則印出來**（`owner_id` ＋ 內容首行）—— 擋 id 打錯：
+   數字錯一位不會有任何一層喊，而它會按到一個陌生人的噗。
+2. `confirm=1` 才真的送（跟 `op=post` 同一條規矩）。
+3. 送出後回讀。⚠ `favorite_count` 是**總數**不是「我按了沒」——
+   同時有別人按或收回時它不是乾淨的證據；直接證據是 `favorite` 欄位，
+   **它不存在時回傳檔會明說「這一格沒有讀數」**，而不是印一個看起來成功的 ✓。
+
+### 本地快取 `<data_root>/Plurk/cache/`（⛔ 不入 git）
+
+唯讀三個 op 每次都落一份快照；`--arg cache=1` 才會**改讀**它。
+
+| 判準 | 為什麼 |
+|---|---|
+| **預設一律打 API** | 反過來的話「現況」與「三小時前的快照」在回傳檔上長得一樣 |
+| 讀快取時印 `fetched_at` ＋ 年齡 ＋「這不是現況」 | 快照要看得出自己是快照 |
+| **不做自動過期判斷** | 「新鮮」會變成一個推論；印年齡讓看的人自己判 |
+| 要讀快取但檔不存在 ⇒ 印一行說它降級了再打 API | 靜默降級會讓「我讀的是快取」變成沒人知道的事 |
+| 不入 git（`AgentCommands/.gitignore` 的 `Plurk/cache/`） | ① 快照入版控讓「現況」與「三天前」在 diff 裡同形<br>② 裡面是**別人的**發文 —— 他們沒同意過被釘進我們的 git 歷史 |
 
 ---
 

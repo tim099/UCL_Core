@@ -1,6 +1,6 @@
 ---
 title: 閱讀資料庫工作流 (Reading Library Workflow)
-last_updated: 2026-08-07 (op=share 分享與 +3 稿費、facts 陣列收斂、管理頁追回檢視、Python recall 退位程序)
+last_updated: 2026-08-23 (外部漫畫庫 comic_root 取得規範、單話閱讀節奏、op=share 分享與 +3 稿費)
 status: active
 theme: agent_activity
 summary: 新閱讀心得採 work → media → persona reader root；reader.json 保存當前狀態，章節 rounds 保存不可覆寫的閱讀歷史。
@@ -125,8 +125,25 @@ D. Archive 讀不到 metadata 的 entry（`_` 開頭系統目錄除外）
 **normalize 相等＝候選，不＝同作品** —— 撒網自動、收網人工（Q3/Q4 定案：偵測自動、遷移人工，
 工具不代辦任何合併 / 搬移 / 改名）。
 
+## 外部漫畫庫與 comic_root
+
+外部實體漫畫目錄由 Unity Editor 的 `UCL_LibraryManagePage` 後台（工具集 → 閱讀心得管理 → 外部漫畫庫）設定，並自動寫出本機快照檔 `.comic_root.local`（儲存於專案根目錄與 UCL_Core 根目錄，不上 Git）。
+
+- **路徑解析唯一入口**：Python 工具與 agent 讀取外部漫畫路徑時，**一律呼叫 `ucl_paths.comic_root()`**：
+  ```python
+  import sys
+  from pathlib import Path
+  sys.path.insert(0, "<UCL_Core>/Tools~/AgentCommands")
+  from _lib.ucl_paths import comic_root
+
+  root = comic_root() # 回傳 Path("D:/comic") 或 None
+  ```
+- **單話閱讀原則**：漫畫閱讀每次專注消化 1 話（章），逐頁看圖體會分鏡、台詞與細節後落盤心得，嚴禁一次暴讀整卷/整本。
+- 更多細節參閱 `<ucl_core:Skills~/reading-manga/SKILL.md>`。
+
 ## 工具要求
 
 新 schema 的讀寫**唯一實作者是 `UCL_ReadingLibraryIO`**（agent 入口 `Cmd_Library`、
 人的入口為閱讀心得管理頁）。寫入以一次操作更新 reader root、章節 round 與 bookshelf 投影，
 並驗證 persona 路徑一致性。legacy `library.py --book`、無讀者主線與 branches API 禁止用於新資料。
+

@@ -141,6 +141,23 @@ namespace UCL.Core.EditorLib.AgentCommands
                 DefaultOn = true,
             },
             // ===========================================================
+            // 區塊職責：`bookshelf/` —— 閱讀卡（機械投影，Tim 2026-08-23 拍板收進自動群）。
+            // 物理意義：內容由 `UCL_ReadingLibraryIO` 從 `reader.json` **重新生成**
+            //          （進度／期待度／當前看法／章節 round 清單），檔頭自己就寫著
+            //          「機械投影，手改會被覆寫」⇒ 依本表判準（分界是**作者是誰**）屬於可自動收那側。
+            //          親筆住 Library 的 `reader.json`／各章 round 檔，不在這裡。
+            // ⚠ 之前不在表上，所以它每次落 `__other`、靠人手動 commit ——
+            //   而「沒人收」的症狀是早安 brief 的閱讀卡在別台機器上是舊的，且不會叫。
+            // ===========================================================
+            new GroupDef
+            {
+                Key = "bookshelf",
+                Label = "閱讀卡 bookshelf/（由 reader.json 生成的機械投影）",
+                Match = p => p.StartsWith("bookshelf/"),
+                Message = "[data] 收 bookshelf/ 閱讀卡（reader.json 的機械投影）(auto)",
+                DefaultOn = true,
+            },
+            // ===========================================================
             // 區塊職責：`writing/` —— 書的續寫包（publish 自動投遞的機械投影）。
             // 物理意義：內容由 UCL_BookDossier 於 op=publish 時**重生成**（章節現況／接續點／
             //          素材線索），所以它是投影不是作品 —— 作者的親筆（大綱／設定／待整合素材）

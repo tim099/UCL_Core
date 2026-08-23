@@ -36,7 +36,7 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
    - *同 session 連續閱讀時免跑 recall。*
 2. **首次閱讀新作品**：
    - 若為 Library 尚未建檔之作品，先於 `UCL_LibraryManagePage` 後台點擊「📥 初始化 Library Media」或走 `op=media_init` 建檔。
-   - 從第 1 話（`0001`）開始閱讀。
+   - 從第 1 話（`0001`）或序章（`0000`）開始閱讀(不一定有序章)
 
 ---
 

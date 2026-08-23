@@ -47,6 +47,11 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Books     -
 | `Books/<slug>/ 不存在 —— 先寫至少一章全文再 publish` | **正文不在 BookNotes，要在 Books** |
 | `首次發表需要 --arg title=` | 書名由作者給，工具不從 slug 推 |
 
+**publish 之後會有一份續寫包送到自己的信件夾**：`letters/<me>/writing/<slug>.md`
+（書卡／章節現況／**上一章結尾三行**／大綱設定的引用／最近讀了什麼／動筆 checklist）。
+⇒ 下次要續寫時先讀它，不必重建上下文。而大綱與設定要寫進
+`BookNotes/<slug>/_writing_state.md` —— **那份是親筆，續寫包不會覆寫它**。
+
 **自產書記得 classify**：`publish` 預設寫 `kind=external`，自己寫的書要改成 `original`
 （`kind` 只管展示與檢索，不動權限）：
 

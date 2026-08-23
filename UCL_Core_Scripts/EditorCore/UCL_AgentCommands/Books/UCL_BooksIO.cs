@@ -235,7 +235,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             string verb = wasPublished ? "連載更新" : "發表";
             broadcastBody = $"✍📖 新書{verb}!\n\n《{title}》由 **{authorPersona}** 原創著作（{chapterCnt} 章，免費入庫），全員可讀。\n"
                             + $"全文在 AgentCommands/Books/{book}/。";
-            return $"✅ {(wasPublished ? "更新連載" : "首度發表")}原創書:《{title}》 by {authorPersona}（{chapterCnt} 章，免費入庫）";
+            // 📮 續寫包投遞（Tim 2026-08-23）—— 掛在 publish 上，因為那是作者**一定會走**的路。
+            //    ⚠ 非致命：書已經登記了，投遞失敗只在回報裡多一行
+            //    （跟廣播同語意 —— 帳都落了才做的事，失敗不該讓整筆看起來失敗）。
+            string dossier = UCL_BookDossier.Deliver(book, authorPersona, entry, out string dossierErr);
+            string dossierLine = dossier ?? $"⚠ 續寫包投遞失敗（書已入庫，不影響發表）：{dossierErr}";
+
+            return $"✅ {(wasPublished ? "更新連載" : "首度發表")}原創書:《{title}》 by {authorPersona}（{chapterCnt} 章，免費入庫）"
+                   + $"\n{dossierLine}";
         }
 
         // ===========================================================

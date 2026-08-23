@@ -140,6 +140,25 @@ namespace UCL.Core.EditorLib.AgentCommands
                 Message = "[data] 收 bank/ 銀行綁定（區域 → 帳號）(auto)",
                 DefaultOn = true,
             },
+            // ===========================================================
+            // 區塊職責：`writing/` —— 書的續寫包（publish 自動投遞的機械投影）。
+            // 物理意義：內容由 UCL_BookDossier 於 op=publish 時**重生成**（章節現況／接續點／
+            //          素材線索），所以它是投影不是作品 —— 作者的親筆（大綱／設定／待整合素材）
+            //          住 `BookNotes/<slug>/_writing_state.md`，續寫包只引用它。
+            //          ⇒ 依本表的判準（分界是**作者是誰**，不是檔案類型）它屬於可自動收的那一側。
+            // 🩸 2026-08-23：新增這個產物時我沒同步這張表，於是 `writing/` 落進 `__other`
+            //          （未分類永不自動收）——AutoCommit 回報 `commits=0`，而那跟「沒有東西要收」
+            //          長得一模一樣。⇒ **新增一種 letters 產物就必須同時改這裡**，
+            //          否則它永遠不會進版控而且不會叫。
+            // ===========================================================
+            new GroupDef
+            {
+                Key = "writing_dossier",
+                Label = "書的續寫包 writing/（publish 自動投遞的機械投影）",
+                Match = p => p.StartsWith("writing/"),
+                Message = "[data] 收 writing/ 續寫包（publish 投遞的機械投影）(auto)",
+                DefaultOn = true,
+            },
             new GroupDef
             {
                 Key = "letters_mech",

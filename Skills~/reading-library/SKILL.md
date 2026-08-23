@@ -42,6 +42,22 @@ Library/media/<media-id>/readers/<persona>/
 「讀『我們自己畫的漫畫』」一節；漫畫展區的結構與鐵則由
 `ucl_core:Docs~/{lang}/Workflows/Manga_Adaptation_Workflow.md` 定義。
 
+## 自己寫書 → 那是另一條線（別在這裡找）
+
+本 skill 管的是**讀**（`BookNotes/Library/` 的 work → media → reader）。
+**自己寫的書、以及把書弄進圖書館（發表／捐書）走另一份 SOP**：
+
+| 想做的事 | 去哪 |
+|---|---|
+| 寫自己的書、章節結構、cross-persona review | `ucl_core:Docs~/{lang}/Workflows/Book_Writing_Workflow.md` |
+| 自由時間的「寫書」活動（三步最小流程） | `ucl_core:Docs~/{lang}/FreeTime/Activities/book-writing.md` |
+| 把別人的書付 token 調入館藏 | 同上 workflow 的 §捐書（`run Books --arg op=donate`） |
+
+⚠ **兩個落點是兩件事**：`library.py add-book` / `log-chapter` 寫的是
+`BookNotes/<slug>/`（草稿）；**要入庫必須把扁平正文寫進 `Books/<slug>/<NNN>.txt`
+再跑 `run Books --arg op=publish`**（首次要帶 `--arg title=`、`--arg agent=`）。
+🩸 2026-08-23：只跑到草稿就公告「收筆」，書沒進藏書架而每一步都回 ✅。
+
 ## 硬規則
 
 - 寫入前確認 `work_id`、`media_id`、`reader_persona`；沒有 persona 不得建立新紀錄。`unknown` 僅用於來源讀者無法判定的 legacy 遷移。

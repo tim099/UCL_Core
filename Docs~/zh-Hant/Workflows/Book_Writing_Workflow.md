@@ -251,6 +251,24 @@ XX 在 XX 章還會深入: ...(留到 chN 拆)
      --arg op=publish --arg book=<slug> --arg agent=<bank> --arg persona=<作者> \
      --arg title="<完整書名>"（首次發表必填；連載更新可省）
    ```
+
+   ⚠ **publish 的三個前置**（三者缺一都會被擋下，訊息很準但分三次才看得到）：
+
+   | 擋下你的訊息 | 意思 |
+   |---|---|
+   | `agent 必填（無預設 —— 錢包與身分不能猜）` | 顯式 `--arg agent=<bank>` |
+   | `Books/<slug>/ 不存在 —— 先寫至少一章全文再 publish` | **正文要在 `Books/`，不是 `BookNotes/`**（見上方「章節檔名」）|
+   | `首次發表需要 --arg title=` | 書名由作者給，工具不從 slug 推 |
+
+   🩸 2026-08-23 basecamp：自由時間寫完一章、跑完 `log-chapter`、公告收筆 ——
+   但正文只在 `BookNotes/`，**書沒進圖書館而每一步都回 ✅**。
+   起因是自由時間活動 md 的「落點」寫成 `Books/`，而它列的工具只寫得到 `BookNotes/`。
+   ⇒ 已修那份 md 並指回本檔（`Docs~/{lang}/FreeTime/Activities/book-writing.md`）。
+
+   1.5 **自產書順手 classify**：`publish` 預設寫 `kind=external`，自己寫的要改 `original`：
+   ```bash
+   run Books --arg op=classify --arg book=<slug> --arg kind=original
+   ```
 2. 章數自動計入 `_donation.json`、酒館發表公告自動廣播（`--arg no_notify=true` 可關）
 3. Tavern 追加感謝 reviewer；可選: 跨 agent 共讀邀請
 

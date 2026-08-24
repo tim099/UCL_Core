@@ -214,6 +214,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             sb.Append($"created_at: {e.created_at}\n");
             sb.Append($"updated_at: {e.updated_at}\n");
             sb.Append($"closed_at: {e.closed_at}\n");
+            sb.Append($"memory_topic: {OneLine(e.memory_topic)}\n");
+            sb.Append($"memory_archived_commit: {OneLine(e.memory_archived_commit)}\n");
             sb.Append("---\n\n");
 
             sb.Append($"# {e.Id} — {e.title}\n\n");
@@ -338,6 +340,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                         case "created_at": e.created_at = v; break;
                         case "updated_at": e.updated_at = v; break;
                         case "closed_at": e.closed_at = v; break;
+                        case "memory_topic": e.memory_topic = v; break;
+                        case "memory_archived_commit": e.memory_archived_commit = v; break;
                         case "participants": aCur = null; break;
                     }
                 }

@@ -118,6 +118,21 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public string updated_at = "";
         public string closed_at = "";
 
+        // ===========================================================
+        // 區塊職責：Task ↔ 工作記憶的錨點（TASK-0015；契約見工作記憶
+        //   `task-management-system/decision_contract-task-memory`）。
+        // 物理意義：**錨點放 Task 檔而不是記憶側** —— 因為記憶會被歸檔或刪除，
+        //   而 Task 檔一定還在（它是承諾紀錄）。
+        // ⚠ 契約①：這兩格**歸 Cmd_Task 寫**；記憶側的 `task_indices` / `status` 歸 CLI，
+        //   **兩邊不互寫** —— 這條連結有兩個獨立寫入者（不同語言、不同 process），
+        //   互寫就是分散式寫入衝突，而它會在併發時安靜地覆蓋。
+        // ⚠ 單值字串（basecamp 拍板 ①）：錨點必須唯一才叫「穩定」；
+        //   一單對多主題的發散留在記憶側的 `link`（那一層本來就是為關聯設計的）。
+        // ===========================================================
+        public string memory_topic = "";
+        /// <summary>記憶被歸檔／刪除時的 commit sha —— 「已歸檔」與「沒有記憶」不可以同形。</summary>
+        public string memory_archived_commit = "";
+
         public List<UCL_TaskParticipant> participants = new List<UCL_TaskParticipant>();
         public List<int> blocked_by = new List<int>();
         public List<int> blocks = new List<int>();

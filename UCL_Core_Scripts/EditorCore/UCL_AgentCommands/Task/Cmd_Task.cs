@@ -44,6 +44,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "note=<resolve 的結單說明> | qa_note=<代 QA 結單時的驗收紀錄> | " +
             "milestone= | epic_id= | tags=<逗號分隔> | " +
             "tag=<list 篩選：有這個 tag 的單> | epic=<list 篩選：TASK-0008 / 8 皆可> | " +
+            "memory_topic=<create/update 設定；list 篩選：工作記憶主題名> | " +
+            "memory_archived_commit=<update：記憶歸檔／刪除後的 commit sha> | " +
             "confirm=1（resolve 必帶）";
 
         public override string ExampleArgs =>
@@ -127,6 +129,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 reporter = iActor,
                 milestone = GetArg(iArgs, "milestone", "").Trim(),
                 epic_id = GetArg(iArgs, "epic_id", "").Trim(),
+                memory_topic = GetArg(iArgs, "memory_topic", "").Trim(),
                 created_at = aNow,
                 updated_at = aNow,
             };
@@ -198,6 +201,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 aList = aList.Where(e => e.tags.Any(t =>
                     string.Equals(t, aTag, StringComparison.OrdinalIgnoreCase))).ToList();
 
+            string aMemFilter = GetArg(iArgs, "memory_topic", "").Trim();
+            if (aMemFilter.Length > 0)
+                aList = aList.Where(e => string.Equals(e.memory_topic, aMemFilter,
+                    StringComparison.OrdinalIgnoreCase)).ToList();
+
             string aEpicRaw = GetArg(iArgs, "epic", "").Trim();
             int aEpicIdx = -1;
             if (aEpicRaw.Length > 0)
@@ -220,6 +228,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 + (aAssignee.Length == 0 ? "" : $"　assignee=`{aAssignee}`")
                 + (aMilestone.Length == 0 ? "" : $"　milestone=`{aMilestone}`")
                 + (aTag.Length == 0 ? "" : $"　tag=`{aTag}`")
+                + (aMemFilter.Length == 0 ? "" : $"　memory_topic=`{aMemFilter}`")
                 + (aEpicIdx <= 0 ? "" : $"　epic=`TASK-{aEpicIdx:0000}`")
                 + $"）—— **{aList.Count}** 張");
             if (aList.Count == 0)
@@ -253,6 +262,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var aBlockers = UCL_TaskIO.OpenBlockers(e);
             if (aBlockers.Count > 0) ioR.AppendLine($"- 🛑 **未解 blocker**：{string.Join("；", aBlockers)}");
             if (e.epic_id.Length > 0) ioR.AppendLine($"- 屬於主 Task：**{e.epic_id}**");
+            // 記憶錨點 —— 四種答案（沒掛／主題在／已歸檔／連結壞了）刻意各自不同形
+            ioR.AppendLine($"- 工作記憶：{UCL_TaskMemoryLink.Describe(e)}");
             if (e.tags.Count > 0) ioR.AppendLine($"- tags: {string.Join(" ", e.tags.Select(t => "`" + t + "`"))}");
             // 子任務進度 —— 主 Task 的意義就是這個數字（沒有它，subtask_indices 只是一串號碼）
             UCL_TaskIO.SubtaskProgress(e, out int aSubTotal, out int aSubClosed,
@@ -386,6 +397,17 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             if (aTitle.Length > 0) { aChanges.Add("title 改寫"); e.title = aTitle; }
             string aMilestone = GetArg(iArgs, "milestone", "").Trim();
             if (aMilestone.Length > 0) { aChanges.Add($"milestone → {aMilestone}"); e.milestone = aMilestone; }
+            // 記憶錨點（契約①：這兩格歸 Task 側寫，記憶側的 task_indices 歸 CLI）
+            string aMemTopic = GetArg(iArgs, "memory_topic", "").Trim();
+            if (aMemTopic.Length > 0)
+            {
+                aChanges.Add($"memory_topic {(e.memory_topic.Length == 0 ? "(空)" : e.memory_topic)} → {aMemTopic}"
+                    + (UCL_TaskMemoryLink.TopicExists(aMemTopic) ? "" : "　⚠ **這個主題目前不在磁碟上**（照樣寫入，但要知道）"));
+                e.memory_topic = aMemTopic;
+            }
+            string aMemSha = GetArg(iArgs, "memory_archived_commit", "").Trim();
+            if (aMemSha.Length > 0)
+            { aChanges.Add($"memory_archived_commit → {aMemSha}"); e.memory_archived_commit = aMemSha; }
 
             if (aChanges.Count == 0)
             {
@@ -627,6 +649,19 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     e.status = "done";
                     e.closed_at = aNow;
                     aVerdict = "→ **done**（這張單沒有指名 QA ⇒ 沒有人要驗，commit 直接結）";
+                    // ⚠ 落差要出聲（basecamp 拍板 ③，TASK-0015）：
+                    //   單上有 dev 以外的角色（pm / reviewer / design…）卻**沒有 qa** ⇒
+                    //   「沒有人要驗」這個假設要攤在被影響的人面前，而不是靜默生效。
+                    //   🩸 血證就是 TASK-0009 本身：basecamp 掛的是 pm，我的 commit 直接把它關了，
+                    //     而她一整天都在驗我的交付。閘做對了它的事 —— 錯的是沒有人被告知。
+                    //   ⛔ **警示不是擋**：擋會讓真正不需要 QA 的小單無法自動結，而那是設計要的。
+                    var aNonDev = e.participants
+                        .Where(p => !string.Equals(p.role, "dev", StringComparison.OrdinalIgnoreCase))
+                        .Select(p => $"{p.persona}({p.role})").Distinct().ToList();
+                    if (aNonDev.Count > 0)
+                        aVerdict += $"\n  ⚠ **本單沒有 QA 卻有其他角色：{string.Join("、", aNonDev)}**"
+                            + " —— 若非預期請 reopen 並補 `op=assign --arg role=qa`"
+                            + "（`pm` 不是 QA 閘：PM 排序、QA 簽名，混起來會讓「有人管」被讀成「有人驗」）";
                 }
             }
 

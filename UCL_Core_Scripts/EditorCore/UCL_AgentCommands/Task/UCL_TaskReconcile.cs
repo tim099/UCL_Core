@@ -125,6 +125,48 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 if (aStaleClaims.Count > 0)
                     sb.AppendLine($"    ⇒ 釋放回 todo（機械、可重跑）："
                         + $"`run Task --arg op=sweep --arg confirm=1`");
+
+                // ===========================================================
+                // ④ Task ↔ 工作記憶（TASK-0015；契約 ②「不一致只印不自動修」）
+                // 物理意義：跨多日的大 Task 最常死在「單子還開著，而沒有人記得上次做到哪」。
+                //   ⇒ 兩類都只印：
+                //     (a) **單向連結** —— 單子指向一個主題，而那個主題不在磁碟上（或沒有 state）
+                //     (b) **久未更新** —— 未關單的 `updated_at` 超過門檻
+                // ⚠ 門檻沿用 `STALE_DAYS`（basecamp 拍板 ②）：Tim 的新約束是「進度由 Task 本身紀錄，
+                //   記憶不額外記進度」⇒ 這裡量的與 sweep 量的是**同一件事：這張單多久沒動**。
+                //   📌 同一個量就該一個常數；不同的量才需要各自的常數。
+                // ===========================================================
+                var aMine = aAll.Where(e => !e.IsClosed() && Involves(e, iPersona)).ToList();
+                var aBrokenLink = new List<string>();
+                var aColdMemory = new List<string>();
+                foreach (var e in aMine)
+                {
+                    string aTopic = (e.memory_topic ?? "").Trim();
+                    if (aTopic.Length > 0 && !UCL_TaskMemoryLink.TopicExists(aTopic))
+                    {
+                        aBrokenLink.Add($"{e.Id} → `{aTopic}`　"
+                            + ((e.memory_archived_commit ?? "").Length > 0
+                                ? $"（已歸檔 `{e.memory_archived_commit}` —— 這是正常的，只是提醒接手要去 git 找）"
+                                : "**主題不在磁碟上且沒有歸檔 sha** ⇒ 連結壞了，不是沒有記憶"));
+                    }
+                    int aDays = e.DaysSinceUpdate(aNow);
+                    if (aDays >= UCL_TaskIO.STALE_DAYS)
+                        aColdMemory.Add($"{e.Id} `{e.status}` {Trunc(e.title, 50)}　**{aDays} 天沒動**"
+                            + (aTopic.Length == 0 ? "（沒掛記憶 ⇒ 接手的人只有這張單）"
+                                                  : $"　記憶：`{aTopic}`"));
+                }
+                sb.AppendLine(aBrokenLink.Count == 0
+                    ? "- ✅ ④a 記憶連結沒有壞的（掛了主題的單，主題都在）"
+                    : $"- ⚠ ④a 有 **{aBrokenLink.Count}** 筆記憶連結要看：");
+                foreach (var s in aBrokenLink) sb.AppendLine("    · " + s);
+                sb.AppendLine(aColdMemory.Count == 0
+                    ? $"- ✅ ④b 跟我有關的未關單都在 {UCL_TaskIO.STALE_DAYS} 天內動過"
+                    : $"- 🧊 ④b 有 **{aColdMemory.Count}** 張未關單超過 {UCL_TaskIO.STALE_DAYS} 天沒動"
+                        + "（跨多日大 Task 死在這裡：單還開著，而沒人記得上次做到哪）：");
+                foreach (var s in aColdMemory) sb.AppendLine("    · " + s);
+                if (aColdMemory.Count > 0)
+                    sb.AppendLine("    ⇒ **只印不改**（契約②）：要嘛去推進它，要嘛把現況寫進它的記憶主題，"
+                        + "要嘛 `op=update` 改狀態說明它為什麼停著。");
             }
             catch (Exception ex)
             {

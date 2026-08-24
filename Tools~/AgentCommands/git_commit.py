@@ -210,6 +210,45 @@ def resolve_fixed_bugs(message: str, sha: str, persona: str) -> None:
             print(f"⚠ BUG-{n} 自動關單失敗（{e}）—— 單子還開著，需手動 resolve。", file=sys.stderr)
 
 
+# 區塊職責：commit 訊息裡的 `Fixes TASK-<n>` / `Refs TASK-<n>` → 推進那幾張任務單。
+# 物理意義：跟 `Fixes BUG-<n>` 同一條理由 —— 把狀態推進掛在**修東西的人一定會走的路**上。
+#          舊的 AgentTasks（2026-05）死因就是「狀態要有人專程回來推」，而沒有人會專程回來。
+# ⚠ **狀態機不在這裡**：這支只抓單號與 mode，剩下的判斷（有 blocker 不推進 / 有 QA 推 in_review /
+#   沒 QA 才 done）全在 `Cmd_Task op=commit`。複製一份到 python 就是兩份產線 ——
+#   兩邊都不報錯，而它們遲早各說各話（🩸 2026-08-21 一天撞五次同族）。
+# 數值影響：一張單一次 Cmd 呼叫；失敗只警告不影響 commit 與領薪。
+# ⚠ 同樣刻意放在**公告成功之後**：commit 與領薪是主線，推進任務是附帶效果。
+def advance_tasks(message: str, sha: str, persona: str) -> None:
+    # (index, mode) 保序去重 —— 同一張單同時寫 Fixes 與 Refs 時，**Fixes 優先**（它是較強的宣告）
+    seen: dict = {}
+    for kw, mode in (("Fixes", "fixes"), ("Refs", "refs")):
+        for m in re.finditer(rf"\b{kw}\s+TASK-(\d+)\b", message, re.IGNORECASE):
+            n = str(int(m.group(1)))          # TASK-0001 與 TASK-1 是同一張單
+            if n not in seen:
+                seen[n] = mode
+    if not seen:
+        return
+    run_cmd = Path(__file__).with_name("run_cmd.py")
+    for n, mode in seen.items():
+        cmd = [sys.executable, str(run_cmd), "--persona", persona, "run", "Task",
+               "--arg", "op=commit", "--arg", f"index={n}",
+               "--arg", f"sha={sha}", "--arg", f"mode={mode}",
+               "--wait-reply", "0"]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=180)
+            if r.returncode == 0 and "Success" in (r.stdout or ""):
+                # 不在這裡宣告「已完成」—— 真正的落點是 in_review 還是 done 由 Cmd 判，
+                # 而它印在回傳檔裡。這行只說「訊號送到了」，不替它作答。
+                print(f"📋 TASK-{n} 已收到 commit（{mode} / {sha}）—— 落到哪一格見 "
+                      f"AgentCommands/Tasks/_last_task_report.md")
+            else:
+                print(f"⚠ TASK-{n} 推進失敗，單子狀態沒動：手動補 "
+                      f"run Task --arg op=commit --arg index={n} --arg sha={sha} --arg mode={mode}",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"⚠ TASK-{n} 推進失敗（{e}）—— 單子狀態沒動，需手動補。", file=sys.stderr)
+
+
 def post_announcement(body: str, sha: str, persona: str) -> tuple:
     """發酒館公告；回 (成功, 說明)。走 run_cmd.py Tavern，body 經檔案避免引號地獄。"""
     here = Path(__file__).resolve().parent
@@ -376,6 +415,7 @@ def main() -> int:
         else:
             print(f"✓ {sha} 已提交並公告（{primary}{'／bump of ' + args.bump_of if args.bump_of else ''}）")
         resolve_fixed_bugs(message, sha, primary)
+        advance_tasks(message, sha, primary)
         return EXIT_OK
     # commit 已經落地了，這裡失敗只有錢沒領到 —— 講清楚是哪一半失敗，別讓人以為 commit 也沒成功。
     print(f"⚠ commit 成功但公告發送失敗：{detail}", file=sys.stderr)

@@ -119,9 +119,13 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 if (aJd == null) return aRes;
                 aRes.sessionsTotal = aJd.Contains("sessions_total") ? aJd.GetInt("sessions_total", 0) : 0;
                 aRes.updatedAt = aJd.Contains("updated_at") ? aJd["updated_at"].ToString() : "";
-                if (aJd.Contains("activities"))
+                // 🩸 2026-08-24 首次實跑：空字典被寫成 `"activities":null`，而 `Contains` 對 null 值仍回 true
+                //   ⇒ 這裡拿到 null，`.Keys` 丟 NullReference，整份統計被 catch 當成「讀不到」。
+                //   症狀是回傳檔同時印「累計第 1 場」與「尚無活動統計」—— 兩句不該同時成立。
+                //   ⇒ 存在（Contains）不等於有值。判定要看**值本身**，不是看鍵在不在。
+                var aActs = aJd.Contains("activities") ? aJd["activities"] : null;
+                if (aActs != null && aActs.IsObject)
                 {
-                    var aActs = aJd["activities"];
                     foreach (var aKey in aActs.Keys)
                     {
                         var aIt = aActs[aKey];
@@ -161,7 +165,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 aIt["last_at"] = new JsonData(aKv.Value.lastAt ?? "");
                 aActs[aKv.Key] = aIt;
             }
-            aJd["activities"] = aActs;
+            // ⚠ 空字典在這個 JsonData 實作下會序列化成 `null`（不是 `{}`）——
+            //   而 null 在讀取端是個陷阱（見 Load 的血證）。**沒有內容就不要寫那個鍵**：
+            //   缺鍵是讀取端本來就處理的情形，null 則是它處理不了的第三種狀態。
+            if (iStats.activities.Count > 0) aJd["activities"] = aActs;
             // 原子替換：同 UCL_FreeTimeIO 慣例（半寫的 JSON 會讓下次讀取整份當「沒有統計」）
             string aTmp = aPath + ".tmp";
             File.WriteAllText(aTmp, aJd.ToJson(), new UTF8Encoding(false));

@@ -885,6 +885,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             // session 註冊（C# 唯一寫入端）
             string aSessionId = $"sw-{DateTime.UtcNow:yyyyMMddTHHmmssZ}-{iPersona}";
+            // ⚠ 本方法的 iArgs 是 IDictionary，而 GetArg 的簽章吃 Dictionary ⇒ 直接讀，不繞 GetArg。
+            string aIntervalArg = (iArgs != null && iArgs.TryGetValue("interval", out string aIvRaw))
+                                ? (aIvRaw ?? "").Trim() : "";
             var aSession = new UCL_StreamWatchSession
             {
                 persona = iPersona,
@@ -897,11 +900,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 end_ts = aUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
                 until_local = aUntil.ToString("yyyy-MM-dd HH:mm"),
                 cursor_epoch = 0,                 // 0 = 尚未取材，首輪由 montage 決定窗口
+                // 節奏調控（Tim 2026-08-24）：primary 才有；陪看場保持 0（見欄位註解的適用範圍那一段）。
+                cycle_interval_seconds = ResolveCycleInterval(aIntervalArg, out string aIntervalSrc),
                 active = true,
             };
             // 場次層來源資訊（up 主在 work 那層已經有了，這裡記的是**這一場看的那支**）
             // ⚠ 這四個欄位過去「空就不寫鍵」，typed model 一律寫（空字串）——
             //   加鍵是相容的（讀取端都用預設值判空），而少一個鍵才是查不出來的那種差異。
+            aSession.cycle_interval_source = aIntervalSrc;
             aSession.up = iSrc.Up;
             aSession.video_title = iSrc.VideoTitle;
             aSession.video_desc = iSrc.VideoDesc;
@@ -979,6 +985,110 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ⚠ 中斷判定**不推論 frame 新鮮度**：實測活樣本 enabled=false 而 994 張 frame 仍在磁碟上 ——
         //   「錄影停了」與「frame 沒變新」是兩件事，用後者推論會把 daemon 打嗝讀成中斷而誤殺 session。
         // ===========================================================
+        // ===========================================================
+        // 區塊：cycle 節奏調控（Tim 2026-08-24 拍板）
+        // 職責：把「兩輪之間等多久」從 agent 手上收回來 —— Cmd 持有格線，agent 什麼時候呼叫都行。
+        // 物理意義：next_slot = last_cycle_ts + interval。早到就 await 到格線；
+        //          晚到（例：interval=3 分，上輪 t=2 而 t=5 才來）就**立刻回**，並以 t=5 當新錨點
+        //          ⇒ 錨在「上輪回傳時刻」而非絕對格線，遲到不累積欠帳。
+        // 🩸 為什麼一定要在 Cmd 這邊等：agent 端的 sleep 是**可以被權衡的動作**——
+        //    basecamp 2026-08-24 用它把最後 7 分鐘跳掉了（她拿「剩餘 6 分」算出「留給收工」）。
+        //    搬進 Cmd 之後 agent 那邊沒有時間變數可以算。
+        // ===========================================================
+
+        /// <summary>後台讀不到時的保底間隔（秒）。⚠ 這是**故障保底**，不是「預設值」——
+        /// 真相源是 `_screenstream/_config.json` 的 `watch_cycle_interval_sec`（後台頁可改）。</summary>
+        const int cFallbackCycleIntervalSeconds = 45;
+
+        /// <summary>
+        /// 解析本場間隔：**後台設定為真相源**，`--arg interval=<秒>` 為本場覆寫。
+        /// </summary>
+        /// <remarks>
+        /// 🩸 這裡原本寫成 `Math.Min(預設 120, 上限 45)` ⇒ **恆等於 45，那個 120 一次都沒生效過**，
+        ///    而欄位註解大聲宣稱「預設 120」。註解寫了一條實作從不執行的紀律 —— 本專案的常客。
+        ///    ⇒ 現在不設「預設＋上限」這種會互相吃掉的兩層，只有一層：讀後台，讀不到才用保底。
+        /// ⚠ 回傳 oSource 是為了讓「這個數字從哪來」印得出來：
+        ///    後台值與 arg 覆寫在結果上長得一模一樣，而它們的修改方式完全不同。
+        /// </remarks>
+        static int ResolveCycleInterval(string iArgRaw, out string oSource)
+        {
+            if (!string.IsNullOrEmpty(iArgRaw) && int.TryParse(iArgRaw, out int aArgSec))
+            {
+                oSource = $"本場覆寫 `--arg interval={aArgSec}`";
+                return Math.Max(0, aArgSec);
+            }
+            try
+            {
+                string aPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json");
+                var aCfg = MediaAdmin.UCL_ScreenStreamConfig.Load(aPath);
+                if (aCfg != null)
+                {
+                    oSource = $"後台設定 `watch_cycle_interval_sec`（{aPath}）";
+                    return Math.Max(0, aCfg.watch_cycle_interval_sec);
+                }
+                oSource = $"⚠ 保底值 —— 讀不到 {aPath}";
+            }
+            catch (Exception e) { oSource = $"⚠ 保底值 —— 讀後台設定失敗：{e.Message}"; }
+            return cFallbackCycleIntervalSeconds;
+        }
+
+        /// <summary>等到格線（或到期／停錄影就提早退出）。回傳**實際等了幾秒**，供回傳檔印出來對帳。</summary>
+        /// <remarks>
+        /// ⚠ 用**牆鐘迴圈**而不是一發 `UniTask.Delay(interval)`：Editor 失焦會降頻，
+        ///    一發式的 delay 會被拉長而**不報錯**（check_compile 的註解記過同一族）。
+        ///    牆鐘迴圈的誤差上限是一個 tick（500ms），而且它是自我修正的。
+        /// ⚠ 上限永遠是 ends_at：等待不得讓收工遲到（2026-08-24 那場收工判定晚了 1 分 49 秒，
+        ///    成因正是 agent 在外面 sleep —— 把等待搬進來之後這條就變成本函式的責任）。
+        /// </remarks>
+        static async UniTask<double> AwaitCycleSlotAsync(UCL_StreamWatchSession iS, DateTime? iEnd, CancellationToken iToken)
+        {
+            if (iS == null || iS.cycle_interval_seconds <= 0) return 0;          // 陪看場／關閉調控
+            DateTime? aLast = ParseIsoLocal(iS.last_cycle_ts);
+            if (!aLast.HasValue) return 0;                                       // 第一輪不等，立刻取材
+            DateTime aSlot = aLast.Value.AddSeconds(iS.cycle_interval_seconds);
+            if (iEnd.HasValue && aSlot > iEnd.Value) aSlot = iEnd.Value;         // 不得跨過 ends_at
+            DateTime aBegin = DateTime.Now;
+            while (DateTime.Now < aSlot)
+            {
+                if (iToken.IsCancellationRequested) break;
+                if (!IsRecordingEnabled(out _)) break;                           // Tim 停錄影 ⇒ 立刻去結算
+                await UniTask.Delay(500, DelayType.Realtime, cancellationToken: iToken);
+            }
+            return Math.Max(0, (DateTime.Now - aBegin).TotalSeconds);
+        }
+
+        /// <summary>把節奏調控印成讀數（目標間隔／本輪實等／下一格線）—— 做了什麼要看得見。</summary>
+        static void AppendPacingLine(StringBuilder ioR, UCL_StreamWatchSession iS, double iWaited)
+        {
+            if (iS == null || iS.cycle_interval_seconds <= 0)
+            {
+                ioR.AppendLine("- 節奏調控 : **關閉**（陪看場／interval=0）—— 呼叫即取材，間隔由你自己決定");
+                return;
+            }
+            var aNext = ParseIsoLocal(iS.last_cycle_ts);
+            string aNextText = aNext.HasValue
+                ? aNext.Value.AddSeconds(iS.cycle_interval_seconds).ToString("HH:mm:ss")
+                : "(下一輪起算)";
+            ioR.AppendLine($"- 節奏調控 : 目標間隔 {iS.cycle_interval_seconds}s｜本輪實等 **{iWaited:F0}s**｜下一格線 {aNextText}"
+                         + "　←　等待由本 Cmd 執行，**呼叫端不必也不要自己等**");
+            ioR.AppendLine($"　　　　　　 來源：{(string.IsNullOrEmpty(iS.cycle_interval_source) ? "(未記錄)" : iS.cycle_interval_source)}");
+            // ⚠ 間隔與呼叫端 timeout 是耦合的，而它壞掉的樣子是「客戶端報 Timeout、Editor 其實跑完了」。
+            //   ⇒ 超過門檻就明說，不要靜靜地讓它壞。
+            try
+            {
+                var aCfg = MediaAdmin.UCL_ScreenStreamConfig.Load(
+                    Path.Combine(UCL_AgentCommandsPath.DataRoot, "_screenstream", "_config.json"));
+                int aWarn = aCfg?.watch_cycle_interval_warn_sec ?? 0;
+                if (aWarn > 0 && iS.cycle_interval_seconds >= aWarn)
+                {
+                    ioR.AppendLine($"　　　　　　 ⚠ 間隔 {iS.cycle_interval_seconds}s ≥ {aWarn}s ——"
+                                 + " 呼叫端請加大 `run_cmd.py --timeout`（預設 120s），"
+                                 + "否則會出現「客戶端報 Timeout 而 Editor 其實跑完了」的脫鉤。");
+                }
+            }
+            catch { /* 提醒讀不到就不提醒 —— 不因為提醒失敗而讓整輪失敗 */ }
+        }
+
         async UniTask StepCycle(IDictionary<string, string> iArgs, string iPersona, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "cycle");
@@ -994,8 +1104,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 throw new Exception($"[StreamWatch] step=cycle blocked：無 active session（詳見 {aPath}）");
             }
 
-            DateTime aNow = DateTime.Now;
             DateTime? aEnd = ParseIsoLocal(aS.end_ts);
+            // ── 節奏調控：先等到格線，**再**判終止 ────────────────
+            //   順序不可調換：等待會跨過 ends_at 的話，判定必須用「真正回傳的那一刻」的時鐘，
+            //   否則會出現「判定說沒到期、而回傳到手時早就過了」那種兩層各自為真的脫鉤。
+            double aWaited = await AwaitCycleSlotAsync(aS, aEnd, iToken);
+
+            DateTime aNow = DateTime.Now;
             bool aExpired = aEnd.HasValue && aNow >= aEnd.Value;
             bool aRecordingOff = !IsRecordingEnabled(out string aCfgNote);
 
@@ -1116,8 +1231,16 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                               iPersona, ParseTavernShown(aStdout), Math.Max(0, aTavernSince), false);
                 AppendHotspots(aR, iPersona);   // 無素材時更該印 —— 沒東西看正是該去領熱點的時刻
                 aR.AppendLine();
+                // 這條路徑也要落格線錨點，否則「無素材 → 沒錨點 → 下一次不等 → 又無素材」會變成空轉迴圈。
+                // 落了之後，下一次呼叫由 AwaitCycleSlotAsync 自己等到格線 ⇒ 呼叫端不必再自己數 30-60 秒。
+                aS.last_cycle_ts = UCL_AwakeningService.NowIso();
+                SaveSession(iPersona, aS);
+                AppendPacingLine(aR, aS, aWaited);
+                aR.AppendLine();
                 aR.AppendLine("## next");
-                aR.AppendLine($"1. 等 30–60 秒再跑一次 step=cycle（不必改任何參數）。");
+                // 措辭跟有素材那條路徑一致（祈使句＋指令直接附上）—— 兩條路徑都只給一個動作。
+                // ⛔ 不寫「等 N 秒再來」：等待已經是本 Cmd 的職責，寫在這裡等於把它還給呼叫端。
+                aR.AppendLine($"1. **請繼續觀看下一輪**：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
                 WritePayload(iArgs, aPath, aR.ToString());
                 Debug.Log($"[StreamWatch] step=cycle 感官水位未追上 → {aPath}");
                 return;
@@ -1172,6 +1295,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aS.tiles_total += aInfo.Tiles;
             aS.last_tiles = aInfo.Tiles;
             aS.last_span_seconds = aInfo.SpanSeconds;
+            // 格線錨點＝**這一輪實際回傳的時刻**（不是被呼叫的時刻）——
+            // 遲到那一輪就以遲到點重新起算，欠帳不累積（Tim 2026-08-24：t=2 → t=5 就從 5 起算）。
+            // ⚠ 存 UTC ISO（跟 start_ts / end_ts 同一種形狀）—— ParseIsoLocal 是 AssumeUniversal，
+            //   餵本地時間字串進去會被當成 UTC，格線整整偏掉一個時區而**不報錯**。
+            aS.last_cycle_ts = UCL_AwakeningService.NowIso();
             SaveSession(iPersona, aS);
 
             int aRemain = aEnd.HasValue ? (int)Math.Max(0, (aEnd.Value - aNow).TotalMinutes) : 0;
@@ -1204,7 +1332,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"- 感官     : OCR {(aOcrOn ? "開" : "關")}／STT {(aSttOn ? "開" : "關")}（讀自 _config.json，**不必傳旗標**）");
             AppendSttLine(aR, aSttOn, aInfo);
             AppendClampAudit(aR, aInfo.NextCursor, aWatermark, aWmNote);
-            aR.AppendLine($"- 剩餘     : {aRemain} 分鐘（到 {aEnd:HH:mm}）");
+            // 「剩餘」曾被當成收束訊號用（basecamp 2026-08-24：讀到「剩 6 分」就自己收手去等到期）。
+            // ⇒ 就地把這個數字的用途指派掉（它是寫評論用的時間感）。⛔ 不在這裡加勸告 ——
+            //    往前走的指令只放在 `## next` 那一個地方，這裡多寫一句就是多給一個可以權衡的變數。
+            aR.AppendLine($"- 剩餘     : {aRemain} 分鐘（到 {aEnd:HH:mm}）　← 寫評論用的時間感");
+            // 節奏調控是**這支 Cmd 替你做的事**，所以要印讀數而不是靜靜地做完：
+            // 失焦降頻會讓實等偷偷變長，而「等了 45s」與「等了 90s」在沒有這一行時完全同形。
+            AppendPacingLine(aR, aS, aWaited);
             aR.AppendLine($"- 本場累計 : cycles={aS.cycles}｜observations={aS.observations}");
             // 單一入口：字幕／語音／同場訊息全部嵌進本檔（Tim 2026-08-16）
             // 游標印本輪實際餵進去的那個（aTavernSince），與 sidecar 標題的 `已讀 seq≤N` 同源 —— 見瑕疵①③。
@@ -1223,7 +1357,17 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //    🩸 結果反效果：basecamp 陪看第一輪讀到那句之後**就停了**（把「收工」放進視野，
             //    等於在指路的位置提供了一個停下來的選項）。反向提示會被當成選項，不會被當成禁令。
             //    ⇒ 收工由 cycle 在**真的到期時**宣布即可，不必事先預告。
-            aR.AppendLine($"3. 之後再跑 step=cycle 繼續下一輪。");
+            //
+            // 🩸 2026-08-24 basecamp（同一條線的第二隻，形狀相反）：這一行原本是
+            //    「之後再跑 step=cycle 繼續下一輪。」—— 語氣中性 ⇒ **讀起來像一個選項**。
+            //    她最後一輪取到 23:08，看到「剩餘 6 分鐘」就停手去等到期，那 7 分鐘正片一格沒取，
+            //    而她已經寫進觀察的「投票結果我看不到了」是假的 —— 她看得到，是她不去看。
+            //    ⇒ 上一隻的教訓是「別把收工放進視野」，這一隻是「**別讓往前變成可選的**」。
+            //    修法（Tim 2026-08-24 給的措辭）：**祈使句 ＋ 指令直接附上**，不解釋、不列代價、不提收工。
+            //    「請繼續觀看下一輪」沒有留任何一個可以權衡的變數 —— 而中性語氣有（agent 會拿剩餘分鐘去權衡）。
+            //    ⛔ 想在這裡補一句「不然會丟畫面」之前先讀這行：那是**代價說明**，而代價說明可以被算贏；
+            //       上一版就是敗在給了東西可以算。這裡只留動作。
+            aR.AppendLine($"3. **請繼續觀看下一輪**：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=cycle tiles={aInfo.Tiles} span={aInfo.SpanSeconds:F0}s → {aPath}");
         }
@@ -2845,6 +2989,26 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
         /// <summary>取材游標（epoch 秒）。0＝尚未取材，首輪窗口由 montage 決定。</summary>
         public double cursor_epoch = 0;
+
+        /// <summary>節奏調控：兩輪取材之間的目標間隔（秒）。0＝不調控（陪看場一律 0）。</summary>
+        /// <remarks>
+        /// 物理意義：Cmd 自己持有格線 —— `next_slot = last_cycle_ts + interval`，agent 什麼時候呼叫都行，
+        ///          Cmd 一律**等到格線才回傳**。⇒ 窗口寬度恆等於 interval，每格粗細跟著固定。
+        /// 為什麼由 Cmd 等而不是 agent 等（Tim 2026-08-24 拍板）：agent 端的 `sleep` 是一個**可以被權衡的動作** ——
+        ///          🩸 basecamp 當晚就是用它跳過了最後 7 分鐘（她拿「剩餘 6 分」算出「留給收工」）。
+        ///          把等待搬進 Cmd 之後，agent 那邊**沒有時間變數可以算**，節奏不再是它的權限。
+        /// ⚠ 射程：這只設得了間隔的**下限**。窗口寬度＝agent 迴轉時間，迴轉比 interval 慢時格線會順延
+        ///          （錨在「上輪回傳時刻」而不是絕對格線 ⇒ 不累積欠帳，但那幾輪的每格還是會變粗）。
+        /// ⛔ 陪看場不套用：companion 的正確性條件跟 primary **相反**（gap 是正常不是失敗），
+        ///          把 primary 的不變式套到沒有那條不變式的角色上，就是「通則沒問適用範圍」那隻。
+        /// </remarks>
+        public int cycle_interval_seconds = 0;
+        /// <summary>這個間隔是從哪來的（後台設定／本場覆寫／保底）——「值一樣」不代表「來源一樣」，
+        /// 而改它的方式完全不同。印得出來才改得對。</summary>
+        public string cycle_interval_source = "";
+        /// <summary>上一輪 cycle **實際回傳**的 UTC ISO（格線錨點）。空＝還沒有回傳過任何一輪。</summary>
+        public string last_cycle_ts = "";
+
         public int cycles = 0;
         public int observations = 0;
         public int tiles_total = 0;

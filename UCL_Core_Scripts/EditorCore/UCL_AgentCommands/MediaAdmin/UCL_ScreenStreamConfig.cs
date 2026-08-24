@@ -98,6 +98,22 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         /// <summary>開播酒館廣播「📺 本場節目」那行的唯一來源（**每片一份**，換片要改）。</summary>
         public string stream_title = "";
 
+        // ── 觀影節奏（StreamWatch cycle 調控；Tim 2026-08-24 拍板要能從後台配置）──
+        /// <summary>主觀影者兩輪取材之間的目標間隔（秒）。0＝關閉調控（呼叫即取材）。</summary>
+        /// <remarks>
+        /// 物理意義：Cmd 自己持有格線（`上輪回傳時刻 + 本值`），早到就等、晚到就立刻回並重新起算 ——
+        ///          ⇒ 窗口寬度恆等於本值，**每格粗細＝本值 ÷ 格數**。
+        ///          今晚實測基準：182s / 16 格 ＝ 每格 11s（偏粗，關鍵台詞得靠 STT 補）。
+        /// ⚠ **它與呼叫端的 timeout 是耦合的**：`run_cmd.py` 預設 120s，本值若逼近或超過它，
+        ///          就會長出「客戶端報 Timeout、Editor 其實跑完了」那種兩層各自為真的脫鉤。
+        ///          ⇒ 設超過 `watch_cycle_interval_warn_sec` 時 Cmd 會在回傳檔明說要加大 `--timeout`，
+        ///          而不是靜靜地讓它壞（缺席被印成正常值是這個專案抓最多的那一族）。
+        /// ⛔ 只作用於 primary：companion 的正確性條件相反（gap 是正常不是失敗）。
+        /// </remarks>
+        public int watch_cycle_interval_sec = 45;
+        /// <summary>超過本值就在回傳檔提醒「呼叫端要加大 --timeout」。0＝不提醒。</summary>
+        public int watch_cycle_interval_warn_sec = 100;
+
         public int _schema_version = 1;
 
         // ===========================================================

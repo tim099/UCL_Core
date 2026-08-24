@@ -79,6 +79,7 @@ namespace UCL.Core.EditorLib.Page
 
             new ToolGroup("Fold.AgentOps", "ToolBox.Group.AgentOps",
                 new ToolEntry("ToolBox.BugReportAdmin", () => UCL_BugReportAdminPage.Create()),
+                new ToolEntry("ToolBox.TaskManager", () => UCL_TaskManagerPage.Create()),
                 new ToolEntry("ToolBox.Relationship", () => UCL_RelationshipPage.Create()),
                 new ToolEntry("ToolBox.SessionAdmin", () => UCL_SessionAdminPage.Create()),
                 new ToolEntry("ToolBox.FreeTimeAdmin", () => UCL_FreeTimeAdminPage.Create())),

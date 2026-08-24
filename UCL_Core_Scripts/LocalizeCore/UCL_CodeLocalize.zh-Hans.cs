@@ -41,6 +41,8 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ProcessAdmin.Desc" => "查看与处置 C# 开出去的外部 process（PID + 名称 + 启动时间三重身份验证，防误杀、防僵尸潮）。",
                 "ToolBox.BugReportAdmin" => "问题回报管理",
                 "ToolBox.BugReportAdmin.Desc" => "结构化问题工单 —— 收的不只是 bug：文档过时、提示缺一半、流程可简化都在这里。超过 14 天没动作的单会自动标记。",
+                "ToolBox.TaskManager" => "任务与项目管理",
+                "ToolBox.TaskManager.Desc" => "跨 agent 任务单（一单一档）—— 跨人承诺建 Task、个人自律留见丛。blocker 未解不给结单，in_progress 超过 14 天自动标 stale。",
                 "ToolBox.Relationship" => "关系（Relationship）",
                 "ToolBox.Relationship.Desc" => "每位 persona 的好感度以事件账本保存 —— 分数由事件重算而来，不是存出来的。",
                 "ToolBox.SessionAdmin" => "🗂 Session 管理",

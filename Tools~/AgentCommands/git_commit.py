@@ -30,7 +30,8 @@ git_commit.py — commit 的最後一步：帶 persona 參數，自動組 Co-Aut
 （帳本 / 訊息 / cursor / 狀態快照）走 `Cmd AutoCommit` —— 那條路是純 git commit，
 不掛 trailer、不公告、不領薪（掛誰的名字領誰的薪都是假帳）。
 
-exit code: 0 成功 / 2 參數或 persona 有問題 / 3 信箱未設定 / 4 沒有 staged 變更 / 5 git commit 失敗
+exit code: 0 成功 / 2 參數或 persona 有問題（含 --expect-files 不符）/ 3 信箱未設定
+         / 4 沒有 staged 變更 / 5 git commit 失敗
          / 6 commit 成功但公告發送失敗（**錢沒領到，需手動補**）
 """
 
@@ -337,6 +338,9 @@ def main() -> int:
     ap.add_argument("--allow-unset", action="store_true",
                     help="信箱未設定仍提交（預設拒絕 —— 假位址進了 history 就改不掉）")
     ap.add_argument("--dry-run", action="store_true", help="只印組出來的訊息，不提交")
+    ap.add_argument("--expect-files", type=int, default=None,
+                    help="宣告這一筆應該收幾個檔；與實際 staged 數不符就擋下不提交"
+                         "（不帶＝不檢查。防「git add <目錄> 把別人的檔一起收走」）")
     ap.add_argument("--announce-body", default="",
                     help="公告的開場白（插在標題與 commit 內文之間，寫給現在在酒館的同事看）")
     ap.add_argument("--announce-body-file", default="",
@@ -381,6 +385,33 @@ def main() -> int:
     if not staged.stdout.strip():
         print(f"ERROR: {args.repo} 沒有 staged 變更 —— 本工具只做提交，stage 請自己來", file=sys.stderr)
         return EXIT_NOTHING_STAGED
+
+    # ===========================================================
+    # 區塊職責：`--expect-files N` —— staged 檔數與宣告不符就**擋下**，不提交。
+    #
+    # 🩸 2026-08-24 summit 一天三次同族「讀數印出來了而我沒讀」：
+    #   ① commit 訊息只講兩張單而 `--name-only` 印了五個檔（我看到了，照樣送出）
+    #   ② `git add <目錄>` 用目錄當清單，收走同事正在寫的兩張單
+    #   ③ 回傳檔印了「已建單 TASK-0010」而我對 index=8 下手，取消掉同事的主 Task
+    #   三次那個正確的讀數**都已經在畫面上**。⇒ 「下次記得看」是願望（第二三次都發生在我
+    #   寫下第一次的修法之後）；有效的只有兩種形狀：把清單縮短，或把手勢換掉。
+    #
+    # 本旗標屬後者：它把「我以為我在提交幾個檔」變成一個**必須先算過**的數字 ——
+    # 跟 `sculpt.py --expect-pixels` 同一個形狀（本 repo 已有的慣例，不是新發明）。
+    #
+    # ⚠ 不帶旗標時**行為完全不變** —— 強制它會讓既有呼叫端全部壞掉，而那會讓人改去繞過本工具。
+    # 數值影響：不符時 exit 2（參數層問題），**且在 git commit 之前**返回 ⇒ 沒有東西落地。
+    # ===========================================================
+    staged_files = [l for l in staged.stdout.splitlines() if l.strip()]
+    if args.expect_files is not None and args.expect_files != len(staged_files):
+        print(f"ERROR: --expect-files={args.expect_files} 但實際 staged **{len(staged_files)}** 個檔"
+              f" ⇒ 擋下，沒有提交。", file=sys.stderr)
+        print("  完整清單（這就是那個「印出來了而沒被讀」的讀數）：", file=sys.stderr)
+        for f in staged_files:
+            print(f"    - {f}", file=sys.stderr)
+        print("  ⇒ 要嘛改 --expect-files 的數字（先確認每一個檔都是你要收的），"
+              "要嘛 unstage 不該收的（別人正在寫的檔不會有任何一層喊）。", file=sys.stderr)
+        return EXIT_BAD_ARGS
 
     result = subprocess.run(["git", "-C", args.repo, "commit", "-F", "-"],
                             input=message, capture_output=True, text=True, encoding="utf-8")

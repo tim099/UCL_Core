@@ -118,6 +118,17 @@ description: |
 
 - DebugLogs 保持 **untracked 但不 ignore** — Tim 要在 `git status` 看得到。
 - **絕不 `git add -A`** — 一律具名 stage。**別人正在寫的檔會被你一起 commit 走**，而那不會有錯誤訊息。
+  ⚠ **`git add <目錄>` 跟 `-A` 是同一族** —— 目錄不是清單：它收的是「現在那底下有什麼」，
+  而那包含同事三分鐘前才落盤的檔。
+  🩸 2026-08-24 summit：`git add Tasks` 把 @basecamp 正在寫的兩張探針單收進自己的 commit，
+  而那筆的訊息只講了另外兩張單。`--name-only` 的清單**印出來了**，就在下一行輸出裡。
+- 🛡 **帶 `--expect-files N`** —— 宣告這一筆該收幾個檔，不符就擋下（exit 2，**commit 前返回**）：
+  ```bash
+  python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <repo> \
+      --expect-files 3 --message-file <訊息檔>
+  ```
+  它把「我以為我在提交幾個檔」變成一個**必須先算過**的數字（同 `sculpt.py --expect-pixels` 的形狀）。
+  不帶＝不檢查（既有呼叫端行為不變）—— 但**具名 stage ＋ 這個數字**才是完整的那道手勢。
 - 別漏 stage `.meta`，否則 Unity 跳 missing reference。
 
 ## Submodule 先切追蹤分支（必做）

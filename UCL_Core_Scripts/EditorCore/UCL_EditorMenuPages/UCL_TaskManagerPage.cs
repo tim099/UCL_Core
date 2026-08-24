@@ -159,24 +159,25 @@ namespace UCL.Core.EditorLib.Page
 
             using (new GUILayout.HorizontalScope())
             {
-                m_ShowClosed = UCL_GUILayout.Toggle(m_ShowClosed);
-                GUILayout.Label("含已關（done / cancelled）", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                GUILayout.Space(12);
+
 
                 GUILayout.Label("狀態", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 DrawFilterPopup(ref m_StatusFilter, STATUS_VALUES, STATUS_LABELS, "StatusFilter",
-                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
 
                 GUILayout.Space(12);
                 GUILayout.Label("參與者", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
                 // 選項永遠 ≥ 1（第一項是「全部」）—— PopupSearch 空清單會 LogError
                 var aPersonaValues = new List<string> { "" };
                 aPersonaValues.AddRange(aPersonas);
                 var aPersonaLabels = new List<string> { "全部" };
                 aPersonaLabels.AddRange(aPersonas);
                 DrawFilterPopup(ref m_PersonaFilter, aPersonaValues, aPersonaLabels, "PersonaFilter",
-                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
 
+                m_ShowClosed = UCL_GUILayout.CheckBox(m_ShowClosed);
+                GUILayout.Label("含已關（done / cancelled）", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 GUILayout.FlexibleSpace();
             }
 

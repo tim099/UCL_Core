@@ -109,8 +109,41 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         // ===========================================================
         static readonly string[] SECTION_HEADINGS =
         {
-            "## 驗收標準", "## 任務描述", "## 結單說明", "## 活動與討論時間線",
+            "## 驗收標準", "## 任務描述", "## 結單說明", "## 留言", "## 活動與討論時間線",
         };
+
+        // ===========================================================
+        // 區塊職責：留言的**唯一表示法** —— `### 💬 #<id>　<persona>　<iso>`。
+        // 物理意義：留言區要能被機器認出「一則的邊界」與「是誰說的」，同時人讀得懂。
+        //   ⇒ 只用這一行當標記，**不另加 HTML 註解** —— 兩種標記就是兩份真相，而它們會漂
+        //     （🩸 這個 repo 最貴的錯誤形狀：同一件事有兩份，而併起來才知道原本有幾個）。
+        // 數值影響：解析靠這條 regex；寫回靠 CommentHeader()。**改一邊要改另一邊**，所以放在一起。
+        // ===========================================================
+        static readonly System.Text.RegularExpressions.Regex COMMENT_HEAD = new System.Text.RegularExpressions.Regex(
+            @"^###\s+💬\s+#(?<id>\d+)\s+(?<persona>\S+)\s+(?<at>\S+)\s*$",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        static string CommentHeader(UCL_TaskComment c)
+            => $"### 💬 #{c.id} {c.persona} {c.at}";
+
+        // ===========================================================
+        // 區塊職責：留言內文裡「看起來像區塊標題」的行要逃脫。
+        //
+        // 🩸 2026-08-24 實測（我自己下的探針）：一則留言的內文中間有一行是 `## 驗收標準`，
+        //    下一次寫入（整檔重寫 → 重新解析）時 parser 在那一行判定「區塊結束」⇒
+        //    **那則留言的第三行永久消失，而檔案看起來完全正常**。
+        //    ⇒ 這是本 repo 最貴的形狀：一次寫入之後靜默丟資料，沒有任何一層會喊。
+        //
+        // 修法：寫入時在行首的 `#` 前加一個 `\`（markdown 的字面轉義，渲染仍是 `#`），
+        //   讀取時脫掉。**兩個方向都在這裡**，所以改一邊必然看到另一邊。
+        // ⚠ 為什麼不改成「更聰明的邊界判定」：那要猜「這個 `##` 是留言內容還是區塊標題」，
+        //   而猜錯的兩種結果都是靜默的。逃脫是把歧義**消掉**，不是把它判對。
+        // ===========================================================
+        static string EscapeCommentLine(string iLine)
+            => iLine.TrimStart().StartsWith("#", StringComparison.Ordinal) ? "\\" + iLine : iLine;
+
+        static string UnescapeCommentLine(string iLine)
+            => iLine.StartsWith("\\#", StringComparison.Ordinal) ? iLine.Substring(1) : iLine;
 
         // ===========================================================
         // 區塊職責：寫一張單（新建 / 狀態變更 / 留言皆走這裡）。
@@ -131,6 +164,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     if (aIn && IsSectionHeading(aLine)) aIn = false;
                     if (aIn && aLine.TrimStart().StartsWith("- ", StringComparison.Ordinal)) aTimeline.Add(aLine.Trim());
                 }
+                // 留言：呼叫端沒帶（e.comments 空）時從磁碟撈回來 ——
+                // 整檔重寫會蓋掉它，而它跟時間線一樣是不可重建的
+                if (e.comments.Count == 0) e.comments = ReadComments(aPath);
                 // 內文欄位沒給就沿用既有的 —— 狀態變更不必重打驗收標準與描述
                 if (string.IsNullOrEmpty(iCriteria)) iCriteria = ReadSection(aPath, "## 驗收標準");
                 if (string.IsNullOrEmpty(iDescription)) iDescription = ReadSection(aPath, "## 任務描述");
@@ -188,6 +224,24 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             sb.Append("## 任務描述\n\n").Append(Nz(iDescription)).Append("\n\n");
             if (!string.IsNullOrWhiteSpace(e.resolution_note))
                 sb.Append("## 結單說明\n\n").Append(e.resolution_note).Append("\n\n");
+
+            // 留言區 —— 一則一個 `### 💬` 標頭 ＋ 內文。空的時候也印區塊標題，
+            // 因為「這張單沒有人討論過」跟「這個區塊不存在」不是同一件事。
+            sb.Append("## 留言\n\n");
+            if (e.comments.Count == 0)
+            {
+                sb.Append("_(還沒有人留言)_\n\n");
+            }
+            else
+            {
+                foreach (var c in e.comments)
+                {
+                    sb.Append(CommentHeader(c)).Append('\n');
+                    foreach (var aLine in (c.body ?? "").TrimEnd().Replace("\r", "").Split('\n'))
+                        sb.Append(EscapeCommentLine(aLine)).Append('\n');
+                    sb.Append('\n');
+                }
+            }
             sb.Append("## 活動與討論時間線\n\n");
             foreach (var h in aTimeline) sb.Append(h).Append('\n');
             File.WriteAllText(aPath, sb.ToString(), new UTF8Encoding(false));
@@ -273,7 +327,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                         case "participants": aCur = null; break;
                     }
                 }
-                return e.index > 0 ? e : null;
+                if (e.index <= 0) return null;
+                e.comments = ReadComments(iPath);
+                return e;
             }
             catch (Exception ex)
             {
@@ -426,6 +482,70 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
         static string After(string iLine, string iPrefix)
             => iLine.Substring(iPrefix.Length).Trim();
+
+        // ===========================================================
+        // 區塊職責：把 `## 留言` 區塊解析成留言清單。
+        // 物理意義：一則的邊界＝下一個 `### 💬` 標頭或下一個頂層區塊標題。
+        // ⚠ 認不出標頭的行（例如有人手改壞了格式）**歸給前一則的內文**而不是丟掉 ——
+        //   丟掉會讓「有人手改壞了」與「他沒寫過那句話」長得一樣。
+        // 數值影響：一次讀檔。回空清單＝這張單沒有留言（或沒有留言區塊）。
+        // ===========================================================
+        public static List<UCL_TaskComment> ReadComments(string iPath)
+        {
+            var aOut = new List<UCL_TaskComment>();
+            try
+            {
+                if (!File.Exists(iPath)) return aOut;
+                bool aIn = false;
+                UCL_TaskComment aCur = null;
+                var aBody = new StringBuilder();
+                foreach (var aLine in File.ReadAllLines(iPath, Encoding.UTF8))
+                {
+                    if (aLine.StartsWith("## 留言", StringComparison.Ordinal)) { aIn = true; continue; }
+                    if (!aIn) continue;
+                    if (IsSectionHeading(aLine)) break;                 // 區塊結束
+
+                    var aM = COMMENT_HEAD.Match(aLine);
+                    if (aM.Success)
+                    {
+                        Flush(aOut, ref aCur, aBody);
+                        aCur = new UCL_TaskComment
+                        {
+                            persona = aM.Groups["persona"].Value,
+                            at = aM.Groups["at"].Value,
+                        };
+                        int.TryParse(aM.Groups["id"].Value, out aCur.id);
+                        continue;
+                    }
+                    if (aCur != null) aBody.Append(UnescapeCommentLine(aLine)).Append('\n');
+                }
+                Flush(aOut, ref aCur, aBody);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Task] 留言解析失敗（當成沒有留言，但這一行是那個失敗的讀數）：{iPath}（{ex.Message}）");
+            }
+            return aOut;
+        }
+
+        static void Flush(List<UCL_TaskComment> ioList, ref UCL_TaskComment ioCur, StringBuilder ioBody)
+        {
+            if (ioCur != null)
+            {
+                ioCur.body = ioBody.ToString().Trim();
+                ioList.Add(ioCur);
+            }
+            ioCur = null;
+            ioBody.Length = 0;
+        }
+
+        /// <summary>下一則留言的編號（現有最大 +1）—— 編號只為讓人指名「第幾則」。</summary>
+        public static int NextCommentId(UCL_TaskEntry e)
+        {
+            int aMax = 0;
+            foreach (var c in e.comments) if (c.id > aMax) aMax = c.id;
+            return aMax + 1;
+        }
 
         static string IntList(List<int> iList)
         {

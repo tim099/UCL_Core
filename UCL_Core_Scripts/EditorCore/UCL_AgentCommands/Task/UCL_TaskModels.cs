@@ -72,6 +72,25 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public string assigned_at = "";
     }
 
+    // ===========================================================
+    // 區塊職責：一則留言。
+    // 物理意義：**討論與活動紀錄是兩種東西**，所以在單檔裡是兩個區塊：
+    //   `## 活動與討論時間線` 記「系統做了什麼」（狀態變更、link、commit）——機械寫的；
+    //   `## 留言` 記「人說了什麼」——有作者、有內文、可多行。
+    //   混在一起的話，「誰說的」會被 append 成一行純文字，而下一個讀的人分不出
+    //   那句話是系統敘述還是同事的意見（Tim 2026-08-24：留言要有可判別的區域與留言者）。
+    // 數值影響：落在 md 的 `### 💬 #<id>　<persona>　<iso>` 標頭 ＋ 其後的內文行。
+    //   ⚠ **只有這一份表示法**（不另加 HTML 註解標記）—— 兩種標記就是兩份真相，而它們會漂。
+    // ===========================================================
+    public class UCL_TaskComment
+    {
+        public int id = 0;
+        public string persona = "";
+        /// <summary>UTC ISO8601。</summary>
+        public string at = "";
+        public string body = "";
+    }
+
     /// <summary>
     /// 一張任務單。事實來源＝<c>tasks/&lt;index&gt;.md</c> 的 frontmatter ＋內文區塊；
     /// **沒有第二份索引**（有索引就會有「索引與檔案不一致」那一類 bug，而它們通常靜默）。
@@ -106,6 +125,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public List<int> subtask_indices = new List<int>();
         public List<string> tags = new List<string>();
         public List<string> commit_shas = new List<string>();
+        /// <summary>討論留言（由單檔的 `## 留言` 區塊解析而來，寫回時整區重寫）。</summary>
+        public List<UCL_TaskComment> comments = new List<UCL_TaskComment>();
 
         public string Id => "TASK-" + index.ToString("0000", System.Globalization.CultureInfo.InvariantCulture);
 

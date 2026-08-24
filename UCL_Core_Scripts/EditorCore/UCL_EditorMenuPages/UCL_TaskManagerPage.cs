@@ -56,6 +56,15 @@ namespace UCL.Core.EditorLib.Page
         double m_ArmedTime = -1.0;
         const double ARM_WINDOW_SEC = 5.0;
 
+        // 區塊職責：留言輸入 —— 只在展開的那一張單上（Tim 2026-08-24：展開 Task 才顯示留言）。
+        // 物理意義：草稿存在**記憶體且綁定單號** —— 換單、換頁就消失。
+        //   ⚠ 不做「跨單共用一個草稿」：那會讓在 A 單打的字送進 B 單，而送出之後看起來一切正常。
+        int m_DraftIndex = -1;
+        string m_Draft = "";
+        // 後台頁的操作者。留言要有作者，而作者不能是「後台頁」——
+        // 一則沒有人負責的留言，讀的人無從判斷它的份量。
+        string m_Author = "Tim";
+
         GUIStyle m_SmallStyle;
         GUIStyle SmallStyle
         {
@@ -275,7 +284,89 @@ namespace UCL.Core.EditorLib.Page
                     }
                     GUILayout.FlexibleSpace();
                 }
+
+                DrawComments(e);
             }
+        }
+
+        // ===========================================================
+        // 區塊職責：留言區（**只在展開時畫** —— Tim 2026-08-24 指定）。
+        // 物理意義：列表列要能一眼掃完，所以討論不能佔用它的高度；
+        //          而展開的那一張單是「我正在處理這件事」，那時討論才是主角。
+        // 數值影響：讀取用已載入的 `e.comments`（LoadAll 時一併解析，不另外讀磁碟）；
+        //          送出走 `UCL_TaskIO.Save` ＋ `UCL_TaskNotify`（與 Cmd 同一條路，不是第二個寫入端）。
+        // ===========================================================
+        void DrawComments(UCL_TaskEntry e)
+        {
+            GUILayout.Space(4);
+            GUILayout.Label($"💬 留言（{e.comments.Count}）", UCL_GUIStyle.LabelStyle);
+            if (e.comments.Count == 0)
+                GUILayout.Label("（還沒有人留言）", SmallStyle);
+            foreach (var c in e.comments)
+            {
+                using (new GUILayout.VerticalScope(GUI.skin.box))
+                {
+                    GUILayout.Label($"#{c.id}　**{c.persona}**　{LocalTime(c.at)}", SmallStyle);
+                    GUILayout.Label(c.body, SmallStyle);
+                }
+            }
+
+            // ── 輸入列 ────────────────────────────────────────────────
+            if (m_DraftIndex != e.index) { m_DraftIndex = e.index; m_Draft = ""; }
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("作者", SmallStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
+                m_Author = GUILayout.TextField(m_Author, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                GUILayout.Label("　留言（送出後會同步發到酒館並 @ 參與者）", SmallStyle);
+            }
+            m_Draft = GUILayout.TextArea(m_Draft, GUILayout.MinHeight(UCL_GUIStyle.GetScaledSize(48)));
+            using (new GUILayout.HorizontalScope())
+            {
+                bool aCanSend = !string.IsNullOrWhiteSpace(m_Draft) && !string.IsNullOrWhiteSpace(m_Author);
+                // ⚠ 空白留言不給送 —— 一則空留言會推進 updated_at（讓 stale 計時歸零），
+                //   於是「有人在動它」這個讀數會被一個沒有內容的動作洗掉。
+                if (!aCanSend)
+                {
+                    var c = GUI.color; GUI.color = new Color(0.6f, 0.6f, 0.6f);
+                    GUILayout.Label(string.IsNullOrWhiteSpace(m_Author)
+                        ? "（要填作者 —— 沒有作者的留言，讀的人無從判斷它的份量）"
+                        : "（留言是空的 ⇒ 不給送：空留言會把 stale 計時洗掉）", SmallStyle);
+                    GUI.color = c;
+                }
+                else if (GUILayout.Button("送出留言", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                {
+                    AddComment(e, m_Author.Trim(), m_Draft.Trim());
+                    m_Draft = "";
+                    GUIUtility.keyboardControl = 0;
+                }
+                GUILayout.FlexibleSpace();
+            }
+        }
+
+        // ⚠ 寫入與通知都走與 Cmd 相同的兩支（`UCL_TaskIO.Save` / `UCL_TaskNotify`）——
+        //   後台頁不自己組 md、也不自己發酒館訊息（兩份格式會漂，而漂移是靜默的）。
+        void AddComment(UCL_TaskEntry e, string iAuthor, string iBody)
+        {
+            string aNow = UCL_TaskIO.NowUtc();
+            var aComment = new UCL_TaskComment
+            { id = UCL_TaskIO.NextCommentId(e), persona = iAuthor, at = aNow, body = iBody };
+            e.comments.Add(aComment);
+            UCL_TaskIO.Touch(e, aNow);
+            UCL_TaskIO.Save(e, "", "", $"{aNow}　`comment`　{iAuthor} 留言 #{aComment.id}（後台頁）");
+            UCL_TaskNotify.PostFireAndForget(e, UCL_TaskNotify.Kind.Comment, iAuthor, "", iBody);
+            Refresh();
+            Debug.Log($"[TaskManager] {e.Id} 留言 #{aComment.id} by {iAuthor}（已請酒館通知；失敗會印 [TaskNotify]）");
+        }
+
+        /// <summary>UTC ISO → 本地 `MM-dd HH:mm`。解析不了就**原樣回**（不假裝知道時間）。</summary>
+        static string LocalTime(string iIso)
+        {
+            if (string.IsNullOrEmpty(iIso)) return "(無時間)";
+            if (!DateTime.TryParse(iIso, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AdjustToUniversal
+                    | System.Globalization.DateTimeStyles.AssumeUniversal, out var aUtc)) return iIso;
+            return aUtc.ToLocalTime().ToString("MM-dd HH:mm",
+                System.Globalization.CultureInfo.InvariantCulture);
         }
 
         // 區塊職責：二段確認按鈕 —— 第一次點只 arm，ARM_WINDOW_SEC 秒內再點同一顆才真的動手。

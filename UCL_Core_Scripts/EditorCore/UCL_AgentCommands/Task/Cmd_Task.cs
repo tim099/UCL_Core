@@ -64,17 +64,17 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             {
                 switch (aOp)
                 {
-                    case "create": OpCreate(args, aActor, aR); break;
+                    case "create": await OpCreate(args, aActor, aR); break;
                     case "list": OpList(args, aR); break;
                     case "show": OpShow(args, aR); break;
-                    case "claim": OpClaim(args, aActor, aR); break;
-                    case "assign": OpAssign(args, aActor, aR); break;
+                    case "claim": await OpClaim(args, aActor, aR); break;
+                    case "assign": await OpAssign(args, aActor, aR); break;
                     case "unassign": OpUnassign(args, aActor, aR); break;
                     case "update": OpUpdate(args, aActor, aR); break;
-                    case "comment": OpComment(args, aActor, aR); break;
+                    case "comment": await OpComment(args, aActor, aR); break;
                     case "link": OpLink(args, aActor, aR); break;
-                    case "resolve": OpResolve(args, aActor, aR); break;
-                    case "commit": OpCommit(args, aActor, aR); break;
+                    case "resolve": await OpResolve(args, aActor, aR); break;
+                    case "commit": await OpCommit(args, aActor, aR); break;
                     case "kanban": OpKanban(aR); break;
                     default:
                         throw new Exception($"[Task] 認不得的 op='{aOp}'"
@@ -96,7 +96,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //   （Sirius 教的：交件的通過條件比結論值錢。）
         // 數值影響：配一個 index、寫一份 tasks/<index>.md。
         // ===========================================================
-        void OpCreate(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
+        async UniTask OpCreate(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
         {
             string aTitle = GetArg(iArgs, "title", "").Trim();
             string aCriteria = GetArg(iArgs, "criteria", "").Trim();
@@ -146,7 +146,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine($"- 認領 → `run Task --arg op=claim --arg index={e.index} --arg role=dev`");
             ioR.AppendLine($"- 見叢留一行引用（Task 記別人在等什麼，見叢記我為什麼又拖了）：");
             ioR.AppendLine($"  `awakening.py keys --persona <me> --add \"[{e.Id}] {e.title}\"`");
-            ioR.AppendLine($"- 做完 commit 訊息帶 `Fixes {e.Id}`（P1 上線後自動推進狀態；目前仍需手動 resolve）");
+            ioR.AppendLine($"- 做完 commit 訊息帶 `Fixes {e.Id}`（提交時自動推進 —— 有 QA 進 in_review，沒 QA 直接 done）");
+            ioR.AppendLine();
+            bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Created, iActor,
+                GetArg(iArgs, "description", "").Trim());
+            AppendNotifyLine(ioR, e, iActor, aOk);
         }
 
         // ===========================================================
@@ -229,7 +233,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //   目前先讓 `list` 把 stale 印出來 —— **告警是給人看的，釋放才是機械的**，
         //   所以這裡不假裝那一格已經有守衛。
         // ===========================================================
-        void OpClaim(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
+        async UniTask OpClaim(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
         {
             var e = Require(iArgs, out int aIndex);
             string aRole = Norm(GetArg(iArgs, "role", "dev"));
@@ -250,9 +254,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 ioR.AppendLine($"- 🛑 **注意：這張單有未解 blocker** —— {string.Join("；", aBlockers)}");
                 ioR.AppendLine("  認領不擋（也許妳就是要去解它），但 `resolve` 會擋。");
             }
+            bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
+                $"{aFrom} → **in_progress**（{iActor} 認領 role={aRole}）");
+            AppendNotifyLine(ioR, e, iActor, aOk);
         }
 
-        void OpAssign(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
+        async UniTask OpAssign(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
         {
             var e = Require(iArgs, out int aIndex);
             string aTarget = GetArg(iArgs, "target_persona", "").Trim();
@@ -266,8 +273,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine($"## ✅ {e.Id} 參與者已更新");
             ioR.AppendLine($"- {(aNew ? "新增" : "已存在，未重複加")}：{aTarget}（{aRole}）");
             ioR.AppendLine($"- 參與：{Participants(e)}");
-            ioR.AppendLine("- ⚠ **指派本身不會通知對方** —— 通知由 Tim 在後台做（2026-08-24 拍板）。");
-            ioR.AppendLine($"  被指派的人若沒在見叢寫一行 `[{e.Id}]`，他的早安 brief 不會提這張單。");
+            bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Assigned, iActor,
+                $"{aTarget} ← `{aRole}`");
+            AppendNotifyLine(ioR, e, iActor, aOk);
+            ioR.AppendLine($"- ⚠ 被指派的人若沒在見叢寫一行 `[{e.Id}]`，他的**早安 brief 不會提這張單**");
+            ioR.AppendLine("  （早安流程刻意零改動 —— Tim 2026-08-24 拍板）。酒館通知是他知道這件事的那條路。");
         }
 
         void OpUpdate(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
@@ -287,6 +297,14 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                         + "而 update 沒有）。這不是麻煩，是刻意不留旁路。");
                 aChanges.Add($"status {e.status} → {aNorm}");
                 e.status = aNorm;
+                // 🩸 2026-08-24：我誤關了別人的單再改回 todo，而 `closed_at` **留著我那筆取消的時戳** ⇒
+                //   status=todo 而 closed_at 有值 —— 資料自己跟自己打架，且看不出哪一邊是真的。
+                //   ⇒ 從已關改回未關時一律清掉它，並在時間線寫明清了什麼（不靜默改數字）。
+                if (e.closed_at.Length > 0)
+                {
+                    aChanges.Add($"closed_at 清空（原 {e.closed_at} —— 未關的單不該有結案時間）");
+                    e.closed_at = "";
+                }
             }
             string aPriority = GetArg(iArgs, "priority", "").Trim();
             if (aPriority.Length > 0) { aChanges.Add($"priority {e.priority} → {Norm(aPriority)}"); e.priority = Norm(aPriority); }
@@ -308,18 +326,63 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             foreach (var c in aChanges) ioR.AppendLine($"- {c}");
         }
 
-        void OpComment(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
+        async UniTask OpComment(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
         {
             var e = Require(iArgs, out int aIndex);
             string aBody = GetArg(iArgs, "body", "").Trim();
             if (aBody.Length == 0) throw new Exception("[Task] op=comment 需要 --arg body=<內容>");
             string aNow = UCL_TaskIO.NowUtc();
+            var aComment = new UCL_TaskComment
+            {
+                id = UCL_TaskIO.NextCommentId(e),
+                persona = iActor,
+                at = aNow,
+                body = aBody,
+            };
+            e.comments.Add(aComment);
             UCL_TaskIO.Touch(e, aNow);
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　[{iActor}] {aBody.Replace("\r", " ").Replace("\n", " ")}");
-            ioR.AppendLine($"## ✅ {e.Id} 已追加一則時間線");
-            ioR.AppendLine($"- [{iActor}] {aBody}");
+            // 時間線只留一行「有人留言了」的索引 —— 內容在留言區，**不存兩份**
+            UCL_TaskIO.Save(e, "", "", $"{aNow}　`comment`　{iActor} 留言 #{aComment.id}");
+
+            ioR.AppendLine($"## ✅ {e.Id} 已留言 #{aComment.id}");
+            ioR.AppendLine($"- 作者：{iActor}　時間：{aNow}");
+            ioR.AppendLine("- 落點：單檔的 `## 留言` 區塊（時間線只留一行索引）");
+            ioR.AppendLine();
+            ioR.AppendLine("```markdown");
+            ioR.AppendLine(aBody);
+            ioR.AppendLine("```");
+            ioR.AppendLine();
+            bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Comment, iActor, "", aBody);
+            AppendNotifyLine(ioR, e, iActor, aOk);
             ioR.AppendLine("- ⚠ 留言**會推進 `updated_at`** ⇒ 它會讓 stale 計時歸零。");
             ioR.AppendLine("  所以「留言說我還在做」跟「真的有做」在 stale 讀數上長得一樣 —— 這是這個讀數的邊界。");
+        }
+
+        // ===========================================================
+        // 區塊職責：把「通知有沒有發出去」寫進回傳檔。
+        // 物理意義：通知是對別人的動作，而它可能失敗（酒館寫入失敗 / persona 名字打錯）。
+        //   ⚠ 沒有這一行的話，「我以為他知道了」會變成一個**沒有人發現**的錯 ——
+        //     主動作成功、附帶效果靜默失敗，那正是這個 repo 最貴的形狀。
+        // ===========================================================
+        static void AppendNotifyLine(StringBuilder ioR, UCL_TaskEntry e, string iActor, bool iOk)
+        {
+            // ⚠ 名單邏輯必須與 UCL_TaskNotify.BuildBody 一致（參與者 ＋ 開單人 − 動手的人）——
+            //   回傳檔說「@ 了誰」而實際 @ 的是另一群人，那比不印更糟。
+            var aMentions = e.participants.Select(p => p.persona)
+                .Concat(new[] { e.reporter })
+                .Where(s => !string.IsNullOrWhiteSpace(s)
+                            && !string.Equals(s, iActor, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (!iOk)
+            {
+                ioR.AppendLine("- ⚠ **酒館通知沒發出去**（單子已經寫好了）—— 見 Editor log 的 `[TaskNotify]`。");
+                ioR.AppendLine("  ⇒ 相關的人**還不知道這件事**，要自己去講一聲。");
+                return;
+            }
+            ioR.AppendLine(aMentions.Count > 0
+                ? $"- 📣 酒館已通知並 @：{string.Join(" ", aMentions.Select(s => "@" + s))}"
+                : "- 📣 酒館已發，但**沒有 @ 任何人** —— 參與者與開單人扣掉操作者之後是空的"
+                    + "（不是通知失敗；如果連開單人都是我自己，那就真的沒有人需要知道）");
         }
 
         void OpLink(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
@@ -357,7 +420,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //          ② 單上指名 QA 而動手的不是那位 QA ⇒ 擋，除非附驗收紀錄（RFC §2④）
         //          ③ `confirm=1` 才真的寫 —— 「我只是想看看」與「我要關掉它」不得同形
         // ===========================================================
-        void OpResolve(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
+        async UniTask OpResolve(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
         {
             var e = Require(iArgs, out int aIndex);
             string aStatus = Norm(GetArg(iArgs, "status", "done"));
@@ -425,6 +488,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                             + $"　剩餘 blocker: {UCL_TaskIO.OpenBlockers(b).Count}");
                 }
             }
+            bool aNotified = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
+                $"{aFrom} → **{aStatus}**" + (aNote.Length == 0 ? "" : $"：{aNote}"));
+            AppendNotifyLine(ioR, e, iActor, aNotified);
         }
 
         // ===========================================================
@@ -440,7 +506,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //       · 沒有 QA           ⇒ `done`
         // ⚠ 已關的單只追加 sha 並明說「它已經關了」—— 不要靜默重開，也不要假裝有推進。
         // ===========================================================
-        void OpCommit(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
+        async UniTask OpCommit(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
         {
             var e = Require(iArgs, out int aIndex);
             string aSha = GetArg(iArgs, "sha", "").Trim();
@@ -500,6 +566,19 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 ioR.AppendLine($"- ▶ 等 QA 結單：`run Task --arg op=resolve --arg index={e.index}"
                     + " --arg status=done --arg note=<驗收讀數> --arg confirm=1`");
                 ioR.AppendLine($"  （要由 {string.Join(" / ", aQa)} 跑；別人跑要帶 `--arg qa_note=`）");
+            }
+            // ⚠ 只有**狀態真的變了**才通知：沒推進（refs / 被 blocker 擋 / 已關）時發通知
+            //   等於用一則訊息說「什麼都沒發生」—— 那種訊息會訓練大家忽略這個 tag。
+            if (aFrom != e.status)
+            {
+                bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
+                    $"{aFrom} → **{e.status}**（commit `{aSha}`）");
+                AppendNotifyLine(ioR, e, iActor, aOk);
+            }
+            else
+            {
+                ioR.AppendLine("- 📣 狀態沒有變 ⇒ **不發酒館通知**（一則說「什麼都沒發生」的訊息"
+                    + "會訓練大家忽略這個 tag）");
             }
         }
 

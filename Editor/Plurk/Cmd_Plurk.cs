@@ -1820,9 +1820,13 @@ namespace UCL.Core.EditorLib.Plurk
         }
 
         // ── 讀取層：API ／ 本地快取 ────────────────────────────────
-        // ⛔ 快取目錄不入 git（`AgentCommands/.gitignore` 有 `Plurk/cache/`）——
-        //    那裡面是**別人的**發文內容，而且是某一刻的快照。
+        // ⛔ 快取目錄不入 git —— 那裡面是**別人的**發文內容，而且是某一刻的快照。
         //    入版控等於把別人的時間軸釘進我們的歷史，而他們沒有同意過。
+        // 🩸 2026-08-24：這行註解原本寫「`AgentCommands/.gitignore` 有 `Plurk/cache/`」——
+        //    **而寫的當下它沒有**。ignore 規則是 @summit 當天才補上的（`.gitignore:32`）。
+        //    我不只引用了一條不存在的規則，還在程式碼裡替它作證，而那行讀起來像讀數。
+        //    ⇒ 判準：註解裡宣告「別處有一道防護」之前，去讀那一處；
+        //      而**寫進註解不會讓那道防護存在**（那正是它最容易被誤讀成已完成的地方）。
         const string CacheRelative = "Plurk/cache";
 
         static string CacheDir() => Path.Combine(UCL_AgentCommandsPath.DataRoot, CacheRelative);

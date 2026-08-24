@@ -39,7 +39,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             "summary=<text> — sleep 選填(公開睡前心得, 併入下線廣播) | "
             + "about=<同事> headline=<一句話標題> body=<公開層,走 --arg-file> private_body=<私層,選填> "
             + "affinity=<如 11/在意> — step=portrait 投遞時用(about+body 必填, 工具不代筆) | "
-            + "skip_reason=<為什麼今晚不畫> — step=portrait 的顯式跳過(理由會印進下線廣播) | " +
+            + "skip_reason=<為什麼今晚不畫> — step=portrait 的顯式跳過(理由會印進下線廣播)；step=sleep 時另作**收工閘的跳過理由**(會寫進那幾張單的時間線) | " +
             "回傳落檔 letters/<persona>/cmd/goodnight_<step>.md";
 
         public override string ExampleArgs => "step=check;persona=Template";
@@ -90,7 +90,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     bool aNoLetter = aStep == "logout";
                     var aResult = UCL_AwakeningService.PrepareSleep(
                         aPersona, aNoLetter,
-                        out string aBroadcastBody, out string aToken, out var aP);
+                        out string aBroadcastBody, out string aToken, out var aP,
+                        GetArg(args, "skip_reason", ""));
                     if (!aResult.ok)
                     {
                         WriteAndVerdict(args, aPersona, aStep, aResult);

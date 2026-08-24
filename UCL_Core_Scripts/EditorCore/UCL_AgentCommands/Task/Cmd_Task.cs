@@ -26,11 +26,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public override string CommandType => "Task";
 
         public override string ShortDescription =>
-            "跨 agent 任務管理：create/list/show/claim/assign/unassign/update/comment/link/resolve/commit/sweep/kanban。"
+            "跨 agent 任務管理：create/list/show/claim/assign/unassign/update/comment/link/resolve/commit/sweep/wrapup/kanban。"
             + " 一單一檔；跨人承諾建 Task，個人自律留見叢。";
 
         public override string ArgsSchema =>
-            "op=create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|sweep|kanban（預設 list） | " +
+            "op=create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|sweep|wrapup|kanban（預設 list） | " +
             "sha=<commit SHA，op=commit 必填> | mode=fixes|refs（op=commit 用，預設 fixes） | " +
             "title=<標題，create 必填> | criteria=<驗收標準，create 必填> | description= | " +
             "type=feature|improvement|refactor|spike|subtask（預設 feature） | " +
@@ -46,6 +46,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "tag=<list 篩選：有這個 tag 的單> | epic=<list 篩選：TASK-0008 / 8 皆可> | " +
             "memory_topic=<create/update 設定；list 篩選：工作記憶主題名> | " +
             "memory_archived_commit=<update：記憶歸檔／刪除後的 commit sha> | " +
+            "progress=<收工進度，op=wrapup 必填，走 --arg-file> | why=<為什麼卡住／試過什麼不行，選填 ⇒ 寫進工作記憶> | " +
+            "memory_type=pitfall|decision|knowhow（op=wrapup 的 why 用，預設 pitfall） | " +
             "confirm=1（resolve 必帶）";
 
         public override string ExampleArgs =>
@@ -80,10 +82,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     case "resolve": await OpResolve(args, aActor, aR); break;
                     case "commit": await OpCommit(args, aActor, aR); break;
                     case "sweep": await OpSweep(args, aActor, aR); break;
+                    case "wrapup": await OpWrapup(args, aActor, aR); break;
                     case "kanban": OpKanban(aR); break;
                     default:
                         throw new Exception($"[Task] 認不得的 op='{aOp}'"
-                            + "（create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|sweep|kanban）");
+                            + "（create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|sweep|wrapup|kanban）");
                 }
             }
             finally
@@ -696,6 +699,121 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         }
 
         // ===========================================================
+        // 區塊職責：收工（`op=wrapup`）—— **一個動作、兩個目的地**。
+        //
+        // 物理意義（Tim 2026-08-24 補的洞 ＋ basecamp 拍板，TASK-0019）：
+        //   `resolve` 是「這件事做完了」，`wrapup` 是「**我今天不做了**」。
+        //   混在一起會逼人在還沒做完時按結單、或在收工時什麼都不寫 ——
+        //   而**只有 wrapup 是每天都可能發生的那一個**。
+        //   ⇒ 所以它 **不改 status**（反向驗收：回讀確認狀態沒動）。
+        //
+        // 兩個目的地，**分流交給工具不交給人**：
+        //   · `progress`（還剩什麼、下一步從哪接）⇒ **Task 留言**（進度真相源是 Task，Tim 拍板）
+        //   · `why`（為什麼卡住／試過什麼不行／被否決的選項）⇒ **代跑 `work_memory.py`** 寫 pitfall/decision
+        //   🩸 為什麼不讓人自己分：basecamp 的血證 —— 分流交給人＝全部倒進同一個地方
+        //     （她今天把看板快照倒進了記憶，而那跟 `op=kanban` 記同一個量）。
+        //
+        // ⚠ 契約①：**C# 不自己寫記憶檔**。`why` 走 `UCL_TaskWorkMemoryCli`（代跑 python），
+        //   而內文一律 `--body-file`（心得含引號／反引號／換行，那些在命令列上是地雷）。
+        // ===========================================================
+        async UniTask OpWrapup(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
+        {
+            var e = Require(iArgs, out int aIndex);
+            string aProgress = GetArg(iArgs, "progress", "").Trim();
+            string aWhy = GetArg(iArgs, "why", "").Trim();
+
+            // `progress` 必填 —— 收工的意義就是它（沒有它的收工＝只是關掉視窗）
+            if (aProgress.Length == 0)
+            {
+                ioR.AppendLine("## blocked");
+                ioR.AppendLine("- reason: `progress` 必填 —— **收工的意義就是「還剩什麼、下一步從哪接」**。");
+                ioR.AppendLine("  沒有它的收工只是關掉視窗：單子還開著，而沒有人知道停在哪一步。");
+                ioR.AppendLine("  用法：`--arg-file progress=<檔>`（走檔案，內文不經過命令列）");
+                throw new Exception("[Task] wrapup 缺 progress");
+            }
+
+            // 給了 why 卻沒有 memory_topic ⇒ 擋，**不猜主題名**
+            string aTopic = (e.memory_topic ?? "").Trim();
+            if (aWhy.Length > 0 && aTopic.Length == 0)
+            {
+                ioR.AppendLine("## blocked");
+                ioR.AppendLine($"- reason: 給了 `why` 但 {e.Id} 沒有 `memory_topic` —— **我不猜主題名**。");
+                ioR.AppendLine($"  先設：`run Task --arg op=update --arg index={e.index}"
+                    + " --arg memory_topic=<主題>`，或這次只寫 progress（why 留著下次）。");
+                throw new Exception("[Task] wrapup: 有 why 但沒有 memory_topic");
+            }
+
+            string aNow = UCL_TaskIO.NowUtc();
+            string aFrom = e.status;
+
+            // ① progress → Task 留言（＋時間線一筆 `wrapup` 事件，供晚安閘判定「今天收工過了」）
+            var aComment = new UCL_TaskComment
+            {
+                id = UCL_TaskIO.NextCommentId(e),
+                persona = iActor,
+                at = aNow,
+                body = "**[收工 wrapup]**\n\n" + aProgress,
+            };
+            e.comments.Add(aComment);
+            UCL_TaskIO.Touch(e, aNow);
+            UCL_TaskIO.Save(e, "", "", $"{aNow}　`wrapup`　{iActor} 收工（狀態不動：{aFrom}）留言 #{aComment.id}");
+
+            ioR.AppendLine($"## ✅ {e.Id} 已收工（`wrapup`）");
+            ioR.AppendLine($"- 狀態：**維持 `{aFrom}`** —— 收工不是結單，也不是放棄");
+            ioR.AppendLine($"- 進度寫進留言 #{aComment.id}（進度真相源是 Task）");
+            ioR.AppendLine();
+            ioR.AppendLine("```markdown");
+            ioR.AppendLine(aProgress);
+            ioR.AppendLine("```");
+
+            // ② why → 代跑 work_memory.py（契約①：記憶側唯一寫入端是 python）
+            if (aWhy.Length > 0)
+            {
+                string aType = Norm(GetArg(iArgs, "memory_type", "pitfall"));
+                if (aType != "pitfall" && aType != "decision" && aType != "knowhow")
+                    aType = "pitfall";
+                string aId = $"{aType}_wrapup-{e.index:0000}-{DateTime.UtcNow:yyyyMMddHHmm}";
+                string aTitle = $"收工紀錄 {e.Id}：{Trunc(e.title, 40)}";
+                string aTmp = Path.Combine(Path.GetTempPath(),
+                    $"ucl_wrapup_{e.index}_{DateTime.UtcNow:yyyyMMddHHmmss}.md");
+                try
+                {
+                    File.WriteAllText(aTmp, aWhy, new UTF8Encoding(false));
+                    var (aOk, aOut, aDetail) = await UCL_TaskWorkMemoryCli.AddAsync(
+                        aTopic, aType, aId, aTitle, aTmp, iActor);
+                    ioR.AppendLine();
+                    if (aOk)
+                    {
+                        ioR.AppendLine($"- 🧠 已寫進工作記憶：`{aTopic}` / `{aType}` / `{aId}`（代跑 work_memory.py）");
+                        if (aOut.Length > 0) ioR.AppendLine($"    · 工具輸出：{Trunc(aOut, 200)}");
+                    }
+                    else
+                    {
+                        // ⚠ 大聲但不致命：進度已經落盤（那是主線），記憶那半沒寫成要看得見
+                        ioR.AppendLine($"- ⚠ **記憶那半沒寫成**（{aDetail}）—— 進度已落盤，"
+                            + "但「為什麼卡住」還沒有家。");
+                        ioR.AppendLine($"    · 手動補：`python <UCL_Core>/Tools~/AgentCommands/work_memory.py add"
+                            + $" --topic {aTopic} --type {aType} --id {aId} --title \"{aTitle}\" --body-file <檔> --by {iActor}`");
+                    }
+                }
+                finally
+                {
+                    try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch { }
+                }
+            }
+            else
+            {
+                ioR.AppendLine();
+                ioR.AppendLine("- 🧠 沒帶 `why` ⇒ 沒寫記憶（**這是合法的** —— 不強迫每天都有心得；"
+                    + "為了通關而寫的記憶比沒有更糟，它佔著位置又看起來像有人整理過）");
+            }
+
+            bool aNotified = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Comment, iActor,
+                "", "**[收工 wrapup]**\n\n" + aProgress);
+            AppendNotifyLine(ioR, e, iActor, aNotified);
+        }
+
+        // ===========================================================
         // 區塊職責：逾期認領的機械釋放 —— `in_progress` 且 ≥ STALE_DAYS 沒動 ⇒ 退回 `todo`。
         //
         // 物理意義：**認領會變成占位** —— persona 會下線、記憶會斷，明天的他不記得認領過，
@@ -857,6 +975,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         static string RelationLine(UCL_TaskEntry e)
             => $"blocked_by={Ids(e.blocked_by)} blocks={Ids(e.blocks)} related_to={Ids(e.related_to)}"
              + $" epic_id={(e.epic_id.Length == 0 ? "—" : e.epic_id)} subtasks={Ids(e.subtask_indices)}";
+
+        static string Trunc(string s, int n)
+        {
+            s = (s ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
+            return s.Length <= n ? s : s.Substring(0, n) + "…";
+        }
 
         static string Ids(List<int> iList)
             => iList == null || iList.Count == 0 ? "—"

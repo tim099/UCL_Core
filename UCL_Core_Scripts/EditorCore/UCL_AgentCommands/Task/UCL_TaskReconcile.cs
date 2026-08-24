@@ -177,6 +177,64 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             return sb.ToString();
         }
 
+        // ===========================================================
+        // 區塊職責：晚安的**收工閘** —— 今天動過、還開著、我是參與者，而今天沒收工過的單。
+        //
+        // 物理意義（Tim 2026-08-24 補的洞）：跨多日接回真正會斷的地方不是「忘了寫記憶」，
+        //   是**單子還開著、狀態還是 in_progress，而沒有人知道停在哪一步**。
+        //   ⇒ 所以閘的判準是「**今天動過**」而不是「有沒有記憶」：
+        //     今天沒碰的單不該擋我下線（那是別天的事）。
+        //
+        // ⚠ 判定「今天收工過了」的唯一依據是**該單時間線裡今天的 `wrapup` 事件** ——
+        //   不另存一份「今天收過工的清單」（那就是第二個真相源，而它會漂）。
+        // ===========================================================
+        public static List<UCL_TaskEntry> PendingWrapups(string iPersona)
+        {
+            var aOut = new List<UCL_TaskEntry>();
+            string aToday = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            foreach (var e in UCL_TaskIO.LoadAll())
+            {
+                if (e.IsClosed()) continue;                       // 已關的不看（反向驗收要求）
+                if (e.RolesOf(iPersona).Count == 0) continue;      // 別人的單不看
+                if (!(e.updated_at ?? "").StartsWith(aToday, StringComparison.Ordinal)) continue;  // 今天沒動的不看
+                if (HasWrapupOn(e.index, aToday)) continue;        // 今天收過工了
+                aOut.Add(e);
+            }
+            return aOut;
+        }
+
+        /// <summary>該單的時間線裡有沒有 <paramref name="iDate"/>（yyyy-MM-dd）那天的 `wrapup` 事件。</summary>
+        public static bool HasWrapupOn(int iIndex, string iDate)
+        {
+            try
+            {
+                string aPath = UCL_TaskIO.TaskPath(iIndex);
+                if (!File.Exists(aPath)) return false;
+                foreach (var aLine in File.ReadAllLines(aPath, Encoding.UTF8))
+                {
+                    if (!aLine.TrimStart().StartsWith("- ", StringComparison.Ordinal)) continue;
+                    if (aLine.IndexOf("`wrapup`", StringComparison.Ordinal) < 0) continue;
+                    if (aLine.IndexOf(iDate, StringComparison.Ordinal) >= 0) return true;
+                }
+            }
+            catch { /* 讀不到就當沒有 —— 擋下比放行安全（而擋下有出口：skip_reason） */ }
+            return false;
+        }
+
+        /// <summary>
+        /// 顯式跳過收工閘：把理由寫進**那張單的時間線**。
+        /// <para>⚠ 不是寫進 log —— **跳過要留在別人看得到的地方**（basecamp 拍板：
+        /// 可跳過但留名，比不可跳過更持久；硬擋會讓人去找繞過的方法，而繞過一次那道閘就永久失效）。</para>
+        /// </summary>
+        public static void WriteSkip(UCL_TaskEntry e, string iPersona, string iReason)
+        {
+            if (e == null) return;
+            string aNow = UCL_TaskIO.NowUtc();
+            UCL_TaskIO.Touch(e, aNow);
+            UCL_TaskIO.Save(e, "", "", $"{aNow}　`wrapup-skip`　{iPersona} 顯式跳過收工："
+                + iReason.Replace("\r", " ").Replace("\n", " "));
+        }
+
         static List<string> RolesOrReporter(UCL_TaskEntry e, string iPersona)
         {
             var aRoles = e.RolesOf(iPersona);

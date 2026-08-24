@@ -1497,7 +1497,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         // 是「寫信」不是守衛，廣播會標明未留信）。
         // </summary>
         // ===========================================================
-        public static StepResult PrepareSleep(string iPersona, bool iNoLetter, out string oBroadcastBody, out string oToken, out UCL_PersonaData oP)
+        public static StepResult PrepareSleep(string iPersona, bool iNoLetter, out string oBroadcastBody, out string oToken, out UCL_PersonaData oP,
+            string iWrapupSkipReason = "")
         {
             var aR = new StringBuilder();
             var aRes = new StepResult();
@@ -1522,6 +1523,46 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             //   ⇒ 期望那一半改由 lock 供給；舊 lock（沒這一欄）走 mtime 備援，並**明說走的是備援**。
             int aLetters = WakeLetterCount(iPersona);
             var aLockPre = ReadLock(iPersona);
+
+            // ===========================================================
+            // 收工閘（TASK-0019；Tim 2026-08-24：「沒觸發過收工的話，晚安流程需要觸發收工」）
+            // 物理意義：跨多日接回會斷在「單子還開著、狀態還是 in_progress，而沒人知道停在哪一步」。
+            //   判準＝**今天動過** ＋ **未關** ＋ **我是參與者** ＋ 今天沒有 `wrapup` 事件。
+            // ⚠ 照 letter-before-sleep 的形狀做（**不重造第二套閘**）：
+            //   `## blocked` ＋ reason ＋ **exits**，而 exits 一定要包含「怎麼過去」。
+            // ⚠ 可跳過但**留名**：`--arg skip_reason=` 寫進那張單的時間線 ——
+            //   硬擋會讓人在真的沒東西可寫時去找繞過的方法，而繞過一次那道閘就永久失效。
+            // ⛔ logout（iNoLetter）不套這道閘 —— 它是 cleanup，不是收工。
+            // ===========================================================
+            if (!iNoLetter)
+            {
+                var aPending = TaskMgmt.UCL_TaskReconcile.PendingWrapups(iPersona);
+                if (aPending.Count > 0 && string.IsNullOrWhiteSpace(iWrapupSkipReason))
+                {
+                    aR.AppendLine("## blocked");
+                    aR.AppendLine($"- reason: 有 **{aPending.Count}** 張今天動過、還開著的單**沒有收工**"
+                        + "（`wrapup`）—— 明天接回會斷在「單子開著而沒人知道停在哪一步」");
+                    foreach (var t in aPending)
+                        aR.AppendLine($"    · {t.Id} `{t.status}` {t.title}");
+                    aR.AppendLine("- exits:");
+                    foreach (var t in aPending)
+                        aR.AppendLine($"    · 收工 → `run Task --arg op=wrapup --arg index={t.index}"
+                            + " --arg-file progress=<還剩什麼、下一步從哪接>"
+                            + " [--arg-file why=<為什麼卡住／試過什麼不行 ⇒ 進工作記憶>]`");
+                    aR.AppendLine("    · 真的沒東西可寫 → 本步驟帶 `--arg skip_reason=<一句話>`"
+                        + "（**理由會寫進那幾張單的時間線** —— 跳過要留在別人看得到的地方）");
+                    aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
+                }
+                if (aPending.Count > 0)
+                {
+                    // 跳過也要落地：每一張都留名，而不是在 log 裡記一行「使用者跳過了」
+                    foreach (var t in aPending)
+                        TaskMgmt.UCL_TaskReconcile.WriteSkip(t, iPersona, iWrapupSkipReason);
+                    aR.AppendLine($"- ⚠ 收工閘**顯式跳過**（{aPending.Count} 張）：{iWrapupSkipReason}");
+                    aR.AppendLine("  理由已寫進那幾張單的時間線 —— 明天接回的人看得到我今天沒寫進度。");
+                }
+            }
+
             if (!iNoLetter)
             {
                 int aExpected = aLockPre?.wake_expected ?? 0;

@@ -64,6 +64,11 @@ namespace UCL.Core.EditorLib.Page
         // 有統計檔的 persona —— 跟活動清單同一個規矩：只在 Reload 時掃磁碟，不每幀掃
         // （IMGUI 每 repaint 都會跑 ContentOnGUI，每幀列目錄是把磁碟當變數用）。
         readonly List<string> m_StatsPersonas = new List<string>();
+        // 🩸 2026-08-24 Editor 凍結：首版在 ContentOnGUI 裡**每次 repaint 都 Load() 讀磁碟** ——
+        //   本頁檔頭第 8 行早就寫著「不每幀掃磁碟」，而我照樣寫了一個每幀掃的區塊。
+        //   引用一條規則不等於守住它 ⇒ 統計改成跟活動清單同一個生命週期：只在 Reload 時讀。
+        readonly Dictionary<string, UCL_FreeTimeActivityStats> m_StatsCache
+            = new Dictionary<string, UCL_FreeTimeActivityStats>();
 
         public override string WindowName => "自由時間管理";
         //public override bool ShowInPageMenu => false;
@@ -87,6 +92,8 @@ namespace UCL.Core.EditorLib.Page
             m_DraftGroup.Clear();
             m_StatsPersonas.Clear();
             m_StatsPersonas.AddRange(UCL_FreeTimeActivityStatsIO.ListPersonasWithStats());
+            m_StatsCache.Clear();
+            foreach (string aP in m_StatsPersonas) m_StatsCache[aP] = UCL_FreeTimeActivityStatsIO.Load(aP);
             RebuildOptions();
             m_Loaded = true;
         }
@@ -494,6 +501,10 @@ namespace UCL.Core.EditorLib.Page
         //   在管理頁開一個「手動改次數」的入口，等於讓那個數字失去它唯一的意義。
         // 數值影響：不寫任何檔。清單跟活動清單一樣只在 Reload 時重掃。
         // ===========================================================
+        /// <summary>畫之前先截斷 —— IMGUI 的長字串量測會走 glyph 補字那條死路（見 DrawStatsSection 的血證）。</summary>
+        static string Trunc(string iText, int iMax)
+            => string.IsNullOrEmpty(iText) ? "" : (iText.Length <= iMax ? iText : iText.Substring(0, iMax) + "…");
+
         void DrawStatsSection()
         {
             using (new GUILayout.VerticalScope("box"))
@@ -514,14 +525,18 @@ namespace UCL.Core.EditorLib.Page
                     // ⚠ 「沒人有紀錄」≠「大家都沒跑過自由時間」——
                     //   統計是 2026-08-24 才加的，之前跑過的場次不會回溯。這句一定要寫出來。
                     GUILayout.Label("目前沒有任何 persona 有統計檔。"
-                        + " ⚠ 這**不代表沒人跑過自由時間** —— 統計是 2026-08-24 才接上的，之前的場次不會回溯補算。",
-                        WrapLabelStyle);
+                        + " ⚠ 這不代表沒人跑過自由時間 —— 統計是 2026-08-24 才接上的，之前的場次不會回溯補算。",
+                        UCL_GUIStyle.LabelStyle);
                     return;
                 }
 
+                if (GUILayout.Button("🔄 重新讀取統計", UCL_GUIStyle.GetButtonStyle(Color.white),
+                        GUILayout.ExpandWidth(false)))
+                    Reload();
                 foreach (string aPersona in m_StatsPersonas)
                 {
-                    var aStats = UCL_FreeTimeActivityStatsIO.Load(aPersona);
+                    // 只讀 Reload 時填好的快取 —— **這裡不碰磁碟**
+                    if (!m_StatsCache.TryGetValue(aPersona, out var aStats) || aStats == null) continue;
                     GUILayout.Label($"<b>{aPersona}</b> — 累計 <b>{aStats.sessionsTotal}</b> 場"
                         + (string.IsNullOrEmpty(aStats.updatedAt) ? "" : $"（最後更新 {aStats.updatedAt}）"),
                         UCL_GUIStyle.LabelStyle);
@@ -539,17 +554,22 @@ namespace UCL.Core.EditorLib.Page
                         int aPicks = aStats.Picks(a.id);
                         bool aWouldHoist = aHoisted.ContainsKey(a.id);
                         string aMark = aWouldHoist ? "⭐💤" : (aGap >= UCL_FreeTimeActivityStatsIO.STARVE_THRESHOLD ? "💤" : "　");
-                        GUILayout.Label($"　{aMark} <b>{a.name}</b> `{a.id}`"
+                        // ⚠ 這幾行**刻意不用自動換行樣式**：換行標籤走 GUIWordWrapSizer.CalcWidth，
+                        //   那條路要對整串字算 min/max 寬 ⇒ 每個不在字型 atlas 裡的字（emoji！）
+                        //   都會觸發一次動態補字，而補字失敗時 Unity 會印整份堆疊 ＋ 動 AssetDatabase。
+                        //   🩸 2026-08-24 Editor 凍結 83 秒以上的就是那條路（Editor.log 有完整堆疊）。
+                        //   活動名本來就短，固定不換行足夠；長字串一律截斷再畫。
+                        GUILayout.Label($"　{aMark} {Trunc(a.name, 60)} `{a.id}`"
                             + $" — 做過 {aPicks} 次｜已 {aGap} 場沒選"
-                            + (aWouldHoist ? "　← **下一輪會被置頂**" : ""),
-                            WrapLabelStyle);
+                            + (aWouldHoist ? "　← 下一輪會被置頂" : ""),
+                            UCL_GUIStyle.LabelStyle);
                     }
                     if (aOverflow > 0)
-                        GUILayout.Label($"　⚠ 另有 {aOverflow} 項也超過門檻但**不會**被頂上來"
-                            + $"（一次最多 {UCL_FreeTimeActivityStatsIO.STARVE_HOIST_MAX} 項 —— 全部置頂等於沒有置頂）",
-                            WrapLabelStyle);
+                        GUILayout.Label($"　⚠ 另有 {aOverflow} 項也超過門檻但不會被頂上來"
+                            + $"（一次最多 {UCL_FreeTimeActivityStatsIO.STARVE_HOIST_MAX} 項）",
+                            UCL_GUIStyle.LabelStyle);
                     if (!aStats.loaded)
-                        GUILayout.Label("　⚠ 這一份**讀取失敗**（上面的數字沒有讀數，不是 0）", WrapLabelStyle);
+                        GUILayout.Label("　⚠ 這一份讀取失敗（上面的數字沒有讀數，不是 0）", UCL_GUIStyle.LabelStyle);
                     GUILayout.Space(4);
                 }
             }

@@ -1,0 +1,166 @@
+---
+title: Task Management Workflow — 跨 Agent 任務管理與協作維護指南
+description: 跨專案共享的專案與任務管理作業標準 — 一單一檔任務建立、多參與者（Dev/QA/PM/Design/Reviewer/Sound/Art）指派、依賴關係雙向維護、早安零改動天然透傳、Commit 自動閉環（Fixes TASK-N ＋ --expect-files）、Task ↔ 工作記憶雙向錨點（四個觸發點）、晚安雙向對帳機制與 sweep 逾期釋放。
+last_updated: 2026-08-24
+target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
+related:
+  - ucl_core:Docs~/{lang}/Plan/Plan_Task_Management_System.md | Task Plan RFC | 系統架構設計與資料模型
+  - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 提交閉環與 trailer 語法
+  - ucl_core:Docs~/{lang}/Workflows/Awakening_Cmd_Flow.md | 早安/晚安 Cmd 流程 | 晚安雙向對帳掛點
+  - ucl_core:Skills~/ucl-work-memory/SKILL.md | Work Memory Skill | 工作記憶操作指南
+---
+
+# 📋 Task Management Workflow — 專案任務管理工作流程
+
+> 一句話：**跨人承諾建 Task，個人自律留見叢，工作脈絡留記憶；早安零改動、Commit 閉環、晚安雙向對帳**。
+
+---
+
+## 1. 核心觀念與三格分流決策 (Tri-Split Decision)
+
+在工作日誌、見叢、酒館或開工紀錄中遇到待辦或 know-how 時，依以下決策樹進行三格分流：
+
+```mermaid
+graph TD
+    A[遇到待辦、需求或經驗記錄] --> B{有沒有第二個人在等這件事？}
+    B -->|有| C[走 Cmd_Task create 開立 TASK-N<br>（承諾交付物與驗收標準）]
+    B -->|沒有| D{換人接手或隔天重啟需要知道嗎？}
+    D -->|需要| E[走 work_memory.py 寫入工作記憶<br>（決策背景/踩坑/上下文）]
+    D -->|只有我需要| F[留在個人見叢 _keys_open.md<br>（自律反省/防呆教訓）]
+    C --> G{是否包含複雜技術脈絡與跨日接手背景？}
+    G -->|是| H[Task 綁定 memory_topic，工作記憶記 decision/pitfall]
+    G -->|否| I[純 Task 交付]
+```
+
+### 🎯 核心分流金句
+> **「記憶回答『為什麼』與『怎麼踩過』，Task 回答『到哪了』，文件回答『怎麼用』。三者重疊的那部分不是備援，是漂移。」**
+> **「記憶是工作期間的鷹架不是永久資產，相關 Task 全完成後歸檔或刪除，紀錄留 git。」**
+
+1. **Task（任務承諾）**：**「有沒有第二個人在等這件事？」** ➔ 有則開 Task，見叢只留引用（如 `- [ ] [TASK-0042] 說明`）。
+2. **工作記憶（Work Memory）**：**「我明天若忘了，接手的人靠什麼接回來？」** ➔ 換人接手需要知道的思路、踩坑與 pointer 指路，寫進工作記憶（`work_memory.py`）。進度由 Task 時間線紀錄。
+3. **見叢（個人自律）**：**「這是不是純個人自省？」** ➔ 只有我自己需要被打臉的拖延或自律血證，留在個人見叢 `_keys_open.md`。
+
+---
+
+## 2. 參與者職責矩陣 (Role Matrix)
+
+系統支援每張單指派多位參與者並標註明確身分（`role`，共 7 種），各司其職：
+
+| 身分 (`role`) | 中文名稱 | 核心職責與在系統中的行為 |
+|---|---|---|
+| **`PM`** | **專案管理** | **大項目拆解與相依性統籌**：<br>① **大型模組拆分**：將 Epic 或大型需求拆解為具體、可獨立驗收的 Task 與 Subtask。<br>② **相依性分析**：釐清各任務間的阻塞關係（設定 `blocked_by` / `blocks`），找出關鍵路徑 (Critical Path)。<br>③ **順序與優先度排序**：依據相依性與緊急程度調整 `priority`（Urgent/High/Normal/Low），規劃執行順序，避免團隊被 Blocker 卡死。 |
+| **`Design`** | **企劃 / 規格** | **規格制定與驗收初審**：定義功能規格與詳細說明，負責撰寫清單中的 **Acceptance Criteria（驗收標準）**，確保目標明確可度量。 |
+| **`Dev`** | **程式 / 執行** | **主要實作與交付**：認領任務（`op=claim --arg role=dev`），實作程式碼或產出檔案，提交 Commit 時帶 `Fixes TASK-N` 推進狀態至 `in_review` / `done`。 |
+| **`QA`** | **測試 / 驗收看門狗** | **品質把關與結單簽核**：任務若指定 QA，結單前必須由 QA 覆核驗收標準，並於 `resolve` 時簽署 `qa_note`；有權以「標準不可度量或驗收失敗」退回單子。 |
+| **`Reviewer`** | **審查者** | **代碼 / 設計審查**：針對 PR、架構變更或設計產物進行 Review 並留下審查意見。 |
+| **`Sound`** | **聲音 / 音效** | **音效與音頻整合**：負責音訊資產製作與品質確認。 |
+| **`Art`** | **美術 / 視覺** | **視覺資產產出**：負責角色、場景與 UI 圖像產出。 |
+
+---
+
+## 3. 常用操作指令 (CLI Quick Reference)
+
+所有指令統一走 `run_cmd.py --persona <me> run Task`：
+
+```bash
+R="python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Task"
+
+# 1. 開立新任務（必須填寫標題與驗收標準，可綁定 memory_topic）
+$R --arg op=create --arg title="任務標題" --arg type=feature --arg priority=high \
+   [--arg milestone="comic-vol-1"] [--arg memory_topic="task-mgmt"] [--arg tags="comic,draft"] \
+   --arg criteria="- [ ] 驗收條件一\n- [ ] 驗收條件二"
+
+# 2. 查詢待辦清單（支援 status, assignee, milestone, tag, epic 過濾）
+$R --arg op=list --arg status=todo
+$R --arg op=list --arg assignee=<persona>        # 查指派給某人的任務
+$R --arg op=list --arg milestone="comic-vol-1"   # 依里程碑過濾
+$R --arg op=list --arg tag=epic                  # 依標籤過濾
+$R --arg op=list --arg epic=TASK-0008            # 依父任務過濾子任務
+$R --arg op=kanban                               # 終端機格式化看板
+
+# 3. 查閱單一任務完整內容與開工接回（自動印出記憶錨點摘要）
+$R --arg op=show --arg index=42
+
+# 4. 認領任務（智能語意：只有執行角色且在 todo/backlog 才推 in_progress；QA/PM 認領狀態不動）
+$R --arg op=claim --arg index=42 --arg role=dev
+
+# 5. 指派其他人或新增身分（如指定 PM 或 QA）
+$R --arg op=assign --arg index=42 --arg target_persona=summit --arg role=qa
+
+# 6. 移除參與者身分
+$R --arg op=unassign --arg index=42 --arg target_persona=summit
+
+# 7. 追加進度筆記或討論（同步廣播酒館）
+$R --arg op=comment --arg index=42 --arg body="今日完成 P1~P6 分鏡，預計明日完成線稿。"
+
+# 8. 建立依賴與階層關係（雙向自動連動）
+$R --arg op=link --arg index=43 --arg op_link=blocked_by --arg target=42
+$R --arg op=link --arg index=43 --arg op_link=subtask_of --arg target=42
+
+# 9. 屬性更新（⛔ 嚴禁直接推 done/cancelled，結單必須走 resolve）
+$R --arg op=update --arg index=42 --arg priority=urgent [--arg milestone="comic-vol-1"] [--arg memory_topic="task-mgmt"]
+
+# 10. 結單關閉任務（需 confirm=1；提示回寫工作記憶；若 blocker 未解或無 qa_note 則機械阻擋）
+$R --arg op=resolve --arg index=42 --arg status=done --arg note="已由 QA 覆核完工" --arg confirm=1 [--arg qa_note="QA 簽核說明"]
+
+# 11. 逾期認領自動釋放（in_progress 且 ≥14 天未動者釋放回 todo）
+$R --arg op=sweep [--arg days=14] --arg confirm=1
+
+# 12. Commit 閉環推進（git_commit.py 內部自動轉接）
+$R --arg op=commit --arg sha=<commit_sha> --arg mode=fixes|refs
+```
+
+---
+
+## 4. Task ↔ 工作記憶雙向接回機制 (Four Trigger Points)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Agent (執行者)
+    participant Task as Cmd_Task
+    participant Memory as WorkMemory
+    actor PM as PM / QA
+
+    Note over Dev, Task: ① 開工接回
+    Dev->>Task: op=show <index>
+    Task-->>Dev: 印出任務詳情 ＋ memory_topic 決策與 pointer 摘要
+    
+    Note over Dev, Task: 施工中提交
+    Dev->>Task: git commit (Fixes TASK-N)
+    
+    Note over Dev, Task: ② 結單沉澱
+    Dev->>Task: op=resolve --confirm 1
+    Task-->>Dev: 結單成功 ＋ 提示：「本單是否有 decision/pitfall 值得整理至記憶？」
+    Dev->>Memory: work_memory.py add/supersede
+    
+    Note over Task, Memory: ③ 晚安對帳
+    Task->>Task: Cmd_GoodNight step=check
+    Task-->>Dev: 檢查未關單 updated_at 逾期 14 天 / 單向斷鏈（只印不改）
+    
+    Note over PM, Memory: ④ 歸檔退場
+    PM->>Memory: work_memory.py archive --topic <slug>
+    Memory-->>PM: 檢查 git 狀態乾淨 ➔ 標記 archived ➔ 留下 commit 錨點
+```
+
+---
+
+## 5. 鋼鐵動線整合規範
+
+### ① 早安喚醒 (`GoodMorning`)
+- **早安 Brief 生成流程零改動**：
+  - 不新增任何額外的 Task 節，不搶佔 Brief 行數額度。
+  - 任務資訊透過個人見叢既有的引用行（`- [ ] [TASK-0042] …`）天然於 Brief §2 中呈現。
+
+### ② 代碼提交 (`Commit`)
+- 代碼提交時，於 Commit Trailer 填寫關聯語法：
+  - `Fixes TASK-42`：自動推進狀態至 `in_review`（有 QA 時）或 `done`（無 QA 時；若有 dev 外之角色無 QA 則印警示提醒）。
+  - `Refs TASK-42`：追加 `commit_shas` 紀錄但不變更狀態。
+  - 搭配 `--expect-files <N>` 守衛，強制檢驗 staged 檔案數量。
+
+### ③ 晚安收尾 (`GoodNight`)
+- 晚安儀式執行時，`Cmd_GoodNight step=check`（`UCL_TaskReconcile`）進行四類雙向對帳（只印不改）：
+  1. **見叢引用已關或不存在單** ➔ 提示手動劃掉。
+  2. **指派給我（Dev/QA）但見叢未引用** ➔ 提示補寫一行。
+  3. **逾期認領未動（≥14 天）** ➔ 提示認領已過期，引導執行 `op=sweep` 釋放。
+  4. **記憶錨點異常** ➔ 提示未關單 `updated_at` 逾期 14 天未動或單向斷鏈。

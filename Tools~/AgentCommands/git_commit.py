@@ -184,7 +184,13 @@ ANNOUNCE_ACK_TIMEOUT_SEC = 240
 # ⚠ 刻意放在**公告成功之後**才跑：commit 與領薪是主線，關單是附帶效果。
 def resolve_fixed_bugs(message: str, sha: str, persona: str) -> None:
     idxs = []
-    for m in re.finditer(r"\bFixes\s+BUG-(\d+)\b", message, re.IGNORECASE):
+    # ⚠ **行首錨定**（`^[ \t]*Fixes`）而不是 `\bFixes`。
+    # 🩸 2026-08-24 summit：我在 commit 訊息裡**引述**上一筆的 `Fixes TASK-n`（描述那一筆發生過什麼），
+    #   而 regex 分不出「這一筆要關」與「我在講那一筆」⇒ 兩張單被重複掛上這一筆 sha。
+    #   trailer 的定義本來就是「獨占一行」（文件寫的是「在 commit 訊息裡寫一行就好」）,
+    #   所以錨定行首不是收緊規則，是**把規則寫成它本來的形狀**。
+    for m in re.finditer(r"^[ \t]*Fixes[ \t]+BUG-(\d+)\b", message,
+                         re.IGNORECASE | re.MULTILINE):
         n = m.group(1)
         if n not in idxs:
             idxs.append(n)
@@ -222,7 +228,9 @@ def advance_tasks(message: str, sha: str, persona: str) -> None:
     # (index, mode) 保序去重 —— 同一張單同時寫 Fixes 與 Refs 時，**Fixes 優先**（它是較強的宣告）
     seen: dict = {}
     for kw, mode in (("Fixes", "fixes"), ("Refs", "refs")):
-        for m in re.finditer(rf"\b{kw}\s+TASK-(\d+)\b", message, re.IGNORECASE):
+        # 行首錨定 —— 理由同 resolve_fixed_bugs（引述別人的 trailer 不該觸發推進）
+        for m in re.finditer(rf"^[ \t]*{kw}[ \t]+TASK-(\d+)\b", message,
+                             re.IGNORECASE | re.MULTILINE):
             n = str(int(m.group(1)))          # TASK-0001 與 TASK-1 是同一張單
             if n not in seen:
                 seen[n] = mode

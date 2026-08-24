@@ -49,6 +49,18 @@ namespace UCL.Core.EditorLib.Page
         string m_PersonaFilter = "";      // 空＝全部人
         int m_Expanded = -1;
 
+        // PopupSearch 需要一個 UCL_ObjectDictionary 當它的展開/搜尋字快取容器。
+        // ⚠ **不與折疊或其他 UI 狀態共用同一個容器** —— 🩸 既有血證：共用時資料重載路徑上的
+        //   `Clear()` 會把另一邊的值一起清掉（症狀是「收不起來」而沒有任何錯誤）。
+        readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
+
+        // 狀態下拉的選項 —— **值與顯示分開兩張表**：值要跟磁碟上的 `status` 逐字相同，
+        // 顯示要給人看。混成一張表就會有人拿中文去比對 frontmatter，而那永遠不相等。
+        static readonly List<string> STATUS_VALUES = new List<string>
+        { "", "backlog", "todo", "in_progress", "in_review", "done", "cancelled" };
+        static readonly List<string> STATUS_LABELS = new List<string>
+        { "全部", "backlog", "todo", "進行中", "待驗收", "已完成", "已取消" };
+
         // 破壞性動作二段確認（照母版的手勢）。
         // 物理意義：**結單是對別人的宣告** —— 清單上少一筆等於大家不再看它。
         int m_ArmedIndex = -1;
@@ -95,7 +107,16 @@ namespace UCL.Core.EditorLib.Page
 
         List<string> Blockers(UCL_TaskEntry e)
             => m_BlockerCache.TryGetValue(e.index, out var aList) ? aList : new List<string>();
-
+        protected override void TopBarButtons()
+        {
+            base.TopBarButtons();
+            if (GUILayout.Button("重新整理", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) Refresh();
+            if (GUILayout.Button("開啟資料夾", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            {
+                UCL_TaskIO.EnsureDir();
+                UnityEditor.EditorUtility.RevealInFinder(UCL_TaskIO.TasksDir);
+            }
+        }
         protected override void ContentOnGUI()
         {
             double aNow = UnityEditor.EditorApplication.timeSinceStartup;
@@ -128,43 +149,43 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label($"　⚠ {m_Broken} 張時戳壞掉，算不出天數（不算進 stale）",
                         SmallStyle, GUILayout.ExpandWidth(false));
                 GUILayout.FlexibleSpace();
-                if (GUILayout.Button("重新整理", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) Refresh();
-                if (GUILayout.Button("開啟資料夾", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                {
-                    UCL_TaskIO.EnsureDir();
-                    UnityEditor.EditorUtility.RevealInFinder(UCL_TaskIO.TasksDir);
-                }
             }
+
+            // 人員清單：從**現有單子上實際出現過的 persona** 產生，不寫死名單
+            //（寫死的名單會在有人加入時安靜地漏掉他）
+            var aPersonas = m_Rows.SelectMany(e => e.participants.Select(p => p.persona))
+                .Where(s => !string.IsNullOrEmpty(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
 
             using (new GUILayout.HorizontalScope())
             {
                 m_ShowClosed = UCL_GUILayout.Toggle(m_ShowClosed);
                 GUILayout.Label("含已關（done / cancelled）", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 GUILayout.Space(12);
-                GUILayout.Label("狀態：", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                DrawFilterBtn("全部", ref m_StatusFilter, "");
-                DrawFilterBtn("backlog", ref m_StatusFilter, "backlog");
-                DrawFilterBtn("todo", ref m_StatusFilter, "todo");
-                DrawFilterBtn("進行中", ref m_StatusFilter, "in_progress");
-                DrawFilterBtn("待驗收", ref m_StatusFilter, "in_review");
+
+                GUILayout.Label("狀態", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                DrawFilterPopup(ref m_StatusFilter, STATUS_VALUES, STATUS_LABELS, "StatusFilter",
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
+
+                GUILayout.Space(12);
+                GUILayout.Label("參與者", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                // 選項永遠 ≥ 1（第一項是「全部」）—— PopupSearch 空清單會 LogError
+                var aPersonaValues = new List<string> { "" };
+                aPersonaValues.AddRange(aPersonas);
+                var aPersonaLabels = new List<string> { "全部" };
+                aPersonaLabels.AddRange(aPersonas);
+                DrawFilterPopup(ref m_PersonaFilter, aPersonaValues, aPersonaLabels, "PersonaFilter",
+                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
+
                 GUILayout.FlexibleSpace();
             }
 
-            // 人員篩選：從**現有單子上實際出現過的 persona** 產生，不寫死名單
-            //（寫死的名單會在有人加入時安靜地漏掉他）
-            var aPersonas = m_Rows.SelectMany(e => e.participants.Select(p => p.persona))
-                .Where(s => !string.IsNullOrEmpty(s))
-                .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
-            if (aPersonas.Count > 0)
-            {
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label("參與者：", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    DrawFilterBtn("全部", ref m_PersonaFilter, "");
-                    foreach (var p in aPersonas) DrawFilterBtn(p, ref m_PersonaFilter, p);
-                    GUILayout.FlexibleSpace();
-                }
-            }
+            // ⚠ 篩到已關的狀態卻沒開「含已關」⇒ 清單必定是空的，而**兩個設定各自看起來都正常**。
+            //   ⇒ 這裡直接放行並說明，不讓人對著一個空清單找原因。
+            bool aClosedFilter = m_StatusFilter == "done" || m_StatusFilter == "cancelled";
+            if (aClosedFilter && !m_ShowClosed)
+                GUILayout.Label($"ℹ 狀態選了 `{m_StatusFilter}`（已關）⇒ 本次自動含已關的單"
+                    + "（否則清單必定是空的，而那看起來像「沒有這種單」）", SmallStyle);
 
             GUILayout.Space(6);
             var aNowUtc = DateTime.UtcNow;
@@ -172,7 +193,7 @@ namespace UCL.Core.EditorLib.Page
             foreach (var e in m_Rows)
             {
                 bool aClosed = e.IsClosed();
-                if (!m_ShowClosed && aClosed) continue;
+                if (!m_ShowClosed && !aClosedFilter && aClosed) continue;
                 if (!string.IsNullOrEmpty(m_StatusFilter)
                     && !string.Equals(e.status, m_StatusFilter, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!string.IsNullOrEmpty(m_PersonaFilter) && e.RolesOf(m_PersonaFilter).Count == 0) continue;
@@ -187,15 +208,41 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        void DrawFilterBtn(string iLabel, ref string ioField, string iValue)
+        // ===========================================================
+        // 區塊職責：篩選下拉（Tim 2026-08-24：改用 `UCL_GUILayout.PopupSearch`）。
+        //
+        // ⚠ **真相源是字串，不是索引。** PopupSearch 收/回的是 index，而選項清單是**從資料算出來的**
+        //   （參與者清單會隨單子增減而變長變短、順序也可能變）。
+        //   把 index 存下來的話，清單一變同一個數字就指到**別人** —— 而那個錯誤看起來完全正常
+        //   （下拉顯示一個合法的名字、清單也篩出東西，只是篩的是另一個人）。
+        //   ⇒ 所以每一幀從字串反查 index；查不到就退回「全部」並**說出來**。
+        //
+        // ⚠ 為什麼用 `PopupSearch` 而不是 `PopupSearchCache`：後者的快取失效條件是**選項數量變了**，
+        //   而「數量不變、內容換了」（一個 persona 退出、另一個加入）它偵測不到 ——
+        //   那正是這裡最可能發生的情況。
+        // ===========================================================
+        void DrawFilterPopup(ref string ioField, IList<string> iValues, IList<string> iLabels,
+            string iKey, params GUILayoutOption[] iOptions)
         {
-            bool aOn = ioField == iValue;
-            var c = GUI.color;
-            if (aOn) GUI.color = new Color(0.6f, 0.85f, 1f);
-            if (GUILayout.Button(iLabel, UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                ioField = iValue;
-            GUI.color = c;
+            int aIdx = -1;
+            for (int i = 0; i < iValues.Count; i++)
+                if (string.Equals(iValues[i], ioField, StringComparison.OrdinalIgnoreCase)) { aIdx = i; break; }
+
+            if (aIdx < 0)
+            {
+                // 上次選的值已經不在清單裡（那個人不再出現在任何單子上）
+                // ⇒ 退回「全部」並留一行 —— 靜默退回會讓人以為篩選還生效
+                GUILayout.Label($"ℹ 原本選的 `{ioField}` 已不在任何單子上 ⇒ 退回全部", SmallStyle,
+                    GUILayout.ExpandWidth(false));
+                ioField = iValues.Count > 0 ? iValues[0] : "";
+                aIdx = 0;
+            }
+            int aNext = UCL_GUILayout.PopupSearch(aIdx, iLabels, m_Dic, iKey, iOptions);
+            if (aNext != aIdx && aNext >= 0 && aNext < iValues.Count) ioField = iValues[aNext];
         }
+
+        // 🗑 `DrawFilterBtn`（一排橫向按鈕）已隨下拉選單退場 ——
+        //   留著死碼會讓下一個人以為還有第二條篩選路徑（而它永遠不會被呼叫）。
 
         void DrawRow(UCL_TaskEntry e, DateTime iNowUtc, bool iClosed)
         {

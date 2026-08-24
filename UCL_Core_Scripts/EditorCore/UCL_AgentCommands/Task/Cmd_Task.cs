@@ -26,11 +26,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public override string CommandType => "Task";
 
         public override string ShortDescription =>
-            "跨 agent 任務管理：create/list/show/claim/assign/unassign/update/comment/link/resolve/commit/kanban。"
+            "跨 agent 任務管理：create/list/show/claim/assign/unassign/update/comment/link/resolve/commit/sweep/kanban。"
             + " 一單一檔；跨人承諾建 Task，個人自律留見叢。";
 
         public override string ArgsSchema =>
-            "op=create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|kanban（預設 list） | " +
+            "op=create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|sweep|kanban（預設 list） | " +
             "sha=<commit SHA，op=commit 必填> | mode=fixes|refs（op=commit 用，預設 fixes） | " +
             "title=<標題，create 必填> | criteria=<驗收標準，create 必填> | description= | " +
             "type=feature|improvement|refactor|spike|subtask（預設 feature） | " +
@@ -75,10 +75,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     case "link": OpLink(args, aActor, aR); break;
                     case "resolve": await OpResolve(args, aActor, aR); break;
                     case "commit": await OpCommit(args, aActor, aR); break;
+                    case "sweep": await OpSweep(args, aActor, aR); break;
                     case "kanban": OpKanban(aR); break;
                     default:
                         throw new Exception($"[Task] 認不得的 op='{aOp}'"
-                            + "（create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|kanban）");
+                            + "（create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|sweep|kanban）");
                 }
             }
             finally
@@ -580,6 +581,69 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 ioR.AppendLine("- 📣 狀態沒有變 ⇒ **不發酒館通知**（一則說「什麼都沒發生」的訊息"
                     + "會訓練大家忽略這個 tag）");
             }
+        }
+
+        // ===========================================================
+        // 區塊職責：逾期認領的機械釋放 —— `in_progress` 且 ≥ STALE_DAYS 沒動 ⇒ 退回 `todo`。
+        //
+        // 物理意義：**認領會變成占位** —— persona 會下線、記憶會斷，明天的他不記得認領過，
+        //   而看板上那張單看起來「有人在做」。告警是給人看的（`list` 早就印 stale 了），
+        //   **釋放才是機械的**，而這一支就是那個機械。
+        //
+        // ⚠ 判準三條：
+        //   ① 規則**純時間**、不含判斷（誰該做／做到哪 都不看）⇒ 可以自動，而且可重跑
+        //   ② 仍要 `confirm=1`：它改的是別人的單，而「我只是想看看有哪些」與「動手」不得同形
+        //   ③ **不在晚安 check 裡自動跑** —— 那一步的契約是唯讀起手，在那裡改狀態的話
+        //      那一行沒有人會讀。晚安只印候選 ＋ 這道指令（見 UCL_TaskReconcile）。
+        // 數值影響：每張被釋放的單寫一次檔 ＋ 一則酒館通知（狀態真的變了才發）。
+        // ===========================================================
+        async UniTask OpSweep(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
+        {
+            var aNow = DateTime.UtcNow;
+            string aOnly = GetArg(iArgs, "assignee", "").Trim();   // 空＝全部人
+            var aCandidates = UCL_TaskIO.LoadAll().Where(e => !e.IsClosed()
+                    && string.Equals(e.status, "in_progress", StringComparison.OrdinalIgnoreCase)
+                    && e.DaysSinceUpdate(aNow) >= UCL_TaskIO.STALE_DAYS
+                    && (aOnly.Length == 0 || e.RolesOf(aOnly).Count > 0)).ToList();
+
+            ioR.AppendLine($"## sweep（逾期認領釋放 —— in_progress 且 ≥{UCL_TaskIO.STALE_DAYS} 天沒動）");
+            ioR.AppendLine($"- 候選 **{aCandidates.Count}** 張"
+                + (aOnly.Length == 0 ? "（全部人）" : $"（只看 {aOnly} 參與的）"));
+            if (aCandidates.Count == 0)
+            {
+                ioR.AppendLine("- ✅ 沒有逾期認領 —— 這是「沒有候選」，不是「沒有掃」。");
+                return;
+            }
+            foreach (var e in aCandidates)
+                ioR.AppendLine($"    · {e.Id} `{e.status}` {e.title}"
+                    + $"　{e.DaysSinceUpdate(aNow)} 天沒動　參與：{Participants(e)}");
+
+            if (GetArg(iArgs, "confirm", "").Trim() != "1")
+            {
+                ioR.AppendLine("- 🛑 **dry-run**（沒帶 `confirm=1`）⇒ 一張都沒改。");
+                ioR.AppendLine("  上面的候選清單是真的讀數；要釋放就重跑同一道指令加 `--arg confirm=1`。");
+                return;
+            }
+
+            int aDone = 0;
+            foreach (var e in aCandidates)
+            {
+                string aTs = UCL_TaskIO.NowUtc();
+                int aDays = e.DaysSinceUpdate(aNow);
+                string aFrom = e.status;
+                e.status = "todo";
+                UCL_TaskIO.Touch(e, aTs);
+                // ⚠ 時間線一定要留一行說**為什麼**被釋放 ——
+                //   沒有這行的話，明天看到它從 in_progress 變回 todo 會像有人手動改的
+                UCL_TaskIO.Save(e, "", "", $"{aTs}　`todo`　sweep 釋放（{aFrom} 已 {aDays} 天沒動作，"
+                    + $"逾期 {UCL_TaskIO.STALE_DAYS} 天門檻）by {iActor}");
+                bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
+                    $"{aFrom} → **todo**（sweep：認領後 {aDays} 天沒動，釋放回待領）");
+                AppendNotifyLine(ioR, e, iActor, aOk);
+                aDone++;
+            }
+            ioR.AppendLine($"- ✅ 已釋放 **{aDone}** 張回 `todo`（每張的時間線都留了釋放理由）");
+            ioR.AppendLine("- ⚠ 釋放**不代表那件事不必做** —— 它只是把「有人在做」這個假讀數收回來。");
         }
 
         // ===========================================================

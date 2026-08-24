@@ -717,9 +717,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             };
         }
 
+        /// <summary>
+        /// 見叢（當期交棒清單）的路徑。
+        /// <para>⚠ 這個路徑**只有這一份表達式** —— 原本 `KeysOpenCount` 裡是 inline 寫死的，
+        /// 而 TASK-0004 的對帳需要同一個路徑。兩處各寫一份 = 改名時一邊會安靜地指到不存在的檔。</para>
+        /// </summary>
+        public static string KeysPath(string iPersona)
+            => Path.Combine(LettersDir, iPersona, "_keys_open.md");
+
         public static int KeysOpenCount(string iPersona)
         {
-            string aPath = Path.Combine(LettersDir, iPersona, "_keys_open.md");
+            string aPath = KeysPath(iPersona);
             if (!File.Exists(aPath)) return 0;
             try { return File.ReadAllLines(aPath).Count(l => l.TrimStart().StartsWith("- [ ]")); }
             catch { return 0; }
@@ -1182,6 +1190,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aR.AppendLine($"⚠ 酒館 peek 失敗（{e.Message}）—— **這不代表酒館沒事**；流程照走。");
             }
             aR.AppendLine();
+            // 區塊職責：Task 對帳（TASK-0004；Tim 2026-08-24「早安 brief 不新增任何節」的補償）
+            // 物理意義：早安零改動 ⇒ Task 只能經由見叢的引用行進入 brief，
+            //   於是「別人指派給我而我沒寫進見叢的單」在早安是**不存在**的。
+            //   那個洞補在這裡 —— 晚安 check 是我們本來就會停下來的那一格。
+            // ⚠ **只印不改**：邏輯在 TaskMgmt.UCL_TaskReconcile（本檔不重寫任何 Task 規則）；
+            //   逾期認領的釋放是顯式的 `op=sweep`，不在這一步偷偷跑。
+            aR.AppendLine(TaskMgmt.UCL_TaskReconcile.BuildReport(iPersona, KeysPath(iPersona)));
             aR.AppendLine("## next（人工收尾清單 —— 標 **required** 的兩項會實擋；其餘提示型）");
             aR.AppendLine($"1. 見叢交棒：awakening.py keys --persona {iPersona} --add \"<明天必須知道的一句話>\"");
             // ⛔ commit／submodule bump 不進見叢（Tim 2026-08-21 拍板）—— 晚安之後他自己收尾全部 commit。

@@ -40,9 +40,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "role=dev|design|qa|pm|reviewer|sound|art（claim/assign 用，預設 dev） | " +
             "target_persona=<assign 的對象> | assignee=<list 篩選：只看某人參與的單> | " +
             "body=<comment 內容> | " +
-            "op_link=blocked_by|blocks|related_to（link 用） | target=<link 的對方單號> | " +
+            "op_link=blocked_by|blocks|subtask_of|has_subtask|related_to（link 用） | target=<link 的對方單號> | " +
             "note=<resolve 的結單說明> | qa_note=<代 QA 結單時的驗收紀錄> | " +
-            "milestone= | epic_id= | tags=<逗號分隔> | confirm=1（resolve 必帶）";
+            "milestone= | epic_id= | tags=<逗號分隔> | " +
+            "tag=<list 篩選：有這個 tag 的單> | epic=<list 篩選：TASK-0008 / 8 皆可> | " +
+            "confirm=1（resolve 必帶）";
 
         public override string ExampleArgs =>
             "op=create;title=Cmd_Task 接上 Fixes TASK-n 閉環;criteria=- [ ] git_commit.py 實跑一次並讀回狀態;priority=high";
@@ -183,9 +185,42 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             if (aMilestone.Length > 0)
                 aList = aList.Where(e => string.Equals(e.milestone, aMilestone, StringComparison.OrdinalIgnoreCase)).ToList();
 
+            // ===========================================================
+            // 區塊職責：`tag` 與 `epic` 兩個篩選端（TASK-0009）。
+            // 🩸 為什麼要有：這兩個欄位在此之前**只有 create 一個寫入端** ——
+            //   basecamp 在 TASK-0008 打了 `tags=[epic, main]`，而那不是追蹤機制，是一個註記
+            //   （寫得進去、查不出來 ⇒ 追蹤主 Task 只剩人眼）。
+            // ⚠ `epic` 收 `TASK-0008` / `8` / `0008` 三種寫法，**認不出時不猜** ——
+            //   靜默把認不出的篩選值當成「全部」會讓人以為那個 epic 底下什麼都沒有。
+            // ===========================================================
+            string aTag = GetArg(iArgs, "tag", "").Trim();
+            if (aTag.Length > 0)
+                aList = aList.Where(e => e.tags.Any(t =>
+                    string.Equals(t, aTag, StringComparison.OrdinalIgnoreCase))).ToList();
+
+            string aEpicRaw = GetArg(iArgs, "epic", "").Trim();
+            int aEpicIdx = -1;
+            if (aEpicRaw.Length > 0)
+            {
+                aEpicIdx = UCL_TaskIO.ParseTaskRef(aEpicRaw);
+                if (aEpicIdx <= 0)
+                    throw new Exception($"[Task] 認不得的 epic 參照 '{aEpicRaw}'"
+                        + "（收 TASK-0008 / 8 / 0008）—— 不猜，因為猜錯會印出一個空清單"
+                        + "而那看起來像「這個 epic 底下沒有東西」");
+                string aEpicId = "TASK-" + aEpicIdx.ToString("0000", System.Globalization.CultureInfo.InvariantCulture);
+                var aParent = UCL_TaskIO.Find(aEpicIdx);
+                // 兩條路都算：子單自己宣告 epic_id、或父單把它收進 subtask_indices
+                // ⇒ 只認一邊的話，關係寫了一半時清單會少人（而少的那個不會叫）
+                aList = aList.Where(e =>
+                    string.Equals(e.epic_id, aEpicId, StringComparison.OrdinalIgnoreCase)
+                    || (aParent != null && aParent.subtask_indices.Contains(e.index))).ToList();
+            }
+
             ioR.AppendLine($"## list（filter=`{aFilter}`"
                 + (aAssignee.Length == 0 ? "" : $"　assignee=`{aAssignee}`")
                 + (aMilestone.Length == 0 ? "" : $"　milestone=`{aMilestone}`")
+                + (aTag.Length == 0 ? "" : $"　tag=`{aTag}`")
+                + (aEpicIdx <= 0 ? "" : $"　epic=`TASK-{aEpicIdx:0000}`")
                 + $"）—— **{aList.Count}** 張");
             if (aList.Count == 0)
             {
@@ -217,6 +252,20 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine($"- blocked_by: {Ids(e.blocked_by)}　blocks: {Ids(e.blocks)}　related_to: {Ids(e.related_to)}");
             var aBlockers = UCL_TaskIO.OpenBlockers(e);
             if (aBlockers.Count > 0) ioR.AppendLine($"- 🛑 **未解 blocker**：{string.Join("；", aBlockers)}");
+            if (e.epic_id.Length > 0) ioR.AppendLine($"- 屬於主 Task：**{e.epic_id}**");
+            if (e.tags.Count > 0) ioR.AppendLine($"- tags: {string.Join(" ", e.tags.Select(t => "`" + t + "`"))}");
+            // 子任務進度 —— 主 Task 的意義就是這個數字（沒有它，subtask_indices 只是一串號碼）
+            UCL_TaskIO.SubtaskProgress(e, out int aSubTotal, out int aSubClosed,
+                out var aSubOpen, out var aSubMissing);
+            if (aSubTotal > 0)
+            {
+                ioR.AppendLine($"- 子任務 **{aSubClosed}/{aSubTotal} 已關**"
+                    + (aSubOpen.Count == 0 ? "　✅ 全部關了" : $"　還剩 **{aSubOpen.Count}** 張沒關：")
+                    + (aSubMissing.Count == 0 ? ""
+                        : $"　⚠ 另有 {aSubMissing.Count} 個號碼**查不到單**（{string.Join(",", aSubMissing)}）"
+                          + " —— 查不到不等於已完成"));
+                foreach (var s2 in aSubOpen) ioR.AppendLine($"    · {s2}");
+            }
             if (e.commit_shas.Count > 0) ioR.AppendLine($"- commit_shas: {string.Join(" ", e.commit_shas)}");
             ioR.AppendLine($"- 單檔：`{aPath}`");
             ioR.AppendLine();
@@ -428,9 +477,13 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var b = UCL_TaskIO.Find(aTarget);
             ioR.AppendLine($"## {(aChanged ? "✅ 已建立關聯" : "（關聯本來就存在，沒有重複寫）")}");
             ioR.AppendLine($"- `{aKind}`：{a.Id} ↔ {b.Id}");
+            // 🩸 2026-08-24：首版這裡只印 blocked_by / blocks / related_to 三格 ——
+            //   而 `subtask_of` 改的是 `epic_id` 與 `subtask_indices`，**兩格都不在印出來的欄位裡**。
+            //   於是回讀那行對父子關係什麼都證明不了，卻長得跟證明過一樣。
+            //   ⇒ 判準：**回讀要印「這次動過的那一格」**，不是印一組固定欄位。
             ioR.AppendLine("- 回讀（**雙向都要有，單向寫入是靜默錯**）:");
-            ioR.AppendLine($"    · {a.Id}: blocked_by={Ids(a.blocked_by)} blocks={Ids(a.blocks)} related_to={Ids(a.related_to)}");
-            ioR.AppendLine($"    · {b.Id}: blocked_by={Ids(b.blocked_by)} blocks={Ids(b.blocks)} related_to={Ids(b.related_to)}");
+            ioR.AppendLine($"    · {a.Id}: {RelationLine(a)}");
+            ioR.AppendLine($"    · {b.Id}: {RelationLine(b)}");
             if (aKind == "blocked_by" && b.participants.Count == 0)
             {
                 ioR.AppendLine($"- ⚠ **{b.Id} 沒有任何參與者，而它現在卡著 {a.Id}。**");
@@ -764,6 +817,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             if (e.participants.Count == 0) return "**無**（沒有人在做這件事）";
             return string.Join("、", e.participants.Select(p => $"{p.persona}({p.role})"));
         }
+
+        /// <summary>一張單的**全部**關係欄位（含 epic_id / subtask_indices）—— 回讀用，別漏欄位。</summary>
+        static string RelationLine(UCL_TaskEntry e)
+            => $"blocked_by={Ids(e.blocked_by)} blocks={Ids(e.blocks)} related_to={Ids(e.related_to)}"
+             + $" epic_id={(e.epic_id.Length == 0 ? "—" : e.epic_id)} subtasks={Ids(e.subtask_indices)}";
 
         static string Ids(List<int> iList)
             => iList == null || iList.Count == 0 ? "—"

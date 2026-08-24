@@ -392,6 +392,37 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     Save(b, "", "", $"{aNow}　`link`　{iActor} 標記被 {a.Id} 阻塞");
                 }
             }
+            // ===========================================================
+            // 區塊職責：父子關係（主 Task ↔ 子任務）。
+            // 物理意義：**兩個欄位一起寫才叫一個關係** ——
+            //   子的 `epic_id` 指向父（`TASK-0008` 這種字串），父的 `subtask_indices` 收子的號碼。
+            //   只寫一邊的話：從父看不到子（追蹤斷）或從子看不到父（接手時不知道自己屬於哪條線），
+            //   而兩種殘缺都不會報錯。
+            // 🩸 這也是 `epic_id` 第一個**寫入端以外的意義**：在此之前它只有 create 能填、沒人讀，
+            //   而 basecamp PM 對帳（seq 13527）點名它「寫得進查不出來」。
+            // ===========================================================
+            else if (string.Equals(iKind, "subtask_of", StringComparison.OrdinalIgnoreCase))
+            {
+                if (a.epic_id != b.Id) { a.epic_id = b.Id; aChanged = true; }
+                aChanged |= AddOnce(b.subtask_indices, iIndex);
+                if (aChanged)
+                {
+                    Touch(a, aNow); Touch(b, aNow);
+                    Save(a, "", "", $"{aNow}　`link`　{iActor} 標記它是 {b.Id} 的子任務（epic_id={b.Id}）");
+                    Save(b, "", "", $"{aNow}　`link`　{iActor} 收 {a.Id} 為子任務");
+                }
+            }
+            else if (string.Equals(iKind, "has_subtask", StringComparison.OrdinalIgnoreCase))
+            {
+                aChanged |= AddOnce(a.subtask_indices, iTarget);
+                if (b.epic_id != a.Id) { b.epic_id = a.Id; aChanged = true; }
+                if (aChanged)
+                {
+                    Touch(a, aNow); Touch(b, aNow);
+                    Save(a, "", "", $"{aNow}　`link`　{iActor} 收 {b.Id} 為子任務");
+                    Save(b, "", "", $"{aNow}　`link`　{iActor} 標記它是 {a.Id} 的子任務（epic_id={a.Id}）");
+                }
+            }
             else if (string.Equals(iKind, "related_to", StringComparison.OrdinalIgnoreCase))
             {
                 aChanged |= AddOnce(a.related_to, iTarget);
@@ -403,7 +434,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     Save(b, "", "", $"{aNow}　`link`　{iActor} 關聯 {a.Id}");
                 }
             }
-            else { oError = $"認不得的關聯種類 '{iKind}'（blocked_by|blocks|related_to）"; return false; }
+            else
+            {
+                oError = $"認不得的關聯種類 '{iKind}'"
+                    + "（blocked_by|blocks|subtask_of|has_subtask|related_to）";
+                return false;
+            }
             return aChanged;
         }
 
@@ -423,6 +459,39 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 if (!b.IsClosed()) aOut.Add($"{b.Id} `{b.status}` {b.title}");
             }
             return aOut;
+        }
+
+        // ===========================================================
+        // 區塊職責：子任務的**進度讀數** —— 幾張、幾張已關、剩哪些沒關。
+        // 物理意義：主 Task 的意義就是這個數字。沒有它的話 `subtask_indices` 只是一串號碼，
+        //   而「這條線還剩多少」得靠人一張一張點開 —— 那不是追蹤，是人眼盤點。
+        // ⚠ 指到**不存在**的子單也要報出來（`oMissing`）——「查不到」不等於「已完成」。
+        // ===========================================================
+        public static void SubtaskProgress(UCL_TaskEntry e,
+            out int oTotal, out int oClosed, out List<string> oOpenList, out List<int> oMissing)
+        {
+            oTotal = 0; oClosed = 0;
+            oOpenList = new List<string>();
+            oMissing = new List<int>();
+            if (e == null) return;
+            foreach (int i in e.subtask_indices)
+            {
+                oTotal++;
+                var c = Find(i);
+                if (c == null) { oMissing.Add(i); continue; }
+                if (c.IsClosed()) oClosed++;
+                else oOpenList.Add($"{c.Id} `{c.status}` {c.title}");
+            }
+        }
+
+        /// <summary>把 `TASK-0008` / `8` / `0008` 都收成整數；認不出回 -1（不猜）。</summary>
+        public static int ParseTaskRef(string iRaw)
+        {
+            string s = (iRaw ?? "").Trim();
+            if (s.Length == 0) return -1;
+            if (s.StartsWith("TASK-", StringComparison.OrdinalIgnoreCase)) s = s.Substring(5);
+            return int.TryParse(s.TrimStart('0').Length == 0 ? "0" : s,
+                NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : -1;
         }
 
         /// <summary>QA 閘門：單上有 QA 而動手結單的人不是那位 QA ⇒ 擋。回 null＝可以過。</summary>

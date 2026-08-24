@@ -1,7 +1,7 @@
 ---
 title: Plurk 串接維護指南
 description: Plurk 發文機制的維護面 —— 四個檔的分工、怎麼加一條 lint 規則、怎麼加心情詞、帳號與憑證安裝、OAuth 實作的三個坑、端點驗證狀態、audit 對帳。
-last_updated: 2026-08-23
+last_updated: 2026-08-24
 target_audience: [AI_Agent, Tools_Maintainer]
 status: v1.0（2026-08-21 從 Plurk_Posting_Workflow 拆出 —— Tim：「維護部分單獨一份文件」）
 ---
@@ -157,6 +157,22 @@ persona profile 的 `plurk_account` → registry（`AwakenInit/plurk_accounts.js
 | `/APP/FriendsFans/getFriendsByOffset` | ✅ 200，回**陣列**（不是物件）；`offset`/`limit` 生效 |
 | `/APP/Timeline/favoritePlurks` ＋ `ids=[<id>]` | ✅ 2026-08-23 實跑 ×2，`favorite_count 1→2` **且** 回讀 `favorite=true` |
 | `/APP/Timeline/unfavoritePlurks` | ⚠ code 有、**未實跑**（跟 favorite 共用同一段，但那是推論不是讀數） |
+| `/APP/Profile/getPublicProfile` ＋ `user_id` | ✅ 2026-08-24 實跑，回 `user_info` / `plurks[]` / `friends_count` / `fans_count` ＋關係欄位 |
+| `/APP/FriendsFans/getFriendsByOffset`（**別人的** `user_id`） | ✅ 2026-08-24 實跑，好友的好友讀得到（擴圈那條路不需要新端點） |
+| `/APP/PlurkSearch/search` ＋ `query` | ✅ 2026-08-24 實跑，回 `plurks[]`；⚠ user 字典**不叫 `plurk_users`**（首跑作者全印「查無名稱」） |
+| `/APP/UserSearch/search` | ⚠ code 有、**未實跑**（跟 PlurkSearch 共用同一段，那是推論不是讀數） |
+| `/APP/Alerts/getActive` | ✅ 2026-08-24 實跑；⛔ **不是唯讀** —— 讀一次會把通知清掉（見下方血證） |
+| `/APP/Alerts/getHistory` | ⚠ code 有、**未實跑** |
+| `/APP/FriendsFans/becomeFriend` ＋ `friend_id` | ✅ 2026-08-24 實跑 ×2，200 ＋ `{"success_text":"ok"}`；**證人是 `getActive` 多一筆 `friendship_pending`**，不是那個 200 |
+| `/APP/FriendsFans/becomeFan` ＋ `fan_id` | ✅ 2026-08-24 實跑 ×2，回讀 `is_following` false→true（⚠ `is_fan` **不會**變 —— 那是另一個方向） |
+| `/APP/FriendsFans/setFollowing` ＋ `user_id` | ✅ 2026-08-24 實跑，回讀 `is_following` true→false |
+| `/APP/FriendsFans/removeAsFriend` | ⚠ code 有、**未實跑** |
+| `/APP/Alerts/addAsFriend` ＋ `user_id` | ✅ 2026-08-24 實跑（同意 `hololive@myth` 的請求），回讀 `are_friends` false→**true**；⚠ 順帶把 `is_following` 也翻成 true |
+| `/APP/Alerts/denyFriendship` | ⚠ code 有、**未實跑**（要測就得拒絕一個真的請求，那個代價不對） |
+| `/APP/Emoticons/get` | ✅ 2026-08-24 實跑，回 `karma{}` / `recruited{}` / `custom[]`（三legged 才有 `custom`）；154 個 |
+| `/APP/Emoticons/addFromURL` ＋ `url` | ✅ 2026-08-24 實跑 ×2 **成功**（`custom` 6→7→8）——但**只吃 `emos.plurk.com` 的圖**；`images.plurk.com`（含縮圖）一律 400 `we only support adding emoticons which already being uploaded to plurk`。回 `{"success_text":"ok","keyword":"emo7"}`，⚠ **`alias` 參數被忽略、名字由 Plurk 自己編** |
+| `/APP/Emoticons/add` | ❌ **404**（HTML 頁，不是 API 錯誤格式）⇒ 這個名字不存在 |
+| 刪除自訂表情 | ⛔ 官方 API 頁**沒有任何刪除端點** ⇒ 加錯了只能走網頁 UI 收拾 |
 
 > [!IMPORTANT]
 > ## 🩸 那個 403 不是「他們擋 agent」
@@ -219,6 +235,157 @@ persona profile 的 `plurk_account` → registry（`AwakenInit/plurk_accounts.js
 | **不做自動過期判斷** | 「新鮮」會變成一個推論；印年齡讓看的人自己判 |
 | 要讀快取但檔不存在 ⇒ 印一行說它降級了再打 API | 靜默降級會讓「我讀的是快取」變成沒人知道的事 |
 | 不入 git（`AgentCommands/.gitignore` 的 `Plurk/cache/`） | ① 快照入版控讓「現況」與「三天前」在 diff 裡同形<br>② 裡面是**別人的**發文 —— 他們沒同意過被釘進我們的 git 歷史 |
+
+---
+
+## 5.6 擴圈（2026-08-24 新增）：找陌生人／看清楚他是誰／送關係請求
+
+好友清單是個**封閉集合**：它能說誰已經在裡面，說不出誰可能該進來。這一批補的就是那一格。
+
+| op | 端點 | 性質 |
+|---|---|---|
+| `profile` | `/APP/Profile/getPublicProfile` | 唯讀 |
+| `expand` | `getFriendsByOffset` ×N（好友的好友） | 唯讀，**純現有端點** |
+| `search` | `/APP/PlurkSearch/search`（`kind=user` 走 `UserSearch`） | 唯讀 |
+| `alerts` | `/APP/Alerts/getActive`（`history=1` 走 `getHistory`） | ⛔ **讀取有副作用**，見下 |
+| `follow` / `unfollow` | `becomeFan` / `setFollowing` | **對外**，要 `confirm=1` |
+| `befriend` / `unfriend` | `becomeFriend` / `removeAsFriend` | **對外**，要 `confirm=1` |
+| `accept` / `deny` | `Alerts/addAsFriend` / `denyFriendship` | **對外**，要 `confirm=1` |
+
+### 🩸 四筆首日血證（每一筆都改了 code，不是感想）
+
+1. **`getActive` 不是唯讀。** 第一次讀回 4 筆（2 × `friendship_pending` ＋ `plurk_liked` ＋
+   `my_responded`），**第二次同一支指令只剩 2 筆** —— 讀這一支會把通知清掉，而清掉不可逆。
+   ⇒ 回傳檔現在自己講這件事；要重看走 `history=1`。
+   📌 一般形：**我把一支有副作用的端點標成「唯讀」，而標籤錯了不會報錯。**
+
+2. **方向在欄位名裡，不在 `type` 裡。** `friendship_pending` 的人在 **`to_user`**（我送出、等他）
+   而不是 `from_user`（他送來、等我）。首版只看 `from_user` ⇒ 那兩筆印成空 id ＋「(查無名稱)」，
+   **看起來像壞資料，實際上是四筆真的待處理關係。**
+   ⇒ 現在兩個欄位都認，並且把方向印成人話；認不出人就把原始物件攤開。
+
+3. **`unfollow` 回 200 ＋ `{"success_text":"ok"}` 而什麼都沒發生。** 首版接 `becomeFan` ＋
+   `follow=false` —— 多餘的參數被**無聲吃掉**，成功字串照樣印，`is_following` 沒動。
+   ⇒ 每個關係動作現在宣告「它該讓哪個欄位變成什麼」，回讀不符就印 ⛔ **回 200 但沒生效**。
+   📌 這是「外觀 OK ≠ 真的 OK」在對外動作上的樣子：**成功字串是那一層的讀數，不是結果的讀數。**
+
+4. **`expand` 的分數看起來像排名，而它不是。** 首跑最高共同好友數 3，而前 15 名**全部都是 3** ⇒
+   名次其實由 tie-break（id 字串序）決定，也就是「帳號註冊得早」被印成了「比較推薦」。
+   ⇒ 現在印出「最高分幾分、同分幾位」，同分過多時直說這一頁的名次不是推薦度。
+
+### `friendship_request` vs `friendship_pending`（首日就兩種都碰到了）
+
+| type | 人在哪個欄位 | 意思 | 我能做什麼 |
+|---|---|---|---|
+| `friendship_request` | `from_user` | **對方送來，等我** | `accept` / `deny` |
+| `friendship_pending` | `to_user` | **我送出，等他** | 什麼都不做（催不了） |
+
+⇒ 兩種在 `type` 字串上長得很像，而**方向只寫在欄位名裡**。
+🩸 首版只讀 `from_user` ⇒ pending 那幾筆印成空 id ＋「(查無名稱)」，看起來像壞資料。
+
+### 判準：`befriend` 的 200 不是收據
+
+`becomeFriend` 回 200 之後 `are_friends` **仍然是 false**，因為它要等對方同意。
+⇒ 三本帳分開結算：**處置那本**的憑據是 200，**結果那本**的憑據是
+`getActive` 裡多出來的那筆 `friendship_pending`（去看那個）。
+
+### ⛔ 刻意沒做的兩件事
+
+- **沒有「全部同意」／批次加好友。** 「該不該加這個人」機器判不了，
+  而批次動作會讓那一格**沒有人看過**。
+- **`expand` 只算共同好友數、只讀公開發文** —— 不做別的資料拼合、不建檔。
+  快取照 §5.5 規矩不入 git：那些是陌生人的東西，他們沒有同意過被釘進我們的歷史。
+
+### 而那張人卡真的擋下了一次（首日）
+
+`befriend` 的 dry-run 印出對方自介，其中一位寫著
+「好友主要只加現實真的好友（只有少數例外），若有什麼內容讓你喜歡，不嫌棄的話可以加粉絲」
+⇒ 改送 `follow`。**這一格 lint 判不了、共同好友數也判不了 —— 它只在有人讀那張卡的時候才存在。**
+
+---
+
+## 5.6 表情（2026-08-24 新增）：`[emoN]` 的命名空間，與「描述一次」的共用表
+
+| op | 端點 | 性質 |
+|---|---|---|
+| `emoticons` | `/APP/Emoticons/get` | 對 Plurk 唯讀；**會寫本地共用表**（描述 merge） |
+| `emoadd` | `/APP/Emoticons/addFromURL`（＋試 `/add`） | 對外、要 `confirm=1`；⚠ **目前走不通**，見下 |
+
+### 🩸 `[emoN]` 是 per-account 別名，不是全站編號
+
+`/APP/Emoticons/get` 回三組：`karma{}`（分 karma 門檻）／`recruited{}`／
+`custom[]`（**只有三legged OAuth 才有**）。而 `custom` 的鍵長這樣：
+
+```json
+[["emo1", "https://emos.plurk.com/3dfa5eda…_w48_h48.gif"], ["emo2", "…"]]
+```
+
+⇒ 自訂表情的**別名本身就是 `emoN`**，那個 N 是**帳號內**編號。
+所以別人噗裡的 `[emo17399]` 與我的 `[emo4]` **不同命名空間**：
+拿自己的表去查別人的編號，會查到一個**長得很像答案的錯答案**（比查不到更貴）。
+
+**跨帳號唯一穩定的鍵是圖檔 URL。** 而 URL 拿得到 ——
+`getPlurks` 同一筆裡的 `content`（HTML）帶著每個表情的 `<img src>`，
+跟 `content_raw` 的 `[emoN]` **同序**：
+
+- 讀取端（`timeline` / `responses` / `get`）按序配對 ⇒ 編號 → URL。
+- ⚠ **一定要濾 host**（`emos.plurk.com` / `s.plurk.com/emoticons`）：
+  同一段 HTML 還有使用者上傳的圖（`images.plurk.com`），算進來會讓整排**錯開一格**，
+  而錯開一格的結果每一個都看起來像答案。
+- 數量對不上時**每一個都標 `⟨?配不上⟩`**，不做「前 N 個先配」。
+
+### 共用表：`AgentCommands/Plurk/emoticons/shared.json`（＋ `shared.md` 投影）
+
+Tim 2026-08-24 拍板的形狀：**看圖是最貴的一步，所以只做一次。**
+
+1. 讀到沒見過的圖 ⇒ 自動登記一列（`state=seen`、`desc` 空）＋ 記下別名（`7947987:emo17399`）。
+2. 有人看圖、寫回描述（`--arg emo_desc=<別名|全站碼|URL片段>=<描述>`）。
+3. 之後**所有帳號**讀到同一張圖都是純文字查表 —— 不再抓圖。回傳檔印「命中／待描述／新登記」。
+
+| 判準 | 為什麼 |
+|---|---|
+| **一份共用表**，不是 per-account | 「這張圖是什麼」跟誰在看它無關；分檔會讓同一張圖被每個帳號各自看一次 |
+| 鍵是 URL，別名進 `aliases` | 編號會撞，URL 不會 |
+| 刷新 **merge 不覆寫** | API 沒有「描述」欄位；覆寫＝每次刷新擦掉人寫的，而擦掉後跟「還沒寫」同形 |
+| `state=seen` **不標 missing** | 那是別人帳號的圖，本來就不會出現在我的 API 表裡。標 missing 等於說「它下架了」，那是假的 |
+| 唯讀 op 寫本地表時**一定印出來** | 不然「唯讀」這個標籤會比事實大 |
+
+### ✅ 新增自訂表情：`addFromURL` 通，但只吃表情 CDN 的圖（實測讀數）
+
+| 嘗試 | 讀數 |
+|---|---|
+| `/APP/Emoticons/add` | **404**（回 HTML 頁，不是 API 錯誤格式）⇒ 這個名字不存在 |
+| `addFromURL` ＋ `images.plurk.com` 全尺寸 | **400** `we only support adding emoticons which already being uploaded to plurk` |
+| 同上 ＋ 縮圖（`mx_` 前綴） | **同一句話** ⇒ 不是尺寸問題，是 host |
+| `addFromURL` ＋ **`emos.plurk.com`** 的圖 | ✅ **200** `{"success_text":"ok","keyword":"emo7"}`；`custom` **6→7**。第二次 **7→8**（`keyword: emo8`） |
+
+⇒ 它的用途是**把已經在 Plurk 表情庫裡的圖加進自己的表情盤**（例：讀到別人噗裡的
+`[emo17382]`，反解析拿到 URL，再 `addFromURL` 就變成我的 `[emo7]`），
+不是「從任意圖床上傳新圖」。要上傳全新的圖只能走網頁 UI。
+
+> [!WARNING]
+> ## 🩸 我第一版的驗收問錯了問題
+>
+> 首版驗的是「**我送出的 `alias` 有沒有出現在回讀裡**」⇒ 印「否 ← 沒生效」。
+> 而事實是 **Plurk 不吃我的 `alias`，它自己編號**（回 `keyword: emo7`）——
+> 那一次其實**加成功了**，`custom` 從 6 變成 7。
+>
+> ⇒ 判準：驗收要問「**這個動作有沒有發生**」（before→after 數量／回傳的 `keyword` 在不在清單裡），
+> 不是「**我猜的那個副作用有沒有出現**」。
+> 我猜錯副作用時，那行讀數會誠實地回報一個**與事實相反**的結論。
+> 已改成動手前先數一次，並把 `alias` 被忽略這件事直接印在回傳檔上。
+
+### ⭐ 而它證明了「鍵用 URL」這個決定
+
+`addFromURL` **不會複製檔案** —— 加進來的 `emo7` 沿用**同一個 URL**。
+於是共用表 merge 時它落回**已經存在的那一列**，
+直接繼承了之前寫好的描述（「淡藍白色卡通生物頭部（嚕嚕米風）」），
+`aliases` 欄同時掛著 `plurk_summit:emo7` 與 `7947987:emo17382`。
+
+⇒ **同一張圖在兩個帳號有兩個名字，而表裡只有一列。**
+如果當初鍵用編號，這裡會是兩列、描述要寫兩次 —— 而且沒有任何一層會告訴你它們是同一張。
+
+⚠ 仍然：**API 沒有刪除端點** ⇒ 加錯了只能上網頁 UI 收拾。所以 `emoadd` 要 `confirm=1`。
 
 ---
 

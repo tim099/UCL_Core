@@ -9,7 +9,7 @@ description: |
   - **交付**：交付單 / 文案本體 / 心情詞 / 公開度 / 只限朋友 / 偷偷說 / 匿名噗
   - **檢查**：發布前檢查 / 字數上限 / 300 字 / 超過拆兩則 / Plurk Paste / 拆成回應
   - **附圖**：附圖 / 貼圖 / 傳圖 / 上傳圖片 / 圖片路徑 / 帶圖發文 / uploadPicture
-  - **表情**：自訂表情 / emoN / emo8 / 表情編號 / 表情表
+  - **表情**：自訂表情 / emoN / emo8 / 表情編號 / 表情表 / 表情描述 / 反解析表情 / 看不懂表情 / 表情快取
   - **帳號**：共用帳號 / 公用帳號 / 個人帳號 / plurk 帳號 / plurk 憑證 / plurk token
   跨 agent 通用 —— Claude / Codex / Antigravity / Gemini 走同一支 Cmd 與同一份規則。
 ---
@@ -133,11 +133,78 @@ $R --arg op=timeline --arg cache=1      # 改讀快取而不是現抓
 - ⚠ **要回應誰之前先 `op=get` 讀全文**：摘要是截斷過的，
   而「對著一段開頭講話」跟「讀完再講」，在對方那邊看起來完全不一樣。
 
+### ⑥ 擴圈：找陌生人、看清楚他是誰、送關係請求（2026-08-24 新增）
+
+```bash
+# 唯讀
+$R --arg op=search  --arg query=<關鍵字> [--arg kind=plurk|user]   # 搜「噗的內容」找到有趣的人
+$R --arg op=expand  [--arg top=15] [--arg hops=8]                 # 好友的好友，按共同好友數排序
+$R --arg op=profile --arg user_id=<id>                            # 他是誰＋近期噗＋關係現況
+$R --arg op=alerts  [--arg history=1]                             # 誰在等我／我在等誰
+
+# 對外（改的是關係，對方會知道 ⇒ 要 confirm=1）
+$R --arg op=follow   --arg user_id=<id> --arg confirm=1   # 單向追蹤，不需對方同意
+$R --arg op=unfollow --arg user_id=<id> --arg confirm=1
+$R --arg op=befriend --arg user_id=<id> --arg confirm=1   # 好友請求（對方要同意才成立）
+$R --arg op=unfriend --arg user_id=<id> --arg confirm=1
+$R --arg op=accept   --arg user_id=<id> --arg confirm=1   # 同意別人送來的請求
+$R --arg op=deny     --arg user_id=<id> --arg confirm=1
+```
+
+**建議的順序是「先追蹤／先互動，才加好友」**：追蹤是單向、不需對方同意 ⇒
+有一個零打擾的選項時，預設就走它。冷加好友被無視是常態。
+
+| 判準 | 為什麼 |
+|---|---|
+| 送出前那張**人卡**（顯示名／自介／近期噗／關係現況）要真的讀 | id 錯一位不會有任何一層喊。而首日就有一位自介寫「只加現實好友，歡迎加粉絲」⇒ 改送 follow —— **那一格 lint 判不了** |
+| `befriend` 的 200 **不是**收據 | 它回 200 之後 `are_friends` 仍是 false（要等對方）。結果那本帳的憑據是 `op=alerts` 裡多一筆 `friendship_pending` |
+| 關係動作的回傳檔會印 ⛔ **回 200 但沒生效** | 🩸 首版 `unfollow` 回 200 ＋ `success_text: ok` 而 `is_following` 沒動 —— 多餘的參數被無聲吃掉 |
+| `op=alerts` ⛔ **不是唯讀** | 讀一次會把通知清掉（`friendship_pending` 會留，按讚／回應類不會）。別當可重跑的查詢用 |
+| `friendship_request` vs `friendship_pending` | 方向只寫在**欄位名**裡：`from_user`＝他送來等我（可 accept）／`to_user`＝我送出等他（催不了） |
+| `expand` 的共同好友數是**排序訊號不是判準** | 首跑前 15 名全部同分 ⇒ 名次其實是 id 序。要挑得靠 `op=profile` 讀內容 |
+| ⛔ 沒有「全部同意」／批次加好友 | 「該不該加這個人」機器判不了，而批次會讓那一格沒有人看過 |
+
 ### ④ 讀取層共通的兩格
 
 - **「取滿」與「取完」同形** ⇒ `friends` 拿到剛好 `limit` 筆時會印一行提醒還有下一頁。
 - 回應格式跟預期不一樣時，回傳檔說的是「**格式跟我預期的不一樣**」而不是「沒有資料」——
   那兩件事的處置完全不同。
+
+### ⑦ 表情：看得懂 `[emoN]`（2026-08-24 新增）
+
+```bash
+$R --arg op=emoticons                                    # 讀表情表 ＋ 維護共用描述表
+$R --arg op=emoticons --arg emo_desc=emo4=西裝男子側臉,6dd534ba=光頭男子特寫
+$R --arg op=emoadd --arg url=<emos.plurk.com 的圖> --arg alias=<忽略> --arg confirm=1  # 加自訂表情
+```
+
+> [!IMPORTANT]
+> **`[emoN]` 是 per-account 別名，不是全站編號。**
+> 我的 `[emo4]` 與別人的 `[emo17399]` 不在同一個命名空間 ——
+> 拿自己的表去查別人的編號，會查到一個**長得很像答案的錯答案**。
+> ⇒ 跨帳號唯一穩定的鍵是**圖檔 URL**。
+
+**它怎麼運作（描述一次，之後純文字查表）**
+
+1. 讀取端（`timeline` / `responses` / `get`）拿同一筆噗的 `content`（HTML，帶每個表情的
+   `<img src>`）與 `content_raw`（帶 `[emoN]`）**按序配對** ⇒ 得到每個編號對應的圖檔 URL。
+   數量對不上時**每一個都標 `⟨?配不上⟩`**，不做「前 N 個先配」（錯開一格比沒有結果更貴）。
+2. 沒見過的圖**自動登記**進共用表（`state=seen`、描述留空）⇒ 那就是待描述清單，
+   回傳檔會把它印出來。⚠ 因此唯讀 op 會**寫本地表**，回傳檔一定有一行說它寫了。
+3. 有人看圖描述一次、寫回表（`--arg emo_desc=`），之後**所有帳號**讀到同一張圖都是純文字查表，
+   **不再抓圖**。回傳檔印「命中 N／待描述 M／新登記 K」。
+
+| 判準 | 為什麼 |
+|---|---|
+| 表是**一份共用表**（`AgentCommands/Plurk/emoticons/shared.json` ＋ `.md` 投影），不是 per-account | 「這張圖是什麼」跟誰在看它無關。分檔會讓同一張圖被每個帳號各自看圖描述一次 —— 而看圖是最貴的那一步 |
+| 鍵是 URL，別名記在 `aliases`（`plurk_summit:emo4` / `7947987:emo17399`） | 編號會撞，URL 不會 |
+| 刷新是 **merge**：API 沒有「描述」這個欄位 | 覆寫等於每次刷新把人寫的擦掉，而擦掉之後跟「還沒寫」長得一模一樣 |
+| 消失的條目標 `missing` **不刪**；`state=seen` 不會被標 missing | 「被下架」與「它本來就不在我的帳號表裡」是兩件事 |
+| 自訂表情的別名就是 `emoN` ⇒ 那個 N 才是打進文案的東西 | 🩸 首版把它留空，表格印 `—`，看起來像「沒有編號可用」 |
+| **新增自訂表情：`addFromURL` 可以，但只吃 `emos.plurk.com` 的圖** | 用途是「把別人噗裡的表情加進自己的盤」（反解析拿 URL → `emoadd` → 它變成我的 `[emo7]`）。任意圖床（`images.plurk.com` 含縮圖）一律 400。要上傳全新圖只能走網頁 UI |
+| ⚠ `alias` 參數**會被忽略** —— Plurk 自己編號 | 它回 `{"success_text":"ok","keyword":"emo7"}`，文案要打的是 `[emo7]`。🩸 首版驗「我的 alias 有沒有出現」⇒ 印「沒生效」，而其實 `custom` 6→7 **加成功了**：驗收要問「動作有沒有發生」，不是「我猜的副作用有沒有出現」 |
+| ⛔ API **沒有刪除端點** | 加錯了只能上網頁 UI 收拾 ⇒ 這就是 `emoadd` 要 `confirm=1` 的理由 |
+| ⭐ 加進來的表情**沿用同一個 URL**（不複製檔案） | 所以共用表 merge 會落回同一列、**直接繼承既有描述**，`aliases` 同時掛兩個名字。鍵用編號的話這裡會變兩列、描述寫兩次，而沒有任何一層會說它們是同一張圖 |
 
 ## 4. 延伸參考
 - 完整維護與端點規範：`ucl_core:Docs~/{lang}/Workflows/Plurk_Maintenance.md`

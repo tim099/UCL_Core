@@ -37,11 +37,21 @@ namespace UCL.Core.EditorLib.Plurk
 
         public override string ShortDescription =>
             "Plurk 共用帳號流程：resolve 查帳號 / lint 驗交付單 / preview 組 payload 不送 / post 發文（需 confirm=1）"
-            + " / timeline·responses·friends 看別人在說什麼（唯讀）/ like·unlike 互動（需 confirm=1）。";
+            + " / timeline·responses·friends 看別人在說什麼（唯讀）/ like·unlike 互動（需 confirm=1）"
+            + " / 擴圈：profile·expand·search·alerts 唯讀，befriend·unfriend·follow·unfollow·accept·deny 需 confirm=1"
+            + " / 表情：emoticons 讀表並維護本地描述表（唯讀＋寫本地），emoadd 試新增自訂表情（需 confirm=1）。";
 
         public override string ArgsSchema =>
-            "op=resolve|lint|preview|upload|post|get|whoami|timeline|responses|friends|like|unlike（預設 resolve） | "
-            + "limit=<筆數>（timeline 預設 20／friends 預設 30；夾在 1-100） | "
+            "op=resolve|lint|preview|upload|post|get|whoami|timeline|responses|friends|like|unlike"
+            + "|emoticons|emoadd"
+            + "|profile|expand|search|alerts|befriend|unfriend|follow|unfollow|accept|deny（預設 resolve） | "
+            + "emo_desc=<編號=描述,編號=描述…>（emoticons 選填：把描述寫進本地表，merge 不覆寫） | "
+            + "url=<圖檔網址>（emoadd 必填） | alias=<表情代碼>（emoadd 必填） | "
+            + "user_id=<誰>（profile/befriend/unfriend/follow/unfollow/accept/deny 必填；friends 選填） | "
+            + "query=<關鍵字>（search 必填） | kind=plurk|user（search 選填，預設 plurk） | "
+            + "top=<列前幾名>（expand 選填，預設 15） | hops=<向外問幾位好友>（expand 選填，預設 8） | "
+            + "history=1（alerts 選填：看歷史而不是待處理） | "
+            + "limit=<筆數>（timeline 預設 20／friends·expand 預設 30/100；夾在 1-100） | "
             + "preview=<摘要字數>（timeline 預設 90，夾在 20-400） | "
             + "filter=only_user|only_responded|only_private|only_favorite（timeline 選填） | "
             + "user_id=<誰的好友>（friends 選填；不給就問 /APP/Users/me） | "
@@ -110,9 +120,24 @@ namespace UCL.Core.EditorLib.Plurk
                     // ── 社交面（寫，對別人動手 ⇒ 要 confirm=1）──
                     case "like": await OpFavorite(args, aRes, aR, token, true); break;
                     case "unlike": await OpFavorite(args, aRes, aR, token, false); break;
+                    // ── 擴圈（讀）──
+                    case "emoticons": await OpEmoticons(args, aRes, aR, token); break;
+                    case "emoadd": await OpEmoAdd(args, aRes, aR, token); break;
+                    case "profile": await OpProfile(args, aRes, aR, token); break;
+                    case "expand": await OpExpand(args, aRes, aR, token); break;
+                    case "search": await OpSearch(args, aRes, aR, token); break;
+                    case "alerts": await OpAlerts(args, aRes, aR, token); break;
+                    // ── 擴圈（寫，改的是關係 ⇒ 要 confirm=1）──
+                    case "befriend": await OpRelation(args, aRes, aR, token, "befriend"); break;
+                    case "unfriend": await OpRelation(args, aRes, aR, token, "unfriend"); break;
+                    case "follow": await OpRelation(args, aRes, aR, token, "follow"); break;
+                    case "unfollow": await OpRelation(args, aRes, aR, token, "unfollow"); break;
+                    case "accept": await OpRelation(args, aRes, aR, token, "accept"); break;
+                    case "deny": await OpRelation(args, aRes, aR, token, "deny"); break;
                     default:
                         throw new Exception($"[Plurk] 認不得的 op='{aOp}'"
-                            + "（resolve|whoami|lint|preview|upload|post|get|timeline|responses|friends|like|unlike）");
+                            + "（resolve|whoami|lint|preview|upload|post|get|timeline|responses|friends|like|unlike"
+                            + "|profile|expand|search|alerts|befriend|unfriend|follow|unfollow|accept|deny）");
                 }
             }
             finally
@@ -208,14 +233,23 @@ namespace UCL.Core.EditorLib.Plurk
         // 物理意義：端點參數名未對照官方文件 ⇒ 讓人在送之前用眼睛驗一次它到底要送什麼。
         // 數值影響：零副作用。回傳 payload 供 post 重用（同一份，不重組 —— 重組就會漂）。
         // ===========================================================
+        /// <param name="iWillSend">
+        /// 這一趟**接下來會不會真的送**（`op=post` ＋ `confirm=1`）。
+        /// 🩸 BUG-28：本段被 `post` 重用，而標題硬寫「本 op 不送」⇒
+        /// 真發出去的那一份回傳檔，開頭寫「不送」、下面寫「已送出」。
+        /// 兩句都在同一個檔裡自相矛盾，而**先讀到的是錯的那句**。
+        /// ⇒ 共用渲染段不可以宣告呼叫端的行為，那件事只有呼叫端知道。
+        /// </param>
         void OpPreview(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
-            StringBuilder ioR, out Dictionary<string, string> oPayload)
+            StringBuilder ioR, out Dictionary<string, string> oPayload, bool iWillSend = false)
         {
             var aSlip = LoadSlip(iArgs);
             WriteLintSection(aSlip, iRes, ioR, out var aErrors);
             oPayload = BuildPayload(aSlip, iArgs);
             ioR.AppendLine();
-            ioR.AppendLine("## 將送的 payload（**本 op 不送**）");
+            ioR.AppendLine(iWillSend
+                ? "## 將送的 payload（**帶了 `confirm=1` ⇒ lint 過就會送出**）"
+                : "## 將送的 payload（**本 op 不送**）");
             ioR.AppendLine($"- endpoint: `POST {(string.IsNullOrEmpty(GetArg(iArgs, "reply_to", "")) ? "/APP/Timeline/plurkAdd" : "/APP/Responses/responseAdd")}`");
             foreach (var kv in oPayload.OrderBy(k => k.Key))
             {
@@ -244,7 +278,8 @@ namespace UCL.Core.EditorLib.Plurk
         async UniTask OpPost(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
             StringBuilder ioR, CancellationToken token)
         {
-            OpPreview(iArgs, iRes, ioR, out var aPayload);
+            OpPreview(iArgs, iRes, ioR, out var aPayload,
+                GetArg(iArgs, "confirm", "").Trim() == "1");   // Fixes BUG-28
             var aSlip = LoadSlip(iArgs);
             var (aErr, _) = UCL_PlurkLint.Check(aSlip, iRes.RequiresSignature);
             if (aErr.Count > 0)
@@ -413,7 +448,12 @@ namespace UCL.Core.EditorLib.Plurk
             //   但要**回應別人**時，只讀首行等於對著一句話的開頭講話。
             //   ⇒ 全文印出來（截 800 字，而且截了會說）。
             string aFull = UnescapeJson(aRaw);
-            ioR.AppendLine($"- content_raw（{aFull.Length} 字元）:");
+            // 表情反解析標在全文上；⚠ 標註會**加長字串**，所以字元數用標註前的算
+            int aFullLen = aFull.Length;
+            var aEmoCtx = EmoBegin(iRes);
+            aFull = EmoAnnotatePaired(aFull, UnescapeJson(aHtml), aEmoCtx, aOwner);
+            ioR.AppendLine($"- content_raw（{aFullLen} 字元"
+                + (aFull.Length == aFullLen ? "" : "；下面的 `⟨…⟩` 是表情標註，不在原文裡") + "）:");
             ioR.AppendLine();
             ioR.AppendLine("```");
             ioR.AppendLine(aFull.Length <= 800 ? aFull
@@ -423,6 +463,7 @@ namespace UCL.Core.EditorLib.Plurk
             bool aHasImg = aHtml.Contains("<img");
             ioR.AppendLine($"- 渲染成 `<img>`: **{(aHasImg ? "是" : "否")}**"
                 + "（附圖那則要看這格 —— `content_raw` 裡有 URL 只證明我送進去了，Plurk 認不認是另一回事）");
+            EmoEnd(aEmoCtx, ioR);
         }
 
 
@@ -475,6 +516,11 @@ namespace UCL.Core.EditorLib.Plurk
             ioR.AppendLine();
             ioR.AppendLine("> 形狀取自酒館 catchup：**先短摘要掃一遍，再挑要細看的那幾則**。");
             ioR.AppendLine("> 摘要是「開頭 N 字」不是「首行」—— 首行可能只有兩個字，那掃不出東西。");
+            var aEmoCtx = EmoBegin(iRes);
+            ioR.AppendLine($"> 表情標註 `[emoN]⟨…⟩`：描述來自**共用表**"
+                + $"（現有 {aEmoCtx.Table.Values.Count(r => r.Desc.Length > 0)}/{aEmoCtx.Table.Count} 張已描述）——"
+                + "**描述一次、之後純文字查表，不必再抓圖**；沒描述的會被登記進待描述清單，"
+                + "配不上時印 `?配不上` —— 不猜。");
             ioR.AppendLine();
 
             for (int i = 0; i < aPlurks.Count; i++)
@@ -483,6 +529,8 @@ namespace UCL.Core.EditorLib.Plurk
                 string aId = JsonScalar(aP, "plurk_id");
                 string aOwner = JsonScalar(aP, "owner_id");
                 string aRaw = UnescapeJson(JsonScalar(aP, "content_raw"));
+                // 表情反解析：`[emoN]` 是 per-account 別名 ⇒ 用同一筆的 HTML 按序配對出 URL
+                aRaw = EmoAnnotatePaired(aRaw, UnescapeJson(JsonScalar(aP, "content")), aEmoCtx, aOwner);
                 string aFlat = OneLine(aRaw).Trim();
 
                 var aTags = new List<string>();
@@ -513,6 +561,7 @@ namespace UCL.Core.EditorLib.Plurk
             ioR.AppendLine("　 兩條發文路就是兩套規則，而字數 lint 與末行署名只會套用在其中一條。");
             ioR.AppendLine("⚠ 摘要是**截斷過的**：要回應誰之前先 `op=get` 讀全文。");
             ioR.AppendLine("　 對著一段開頭講話，跟讀完再講，在對方那邊看起來完全不一樣。");
+            EmoEnd(aEmoCtx, ioR);
         }
 
         /// <summary>
@@ -556,16 +605,36 @@ namespace UCL.Core.EditorLib.Plurk
                 ioR.AppendLine("- body（前 300 字）: " + Trunc(aBody, 300));
                 return;
             }
-            ioR.AppendLine($"- **{aList.Count}** 則回應"
+            // 🩸 2026-08-24：陣列 4 筆而 id 只有 3 個 —— **Plurk 自己回了同一則兩次**。
+            //   首版直接印 `aList.Count` 當「幾則回應」⇒ 那個數字是陣列長度，不是回應數。
+            //   ⇒ 兩個數都印（陣列筆數／相異 id 數）＋ 跟 root 的 `response_count` 對帳，
+            //     不一致就說出來。同一個量有三個來源時，挑一個印等於替其他兩個背書。
+            var aRpEmoCtx = EmoBegin(iRes);
+            var aSeen = new HashSet<string>();
+            for (int i = 0; i < aList.Count; i++) aSeen.Add(JsonScalar(aList[i], "id"));
+            string aDeclared = aRoot.Contains("response_count") ? JsonScalar(aRoot, "response_count") : null;
+            ioR.AppendLine($"- **{aSeen.Count}** 則回應（相異 id）"
+                + (aList.Count != aSeen.Count
+                    ? $"　⚠ 而陣列有 **{aList.Count}** 筆 ⇒ **Plurk 回了重複的**（不是我印兩次）" : "")
+                + (aDeclared != null && aDeclared != aSeen.Count.ToString(CultureInfo.InvariantCulture)
+                    ? $"　⚠ 而它自己宣告 `response_count`={aDeclared} ⇒ 三個數不一致，我不挑一個當真" : "")
                 + (aRoot.Contains("responses_seen")
                     ? $"　（對方記錄的已讀數: {JsonScalar(aRoot, "responses_seen")}）" : ""));
+            var aDone = new HashSet<string>();
             for (int i = 0; i < aList.Count; i++)
             {
                 var aRp = aList[i];
+                string aRid = JsonScalar(aRp, "id");
+                bool aDup = !aDone.Add(aRid);
                 ioR.AppendLine($"- **{UserName(aFriends, JsonScalar(aRp, "user_id"))}**"
-                    + $"　`{JsonScalar(aRp, "id")}`　{JsonScalar(aRp, "posted")}");
-                ioR.AppendLine("    " + Trunc(OneLine(UnescapeJson(JsonScalar(aRp, "content_raw"))), 200));
+                    + $"　`{aRid}`　{JsonScalar(aRp, "posted")}"
+                    + (aDup ? "　⚠ **重複的同一則**（上面出現過）" : ""));
+                if (aDup) continue;   // 內容不重印，但**那一行要留著** —— 靜默去重會讓筆數對不上
+                string aRpRaw = EmoAnnotatePaired(UnescapeJson(JsonScalar(aRp, "content_raw")),
+                    UnescapeJson(JsonScalar(aRp, "content")), aRpEmoCtx, JsonScalar(aRp, "user_id"));
+                ioR.AppendLine("    " + Trunc(OneLine(aRpRaw), 200));
             }
+            EmoEnd(aRpEmoCtx, ioR);
         }
 
         async UniTask OpFriends(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
@@ -616,6 +685,571 @@ namespace UCL.Core.EditorLib.Plurk
             if (aRoot.Count == aLimit)
                 ioR.AppendLine($"- ⚠ 剛好取滿 {aLimit} 筆 ⇒ **後面可能還有**"
                     + $"（`--arg offset={aOffset + aLimit}` 續取）。取滿與取完在這裡同形，所以這行一定要印。");
+        }
+
+        // ===========================================================
+        // 區塊職責：表情表 —— 讀 Plurk 的表情清單，並維護一份**帶描述**的本地表。
+        // 物理意義：`[emoN]` 在文案裡是**不透明的**。lint 只數得出「有幾個」，數不出「那是什麼」，
+        //          所以既有規則只能是一句「請對照面板逐一確認」—— 把那一格整個丟給人，
+        //          而 agent 讀別人的噗時看到 `[emo17399]` 也只能當它是一段亂碼。
+        //          ⇒ 這支把面板搬進 repo：代碼／圖檔 URL **從 API 讀**，描述**由人或 agent 寫**。
+        // 數值影響：`emoticons` 對 Plurk 純唯讀（`/APP/Emoticons/get`），但**會寫本地表**：
+        //          `Plurk/emoticons/<account>.json` ＋ 人可讀投影 `.md`。
+        //          刷新是 **merge 不是覆寫** —— API 那邊沒有「描述」這個欄位，
+        //          覆寫等於每次刷新都把人寫的擦掉，而擦掉之後跟「還沒寫」長得一模一樣。
+        //          消失的條目**不刪**，標 `missing` 留著 —— 「被下架」與「我沒讀到」不可以同形。
+        // ⚠ 官方 API 頁（2026-08-24 以顯式 UA 讀回 200）**只有** `/APP/Emoticons/get`：
+        //   新增自訂表情沒有任何文件化端點。emoadd 是**未驗證的嘗試**，讀數見它自己的回傳檔。
+        // ===========================================================
+        const string EmoTableRelative = "Plurk/emoticons";
+
+        // ⚠ **一份共用表，不是 per-account 表**（Tim 2026-08-24 拍板）：
+        //   表要存的是「這張圖是什麼」——那個事實跟哪個帳號在看它無關。
+        //   per-account 分檔會讓同一張圖被每個帳號各自看圖描述一次（那是最貴的一步），
+        //   而共用表只要**任何人描述過一次**，之後所有帳號都是純文字查表、不必再抓圖。
+        //   ⇒ 鍵用圖檔 URL（跨帳號穩定），別名（`emoN`）只是某帳號怎麼叫它，存在同一列裡。
+        static string EmoTableJson()
+            => Path.Combine(UCL_AgentCommandsPath.DataRoot, EmoTableRelative, "shared.json");
+
+        static string EmoTableMd()
+            => Path.Combine(UCL_AgentCommandsPath.DataRoot, EmoTableRelative, "shared.md");
+
+        /// <summary>舊的 per-account 檔（2026-08-24 首版）—— 只讀來搬一次，不再寫。</summary>
+        static string EmoTableLegacyJson(string iAccount)
+            => Path.Combine(UCL_AgentCommandsPath.DataRoot, EmoTableRelative, SafeName(iAccount) + ".json");
+
+        /// <summary>
+        /// 表情表的一列。
+        /// <para>⚠ `Code` 是 **per-account 的別名**（`(bigeyes)` 是全站碼，但自訂表情是 `emo1`/`emo4`
+        /// 這種帳號內編號）—— 🩸 2026-08-24 讀 `/APP/Emoticons/get` 才知道：
+        /// 別人噗裡的 `[emo17399]` 跟我的 `[emo4]` **不在同一個命名空間**，
+        /// 拿我的表去查他的編號會查到一個長得很像答案的錯答案。</para>
+        /// <para>⇒ 所以 `Key` 用 **圖檔 URL**（跨帳號唯一穩定），別名只是這個帳號怎麼叫它。</para>
+        /// </summary>
+        class EmoRow
+        {
+            public string Code = "";
+            public string Id = "";
+            public string Url = "";
+            public string Tier = "";
+            public string Desc = "";
+            public string State = "present";
+            /// <summary>誰怎麼叫它：`plurk_summit:emo4` / `18166697:emo17399`（讀別人的噗時登記的）。</summary>
+            public List<string> Aliases = new List<string>();
+            public string FirstSeen = "";
+            public string Key => Url.Length > 0 ? "url:" + Url : "code:" + Code;
+
+            public void AddAlias(string iAlias)
+            {
+                if (iAlias.Length > 0 && !Aliases.Contains(iAlias)) Aliases.Add(iAlias);
+            }
+        }
+
+        /// <summary>
+        /// 讀取端的表情上下文：**一次載入、整趟共用**，並把「這趟新看到的圖」登記起來。
+        /// <para>物理意義：描述一張圖要**看圖**（那一步貴且要人／要視覺模型）；
+        /// 查一段文字不用。所以流程是「看一次 → 寫進共用表 → 之後永遠查表」。
+        /// 而要知道「還有哪些沒看過」，讀取端就得**把沒見過的登記下來** ——
+        /// 否則待描述清單只存在於某一次的畫面上，關掉就沒了。</para>
+        /// </summary>
+        class EmoCtx
+        {
+            public Dictionary<string, EmoRow> Table;
+            public int NewSeen;
+            public int Hit;
+            public int Miss;
+            public bool Dirty;
+        }
+
+        async UniTask OpEmoticons(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            var aCred = RequireCredentials(iRes);
+            string aBody = await FetchAsync(iArgs, "emoticons", "/APP/Emoticons/get",
+                null, aCred, iRes, ioR, token);
+
+            var aRoot = SafeParse(aBody);
+            ioR.AppendLine();
+            ioR.AppendLine("## emoticons（表情表）");
+            if (aRoot == null || !aRoot.IsObject)
+            {
+                ioR.AppendLine("- ⚠ 回應不是物件 —— **格式跟我預期的不一樣**（不是「沒有表情」）。");
+                ioR.AppendLine("- body（前 300 字）: " + Trunc(aBody, 300));
+                return;
+            }
+
+            // ① 結構讀數：先把「這份回應長什麼樣」印出來，再談內容。
+            //    🩸 判準取自這支既有的血證：格式不同與沒有資料必須分得開。
+            var aGroups = aRoot.Keys.ToList();
+            ioR.AppendLine($"- 頂層分組 **{aGroups.Count}** 組: "
+                + string.Join(" / ", aGroups.Select(k => $"`{k}`"
+                    + (aRoot[k] != null && aRoot[k].IsArray ? $"[{aRoot[k].Count}]"
+                        : aRoot[k] != null && aRoot[k].IsObject ? $"{{{aRoot[k].Count}}}" : "(純量)"))));
+
+            var aRows = new List<EmoRow>();
+            foreach (string aGroup in aGroups)
+            {
+                var aNode = aRoot[aGroup];
+                if (aNode == null) continue;
+                if (aNode.IsObject)
+                {
+                    // karma / recruited：{ "0": [[code,url],...], "25": [...] }
+                    foreach (string aTier in aNode.Keys.ToList())
+                        CollectEmoList(aNode[aTier], aGroup + "/" + aTier, aRows);
+                }
+                else if (aNode.IsArray)
+                {
+                    CollectEmoList(aNode, aGroup, aRows);   // custom 走這條
+                }
+            }
+
+            ioR.AppendLine($"- 讀到 **{aRows.Count}** 個表情"
+                + $"（其中有數字編號的 **{aRows.Count(r => r.Id.Length > 0)}** 個）");
+            foreach (var aTierGroup in aRows.GroupBy(r => r.Tier).OrderBy(g => g.Key))
+                ioR.AppendLine($"    · `{aTierGroup.Key}`　{aTierGroup.Count()} 個"
+                    + $"　例: {string.Join(" ", aTierGroup.Take(4).Select(r => r.Code))}");
+
+            // ② 反解析能不能做，用**讀數**回答，不用推論
+            var aOwn = aRows.Where(r => EmoAliasRe.IsMatch(r.Code)).ToList();
+            ioR.AppendLine();
+            ioR.AppendLine("### ▶ `[emoN]` 反解析可行性（用讀數回答，不是用推論）");
+            ioR.AppendLine($"- 本帳號自己的 `[emoN]` 別名: **{aOwn.Count}** 個"
+                + (aOwn.Count == 0 ? "" : "（" + string.Join(" ", aOwn.Select(r => "[" + r.Code + "]")) + "）")
+                + " ⇒ **我自己文案裡的 `[emoN]` 這張表查得到**。");
+            ioR.AppendLine("- ⛔ 而**別人噗裡的 `[emoN]` 這張表查不到**："
+                + "`emoN` 是 per-account 別名，他的 `[emo17399]` 與我的 `[emo4]` 不同命名空間。"
+                + "拿我的表去查他的編號，會查到一個長得很像答案的**錯**答案。");
+            ioR.AppendLine("- ✅ 跨帳號真正對得上的鍵是**圖檔 URL**："
+                + "`getPlurks` 同一筆裡的 `content`（HTML）帶著每個表情的 `<img src>`，"
+                + "跟 `content_raw` 的 `[emoN]` **同序**⇒ 讀取端按序配對就拿得到 URL，"
+                + "再用 URL 查描述。timeline／responses／get 已接上這條（配不上時標 `⟨?配不上⟩`，不猜）。");
+
+            // ③ merge 進共用表（描述**只增不減**）
+            var aOld = LoadEmoTable(iRes.SecretId ?? "_");
+            string aAccountTag = iRes.SecretId ?? "_";
+            foreach (var aRow in aRows) aRow.AddAlias(aAccountTag + ":" + aRow.Code);
+            int aKept = 0, aNew = 0;
+            var aByKey = aRows.ToDictionary(r => r.Key, r => r);
+            foreach (var aRow in aRows)
+            {
+                if (aOld.TryGetValue(aRow.Key, out EmoRow aPrev))
+                {
+                    if (aPrev.Desc.Length > 0)
+                    {
+                        aRow.Desc = aPrev.Desc;   // 人寫的描述活下來
+                        aKept++;
+                    }
+                    foreach (string aAlias in aPrev.Aliases) aRow.AddAlias(aAlias);
+                    if (aPrev.FirstSeen.Length > 0) aRow.FirstSeen = aPrev.FirstSeen;
+                }
+                else aNew++;
+            }
+            // 舊表裡這次沒讀到的：**不刪**，留著。
+            // ⚠ 但只有「上次是 API 給的」那些才標 missing ——
+            //   `state=seen` 是讀別人的噗登記進來的圖，它**本來就不會**出現在我這個帳號的 API 表裡。
+            //   把它標成 missing 等於說「它下架了」，而那是假的。
+            int aMissing = 0;
+            foreach (var aPrev in aOld.Values)
+            {
+                if (aByKey.ContainsKey(aPrev.Key)) continue;
+                if (aPrev.State != "seen") { aPrev.State = "missing"; aMissing++; }
+                aRows.Add(aPrev);
+            }
+
+            // ④ 手動描述（`--arg emo_desc=17399=紅心眼,590=攤手`）
+            string aDescArg = GetArg(iArgs, "emo_desc", "").Trim();
+            int aWrote = 0;
+            var aUnmatched = new List<string>();
+            if (aDescArg.Length > 0)
+            {
+                foreach (string aPair in aDescArg.Split(','))
+                {
+                    int aEq = aPair.IndexOf('=');
+                    if (aEq <= 0) continue;
+                    string aKey = aPair.Substring(0, aEq).Trim();
+                    string aDesc = aPair.Substring(aEq + 1).Trim();
+                    if (aKey.Length == 0 || aDesc.Length == 0) continue;
+                    // 三種鍵都收：別名（emo4）／全站碼（(bigeyes)）／圖檔 URL 片段
+                    // —— 因為跨帳號唯一穩定的是 URL，而人手上最常有的是別名
+                    var aHit = aRows.FirstOrDefault(r => r.Id == aKey || r.Code == aKey
+                        || (aKey.Length >= 6 && r.Url.Contains(aKey)));
+                    if (aHit == null)
+                    {
+                        // 表裡沒有這個編號 ⇒ **新增一列**（那正是好友噗裡撈到的編號的家），
+                        // 並且標明它不是 API 給的
+                        aHit = new EmoRow { Id = aKey, Code = "[emo" + aKey + "]", Tier = "manual", State = "manual" };
+                        aRows.Add(aHit);
+                        aUnmatched.Add(aKey);
+                    }
+                    aHit.Desc = aDesc;
+                    aWrote++;
+                }
+            }
+
+            SaveEmoTable(aRows, ioR);
+            ioR.AppendLine($"- merge: 新增 **{aNew}**／保留既有描述 **{aKept}**"
+                + $"／這次沒讀到但留著 **{aMissing}**（標 `missing`，不刪）"
+                + (aWrote > 0 ? $"／本次寫入描述 **{aWrote}**" : ""));
+            if (aUnmatched.Count > 0)
+                ioR.AppendLine($"    · ⚠ 其中 {aUnmatched.Count} 筆編號**不在 API 表裡**（標 `manual`）: "
+                    + string.Join(" ", aUnmatched.Select(s => "[emo" + s + "]")));
+
+            int aDescribed = aRows.Count(r => r.Desc.Length > 0);
+            ioR.AppendLine($"- 描述覆蓋率: **{aDescribed}/{aRows.Count}**"
+                + "　（描述是人寫的，API 沒有這個欄位 ⇒ 覆蓋率只會靠人推進）");
+
+            ioR.AppendLine();
+            ioR.AppendLine("### ▶ 下一步");
+            ioR.AppendLine("```bash");
+            ioR.AppendLine("--arg op=emoticons --arg emo_desc=17399=紅心眼,590=攤手   # 補描述（merge，不覆寫）");
+            ioR.AppendLine("--arg op=emoadd --arg url=<圖檔網址> --arg alias=<代碼> --arg confirm=1  # 試新增（未驗證）");
+            ioR.AppendLine("```");
+        }
+
+        /// <summary>把 `[[code,url],...]` 或 `[{...},...]` 收成列。認不得的元素**跳過但不假裝沒有**。</summary>
+        static void CollectEmoList(UCL.Core.JsonLib.JsonData iNode, string iTier, List<EmoRow> ioRows)
+        {
+            if (iNode == null || !iNode.IsArray) return;
+            for (int i = 0; i < iNode.Count; i++)
+            {
+                var aItem = iNode[i];
+                if (aItem == null) continue;
+                var aRow = new EmoRow { Tier = iTier };
+                if (aItem.IsArray && aItem.Count >= 2)
+                {
+                    aRow.Code = UnescapeJson(StripQuote(aItem[0].ToJson()));
+                    aRow.Url = UnescapeJson(StripQuote(aItem[1].ToJson()));
+                }
+                else if (aItem.IsObject)
+                {
+                    aRow.Code = UnescapeJson(JsonScalar(aItem, "alias"));
+                    if (aRow.Code.Length == 0) aRow.Code = UnescapeJson(JsonScalar(aItem, "name"));
+                    aRow.Url = UnescapeJson(JsonScalar(aItem, "url"));
+                    aRow.Id = JsonScalar(aItem, "id");
+                }
+                else continue;
+                // 自訂表情的別名本身就是 `emoN` ⇒ 那個 N 就是文案裡 `[emoN]` 的編號。
+                // 🩸 首版把 Id 留空，於是表格的「編號」欄印 `—`，
+                //    看起來像「這個表情沒有編號可用」—— 而它其實是**唯一**能打進文案的那格。
+                if (aRow.Id.Length == 0 && EmoAliasRe.IsMatch(aRow.Code))
+                    aRow.Id = aRow.Code.Substring(3);
+                if (aRow.Id.Length == 0) aRow.Id = IdFromUrl(aRow.Url);
+                if (aRow.Code.Length == 0 && aRow.Url.Length == 0) continue;
+                ioRows.Add(aRow);
+            }
+        }
+
+        /// <summary>URL 檔名**純數字**時當它是編號；其餘回空 —— 不從雜湊檔名硬擠一個編號出來。</summary>
+        static string IdFromUrl(string iUrl)
+        {
+            if (string.IsNullOrEmpty(iUrl)) return "";
+            int aSlash = iUrl.LastIndexOf('/');
+            string aName = aSlash >= 0 ? iUrl.Substring(aSlash + 1) : iUrl;
+            int aDot = aName.IndexOf('.');
+            if (aDot > 0) aName = aName.Substring(0, aDot);
+            return aName.Length > 0 && aName.All(char.IsDigit) ? aName : "";
+        }
+
+        static string StripQuote(string iRaw)
+        {
+            string aText = (iRaw ?? "").Trim();
+            if (aText.Length >= 2 && aText[0] == '"' && aText[aText.Length - 1] == '"')
+                aText = aText.Substring(1, aText.Length - 2);
+            return aText == "null" ? "" : aText;
+        }
+
+        static Dictionary<string, EmoRow> LoadEmoTable(string iLegacyAccount = null)
+        {
+            var aMap = new Dictionary<string, EmoRow>();
+            string aFile = EmoTableJson();
+            // 共用表還不存在時，把舊的 per-account 檔搬進來一次（含它累積的描述）
+            if (!File.Exists(aFile) && !string.IsNullOrEmpty(iLegacyAccount)
+                && File.Exists(EmoTableLegacyJson(iLegacyAccount)))
+                aFile = EmoTableLegacyJson(iLegacyAccount);
+            if (!File.Exists(aFile)) return aMap;
+            var aRoot = SafeParse(File.ReadAllText(aFile, Encoding.UTF8));
+            if (aRoot == null || !aRoot.Contains("entries") || !aRoot["entries"].IsArray) return aMap;
+            var aArr = aRoot["entries"];
+            for (int i = 0; i < aArr.Count; i++)
+            {
+                var aRow = new EmoRow
+                {
+                    Code = UnescapeJson(JsonScalar(aArr[i], "code")),
+                    Id = JsonScalar(aArr[i], "id"),
+                    Url = UnescapeJson(JsonScalar(aArr[i], "url")),
+                    Tier = JsonScalar(aArr[i], "tier"),
+                    Desc = UnescapeJson(JsonScalar(aArr[i], "desc")),
+                    State = JsonScalar(aArr[i], "state"),
+                    FirstSeen = JsonScalar(aArr[i], "first_seen"),
+                };
+                if (aArr[i].Contains("aliases") && aArr[i]["aliases"].IsArray)
+                {
+                    var aAl = aArr[i]["aliases"];
+                    for (int j = 0; j < aAl.Count; j++)
+                        aRow.AddAlias(UnescapeJson(StripQuote(aAl[j].ToJson())));
+                }
+                if (aRow.Code.Length == 0 && aRow.Id.Length == 0 && aRow.Url.Length == 0) continue;
+                aMap[aRow.Key] = aRow;
+            }
+            return aMap;
+        }
+
+        static void SaveEmoTable(List<EmoRow> iRows, StringBuilder ioR)
+        {
+            string aFile = EmoTableJson();
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(aFile));
+                var aRoot = new UCL.Core.JsonLib.JsonData();
+                aRoot["refreshed_at"] = new UCL.Core.JsonLib.JsonData(DateTime.UtcNow.ToString("o"));
+                var aArr = new UCL.Core.JsonLib.JsonData();
+                foreach (var aRow in iRows.OrderBy(r => r.Tier).ThenBy(r => r.Code))
+                {
+                    var aItem = new UCL.Core.JsonLib.JsonData();
+                    aItem["code"] = new UCL.Core.JsonLib.JsonData(aRow.Code);
+                    aItem["id"] = new UCL.Core.JsonLib.JsonData(aRow.Id);
+                    aItem["url"] = new UCL.Core.JsonLib.JsonData(aRow.Url);
+                    aItem["tier"] = new UCL.Core.JsonLib.JsonData(aRow.Tier);
+                    aItem["desc"] = new UCL.Core.JsonLib.JsonData(aRow.Desc);
+                    aItem["state"] = new UCL.Core.JsonLib.JsonData(aRow.State);
+                    aItem["first_seen"] = new UCL.Core.JsonLib.JsonData(aRow.FirstSeen);
+                    var aAl = new UCL.Core.JsonLib.JsonData();
+                    foreach (string aAlias in aRow.Aliases) aAl.Add(new UCL.Core.JsonLib.JsonData(aAlias));
+                    aItem["aliases"] = aAl;
+                    aArr.Add(aItem);
+                }
+                aRoot["entries"] = aArr;
+                File.WriteAllText(aFile, aRoot.ToJson(), new UTF8Encoding(false));
+                ioR.AppendLine($"- 📋 共用表: `{aFile}`（**merge 寫入**，描述不被刷新擦掉）");
+
+                var aMd = new StringBuilder();
+                aMd.AppendLine("# Plurk 表情共用表（描述一次，之後純文字查表）");
+                aMd.AppendLine();
+                aMd.AppendLine("> 機械投影：`" + Path.GetFileName(aFile) + "` 是真相源"
+                    + "（改描述走 `--arg op=emoticons --arg emo_desc=<別名或URL片段>=<描述>`；本檔每次寫入重生成）。");
+                aMd.AppendLine("> **鍵是圖檔 URL 不是編號**：`[emoN]` 是 per-account 別名，"
+                    + "同一個編號在不同帳號是不同張圖 ⇒ 別名記在 `aliases` 欄，查表查 URL。");
+                aMd.AppendLine("> `state=seen` ＝ 讀別人的噗時撞見的圖，**還沒有人看過它** ⇒ 那就是待描述清單。");
+                aMd.AppendLine();
+                int aDesc = iRows.Count(r => r.Desc.Length > 0);
+                aMd.AppendLine($"- 共 **{iRows.Count}** 張／已描述 **{aDesc}**"
+                    + $"／待描述 **{iRows.Count - aDesc}**");
+                aMd.AppendLine();
+                aMd.AppendLine("| 別名 | 全站碼 | 分層 | 描述 | 狀態 | 圖檔 |");
+                aMd.AppendLine("|---|---|---|---|---|---|");
+                foreach (var aRow in iRows.OrderBy(r => r.Tier).ThenBy(r => r.Code))
+                    aMd.AppendLine($"| {(aRow.Aliases.Count == 0 ? "—" : "`" + string.Join("` `", aRow.Aliases) + "`")}"
+                        + $" | `{(aRow.Code.Length == 0 ? "—" : aRow.Code)}` | {aRow.Tier}"
+                        + $" | {(aRow.Desc.Length == 0 ? "*(未描述)*" : aRow.Desc)} | {aRow.State}"
+                        + $" | [{EmoShort(aRow.Url)}]({aRow.Url}) |");
+                File.WriteAllText(EmoTableMd(), aMd.ToString(), new UTF8Encoding(false));
+                ioR.AppendLine($"- 📋 人可讀投影: `{EmoTableMd()}`");
+            }
+            catch (Exception ex)
+            {
+                // 寫不進去不影響這次的讀數，但要說 —— 不然下次讀不到會變成沒人解釋得了的謎
+                ioR.AppendLine($"- ⚠ 本地表寫入失敗（不影響本次讀數）：{ex.Message}");
+            }
+        }
+
+        static readonly System.Text.RegularExpressions.Regex EmoAliasRe =
+            new System.Text.RegularExpressions.Regex(@"^emo\d+$",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        static readonly System.Text.RegularExpressions.Regex EmoTokenRe =
+            new System.Text.RegularExpressions.Regex(@"\[emo\d+\]",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        // 表情圖只從這兩個 host 來（`s.plurk.com/emoticons/...` 是全站表情，
+        // `emos.plurk.com/...` 是自訂表情）。⚠ 一定要濾 host：
+        // 同一段 HTML 裡還有**使用者上傳的圖片**（images.plurk.com），
+        // 把它們算進來會讓配對整排錯開一格 —— 而錯開一格的結果每一個都看起來像答案。
+        static readonly System.Text.RegularExpressions.Regex EmoImgRe =
+            new System.Text.RegularExpressions.Regex(
+                @"<img[^>]+src=[""'](?<u>https?://(?:emos\.plurk\.com|s\.plurk\.com/emoticons)/[^""']+)[""']",
+                System.Text.RegularExpressions.RegexOptions.Compiled
+                | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        /// <summary>
+        /// 讀取端的反解析：拿同一筆噗的 `content`（HTML）與 `content_raw` **按序配對**，
+        /// 把 `[emoN]` 標成 `[emoN]⟨描述⟩`（或 `⟨🖼 短碼⟩`／`⟨?配不上⟩`）。
+        /// <para>為什麼不查本地表的別名：`emoN` 是 per-account 的，
+        /// 別人的 `[emo17399]` 用我的表查會查到**錯**的那一個 —— 而錯的那個看起來一樣像答案。
+        /// URL 才是跨帳號穩定的鍵。</para>
+        /// <para>數量對不上時**每一個都標 `⟨?配不上⟩`**，不做「前 N 個先配」：
+        /// 錯開一格的結果比沒有結果更貴。</para>
+        /// </summary>
+        static string EmoAnnotatePaired(string iRaw, string iHtml, EmoCtx iCtx, string iOwnerId)
+        {
+            if (string.IsNullOrEmpty(iRaw) || !EmoTokenRe.IsMatch(iRaw)) return iRaw;
+            var aTokens = EmoTokenRe.Matches(iRaw);
+            var aUrls = EmoImgRe.Matches(iHtml ?? "").Cast<System.Text.RegularExpressions.Match>()
+                .Select(m => m.Groups["u"].Value).ToList();
+            bool aAligned = aUrls.Count == aTokens.Count;
+            int aIdx = 0;
+            return EmoTokenRe.Replace(iRaw, m =>
+            {
+                string aNote;
+                if (!aAligned) aNote = "?配不上";
+                else
+                {
+                    string aUrl = aUrls[aIdx];
+                    string aKey = "url:" + aUrl;
+                    if (!iCtx.Table.TryGetValue(aKey, out EmoRow aRow))
+                    {
+                        // 沒見過這張圖 ⇒ **登記**（描述留空）。
+                        // 不登記的話「還有哪些沒看過」只存在於這一次的畫面上，關掉就沒了。
+                        aRow = new EmoRow
+                        {
+                            Url = aUrl,
+                            Tier = "seen",
+                            State = "seen",
+                            FirstSeen = DateTime.UtcNow.ToString("o"),
+                        };
+                        iCtx.Table[aKey] = aRow;
+                        iCtx.NewSeen++;
+                        iCtx.Dirty = true;
+                    }
+                    string aAlias = (string.IsNullOrEmpty(iOwnerId) ? "?" : iOwnerId)
+                        + ":" + m.Value.Trim('[', ']');
+                    if (!aRow.Aliases.Contains(aAlias)) { aRow.AddAlias(aAlias); iCtx.Dirty = true; }
+
+                    if (aRow.Desc.Length > 0) { aNote = aRow.Desc; iCtx.Hit++; }
+                    else { aNote = "未描述:" + EmoShort(aUrl); iCtx.Miss++; }
+                }
+                aIdx++;
+                return m.Value + "⟨" + aNote + "⟩";
+            });
+        }
+
+        /// <summary>目前 `custom` 有幾個。讀不到回 **-1**（不回 0 —— 「讀不到」與「沒有」不可以同形）。</summary>
+        async UniTask<int> EmoCustomCountAsync(Dictionary<string, string> iCred, CancellationToken token)
+        {
+            var (aSt, aBody) = await CallAsync("/APP/Emoticons/get", iCred, null, token);
+            if (aSt != 200) return -1;
+            var aRoot = SafeParse(aBody);
+            if (aRoot == null || !aRoot.IsObject || !aRoot.Contains("custom")) return -1;
+            return aRoot["custom"] != null && aRoot["custom"].IsArray ? aRoot["custom"].Count : -1;
+        }
+
+        /// <summary>讀取端起手：載共用表（必要時從舊 per-account 檔搬一次）。</summary>
+        static EmoCtx EmoBegin(UCL_PlurkAccountResolution iRes)
+            => new EmoCtx { Table = LoadEmoTable(iRes.SecretId ?? "_") };
+
+        /// <summary>
+        /// 讀取端收尾：**有新登記就落盤**，並把三個數印出來（命中／待描述／新登記）。
+        /// <para>⚠ 這讓唯讀 op 產生一個本地寫入 —— 所以它一定要印出來。
+        /// 靜默寫檔會讓「唯讀」這個標籤比事實大。</para>
+        /// </summary>
+        static void EmoEnd(EmoCtx iCtx, StringBuilder ioR)
+        {
+            if (iCtx == null) return;
+            if (iCtx.Hit + iCtx.Miss + iCtx.NewSeen == 0) return;
+            ioR.AppendLine();
+            ioR.AppendLine($"### 🙂 表情查表：命中 **{iCtx.Hit}**／待描述 **{iCtx.Miss}**"
+                + $"／本次新登記 **{iCtx.NewSeen}** 張");
+            if (iCtx.Dirty)
+            {
+                SaveEmoTable(iCtx.Table.Values.ToList(), ioR);
+                ioR.AppendLine("- ⚠ 本 op 對 Plurk 是唯讀，但**寫了本地共用表**（新圖登記／別名補齊）——"
+                    + "這一行就是那個寫入的讀數。");
+            }
+            var aTodo = iCtx.Table.Values.Where(r => r.Desc.Length == 0 && r.State == "seen")
+                .OrderBy(r => r.FirstSeen).Take(8).ToList();
+            if (aTodo.Count > 0)
+            {
+                ioR.AppendLine("- 待描述（看一次圖，之後永遠查表）:");
+                foreach (var aRow in aTodo)
+                    ioR.AppendLine($"    · {aRow.Url}"
+                        + (aRow.Aliases.Count == 0 ? "" : "　（" + string.Join(" ", aRow.Aliases) + "）"));
+                ioR.AppendLine("    ⇒ 描述寫回: `--arg op=emoticons --arg emo_desc=<URL片段>=<描述>`");
+            }
+        }
+
+        /// <summary>圖檔 URL 的短碼（檔名前 8 碼）—— 給人眼比對「這兩個 `[emoN]` 是不是同一張圖」。</summary>
+        static string EmoShort(string iUrl)
+        {
+            if (string.IsNullOrEmpty(iUrl)) return "?";
+            int aSlash = iUrl.LastIndexOf('/');
+            string aName = aSlash >= 0 ? iUrl.Substring(aSlash + 1) : iUrl;
+            return aName.Length <= 8 ? aName : aName.Substring(0, 8);
+        }
+
+
+        // ===========================================================
+        // 區塊職責：試著新增一個自訂表情。
+        // ⚠ 這支是**未驗證的嘗試**，不是已知可用的功能：
+        //   官方 API 頁（2026-08-24，200）的 Emoticons 章節**只有** `get`，
+        //   一個新增用的端點都沒有。所以這裡送的路徑取自社群慣例，
+        //   而它的三種失敗（端點不存在／簽章錯／WAF 擋）**全都是 4xx，長得一樣**。
+        // ⇒ 判準：不論成功或失敗，把 http 碼與 body 原樣印出來，**不翻譯成「成功／不支援」**。
+        // 數值影響：若真的成立，這會在帳號上新增一個自訂表情（對外、可見）⇒ 要 `confirm=1`。
+        // ===========================================================
+        async UniTask OpEmoAdd(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            string aUrl = GetArg(iArgs, "url", "").Trim();
+            string aAlias = GetArg(iArgs, "alias", "").Trim();
+            if (aUrl.Length == 0 || aAlias.Length == 0)
+                throw new Exception("[Plurk] op=emoadd 需要 --arg url=<圖檔網址> 與 --arg alias=<表情代碼>");
+            var aCred = RequireCredentials(iRes);
+
+            ioR.AppendLine();
+            ioR.AppendLine("## emoadd（**未驗證的嘗試** —— 官方 API 頁沒有這個端點）");
+            ioR.AppendLine($"- alias: `{aAlias}`　url: `{aUrl}`");
+            ioR.AppendLine("- ⚠ 官方 `/APP/API` 的 Emoticons 章節只有 `get`（2026-08-24 顯式 UA 讀回 200 確認）。");
+            ioR.AppendLine("  ⇒ 下面每一個候選端點的 4xx **不能**當成「Plurk 不支援」——"
+                + "端點不存在／簽章錯／WAF 擋在這裡長得一樣。");
+
+            if (GetArg(iArgs, "confirm", "") != "1")
+            {
+                ioR.AppendLine("- 🛑 dry-run（沒帶 `confirm=1`）⇒ 一個請求都沒送。");
+                return;
+            }
+
+            // ① 動手**之前**先數一次 —— before/after 才是「這一次加成功了」的證據。
+            //    🩸 2026-08-24 首版只驗「送出的 alias 有沒有出現在回讀裡」，而 Plurk **不吃我給的
+            //    alias**（它自己回 `{"success_text":"ok","keyword":"emo7"}` 自動編號）⇒
+            //    那一行印「否 ← 沒生效」，而事實是 custom 從 6 變成 7，**加成功了**。
+            //    ⇒ 判準：驗收要問「這個動作有沒有發生」，不是「我猜的那個副作用有沒有出現」。
+            int aBefore = await EmoCustomCountAsync(aCred, token);
+            ioR.AppendLine($"- 動手前 `custom` 數量: **{(aBefore < 0 ? "讀不到" : aBefore.ToString())}**");
+
+            // 兩個候選端點都試：先 addFromURL（社群慣例），再 add。
+            // 兩個都印讀數 —— 只試一個然後說「不支援」，那是拿一條路徑的結果替整個世界作答。
+            string aKeyword = "";
+            string[] aCandidates = { "/APP/Emoticons/addFromURL", "/APP/Emoticons/add" };
+            foreach (string aEndpoint in aCandidates)
+            {
+                var aParams = new Dictionary<string, string> { { "url", aUrl }, { "alias", aAlias } };
+                var (aSt, aBody) = await CallAsync(aEndpoint, aCred, aParams, token);
+                ioR.AppendLine($"- `POST {aEndpoint}`　http: **{aSt}**　body（前 200 字）: {Trunc(aBody, 200)}");
+                if (aSt == 200 && aKeyword.Length == 0)
+                    aKeyword = PickJsonValue(aBody, "keyword") ?? "";
+            }
+            if (aKeyword.Length > 0)
+                ioR.AppendLine($"- ⚠ Plurk **自己命名**成 `{aKeyword}`（我送的 alias `{aAlias}` 被忽略）"
+                    + " ⇒ 文案裡要打的是 `[" + aKeyword + "]`，不是我取的那個名字。");
+
+            ioR.AppendLine("- ▶ 回讀（`/APP/Emoticons/get` 的 `custom` 分組才是憑據，200 不是）:");
+            var (aGetSt, aGetBody) = await CallAsync("/APP/Emoticons/get", aCred, null, token);
+            var aRoot = SafeParse(aGetBody);
+            bool aHasCustom = aRoot != null && aRoot.IsObject && aRoot.Contains("custom");
+            int aAfter = aHasCustom && aRoot["custom"] != null && aRoot["custom"].IsArray
+                ? aRoot["custom"].Count : -1;
+            ioR.AppendLine($"    · http {aGetSt}　`custom` 分組: "
+                + (aHasCustom ? $"有，{(aAfter < 0 ? "不是陣列（格式與預期不同）" : aAfter + " 個")}"
+                    : "**沒有這個分組**"));
+            ioR.AppendLine($"    · 數量 **{(aBefore < 0 ? "?" : aBefore.ToString())} → "
+                + $"{(aAfter < 0 ? "?" : aAfter.ToString())}**　"
+                + (aBefore >= 0 && aAfter == aBefore + 1 ? "✅ 加了一個（這是直接證據）"
+                    : aBefore >= 0 && aAfter == aBefore ? "⛔ **沒變 ⇒ 沒生效**"
+                    : "⚠ 兩個讀數之一沒拿到 ⇒ 這一格沒有證據，不當成成功"));
+            if (aKeyword.Length > 0)
+                ioR.AppendLine($"    · 回傳的 `{aKeyword}` 出現在 custom 清單裡: "
+                    + (aHasCustom && (aGetBody ?? "").Contains("\"" + aKeyword + "\"") ? "**是**" : "**否**"));
+            ioR.AppendLine("- ⚠ API **沒有刪除端點** ⇒ 加錯了只能上網頁 UI 收拾。");
+            ioR.AppendLine("- ▶ 下一步：跑 `--arg op=emoticons` 把它併進共用表（順手補描述）。");
         }
 
         // ===========================================================
@@ -683,6 +1317,506 @@ namespace UCL.Core.EditorLib.Plurk
             ioR.AppendLine(aFavFlag == null
                 ? "- ⚠ 回應裡沒有 `favorite` 這個欄位 ⇒ **「我按了沒」這一格沒有讀數**（不是「沒按到」）"
                 : $"- `favorite`（就這個帳號而言）: **{aFavFlag}**　← 這才是直接證據");
+        }
+
+        // ===========================================================
+        // 區塊職責：**擴圈**（Tim 2026-08-24）—— 找到有興趣的陌生人、看清楚他是誰、送出關係請求。
+        // 物理意義：在這之前這支 Cmd 的社交面只到「好友之間」。而好友清單是個封閉集合：
+        //          它能告訴妳誰已經在裡面，說不出**誰可能該進來**。
+        // 數值影響：`profile` / `expand` / `search` / `alerts` 純唯讀；
+        //          `befriend` / `unfriend` / `follow` / `unfollow` / `accept` / `deny` **改關係**，
+        //          一律要 `confirm=1`，且送出前把「那個人是誰」印成人看得懂的東西。
+        //
+        // ⚠ 端點名的驗證狀態：本區塊那幾支是 **2026-08-24 首次接上**，
+        //   事實來源仍在 `Docs~/{lang}/Workflows/Plurk_Maintenance.md` §5（別在這裡另記一份）。
+        //   ⇒ 所以每一支的非 200 都**把 body 印出來**：
+        //     「端點不存在」「簽章錯」「被 WAF 擋」三種失敗都是 4xx，長得一樣。
+        // ⛔ 這裡不做「全部同意」「批次加好友」：
+        //   「該不該加這個人」機器判不了，而批次動作會讓那一格沒有人看過。
+        // ===========================================================
+
+        /// <summary>
+        /// 印一張「這個人是誰」的卡：顯示名／帳號／自介／近期一則噗／關係現況。
+        /// <para>物理意義：對外動作的第一道守衛。id 錯一位不會有任何一層喊，
+        /// 而它會把請求送給一個陌生人 —— 所以送出前印的是**人**，不是 user_id。</para>
+        /// <para>回傳 profile 的原始 body（沒讀到回 null），讓呼叫端能再撈關係欄位。</para>
+        /// </summary>
+        async UniTask<string> PersonCardAsync(string iUserId, Dictionary<string, string> iCred,
+            StringBuilder ioR, CancellationToken token)
+        {
+            var (aSt, aBody) = await CallAsync("/APP/Profile/getPublicProfile", iCred,
+                new Dictionary<string, string> { { "user_id", iUserId } }, token);
+            if (aSt != 200)
+            {
+                ioR.AppendLine($"- ⚠ 讀不到 `{iUserId}` 的公開檔（http={aSt}）"
+                    + "⇒ **這一格沒有讀數**，不是「這個人不存在」。");
+                ioR.AppendLine("  body（前 300 字）: " + Trunc(aBody, 300));
+                return null;
+            }
+            var aRoot = SafeParse(aBody);
+            var aInfo = (aRoot != null && aRoot.Contains("user_info")) ? aRoot["user_info"] : null;
+            if (aInfo == null)
+            {
+                ioR.AppendLine("- ⚠ 回應裡沒有 `user_info` —— 格式跟我預期的不一樣（不是「查無此人」）。");
+                ioR.AppendLine("  body（前 300 字）: " + Trunc(aBody, 300));
+                return aBody;
+            }
+            ioR.AppendLine($"- 👤 **{UnescapeJson(JsonScalar(aInfo, "display_name"))}**"
+                + $"（`{JsonScalar(aInfo, "nick_name")}` / id `{JsonScalar(aInfo, "id")}`）"
+                + $"　karma {JsonScalar(aInfo, "karma")}");
+            string aAbout = OneLine(StripTags(UnescapeJson(JsonScalar(aInfo, "about")))).Trim();
+            ioR.AppendLine("- 自介: " + (aAbout.Length == 0 ? "(空)" : Trunc(aAbout, 160)));
+            ioR.AppendLine($"- 好友 {JsonScalar(aRoot, "friends_count")}"
+                + $" / 粉絲 {JsonScalar(aRoot, "fans_count")}"
+                + $"　關係現況: {RelationText(aRoot)}");
+            // 近期噗 —— 「這個人在寫什麼」比「他有幾個好友」重要得多
+            var aPlurks = aRoot.Contains("plurks") ? aRoot["plurks"] : null;
+            if (aPlurks != null && aPlurks.IsArray && aPlurks.Count > 0)
+            {
+                int aShow = Math.Min(3, aPlurks.Count);
+                ioR.AppendLine($"- 近期噗（{aShow}/{aPlurks.Count} 則，各截 100 字）:");
+                for (int i = 0; i < aShow; i++)
+                {
+                    string aTxt = OneLine(UnescapeJson(JsonScalar(aPlurks[i], "content_raw"))).Trim();
+                    // 🩸 2026-08-24：首版沒印 plurk_id ⇒ 這張卡「看得到、回不了」——
+                    //   要回應誰得先有 id，而卡上沒有 id 就得再繞一趟 timeline／search 去湊。
+                    ioR.AppendLine($"    · `{JsonScalar(aPlurks[i], "plurk_id")}`"
+                        + $" [{ShortTime(JsonScalar(aPlurks[i], "posted"))}] "
+                        + (aTxt.Length == 0 ? "(沒有文字內容)" : Trunc(aTxt, 100)));
+                }
+            }
+            else
+            {
+                ioR.AppendLine("- 近期噗: **沒有讀到**（可能是不公開，也可能是格式不同 —— 這兩件事我分不出來）");
+            }
+            return aBody;
+        }
+
+        /// <summary>
+        /// 關係現況：把 profile 回應裡幾個布林欄位收成一句人話。
+        /// <para>⚠ 欄位都不在時回「沒有讀數」而**不是**「不是好友」——
+        /// 那兩件事的處置完全不同（一個是要去查，一個是可以送請求）。</para>
+        /// </summary>
+        static string RelationText(UCL.Core.JsonLib.JsonData iRoot)
+        {
+            if (iRoot == null) return "(沒有讀數)";
+            var aBits = new List<string>();
+            foreach (string aKey in new[] { "are_friends", "is_fan", "is_following", "has_read_permission" })
+                if (iRoot.Contains(aKey)) aBits.Add($"{aKey}={JsonScalar(iRoot, aKey)}");
+            return aBits.Count == 0 ? "(沒有讀數 —— 不等於「不是好友」)" : string.Join(" / ", aBits);
+        }
+
+        /// <summary>自介欄位是 HTML ⇒ 粗暴剝標籤。只求能讀，不求正確渲染。</summary>
+        static string StripTags(string iHtml)
+        {
+            if (string.IsNullOrEmpty(iHtml)) return "";
+            var sb = new StringBuilder(iHtml.Length);
+            bool aIn = false;
+            foreach (char c in iHtml)
+            {
+                if (c == '<') { aIn = true; continue; }
+                if (c == '>') { aIn = false; sb.Append(' '); continue; }
+                if (!aIn) sb.Append(c);
+            }
+            return sb.ToString();
+        }
+
+        // ── 唯讀：看一個人 ────────────────────────────────────────
+        async UniTask OpProfile(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            string aUserId = GetArg(iArgs, "user_id", "").Trim();
+            if (aUserId.Length == 0)
+                throw new Exception("[Plurk] op=profile 需要 --arg user_id=<誰>"
+                    + "（從 op=friends / op=expand / op=search 的清單抄）");
+            var aCred = RequireCredentials(iRes);
+            ioR.AppendLine();
+            ioR.AppendLine($"## profile（`{aUserId}` 的公開檔 —— 唯讀）");
+            await PersonCardAsync(aUserId, aCred, ioR, token);
+            ioR.AppendLine();
+            ioR.AppendLine("### ▶ 下一步");
+            ioR.AppendLine("```bash");
+            ioR.AppendLine("--arg op=follow   --arg user_id=<id> --arg confirm=1   # 單向追蹤，不需對方同意");
+            ioR.AppendLine("--arg op=befriend --arg user_id=<id> --arg confirm=1   # 送好友請求（對方會收到通知）");
+            ioR.AppendLine("```");
+        }
+
+        // ── 唯讀：擴圈（好友的好友，按共同好友數排序）────────────
+        // 🩸 判準：這裡**只算共同好友數**、只讀公開發文，不做別的資料拼合、不建檔。
+        //    快取照現行規矩不入 git —— 那些是陌生人的東西，他們沒有同意過被釘進我們的歷史。
+        async UniTask OpExpand(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            var aCred = RequireCredentials(iRes);
+            int aTop = ParseIntArg(iArgs, "top", 15, 1, 100);
+            int aPerFriend = ParseIntArg(iArgs, "limit", 100, 1, 100);
+            int aHops = ParseIntArg(iArgs, "hops", 8, 1, 50);   // 最多向外問幾位好友（省 API 呼叫）
+
+            // ① 我是誰、我的好友有誰 —— 兩個都讀，不推
+            var (aMeSt, aMe) = await CallAsync("/APP/Users/me", aCred, null, token);
+            if (aMeSt != 200) throw new Exception($"[Plurk] 問不到自己的 user_id（http={aMeSt}）");
+            string aMeId = PickJsonValue(aMe, "id") ?? "";
+            if (aMeId.Length == 0) throw new Exception("[Plurk] /APP/Users/me 沒有 id 欄位");
+
+            var (aFrSt, aFrBody) = await CallAsync("/APP/FriendsFans/getFriendsByOffset", aCred,
+                new Dictionary<string, string>
+                {
+                    { "user_id", aMeId }, { "offset", "0" },
+                    { "limit", aPerFriend.ToString(CultureInfo.InvariantCulture) },
+                }, token);
+            var aMine = SafeParse(aFrBody);
+            ioR.AppendLine();
+            ioR.AppendLine("## expand（好友的好友 —— 唯讀，按共同好友數排序）");
+            if (aFrSt != 200 || aMine == null || !aMine.IsArray)
+            {
+                ioR.AppendLine($"- ⚠ 拿不到自己的好友清單（http={aFrSt}）⇒ 這一格沒有讀數。");
+                ioR.AppendLine("- body（前 300 字）: " + Trunc(aFrBody, 300));
+                return;
+            }
+
+            var aKnown = new HashSet<string> { aMeId };      // 已經是好友的＋我自己 ⇒ 不列
+            var aSeed = new List<(string id, string name)>();
+            for (int i = 0; i < aMine.Count; i++)
+            {
+                string aId = JsonScalar(aMine[i], "id");
+                if (aId.Length == 0) continue;
+                aKnown.Add(aId);
+                aSeed.Add((aId, UnescapeJson(JsonScalar(aMine[i], "display_name"))));
+            }
+            ioR.AppendLine($"- 我（`{aMeId}`）的好友 **{aSeed.Count}** 位（讀的，不是推的）");
+
+            // ② 向外一跳。⚠ 只問前 aHops 位 —— 而且**把沒問的那幾位說出來**：
+            //    靜默截斷會讓「掃過全部」與「掃了一半」在回傳檔上同形。
+            int aAsk = Math.Min(aHops, aSeed.Count);
+            if (aAsk < aSeed.Count)
+                ioR.AppendLine($"- ⚠ 只向外問了前 **{aAsk}/{aSeed.Count}** 位好友"
+                    + $"（`--arg hops={aSeed.Count}` 問完）—— 這不是全圖，是取樣。");
+
+            var aCount = new Dictionary<string, int>();
+            var aVia = new Dictionary<string, List<string>>();
+            var aName = new Dictionary<string, string>();
+            var aNick = new Dictionary<string, string>();
+            int aFailed = 0;
+            for (int i = 0; i < aAsk; i++)
+            {
+                var (aSt, aBody) = await CallAsync("/APP/FriendsFans/getFriendsByOffset", aCred,
+                    new Dictionary<string, string>
+                    {
+                        { "user_id", aSeed[i].id }, { "offset", "0" },
+                        { "limit", aPerFriend.ToString(CultureInfo.InvariantCulture) },
+                    }, token);
+                var aList = SafeParse(aBody);
+                if (aSt != 200 || aList == null || !aList.IsArray)
+                {
+                    aFailed++;
+                    ioR.AppendLine($"- ⚠ `{aSeed[i].name}`（{aSeed[i].id}）的好友清單讀不到（http={aSt}）"
+                        + " ⇒ 他那一票沒進統計");
+                    continue;
+                }
+                for (int j = 0; j < aList.Count; j++)
+                {
+                    string aId = JsonScalar(aList[j], "id");
+                    if (aId.Length == 0 || aKnown.Contains(aId)) continue;   // 已是好友／我自己 ⇒ 不是候選
+                    aCount[aId] = (aCount.TryGetValue(aId, out int c) ? c : 0) + 1;
+                    if (!aVia.TryGetValue(aId, out var aL)) { aL = new List<string>(); aVia[aId] = aL; }
+                    aL.Add(aSeed[i].name);
+                    aName[aId] = UnescapeJson(JsonScalar(aList[j], "display_name"));
+                    aNick[aId] = JsonScalar(aList[j], "nick_name");
+                }
+            }
+
+            ioR.AppendLine($"- 候選陌生人 **{aCount.Count}** 位"
+                + $"（來自 {aAsk - aFailed} 份好友清單{(aFailed > 0 ? $"，{aFailed} 份讀不到" : "")}）");
+            if (aCount.Count == 0)
+            {
+                ioR.AppendLine("- 沒有候選 —— 而這**可能**是「好友的好友都已經是我的好友」，"
+                    + "也可能是上面那幾份清單讀不到。兩者我分不出來，所以不下結論。");
+                return;
+            }
+            ioR.AppendLine();
+            ioR.AppendLine($"### 前 {Math.Min(aTop, aCount.Count)} 名（共同好友數 ↓）");
+            ioR.AppendLine("> ⚠ 共同好友數是**排序訊號**，不是「該加」的判準。");
+            ioR.AppendLine("> 要不要加，得先 `op=profile` 讀他在寫什麼 —— 那一格機器判不了。");
+            ioR.AppendLine();
+            var aRank = aCount.OrderByDescending(kv => kv.Value)
+                .ThenBy(kv => kv.Key, StringComparer.Ordinal).Take(aTop).ToList();
+            // 🩸 2026-08-24 首跑：最高分 3，而前 15 名**全部都是 3** ⇒ 名次其實由 tie-break（id 字串序）決定，
+            //   也就是「帳號註冊得早」被印成了「比較推薦」。分數看起來像排名，而它不是。
+            //   ⇒ 把平手狀況印出來：同分幾位、這一頁切在哪。**排序的解析度要自己講清楚。**
+            int aTopScore = aRank[0].Value;
+            int aTie = aCount.Count(kv => kv.Value == aTopScore);
+            ioR.AppendLine($"- 最高共同好友數 **{aTopScore}**，同分 **{aTie}** 位"
+                + (aTie > aTop
+                    ? $"　⚠ 而我只列 {aTop} 位 ⇒ **這一頁的名次是 tie-break（id 序）決定的，不是推薦度**。"
+                      + "　同分的人之間這個分數區分不了他們，要挑得靠 `op=profile` 讀內容。"
+                    : ""));
+            ioR.AppendLine("- ⚠ 本表**不知道誰已經被送過請求** —— pending 的人會照樣出現在這裡"
+                + "（`op=profile` 的 `are_friends=false` 也分不出「沒送過」與「送了他沒理」）。");
+            ioR.AppendLine();
+            foreach (var kv in aRank)
+            {
+                var aList = aVia[kv.Key];
+                ioR.AppendLine($"- `{kv.Key}`　**{(aName[kv.Key].Length == 0 ? "(查無名稱)" : aName[kv.Key])}**"
+                    + $"（{aNick[kv.Key]}）　共同好友 **{kv.Value}**"
+                    + $"　← 經由 {string.Join("／", aList.Take(4))}"
+                    + (aList.Count > 4 ? $" 等 {aList.Count} 位" : ""));
+            }
+            ioR.AppendLine();
+            ioR.AppendLine("### ▶ 下一步（id 抄上面那個）");
+            ioR.AppendLine("```bash");
+            ioR.AppendLine("--arg op=profile  --arg user_id=<id>                    # 先讀他在寫什麼（唯讀）");
+            ioR.AppendLine("--arg op=follow   --arg user_id=<id> --arg confirm=1    # 單向追蹤，不打擾對方");
+            ioR.AppendLine("--arg op=befriend --arg user_id=<id> --arg confirm=1    # 送好友請求");
+            ioR.AppendLine("```");
+        }
+
+        // ── 唯讀：搜尋（找主題，而不是找人）────────────────────────
+        async UniTask OpSearch(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            string aQuery = GetArg(iArgs, "query", "").Trim();
+            if (aQuery.Length == 0)
+                throw new Exception("[Plurk] op=search 需要 --arg query=<關鍵字>");
+            string aKind = GetArg(iArgs, "kind", "plurk").Trim().ToLowerInvariant();
+            if (aKind != "plurk" && aKind != "user")
+                throw new Exception($"[Plurk] --arg kind={aKind} 只吃 plurk|user（不靜默取預設值）");
+            var aCred = RequireCredentials(iRes);
+            int aOffset = ParseIntArg(iArgs, "offset", 0, 0, 100000);
+            int aPreview = ParseIntArg(iArgs, "preview", 90, 20, 400);
+
+            string aEndpoint = aKind == "user" ? "/APP/UserSearch/search" : "/APP/PlurkSearch/search";
+            var aParams = new Dictionary<string, string> { { "query", aQuery } };
+            if (aOffset > 0) aParams["offset"] = aOffset.ToString(CultureInfo.InvariantCulture);
+
+            var (aSt, aBody) = await CallAsync(aEndpoint, aCred, aParams, token);
+            ioR.AppendLine();
+            ioR.AppendLine($"## search kind={aKind}（唯讀）　query: `{aQuery}`");
+            ioR.AppendLine($"- endpoint: `POST {aEndpoint}`　http: **{aSt}**");
+            if (aSt != 200)
+            {
+                ioR.AppendLine("- ✗ body（前 400 字）: " + Trunc(aBody, 400));
+                ioR.AppendLine("- ⚠ 排查順序：**先確認端點存在 → 再懷疑簽章 → 最後才是 WAF**"
+                    + "（三種失敗都是 4xx，而 WAF 那格看 body 不看 status）。");
+                throw new Exception($"[Plurk] search 失敗 http={aSt}");
+            }
+            var aRoot = SafeParse(aBody);
+            var aList = (aRoot != null && aRoot.Contains(aKind == "user" ? "users" : "plurks"))
+                ? aRoot[aKind == "user" ? "users" : "plurks"] : null;
+            if (aList == null || !aList.IsArray)
+            {
+                ioR.AppendLine($"- ⚠ 回應裡沒有 `{(aKind == "user" ? "users" : "plurks")}` 陣列 ——"
+                    + " 這是**格式跟我預期的不一樣**，不是「搜不到」。");
+                ioR.AppendLine("- body（前 400 字）: " + Trunc(aBody, 400));
+                return;
+            }
+            ioR.AppendLine($"- **{aList.Count}** 筆（offset={aOffset}）");
+            ioR.AppendLine();
+            // 🩸 2026-08-24：河道那支的 user 字典叫 `plurk_users`，而**搜尋這支不叫那個** ⇒
+            //   首跑 30 筆作者全印「查無名稱」。UserName 那格已經守住了（不回空字串），
+            //   所以我看得出是「我沒查到作者」而不是「這則沒有作者」—— 兩個候選鍵都試。
+            var aUsers = (aRoot != null && aRoot.Contains("plurk_users")) ? aRoot["plurk_users"]
+                : ((aRoot != null && aRoot.Contains("users")) ? aRoot["users"] : null);
+            if (aUsers == null && aKind == "plurk")
+                ioR.AppendLine("- ⚠ 回應裡沒有 `plurk_users` 也沒有 `users` ⇒ 作者名這一欄**沒有讀數**"
+                    + "（下面印的 id 仍可直接餵 `op=profile`）");
+            for (int i = 0; i < aList.Count; i++)
+            {
+                var aIt = aList[i];
+                if (aKind == "user")
+                {
+                    ioR.AppendLine($"- `{JsonScalar(aIt, "id")}`"
+                        + $"　**{UnescapeJson(JsonScalar(aIt, "display_name"))}**"
+                        + $"（{JsonScalar(aIt, "nick_name")}）"
+                        + $"　karma {JsonScalar(aIt, "karma")}");
+                    continue;
+                }
+                string aTxt = OneLine(UnescapeJson(JsonScalar(aIt, "content_raw"))).Trim();
+                ioR.AppendLine($"- **[{JsonScalar(aIt, "plurk_id")}]** {ShortTime(JsonScalar(aIt, "posted"))}"
+                    + $" **{UserName(aUsers, JsonScalar(aIt, "owner_id"))}**"
+                    + $"　（owner_id `{JsonScalar(aIt, "owner_id")}`）");
+                ioR.AppendLine("    " + (aTxt.Length == 0 ? "(沒有文字內容)" : Trunc(aTxt, aPreview)));
+            }
+            ioR.AppendLine();
+            ioR.AppendLine("⚠ 搜到的是**噗**不是人 ⇒ 覺得對盤先 `op=profile --arg user_id=<owner_id>` 讀他這個人，");
+            ioR.AppendLine("　 再決定追蹤或送請求。**摘要是截斷過的，別對著開頭下判斷。**");
+        }
+
+        // ── 唯讀：誰在等我回應 ────────────────────────────────────
+        async UniTask OpAlerts(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            var aCred = RequireCredentials(iRes);
+            bool aHistory = GetArg(iArgs, "history", "") == "1";
+            string aEndpoint = aHistory ? "/APP/Alerts/getHistory" : "/APP/Alerts/getActive";
+            var (aSt, aBody) = await CallAsync(aEndpoint, aCred, null, token);
+
+            ioR.AppendLine();
+            ioR.AppendLine($"## alerts（{(aHistory ? "歷史" : "待處理")}）");
+            // 🩸 2026-08-24 實測：我把 getActive 標成「唯讀」，而**它不是** ——
+            //   第一次讀回 4 筆（2 pending ＋ plurk_liked ＋ my_responded），
+            //   第二次同一支指令只剩 2 筆。⇒ 讀這一支會把通知清掉（friendship_pending 留著，其餘消失）。
+            //   ⇒ 這格是「讀取有副作用」，而副作用不可逆（清掉的通知不會回來）。
+            ioR.AppendLine("- ⚠ **這一支不是唯讀** —— 實測第二次呼叫少了兩筆：");
+            ioR.AppendLine("  `getActive` 會把讀到的通知**清掉**（friendship_pending 會留，按讚／回應類不會）。");
+            ioR.AppendLine("  ⇒ 不要當成可重跑的查詢用；要看歷史走 `--arg history=1`。");
+            ioR.AppendLine($"- endpoint: `POST {aEndpoint}`　http: **{aSt}**");
+            if (aSt != 200)
+            {
+                ioR.AppendLine("- ✗ body（前 400 字）: " + Trunc(aBody, 400));
+                throw new Exception($"[Plurk] alerts 失敗 http={aSt}");
+            }
+            var aRoot = SafeParse(aBody);
+            if (aRoot == null || !aRoot.IsArray)
+            {
+                ioR.AppendLine("- ⚠ 回應不是陣列 —— 格式跟我預期的不一樣（**不是「沒有通知」**）。");
+                ioR.AppendLine("- body（前 400 字）: " + Trunc(aBody, 400));
+                return;
+            }
+            ioR.AppendLine($"- **{aRoot.Count}** 筆"
+                + (aRoot.Count == 0 ? "（真的空 —— 這是讀回來的 0，不是讀不到）" : ""));
+            for (int i = 0; i < aRoot.Count; i++)
+            {
+                var aIt = aRoot[i];
+                string aType = JsonScalar(aIt, "type");
+                // ⚠ 方向在欄位名裡，不在 type 裡（🩸 2026-08-24 我一開始只看 `from_user`）：
+                //   `from_user` ＝ 別人對我做了什麼（要我處置）
+                //   `to_user`   ＝ **我對別人做的還在等他** —— 對它跑 accept 是沒有意義的
+                var aFrom = aIt.Contains("from_user") ? aIt["from_user"] : null;
+                var aTo = aIt.Contains("to_user") ? aIt["to_user"] : null;
+                var aWho = aFrom ?? aTo;
+                string aDir = aFrom != null ? "⬅ 對方 → 我（要我處置）"
+                    : (aTo != null ? "➡ 我 → 對方（**等他回應，我這邊沒事可做**）" : "(方向不明)");
+                string aFromId = aWho != null ? JsonScalar(aWho, "id") : JsonScalar(aIt, "user_id");
+                string aFromName = aWho != null ? UnescapeJson(JsonScalar(aWho, "display_name")) : "";
+                ioR.AppendLine($"- «{aType}»　{aDir}　`{aFromId}`"
+                    + $"　**{(aFromName.Length == 0 ? "(查無名稱)" : aFromName)}**"
+                    + $"（{(aWho != null ? JsonScalar(aWho, "nick_name") : "")}）"
+                    + $"　{ShortTime(JsonScalar(aIt, "posted"))}");
+                // 🩸 2026-08-24：`friendship_pending` 的人不在 `from_user` 裡 ⇒ 上面那行印成
+                //   「(查無名稱)」＋空 id。而「我不知道他是誰」跟「這筆沒有人」長得一樣，
+                //   於是待處理的請求看起來像壞資料。⇒ 認不出人就把原始物件攤開，讓下一個人看得到真欄位名。
+                if (aFromId.Length == 0)
+                    ioR.AppendLine("    ⚠ 撈不到 user id ⇒ 原始欄位攤開（**不是這筆沒有人**）: "
+                        + Trunc(OneLine(aIt.ToJson()), 400));
+            }
+            ioR.AppendLine();
+            ioR.AppendLine("### ▶ 逐筆處理（⛔ 刻意沒有「全部同意」）");
+            ioR.AppendLine("```bash");
+            ioR.AppendLine("--arg op=profile --arg user_id=<id>                   # 先看他是誰");
+            ioR.AppendLine("--arg op=accept  --arg user_id=<id> --arg confirm=1   # 同意");
+            ioR.AppendLine("--arg op=deny    --arg user_id=<id> --arg confirm=1   # 拒絕");
+            ioR.AppendLine("```");
+        }
+
+        // ── 對外：關係動作（befriend / unfriend / follow / unfollow / accept / deny）──
+        // 守衛三道，跟 like 同一族：
+        //   ① 送出前 `PersonCardAsync` 把那個人印成人看得懂的東西（防 id 打錯）
+        //   ② `confirm=1` 才真的送（「我只是想看看」與「我要按下去」不得同形）
+        //   ③ 送出後**回讀** profile 的關係欄位 —— 200 只證明對方收到請求
+        async UniTask OpRelation(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token, string iVerb)
+        {
+            string aUserId = GetArg(iArgs, "user_id", "").Trim();
+            if (aUserId.Length == 0)
+                throw new Exception($"[Plurk] op={iVerb} 需要 --arg user_id=<誰>");
+            var aCred = RequireCredentials(iRes);
+
+            // 端點與參數名一張表 —— 免得六個動作各自散在六段裡漂
+            string aEndpoint, aParamKey, aWhat;
+            switch (iVerb)
+            {
+                case "befriend": aEndpoint = "/APP/FriendsFans/becomeFriend"; aParamKey = "friend_id";
+                    aWhat = "送出好友請求（對方會收到通知，要他同意才成立）"; break;
+                case "unfriend": aEndpoint = "/APP/FriendsFans/removeAsFriend"; aParamKey = "friend_id";
+                    aWhat = "解除好友"; break;
+                case "follow": aEndpoint = "/APP/FriendsFans/becomeFan"; aParamKey = "fan_id";
+                    aWhat = "**單向**追蹤（不需對方同意）"; break;
+                // 🩸 2026-08-24：首版把 unfollow 也接到 becomeFan＋`follow=false` ——
+                //   回 **200 ＋ `{"success_text":"ok"}`，而回讀 `is_following` 沒動**。
+                //   多餘的參數被無聲吃掉，成功字串照樣印。⇒ 換成 setFollowing（它才吃 follow 旗標）。
+                case "unfollow": aEndpoint = "/APP/FriendsFans/setFollowing"; aParamKey = "user_id";
+                    aWhat = "取消追蹤"; break;
+                case "accept": aEndpoint = "/APP/Alerts/addAsFriend"; aParamKey = "user_id";
+                    aWhat = "同意對方的好友請求"; break;
+                case "deny": aEndpoint = "/APP/Alerts/denyFriendship"; aParamKey = "user_id";
+                    aWhat = "拒絕對方的好友請求"; break;
+                default: throw new Exception($"[Plurk] 認不得的關係動作 '{iVerb}'");
+            }
+
+            ioR.AppendLine();
+            ioR.AppendLine($"## {iVerb}（**對外動作 —— 改的是關係，而對方會知道**）");
+            ioR.AppendLine($"- 動作: {aWhat}");
+            ioR.AppendLine($"- 目標 user_id: `{aUserId}`");
+            ioR.AppendLine();
+
+            // ① 這個人是誰
+            string aBefore = await PersonCardAsync(aUserId, aCred, ioR, token);
+
+            // ② confirm 守衛
+            if (GetArg(iArgs, "confirm", "") != "1")
+            {
+                ioR.AppendLine();
+                ioR.AppendLine("- 🛑 **dry-run（沒有送出）** —— 上面那張卡就是這一步的用途：");
+                ioR.AppendLine("  **確認我要動的是這個人**。id 錯一位不會有任何一層喊。");
+                ioR.AppendLine("  要真的做請加 `--arg confirm=1`。");
+                return;
+            }
+
+            var aParams = new Dictionary<string, string> { { aParamKey, aUserId } };
+            // unfollow 走同一支 becomeFan 但 follow=false —— ⚠ 這一格未驗，回 4xx 就是它不對
+            if (iVerb == "unfollow") aParams["follow"] = "false";
+            var (aSt, aBody) = await CallAsync(aEndpoint, aCred, aParams, token);
+            ioR.AppendLine();
+            ioR.AppendLine($"- endpoint: `POST {aEndpoint}`　`{aParamKey}={aUserId}`　http: **{aSt}**");
+            if (aSt != 200)
+            {
+                ioR.AppendLine("- ✗ body（前 400 字）: " + Trunc(aBody, 400));
+                ioR.AppendLine("- ⚠ 端點名這一族是 2026-08-24 首次接上 ⇒ 4xx 先懷疑端點名／參數名，"
+                    + "再懷疑簽章，最後才是 WAF（看 body 不看 status）。");
+                throw new Exception($"[Plurk] {iVerb} 失敗 http={aSt}");
+            }
+            ioR.AppendLine("- body（前 200 字）: " + Trunc(aBody, 200));
+
+            // ③ 回讀 —— 200 只證明對方收到請求
+            var (aSt2, aAfter) = await CallAsync("/APP/Profile/getPublicProfile", aCred,
+                new Dictionary<string, string> { { "user_id", aUserId } }, token);
+            if (aSt2 != 200)
+            {
+                ioR.AppendLine($"- ⚠ 回讀失敗（http={aSt2}）⇒ **結果那本帳沒有讀數**"
+                    + "（已送出 ≠ 已生效，這兩件事要分開報）。");
+                return;
+            }
+            var aAfterJd = SafeParse(aAfter);
+            string aRelBefore = aBefore == null ? "(沒有讀數)" : RelationText(SafeParse(aBefore));
+            ioR.AppendLine($"- 回讀關係: `{aRelBefore}` → `{RelationText(aAfterJd)}`");
+
+            // ── 結果那本帳 ──────────────────────────────────────
+            // 🩸 2026-08-24：`unfollow` 回 200 ＋ `{"success_text":"ok"}`，而 `is_following` 沒動 ——
+            //   多餘的參數被無聲吃掉，成功字串照樣印。**200 是「對方收到請求」，不是「事情發生了」。**
+            //   ⇒ 每個動作宣告它該讓哪個欄位變成什麼；沒變就大聲說未生效，不准讓 200 代表結果。
+            //   ⚠ befriend 是唯一「現在本來就不會變」的動作（要等對方同意）—— 它的證人在 op=alerts。
+            string aField = null, aWant = null;
+            switch (iVerb)
+            {
+                case "follow": aField = "is_following"; aWant = "true"; break;
+                case "unfollow": aField = "is_following"; aWant = "false"; break;
+                case "unfriend": aField = "are_friends"; aWant = "false"; break;
+                case "accept": aField = "are_friends"; aWant = "true"; break;
+            }
+            if (aField == null)
+            {
+                ioR.AppendLine($"- ⚠ `{iVerb}` **現在不該有變化** —— 請求送到了與對方同意了是兩件事。"
+                    + "前者的證人是 `op=alerts` 裡多一筆 `friendship_pending`（去看那個，別看這裡的 200）。");
+                return;
+            }
+            string aGot = (aAfterJd != null && aAfterJd.Contains(aField)) ? JsonScalar(aAfterJd, aField) : null;
+            if (aGot == null)
+                ioR.AppendLine($"- ⚠ 回讀沒有 `{aField}` 欄位 ⇒ **結果那本帳沒有讀數**（不是「沒生效」）。");
+            else if (aGot.Equals(aWant, StringComparison.OrdinalIgnoreCase))
+                ioR.AppendLine($"- ✅ 結果: `{aField}` = **{aGot}**（期待 {aWant}）← 這才是生效的直接證據");
+            else
+                ioR.AppendLine($"- ⛔ **回 200 但沒生效**：`{aField}` = **{aGot}**，期待 `{aWant}`。"
+                    + "　成功字串與實際狀態脫鉤 ⇒ 先懷疑參數名被無聲吃掉，再懷疑端點。");
         }
 
         // ── 讀取層：API ／ 本地快取 ────────────────────────────────

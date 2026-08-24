@@ -4,7 +4,7 @@ description: 自由時間骰面活動的管理台 — 下拉選一項活動編�
 tags: [editor-page, freetime, activities, dice]
 aliases: [自由時間管理, freetime admin, 活動管理頁]
 target_audience: [AI_Agent, Tools_User]
-last_updated: 2026-08-18
+last_updated: 2026-08-24
 ---
 
 # 🎲 自由時間管理頁 (UCL_FreeTimeAdminPage)
@@ -118,6 +118,24 @@ v1 曾經有過 `AgentCommands/FreeTime/activities.json`，**因雙源同步漂�
 
 ⚠ 文案與 `Cmd_FreeTimeActivity.OpPick` 的輸出對齊，**那邊改了這裡要跟著改** ——
 代價是同一份文案兩處各寫一次；換到的是「不必真的開一場 session 才看得到一行提示」。
+
+### 活動觸發統計（唯讀，Tim 2026-08-24）
+
+`📊 活動觸發統計` 區把「誰多久沒做過哪件事」攤出來 —— **per-persona**：
+
+- 每個 persona 的自由時間累計場次
+- 每個啟用活動的累計次數、以及**飢餓度**（已幾場沒被選）
+- `⭐💤` ＝ 下一輪骰面會被置頂；`💤` ＝ 超過門檻但這輪頂不上來（有名額上限）
+
+| 為什麼這樣做 | 理由 |
+|---|---|
+| **唯讀，沒有「手動改次數」的入口** | 那個數字唯一的意義就是「它真的發生過」。開一個手改的入口 = 讓它不再是讀數 |
+| 逐活動列以**現存活動清單**為主軸，不以統計檔的鍵為主軸 | 統計檔會留著已刪活動的紀錄，那些不該影響「我還缺什麼沒做」的判讀 |
+| 沒有任何人有統計檔時，明說「**這不代表沒人跑過**」 | 統計 2026-08-24 才接上，之前的場次不回溯 —— 空與零不可以同形 |
+| 讀取失敗那一份會印「沒有讀數，不是 0」 | 讀不到與真的 0 在數字上一模一樣 |
+
+事實來源：`letters/<persona>/profile/freetime_activity_stats.md`（JSON 內文，
+同 `identity_vector.md` 的慣例）。寫入端只有兩處 —— `step=start` 推場次、`op=pick` 記選中。
 
 ### 新增活動
 

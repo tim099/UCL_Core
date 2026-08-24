@@ -143,6 +143,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             };
             SaveSession(iPersona, aSession);
 
+            // 飢餓度的時鐘：場次 +1。**不推它的話「幾場沒被選」永遠是 0，置頂規則會安靜地永不觸發。**
+            // ⚠ 推在擲骰**之前** —— 本場算第 N 場，而本場的骰面就該用第 N 場的飢餓度。
+            int aSessionsTotal = UCL_FreeTimeActivityStatsIO.BumpSession(iPersona);
+
             // 免費像素發放：整份覆寫額度欄（per-session 清零 —— 拍板②），history 保留供回溯
             // 免費像素 ＝ **綁本場的限時繪圖券**（Tim 2026-08-18 拍板期間限定券）。
             // 物理意義：舊制自己維護一份 `Canvas/freetime/<P>.json` 額度檔（granted/used），
@@ -170,6 +174,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             // 回傳檔：三個時間欄（拍板：時間感由 Cmd 供給）＋骰面（附活動 md 實路徑 —— 傳遞不反推）＋ next
             AppendTimeFields(aR, aNow, aUntil);
             aR.AppendLine($"- session: `{aSessionId}`（state: `{SessionPath(iPersona)}`）");
+            aR.AppendLine(aSessionsTotal < 0
+                ? "- ⚠ 活動統計場次**推進失敗**（不影響本場，但飢餓置頂這一輪不準）—— 見 Console"
+                : $"- 📊 本人自由時間累計 **第 {aSessionsTotal} 場**"
+                  + $"（統計欄 `letters/{iPersona}/profile/{UCL_FreeTimeActivityStatsIO.FieldName}.md`）");
             aR.AppendLine($"- 🎟 限時繪圖券: **{FREE_PIXELS_PER_SESSION} 張**（`--pay auto` 會先花它們；**到期即作廢**，到 {aUntil.AddMinutes(FREE_PIXEL_GRACE_MINUTES):HH:mm}）{(aPrevForfeit > 0 ? $"　⚠ 上場還掛著 {aPrevForfeit} 張未用（過期後由券帳本清掉並記 expire）" : "")}");
             aR.AppendLine($"- 酒館開場宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort，不影響 session）")}");
             AppendOnlineSection(aR, iPersona);
@@ -699,6 +707,29 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 if (a.isProjectLayer) aProjectCount++; else aSharedCount++;
             }
 
+            // ── 第二道半：飢餓置頂（Tim 2026-08-24）──────────────────────────
+            // 物理意義：券囤積那條是綁 kind 的特殊邏輯，**這條是通用的** ——
+            //   任何活動「太久沒被選」都該被頂一次，判準不看它是什麼活動。
+            //   所以它不住在 UCL_FreeTimeGating 的 kind switch 裡，住在這裡（唯一看得到全清單的地方）：
+            //   ⚠ 上限 STARVE_HOIST_MAX 需要全域視野 —— 每項各自判定的話沒有一項知道自己是第幾餓。
+            // ⚠ 不動 visible（飢餓不能讓一個做不成的活動復活）；
+            //   也不覆蓋 tooLong（時間不夠壓過優先 —— 那條規則在上面已經定了）。
+            var aStats = UCL_FreeTimeActivityStatsIO.Load(iPersona);
+            var aStarveIds = new List<string>();
+            foreach (var a in aVisible) if (!a.tooLong) aStarveIds.Add(a.id);
+            var aStarved = UCL_FreeTimeActivityStatsIO.PickStarved(aStats, aStarveIds, out int aStarveOverflow);
+            if (aStarved.Count > 0)
+            {
+                for (int i = 0; i < aVisible.Count; i++)
+                {
+                    var a = aVisible[i];
+                    if (a.tooLong || !aStarved.TryGetValue(a.id, out int aGap)) continue;
+                    a.priority = true;
+                    a.name += UCL_FreeTimeActivityStatsIO.StarveSuffix(aGap, aStats.Picks(a.id));
+                    aVisible[i] = a;   // ActivityInfo 是 struct ⇒ 寫回去，不然改的是複本
+                }
+            }
+
             // ── 第三道：脫離（Tim 2026-08-18）──────────────────────────────
             // 觸發特殊規則排序的活動**從分組脫離成單獨一項**排最前。
             // 理由：它此刻特別值得做的理由是它自己的（棋局對手在線／券快滿），
@@ -760,7 +791,12 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aList.AddRange(aHoisted);
             aList.AddRange(aFit);
             aList.AddRange(aTail);
-            return (aList, $"UCL_Core 共用 {aSharedCount} + 專案 {aProjectCount}", aIsLive);
+            // ⚠ overflow 一定要說出來：「只有 2 項餓」與「有 9 項餓而我只頂 2 項」在骰面上同形。
+            string aStarveNote = aStarved.Count == 0 ? ""
+                : $"｜💤 飢餓置頂 {aStarved.Count} 項"
+                  + (aStarveOverflow > 0 ? $"（另有 {aStarveOverflow} 項也超過 {UCL_FreeTimeActivityStatsIO.STARVE_THRESHOLD} 場沒選，本輪沒頂上來）" : "");
+            string aStatsNote = aStats.loaded ? $"｜本人第 {aStats.sessionsTotal} 場" : "｜⚠ 尚無活動統計（不是 0 場，是沒有讀數）";
+            return (aList, $"UCL_Core 共用 {aSharedCount} + 專案 {aProjectCount}{aStatsNote}{aStarveNote}", aIsLive);
         }
 
         /// <summary>Fisher-Yates（System.Random —— 擲骰不需要密碼學強度）。</summary>

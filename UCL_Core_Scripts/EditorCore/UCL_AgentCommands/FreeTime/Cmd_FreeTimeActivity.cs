@@ -170,6 +170,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             ioSession.activities_done += 1;
             Cmd_FreeTime.SaveSession(iPersona, ioSession);
 
+            // 飢餓統計的唯一寫入端就是這裡（Tim 2026-08-24）。
+            // ⚠ **骰面出現不算被選** —— 出現而沒人做，正是「飢餓」這個詞要描述的狀態。
+            int aPicks = UCL_FreeTimeActivityStatsIO.RecordPick(iPersona, aHit.id);
+
             // 開場宣告（跟骰／未跟骰要可觀測 —— 原本靠人自己在 post 裡註明）
             var aPost = new StringBuilder();
             aPost.AppendLine($"▶️ [{iPersona} 大小姐] 自由時間開做：**{aHit.name}**"
@@ -183,6 +187,9 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             ioR.AppendLine($"## 已選：**{aHit.name}**（id `{aHit.id}`）");
             ioR.AppendLine($"- 跟骰: {(iFollowedDice ? "是" : "**否 —— 已在宣告註明未跟骰**")}");
+            ioR.AppendLine(aPicks < 0
+                ? "- ⚠ 活動統計**寫入失敗**（本次選擇沒被記進飢餓度）—— 見 Console"
+                : $"- 📊 這件活動累計做過 **{aPicks} 次**（飢餓度已歸零）");
             ioR.AppendLine($"- 開場宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
             if (aHit.minMinutes > 0 && iRemain < aHit.minMinutes)
             {

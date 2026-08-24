@@ -29,6 +29,7 @@ namespace UCL.Core.EditorLib.Page
         const string KeyActivitiesFold = "FreeTimeActivitiesFold";
         const string KeyNewActivityFold = "FreeTimeNewActivityFold";
         const string KeyPickPreviewFold = "FreeTimePickPreviewFold";
+        const string KeyStatsFold = "FreeTimeStatsFold";
         const string LogTag = "FreeTimeAdmin";
 
         // 區塊職責：折疊狀態專用容器 —— 刻意不與任何資料快取共用。
@@ -60,6 +61,9 @@ namespace UCL.Core.EditorLib.Page
         string m_NewGroup = "";
         string m_Status = "";
         bool m_Loaded;
+        // 有統計檔的 persona —— 跟活動清單同一個規矩：只在 Reload 時掃磁碟，不每幀掃
+        // （IMGUI 每 repaint 都會跑 ContentOnGUI，每幀列目錄是把磁碟當變數用）。
+        readonly List<string> m_StatsPersonas = new List<string>();
 
         public override string WindowName => "自由時間管理";
         //public override bool ShowInPageMenu => false;
@@ -81,6 +85,8 @@ namespace UCL.Core.EditorLib.Page
             m_DraftName.Clear();
             m_DraftHow.Clear();
             m_DraftGroup.Clear();
+            m_StatsPersonas.Clear();
+            m_StatsPersonas.AddRange(UCL_FreeTimeActivityStatsIO.ListPersonasWithStats());
             RebuildOptions();
             m_Loaded = true;
         }
@@ -115,6 +121,8 @@ namespace UCL.Core.EditorLib.Page
             if (!m_Loaded) Reload();
 
             DrawActivitiesSection();
+            GUILayout.Space(8);
+            DrawStatsSection();
             GUILayout.Space(8);
             DrawNewActivitySection();
 
@@ -477,6 +485,76 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：只寫 frontmatter ＋ 一段待補正文；活動的說明文件仍要人自己寫
         //          （GUI 生得出欄位，生不出「這個活動是什麼」）。
         // ===========================================================
+        // ===========================================================
+        // 區塊：活動觸發統計與飢餓置頂（Tim 2026-08-24）
+        // 物理意義：骰面每場重新洗牌 ⇒ **冷門活動的冷門本來是不可觀測的** ——
+        //          它每場都在清單裡，沒有任何一層會說「這件事你 12 場沒碰過」。
+        //          本區把那個數字攤出來：per-persona 的場次、每個活動的累計次數與飢餓度。
+        // ⚠ 唯讀。統計的寫入端只有兩處（step=start 推場次、op=pick 記選中）——
+        //   在管理頁開一個「手動改次數」的入口，等於讓那個數字失去它唯一的意義。
+        // 數值影響：不寫任何檔。清單跟活動清單一樣只在 Reload 時重掃。
+        // ===========================================================
+        void DrawStatsSection()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, KeyStatsFold, 21, iDefaultValue: false);
+                    GUILayout.Label($"<b>📊 活動觸發統計</b>（{m_StatsPersonas.Count} 人有紀錄"
+                        + $"｜飢餓門檻 {UCL_FreeTimeActivityStatsIO.STARVE_THRESHOLD} 場"
+                        + $"、一次最多頂 {UCL_FreeTimeActivityStatsIO.STARVE_HOIST_MAX} 項）",
+                        UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+                }
+                if (!aShow) return;
+
+                if (m_StatsPersonas.Count == 0)
+                {
+                    // ⚠ 「沒人有紀錄」≠「大家都沒跑過自由時間」——
+                    //   統計是 2026-08-24 才加的，之前跑過的場次不會回溯。這句一定要寫出來。
+                    GUILayout.Label("目前沒有任何 persona 有統計檔。"
+                        + " ⚠ 這**不代表沒人跑過自由時間** —— 統計是 2026-08-24 才接上的，之前的場次不會回溯補算。",
+                        WrapLabelStyle);
+                    return;
+                }
+
+                foreach (string aPersona in m_StatsPersonas)
+                {
+                    var aStats = UCL_FreeTimeActivityStatsIO.Load(aPersona);
+                    GUILayout.Label($"<b>{aPersona}</b> — 累計 <b>{aStats.sessionsTotal}</b> 場"
+                        + (string.IsNullOrEmpty(aStats.updatedAt) ? "" : $"（最後更新 {aStats.updatedAt}）"),
+                        UCL_GUIStyle.LabelStyle);
+
+                    // 逐活動列：以**現存活動清單**為主軸，不以統計檔的鍵為主軸 ——
+                    // 統計檔裡可能留著已刪除活動的紀錄，而那些不該影響「我還缺什麼沒做」的判讀。
+                    var aStarveIds = new List<string>();
+                    foreach (var a in m_Activities) if (a.enabled) aStarveIds.Add(a.id);
+                    var aHoisted = UCL_FreeTimeActivityStatsIO.PickStarved(aStats, aStarveIds, out int aOverflow);
+
+                    foreach (var a in m_Activities)
+                    {
+                        if (!a.enabled) continue;
+                        int aGap = aStats.Starvation(a.id);
+                        int aPicks = aStats.Picks(a.id);
+                        bool aWouldHoist = aHoisted.ContainsKey(a.id);
+                        string aMark = aWouldHoist ? "⭐💤" : (aGap >= UCL_FreeTimeActivityStatsIO.STARVE_THRESHOLD ? "💤" : "　");
+                        GUILayout.Label($"　{aMark} <b>{a.name}</b> `{a.id}`"
+                            + $" — 做過 {aPicks} 次｜已 {aGap} 場沒選"
+                            + (aWouldHoist ? "　← **下一輪會被置頂**" : ""),
+                            WrapLabelStyle);
+                    }
+                    if (aOverflow > 0)
+                        GUILayout.Label($"　⚠ 另有 {aOverflow} 項也超過門檻但**不會**被頂上來"
+                            + $"（一次最多 {UCL_FreeTimeActivityStatsIO.STARVE_HOIST_MAX} 項 —— 全部置頂等於沒有置頂）",
+                            WrapLabelStyle);
+                    if (!aStats.loaded)
+                        GUILayout.Label("　⚠ 這一份**讀取失敗**（上面的數字沒有讀數，不是 0）", WrapLabelStyle);
+                    GUILayout.Space(4);
+                }
+            }
+        }
+
         void DrawNewActivitySection()
         {
             using (new GUILayout.VerticalScope("box"))

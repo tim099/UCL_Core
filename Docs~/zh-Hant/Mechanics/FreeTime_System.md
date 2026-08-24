@@ -1,7 +1,7 @@
 ---
 title: 三池系統 — 績效獎金 / 酒館券 / 自由時間 (Three Pools)
 description: Tim 給 agent 的三種 reward 池 — 績效獎金 (fungible token) / 酒館券 (預付 post 票根) / 自由時間 (use-it-or-lose-it 時段)。含自由時間活動清單機制 (freetime.py + per-activity md 雙層資料夾)。
-last_updated: 2026-08-13
+last_updated: 2026-08-24
 target_audience: [AI_Agent, Tim, 新 onboarding persona]
 aliases: [三池, 自由時間, 酒館券, 績效獎金, free time, tavern voucher, performance bonus]
 canonical_term: 自由時間 (Free Time) — 三池之一
@@ -233,6 +233,44 @@ enabled 過濾在雙層 merge **之後**執行（kotoko QA 2026-06-11 抓出 mer
 > Backlog 候選正式落地時：寫一個活動 md 進對應層資料夾 + 從本表移除該列。
 
 ---
+
+## 4.5 飢餓置頂 — 「太久沒被選」也是一種優先（Tim 2026-08-24）
+
+骰面每場重新洗牌，於是**冷門活動的冷門是不可觀測的**：它每場都在清單裡，
+看起來一切正常，而沒有任何一層會說「這件事你 12 場沒碰過」。
+
+| 概念 | 定義 |
+|---|---|
+| **場次時鐘** | `step=start` 時 `sessions_total += 1`。**不推它，飢餓度永遠是 0，置頂規則會安靜地永不觸發** |
+| **飢餓度** | `sessions_total − 該活動 last_session`。從未被選過 ⇒ 等於 `sessions_total`（沒做過就是最餓的） |
+| **門檻** | `STARVE_THRESHOLD = 5` 場 |
+| **名額上限** | `STARVE_HOIST_MAX = 2` 項／輪 |
+| **記錄點** | 只有 `op=pick`。⚠ **骰面出現不算被選** —— 出現而沒人做正是飢餓本身 |
+| **存放** | `letters/<persona>/profile/freetime_activity_stats.md`（JSON 內文） |
+
+### 跟券囤積置頂的關係：同一個出口，不同一套判準
+
+| | 券囤積（`kind: CanvasVoucherFull`） | 飢餓（本節） |
+|---|---|---|
+| 綁 kind？ | **是**（只有標了那個 kind 的活動走） | **否 —— 通用**，任何活動都適用 |
+| 住哪 | `UCL_FreeTimeGating` 的 kind switch | `Cmd_FreeTime.RollActivities`（唯一看得到全清單的地方） |
+| 為什麼住那 | 判定只看該活動自己的存量 | **名額上限需要全域視野** —— 每項各自判定的話，沒有一項知道自己是第幾餓 |
+
+### 為什麼一定要有名額上限
+
+🩸 同日血證（`Cmd_Plurk op=expand` 首跑）：**當多數項目同時符合條件，排序就失去解析度** ——
+前 15 名共同好友數全部是 3，名次其實由 tie-break（id 序）決定，而畫面上看起來像推薦度。
+飢餓度天生會整批超標（新增一件活動時它立刻是最餓的）⇒ 沒有上限就是「全部置頂」，
+而全部置頂等於沒有置頂。
+
+⇒ 所以骰面的來源字串會印 `💤 飢餓置頂 N 項（另有 M 項也超過門檻，本輪沒頂上來）`——
+**「只有 2 項餓」與「有 9 項餓而我只頂 2 項」在骰面上長得一模一樣**，那個 M 一定要說出來。
+
+### 三條不變式
+
+1. 飢餓**不動 `visible`** —— 它不能讓一個做不成的活動（沒開播的陪看）復活。
+2. 飢餓**不覆蓋 `tooLong`** —— 時間不夠壓過優先，「最優先但這場做不完」是自相矛盾的建議。
+3. 統計讀不到時**一律不置頂**，而回傳檔要印「尚無統計（不是 0 場，是沒有讀數）」。
 
 ## 5. 三池對齊速查 (Quick Reference)
 

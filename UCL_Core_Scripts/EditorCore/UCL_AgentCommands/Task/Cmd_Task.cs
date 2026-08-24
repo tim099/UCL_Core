@@ -241,13 +241,35 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             string aNow = UCL_TaskIO.NowUtc();
             bool aNew = AddParticipant(e, iActor, aRole, aNow);
             string aFrom = e.status;
-            e.status = "in_progress";
+
+            // ===========================================================
+            // 區塊職責：認領要不要推狀態，**由角色決定**。
+            // 🩸 basecamp PM 對帳 2026-08-24（酒館 seq 13527）：首版**無條件**寫
+            //   `status = "in_progress"` ⇒ `--arg role=qa` 也會把單子推成「進行中」。
+            //   而 QA 認領的語意是「我來驗」，不是「開工了」——
+            //   那會讓看板上一張等驗收的單看起來像有人在寫 code。
+            // 判準：只有**執行角色**（dev/design/sound/art）＋**還沒開工的狀態**（backlog/todo）
+            //   才推進；驗收角色（qa/reviewer/pm）與已在 in_progress/in_review 的單一律不動狀態，
+            //   並且**明說為什麼沒動** —— 靜默不動跟「推了」在回傳檔上不能長得一樣。
+            // ===========================================================
+            bool aDoingRole = aRole == "dev" || aRole == "design" || aRole == "sound" || aRole == "art";
+            bool aNotStarted = aFrom == "backlog" || aFrom == "todo";
+            string aWhyNoMove = null;
+            if (!aDoingRole) aWhyNoMove = $"`{aRole}` 是驗收／協調角色，不是「開工」⇒ 狀態不動";
+            else if (!aNotStarted) aWhyNoMove = $"單子已經在 `{aFrom}` ⇒ 不往回推（認領只從 backlog/todo 推進）";
+
+            if (aWhyNoMove == null) e.status = "in_progress";
             UCL_TaskIO.Touch(e, aNow);
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　`in_progress`　{iActor} 認領（role={aRole}，原狀態 {aFrom}）");
+            UCL_TaskIO.Save(e, "", "", aWhyNoMove == null
+                ? $"{aNow}　`in_progress`　{iActor} 認領（role={aRole}，原狀態 {aFrom}）"
+                : $"{aNow}　`{e.status}`　{iActor} 加入為 {aRole}（狀態不動：{aWhyNoMove}）");
 
             ioR.AppendLine($"## ✅ {e.Id} 已認領");
-            ioR.AppendLine($"- {aFrom} → **in_progress**　role=`{aRole}`"
-                + (aNew ? "" : "（這個 persona＋role 本來就在參與者裡，沒有重複加）"));
+            ioR.AppendLine(aWhyNoMove == null
+                ? $"- {aFrom} → **in_progress**　role=`{aRole}`"
+                    + (aNew ? "" : "（這個 persona＋role 本來就在參與者裡，沒有重複加）")
+                : $"- 狀態**維持 `{aFrom}`**　role=`{aRole}` —— {aWhyNoMove}"
+                    + (aNew ? "" : "（這個 persona＋role 本來就在參與者裡，沒有重複加）"));
             ioR.AppendLine($"- 參與：{Participants(e)}");
             var aBlockers = UCL_TaskIO.OpenBlockers(e);
             if (aBlockers.Count > 0)
@@ -256,7 +278,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 ioR.AppendLine("  認領不擋（也許妳就是要去解它），但 `resolve` 會擋。");
             }
             bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
-                $"{aFrom} → **in_progress**（{iActor} 認領 role={aRole}）");
+                aWhyNoMove == null
+                    ? $"{aFrom} → **in_progress**（{iActor} 認領 role={aRole}）"
+                    : $"{iActor} 加入為 `{aRole}`（狀態維持 `{aFrom}` —— {aWhyNoMove}）");
             AppendNotifyLine(ioR, e, iActor, aOk);
         }
 

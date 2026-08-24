@@ -32,11 +32,25 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public static string TasksDir => Path.Combine(Dir, "tasks");
         public static string LastReportPath => Path.Combine(Dir, "_last_task_report.md");
 
-        // ⚠ `epics/` 與 `milestones/` **刻意不建立**：
-        //   欄位（epic_id / milestone）留著避免日後 migration，但目前**沒有任何讀取端**。
-        //   建了空目錄的話，下一個人看到 `epics/` 會以為 Epic 這件事已經在運作 ——
+        // ⚠ `epics/` 與 `milestones/` **兩個目錄刻意不建立** ——
+        //   建了空目錄的話，下一個人看到 `epics/` 會以為 Epic 這件事已經在運作，
         //   而空目錄跟「還沒有人建 Epic」長得一模一樣（🩸 別造一個名字比事實大的東西）。
-        //   要開始用 Epic 的那天再建，而那天會有一個真的 Epic 當第一顆探針。
+        //
+        // 🩸 而**「目錄沒建」≠「欄位沒生效」，我自己把這兩件事講成同一件**
+        //   （basecamp PM 對帳 2026-08-24，酒館 seq 13527 抓到）：
+        //   我在回傳檔與 commit 訊息裡寫「epic_id / milestone / related_to 三格沒有讀取端」，
+        //   而實際上 —— **三格裡有兩格是活的**：
+        //     · `milestone`  ✅ **有讀取端**：`OpList` 真的套 Where 篩選、`OpUpdate` 可改
+        //     · `related_to` ✅ **有讀取端**：`OpShow` / `OpLink` 會印它、`op=link` 能雙向寫
+        //     · `epic_id`    ⛔ 只有 `create` 一個寫入端（`Cmd_Task.cs:127`），**沒有讀取端**（這格我沒講錯）
+        //     · `tags`       ⛔ 同上（`Cmd_Task.cs:131`）—— 寫得進去、查不出來
+        //       ⇒ 追蹤主 Task 目前**只有人眼**；`op=list --arg tag=` 排在 TASK-0009（basecamp）
+        //   （以上四格是 **grep 出來的**，不是憑「我記得我寫過什麼」——
+        //     憑記憶正是上面那個低報的成因）
+        //   ⇒ 這是「訊息比事實小」那一族：低報讓能力隱形 ——
+        //     讀說明的人以為那個功能不存在，於是繞道、或再實作一次。
+        //     高報會在第一次使用時當場失敗（它自己會叫），低報不會叫。
+        //   ⇒ 判準：宣告「這格沒有讀者」之前，**去 grep 那個欄位名**，不要憑「我記得我沒寫」。
 
         public static void EnsureDir()
         {

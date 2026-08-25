@@ -243,19 +243,45 @@ def advance_tasks(message: str, sha: str, persona: str) -> None:
                "--arg", "op=commit", "--arg", f"index={n}",
                "--arg", f"sha={sha}", "--arg", f"mode={mode}",
                "--wait-reply", "0"]
+        # ===========================================================
+        # 區塊職責：把「訊號有沒有送出去」與「怎麼把它講出來」**分成兩段**（TASK-0043）。
+        #
+        # 🩸 血證（2026-08-25）：舊版把兩者放在同一個 try 裡，而 success 分支的指路字串
+        #   用了 `{n:04d}` —— 而 `n` 來自 `TASK-(\d+)` 的 regex group，**是字串**。
+        #   ⇒ 推進**已經成功之後**才丟 TypeError，被外層 except 接住，印成
+        #     「⚠ 推進失敗（…）—— **單子狀態沒動**，需手動補。」
+        #   而單子那時已經是 `in_review` 了。手動補跑一次印出「（不變）」才拆穿它。
+        #
+        # 📌 三本帳同時錯，而最貴的是第二句：**它斷言了一個它不知道的事實**，
+        #   然後叫人去做一個不需要的手動補 —— 而手動補的副作用是這句假話造成的。
+        # ⇒ 一般形：**`except` 只知道「這裡炸了」，它不知道「炸之前做完了什麼」。
+        #   失敗處理不可以替它不知道的事作答。**
+        # ===========================================================
+        sent, why = False, ""
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=180)
-            if r.returncode == 0 and "Success" in (r.stdout or ""):
-                # 不在這裡宣告「已完成」—— 真正的落點是 in_review 還是 done 由 Cmd 判，
-                # 而它印在回傳檔裡。這行只說「訊號送到了」，不替它作答。
-                print(f"📋 TASK-{n} 已收到 commit（{mode} / {sha}）—— 落到哪一格見 "
-                      f"AgentCommands/Tasks/_last_task_report.md")
-            else:
-                print(f"⚠ TASK-{n} 推進失敗，單子狀態沒動：手動補 "
-                      f"run Task --arg op=commit --arg index={n} --arg sha={sha} --arg mode={mode}",
-                      file=sys.stderr)
+            sent = (r.returncode == 0 and "Success" in (r.stdout or ""))
+            if not sent:
+                why = f"run_cmd 回 {r.returncode}"
         except Exception as e:
-            print(f"⚠ TASK-{n} 推進失敗（{e}）—— 單子狀態沒動，需手動補。", file=sys.stderr)
+            why = f"{type(e).__name__}: {e}"     # 這一格的失敗才是真的**沒送出去**
+
+        if not sent:
+            print(f"⚠ TASK-{n} **沒有送出去**（{why}）—— 單子狀態沒動，手動補 "
+                  f"run Task --arg op=commit --arg index={n} --arg sha={sha} --arg mode={mode}",
+                  file=sys.stderr)
+            continue
+
+        # 送到了。以下純輸出 —— 這裡再炸也**不可以**被讀成推進失敗。
+        # 不在這裡宣告「已完成」：真正的落點是 in_review 還是 done 由 Cmd 判，它印在回傳檔裡。
+        try:
+            print(f"📋 TASK-{n} 已收到 commit（{mode} / {sha}）—— 落到哪一格讀單檔："
+                  f"AgentCommands/Tasks/tasks/{int(n):04d}.md")
+        except Exception as e:
+            print(f"⚠ TASK-{n} 的**回報**出錯（{type(e).__name__}: {e}）—— "
+                  f"⚠ **訊號已經送出去了，單子可能已經推進**，去讀 "
+                  f"AgentCommands/Tasks/tasks/ 底下那張單確認，不要盲目手動補。",
+                  file=sys.stderr)
 
 
 def post_announcement(body: str, sha: str, persona: str) -> tuple:

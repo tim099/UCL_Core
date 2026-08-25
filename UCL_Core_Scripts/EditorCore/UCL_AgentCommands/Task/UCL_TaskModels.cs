@@ -117,6 +117,10 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         /// <summary>最後一次狀態變動（UTC ISO8601）—— stale 判定的唯一輸入。</summary>
         public string updated_at = "";
         public string closed_at = "";
+        // 最後一次 `op=wrapup` 的時戳（UTC）。空 ＝ 從來沒收過工，**或**這張單早於本欄位。
+        // ⚠ 讀取端必須能分辨這兩者 —— 見 UCL_TaskReconcile.LastWrapupUtc（缺值時回頭問時間線）。
+        // 2026-08-25 TASK-0036：述詞②從「有沒有收過工」改成「最後一次收工之後有沒有又動過」。
+        public string last_wrapup_at = "";
 
         // ===========================================================
         // 區塊職責：Task ↔ 工作記憶的錨點（TASK-0015；契約見工作記憶

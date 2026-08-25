@@ -223,8 +223,14 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             {
                 if (e.IsClosed()) continue;                       // 已關的不看（反向驗收要求）
                 if (e.RolesOf(iPersona).Count == 0) continue;      // 別人的單不看
-                if (!IsAfterUtc(e.updated_at, aSince)) continue;   // 本次上線後沒動過的不看
-                if (HasWrapupSince(e.index, aSince)) continue;     // 本次上線後收過工了
+                if (!IsAfterUtc(e.updated_at, aSince)) continue;   // ① 本次上線後沒動過的不看
+                // ② 因果判準：**最後一次收工之後，有沒有又動過**（TASK-0036）。
+                //   舊版問的是「本次上線後有沒有收過工」⇒ 10:00 收工、11:00 又改了照樣放行，
+                //   而那正是閘要防的東西：**收工留言寫完之後又動了，那份收工紀錄就過期了。**
+                //   🩸 讀數 2026-08-25（探針 TASK-0042）：wrapup 02:19:50 → updated_at 推到 02:59
+                //     ⇒ 舊版收工閘**零命中**。
+                DateTime aLastWrapup = LastWrapupUtc(e);
+                if (aLastWrapup != DateTime.MinValue && !IsAfterUtc(e.updated_at, aLastWrapup)) continue;
                 aOut.Add(e);
             }
             return aOut;
@@ -268,29 +274,62 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //   兩邊都倒向**擋下**那一側（而擋下有出口：`skip_reason`；放行沒有）。
         // ===========================================================
 
-        /// <summary>該單的時間線裡，<paramref name="iSinceUtc"/> 之後有沒有 `wrapup` 事件。</summary>
-        public static bool HasWrapupSince(int iIndex, DateTime iSinceUtc)
+        // ===========================================================
+        // 區塊職責：這張單**最後一次 `wrapup`** 的時戳（UTC）；沒有回 `DateTime.MinValue`。
+        //
+        // 來源順序（**刻意不是「缺值就擋」**，這格是我對驗收標準的一處偏離，已在單上標明）：
+        //   ① frontmatter 的 `last_wrapup_at` —— `op=wrapup` 寫的，正常路徑走這條
+        //   ② 讀不到就**回頭問時間線**（`wrapup` 事件本來就在那裡）
+        //   ③ 兩邊都沒有 ⇒ 從來沒收過工 ⇒ 回 MinValue ⇒ 呼叫端**擋下**
+        //
+        // 為什麼不直接「缺值就擋」：本欄位是 2026-08-25 才加的，**所有既有單都缺值** ——
+        //   一律擋的話，上線當晚每個人都會被自己收過工的舊單擋住，
+        //   而那正是「修完立刻天天亮」。⇒ 時間線是同一件事的既有紀錄，問它就不必回填。
+        // ⚠ 而「兩邊都沒有」仍然倒向擋下（擋下有 `skip_reason` 出口，放行沒有）——
+        //   驗收標準要的那個方向沒有被放掉，只是把「缺值」拆成了「真的沒收過工」與「欄位還沒補」。
+        // ===========================================================
+        public static DateTime LastWrapupUtc(UCL_TaskEntry e)
         {
+            if (e == null) return DateTime.MinValue;
+            if (!string.IsNullOrWhiteSpace(e.last_wrapup_at)
+                && DateTime.TryParse(e.last_wrapup_at, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AdjustToUniversal
+                    | System.Globalization.DateTimeStyles.AssumeUniversal, out var aField))
+                return aField;
+            return LastWrapupFromTimeline(e.index);
+        }
+
+        /// <summary>時間線裡**最後一筆** `wrapup` 的時戳；沒有回 <c>DateTime.MinValue</c>。</summary>
+        static DateTime LastWrapupFromTimeline(int iIndex)
+        {
+            var aOut = DateTime.MinValue;
             try
             {
                 string aPath = UCL_TaskIO.TaskPath(iIndex);
-                if (!File.Exists(aPath)) return false;
+                if (!File.Exists(aPath)) return aOut;
                 foreach (var aLine in File.ReadAllLines(aPath, Encoding.UTF8))
                 {
                     string aTrim = aLine.TrimStart();
                     if (!aTrim.StartsWith("- ", StringComparison.Ordinal)) continue;
                     if (aLine.IndexOf("`wrapup`", StringComparison.Ordinal) < 0) continue;
-                    // 時間線格式：`- <ISO 時間戳>　<事件>…` ⇒ 取第一個空白之前那段來解析。
                     string aStamp = aTrim.Substring(2).TrimStart();
                     int aCut = aStamp.IndexOfAny(new[] { ' ', '\t', '　' });
                     if (aCut > 0) aStamp = aStamp.Substring(0, aCut);
-                    if (IsAfterUtc(aStamp, iSinceUtc)) return true;
+                    if (DateTime.TryParse(aStamp, System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.AdjustToUniversal
+                            | System.Globalization.DateTimeStyles.AssumeUniversal, out var aUtc)
+                        && aUtc > aOut) aOut = aUtc;
                 }
             }
-            catch { /* 讀不到就當沒有 —— 擋下比放行安全（而擋下有出口：skip_reason） */ }
-            return false;
+            catch { /* 讀不到就當沒有 —— 呼叫端會擋下，而擋下有出口 */ }
+            return aOut;
         }
 
+        // ⛔ `HasWrapupSince(index, since)` 已於 2026-08-25（TASK-0036）移除。
+        //   它問的是「**有沒有**收過工」，而閘要問的是「**最後一次**收工之後有沒有又動過」——
+        //   兩者在「10:00 收工、11:00 又改了」那格給相反答案，而舊的那個會**放行**。
+        //   ⚠ 刻意不留著：一支長得像判準的死函式，下一個人會拿它去重造同一隻。
+        //   要最後一次收工時戳請用 `LastWrapupUtc(entry)`。
         /// <summary>
         /// 顯式跳過收工閘：把理由寫進**那張單的時間線**。
         /// <para>⚠ 不是寫進 log —— **跳過要留在別人看得到的地方**（basecamp 拍板：

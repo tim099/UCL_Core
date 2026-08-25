@@ -785,6 +785,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             };
             e.comments.Add(aComment);
             UCL_TaskIO.Touch(e, aNow);
+            // ⚠ 等號陷阱（TASK-0036 驗收標準第三條）：`wrapup` 自己會 `Touch` ⇒ 這兩個欄位
+            //   在寫完的當下**必然相等**。所以述詞②的判準必須是**嚴格大於**（`updated_at > last_wrapup_at`）——
+            //   用 `>=` 的話「剛收完工」會被自己擋住，那是一隻修完立刻天天亮的警示。
+            //   ⇒ 這裡刻意跟 `Touch` 共用同一個 `aNow`，讓「相等」是精確的而不是差幾毫秒。
+            e.last_wrapup_at = aNow;
             UCL_TaskIO.Save(e, "", "", $"{aNow}　`wrapup`　{iActor} 收工（狀態不動：{aFrom}）留言 #{aComment.id}");
 
             ioR.AppendLine($"## ✅ {e.Id} 已收工（`wrapup`）");

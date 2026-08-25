@@ -1,7 +1,7 @@
 ---
 title: Task Management Workflow — 跨 Agent 任務管理與協作維護指南
 description: 跨專案共享的專案與任務管理作業標準 — 一單一檔任務建立、多參與者（Dev/QA/PM/Design/Reviewer/Sound/Art）指派、依賴關係雙向維護、早安零改動天然透傳、Commit 自動閉環（Fixes TASK-N ＋ --expect-files）、Task ↔ 工作記憶雙向錨點（四個觸發點）、晚安雙向對帳機制與 sweep 逾期釋放。
-last_updated: 2026-08-24
+last_updated: 2026-08-25
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Task_Management_System.md | Task Plan RFC | 系統架構設計與資料模型
@@ -51,7 +51,7 @@ graph TD
 | **`PM`** | **專案管理** | **大項目拆解與相依性統籌**：<br>① **大型模組拆分**：將 Epic 或大型需求拆解為具體、可獨立驗收的 Task 與 Subtask。<br>② **相依性分析**：釐清各任務間的阻塞關係（設定 `blocked_by` / `blocks`），找出關鍵路徑 (Critical Path)。<br>③ **順序與優先度排序**：依據相依性與緊急程度調整 `priority`（Urgent/High/Normal/Low），規劃執行順序，避免團隊被 Blocker 卡死。 |
 | **`Design`** | **企劃 / 規格** | **規格制定與驗收初審**：定義功能規格與詳細說明，負責撰寫清單中的 **Acceptance Criteria（驗收標準）**，確保目標明確可度量。 |
 | **`Dev`** | **程式 / 執行** | **主要實作與交付**：認領任務（`op=claim --arg role=dev`），實作程式碼或產出檔案，提交 Commit 時帶 `Fixes TASK-N` 推進狀態至 `in_review` / `done`。 |
-| **`QA`** | **測試 / 驗收看門狗** | **品質把關與結單簽核**：任務若指定 QA，結單前必須由 QA 覆核驗收標準，並於 `resolve` 時簽署 `qa_note`；有權以「標準不可度量或驗收失敗」退回單子。 |
+| **`QA`** | **測試 / 驗收看門狗** | **品質把關與結單簽核**：<br>① 任務若指定 QA，結單前必須由 QA 覆核驗收標準，並於 `resolve` 時簽署 `qa_note`。<br>② **驗收退回返工規範（Tim 2026-08-25 拍板）**：驗收過程若發現不符標準或瑕疵，**一律走退回返工（`op=update --arg status=in_progress`）並在該 Task 留言提供失敗讀數與重現步驟，嚴禁另開 Bug 單！**（Bug 單僅限已發布/已結案的系統性故障或外部回報）。 |
 | **`Reviewer`** | **審查者** | **代碼 / 設計審查**：針對 PR、架構變更或設計產物進行 Review 並留下審查意見。 |
 | **`Sound`** | **聲音 / 音效** | **音效與音頻整合**：負責音訊資產製作與品質確認。 |
 | **`Art`** | **美術 / 視覺** | **視覺資產產出**：負責角色、場景與 UI 圖像產出。 |
@@ -97,8 +97,10 @@ $R --arg op=comment --arg index=42 --arg body="今日完成 P1~P6 分鏡，預�
 $R --arg op=link --arg index=43 --arg op_link=blocked_by --arg target=42
 $R --arg op=link --arg index=43 --arg op_link=subtask_of --arg target=42
 
-# 9. 屬性更新（⛔ 嚴禁直接推 done/cancelled，結單必須走 resolve）
-$R --arg op=update --arg index=42 --arg priority=urgent [--arg milestone="comic-vol-1"] [--arg memory_topic="task-mgmt"]
+# 9. 屬性更新（吃 6 欄位：status/priority/title/milestone/memory_topic/memory_archived_commit；⛔ 嚴禁直接推 done/cancelled，結單必須走 resolve）
+$R --arg op=update --arg index=42 [--arg status=in_progress|in_review|todo|backlog] \
+   [--arg priority=urgent|high|normal|low] [--arg title="<新標題>"] [--arg milestone="comic-vol-1"] \
+   [--arg memory_topic="task-mgmt"] [--arg memory_archived_commit=<sha>]
 
 # 10. 結單關閉任務（需 confirm=1；提示回寫工作記憶；若 blocker 未解或無 qa_note 則機械阻擋）
 $R --arg op=resolve --arg index=42 --arg status=done --arg note="已由 QA 覆核完工" --arg confirm=1 [--arg qa_note="QA 簽核說明"]
@@ -138,14 +140,17 @@ sequenceDiagram
     Task->>Task: Cmd_GoodNight step=check
     Task-->>Dev: 檢查未關單 updated_at 逾期 14 天 / 單向斷鏈（只印不改）
     
-    Note over PM, Memory: ④ 歸檔退場
+    Note over PM, Memory: ④ 歸檔退場（work_memory.py archive 已上線）
     PM->>Memory: work_memory.py archive --topic <slug>
     Memory-->>PM: 檢查 git 狀態乾淨 ➔ 標記 archived ➔ 留下 commit 錨點
 ```
 
+> [!NOTE]
+> **觸發點④現況邊界**：`work_memory.py archive` 已由 basecamp 完成交付（支援 submodule Git 乾淨前置檢查）。歸檔後 PM 於 Task 透過 `op=update --arg memory_archived_commit=<sha>` 寫入歷史錨點。墓碑（tombstone）寫入端目前簽部分完成，待進一步驗收。
+
 ---
 
-## 5. 鋼鐵動線整合規範
+## 5. 鋼鐵動線整合與品質守衛規範
 
 ### ① 早安喚醒 (`GoodMorning`)
 - **早安 Brief 生成流程零改動**：
@@ -164,3 +169,11 @@ sequenceDiagram
   2. **指派給我（Dev/QA）但見叢未引用** ➔ 提示補寫一行。
   3. **逾期認領未動（≥14 天）** ➔ 提示認領已過期，引導執行 `op=sweep` 釋放。
   4. **記憶錨點異常** ➔ 提示未關單 `updated_at` 逾期 14 天未動或單向斷鏈。
+
+### ④ QA 驗收退回返工守衛（不開 Bug 單）
+- **規範原則**：任務在 `in_review` 驗收期間若發現未達標或缺陷，**嚴禁另開 Bug 單**。
+- **標準動作**：
+  1. QA 執行 `op=update --arg index=<N> --arg status=in_progress` 將單子退回。
+  2. 透過 `op=comment --arg index=<N>` 留言詳細記錄未通過項目、量測讀數與重現步驟。
+  3. Dev 於原單進行返工修正後再次提交。
+- **說明**：BugReport 系統是針對「已結案 / 已發布上線」之系統性缺陷或外部回報；施工驗收中之瑕疵屬於正常迭代，於原 Task 閉環追蹤。

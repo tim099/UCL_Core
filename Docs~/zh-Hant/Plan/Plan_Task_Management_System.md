@@ -67,6 +67,7 @@ related:
   2. `OpenBlockers` 閘：若 `blocked_by` 清單中有任何未解任務，強制阻擋 `resolve`。
   3. `QA` 閘：若參與者清單中有 `role=qa` 成員，且結單操作者非該 QA 人員，必須顯式帶 `--arg qa_note="<覆核簽核說明>"` 方能放行。
 - **防偷推守衛**：`op=update` **嚴格禁止**直接將狀態推至 `done` 或 `cancelled`，所有結單必須走 `resolve`。
+- **QA 驗收退回返工守衛（Tim 2026-08-25 拍板）**：任務在驗收過程中若發現不符標準或瑕疵，**一律走退回返工（`op=update --arg status=in_progress`）並在該 Task 留言提供量測讀數與重現步驟，嚴禁另開 Bug 單！**（BugReport 系統是針對已結案/已發布之線上缺陷）。
 
 ---
 
@@ -125,12 +126,14 @@ AgentCommands/Tasks/ (Submodule -> github.com/tim099/Tasks)
 ```
 
 > [!NOTE]
-> **現況功能完整度**：
+> **現況功能完整度（實跑讀數對照）**：
 > - ✅ **`milestone` 里程碑**：`create`、`update`、`list --arg milestone=` 全面生效。
 > - ✅ **`op=sweep` 逾期認領釋放**：已上線（逾期自動退回 `todo` 釋放認領）。
 > - ✅ **`tags` 標籤過濾**：`op=list --arg tag=` 已生效。
 > - ✅ **`epic_id` 與 `subtask_indices`**：`op=link subtask_of|has_subtask` 與 `op=list --arg epic=` 已全面生效。
-> - ✅ **`memory_topic` 記憶錨點**：`op=show` 讀取端、四種狀態呈現、晚安對帳已全面生效。
+> - ✅ **`op=update` 6 大欄位**：`status`, `priority`, `title`, `milestone`, `memory_topic`, `memory_archived_commit` 均已實跑驗收。
+> - ✅ **`memory_topic` 記憶錨點**：`op=show` 讀取端、五種狀態呈現（主題在 / 全部退場 / 已歸檔 / 已刪除 / 連結壞了）、晚安對帳已全面生效。
+> - ✅ **`work_memory.py archive`**：已由 TASK-0017 上線交付（支援 submodule Git 乾淨前置檢查；墓碑寫入端待進一步驗收）。
 
 ---
 
@@ -142,7 +145,7 @@ AgentCommands/Tasks/ (Submodule -> github.com/tim099/Tasks)
 | `list` | 查詢清單 | `[--arg status=] [--arg assignee=] [--arg milestone=] [--arg tag=] [--arg epic=]` |
 | `show` | 查閱單檔詳情與記憶接回 | `--arg index=<N>` |
 | `claim` | 認領任務（智能角色語意） | `--arg index=<N> [--arg role=dev]` |
-| `update` | 屬性更新（⛔ 不准推 done/cancelled） | `--arg index=<N> [--arg priority=] [--arg milestone=] [--arg memory_topic=]` |
+| `update` | 屬性更新（吃 6 欄位；⛔ 嚴禁直接推 done/cancelled） | `--arg index=<N> [--arg status=] [--arg priority=] [--arg title=] [--arg milestone=] [--arg memory_topic=] [--arg memory_archived_commit=]` |
 | `assign` | 追加/修改參與者（不改狀態） | `--arg index=<N> --arg target_persona= --arg role=` |
 | `unassign` | 移除參與者 | `--arg index=<N> --arg target_persona=` |
 | `comment` | 追加討論/進度（同步發酒館） | `--arg index=<N> --arg body=<筆記內容>` |

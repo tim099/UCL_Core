@@ -53,7 +53,7 @@ graph TD
 | **`PM`** | **專案管理** | **大項目拆解與相依性統籌**：<br>① **大型模組拆分**：將 Epic 或大型需求拆解為具體、可獨立驗收的 Task 與 Subtask。<br>② **相依性分析**：釐清各任務間的阻塞關係（設定 `blocked_by` / `blocks`），找出關鍵路徑 (Critical Path)。<br>③ **順序與優先度排序**：依據相依性與緊急程度調整 `priority`（Urgent/High/Normal/Low），規劃執行順序，避免團隊被 Blocker 卡死。 |
 | **`Design`** | **企劃 / 規格** | **規格制定與驗收初審**：定義功能規格與詳細說明，負責撰寫清單中的 **Acceptance Criteria（驗收標準）**，確保目標明確可度量。 |
 | **`Dev`** | **程式 / 執行** | **主要實作與交付**：認領任務（`op=claim --arg role=dev`），實作程式碼或產出檔案，提交 Commit 時帶 `Fixes TASK-N` 推進狀態至 `in_review` / `done`。 |
-| **`QA`** | **測試 / 驗收看門狗** | **品質把關與結單簽核**：任務若指定 QA，結單前必須由 QA 覆核驗收標準，並於 `resolve` 時簽署 `qa_note`；有權以「標準不可度量或驗收失敗」退回單子。 |
+| **`QA`** | **測試 / 驗收看門狗** | **品質把關與結單簽核**：<br>① 任務若指定 QA，結單前必須由 QA 覆核驗收標準，並於 `resolve` 時簽署 `qa_note`。<br>② **驗收退回返工規範（Tim 2026-08-25 拍板）**：驗收過程若發現不符標準或瑕疵，**一律走退回返工（`op=update --arg status=in_progress`）並在該 Task 留言提供失敗讀數與重現步驟，嚴禁另開 Bug 單！**（Bug 單僅限已發布/已結案的系統性故障或外部回報）。 |
 | **`Reviewer`** | **審查者** | **代碼 / 設計審查**：針對 PR、架構變更或設計產物進行 Review 並留下審查意見。 |
 | **`Sound`** | **聲音 / 音效** | **音頻產出與驗收**：負責 BGM、音效、語音等音頻資源的製作、整合與驗收。 |
 | **`Art`** | **美術 / 視覺** | **視覺資產產出**：負責角色立繪、場景、UI 素材或像素/3D 模型的繪製與整合。 |
@@ -90,8 +90,10 @@ $R --arg op=assign --arg index=<N> --arg target_persona=<persona> --arg role=pm|
 # ⑥ 移除參與者
 $R --arg op=unassign --arg index=<N> --arg target_persona=<persona>
 
-# ⑦ 屬性更新（可改 priority/milestone/memory_topic，⛔ 嚴禁直接推 done/cancelled，結單必須走 resolve）
-$R --arg op=update --arg index=<N> --arg priority=urgent [--arg milestone=<名>] [--arg memory_topic=<topic>]
+# ⑦ 屬性更新（吃 6 欄位：status/priority/title/milestone/memory_topic/memory_archived_commit；⛔ 嚴禁推 done/cancelled，結單必須走 resolve）
+$R --arg op=update --arg index=<N> [--arg status=in_progress|in_review|todo|backlog] \
+   [--arg priority=urgent|high|normal|low] [--arg title="<新標題>"] [--arg milestone=<名>] \
+   [--arg memory_topic=<topic>] [--arg memory_archived_commit=<sha>]
 
 # ⑧ 追加工作進度留言
 $R --arg op=comment --arg index=<N> --arg-file body=<進度說明檔>
@@ -128,8 +130,9 @@ $R --arg op=commit --arg sha=<commit_sha> --arg mode=fixes|refs
    - 結單成功時，機械層自動印出提醒：「本單有無值得沉澱的 decision / pitfall？請整理至工作記憶」。警示不強制阻擋，避免產生無效敷衍記憶。
 3. **晚安雙向對帳 (`GoodNight step=check`)**：
    - 第四段自動檢查：未關單 `updated_at` 超過 14 天未動、或 Task ↔ 記憶單向斷鏈時印出警示（只印不改）。
-4. **全關後 PM 手動歸檔 (`work_memory.py archive`)**：
-   - 主 Task 與子任務全數結單後，PM 手動執行歸檔；歸檔前機械檢查 Git 狀態確保已入版控。
+4. **全關後 PM 手動歸檔（`work_memory.py archive`【已上線】）**：
+   - 主 Task 與子任務全數結單後，PM 手動執行歸檔；工具內建 Git 前置守衛（`git_dir_status` 檢驗 submodule 狀態），乾淨才放行歸檔。
+   - ⚠ 墓碑（tombstone）寫入端目前簽「部分完成」，待進一步驗收；歸檔成功後 PM 於 Task 填寫 `op=update --arg memory_archived_commit=<sha>` 留下歷史錨點。
 
 ---
 
@@ -140,16 +143,21 @@ $R --arg op=commit --arg sha=<commit_sha> --arg mode=fixes|refs
 3. **`QA` 簽核守衛**：若參與者包含 `role=qa` 且操作者非該 QA 人員，必須顯式帶 `--arg qa_note="..."` 說明驗收狀況，否則強制攔截。
 4. **`op=update` 防偷推守衛**：`update` 禁止將狀態設為 `done` 或 `cancelled`，杜絕繞過結單閘。
 5. **落差提示守衛**：若 Commit 提交直接關單時單上有 PM/Reviewer 等角色但**無 QA**，系統會印出警示提醒，防止誤跳過驗收。
+6. **QA 驗收退回返工守衛（不開 Bug 單）**：驗收未通過時，QA 透過 `op=update --arg status=in_progress` 退回任務，並透過 `op=comment` 於單上留言重現步驟與量測讀數；施工中任務之瑕疵禁止開立獨立 Bug 單。
 
 ---
 
-## 5. 現況邊界與功能狀態說明
+## 5. 現況邊界與功能狀態說明（實跑讀數為證）
 
-- ✅ **`milestone` 里程碑**：已具備完整讀寫端（`create`、`update`、`list --arg milestone=` 均已生效）。
-- ✅ **`op=sweep` 逾期認領釋放**：已實作且上線（逾期自動退回 `todo` 釋放認領）。
-- ✅ **`tags` 標籤過濾**：`op=list --arg tag=` 已支援。
-- ✅ **`epic_id` 與 `subtask_indices`**：`op=link --arg op_link=subtask_of|has_subtask` 與 `op=list --arg epic=` 已全面生效。
-- ✅ **`memory_topic` 記憶錨點**：`op=show` 讀取端、四種狀態呈現、晚安對帳已全面生效。
+| 功能模組 | 現況狀態 | 實跑讀數憑據 |
+|---|---|---|
+| **`milestone` 里程碑** | ✅ 讀寫端全活 | `create`、`update`、`list --arg milestone=` 全面生效 |
+| **`op=sweep` 逾期認領釋放** | ✅ 已上線會動 | `in_progress` 且 ≥`STALE_DAYS` 釋放回 `todo` |
+| **`tags` 標籤過濾** | ✅ 已支援 | `op=list --arg tag=` 實跑可篩選出標籤任務 |
+| **`epic_id` 與 `subtask_indices`** | ✅ 已全面生效 | `op=link subtask_of` / `op=list --arg epic=` 階層正常 |
+| **`op=update` 6 大欄位** | ✅ 全數支援 | `status`(擋done/cancelled), `priority`, `title`, `milestone`, `memory_topic`, `memory_archived_commit` 均已實跑驗證 |
+| **`memory_topic` 記憶錨點** | ✅ 讀取端生效 | `op=show` 五種答案不同形（主題在 / 全部已退場 / 已歸檔 / 已刪除 / 連結壞了） |
+| **`work_memory.py archive`** | ✅ 已上線交付 | 支援 `archive`、`tasks`、`delete`，具備 submodule Git 乾淨前置檢查 |
 
 ---
 

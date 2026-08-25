@@ -468,7 +468,13 @@ def copy_skill(src_dir: Path, dst_dir: Path, log: _Log, force: bool = False, tar
         if not log.dry:
             dst_file.parent.mkdir(parents=True, exist_ok=True)
             if transformed:
-                dst_file.write_text(expected_text, encoding="utf-8")
+                # 🩸 2026-08-25：這裡原本沒帶 `newline` ⇒ Python 預設把 `\n` 翻成 os.linesep
+                #   ⇒ Windows 上 antigravity 那份變成 **CRLF**，而 claude/codex 走 shutil.copy2
+                #   （位元組複製）是 LF。同一支工具、同一次執行，產出兩種行尾。
+                #   ⚠ 而本檔第 227 行**有**帶 `newline="\n"` —— 修法只套用在作者記得的那半邊。
+                #   ⚠ 它為什麼一直沒被發現：上面那個 up-to-date 比對用 `read_text()`，
+                #     而它會把 CRLF 翻回 LF ⇒ **工具自己的檢查看不見自己造成的差異。**
+                dst_file.write_text(expected_text, encoding="utf-8", newline="\n")
             else:
                 shutil.copy2(src_file, dst_file)
         copied += 1

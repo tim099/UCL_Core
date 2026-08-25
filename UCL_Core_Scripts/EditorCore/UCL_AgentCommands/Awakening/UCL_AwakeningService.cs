@@ -1527,7 +1527,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             // ===========================================================
             // 收工閘（TASK-0019；Tim 2026-08-24：「沒觸發過收工的話，晚安流程需要觸發收工」）
             // 物理意義：跨多日接回會斷在「單子還開著、狀態還是 in_progress，而沒人知道停在哪一步」。
-            //   判準＝**今天動過** ＋ **未關** ＋ **我是參與者** ＋ 今天沒有 `wrapup` 事件。
+            //   判準＝**本次醒來後動過** ＋ **未關** ＋ **我是參與者** ＋ **最後一次收工之後又動過**。
+            //   ⚠ 判準裡**沒有日曆**（Tim 2026-08-25：「不能用日期判斷，要看本次醒來期間動過哪些」）——
+            //     ①比對 `locked_at`、②比對 `last_wrapup_at`，兩個都是純 UTC 時間戳比大小。
+            //     🩸 本行原本寫「今天動過」，而那在 `ea33cbf`／`31a607e` 之後就不成立了 ——
+            //     **註解與訊息是最後才更新的東西，而它們不會報錯。**
             // ⚠ 照 letter-before-sleep 的形狀做（**不重造第二套閘**）：
             //   `## blocked` ＋ reason ＋ **exits**，而 exits 一定要包含「怎麼過去」。
             // ⚠ 可跳過但**留名**：`--arg skip_reason=` 寫進那張單的時間線 ——
@@ -1540,8 +1544,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 if (aPending.Count > 0 && string.IsNullOrWhiteSpace(iWrapupSkipReason))
                 {
                     aR.AppendLine("## blocked");
-                    aR.AppendLine($"- reason: 有 **{aPending.Count}** 張今天動過、還開著的單**沒有收工**"
-                        + "（`wrapup`）—— 明天接回會斷在「單子開著而沒人知道停在哪一步」");
+                    // ⚠ 措辭必須跟判準同形：這裡量的不是「今天」，是**本次醒來這一段**。
+                    //   訊息比判準大，讀的人會照訊息去推理，然後在跨夜那格得到錯的預期。
+                    aR.AppendLine($"- reason: 有 **{aPending.Count}** 張**本次醒來後動過**、還開著的單"
+                        + "**沒有收工**（`wrapup`）—— 或**收工之後又動過**，那份收工紀錄已經過期。\n"
+                        + "  明天接回會斷在「單子開著而沒人知道停在哪一步」");
                     foreach (var t in aPending)
                         aR.AppendLine($"    · {t.Id} `{t.status}` {t.title}");
                     aR.AppendLine("- exits:");

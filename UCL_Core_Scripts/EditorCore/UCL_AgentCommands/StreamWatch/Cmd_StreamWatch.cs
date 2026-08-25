@@ -947,6 +947,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 updated_by = iPersona,
                 updated_at = UCL_AwakeningService.NowIso(),
             });
+            // 熱點跨場清除（Tim 2026-08-25 拍板）：熱點指的是「這一場的某段」——
+            // 上一場的標記在新場只會以「⛔ 已被 ring buffer 覆蓋」的殭屍形式佔著每一輪回傳檔
+            // （h1/h2 從 08-16 一路爛到今天就是現行病灶）。開新場＝清單歸零。
+            SaveHotspots(new UCL_StreamWatchHotspots());
 
             // 開播公告（記 start_seq —— 匯出區間的左端點，寫入當下就知道，不必事後回頭數）
             int aMinutes = (int)Math.Max(0, (aUntil - aNow).TotalMinutes);
@@ -1169,9 +1173,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         }
 
         /// <summary>算出本輪取材窗口；可播放量不足本檔窗口時在此等水位（牆鐘迴圈，同 AwaitCycleSlotAsync 的守則：
-        /// 不跨 ends_at、Tim 停錄影／取消立即退，等滿上限就先吃現有的）。</summary>
+        /// 不跨 ends_at、Tim 停錄影／取消立即退，等滿上限就先吃現有的）。
+        /// 接力開啟時，等待中每 tick **重讀共享前緣** —— 兩人同時等水位，先醒的佔走該段後，
+        /// 後醒的自動跳到新前緣重算（Tim 2026-08-25 提問補上；否則兩人會拿到同一段各看一次）。</summary>
         static async UniTask<WatchWindowPlan> AwaitWindowPlanAsync(
-            double iCursor, bool iOcr, bool iStt, DateTime? iEnd, CancellationToken iToken)
+            double iCursor, bool iOcr, bool iStt, DateTime? iEnd,
+            bool iRelayOn, string iRelayKey, string iRelaySid, CancellationToken iToken)
         {
             var aCfg = LoadStreamConfig();
             int aOverlap = Math.Max(0, aCfg?.watch_window_overlap_sec ?? 3);
@@ -1183,15 +1190,23 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             var aPlan = new WatchWindowPlan();
             DateTime aBegin = DateTime.Now;
+            double aCur = iCursor;   // 本輪段起點 —— 等待中可能被共享前緣往前帶（見下）
             while (true)
             {
+                // 接力：每 tick 重讀前緣 —— 段被別人佔走就跳到新前緣，重算落後量與檔位
+                if (iRelayOn)
+                {
+                    var aLive = LoadRelay(iRelayKey);
+                    if (aLive != null && aLive.session_id == iRelaySid && aLive.frontier_epoch > aCur)
+                        aCur = aLive.frontier_epoch;
+                }
                 double aWm = SensorWatermark(iOcr, iStt, out string aWmNote);
                 aPlan.Watermark = aWm; aPlan.WmNote = aWmNote;
                 // 可播放前緣：水位讀得到＝「STT/OCR 已辨識完」的那一刻；讀不到退「現在−安全距離」。
                 // 兩條路都保證窗口尾端不落在還在辨識中的段落。
                 double aPlayable = aWm > 0 ? aWm : ToEpoch(DateTime.UtcNow) - aGuard;
                 string aFrontierNote = aWm > 0 ? "感官水位" : $"現在−{aGuard}s（無水位）";
-                double aLag = aPlayable - iCursor;   // 可讀落後量（可播放前緣 − 游標）
+                double aLag = aPlayable - aCur;   // 可讀落後量（可播放前緣 − 段起點）
 
                 if (!aTierOn)
                 {
@@ -1216,7 +1231,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                               || !IsRecordingEnabled(out _);
                 if (aEnough || aWaitMax <= 0 || aMustStop)
                 {
-                    aPlan.Before = Math.Min(iCursor + aTier.window_sec, aPlayable);
+                    aPlan.Before = Math.Min(aCur + aTier.window_sec, aPlayable);
                     string aWaitNote = aWaited < 1 ? ""
                         : aEnough ? $"｜等水位 {aWaited:F0}s ✓ 滿足"
                         : $"｜等水位 {aWaited:F0}s 仍不足（可讀 {Math.Max(0, aLag):F0}s < 目標 {aTier.window_sec}s，先吃現有的）";
@@ -1237,7 +1252,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 double aEndEp = ToEpoch(iEnd.Value.ToUniversalTime());
                 if (aPlan.Before > aEndEp) aPlan.Before = aEndEp;
             }
-            aPlan.After = Math.Max(0, iCursor - aOverlap);
+            aPlan.After = Math.Max(0, aCur - aOverlap);   // 用等待後的段起點 —— 前緣被帶走時 After 要跟著走
             return aPlan;
         }
 
@@ -1373,18 +1388,28 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             var (aOcrOn, aSttOn) = ReadSensorFlags();
-            // 窗口計畫：可播放前緣＋進度檔位＋重疊；可播放量不足本檔窗口時**在這裡等水位**（讀數印在回傳檔）。
-            var aWin = await AwaitWindowPlanAsync(aCursor, aOcrOn, aSttOn, aEnd, iToken);
+            // 窗口計畫：可播放前緣＋進度檔位＋重疊；可播放量不足本檔窗口時**在這裡等水位**（讀數印在回傳檔；
+            // 接力開啟時等待中會跟著共享前緣走 —— 段被別人佔走就自動改拿下一段）。
+            var aWin = await AwaitWindowPlanAsync(aCursor, aOcrOn, aSttOn, aEnd,
+                                                  aRelay != null, aRelayKey, aRelaySid, iToken);
             double aWatermark = aWin.Watermark;
             string aWmNote = aWin.WmNote;
             // 先佔段再取材：窗口計畫一定案就把前緣推到計畫尾端（Max 單調）——
             // 兩人同時回來也拿不到同一段；montage 若短交，短差由下一段的重疊補。
-            if (aRelay != null && aWin.Before > aRelay.frontier_epoch)
+            // ⚠ 佔段前**重讀**前緣：等待期間別人可能已把前緣推得更遠，拿等待前的舊物件直接覆寫
+            //   會把前緣往回拉（單調性破壞 —— 這格是 2026-08-25 自己 code review 抓到的，未實撞先修）。
+            if (aRelay != null)
             {
-                aRelay.frontier_epoch = aWin.Before;
-                aRelay.updated_by = iPersona;
-                aRelay.updated_at = UCL_AwakeningService.NowIso();
-                SaveRelay(aRelayKey, aRelay);
+                var aFresh = LoadRelay(aRelayKey);
+                if (aFresh != null && aFresh.session_id == aRelaySid && aFresh.frontier_epoch > aRelay.frontier_epoch)
+                    aRelay = aFresh;
+                if (aWin.Before > aRelay.frontier_epoch)
+                {
+                    aRelay.frontier_epoch = aWin.Before;
+                    aRelay.updated_by = iPersona;
+                    aRelay.updated_at = UCL_AwakeningService.NowIso();
+                    SaveRelay(aRelayKey, aRelay);
+                }
             }
             DateTime aRunStart = DateTime.Now;
             // 酒館已讀游標：優先用 session 記的 `tavern_seq`；沒有就退回 `start_seq`（＝開播那則，本場起點）。
@@ -1604,9 +1629,17 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aOwn = LoadSession(iPersona);
             if (aOwn != null && aOwn.active)
             {
-                Blocked(iArgs, aR, aPath, "你已經有進行中的觀影 session —— 不疊開",
-                        "跑 step=cycle 繼續你自己那場");
-                throw new Exception($"[StreamWatch] step=join blocked：已有 session（詳見 {aPath}）");
+                DateTime aNow = DateTime.Now;
+                DateTime? aOwnEnd = ParseIsoLocal(aOwn.end_ts);
+                if (aOwnEnd.HasValue && aNow <= aOwnEnd.Value)
+                {
+                    Blocked(iArgs, aR, aPath, "你已經有進行中的觀影 session —— 不疊開",
+                            "跑 step=cycle 繼續你自己那場");
+                    throw new Exception($"[StreamWatch] step=join blocked：已有 session（詳見 {aPath}）");
+                }
+                aR.AppendLine($"- ℹ 偵測到過期殘留 session（{aOwn.session_id}）已自動收掉，加入新場。");
+                aOwn.active = false;
+                SaveSession(iPersona, aOwn);
             }
 
             // 找一個進行中的 primary（不是自己）

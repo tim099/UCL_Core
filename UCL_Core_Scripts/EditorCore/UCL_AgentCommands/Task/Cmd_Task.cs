@@ -167,6 +167,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             };
             foreach (var t in SplitList(GetArg(iArgs, "tags", ""))) e.tags.Add(t);
 
+            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
             UCL_TaskIO.Save(e, aCriteria, GetArg(iArgs, "description", "").Trim(),
                 $"{aNow}　`{e.status}`　由 {iActor} 開單");
 
@@ -352,6 +353,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
             if (aWhyNoMove == null) e.status = "in_progress";
             UCL_TaskIO.Touch(e, aNow);
+            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
             UCL_TaskIO.Save(e, "", "", aWhyNoMove == null
                 ? $"{aNow}　`in_progress`　{iActor} 認領（role={aRole}，原狀態 {aFrom}）"
                 : $"{aNow}　`{e.status}`　{iActor} 加入為 {aRole}（狀態不動：{aWhyNoMove}）");
@@ -385,6 +387,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             string aNow = UCL_TaskIO.NowUtc();
             bool aNew = AddParticipant(e, aTarget, aRole, aNow);
             UCL_TaskIO.Touch(e, aNow);
+            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
             UCL_TaskIO.Save(e, "", "", $"{aNow}　`assign`　{iActor} 指派 {aTarget} 為 {aRole}");
 
             ioR.AppendLine($"## ✅ {e.Id} 參與者已更新");
@@ -448,6 +451,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 return;
             }
             UCL_TaskIO.Touch(e, aNow);
+            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
             UCL_TaskIO.Save(e, GetArg(iArgs, "criteria", ""), GetArg(iArgs, "description", ""),
                 $"{aNow}　`update`　{iActor}：{string.Join("／", aChanges)}");
             ioR.AppendLine($"## ✅ {e.Id} 已更新");
@@ -470,6 +474,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             e.comments.Add(aComment);
             UCL_TaskIO.Touch(e, aNow);
             // 時間線只留一行「有人留言了」的索引 —— 內容在留言區，**不存兩份**
+            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
             UCL_TaskIO.Save(e, "", "", $"{aNow}　`comment`　{iActor} 留言 #{aComment.id}");
 
             ioR.AppendLine($"## ✅ {e.Id} 已留言 #{aComment.id}");
@@ -603,6 +608,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             if (aQaNote.Length > 0)
                 e.resolution_note = (e.resolution_note + "\n\n**QA 代簽紀錄**：" + aQaNote).Trim();
             UCL_TaskIO.Touch(e, aNow);
+            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
             UCL_TaskIO.Save(e, "", "", $"{aNow}　`{aStatus}`　{iActor} 結單（原狀態 {aFrom}）"
                 + (aNote.Length == 0 ? "" : $"：{aNote.Replace("\r", " ").Replace("\n", " ")}"));
 
@@ -698,6 +704,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             }
 
             UCL_TaskIO.Touch(e, aNow);
+            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
             UCL_TaskIO.Save(e, "", "", $"{aNow}　`{e.status}`　commit `{aSha}`（{aMode}）by {iActor}"
                 + (aShaNew ? "" : "（這個 sha 本來就在，沒重複加）"));
 
@@ -790,6 +797,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             //   用 `>=` 的話「剛收完工」會被自己擋住，那是一隻修完立刻天天亮的警示。
             //   ⇒ 這裡刻意跟 `Touch` 共用同一個 `aNow`，讓「相等」是精確的而不是差幾毫秒。
             e.last_wrapup_at = aNow;
+            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
             UCL_TaskIO.Save(e, "", "", $"{aNow}　`wrapup`　{iActor} 收工（狀態不動：{aFrom}）留言 #{aComment.id}");
 
             ioR.AppendLine($"## ✅ {e.Id} 已收工（`wrapup`）");
@@ -907,6 +915,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 UCL_TaskIO.Touch(e, aTs);
                 // ⚠ 時間線一定要留一行說**為什麼**被釋放 ——
                 //   沒有這行的話，明天看到它從 in_progress 變回 todo 會像有人手動改的
+                // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
                 UCL_TaskIO.Save(e, "", "", $"{aTs}　`todo`　sweep 釋放（{aFrom} 已 {aDays} 天沒動作，"
                     + $"逾期 {UCL_TaskIO.STALE_DAYS} 天門檻）by {iActor}");
                 bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
@@ -948,6 +957,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             }
             string aNow = UCL_TaskIO.NowUtc();
             UCL_TaskIO.Touch(e, aNow);
+            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
             UCL_TaskIO.Save(e, "", "", $"{aNow}　`unassign`　{iActor} 移除 {aTarget}"
                 + (aRole.Length == 0 ? "（全部角色）" : $"（role={Norm(aRole)}）") + $"　共 {aRemoved} 筆");
             ioR.AppendLine($"## ✅ {e.Id} 已移除 {aRemoved} 筆參與");

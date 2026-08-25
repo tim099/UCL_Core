@@ -70,6 +70,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public string persona = "";
         public string role = "dev";
         public string assigned_at = "";
+
+        public override string ToString()
+        {
+            return $"[{role}]{persona}";
+        }
     }
 
     // ===========================================================
@@ -149,7 +154,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
         public string Id => "TASK-" + index.ToString("0000", System.Globalization.CultureInfo.InvariantCulture);
 
-        public string ParticipantsName => participants.ConcatToString(a => a.persona);
+        public string ParticipantsName => participants.ConcatToString();
         /// <summary>已關（不進 open 讀數）。</summary>
         public bool IsClosed()
             => string.Equals(status, "done", StringComparison.OrdinalIgnoreCase)

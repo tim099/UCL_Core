@@ -91,9 +91,38 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             }
             finally
             {
+                // ===========================================================
+                // 區塊職責：回傳檔落 **per-persona**，不再落全域單槽。
+                //
+                // 🩸 血證 2026-08-25（BUG-34 / TASK-0026 ①，summit 現場撞到）：
+                //   舊版寫死 `Tasks/_last_task_report.md` —— **一顆全域 slot，last-write-wins**。
+                //   實測：08:19:47 basecamp 送出 `op=kanban`；08:19:53 檔案 header 變成 `persona=summit`；
+                //   08:20:00 又變成 `persona=gura`。**我讀我自己那次的回傳檔，讀到的是別人的。**
+                //   ⚠ 而發現它的唯一原因是 header 上的名字跟我不一樣 ——
+                //     **若那次剛好是同一個 persona 的另一個 session 跑的，就永遠不會有人發現。**
+                //   📌 這跟 2026-08-16 `s_CurrentCmdOutputs` 那隻是同一族（見 UCL_AgentCommandRunner
+                //     L68-75）：queue 依 persona 分 lane 之後 watcher **並行派遣**，
+                //     任何全域 slot 都會互相覆蓋，而且**完全無聲**。
+                //     那次的解是 per-cmd context；這次的解是 per-persona 落點。
+                //
+                // ⚠ 舊路徑不留空殼：留著一份**內容過期但長得正常**的檔，
+                //   比「檔不見了」更毒 —— 讀的人不會知道自己讀的是三天前的視圖。
+                //   ⇒ 覆寫成一行指路 stub（內容固定 ⇒ 多人同時寫也不會漂）。
+                // ===========================================================
+                string aPayload = UCL_LettersPath.CmdPayload(aActor, "task", aOp);
+                Directory.CreateDirectory(Path.GetDirectoryName(aPayload));
+                File.WriteAllText(aPayload, aR.ToString(), new UTF8Encoding(false));
+                UCL_AgentCommandRunner.ReportOutputFile(args, aPayload);
+                Debug.Log($"[Task] op={aOp} persona={aActor} → {aPayload}");
+
                 UCL_TaskIO.EnsureDir();
-                File.WriteAllText(UCL_TaskIO.LastReportPath, aR.ToString(), new UTF8Encoding(false));
-                Debug.Log($"[Task] op={aOp} → {UCL_TaskIO.LastReportPath}");
+                File.WriteAllText(UCL_TaskIO.LastReportPath,
+                    "# （已退場）Task 回傳檔不再寫在這裡\n\n"
+                    + "> 這裡曾是**全域單槽**，兩個人同時跑 `run Task` 會互相覆蓋，\n"
+                    + "> 而覆蓋是**無聲的**（TASK-0026 ①）。\n\n"
+                    + "回傳檔現在落在 **`letters/<persona>/cmd/task_<op>.md`** ——\n"
+                    + "`run_cmd.py` 會直接印出「📄 回傳檔：<路徑>」，照那一行讀，不要背路徑。\n",
+                    new UTF8Encoding(false));
             }
         }
 

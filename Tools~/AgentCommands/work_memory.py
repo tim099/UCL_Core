@@ -370,22 +370,88 @@ def _participants_of(path: Path) -> str:
     return "、".join(out)
 
 
+def scan_tasks_by_topic(topic: str) -> list[int]:
+    """掃 `tasks/*.md` 找 `memory_topic == topic` —— **關聯關係的真相源。**
+
+    🩸 2026-08-25（summit QA 退回 TASK-0017 ③）：原本只讀主題卡的 `task_indices`，
+      而那是**手動維護**的，Task 側的 `memory_topic` 是**自動寫**的
+      ⇒ **同一個關係兩個寫入端 ⇒ 第一天就漂**：記憶側 6 筆、Task 側 14 張，**漏 8 張**。
+      而照這條驗收標準做的人「不必再跑一次 op=list」，於是他拿到 6 張並且
+      **不知道自己少了 8 張** —— 靜默低報。
+      📌 兩份必漂 —— 那句話是我自己殺掉看板快照時寫的，這次輪到我。
+
+    ⇒ 換量：`read` 本來就在打開單檔（它印得出 status 與參與者），
+      只是用 `task_indices` 決定打開哪幾個。改成直接掃就不需要那個索引了。
+    ⚠ 契約①禁止的是互**寫**，不是互**讀** —— 本函式只讀 Task 側。
+    """
+    out: list[int] = []
+    if not TASKS_ROOT.is_dir():
+        return out
+    for p in sorted(TASKS_ROOT.glob("*.md")):
+        try:
+            meta, _ = parse_frontmatter(p.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        if str(meta.get("memory_topic", "")).strip() == topic:
+            try:
+                out.append(int(p.stem))
+            except ValueError:
+                continue
+    return sorted(out)
+
+
+def _task_bucket(index: int) -> str:
+    """一張單落在哪一格：`open` / `closed` / `unreadable`。**讀不到自成一格。**"""
+    p = TASKS_ROOT / f"{index:04d}.md"
+    if not p.is_file():
+        return "unreadable"
+    try:
+        meta, _ = parse_frontmatter(p.read_text(encoding="utf-8"))
+    except OSError:
+        return "unreadable"
+    return "closed" if str(meta.get("status", "")).strip() in CLOSED_TASK_STATUS else "open"
+
+
 def describe_related_tasks(card: dict) -> list[str]:
     """主題卡 → 關聯單現況區塊（給 read 用）。**沒有關聯單也要印一行**, 不可靜默。"""
-    idx = _int_list(card.get("task_indices"))
+    topic = str(card.get("id", "")).strip()
+    scanned = scan_tasks_by_topic(topic) if topic else []
+    declared = _int_list(card.get("task_indices"))
+    # 只在記憶側宣告、而 Task 側沒指回來的 ⇒ **單向連結**，要看得見不要靜默併入
+    oneway = [i for i in declared if i not in scanned]
+    idx = scanned + oneway
+
     if not idx:
-        return ["🔗 關聯 Task：**尚未關聯任何單**"
-                "（`work_memory.py tasks --topic <t> --add <n>` 建反向索引;"
-                " 這不等於「沒有單」, 只等於**沒有人建過這個連結**）"]
-    rows = [f"🔗 關聯 Task（{len(idx)} 張）："]
-    rows.extend("    · " + _describe_task(i) for i in idx)
-    open_n = sum(1 for i in idx
-                 if (TASKS_ROOT / f"{i:04d}.md").is_file()
-                 and str(parse_frontmatter((TASKS_ROOT / f"{i:04d}.md").read_text(encoding="utf-8"))[0]
-                         .get("status", "")).strip() not in CLOSED_TASK_STATUS)
-    rows.append(f"    ⇒ 未關 **{open_n}** / 共 {len(idx)} 張"
-                + ("　✅ 全部關了 ⇒ 這個主題可以考慮歸檔（`archive`）"
-                   if open_n == 0 else "　⇒ 還不到歸檔的時候"))
+        return ["🔗 關聯 Task：**沒有任何單指向這個主題**"
+                "（沒有單的 `memory_topic` 是它, 記憶側也沒宣告）—— "
+                "這不等於「沒有單」, 只等於**沒有人建過這個連結**"]
+
+    rows = [f"🔗 關聯 Task（{len(idx)} 張；掃 `memory_topic` 得 {len(scanned)}"
+            + (f"，另有 {len(oneway)} 張只在記憶側宣告" if oneway else "") + "）："]
+    for i in idx:
+        rows.append("    · " + _describe_task(i)
+                    + ("　⚠ **單向**：Task 側的 `memory_topic` 沒指回來" if i in oneway else ""))
+
+    # ===========================================================
+    # 🩸 2026-08-25（summit QA）：舊版彙總只有「未關 N / 共 M」——
+    #   而**讀不到的單會落進「不是未關」那一側 ⇒ 被算成已關**，
+    #   於是同一段輸出上一行說「讀不到」、下一行說「✅ 全部關了 ⇒ 可以考慮歸檔」。
+    #   📌 **逐行分得清、彙總分不清。** 而這個方向比誤報更貴：
+    #     它讓 PM 在**假前提**上按歸檔。
+    #   ⇒ 三格各自成數，且**只有 unreadable==0 且 open==0 才敢建議歸檔**。
+    # ===========================================================
+    buckets = {"open": 0, "closed": 0, "unreadable": 0}
+    for i in idx:
+        buckets[_task_bucket(i)] += 1
+    rows.append(f"    ⇒ 未關 **{buckets['open']}** ／ 已關 {buckets['closed']}"
+                f" ／ **讀不到 {buckets['unreadable']}**（共 {len(idx)} 張）")
+    if buckets["unreadable"]:
+        rows.append("      ⛔ **有讀不到的單 ⇒ 不建議歸檔** —— "
+                    "「讀不到」不是「已完成」，先把那幾筆查清楚")
+    elif buckets["open"] == 0:
+        rows.append("      ✅ 全部關了 ⇒ 這個主題可以考慮歸檔（`archive`）")
+    else:
+        rows.append("      ⇒ 還不到歸檔的時候")
     return rows
 
 
@@ -802,7 +868,10 @@ def op_tasks(args) -> int:
         print(f"✗ 主題不存在: {args.topic}")
         return 2
     before = _int_list(card.get("task_indices"))
-    if args.set:
+    # `--set` 有給（即使是空字串）就是**整組覆寫** —— 空字串 ⇒ 清空。
+    # ⚠ 用 `is not None` 不用真值判斷：`--set ""` 的語意是「設成空」，
+    #   而真值判斷會把它讀成「沒給」⇒ **沒有任何路徑可以清空這個欄位**。
+    if args.set is not None and args.set != "__unset__":
         after = _int_list(args.set.split(","))
     else:
         after = list(before)
@@ -810,7 +879,7 @@ def op_tasks(args) -> int:
         drop = set(_int_list((args.remove or "").split(",")))
         after = [i for i in dict.fromkeys(after) if i not in drop]
     after = sorted(dict.fromkeys(after))
-    if not (args.set or args.add or args.remove):
+    if args.set == "__unset__" and not (args.add or args.remove):
         print(f"🔗 {args.topic} 目前的 task_indices: {before or '（空）'}")
         print("\n".join(describe_related_tasks(card)))
         return 0
@@ -979,7 +1048,7 @@ def main() -> int:
     # ── TASK-0017：反向索引 / 歸檔 / 刪除 ──────────────────────────
     p = sub.add_parser("tasks", help="主題卡的 task_indices（反向索引）：不帶動作＝只印現況")
     p.add_argument("--topic", required=True)
-    p.add_argument("--set", default="", help="整組覆寫，如 8,15,17")
+    p.add_argument("--set", default="__unset__", help="整組覆寫，如 8,15,17；給空字串＝清空")
     p.add_argument("--add", default="")
     p.add_argument("--remove", default="")
     p = sub.add_parser("archive", help="主題退場（status→archived）；前置 git 守衛")

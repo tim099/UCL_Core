@@ -191,24 +191,53 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //
         // ⚠ 判定「今天收工過了」的唯一依據是**該單時間線裡今天的 `wrapup` 事件** ——
         //   不另存一份「今天收過工的清單」（那就是第二個真相源，而它會漂）。
+        //
+        // 🩸 血證 2026-08-25（summit 自驗 TASK-0019 那格「跨夜沒驗」）——
+        //   舊版用 `DateTime.UtcNow.ToString("yyyy-MM-dd")` 當「今天」，並拿它去**字串比對** UTC 時間戳。
+        //   ⇒ 換日發生在 **UTC 午夜**，而本地是 +08 ⇒ **邊界落在本地早上 08:00**，
+        //     也就是這個團隊每天開工的時間（08-25 那天 summit 08:16、basecamp 08:17 早安）。
+        //   實測（探針 TASK-0029，同一張單只改 `updated_at` 一格）：
+        //     `2026-08-25T01:00Z`（本地 09:00）⇒ 🛑 擋下並點名；
+        //     `2026-08-24T23:50Z`（**本地同一天 07:50**）⇒ ✅ **靜默放行，一個字都沒說**。
+        //   📌 而我當初記在見叢的猜測是錯的：我寫「午夜前後語意模糊」——
+        //     **跨本地午夜反而安全**（那時 UTC 還在同一天），危險的是跨本地早上八點。
+        //     ⇒ 一般形：**「今天」是人的概念，而人講的今天是本地日；
+        //       拿 UTC 日去代表它，等於把換日點搬到一個沒有人會注意的時刻。**
+        //
+        // ⇒ 現行：時間戳一律**解析成 DateTime 再轉本地**比對，不做日期字串的 substring 比對
+        //   （字串比對是上面那隻能成立的原因：它逼著「今天」必須跟儲存格式同一個時區）。
         // ===========================================================
         public static List<UCL_TaskEntry> PendingWrapups(string iPersona)
         {
             var aOut = new List<UCL_TaskEntry>();
-            string aToday = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            DateTime aToday = DateTime.Now.Date;                   // 本地日 —— 見上方血證
             foreach (var e in UCL_TaskIO.LoadAll())
             {
                 if (e.IsClosed()) continue;                       // 已關的不看（反向驗收要求）
                 if (e.RolesOf(iPersona).Count == 0) continue;      // 別人的單不看
-                if (!(e.updated_at ?? "").StartsWith(aToday, StringComparison.Ordinal)) continue;  // 今天沒動的不看
+                if (!IsOnLocalDate(e.updated_at, aToday)) continue; // 今天（本地日）沒動的不看
                 if (HasWrapupOn(e.index, aToday)) continue;        // 今天收過工了
                 aOut.Add(e);
             }
             return aOut;
         }
 
-        /// <summary>該單的時間線裡有沒有 <paramref name="iDate"/>（yyyy-MM-dd）那天的 `wrapup` 事件。</summary>
-        public static bool HasWrapupOn(int iIndex, string iDate)
+        // ===========================================================
+        // 區塊職責：把一個 ISO 時間戳解析出來，問它是不是落在某個**本地日**。
+        // ⚠ 解析不出來一律回 **false** —— 對 `updated_at` 是「不擋」，對 `wrapup` 是「當成沒收工」，
+        //   兩邊都倒向**擋下**那一側（而擋下有出口：`skip_reason`；放行沒有）。
+        // ===========================================================
+        static bool IsOnLocalDate(string iIso, DateTime iLocalDate)
+        {
+            if (string.IsNullOrWhiteSpace(iIso)) return false;
+            return DateTime.TryParse(iIso, System.Globalization.CultureInfo.InvariantCulture,
+                       System.Globalization.DateTimeStyles.AdjustToUniversal
+                       | System.Globalization.DateTimeStyles.AssumeUniversal, out var aUtc)
+                   && aUtc.ToLocalTime().Date == iLocalDate;
+        }
+
+        /// <summary>該單的時間線裡有沒有 <paramref name="iLocalDate"/>（**本地日**）的 `wrapup` 事件。</summary>
+        public static bool HasWrapupOn(int iIndex, DateTime iLocalDate)
         {
             try
             {
@@ -216,9 +245,14 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 if (!File.Exists(aPath)) return false;
                 foreach (var aLine in File.ReadAllLines(aPath, Encoding.UTF8))
                 {
-                    if (!aLine.TrimStart().StartsWith("- ", StringComparison.Ordinal)) continue;
+                    string aTrim = aLine.TrimStart();
+                    if (!aTrim.StartsWith("- ", StringComparison.Ordinal)) continue;
                     if (aLine.IndexOf("`wrapup`", StringComparison.Ordinal) < 0) continue;
-                    if (aLine.IndexOf(iDate, StringComparison.Ordinal) >= 0) return true;
+                    // 時間線格式：`- <ISO 時間戳>　<事件>…` ⇒ 取第一個空白之前那段來解析。
+                    string aStamp = aTrim.Substring(2).TrimStart();
+                    int aCut = aStamp.IndexOfAny(new[] { ' ', '\t', '　' });
+                    if (aCut > 0) aStamp = aStamp.Substring(0, aCut);
+                    if (IsOnLocalDate(aStamp, iLocalDate)) return true;
                 }
             }
             catch { /* 讀不到就當沒有 —— 擋下比放行安全（而擋下有出口：skip_reason） */ }

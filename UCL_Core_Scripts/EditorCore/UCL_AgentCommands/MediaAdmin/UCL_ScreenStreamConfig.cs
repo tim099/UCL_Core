@@ -140,6 +140,10 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         /// ⚠ 與呼叫端 timeout 耦合：本值＋`watch_cycle_interval_sec`＋montage 合成（~53s）若逼近
         /// `run_cmd.py --timeout`（預設 120s）就會脫鉤 —— 加大本值時 timeout 要一起加。</summary>
         public int watch_water_wait_max_sec = 30;
+        /// <summary>接力觀看（Tim 2026-08-25 拍板）：同場全員（primary＋companions）共用一條前緣，
+        /// 誰的 cycle 先回來誰拿下一段 ⇒ 區段天生連續、個人有洞、覆蓋由全體保證。
+        /// 熱點觀看（step=claim 顯式區段）不參與。false＝退回各自游標（三人三條平行覆蓋的舊行為）。</summary>
+        public bool watch_relay_enabled = true;
 
         public int _schema_version = 1;
 
@@ -213,6 +217,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             aData["stt_enabled"] = new JsonData(stt_enabled);
             aData["stt_setting"] = new JsonData(stt_setting);
             aData["stt_vad_filter"] = new JsonData(stt_vad_filter);
+            aData["watch_relay_enabled"] = new JsonData(watch_relay_enabled);
 
             // ⚠ 只在**空 List** 時補一個空陣列 —— 非空時 base 的巢狀序列化已經正確，不重做一次。
             //   空的走 base 會讓整個鍵消失（`SaveDataToJson` 的 IList 分支不把空 JsonData 標成 array）。

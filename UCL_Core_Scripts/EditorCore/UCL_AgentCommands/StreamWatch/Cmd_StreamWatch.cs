@@ -819,6 +819,32 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine($"- ℹ 偵測到過期殘留 session（{aOld.session_id}）已自動收掉，開新場。");
             }
 
+            // ── 守衛③.5：全場同時只能有一個主觀影者（Tim 2026-08-25 拍板「不管是否帶錯參數」）──
+            // 物理意義：畫面流只有一條；primary 的職責是準備階段設定＋熱點安排＋開收場結算，
+            //          第二個 primary = 第二條接力前緣 ⇒ 兩組整場互相重疊。
+            // 🩸 2026-08-25 實撞（末日後酒店 08）：gura 的 prepare 與 basecamp 的 start 只差一分鐘，
+            //          她照 prepare 回傳檔的慣性跑了 start ⇒ 兩主場並行 —— 靠「記得先查」擋不住，擋在必經路上。
+            // 邊界：過期（now > end_ts）或已結算（active=false）的殘留 session 不擋 —— 主人沒回來收工
+            //       不該把整個系統卡死；同 persona 的疊開由守衛③管。
+            string aSessDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "sessions");
+            if (Directory.Exists(aSessDir))
+            {
+                foreach (var aFile in Directory.GetFiles(aSessDir, "*.json"))
+                {
+                    string aWho = Path.GetFileNameWithoutExtension(aFile);
+                    if (string.Equals(aWho, iPersona, StringComparison.OrdinalIgnoreCase)) continue;
+                    var aOther = LoadSessionAt(aFile);
+                    if (aOther == null || !aOther.active || aOther.role != "primary") continue;
+                    DateTime? aOtherEnd = ParseIsoLocal(aOther.end_ts);
+                    if (!aOtherEnd.HasValue || aNow > aOtherEnd.Value) continue;   // 過期殘留不擋
+                    Blocked(iArgs, aR, aPath,
+                        $"已有主觀影者 @{aWho}（media={aOther.media_id}，至 {aOtherEnd.Value:HH:mm} 本地）—— 全場同時只能有一個 primary",
+                        $"加入她的場：run_cmd.py run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id=<準備公告那個 id>（缺集才需要）→ --arg step=join --arg persona={iPersona}；"
+                        + "或等該場到期／主觀影者收工後再 start");
+                    throw new Exception($"[StreamWatch] step=start blocked：已有主觀影者 @{aWho}（詳見 {aPath}）");
+                }
+            }
+
             // 守衛④：media 是共享鍵 —— 不給就 blocked，不猜
             if (string.IsNullOrEmpty(iMedia))
             {
@@ -913,6 +939,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aSession.video_desc = iSrc.VideoDesc;
             aSession.source_url = iSrc.Url;
             SaveSession(iPersona, aSession);
+            // 接力前緣重置：新場＝新的一條前緣（frontier=0，第一個回來的 cycle 播種）。
+            // 綁 session_id ⇒ 上一場的殘留前緣在本場永遠對不上鍵，不會被誤用。
+            SaveRelay(iPersona, new UCL_StreamWatchRelay
+            {
+                session_id = aSession.session_id,
+                updated_by = iPersona,
+                updated_at = UCL_AwakeningService.NowIso(),
+            });
 
             // 開播公告（記 start_seq —— 匯出區間的左端點，寫入當下就知道，不必事後回頭數）
             int aMinutes = (int)Math.Max(0, (aUntil - aNow).TotalMinutes);
@@ -923,7 +957,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!string.IsNullOrEmpty(iSrc.VideoDesc)) aBody.AppendLine($"　簡介：{Truncate(iSrc.VideoDesc, 300)}");
             if (!string.IsNullOrEmpty(iSrc.Url)) aBody.AppendLine($"　出處：{iSrc.Url}");
             aBody.AppendLine();
-            aBody.AppendLine("陪同觀眾可跑 `step=join` 加入（挑段細看；主劇情由本場主觀影者在酒館帶）。");
+            aBody.AppendLine("陪同觀眾可跑 `step=join` 加入 —— **全員跑同一條接力段**（誰先回來誰拿下一段，交接自帶重疊）；"
+                           + "主觀影者負責場次設定與熱點安排，熱點細看由陪看者認領。");
             int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-start", iToken);
             if (aSeq > 0)
             {
@@ -1194,6 +1229,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 }
                 await UniTask.Delay(1000, DelayType.Realtime, cancellationToken: iToken);
             }
+            // 窗口尾端不越過 ends_at（Tim 2026-08-25「觀影結束看實際錄製時間」）——
+            // ends_at 是**實錄內容**的終點：加班補尾段的最後一輪從這裡收口，
+            // 前緣因此正好停在 ends_at，下一次 cycle 的收工判定（牆鐘到＋前緣到）隨之成立。
+            if (iEnd.HasValue)
+            {
+                double aEndEp = ToEpoch(iEnd.Value.ToUniversalTime());
+                if (aPlan.Before > aEndEp) aPlan.Before = aEndEp;
+            }
             aPlan.After = Math.Max(0, iCursor - aOverlap);
             return aPlan;
         }
@@ -1220,17 +1263,52 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             double aWaited = await AwaitCycleSlotAsync(aS, aEnd, iToken);
 
             DateTime aNow = DateTime.Now;
-            bool aExpired = aEnd.HasValue && aNow >= aEnd.Value;
             bool aRecordingOff = !IsRecordingEnabled(out string aCfgNote);
 
-            // ── 終止判定（唯一的一處）───────────────────
-            if (aExpired || aRecordingOff)
+            // ── 游標種子＋接力前緣（提前到終止判定之前 —— 收工要看「實錄補到哪」，不是只看牆鐘）──
+            double aCursor = aS.cursor_epoch;
+            // ⚠ 首輪沒有 cursor 會踩到雞生蛋（2026-08-15 自由時間實跑抓到）：
+            //   cursor=0 ⇒ 不傳 --after-mtime ⇒ montage 的 --before-mtime 過濾與 next-cursor 回報
+            //   都在 after-mtime 分支裡 ⇒ 夾子不生效、cursor 永遠設不起來。首輪用 session 起始時刻播種。
+            if (aCursor <= 0)
+            {
+                DateTime? aSt = ParseIsoLocal(aS.start_ts);
+                if (aSt.HasValue) aCursor = ToEpoch(aSt.Value.ToUniversalTime());
+            }
+            // ── 接力：除熱點外，觀看區段一律接力（Tim 2026-08-25 拍板；設計＝「誰先回來誰拿下一段」）──
+            // 組鍵＝primary 的 persona（companion 走 parent_persona）；relay 檔綁 primary session id，
+            // 開新場自動作廢。檔案缺失／舊場就地重建，前緣由本輪游標播種。
+            bool aRelayEnabled = LoadStreamConfig()?.watch_relay_enabled ?? true;
+            string aRelayKey = (aS.role == "companion" && !string.IsNullOrEmpty(aS.parent_persona))
+                ? aS.parent_persona : iPersona;
+            string aRelaySid = (aS.role == "companion" && !string.IsNullOrEmpty(aS.parent_session_id))
+                ? aS.parent_session_id : aS.session_id;
+            UCL_StreamWatchRelay aRelay = null;
+            if (aRelayEnabled)
+            {
+                aRelay = LoadRelay(aRelayKey);
+                if (aRelay == null || aRelay.session_id != aRelaySid)
+                    aRelay = new UCL_StreamWatchRelay { session_id = aRelaySid };
+                // 段起點來自共享前緣，不來自個人游標 —— 這一行就是「接力」與「平行覆蓋」的分水嶺
+                if (aRelay.frontier_epoch > 0) aCursor = aRelay.frontier_epoch;
+            }
+
+            // ── 終止判定（唯一的一處；Tim 2026-08-25 拍板「觀影結束看實際錄製時間」）──
+            // 物理意義：ends_at 指的是**實錄內容**要看到那一刻，不是牆鐘走到那一刻就停 ——
+            //          例：牆鐘 22:39、ends_at 22:35、前緣才補到 22:34 ⇒ 還有 1 分鐘實錄沒看，繼續取材。
+            //          收工條件＝「牆鐘到 **且** 前緣蓋過 ends_at」；後台停錄影（中斷）照舊立即結算。
+            double aEndEpoch = aEnd.HasValue ? ToEpoch(aEnd.Value.ToUniversalTime()) : 0;
+            bool aTimeUp = aEnd.HasValue && aNow >= aEnd.Value;
+            bool aTailDone = !aEnd.HasValue || aCursor >= aEndEpoch - 0.5;
+            if (aRecordingOff || (aTimeUp && aTailDone))
             {
                 bool aByInterrupt = aRecordingOff;
-                string aReason = aByInterrupt ? "Tim 停止錄影（_config.json enabled=false）" : "到期";
+                string aReason = aByInterrupt ? "Tim 停止錄影（_config.json enabled=false）" : "到期（實錄已補到 ends_at）";
                 aR.AppendLine("## 收工判定");
                 aR.AppendLine($"- 判定: **{aReason}**");
-                aR.AppendLine($"- 依據: {(aByInterrupt ? aCfgNote : $"now={aNow:HH:mm:ss} >= ends_at={aEnd:HH:mm:ss}")}");
+                string aBasis = aByInterrupt ? aCfgNote
+                    : $"now={aNow:HH:mm:ss} ≥ ends_at={aEnd:HH:mm:ss} 且 實錄前緣 {FromEpochLocal(aCursor):HH:mm:ss} ≥ ends_at（兩個條件都要）";
+                aR.AppendLine($"- 依據: {aBasis}");
                 aR.AppendLine("- ⚠ 本判定只認**顯式狀態**（系統時鐘／`enabled` 欄位），不推論 frame 新鮮度。");
                 aR.AppendLine();
 
@@ -1281,19 +1359,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   （Cmd_GoodMorning.cs:86 同樣的坑）。
             string aScript = ResolveMontageScript();
             string aOutPath = MontageOutPath(iPersona);
-            double aCursor = aS.cursor_epoch;
-            // ⚠ 首輪沒有 cursor 會踩到雞生蛋（2026-08-15 自由時間實跑抓到）：
-            //   cursor=0 ⇒ 不傳 --after-mtime ⇒ 而 montage 的 --before-mtime 過濾與 next-cursor 回報
-            //   **都在 after-mtime 那個分支裡**  ⇒ 夾子不生效、cursor 也永遠設不起來，
-            //   於是每一輪都退回 `--last` 預設路徑 —— **而回傳檔照樣印「窗口尾端夾在這裡」**。
-            //   （旗標被接受卻未套用，跟今天稍早抓到的 `--max-tiles` 在 --last 路徑 no-op 同形。）
-            // ⇒ 首輪用 session 起始時刻當 cursor：語意上正確（從開播那一刻看起），
-            //   且保證每一輪都走 loop 路徑。
-            if (aCursor <= 0)
-            {
-                DateTime? aSt = ParseIsoLocal(aS.start_ts);
-                if (aSt.HasValue) aCursor = ToEpoch(aSt.Value.ToUniversalTime());
-            }
+            // （游標種子與接力前緣已在終止判定前解析 —— 收工要看「實錄補到哪」）
+            // ⏳ 牆鐘已過 ends_at 但實錄尾段未補完 ⇒ 加班取材，本輪窗口會被夾在 ends_at（見 AwaitWindowPlanAsync）
+            if (aTimeUp)
+                aR.AppendLine($"- ⏳ 加班補尾段：牆鐘 {aNow:HH:mm:ss} 已過 ends_at {aEnd:HH:mm}，"
+                            + $"實錄前緣 {FromEpochLocal(aCursor):HH:mm:ss} 尚未蓋過 —— 補完才收工（Tim 2026-08-25 拍板）");
 
             if (string.IsNullOrEmpty(aScript))
             {
@@ -1307,6 +1377,15 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aWin = await AwaitWindowPlanAsync(aCursor, aOcrOn, aSttOn, aEnd, iToken);
             double aWatermark = aWin.Watermark;
             string aWmNote = aWin.WmNote;
+            // 先佔段再取材：窗口計畫一定案就把前緣推到計畫尾端（Max 單調）——
+            // 兩人同時回來也拿不到同一段；montage 若短交，短差由下一段的重疊補。
+            if (aRelay != null && aWin.Before > aRelay.frontier_epoch)
+            {
+                aRelay.frontier_epoch = aWin.Before;
+                aRelay.updated_by = iPersona;
+                aRelay.updated_at = UCL_AwakeningService.NowIso();
+                SaveRelay(aRelayKey, aRelay);
+            }
             DateTime aRunStart = DateTime.Now;
             // 酒館已讀游標：優先用 session 記的 `tavern_seq`；沒有就退回 `start_seq`（＝開播那則，本場起點）。
             // ⚠ 退回值**不可以是 -1** —— 那會讓 sidecar 從全庫最舊開始列，正是 2026-08-16 那隻的成因。
@@ -1332,6 +1411,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                             + (aWatermark > 0 ? $"　⇒ {FromEpochLocal(aWatermark):HH:mm:ss}"
                                                 + $"　←　落後 cursor {(aCursor - aWatermark):F0}s" : ""));
                 aR.AppendLine(aWin.TierLine);   // 檔位讀數兩條路徑都印 —— 等了水位卻沒印，等待與卡住同形
+                aR.AppendLine(RelayLine(aRelayEnabled, aRelay, aRelayKey, aCursor, iPersona));
                 aR.AppendLine("- 意思    : 畫面有，但**字幕/語音還沒辨識到那裡**。看已辨識完的段落是刻意的（Tim 2026-08-15）。");
                 // ⚠ **無素材時同樣要印同場訊息** —— 這條是我 2026-08-16 自己寫了「每一段永遠存在」
                 //   卻在同一次改動裡違反的那格：AppendSidecar 原本只掛在有素材那條路徑上。
@@ -1458,6 +1538,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     : "- 窗口對帳 : ⚠ **無讀數** —— montage 沒回報 next-cursor，無法確認保底夾是否生效。**當成沒生效看待。**");
             }
             aR.AppendLine(aWin.TierLine);
+            aR.AppendLine(RelayLine(aRelayEnabled, aRelay, aRelayKey, aWin.After, iPersona));
             // 「剩餘」曾被當成收束訊號用（basecamp 2026-08-24：讀到「剩 6 分」就自己收手去等到期）。
             // ⇒ 就地把這個數字的用途指派掉（它是寫評論用的時間感）。⛔ 不在這裡加勸告 ——
             //    往前走的指令只放在 `## next` 那一個地方，這裡多寫一句就是多給一個可以權衡的變數。
@@ -1610,7 +1691,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aBody = new StringBuilder();
             aBody.AppendLine($"🍿 [{iPersona} 大小姐] 加入觀影 — 陪同 @{aPrimaryPersona} 的場｜媒材 `{aMedia}`");
             aBody.AppendLine();
-            aBody.AppendLine("陪同觀眾**挑段細看**，主劇情由主觀影者在酒館帶 —— gap 對我是正常的，不是漏看。");
+            aBody.AppendLine("加入接力 —— 全員同一條前緣，誰先回來誰拿下一段；**個人有洞是設計，不是漏看**（主線由全體拼，熱點細看另認領）。");
             int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-join", iToken);
             if (aSeq > 0) { aS.start_seq = aSeq; SaveSession(iPersona, aS); }
 
@@ -1621,9 +1702,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"- primary 進度: 已 {aPrimary.cycles} 輪／{aPrimary.observations} 筆評論");
             aR.AppendLine($"- 加入公告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
             aR.AppendLine();
-            aR.AppendLine("## 你的不變式跟 primary **不一樣**");
-            aR.AppendLine("- primary：連續覆蓋，gap ＝ 失敗");
-            aR.AppendLine("- **你（companion）：自由取樣，gap ＝ 正常** —— 挑段細看，主劇情靠酒館追");
+            aR.AppendLine("## 觀影不變式（Tim 2026-08-25 拍板：全員同一條接力段）");
+            aR.AppendLine("- **所有觀影者（含 primary）跑同一條接力前緣** —— 誰的 cycle 先回來誰拿下一段，交接自帶重疊");
+            aR.AppendLine("- **個人有洞是設計，不是漏看**：主線覆蓋由全體拼，健康看回傳檔「接力」行的「前緣落後即時 Ns」");
+            aR.AppendLine("- primary 的差異只在職責：場次設定（prepare/start/收工結算）與熱點**標記**；熱點**細看**由你們認領");
             aR.AppendLine();
             aR.AppendLine("## 準備階段給你的定值（**不要自己打字**，那是漂移的來源）");
             aR.AppendLine($"- 本場章號: `{aPrepChapter}`（第 {aPrep.episode} 話）／節目名 `{aPrep.show_title}`");
@@ -1919,6 +2001,34 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"- 本場累計: cycles={aS.cycles}｜**observations={aObs}**（計酬上限 {OBSERVATION_CAP}）");
             aR.AppendLine($"- 剩餘    : {aRemain} 分鐘（到 {aEnd:HH:mm}）");
             aR.AppendLine();
+            // ── 貼文當下的最新同場訊息（Tim 2026-08-25）──
+            // 物理意義：sidecar 的酒館段定格在**取材當下**，而 agent 讀素材＋寫評論要花幾分鐘 ——
+            //          那段時間同事發的話，等到下一輪 cycle 才看得到，就會出現
+            //          「16919（22:20 發）沒被 16921（22:21 貼）看到」那種對話錯位。
+            //          在**貼文之後**再撈一次未讀，把盲區關掉；只顯示不推游標（游標由 cycle 擁有）。
+            try
+            {
+                var aFresh = ChatTavern.UCL_ChatTavernIO.LoadMessagesAfterSeq("tavern", Math.Max(0, aS.tavern_seq));
+                var aShow = new List<string>();
+                foreach (var m in aFresh)
+                {
+                    if (m == null || m.seq >= aSeq) continue;                                  // 自己剛發的那筆之後不會有更新的
+                    if (string.Equals(m.sender_persona, iPersona, StringComparison.OrdinalIgnoreCase)) continue;
+                    string aOneLine = (m.body ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
+                    if (aOneLine.Length > 160) aOneLine = aOneLine.Substring(0, 160) + "…";
+                    aShow.Add($"- [seq {m.seq}] {m.DisplayName}: {aOneLine}");
+                }
+                if (aShow.Count > 0)
+                {
+                    aR.AppendLine($"## 💬 貼文當下的最新同場訊息（{aShow.Count} 筆 —— 妳寫評論期間發的，sidecar 還沒收）");
+                    int aSkip = Math.Max(0, aShow.Count - 8);
+                    if (aSkip > 0) aR.AppendLine($"- （較舊 {aSkip} 筆未列 —— 下一輪 sidecar 會補全文）");
+                    for (int i = aSkip; i < aShow.Count; i++) aR.AppendLine(aShow[i]);
+                    aR.AppendLine("- ⇒ 有該回的，下一則 observe 回 —— 游標未推進，下一輪 sidecar 仍會帶全文。");
+                    aR.AppendLine();
+                }
+            }
+            catch { /* 顯示性附加段 —— 讀不到不影響已完成的發文與記帳 */ }
             aR.AppendLine("## next");
             // ⚠ **next 只寫「往前」，不提收工**（Tim 2026-08-16 拍板）。
             //    原本這裡寫「收工不用你判斷 —— 到期時 cycle 會告訴你」，本意是防 agent 自行收手，
@@ -2444,10 +2554,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"# StreamWatch step=claim persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
-            // ⚠ **認領只給陪看者**（Tim 2026-08-16）：熱點是「回頭把某段拉細」，而那要花一整輪；
-            //   主觀影者一離開主線，**整場的主劇情就斷了**（陪看者的窗口只是挑段，接不起來）。
-            //   ⇒ 標記人人可（誰看到都能標），但**看熱點是 join 者的工作**。分工不是階級，是覆蓋率：
-            //     primary 顧連續性、companion 顧解析度。
+            // ⚠ **認領只給陪看者**（Tim 2026-08-16；2026-08-25 接力落地後語意更新）：
+            //   接力段人人都拿（前緣不會因誰缺席而停），primary 的職責是場次設定＋熱點**標記**；
+            //   熱點**細看**要脫離接力段花一整輪，那是陪看者的工作 —— 標記人人可，認領只給 join 者。
             var aMySession = LoadSession(iPersona);
             if (aMySession != null && aMySession.active && aMySession.role == "primary")
             {
@@ -2911,6 +3020,60 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         static void SaveSession(string iPersona, UCL_StreamWatchSession iS)
             => AtomicWrite(SessionPath(iPersona), iS.SerializeToJson().ToJsonBeautify());
 
+        // ===========================================================
+        // 區塊：接力前緣（Tim 2026-08-25 拍板「除熱點外，觀看區段要接力」）
+        // 物理意義：同場全員（primary＋companions）共用**一條**取材前緣 ——
+        //          誰的 cycle 先回來誰從前緣拿下一段並把前緣推走 ⇒ 區段天生連續、
+        //          個人有洞、覆蓋由全體保證；交接處由 watch_window_overlap_sec 保證重疊。
+        //          個人 cursor_epoch 退居備援（relay 關閉／檔案缺失時仍能各自看）。
+        // 🩸 2026-08-25 實場（末日後酒店 06）：三人各持 cursor ⇒ 三條平行的完整覆蓋，
+        //          「接力」只存在於設計筆記裡 —— 本區塊是把它落地的那一半。
+        // 併發語意：**先佔段再取材** —— 窗口計畫一定案就把前緣推到計畫尾端（Max，單調），
+        //          兩人同時回來也拿不到同一段；montage 實際尾端略短於計畫時，
+        //          短差 ≤ 一個幀距，由下一段起點的重疊（預設 3s）補回。
+        //          代價：montage 失敗會留下 ≤ 一個窗口的洞，回傳檔誠實印 —— 比重看同一段便宜。
+        // ===========================================================
+        public class UCL_StreamWatchRelay : UnityJsonSerializable
+        {
+            /// <summary>共享前緣（epoch 秒）—— 下一段的起點。0＝尚未取材（第一個回來的人播種）。</summary>
+            public double frontier_epoch = 0;
+            /// <summary>綁定的 primary session id —— 開新場（step=start）就重置，舊前緣不跨場。</summary>
+            public string session_id = "";
+            public string updated_by = "";
+            public string updated_at = "";
+        }
+
+        static string RelayPath(string iPrimaryPersona)
+            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "relay", $"{iPrimaryPersona}.json");
+
+        static UCL_StreamWatchRelay LoadRelay(string iPrimaryPersona)
+        {
+            try
+            {
+                string aPath = RelayPath(iPrimaryPersona);
+                if (!File.Exists(aPath)) return null;
+                var aJd = JsonData.ParseJson(File.ReadAllText(aPath, Encoding.UTF8));
+                if (aJd == null) return null;
+                var aRelay = new UCL_StreamWatchRelay();
+                aRelay.DeserializeFromJson(aJd);
+                return aRelay;
+            }
+            catch { return null; }
+        }
+
+        static void SaveRelay(string iPrimaryPersona, UCL_StreamWatchRelay iRelay)
+            => AtomicWrite(RelayPath(iPrimaryPersona), iRelay.SerializeToJson().ToJsonBeautify());
+
+        /// <summary>接力讀數行 —— 做了什麼要看得見；三種狀態（關閉／讀不到／正常）在輸出上必須可分。</summary>
+        static string RelayLine(bool iEnabled, UCL_StreamWatchRelay iRelay, string iKey, double iSegStart, string iPersona)
+        {
+            if (!iEnabled) return "- 接力     : **關閉**（`watch_relay_enabled=false`）—— 各自游標，多人覆蓋會整段重疊";
+            if (iRelay == null) return "- 接力     : ⚠ 前緣讀不到 —— 本輪退用個人游標（下一輪自動重建 relay 檔）";
+            double aBehind = ToEpoch(DateTime.UtcNow) - iRelay.frontier_epoch;
+            return $"- 接力     : 組=@{iKey}｜本段起點 {FromEpochLocal(iSegStart):HH:mm:ss} → 前緣推至 {FromEpochLocal(iRelay.frontier_epoch):HH:mm:ss}"
+                 + $"（@{iPersona} 認領）｜**前緣落後即時 {Math.Max(0, aBehind):F0}s** ← 接力的健康指標只有這一個數";
+        }
+
         static void AtomicWrite(string iPath, string iContent)
         {
             UCL_LettersPath.EnsurePayloadDir(iPath);   // 建目錄＋補 cmd/.gitignore（唯一入口）
@@ -3125,8 +3288,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         ///          把等待搬進 Cmd 之後，agent 那邊**沒有時間變數可以算**，節奏不再是它的權限。
         /// ⚠ 射程：這只設得了間隔的**下限**。窗口寬度＝agent 迴轉時間，迴轉比 interval 慢時格線會順延
         ///          （錨在「上輪回傳時刻」而不是絕對格線 ⇒ 不累積欠帳，但那幾輪的每格還是會變粗）。
-        /// ⛔ 陪看場不套用：companion 的正確性條件跟 primary **相反**（gap 是正常不是失敗），
-        ///          把 primary 的不變式套到沒有那條不變式的角色上，就是「通則沒問適用範圍」那隻。
+        /// ⛔ 陪看場不套用（interval=0，呼叫即取材）：接力落地後（2026-08-25）全員同一條前緣，
+        ///          覆蓋不靠任何單人的節奏 —— companion 自行決定回來的頻率，前緣保證不重段；
+        ///          primary 保留 interval 是給「單人觀影」的場景定節奏，不再背「連續覆蓋」的不變式。
         /// </remarks>
         public int cycle_interval_seconds = 0;
         /// <summary>這個間隔是從哪來的（後台設定／本場覆寫／保底）——「值一樣」不代表「來源一樣」，

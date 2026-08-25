@@ -33,8 +33,14 @@ related:
 | `observe` | 必填 | `body`（必，走 `--arg-file`） | 記次數 | 每筆 | 評論 |
 | `note` | 必填 | `body`（必） | 記旗標 | ❌ | 接續點 |
 
-**沒有 `end`。** 兩個終止條件都由 `cycle` 判定：
-`now >= ends_at`（到期）／`_screenstream/_config.json` 的 `enabled` 轉 false（Tim 停錄影）。
+**沒有 `end`。** 終止由 `cycle` 判定，條件兩種（2026-08-25 起「到期」看實錄不看牆鐘）：
+- **到期**＝`now ≥ ends_at` **且** 接力前緣（實錄補到哪）≥ `ends_at` —— 牆鐘過了但尾段沒補完就
+  **加班取材**（窗口尾端夾在 ends_at，補完那輪的下一次 cycle 收工）；
+- **中斷**＝`_screenstream/_config.json` 的 `enabled` 轉 false（Tim 停錄影）—— 立即結算，不補尾段。
+
+**全場同時只有一個主觀影者**（同日拍板，硬守衛）：`step=start` 掃 `sessions/*.json`，
+存在別人的 active 且未過期 primary ⇒ blocked 指路 catchup→join（過期殘留不擋）。
+primary 的職責＝準備階段設定＋熱點**標記**＋開收場結算；**取材上全員平等**（同一條接力段）。
 
 ⚠ 中斷**只認 `enabled` 這個顯式欄位，不推論 frame 新鮮度** ——
 實測活樣本 `enabled=false` 而近千張 frame 仍在磁碟上；用 frame 推論會把 daemon 打嗝讀成中斷，
@@ -75,6 +81,13 @@ before-mtime = min(cursor ＋ 本檔窗口長度, 可播放前緣)
   ⚠ 等待與 interval、montage 合成都吃呼叫端 `--timeout` 的額度 —— 調大旋鈕時 timeout 要一起調。
 - **適用範圍**：`step=cycle` 的 primary 與 companion **都套**；
   `step=claim` 熱點觀看**不套**（吃標記者的顯式 from..to，檔位夾上去就不是他標的那段）。
+- **接力**（`watch_relay_enabled`，預設開；同日拍板「除熱點外觀看區段要接力」）：
+  同場全員共用一條前緣（`StreamWatch/relay/<primary>.json`，綁 primary session id，開新場重置），
+  **誰的 cycle 先回來誰拿下一段** —— 段起點＝前緣−重疊，**先佔段再取材**（前緣一定案就推到
+  計畫尾端，兩人同時回來拿不到同一段；montage 短交由下一段重疊補、失敗留 ≤ 一窗口的洞並誠實印）。
+  個人 `cursor_epoch` 退居備援（relay 關閉／檔案缺失時各自看）。
+  健康指標只有一個數：**前緣落後即時幾秒**（回傳檔「接力」行）。
+  🩸 2026-08-25 實場：三人各持 cursor ⇒ 三條平行完整覆蓋，「接力」只存在於設計筆記 —— 本段是落地。
 - 每輪回傳檔印「進度檔位」讀數行（選中檔位／可讀落後／窗口目標／重疊／等水位秒數／來源）——
   做了什麼要看得見；水位讀不到時窗口對帳行改比「保底前緣」。
 

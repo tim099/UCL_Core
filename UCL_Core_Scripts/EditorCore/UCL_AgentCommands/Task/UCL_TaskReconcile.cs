@@ -204,40 +204,72 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //     ⇒ 一般形：**「今天」是人的概念，而人講的今天是本地日；
         //       拿 UTC 日去代表它，等於把換日點搬到一個沒有人會注意的時刻。**
         //
-        // ⇒ 現行：時間戳一律**解析成 DateTime 再轉本地**比對，不做日期字串的 substring 比對
-        //   （字串比對是上面那隻能成立的原因：它逼著「今天」必須跟儲存格式同一個時區）。
+        // ⚠ 2026-08-25 Tim 拍板：**系統面一律 UTC，只有顯示面用本地時間。**
+        //   ⇒ 於是「本地日」那個修法不能留（閘是系統面）。而單純換回 UTC 日會**把上面那隻放回去**。
+        //   📌 兩個都不對，代表問題不在「用哪套曆」，在**這裡根本不該用曆**：
+        //     這道閘真正要問的從來不是「今天」，是「**我這次上線之後**」——
+        //     goodnight 依定義就是一段 session 的結尾，而 session 的起點寫在
+        //     `_session/_persona_<name>.json` 的 `locked_at`（本來就是 UTC）。
+        //   ⇒ 現行：兩個述詞都改成**跟 `locked_at` 比大小的純 UTC 時間戳比較** ——
+        //     零日曆、零時區轉換，比「一律 UTC 日期」更嚴格地符合拍板。
+        //     附帶好處：跨夜 session（wake#62 那種）本來就該把整段都算進來，而日曆做不到。
+        // ⚠ 拿不到 lock（例如沒登入就跑）⇒ 退回 **UTC 日**（拍板的預設），不退回本地日。
         // ===========================================================
         public static List<UCL_TaskEntry> PendingWrapups(string iPersona)
         {
             var aOut = new List<UCL_TaskEntry>();
-            DateTime aToday = DateTime.Now.Date;                   // 本地日 —— 見上方血證
+            DateTime aSince = SessionStartUtc(iPersona);
             foreach (var e in UCL_TaskIO.LoadAll())
             {
                 if (e.IsClosed()) continue;                       // 已關的不看（反向驗收要求）
                 if (e.RolesOf(iPersona).Count == 0) continue;      // 別人的單不看
-                if (!IsOnLocalDate(e.updated_at, aToday)) continue; // 今天（本地日）沒動的不看
-                if (HasWrapupOn(e.index, aToday)) continue;        // 今天收過工了
+                if (!IsAfterUtc(e.updated_at, aSince)) continue;   // 本次上線後沒動過的不看
+                if (HasWrapupSince(e.index, aSince)) continue;     // 本次上線後收過工了
                 aOut.Add(e);
             }
             return aOut;
         }
 
         // ===========================================================
-        // 區塊職責：把一個 ISO 時間戳解析出來，問它是不是落在某個**本地日**。
-        // ⚠ 解析不出來一律回 **false** —— 對 `updated_at` 是「不擋」，對 `wrapup` 是「當成沒收工」，
-        //   兩邊都倒向**擋下**那一側（而擋下有出口：`skip_reason`；放行沒有）。
+        // 區塊職責：本次 session 的起點（UTC）。
+        // 物理意義：`locked_at` 是早安登入寫的，**它就是這段工作的起點**。
+        // ⚠ 讀不到就退回「UTC 今天 00:00」—— 那是拍板的預設曆，**不是本地日**。
+        //   （讀不到的情境：沒登入就跑閘、lock 被清掉。此時退回日曆是刻意的降級，不是 fail-open：
+        //     它仍然會擋 UTC 今天動過的單，只是拿不到跨夜那一段。）
         // ===========================================================
-        static bool IsOnLocalDate(string iIso, DateTime iLocalDate)
+        static DateTime SessionStartUtc(string iPersona)
+        {
+            try
+            {
+                var aLock = Awakening.UCL_AwakeningService.ReadLock(iPersona);
+                if (aLock != null && !string.IsNullOrWhiteSpace(aLock.locked_at)
+                    && DateTime.TryParse(aLock.locked_at, System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.AdjustToUniversal
+                        | System.Globalization.DateTimeStyles.AssumeUniversal, out var aUtc))
+                    return aUtc;
+            }
+            catch { /* 讀不到就走下面的降級 —— 降級是有曆的那個，不是沒有閘 */ }
+            return DateTime.UtcNow.Date;
+        }
+
+        /// <summary>ISO 時間戳晚於 <paramref name="iSinceUtc"/> 嗎（純 UTC 比大小，不碰時區轉換）。</summary>
+        static bool IsAfterUtc(string iIso, DateTime iSinceUtc)
         {
             if (string.IsNullOrWhiteSpace(iIso)) return false;
             return DateTime.TryParse(iIso, System.Globalization.CultureInfo.InvariantCulture,
                        System.Globalization.DateTimeStyles.AdjustToUniversal
                        | System.Globalization.DateTimeStyles.AssumeUniversal, out var aUtc)
-                   && aUtc.ToLocalTime().Date == iLocalDate;
+                   && aUtc > iSinceUtc;
         }
 
-        /// <summary>該單的時間線裡有沒有 <paramref name="iLocalDate"/>（**本地日**）的 `wrapup` 事件。</summary>
-        public static bool HasWrapupOn(int iIndex, DateTime iLocalDate)
+        // ===========================================================
+        // 區塊職責：解析時間戳的兩個述詞（都在 §PendingWrapups 上方那段血證的射程內）。
+        // ⚠ 解析不出來一律回 **false** —— 對 `updated_at` 是「不擋」，對 `wrapup` 是「當成沒收工」，
+        //   兩邊都倒向**擋下**那一側（而擋下有出口：`skip_reason`；放行沒有）。
+        // ===========================================================
+
+        /// <summary>該單的時間線裡，<paramref name="iSinceUtc"/> 之後有沒有 `wrapup` 事件。</summary>
+        public static bool HasWrapupSince(int iIndex, DateTime iSinceUtc)
         {
             try
             {
@@ -252,7 +284,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     string aStamp = aTrim.Substring(2).TrimStart();
                     int aCut = aStamp.IndexOfAny(new[] { ' ', '\t', '　' });
                     if (aCut > 0) aStamp = aStamp.Substring(0, aCut);
-                    if (IsOnLocalDate(aStamp, iLocalDate)) return true;
+                    if (IsAfterUtc(aStamp, iSinceUtc)) return true;
                 }
             }
             catch { /* 讀不到就當沒有 —— 擋下比放行安全（而擋下有出口：skip_reason） */ }

@@ -813,6 +813,14 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 try
                 {
                     File.WriteAllText(aTmp, aWhy, new UTF8Encoding(false));
+                    // ⛔⛔ **這個 `await` 必須留在 `UCL_TaskIO.Save` 之後，不可以搬到前面。**
+                    //   它內部是 `await Task.Run(...)`（`UCL_TaskWorkMemoryCli.cs:74`）——
+                    //   **本檔唯一一個真的會離開主執行緒的地方**。
+                    //   本單（TASK-0026）的併發安全完全依賴「read-modify-write 中間沒有 yield 點」，
+                    //   而搬動這一句就會把 yield 點放進那個窗口裡。
+                    //   🩸 症狀是**靜默的**：整檔覆蓋、留言消失、index 撞號 —— 沒有一格會紅。
+                    //   ⚠ 唯一的告警是 `UCL_TaskIO.AssertMainThread`，而它只在**事情已經發生之後**才出聲。
+                    //   （通則寫在 UCL_TaskIO 檔頭；這裡指名道姓，因為通則會被讀成建議。）
                     var (aOk, aOut, aDetail) = await UCL_TaskWorkMemoryCli.AddAsync(
                         aTopic, aType, aId, aTitle, aTmp, iActor);
                     ioR.AppendLine();

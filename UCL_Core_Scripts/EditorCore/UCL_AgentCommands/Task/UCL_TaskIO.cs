@@ -1,4 +1,11 @@
 // 區塊職責：任務單的磁碟層 —— index 配發 / 單檔讀寫 / 清單 / 依賴雙向寫入 / stale 與 blocker 讀數。
+//
+// ⚠⚠ **這個檔的併發安全來自「單一主執行緒 ＋ read-modify-write 中間沒有 `await`」，
+//     不是來自任何鎖。** 這裡沒有鎖，而且是刻意沒有（TASK-0026，2026-08-25）。
+//   讀數：三個 persona 同時 `op=create` ⇒ 3 檔連號零空洞；兩人同秒 `op=comment` ⇒ 兩則都在。
+//   ⇒ 所以**加一把守不到東西的鎖**被判為有害：它會讓下一個人不再去問這裡到底安不安全。
+//   ⛔ 要動多執行緒／多 process 的人請從這一段開始讀：**前提一旦破，症狀是靜默的**
+//     （整檔覆蓋、留言消失、index 撞號 —— 沒有一格會紅）。
 // 物理意義：AgentCommands/Tasks/ 底下的唯一寫入端。Cmd 與後台頁都走這裡，不各自碰檔案。
 //
 // 📌 **一單一檔**（照 BugReport 的母版，Tim 2026-08-18 拍板的形狀）：
@@ -163,8 +170,60 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         // 區塊職責：寫一張單（新建 / 狀態變更 / 留言皆走這裡）。
         // 數值影響：一次讀（撈既有歷史與內文）＋ 一次寫。iActivityLine 為空＝不追加時間線。
         // ===========================================================
+        // ===========================================================
+        // 區塊職責：把「寫入必須發生在主執行緒」這個**前提**變成會出聲的東西。
+        // 物理意義：本檔沒有鎖（見檔頭）。整檔重寫的安全性完全建立在
+        //   「所有寫入都在同一條執行緒、且 read-modify-write 中間沒有 yield 點」之上。
+        //   ⇒ 那是一個**沒有任何機械在保護的前提**，而它破掉的時候症狀是靜默的。
+        //   🩸 2026-08-25：`UCL_TaskWorkMemoryCli.cs:74` 有一個 `await Task.Run(...)`，
+        //     由 `Cmd_Task.OpWrapup` 呼叫 —— 它**目前**站在 `Save` 之後，所以安全。
+        //     而「站在哪一邊」是一次程式碼搬移就會改變的事。**這行斷言就是那次搬移的告警。**
+        // ⚠ 只出聲**不丟例外**：寫入本身仍然照做。
+        //   丟例外會把「前提破了」變成「使用者的操作失敗」——
+        //   而那會逼下一個人把斷言拿掉，不是去修前提。
+        // 數值影響：正常路徑零成本（一次 int 比較），且**不改變任何行為**。
+        // ===========================================================
+        // ⚠ 定錨方式刻意**不是**「第一次寫入時記下當前執行緒」：
+        //   那樣的話，萬一第一次寫入本身就在非主執行緒上，它會錨到錯的那條，
+        //   然後**反過來對所有正確的呼叫誤報** —— 一個會誤報的告警活不過三天。
+        //   ⇒ 走 `[InitializeOnLoadMethod]`（Unity 保證在主執行緒跑，本 repo 既有慣例）。
+        // 邊界：錨沒設成（理論上不該發生）⇒ 這道斷言**停用但出聲一次**。
+        //   🩸 這一格是我自己第一版犯的：原本寫「錨沒設成就 return」，於是
+        //   「錨對上了」與「根本沒在量」**在輸出上完全同形（都是安靜）**——
+        //   而那正是本檔今天修的一整族（找不到 vs 不存在、被 ignore vs 乾淨）。
+        //   ⇒ 「量不到」不可以長得像「量到了而且正常」。出聲一次，不重複洗版。
+        static int s_MainThreadId = -1;
+        static bool s_WarnedNoAnchor = false;
+
+        [UnityEditor.InitializeOnLoadMethod]
+        static void AnchorMainThread()
+            => s_MainThreadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+
+        static void AssertMainThread(string iWho, int iIndex)
+        {
+            int aNow = System.Threading.Thread.CurrentThread.ManagedThreadId;
+            if (s_MainThreadId < 0)
+            {
+                if (!s_WarnedNoAnchor)
+                {
+                    s_WarnedNoAnchor = true;
+                    Debug.LogWarning("[Task] 主執行緒錨沒設成（InitializeOnLoadMethod 沒跑到）⇒"
+                        + " **併發前提這一輪沒有人在量**。這不是「安全」，是「沒有讀數」。");
+                }
+                return;
+            }
+            if (aNow == s_MainThreadId) return;
+            Debug.LogError(
+                $"[Task] ⚠️ {iWho}(index={iIndex}) 跑在**非主執行緒**上（tid={aNow}，主={s_MainThreadId}）。"
+                + " 本檔沒有鎖 —— 併發安全完全依賴『單一主執行緒 ＋ RMW 中間沒有 await』，"
+                + " 而這行讀數說那個前提已經破了。"
+                + " ⇒ 去看是誰在 read-modify-write 中間加了 await（最可能是 Cmd_Task 的某個 Op），"
+                + " 把它移到 Save 之後；或者這裡真的需要鎖了，那要開一張新單而不是把這行拿掉。");
+        }
+
         public static void Save(UCL_TaskEntry e, string iCriteria, string iDescription, string iActivityLine)
         {
+            AssertMainThread(nameof(Save), e?.index ?? -1);
             EnsureDir();
             string aPath = TaskPath(e.index);
 

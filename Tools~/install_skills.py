@@ -455,12 +455,30 @@ def copy_skill(src_dir: Path, dst_dir: Path, log: _Log, force: bool = False, tar
         dst_file = dst_dir / rel
 
         transformed = (target == "antigravity" and src_file.name == "SKILL.md")
-        expected_text = transform_antigravity_frontmatter(src_file.read_text(encoding="utf-8"), src_dir.name) if transformed else None
+        # 區塊職責: 轉換後**最終要落地的那串位元組**只算一次, 比對與寫入共用同一份。
+        #
+        # 🩸 2026-08-25 血證（同一族踩了三次, 每次都是「兩個尺」）:
+        #   ① 寫入端沒帶 newline ⇒ 行尾由執行環境決定, 而 claude/codex 走 shutil.copy2
+        #      是**跟隨源檔** ⇒ 同一支工具兩套規則。
+        #   ② 我的第一版修法寫死 newline="\n" ⇒ 製造了**反方向**的漂移:
+        #      源檔是 CRLF 的那 21 個 skill, .agents 變 LF 而另外兩端仍是 CRLF。
+        #      📌 修一族坑時最該懷疑的就是修法本身。
+        #   ③ up-to-date 比對用 read_text()（會把 CRLF 翻回 LF）⇒ **檢查看不見自己造成的差異**,
+        #      於是已經壞掉的那份永遠被跳過、永遠修不好 —— 修了寫入端也走不到寫入端。
+        #
+        # ⇒ 正解: 行尾**跟隨源檔**（與另外兩端同一個規則）, 且比對與寫入用同一份 bytes。
+        expected_bytes = None
+        if transformed:
+            _raw = src_file.read_bytes()
+            _nl = "\r\n" if b"\r\n" in _raw else "\n"
+            _text = transform_antigravity_frontmatter(
+                src_file.read_text(encoding="utf-8"), src_dir.name)
+            expected_bytes = _text.replace("\r\n", "\n").replace("\n", _nl).encode("utf-8")
 
         if dst_file.is_file():
             if transformed:
-                if dst_file.read_text(encoding="utf-8") == expected_text:
-                    continue  # already up to date
+                if dst_file.read_bytes() == expected_bytes:
+                    continue  # already up to date（比的是最終位元組, 跟寫下去的同一份）
             elif dst_file.read_bytes() == src_file.read_bytes():
                 continue      # already up to date
 
@@ -468,13 +486,7 @@ def copy_skill(src_dir: Path, dst_dir: Path, log: _Log, force: bool = False, tar
         if not log.dry:
             dst_file.parent.mkdir(parents=True, exist_ok=True)
             if transformed:
-                # 🩸 2026-08-25：這裡原本沒帶 `newline` ⇒ Python 預設把 `\n` 翻成 os.linesep
-                #   ⇒ Windows 上 antigravity 那份變成 **CRLF**，而 claude/codex 走 shutil.copy2
-                #   （位元組複製）是 LF。同一支工具、同一次執行，產出兩種行尾。
-                #   ⚠ 而本檔第 227 行**有**帶 `newline="\n"` —— 修法只套用在作者記得的那半邊。
-                #   ⚠ 它為什麼一直沒被發現：上面那個 up-to-date 比對用 `read_text()`，
-                #     而它會把 CRLF 翻回 LF ⇒ **工具自己的檢查看不見自己造成的差異。**
-                dst_file.write_text(expected_text, encoding="utf-8", newline="\n")
+                dst_file.write_bytes(expected_bytes)   # 與上面比對的是同一份
             else:
                 shutil.copy2(src_file, dst_file)
         copied += 1

@@ -194,6 +194,66 @@ namespace UCL.Core.EditorLib.Page
         // 額外區域的 baseline 用序列化字串比對 (list 整體當單一欄位做 3-way merge)
         bool m_BaseOcrMainEnable = true;
         string m_BaseOcrExtraRegions = "";
+        // ===========================================================
+        // 區塊: 觀影節奏 (StreamWatch cycle) 設定 draft — 交給 UCL_GUILayout.DrawObjectData 反射繪製
+        // 物理意義: 欄位名刻意 == _config.json 鍵名 (畫面顯示即鍵名, 對帳零翻譯);
+        //          之後 config 加觀影欄位 → 這裡加一行 + FromConfig/ApplyTo 各一行, **繪製零改動**
+        //          (Tim 2026-08-25 拍板: 用 DrawObjectData 自動繪製, 不手刻欄位)。
+        // 數值影響: 這組欄位的寫入端只有本頁與手改檔 (Cmd/montage 只讀) ⇒ 3-way merge 用**整組**
+        //          粒度即可 — 序列化字串當 baseline (同 ocr_extra_regions 模式), 不逐欄位開 baseline。
+        // ===========================================================
+        public class WatchPacingDraft : UnityJsonSerializable
+        {
+            public int watch_cycle_interval_sec;
+            public int watch_cycle_interval_warn_sec;
+            public int watch_window_overlap_sec;
+            public int watch_live_guard_sec;
+            public int watch_water_wait_max_sec;
+            public List<AgentCommands.MediaAdmin.UCL_WatchPacingTier> watch_pacing_tiers
+                = new List<AgentCommands.MediaAdmin.UCL_WatchPacingTier>();
+
+            /// <summary>從 config 取觀影欄位（預設值因此只住在 UCL_ScreenStreamConfig 一份）。
+            /// tier 逐筆 clone —— draft 與 config 不共享實例，避免「畫面改到一半就寫進 config 物件」。</summary>
+            public static WatchPacingDraft FromConfig(AgentCommands.MediaAdmin.UCL_ScreenStreamConfig iCfg)
+            {
+                var aDraft = new WatchPacingDraft
+                {
+                    watch_cycle_interval_sec = iCfg.watch_cycle_interval_sec,
+                    watch_cycle_interval_warn_sec = iCfg.watch_cycle_interval_warn_sec,
+                    watch_window_overlap_sec = iCfg.watch_window_overlap_sec,
+                    watch_live_guard_sec = iCfg.watch_live_guard_sec,
+                    watch_water_wait_max_sec = iCfg.watch_water_wait_max_sec,
+                };
+                if (iCfg.watch_pacing_tiers != null)
+                    foreach (var t in iCfg.watch_pacing_tiers)
+                        if (t != null)
+                            aDraft.watch_pacing_tiers.Add(new AgentCommands.MediaAdmin.UCL_WatchPacingTier
+                            { label = t.label, lag_min_sec = t.lag_min_sec, window_sec = t.window_sec });
+                return aDraft;
+            }
+
+            /// <summary>寫回 config —— 欄位對應只有 FromConfig / ApplyTo 兩處，同檔可肉眼對照。</summary>
+            public void ApplyTo(AgentCommands.MediaAdmin.UCL_ScreenStreamConfig ioCfg)
+            {
+                ioCfg.watch_cycle_interval_sec = watch_cycle_interval_sec;
+                ioCfg.watch_cycle_interval_warn_sec = watch_cycle_interval_warn_sec;
+                ioCfg.watch_window_overlap_sec = watch_window_overlap_sec;
+                ioCfg.watch_live_guard_sec = watch_live_guard_sec;
+                ioCfg.watch_water_wait_max_sec = watch_water_wait_max_sec;
+                ioCfg.watch_pacing_tiers = new List<AgentCommands.MediaAdmin.UCL_WatchPacingTier>();
+                foreach (var t in watch_pacing_tiers)
+                    if (t != null)
+                        ioCfg.watch_pacing_tiers.Add(new AgentCommands.MediaAdmin.UCL_WatchPacingTier
+                        { label = t.label, lag_min_sec = t.lag_min_sec, window_sec = t.window_sec });
+            }
+        }
+        WatchPacingDraft m_WatchDraft
+            = WatchPacingDraft.FromConfig(new AgentCommands.MediaAdmin.UCL_ScreenStreamConfig());
+        /// <summary>觀影節奏整組 baseline（序列化字串）。null＝首次 reload 前 —— 無條件吃磁碟值，
+        /// 否則「頁面預設值 ≠ 磁碟值」會被誤判成「Tim 編輯中」而永遠不載入。</summary>
+        string m_BaseWatchSer = null;
+        static string SerWatch(WatchPacingDraft iDraft) => iDraft.SerializeToJson().ToJsonBeautify();
+
         // config 檔 mtime 快照 — 沒變就跳過 parse (省 IO), 變了才走 merge reload
         long m_ConfigMtime = 0;
         static readonly string[] s_SttModelOptions = { "tiny", "base", "small", "medium", "large-v3" };
@@ -730,6 +790,12 @@ namespace UCL.Core.EditorLib.Page
                             m_OcrExtraRegions.AddRange(diskRegions);
                         }
                         m_BaseOcrExtraRegions = diskRegionsSer;
+                        // 觀影節奏: 整組視為單一欄位 — UI 沒動過 (序列化 == baseline) 才吃磁碟值
+                        //（同 ocr_extra_regions 模式; baseline==null 表示首次載入, 無條件吃磁碟）
+                        var diskWatch = WatchPacingDraft.FromConfig(data);
+                        if (m_BaseWatchSer == null || SerWatch(m_WatchDraft) == m_BaseWatchSer)
+                            m_WatchDraft = diskWatch;
+                        m_BaseWatchSer = SerWatch(diskWatch);
                     }
                     m_ConfigMtime = mtime;
                 }
@@ -976,6 +1042,8 @@ namespace UCL.Core.EditorLib.Page
                         y_bottom_pct = r.YBottomPct, h_pct = r.HPct,
                         x_center_pct = r.XCenterPct, w_pct = r.WPct, enable = r.Enable,
                     });
+                // 觀影節奏 — 欄位對應住在 WatchPacingDraft.ApplyTo（跟 FromConfig 成對）
+                m_WatchDraft.ApplyTo(existing);
                 // 「清除偏置」鈕走這條 (Tim 2026-08-11 起僅此一處呼叫; 開始錄影已不再自動清空 —— 原因見
                 //  m_SttPrompt 宣告處的沿革註解: 自動清空與可編輯欄位互斥)
                 if (clearSttPrompt)
@@ -1013,6 +1081,7 @@ namespace UCL.Core.EditorLib.Page
                 m_BaseOcrWPct = m_OcrBand.WPct;
                 m_BaseOcrMinConf = m_OcrMinConf;
                 m_BaseOcrExtraRegions = SerializeRegions(m_OcrExtraRegions);
+                m_BaseWatchSer = SerWatch(m_WatchDraft);
                 m_ConfigMtime = new FileInfo(path).LastWriteTime.Ticks;
             }
             catch (Exception e)
@@ -1229,9 +1298,10 @@ namespace UCL.Core.EditorLib.Page
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("resolution:", GUILayout.Width(120));
+            // 下拉取代 SelectionGrid（Tim 2026-08-25 要求）—— 同 STT 三個下拉的既有模式（PopupSearchCache + m_Dic）
             int curIdx = Array.IndexOf(s_ResolutionOptions, m_Resolution);
             if (curIdx < 0) curIdx = 3; // default 1080p
-            int newIdx = GUILayout.SelectionGrid(curIdx, s_ResolutionOptions, s_ResolutionOptions.Length);
+            int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, s_ResolutionOptions, m_Dic, "m_Resolution");
             if (newIdx != curIdx) m_Resolution = s_ResolutionOptions[newIdx];
             GUILayout.EndHorizontal();
 
@@ -1451,6 +1521,35 @@ namespace UCL.Core.EditorLib.Page
             // ===========================================================
             GUILayout.Space(10);
             DrawOcrSettingsPanel();
+
+            // ===========================================================
+            // 🎬 觀影節奏 (StreamWatch cycle) — 間隔 / 進度檔位 / 重疊 / 等水位
+            // 整組交給 DrawObjectData 反射繪製 (Tim 2026-08-25 拍板): config 加欄位時
+            // 只動 WatchPacingDraft (欄位 + FromConfig/ApplyTo), 這裡零改動。
+            // 之後若加 enum-like 字串欄位, 掛 [UCL.Core.PA.UCL_List(nameof(選項方法))] 即自動變下拉。
+            // ===========================================================
+            GUILayout.Space(10);
+            using (new GUILayout.VerticalScope("box"))
+            {
+                GUILayout.BeginHorizontal();
+                bool aShowWatch = UCL_GUILayout.Toggle(m_Dic, "WatchSettingsFold", 21, iDefaultValue: false);
+                GUILayout.Label("🎬 觀影節奏 (StreamWatch cycle — 間隔 / 進度檔位 / 重疊 / 等水位；欄位名＝config 鍵名)",
+                    new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold });
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+                if (aShowWatch)
+                {
+                    // iIsAlwaysShowDetail: true — 本區已有自己的折疊 header, 不要 DrawObjectData 再包一層標題列
+                    m_WatchDraft = (WatchPacingDraft)UCL_GUILayout.DrawObjectData(
+                        m_WatchDraft, m_Dic.GetSubDic("WatchDraftDic"), "觀影節奏參數", iIsAlwaysShowDetail: true);
+                    GUILayout.Label("  ⓘ 檔位選法: 取 lag_min_sec ≤ 可讀落後量 中門檻最高者; window_sec ≤0 的檔會被跳過; 清空 List = 關閉檔位調控.",
+                        new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                    GUILayout.Label("  ⚠ 間隔＋等水位上限＋montage 合成(~53s) 若逼近 run_cmd --timeout (預設 120s) 會脫鉤 —— 調大時 timeout 要一起調.",
+                        new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                    GUILayout.Label("  ⓘ 生效時機: 按下方「💾 儲存設定」寫 config; Cmd_StreamWatch 每輪 cycle 重讀, 下一輪即生效 (不必重啟).",
+                        new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Italic });
+                }
+            }
 
             GUILayout.Space(10);
             if (GUILayout.Button("💾 儲存設定", GUILayout.Height(30)))

@@ -56,12 +56,27 @@ related:
 兩條流都要比對 —— 只比對 stderr 會讓那條軟路徑**永遠不執行**（2026-08-15 血證：
 每輪都退成 blocked 拋例外，而「水位還沒追上」是開場常態）。
 
-## 3. 窗口怎麼決定（感官水位夾尾端）
+## 3. 窗口怎麼決定（可播放前緣 ＋ 進度檔位 ＋ 重疊；2026-08-25 拍板）
 
 ```
-after-mtime  = session.cursor_epoch（首輪＝session 起始時刻，見下方「雞生蛋」）
-before-mtime = min(OCR 水位, STT 水位)     ← 感官開著的那幾項才參與取小；全關則不夾
+after-mtime  = cursor − 重疊秒數（`watch_window_overlap_sec`）   ← 相鄰輪保證重疊，接力銜接不留縫
+可播放前緣   = min(OCR 水位, STT 水位)                            ← 感官開著的才參與取小
+               讀不到水位 ⇒ 現在 − `watch_live_guard_sec`         ← 保底：不吃還在辨識中的尾端
+before-mtime = min(cursor ＋ 本檔窗口長度, 可播放前緣)
 ```
+
+- **進度檔位**（`watch_pacing_tiers`，List 一檔一份 `{label, lag_min_sec, window_sec}`，
+  檔數不限、空＝關閉調控）：以「可讀落後量＝可播放前緣 − cursor」選檔，
+  取 `lag_min_sec ≤ 落後量` 中門檻最高者；預設三檔（追進度／維持進度／放慢細看），
+  **值讀 config，本檔不抄**。落後越多一次吃越長（丟解析度換覆蓋），追平後縮窗細看。
+- **可播放量不足本檔窗口** ⇒ `cycle` 在 Cmd 內用 UniTask 等水位追上
+  （上限 `watch_water_wait_max_sec`；退出條件同格線等待：不跨 ends_at、停錄影／取消即退；
+  等滿仍不足＝先吃現有的，可讀 0 則走「無新素材」軟回）。
+  ⚠ 等待與 interval、montage 合成都吃呼叫端 `--timeout` 的額度 —— 調大旋鈕時 timeout 要一起調。
+- **適用範圍**：`step=cycle` 的 primary 與 companion **都套**；
+  `step=claim` 熱點觀看**不套**（吃標記者的顯式 from..to，檔位夾上去就不是他標的那段）。
+- 每輪回傳檔印「進度檔位」讀數行（選中檔位／可讀落後／窗口目標／重疊／等水位秒數／來源）——
+  做了什麼要看得見；水位讀不到時窗口對帳行改比「保底前緣」。
 
 - **OCR 水位**＝`_screenstream/ocr/` 內最新檔 mtime。
 - **STT 水位**＝`_screenstream/stt/stt_*.json` 的**檔名 epoch 毫秒**（不是 mtime）——

@@ -1089,6 +1089,115 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             catch { /* 提醒讀不到就不提醒 —— 不因為提醒失敗而讓整輪失敗 */ }
         }
 
+        // ===========================================================
+        // 區塊：取材窗口計畫（Tim 2026-08-25 拍板）
+        // 職責：把「這一輪從哪讀到哪」從『cursor→水位全吃』升級成三件事的合成：
+        //       ① 可播放前緣 —— 只讀 STT/OCR 已處理完的段落（感官水位；讀不到退「現在−安全距離」，
+        //          舊行為在感官全關時**完全不夾**，會吃到還在辨識中的尾端 —— 可播放量之前被忽略了）
+        //       ② 進度檔位 —— 依「可讀落後量」選窗口長度（後台 List 一檔一份，落後越多一次吃越長；
+        //          可播放量不足本檔窗口時**在這裡等水位**，上限 `watch_water_wait_max_sec`）
+        //       ③ 重疊 —— 窗口起點往回搭 `watch_window_overlap_sec`，接力銜接不留縫
+        //          （2026-08-24 實錄：#1 收 23:52:43、#2 起 23:52:44 —— 相鄰輪無重疊，
+        //          邊界上被切半的字幕/語音段兩輪都看不到，而它不報錯）
+        // 適用範圍：step=cycle 的 primary 與 companion **都套**；step=claim 熱點觀看**不套**——
+        //          熱點吃標記者給的顯式 from..to，檔位夾上去就不是他標的那段了。
+        // 數值影響：全部旋鈕住在 `_config.json`（真相源，改檔即生效）；檔位表空＝關閉調控，
+        //          窗口退回「cursor→可播放前緣」（仍比從前多了①的保底夾）。
+        // ===========================================================
+
+        struct WatchWindowPlan
+        {
+            /// <summary>--after-mtime（cursor − 重疊）。</summary>
+            public double After;
+            /// <summary>--before-mtime（min(cursor＋檔位窗口, 可播放前緣)）。可能 ≤ After ⇒ montage 軟回「無 frame 命中」。</summary>
+            public double Before;
+            /// <summary>最後一次讀到的感官水位（回傳檔對帳用；0＝讀不到）。</summary>
+            public double Watermark;
+            /// <summary>水位來源說明（同 SensorWatermark 的 oNote）。</summary>
+            public string WmNote;
+            /// <summary>「進度檔位」讀數行（回傳檔原樣印 —— 做了什麼要看得見）。</summary>
+            public string TierLine;
+        }
+
+        /// <summary>選檔：取 `lag_min_sec ≤ 落後量` 中門檻最高者；全都比落後量大（含落後量為負）就取門檻最小那檔。
+        /// `window_sec ≤ 0` 的檔＝設定錯誤，跳過 —— 夾出零長度窗口的失效樣子跟「沒新素材」同形。</summary>
+        static MediaAdmin.UCL_WatchPacingTier PickPacingTier(List<MediaAdmin.UCL_WatchPacingTier> iTiers, double iLag)
+        {
+            MediaAdmin.UCL_WatchPacingTier aBest = null, aFloor = null;
+            foreach (var t in iTiers)
+            {
+                if (t == null || t.window_sec <= 0) continue;
+                if (aFloor == null || t.lag_min_sec < aFloor.lag_min_sec) aFloor = t;
+                if (t.lag_min_sec <= iLag && (aBest == null || t.lag_min_sec > aBest.lag_min_sec)) aBest = t;
+            }
+            return aBest ?? aFloor;
+        }
+
+        /// <summary>算出本輪取材窗口；可播放量不足本檔窗口時在此等水位（牆鐘迴圈，同 AwaitCycleSlotAsync 的守則：
+        /// 不跨 ends_at、Tim 停錄影／取消立即退，等滿上限就先吃現有的）。</summary>
+        static async UniTask<WatchWindowPlan> AwaitWindowPlanAsync(
+            double iCursor, bool iOcr, bool iStt, DateTime? iEnd, CancellationToken iToken)
+        {
+            var aCfg = LoadStreamConfig();
+            int aOverlap = Math.Max(0, aCfg?.watch_window_overlap_sec ?? 3);
+            int aGuard = Math.Max(0, aCfg?.watch_live_guard_sec ?? 20);
+            int aWaitMax = Math.Max(0, aCfg?.watch_water_wait_max_sec ?? 0);
+            var aTiers = aCfg?.watch_pacing_tiers;
+            bool aTierOn = aTiers != null && aTiers.Count > 0;
+            string aCfgSrc = aCfg != null ? "後台設定" : "⚠ 保底值（讀不到 _config.json）";
+
+            var aPlan = new WatchWindowPlan();
+            DateTime aBegin = DateTime.Now;
+            while (true)
+            {
+                double aWm = SensorWatermark(iOcr, iStt, out string aWmNote);
+                aPlan.Watermark = aWm; aPlan.WmNote = aWmNote;
+                // 可播放前緣：水位讀得到＝「STT/OCR 已辨識完」的那一刻；讀不到退「現在−安全距離」。
+                // 兩條路都保證窗口尾端不落在還在辨識中的段落。
+                double aPlayable = aWm > 0 ? aWm : ToEpoch(DateTime.UtcNow) - aGuard;
+                string aFrontierNote = aWm > 0 ? "感官水位" : $"現在−{aGuard}s（無水位）";
+                double aLag = aPlayable - iCursor;   // 可讀落後量（可播放前緣 − 游標）
+
+                if (!aTierOn)
+                {
+                    aPlan.Before = aPlayable;
+                    aPlan.TierLine = $"- 進度檔位 : **關閉**（`watch_pacing_tiers` 空）"
+                                   + $"｜可播放前緣 {FromEpochLocal(aPlayable):HH:mm:ss}（{aFrontierNote}）｜重疊 {aOverlap}s";
+                    break;
+                }
+                var aTier = PickPacingTier(aTiers, aLag);
+                if (aTier == null)
+                {
+                    aPlan.Before = aPlayable;
+                    aPlan.TierLine = "- 進度檔位 : ⚠ 檔位表無有效項（`window_sec` 全 ≤0）—— 視同關閉"
+                                   + $"｜可播放前緣 {FromEpochLocal(aPlayable):HH:mm:ss}（{aFrontierNote}）｜重疊 {aOverlap}s";
+                    break;
+                }
+                bool aEnough = aLag >= aTier.window_sec;
+                double aWaited = (DateTime.Now - aBegin).TotalSeconds;
+                // 等待的退出條件跟 AwaitCycleSlotAsync 同一組 —— 等水位不得讓收工遲到、不得無視 Tim 停錄影。
+                bool aMustStop = aWaited >= aWaitMax || iToken.IsCancellationRequested
+                              || (iEnd.HasValue && DateTime.Now >= iEnd.Value)
+                              || !IsRecordingEnabled(out _);
+                if (aEnough || aWaitMax <= 0 || aMustStop)
+                {
+                    aPlan.Before = Math.Min(iCursor + aTier.window_sec, aPlayable);
+                    string aWaitNote = aWaited < 1 ? ""
+                        : aEnough ? $"｜等水位 {aWaited:F0}s ✓ 滿足"
+                        : $"｜等水位 {aWaited:F0}s 仍不足（可讀 {Math.Max(0, aLag):F0}s < 目標 {aTier.window_sec}s，先吃現有的）";
+                    string aLabel = string.IsNullOrEmpty(aTier.label) ? $"檔位(≥{aTier.lag_min_sec}s)" : aTier.label;
+                    aPlan.TierLine = $"- 進度檔位 : **{aLabel}**（可讀落後 {Math.Max(0, aLag):F0}s，門檻 ≥{aTier.lag_min_sec}s）"
+                                   + $"｜窗口目標 {aTier.window_sec}s｜重疊 {aOverlap}s{aWaitNote}\n"
+                                   + $"　　　　　　 來源：{aCfgSrc} `watch_pacing_tiers`（{aTiers.Count} 檔）"
+                                   + $"｜前緣＝{aFrontierNote}｜尾端＝min(游標＋目標, 前緣)";
+                    break;
+                }
+                await UniTask.Delay(1000, DelayType.Realtime, cancellationToken: iToken);
+            }
+            aPlan.After = Math.Max(0, iCursor - aOverlap);
+            return aPlan;
+        }
+
         async UniTask StepCycle(IDictionary<string, string> iArgs, string iPersona, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "cycle");
@@ -1194,13 +1303,16 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             var (aOcrOn, aSttOn) = ReadSensorFlags();
-            double aWatermark = SensorWatermark(aOcrOn, aSttOn, out string aWmNote);
+            // 窗口計畫：可播放前緣＋進度檔位＋重疊；可播放量不足本檔窗口時**在這裡等水位**（讀數印在回傳檔）。
+            var aWin = await AwaitWindowPlanAsync(aCursor, aOcrOn, aSttOn, aEnd, iToken);
+            double aWatermark = aWin.Watermark;
+            string aWmNote = aWin.WmNote;
             DateTime aRunStart = DateTime.Now;
             // 酒館已讀游標：優先用 session 記的 `tavern_seq`；沒有就退回 `start_seq`（＝開播那則，本場起點）。
             // ⚠ 退回值**不可以是 -1** —— 那會讓 sidecar 從全庫最舊開始列，正是 2026-08-16 那隻的成因。
             int aTavernSince = aS != null ? aS.tavern_seq : 0;
             if (aTavernSince <= 0 && aS != null) aTavernSince = aS.start_seq;
-            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aCursor, aWatermark, aOutPath, aOcrOn, aSttOn,
+            var (aOk, aStdout, aErr) = await RunMontageAsync(aScript, aWin.After, aWin.Before, aOutPath, aOcrOn, aSttOn,
                                                             iPersona, Math.Max(0, aTavernSince), iToken);
             // ⚠ **軟條件的訊息在 stdout，不在 stderr**（2026-08-15 實測：`--before-mtime` 夾出空窗口時
             //   montage `print("ERROR: 選擇條件下無 frame 命中")` ⇒ 走 stdout、exit=1，stderr 全空）。
@@ -1219,6 +1331,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine($"- 感官水位  : {aWmNote}"
                             + (aWatermark > 0 ? $"　⇒ {FromEpochLocal(aWatermark):HH:mm:ss}"
                                                 + $"　←　落後 cursor {(aCursor - aWatermark):F0}s" : ""));
+                aR.AppendLine(aWin.TierLine);   // 檔位讀數兩條路徑都印 —— 等了水位卻沒印，等待與卡住同形
                 aR.AppendLine("- 意思    : 畫面有，但**字幕/語音還沒辨識到那裡**。看已辨識完的段落是刻意的（Tim 2026-08-15）。");
                 // ⚠ **無素材時同樣要印同場訊息** —— 這條是我 2026-08-16 自己寫了「每一段永遠存在」
                 //   卻在同一次改動裡違反的那格：AppendSidecar 原本只掛在有素材那條路徑上。
@@ -1331,7 +1444,20 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             AppendRetentionLine(aR);
             aR.AppendLine($"- 感官     : OCR {(aOcrOn ? "開" : "關")}／STT {(aSttOn ? "開" : "關")}（讀自 _config.json，**不必傳旗標**）");
             AppendSttLine(aR, aSttOn, aInfo);
-            AppendClampAudit(aR, aInfo.NextCursor, aWatermark, aWmNote);
+            if (aWatermark > 0) AppendClampAudit(aR, aInfo.NextCursor, aWatermark, aWmNote);
+            else
+            {
+                // 感官水位讀不到時 cycle 已退用「現在−安全距離」保底夾（AwaitWindowPlanAsync）——
+                // AppendClampAudit 的「未夾」訊息在這裡是假話（那是 peek 的語意），對帳改比保底前緣。
+                aR.AppendLine(aInfo.NextCursor > 0 && aWin.Before > 0
+                    ? (aWin.Before - aInfo.NextCursor >= -1.0
+                        ? $"- 窗口對帳 : 窗口尾端 {FromEpochLocal(aInfo.NextCursor):HH:mm:ss} ≤ 保底前緣 {FromEpochLocal(aWin.Before):HH:mm:ss} ✅"
+                          + $"（無感官水位，以「現在−安全距離」夾；{aWmNote}）"
+                        : $"- 窗口對帳 : ⚠ 窗口尾端 {FromEpochLocal(aInfo.NextCursor):HH:mm:ss} **>** 保底前緣 {FromEpochLocal(aWin.Before):HH:mm:ss} ❌ "
+                          + "**保底夾沒生效** —— 尾端可能落在 STT/OCR 還在跑的段落")
+                    : "- 窗口對帳 : ⚠ **無讀數** —— montage 沒回報 next-cursor，無法確認保底夾是否生效。**當成沒生效看待。**");
+            }
+            aR.AppendLine(aWin.TierLine);
             // 「剩餘」曾被當成收束訊號用（basecamp 2026-08-24：讀到「剩 6 分」就自己收手去等到期）。
             // ⇒ 就地把這個數字的用途指派掉（它是寫評論用的時間感）。⛔ 不在這裡加勸告 ——
             //    往前走的指令只放在 `## next` 那一個地方，這裡多寫一句就是多給一個可以權衡的變數。

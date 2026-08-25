@@ -114,6 +114,33 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         /// <summary>超過本值就在回傳檔提醒「呼叫端要加大 --timeout」。0＝不提醒。</summary>
         public int watch_cycle_interval_warn_sec = 100;
 
+        // ── 觀影取材窗口（StreamWatch cycle；Tim 2026-08-25 拍板）──
+        /// <summary>進度檔位表：依「可讀落後量」決定本輪窗口長度。一般接力模式（step=cycle）
+        /// **primary 與 companion 都套用**；**熱點觀看（step=claim 的顯式區段）不套用** ——
+        /// 熱點吃的是標記者給的 from..to，自動檔位夾上去就不是他標的那段了。
+        /// 空 List＝關閉檔位調控（窗口＝cursor→可播放前緣，行為同從前）。</summary>
+        /// <remarks>
+        /// 物理意義：落後越多一次吃越長（丟解析度換覆蓋），追平後窗口縮短（細看）。
+        /// 選檔規則：取 `lag_min_sec ≤ 落後量` 中門檻最高的那檔；落後量比全部門檻都小時取門檻最小那檔。
+        /// ⚠ 一檔一份設定、檔數不限（不寫死三檔）—— 預設值才是三檔（追進度／維持進度／放慢細看）。
+        /// </remarks>
+        public List<UCL_WatchPacingTier> watch_pacing_tiers = new List<UCL_WatchPacingTier>
+        {
+            new UCL_WatchPacingTier { label = "追進度",   lag_min_sec = 300, window_sec = 150 },
+            new UCL_WatchPacingTier { label = "維持進度", lag_min_sec = 120, window_sec = 60 },
+            new UCL_WatchPacingTier { label = "放慢細看", lag_min_sec = 0,   window_sec = 30 },
+        };
+        /// <summary>相鄰兩輪窗口的最小重疊秒數（接力銜接的保險 —— 邊界上被切半的字幕/語音段兩輪都看得到）。
+        /// primary 與 companion 都套用。0＝不重疊（回到會漏縫的舊行為）。</summary>
+        public int watch_window_overlap_sec = 3;
+        /// <summary>感官水位讀不到時（OCR/STT 全關或無 cache），窗口尾端與「現在」至少保持的安全距離（秒）。
+        /// 保證讀到的區間 STT/OCR 有時間跑完 —— 水位讀得到時以水位為準，本值不參與。</summary>
+        public int watch_live_guard_sec = 20;
+        /// <summary>可播放量不足本檔窗口長度時，cycle 最多等水位追上幾秒（0＝不等，直接回「無新素材」）。
+        /// ⚠ 與呼叫端 timeout 耦合：本值＋`watch_cycle_interval_sec`＋montage 合成（~53s）若逼近
+        /// `run_cmd.py --timeout`（預設 120s）就會脫鉤 —— 加大本值時 timeout 要一起加。</summary>
+        public int watch_water_wait_max_sec = 30;
+
         public int _schema_version = 1;
 
         // ===========================================================
@@ -193,6 +220,10 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             //   後果不會叫（python `cfg.get(...,[])` 照樣拿到 []），但檔案少一個欄位而沒人會發現。
             if (ocr_extra_regions == null || ocr_extra_regions.Count == 0)
                 aData["ocr_extra_regions"] = new JsonData().ToArray();
+            // ⚠ 同上一族，但這裡的後果**更兇**：空 List 的鍵消失 ⇒ 下次載入落回「預設三檔」——
+            //   使用者刻意清空（＝關閉檔位調控）會被靜默改回開啟。空陣列必須被寫出來。
+            if (watch_pacing_tiers == null || watch_pacing_tiers.Count == 0)
+                aData["watch_pacing_tiers"] = new JsonData().ToArray();
 
             // 未知鍵補回（已宣告欄位不被覆蓋 —— model 才是那些鍵的擁有者）
             if (m_Unknown != null)
@@ -299,6 +330,22 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             stt_enabled = iOn && stt_setting;
             return aChanged;
         }
+    }
+
+    /// <summary>觀影進度檔位（`watch_pacing_tiers` 的一筆）。欄位名即 JSON 鍵名。
+    /// 一檔一份設定、檔數不限；選檔規則見 <see cref="UCL_ScreenStreamConfig.watch_pacing_tiers"/>。</summary>
+    public class UCL_WatchPacingTier : UnityJsonSerializable, UCL.Core.UCLI_ShortName
+    {
+        /// <summary>檔名（回傳檔顯示用；空＝以門檻代稱）。</summary>
+        public string label = "";
+        /// <summary>可讀落後量（可播放前緣 − 游標）≥ 本值（秒）即落入本檔。</summary>
+        public int lag_min_sec = 0;
+        /// <summary>本輪窗口目標長度（秒）。≤0 ＝ 無效檔（會被跳過，不會夾出零長度窗口）。</summary>
+        public int window_sec = 60;
+
+        /// <summary>List 元素的顯示名（DrawObjectData / DrawList 用）—— 沒有它每個元素都顯示型別名。</summary>
+        public string GetShortName()
+            => $"{(string.IsNullOrEmpty(label) ? "(未命名檔位)" : label)}　落後≥{lag_min_sec}s → 窗口 {window_sec}s";
     }
 
     /// <summary>OCR 額外辨識區域（`ocr_extra_regions` 的一筆）。欄位名即 JSON 鍵名。</summary>

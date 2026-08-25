@@ -179,8 +179,44 @@ def crosscheck_error_log(data: dict) -> dict:
     since = ts.split("T")[1][:8] if "T" in ts and len(ts.split("T")[1]) >= 8 else None
     res["since"] = since
     res["entries"] = parse_error_log_compile_errors(log, since)
-    res["disagree"] = bool(res["entries"]) and int(data.get("total_errors", 0) or 0) == 0
+    res["tracker_errors"] = int(data.get("total_errors", 0) or 0)
+    res["disagree"] = bool(res["entries"]) and res["tracker_errors"] == 0
     return res
+
+
+# ===========================================================
+# 區塊職責：把兩個來源的讀數解讀成**四種各自不同形**的判定（TASK-0035）。
+#
+# 🩸 血證（2026-08-25，summit 修 TASK-0019 時被它騙）: 舊版渲染只有兩個分支 ——
+#   `disagree` → 不一致；`else` → 「一致（<since> 起無編譯錯誤）」。
+#   而 `disagree` 刻意只認「tracker 說 0 而 ErrorLog 有錯」（只讓綠燈變紅），
+#   ⇒ 那個 `else` 底下其實躺著**三種**不同狀態，而它們共用同一句話。
+#   她拿到的輸出是：`- **Errors: 1**` 與 `- 🔍 ErrorLog 對帳: 一致（…起無編譯錯誤）`
+#   **同一份輸出，上面說有 1 個錯，下面說無編譯錯誤。**
+#
+# ⚠ 而它能活這麼久的原因要記住：**退出碼沒有說謊**（tracker 有錯就回 2）——
+#   任何看 exit code 的人都不會被騙，只有**讀那一行字的人**會。
+#   📌 儀器的兩個出口說不同的話時，先壞的一定是人在讀的那個。
+#
+# 數值影響: 純顯示分類, 不改變任何退出碼。回 (符號, 標題, 補充說明)。
+# ===========================================================
+def crosscheck_verdict(xcheck: dict) -> tuple:
+    n = int(xcheck.get("tracker_errors", 0) or 0)      # tracker 這一趟回報的錯誤數
+    m = len(xcheck.get("entries", []))                 # ErrorLog 在同期間看到的筆數
+    since = xcheck.get("since") or "全檔"
+    if n == 0 and m == 0:
+        return ("✅", f"一致：**兩邊都沒有錯**（{since} 起）",
+                "")
+    if n == 0 and m > 0:
+        return ("🚨", f"**不一致（ErrorLog {m} 筆，而 tracker 說 0）** ← 見下方",
+                "以 ErrorLog 為準：這不是 clean compile。")
+    if n > 0 and m > 0:
+        return ("⚠", f"一致：**兩邊都有錯**（tracker {n} 個／ErrorLog {m} 筆，{since} 起）",
+                "「一致」在這裡不是好消息 —— 它只是說兩個來源看到同一件壞事。")
+    # n > 0 and m == 0
+    return ("⚠", f"**反向不一致**：tracker 有 {n} 個錯，而 ErrorLog 在 {since} 起沒看到",
+            "兩邊射程不同（tracker 看這一趟回調，ErrorLog 看落檔）—— "
+            "**不要把它讀成「其實沒錯」**，tracker 那 %d 個仍然算數。" % n)
 
 
 def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: int,
@@ -225,11 +261,12 @@ def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: 
     if xcheck is not None:
         if not xcheck.get("available"):
             lines.append("- 🔍 ErrorLog 對帳: **無第二來源**（找不到 `Assets/DebugLogs~/Errors_latest.log`）")
-        elif xcheck.get("disagree"):
-            lines.append(f"- 🔍 ErrorLog 對帳: **不一致（{len(xcheck['entries'])} 筆）** ← 見下方")
         else:
-            lines.append(f"- 🔍 ErrorLog 對帳: 一致"
-                         f"（{xcheck.get('since') or '全檔'} 起無編譯錯誤）")
+            # 四種狀態各自不同形 —— 舊版把其中三種印成同一句「一致（…起無編譯錯誤）」（TASK-0035）
+            aMark, aTitle, aNote = crosscheck_verdict(xcheck)
+            lines.append(f"- 🔍 ErrorLog 對帳: {aMark} {aTitle}")
+            if aNote:
+                lines.append(f"    · {aNote}")
     if errors_only:
         lines.append(f"- (filter: errors only)")
     if max_count > 0 and len(msgs) >= max_count:

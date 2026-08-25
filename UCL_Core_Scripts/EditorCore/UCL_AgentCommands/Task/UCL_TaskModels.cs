@@ -145,6 +145,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
         public string Id => "TASK-" + index.ToString("0000", System.Globalization.CultureInfo.InvariantCulture);
 
+        public string ParticipantsName => participants.ConcatToString(a => a.persona);
         /// <summary>已關（不進 open 讀數）。</summary>
         public bool IsClosed()
             => string.Equals(status, "done", StringComparison.OrdinalIgnoreCase)

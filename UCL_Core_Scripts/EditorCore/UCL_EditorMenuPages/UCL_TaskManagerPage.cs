@@ -111,6 +111,29 @@ namespace UCL.Core.EditorLib.Page
         {
             base.TopBarButtons();
             if (GUILayout.Button("重新整理", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) Refresh();
+
+            // 人員清單：從**現有單子上實際出現過的 persona** 產生，不寫死名單
+            //（寫死的名單會在有人加入時安靜地漏掉他）
+            var aPersonas = m_Rows.SelectMany(e => e.participants.Select(p => p.persona))
+                .Where(s => !string.IsNullOrEmpty(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
+
+            GUILayout.Label("狀態", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            DrawFilterPopup(ref m_StatusFilter, STATUS_VALUES, STATUS_LABELS, "StatusFilter",
+                GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+
+            GUILayout.Space(12);
+            GUILayout.Label("參與者", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+            // 選項永遠 ≥ 1（第一項是「全部」）—— PopupSearch 空清單會 LogError
+            var aPersonaValues = new List<string> { "" };
+            aPersonaValues.AddRange(aPersonas);
+            var aPersonaLabels = new List<string> { "全部" };
+            aPersonaLabels.AddRange(aPersonas);
+            DrawFilterPopup(ref m_PersonaFilter, aPersonaValues, aPersonaLabels, "PersonaFilter",
+                GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+
+
             if (GUILayout.Button("開啟資料夾", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 UCL_TaskIO.EnsureDir();
@@ -130,6 +153,10 @@ namespace UCL.Core.EditorLib.Page
             // 需要人主動去篩才看得到的警告等於沒有警告 —— 所以它印在最上面，永遠。
             using (new GUILayout.HorizontalScope())
             {
+                m_ShowClosed = UCL_GUILayout.CheckBox(m_ShowClosed);
+                GUILayout.Label("含(done / cancelled)", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+
                 GUILayout.Label($"未關 {m_Open} 張", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
                 if (m_Blocked > 0)
                 {
@@ -151,35 +178,7 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.FlexibleSpace();
             }
 
-            // 人員清單：從**現有單子上實際出現過的 persona** 產生，不寫死名單
-            //（寫死的名單會在有人加入時安靜地漏掉他）
-            var aPersonas = m_Rows.SelectMany(e => e.participants.Select(p => p.persona))
-                .Where(s => !string.IsNullOrEmpty(s))
-                .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
 
-            using (new GUILayout.HorizontalScope())
-            {
-
-
-                GUILayout.Label("狀態", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                DrawFilterPopup(ref m_StatusFilter, STATUS_VALUES, STATUS_LABELS, "StatusFilter",
-                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
-
-                GUILayout.Space(12);
-                GUILayout.Label("參與者", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-
-                // 選項永遠 ≥ 1（第一項是「全部」）—— PopupSearch 空清單會 LogError
-                var aPersonaValues = new List<string> { "" };
-                aPersonaValues.AddRange(aPersonas);
-                var aPersonaLabels = new List<string> { "全部" };
-                aPersonaLabels.AddRange(aPersonas);
-                DrawFilterPopup(ref m_PersonaFilter, aPersonaValues, aPersonaLabels, "PersonaFilter",
-                    GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
-
-                m_ShowClosed = UCL_GUILayout.CheckBox(m_ShowClosed);
-                GUILayout.Label("含已關（done / cancelled）", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                GUILayout.FlexibleSpace();
-            }
 
             // ⚠ 篩到已關的狀態卻沒開「含已關」⇒ 清單必定是空的，而**兩個設定各自看起來都正常**。
             //   ⇒ 這裡直接放行並說明，不讓人對著一個空清單找原因。
@@ -269,8 +268,9 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.Label($"[{e.type}/{e.priority}]", SmallStyle,
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
                     GUILayout.Label(e.status, SmallStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
-                    GUILayout.Label(aDays < 0 ? "⚠ 壞時戳" : (aStale ? $"⚠ {aDays} 天" : $"{aDays} 天"),
-                        SmallStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    //GUILayout.Label(aDays < 0 ? "⚠ 壞時戳" : (aStale ? $"⚠ {aDays} 天" : $"{aDays} 天"),
+                    //SmallStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
+                    GUILayout.Label(e.ParticipantsName, SmallStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
                     if (aBlockers.Count > 0)
                         GUILayout.Label($"🛑{aBlockers.Count}", SmallStyle,
                             GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));

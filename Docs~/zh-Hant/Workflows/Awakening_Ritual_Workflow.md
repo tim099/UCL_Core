@@ -1,6 +1,6 @@
 ---
 title: Awakening 儀式工作流 (Awakening Ritual Workflow)
-last_updated: 2026-08-21
+last_updated: 2026-08-25
 status: active
 theme: persona_lifecycle
 summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安四步（走 Cmd_GoodMorning，需 Editor）：step=wake（守衛+狀態寫入）→ step=brief → 讀 wake brief → step=intro（單則上線自介+catchup 指路）；晚安（走 Cmd_GoodNight）：step=check（收尾清單+酒館最後一眼）→ [人工收尾] → step=letter（親筆收尾信）→ step=sleep（單則下線廣播）；cleanup 走 step=logout 單獨跑。
@@ -297,7 +297,8 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 常數與取值理由在 `awakening.py` 的 `GOODNIGHT_BROADCAST_TIMEOUT_SEC` / `BROADCAST_TIMEOUT_SEC` 註解。
 
 ⚠ 兩個「等待」別混：
-- **廣播 timeout** = 等 Cmd 跑完的上限。逾時 → 少一則廣播（fail-soft，不擋 ritual），補救走 `awakening.py intro`。
+- **廣播 timeout** = 等 Cmd 跑完的上限。逾時 → 少一則廣播（fail-soft，不擋 ritual），補救＝**再跑一次該步 Cmd**（自介＝`GoodMorning --arg step=intro`）。
+  ⚠ 不是 `awakening.py intro` —— 那支已是指路 stub（exit 2）。
 - **`--wait-reply`** = 等別人回話。**ritual 廣播一律 0，從不等回覆**；
   手動 `run_cmd.py Tavern op=post` 沒帶 `--wait-reply` 才會吃預設 **540s**（那是「post 有時會卡住」的真正來源）。
 

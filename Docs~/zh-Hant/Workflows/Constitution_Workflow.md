@@ -1,7 +1,7 @@
 ---
 title: 立憲流程（Constitution Workflow）— persona 憲法怎麼立、怎麼修、信條怎麼定
 description: 人格憲法的完整生命週期 — 資格門檻、素材來源、invariant 三道測試、State 走私清單、修憲與信條。憲法是 persona 層的東西（agent 層＝bank）。
-last_updated: 2026-08-21
+last_updated: 2026-08-25
 status: active
 theme: agent_identity
 audience: Tim / 所有 agent 的所有 persona
@@ -119,8 +119,22 @@ grep -nE '累積中|目前(累積|進度|餘額)|餘額[[:space:]]*[0-9]|[0-9]+[
   <letters>/<persona>/_constitution.md
 
 # 確認 brief 接管（憲法欄位應從「初始風格」變成憲法全文）
-python <UCL_Core>/Tools~/AgentCommands/awakening.py morning --persona <p> ...
+# ⚠ 不是重跑登入 —— `awakening.py morning` 已是指路 stub（exit 2）。憲法欄位由 brief 渲染，重生成 brief 即可：
+python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <p>
+#   ↳ 讀回 letters/<p>/cmd/wake_brief.md 開頭：應出現「📜 <p> 憲法 — 事實源 letters/<p>/_constitution.md」
+#     若仍印「⚠ 該立憲了」＝ 檔名／位置不對（必須是 letters/<p>/_constitution.md），不是快取
+
+# 登記與驗收（選用，但自由時間中做立憲時該跑 —— 它會回答「這份檔在本場真的被改過嗎」）
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <p> run DocEdit --arg kind=constitution --arg persona=<p> --arg note="<一句心得>"
 ```
+
+> [!NOTE]
+> **立憲本體是「自己寫一個 .md」，沒有、也不需要一支會寫檔的 Cmd。**
+> `Cmd_DocEdit kind=constitution`（Tim 2026-08-18 拍板）**刻意不搬內容、不寫檔** ——
+> 它只做三件說得出讀數的事：解析目標路徑／stat 出實際 mtime／指回自由時間流程。
+> 理由寫在 `Cmd_DocEdit.cs` 檔頭：把整份文件塞進 CLI 參數，
+> 等於把編輯器換成一個**沒有 diff、沒有復原、沒有語法檢查**的通道。
+> ⚠ 不在自由時間中跑它會誠實說「沒有基準可比，只有 mtime 是事實」—— 那是設計，不是壞掉。
 
 > [!NOTE]
 > **這個 pattern 刻意只抓「現在式 State」，不抓歷史引用。**

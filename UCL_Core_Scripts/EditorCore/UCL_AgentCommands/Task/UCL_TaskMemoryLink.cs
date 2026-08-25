@@ -191,6 +191,43 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                         + " 這是「連結壞了」不是「沒有記憶」（要嘛主題被手動刪、要嘛名字打錯）";
 
             string aStatus = TopicStatus(aTopic);
+
+            // ===========================================================
+            // 🩸 血證 2026-08-25（basecamp 複驗第六格）：**呈現的大小聲分配曾經是反的。**
+            //   `archive` 保留目錄只改 status（那正是它與 `delete` 的差別 —— 內容還要看得到），
+            //   於是產生「主題在磁碟上、但已退場」這個狀態。而舊版對它印的是
+            //   `🧠 …（status=archived）` —— 跟 active 那行**只差括號裡一個字**。
+            //   反觀大聲的 📦 分支只在 `!TopicExists`（目錄消失＝ `delete` 之後）才觸發。
+            //   ⇒ **最常發生的那條路拿到最小聲的呈現，最少發生的拿到最大聲的。**
+            //   而讀的人看到的是一個「看起來還活著的主題」，然後照它接手。
+            // 📌 一般形：**狀態的差別要反映在「形狀」上，不能只反映在「欄位值」上** ——
+            //   欄位值要人去比對才看得出來，而接手的人不會有另一行可以比。
+            // ===========================================================
+            if (aStatus.Length > 0 && !aStatus.Equals("active", StringComparison.OrdinalIgnoreCase))
+            {
+                string aCard = Path.Combine(TopicDir(aTopic), "_topic.md");
+                string aMemSha = ReadFrontmatterField(aCard, "archived_commit");
+                string aWhen = ReadFrontmatterField(aCard, "archived_at");
+                TopicCounts(aTopic, out int aN, out int aD, out int aP, out _);
+
+                var ab = new StringBuilder();
+                ab.Append($"📦 **已退場（status=`{aStatus}`）**：`{aTopic}`");
+                ab.Append(" —— 目錄還在、內容讀得到，但**沒有人在維護它**");
+                ab.Append($"\n    · {aN} 筆（decision {aD}／pitfall {aP}）");
+                if (aWhen.Length > 0) ab.Append($"　退場於 {aWhen}");
+                ab.Append(aMemSha.Length == 0
+                    ? "\n    · ⚠ 記憶側沒寫 `archived_commit` —— 拿不到「退場當下那一版」的定位點"
+                    : $"\n    · 記憶側 `archived_commit`：`{aMemSha}`");
+                // 契約①：Task 側那格由 Cmd_Task 寫，本檔只讀 —— 兩邊不一致只印不修。
+                if (aSha.Length == 0)
+                    ab.Append("\n    · ⚠ 本單的 `memory_archived_commit` 是空的"
+                        + "（記憶側已退場而單子還不知道）⇒ `op=update --arg memory_archived_commit=<sha>`");
+                else if (aMemSha.Length > 0 && !string.Equals(aSha, aMemSha, StringComparison.OrdinalIgnoreCase))
+                    ab.Append($"\n    · ⚠ 兩邊的 sha 不一致（單子 `{aSha}` vs 記憶側 `{aMemSha}`）—— 人要看一眼");
+                ab.Append("\n    · ⛔ 接手前先確認這份還適不適用：**它退場了，不是「還在做」**");
+                return ab.ToString();
+            }
+
             LatestState(aTopic, out string aName, out string aHead, out int aDays, out int aRetired);
             var sb = new StringBuilder();
             sb.Append($"🧠 `{aTopic}`");

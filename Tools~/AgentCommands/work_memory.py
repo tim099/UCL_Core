@@ -26,6 +26,9 @@ CLI:
     python work_memory.py supersede --topic <slug> --id <fragment-id> [--by <new-fragment-id>]
     python work_memory.py link --from <topic>/<frag-id> --to <topic>/<frag-id>   # 雙向
     python work_memory.py index [--topic <slug>]          # 重建機械索引（add/link 後自動跑）
+    python work_memory.py tasks --topic <slug> [--set 8,15 | --add 17 | --remove 3]  # 反向索引
+    python work_memory.py archive --topic <slug> [--commit <sha>] [--undo]           # 退場（含 git 守衛）
+    python work_memory.py delete --topic <slug> [--by <persona>] [--confirm]         # 刪除＋留墓碑
 
 # Source: ucl_core:Tools~/AgentCommands/work_memory.py
 """
@@ -34,6 +37,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -46,6 +50,10 @@ except Exception:
 
 FRAGMENT_TYPES = ("decision", "knowhow", "pitfall", "state", "pointer")
 FRAGMENT_STATUS = ("active", "superseded", "closed")
+# 區塊職責: 主題卡的生命週期狀態（TASK-0017）。
+# 物理意義: 記憶是工作期間的鷹架不是永久資產 — 相關 Task 全關之後歸檔或刪除, 紀錄留 git。
+# 數值影響: 只影響 topics 的分組與 read 的橫幅; 不影響任何 fragment 的內容。
+TOPIC_STATUS = ("active", "archived")
 
 
 # ===========================================================
@@ -73,6 +81,17 @@ WM_ROOT = REPO_ROOT / "AgentCommands" / "WorkMemory"
 # 數值影響: 每次讀取新增一份 UTF-8 Markdown；檔名含微秒 UTC 時間戳，連續呼叫也不會互相覆寫。
 READ_BRIEF_ROOT = REPO_ROOT / "AgentCommands" / "WorkMemoryReadBriefs"
 UCL_CORE_ROOT = Path(__file__).resolve().parents[2]
+# 區塊職責: Task 單檔目錄 — 反向索引（task_indices → 那幾張單現在在哪一格）的讀取來源。
+# 物理意義: 契約①（decision_contract-task-memory）: 本檔**只讀 Task 側, 絕不寫**。
+#          Task 的 memory_topic / memory_archived_commit 歸 Cmd_Task（C#）寫;
+#          記憶側的 task_indices / status 歸本檔寫。互寫＝兩個獨立寫入者的分散式衝突。
+# 數值影響: 純讀; 讀不到單檔不是錯誤, 是**一種要被印出來的答案**（見 _describe_task）。
+TASKS_ROOT = REPO_ROOT / "AgentCommands" / "Tasks" / "tasks"
+# 區塊職責: 主題被刪除時的墓碑總表（append-only）。
+# 物理意義: **刪除可以, 失聯不行** — 刪掉的主題要留一行指向那顆 commit, 否則
+#          「這個主題不存在」與「它曾經存在, 內容在 git 裡」在輸出上同形。
+# 數值影響: 檔名以 `_` 開頭 ⇒ topics()/index() 的 `d.is_dir()` 掃描天生略過它。
+TOMBSTONE_PATH = WM_ROOT / "_tombstones.md"
 # 區塊職責: 限制每份來源在共讀 briefing 中的展開行數，保留辨識檔案職責所需的開頭上下文。
 # 物理意義: 完整來源仍以 related_docs 指向的原始檔為單一真相；briefing 僅是開工導覽，不取代原檔。
 # 數值影響: 每個來源最多貢獻 100 行，避免單一大型 C# 或 workflow 壓縮其他記憶與文件的可讀空間。
@@ -156,22 +175,263 @@ def save_fragment_meta(frag: dict) -> None:
 
 
 # ===========================================================
+# 主題卡讀寫 — 歸檔／task_indices 都只動 frontmatter, 正文原樣保留
+# ===========================================================
+def load_topic_card(topic: str) -> dict | None:
+    card_path = topic_dir(topic) / "_topic.md"
+    return load_fragment(card_path) if card_path.exists() else None
+
+
+def save_topic_card(card: dict) -> None:
+    save_fragment_meta(card)
+
+
+def _int_list(vals) -> list[int]:
+    """把 frontmatter 讀回來的 task_indices 正規化成 int list（壞值略過但**出聲**）。"""
+    out: list[int] = []
+    for v in (vals or []):
+        s = str(v).strip().lstrip("#")
+        if not s:          # 空字串＝「沒有值」, 不是「壞值」—— 兩者不可以走同一條路
+            continue
+        s = s[5:] if s.upper().startswith("TASK-") else s
+        try:
+            out.append(int(s))
+        except ValueError:
+            print(f"⚠ task_indices 裡有一個不是數字的值, 已略過: {v!r}")
+    return sorted(dict.fromkeys(out))
+
+
+# ===========================================================
+# git 前置守衛 — 歸檔／刪除之前先驗「已入版控」
+# ===========================================================
+# 區塊職責: 回答「這個目錄現在在 git 裡乾淨嗎」, 並在不乾淨時把**實際的 git status** 印出來。
+# 物理意義: 🩸 2026-08-24 血證: 寫完四筆記憶後 `git status` 顯示 untracked —
+#          也就是在 `8c77758` 之前,「刪掉也沒關係, git 有」是**假的**。
+#          📌「反正 git 有」不是狀態, 是一個需要被驗的前提。
+# 數值影響: 純讀。回 (clean, detail)。git 不可用時回 clean=False —— **不假設乾淨**
+#          （讀取失敗與真的乾淨在輸出上必須可分, 否則守衛會在最需要它的時候安靜地放行）。
+# ===========================================================
+def _git(args: list[str], cwd: Path) -> tuple[int, str, str]:
+    try:
+        r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=30)
+        return r.returncode, (r.stdout or "").strip(), (r.stderr or "").strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        return -1, "", str(exc)
+
+
+def git_owning_worktree(path: Path) -> Path | None:
+    """回傳**真正擁有** path 的 git 工作區根目錄（可能是巢狀 submodule）。
+
+    🩸 2026-08-25 血證（本函式的存在理由）: 第一版直接對 REPO_ROOT 問
+      `git status --porcelain -- <path>`, 而 `AgentCommands/WorkMemory` 是**巢狀 submodule** ——
+      父 repo 只追蹤那顆 gitlink, 對子路徑一無所知 ⇒ 回傳**空字串、exit 0**。
+      於是守衛把「我問錯 repo」讀成「目錄是乾淨的」, 在我改完 `_topic.md` 的當下**放行了歸檔**。
+      📌 這正是這支守衛要防的那隻病, 而它第一次上場就自己犯了一次:
+        **讀取失敗與真的 0 在輸出上必須可分。**
+    """
+    code, out, _ = _git(["rev-parse", "--show-toplevel"], path if path.is_dir() else path.parent)
+    if code != 0 or not out:
+        return None
+    return Path(out)
+
+
+def git_dir_status(path: Path) -> tuple[bool, str]:
+    top = git_owning_worktree(path)
+    if top is None:
+        return False, ("⚠ 問不出這個路徑屬於哪個 git 工作區 —— 這不是「乾淨」, 是**沒有讀數**"
+                       "（git 不可用／不在任何 repo 內）")
+    try:
+        rel = path.resolve().relative_to(top.resolve()).as_posix()
+    except ValueError:
+        rel = "."
+    # ===========================================================
+    # ① **先問「真的在版控裡嗎」（ls-files），再問「有沒有待處理的變更」（status）。**
+    #
+    # 🩸 2026-08-25 血證（summit QA，TASK-0017 第二條）: 原本只問 status，判準是 `out == ""`。
+    #   而 `git status --porcelain -- <path>` 的**空字串有三種來源**：
+    #     ① 真的乾淨　② **路徑被 ignore**　③ 路徑不存在
+    #   ⇒ 守衛只認得第一種。她的實跑：同一個 untracked 主題，只加一行 `.git/info/exclude`，
+    #     前一分鐘還 `🛑 擋下 exit=3`，加完就 `✅ 乾淨` → 歸檔放行，
+    #     而墓碑寫進一顆**那個主題從來不存在的 sha**。
+    #
+    # 📌 她入典的一般形（我照抄，因為它比我原本的判準準）:
+    #   **守衛量的是「沒有待處理的變更」，而標準要的是「真的在版控裡」——
+    #     兩個量，只在「檔案有被追蹤」時才相等。**
+    #   ⇒ 所以修法不是多加一個 if，是**把量換掉**：以「磁碟上每一個檔都在 ls-files 裡」為主判準。
+    #
+    # ⚠ 而 ignore 與 untracked 在輸出上**刻意分開講**（`check-ignore` 問一次）——
+    #   兩者的處置不同（一個要改 ignore 規則、一個要 add），印成同一句就又是一次同形。
+    # ===========================================================
+    code, tracked_out, err = _git(["ls-files", "--", rel or "."], top)
+    if code != 0:
+        return False, f"⚠ `git ls-files` 回非零（{code}）：{err} —— 沒有讀數, 不放行"
+    tracked = {ln.strip() for ln in tracked_out.splitlines() if ln.strip()}
+    disk = sorted(p for p in path.rglob("*") if p.is_file()) if path.is_dir() else [path]
+    prefix = (rel.rstrip("/") + "/") if rel not in ("", ".") else ""
+    missing = []
+    for p in disk:
+        try:
+            r = p.resolve().relative_to(top.resolve()).as_posix()
+        except ValueError:
+            r = p.name
+        if r not in tracked:
+            code_ci, ci_out, _ = _git(["check-ignore", "-v", "--", r], top)
+            # `check-ignore -v` 的格式是 `<來源>:<行號>:<pattern>\t<路徑>`。
+            # ⚠ Windows 的來源是 `D:/…` —— 用 `split(":")` 取第一段會得到「D」（實測踩過）。
+            #   ⇒ 取 tab 前那整段, 那才是「哪一條規則、寫在哪」這個人要的答案。
+            why = ci_out.split("\t")[0].strip() if (code_ci == 0 and ci_out) else ""
+            missing.append(f"{r}　" + (f"← **被 ignore**（{why}）" if why else "← untracked"))
+    if not tracked:
+        return False, (f"[工作區 {top}]\n"
+                       f"**`{prefix or '.'}` 底下沒有任何檔案在版控裡**（`git ls-files` 回 0 筆）\n"
+                       + "\n".join(missing))
+    if missing:
+        return False, (f"[工作區 {top}]\n"
+                       f"磁碟上有 {len(missing)} 個檔**不在版控裡**（ignore 與 untracked 分開標）：\n"
+                       + "\n".join(missing))
+
+    # ② 追蹤到了, 再問有沒有未提交的變更
+    code, out, err = _git(["status", "--porcelain", "--untracked-files=all", "--", rel or "."], top)
+    if code != 0:
+        return False, f"⚠ git 回非零（{code}）：{err} —— 沒有讀數, 不放行"
+    return (out == ""), (f"[工作區 {top}]\n" + out if out else "")
+
+
+def git_head_sha(path: Path | None = None) -> str:
+    """**擁有這份內容的那個工作區**的 HEAD —— 不是父 repo 的。
+
+    🩸 2026-08-25 血證: 第一版取的是 `REPO_ROOT` 的 HEAD。而記憶住在巢狀 submodule
+      `AgentCommands/WorkMemory` 裡, 父 repo 的 HEAD 只記著一顆 **gitlink** ——
+      而本專案的父層 pointer **長期未 bump**（見林四代未解線）⇒ 那顆 sha 指到的
+      WorkMemory 版本裡, 這些 fragment **根本還不在**。
+      📌 它會寫進 `archived_commit`、被印在墓碑上、被接手的人拿去 `git show` ——
+        然後找不到東西, 而 sha 本身長得完全正常。**這種錯不會叫。**
+    """
+    top = git_owning_worktree(path) if path is not None else REPO_ROOT
+    if top is None:
+        return ""
+    code, out, _ = _git(["rev-parse", "HEAD"], top)
+    return out if code == 0 else ""
+
+
+# ===========================================================
+# 反向索引 — task_indices → 那幾張單現在在哪一格
+# ===========================================================
+# 區塊職責: 把一個單號解讀成**一行現況**（狀態／參與者）。
+# 物理意義: TASK-0015 驗收標準第三條（2026-08-25 由 PM 拆到本單）:
+#          「讓接手的人不必人腦記單號, 也不必再跑一次 op=list 去查那幾張單在哪一格」。
+# 數值影響: 純讀。⛔ **三種答案不可以同形**（契約③的鏡像）:
+#            ① 單在且未關 ② 單在但已關 ③ **號碼在而單檔讀不到**
+#          第三種若印成「沒有這張單」, 就是「找不到 vs 什麼都沒有」那隻病。
+# ===========================================================
+CLOSED_TASK_STATUS = ("done", "cancelled")
+
+
+def _describe_task(index: int) -> str:
+    path = TASKS_ROOT / f"{index:04d}.md"
+    if not path.is_file():
+        return (f"TASK-{index:04d}　⚠ **號碼在, 但單檔讀不到**（{path.name}）"
+                f" —— 這是「連結壞了」不是「沒有這張單」")
+    try:
+        meta, _ = parse_frontmatter(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return f"TASK-{index:04d}　⚠ **讀取失敗**：{exc} —— 沒有讀數, 不是沒有內容"
+    status = str(meta.get("status", "")).strip() or "?"
+    title = str(meta.get("title", "")).strip()
+    # 參與者是巢狀 list, 輕量 frontmatter 解析器讀不到 ⇒ 直接掃原文, 掃不到就說掃不到
+    who = _participants_of(path)
+    mark = "✅" if status in CLOSED_TASK_STATUS else "🔸"
+    return f"{mark} TASK-{index:04d}　`{status}`　{title}" + (f"　[{who}]" if who else "")
+
+
+def _participants_of(path: Path) -> str:
+    """從單檔的 participants 區塊抓 persona(role) —— 巢狀 YAML, 輕量解析器讀不到。"""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    out, persona, in_block = [], "", False
+    for line in lines:
+        if line.startswith("participants:"):
+            in_block = True
+            continue
+        if in_block:
+            if line[:1] not in (" ", "-") or line.startswith("---"):
+                break
+            m = re.match(r"\s*-\s*persona:\s*(\S+)", line)
+            if m:
+                persona = m.group(1)
+                continue
+            m = re.match(r"\s*role:\s*(\S+)", line)
+            if m and persona:
+                out.append(f"{persona}({m.group(1)})")
+                persona = ""
+    return "、".join(out)
+
+
+def describe_related_tasks(card: dict) -> list[str]:
+    """主題卡 → 關聯單現況區塊（給 read 用）。**沒有關聯單也要印一行**, 不可靜默。"""
+    idx = _int_list(card.get("task_indices"))
+    if not idx:
+        return ["🔗 關聯 Task：**尚未關聯任何單**"
+                "（`work_memory.py tasks --topic <t> --add <n>` 建反向索引;"
+                " 這不等於「沒有單」, 只等於**沒有人建過這個連結**）"]
+    rows = [f"🔗 關聯 Task（{len(idx)} 張）："]
+    rows.extend("    · " + _describe_task(i) for i in idx)
+    open_n = sum(1 for i in idx
+                 if (TASKS_ROOT / f"{i:04d}.md").is_file()
+                 and str(parse_frontmatter((TASKS_ROOT / f"{i:04d}.md").read_text(encoding="utf-8"))[0]
+                         .get("status", "")).strip() not in CLOSED_TASK_STATUS)
+    rows.append(f"    ⇒ 未關 **{open_n}** / 共 {len(idx)} 張"
+                + ("　✅ 全部關了 ⇒ 這個主題可以考慮歸檔（`archive`）"
+                   if open_n == 0 else "　⇒ 還不到歸檔的時候"))
+    return rows
+
+
+# ===========================================================
 # op: topics / init / add / read / link / supersede / index
+#     / tasks / archive / delete（TASK-0017）
 # ===========================================================
 def op_topics(_args) -> int:
     if not WM_ROOT.is_dir():
         print("（工作記憶區為空 — 用 init 建第一個主題）")
         return 0
-    print("🧠 工作記憶主題:")
+    # 區塊職責: 依 status 分組列出（TASK-0017 驗收標準⑤）。
+    # 物理意義: 原本 active 與 archived 只靠排序分先後 —— 而**排序不是分界**:
+    #          讀的人看到一長串, 分不出哪些是還在做的、哪些是已經退場的。
+    # 數值影響: 純顯示。空的組別**也印一行**（「0 個」與「這組不存在」不可以同形）。
+    groups: dict[str, list[str]] = {s: [] for s in TOPIC_STATUS}
+    unknown: list[str] = []
     for d in sorted(WM_ROOT.iterdir()):
         if not d.is_dir():
             continue
         card = load_fragment(d / "_topic.md") if (d / "_topic.md").exists() else None
         n = len([f for f in d.glob("*.md") if not f.name.startswith("_")])
         title = card.get("title", "") if card else ""
-        status = card.get("status", "?") if card else "?"
+        status = str(card.get("status", "?")).strip() if card else "?"
         rel = ", ".join(card.get("related_topics", [])) if card else ""
-        print(f"  - {d.name}  「{title}」 [{status}] fragments={n}" + (f"  ↔ {rel}" if rel else ""))
+        tasks = _int_list(card.get("task_indices")) if card else []
+        row = (f"  - {d.name}  「{title}」 fragments={n}"
+               + (f"  🔗 TASK {','.join(str(i) for i in tasks)}" if tasks else "")
+               + (f"  ↔ {rel}" if rel else ""))
+        if status == "archived":
+            sha = str(card.get("archived_commit", "")).strip() if card else ""
+            row += f"  📦 已歸檔（{sha[:9] or 'sha 未記'}）"
+        (groups[status] if status in groups else unknown).append(row)
+
+    print("🧠 工作記憶主題:")
+    print(f"\n■ active（{len(groups['active'])} 個）—— 還在做的")
+    print("\n".join(groups["active"]) or "  （無）")
+    print(f"\n■ archived（{len(groups['archived'])} 個）—— 已退場, 內容仍在磁碟上, 全文照樣 read 得到")
+    print("\n".join(groups["archived"]) or "  （無）")
+    if unknown:
+        print(f"\n■ ⚠ status 認不得（{len(unknown)} 個）—— 主題卡壞了或缺 status, 不是 active 也不是 archived")
+        print("\n".join(unknown))
+    if TOMBSTONE_PATH.exists():
+        n_tomb = sum(1 for ln in TOMBSTONE_PATH.read_text(encoding="utf-8").splitlines()
+                     if ln.startswith("- "))
+        print(f"\n🪦 另有 **{n_tomb}** 個主題已被刪除（墓碑在 {TOMBSTONE_PATH.name}, 內容在 git 裡）")
     return 0
 
 
@@ -472,6 +732,17 @@ def op_read(args) -> int:
     related_docs: list[str] = []
     card = load_fragment(card_path)
     lines.append(f"🧠 工作記憶 — {card.get('title', args.topic)}  [{card.get('status', '?')}]")
+    # 區塊職責: 已歸檔的主題**照樣印全文**, 只是頭上多一條橫幅（TASK-0017 驗收標準④）。
+    # 物理意義: ⛔「已歸檔」不可以印成「沒有這個主題」——「曾經有、內容在這裡、只是退場了」
+    #          與「從來沒有」是兩件事, 而它們同形就是「找不到 vs 什麼都沒有」那隻病。
+    # 數值影響: 純顯示; 不擋讀取, 不改任何內容。
+    if str(card.get("status", "")).strip() == "archived":
+        sha = str(card.get("archived_commit", "")).strip()
+        at = str(card.get("archived_at", "")).strip()
+        lines.append(f"   📦 **已歸檔**{f'（{at}）' if at else ''}"
+                     f"{f'　commit `{sha}`' if sha else '　⚠ 沒有記 archived_commit —— 接手的人不知道去哪顆 commit 找'}")
+        lines.append("   ⇒ **這不是「沒有記憶」** —— 正文照樣在下面, 它只是不再被維護了。")
+    lines.extend(describe_related_tasks(card))
     if card.get("key_docs"):
         lines.append(f"   📚 權威文件: {', '.join(card['key_docs'])}")
         related_docs.extend(card["key_docs"])
@@ -523,6 +794,149 @@ def op_read(args) -> int:
 
 
 # ===========================================================
+# op: tasks — 主題卡的 task_indices 寫入端（契約①：記憶側這一格歸 python）
+# ===========================================================
+def op_tasks(args) -> int:
+    card = load_topic_card(args.topic)
+    if card is None:
+        print(f"✗ 主題不存在: {args.topic}")
+        return 2
+    before = _int_list(card.get("task_indices"))
+    if args.set:
+        after = _int_list(args.set.split(","))
+    else:
+        after = list(before)
+        after += _int_list((args.add or "").split(","))
+        drop = set(_int_list((args.remove or "").split(",")))
+        after = [i for i in dict.fromkeys(after) if i not in drop]
+    after = sorted(dict.fromkeys(after))
+    if not (args.set or args.add or args.remove):
+        print(f"🔗 {args.topic} 目前的 task_indices: {before or '（空）'}")
+        print("\n".join(describe_related_tasks(card)))
+        return 0
+    card["task_indices"] = [str(i) for i in after]
+    save_topic_card(card)
+    # 回讀確認 —— 寫入成功不等於讀得回來
+    reread = _int_list((load_topic_card(args.topic) or {}).get("task_indices"))
+    print(f"✅ task_indices: {before or '（空）'} → {reread or '（空）'}（回讀自 _topic.md）")
+    if reread != after:
+        print(f"⚠ 回讀值與預期不符（預期 {after}）—— 有第二個寫入者, 或 frontmatter 解析漏了")
+        return 1
+    print("\n".join(describe_related_tasks(load_topic_card(args.topic))))
+    print("\n📌 契約①提醒：Task 側的 `memory_topic` 由 Cmd_Task 寫, **本工具不碰它**。"
+          "\n   要補另一半：`run_cmd.py run Task --arg op=update --arg index=<n> "
+          f"--arg memory_topic={args.topic}`")
+    return 0
+
+
+# ===========================================================
+# op: archive — 主題退場（status → archived）, 前置 git 守衛
+# ===========================================================
+def op_archive(args) -> int:
+    card = load_topic_card(args.topic)
+    if card is None:
+        print(f"✗ 主題不存在: {args.topic}")
+        return 2
+    cur = str(card.get("status", "")).strip()
+    target = "active" if args.undo else "archived"
+    if cur == target:
+        print(f"⚠ {args.topic} 已經是 `{target}` —— 什麼都沒做")
+        return 0
+
+    if not args.undo:
+        # ① 未關的關聯單 ⇒ 警示不擋（PM 判斷; 硬擋會讓沒建反向索引的主題永遠歸不了檔）
+        idx = _int_list(card.get("task_indices"))
+        open_tasks = [i for i in idx if (TASKS_ROOT / f"{i:04d}.md").is_file()
+                      and str(parse_frontmatter((TASKS_ROOT / f"{i:04d}.md")
+                                                .read_text(encoding="utf-8"))[0]
+                              .get("status", "")).strip() not in CLOSED_TASK_STATUS]
+        if open_tasks:
+            print("⚠ 這個主題還有未關的關聯單：")
+            for i in open_tasks:
+                print("    · " + _describe_task(i))
+            print("  ⇒ **警示不是擋**（歸檔是 PM 的判斷）。但接手的人會拿不到「上次做到哪」。")
+        elif not idx:
+            print("⚠ 這個主題**沒有建過反向索引**（task_indices 是空的）"
+                  " ⇒ 我無法替妳檢查「相關 Task 是不是都關了」。這不是「都關了」, 是**沒有讀數**。")
+
+        # ② git 前置守衛 —— 血證驅動: 「反正 git 有」是一個需要被驗的前提
+        d = topic_dir(args.topic)
+        clean, detail = git_dir_status(d)
+        if not clean:
+            print(f"\n🛑 **擋下**：`{d.relative_to(REPO_ROOT)}` 在 git 裡不乾淨 ⇒ 不歸檔。")
+            print("   實際的 git status（--porcelain --untracked-files=all）：")
+            print("\n".join("     " + ln for ln in (detail.splitlines() or ["（空 —— 但上面說不乾淨, 這本身就是要看的訊號）"])))
+            print("   ⇒ 先 commit 再來。**「刪掉也沒關係, git 有」不是狀態, 是一個需要被驗的前提。**")
+            print("   （🩸 2026-08-24：四筆記憶寫完當下是 untracked, 那句話當時是假的）")
+            return 3
+        print(f"✅ git 守衛：`{d.relative_to(REPO_ROOT)}` 乾淨（無 modified／staged／untracked）")
+
+    sha = (args.commit or "").strip() or (git_head_sha(topic_dir(args.topic)) if not args.undo else "")
+    card["status"] = target
+    if args.undo:
+        card.pop("archived_at", None)
+        card.pop("archived_commit", None)
+    else:
+        card["archived_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        card["archived_commit"] = sha or ""
+        if not sha:
+            print("⚠ 拿不到 HEAD sha ⇒ `archived_commit` 留空。"
+                  "接手的人會知道它是空的（而不是被塞一個假 sha）")
+    save_topic_card(card)
+    reread = load_topic_card(args.topic) or {}
+    print(f"✅ {args.topic}: `{cur}` → `{reread.get('status')}`（回讀自 _topic.md）"
+          + (f"　commit `{reread.get('archived_commit')}`" if reread.get("archived_commit") else ""))
+    if not args.undo:
+        print("\n📌 契約①提醒：Task 側那一格**我不寫**。要讓回看單子的人接得回來, 對每一張關聯單跑：")
+        print(f"   `run_cmd.py run Task --arg op=update --arg index=<n> --arg memory_archived_commit={sha or '<sha>'}`")
+        print("   ⇒ 沒補這一格的話, `op=show` 會印「⚠ 指向一個不存在的主題」而不是「📦 已歸檔」——"
+              "\n     兩者都不是謊, 但後者才是真的。")
+    return 0
+
+
+# ===========================================================
+# op: delete — 主題刪除, **強制留墓碑**
+# ===========================================================
+def op_delete(args) -> int:
+    d = topic_dir(args.topic)
+    card = load_topic_card(args.topic)
+    if card is None:
+        print(f"✗ 主題不存在: {args.topic}")
+        return 2
+    clean, detail = git_dir_status(d)
+    if not clean:
+        print(f"🛑 **擋下**：`{d.relative_to(REPO_ROOT)}` 在 git 裡不乾淨 ⇒ 不刪。")
+        print("   實際的 git status：")
+        print("\n".join("     " + ln for ln in (detail.splitlines() or ["（空）"])))
+        print("   ⇒ **刪除是不可逆的**, 而沒入版控的內容刪掉就真的沒了。")
+        return 3
+    sha = (args.commit or "").strip() or git_head_sha(d)
+    if not args.confirm:
+        print(f"🛑 **dry-run**（沒帶 --confirm）⇒ 什麼都沒刪。")
+        print(f"   git 守衛已通過（目錄乾淨, HEAD `{sha[:9] or '?'}`）—— 上面這一格是真的讀數。")
+        print(f"   要真的刪：同一道指令加 `--confirm`。")
+        return 0
+    n = len(list(d.glob("*.md")))
+    import shutil
+    shutil.rmtree(d)
+    TOMBSTONE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not TOMBSTONE_PATH.exists():
+        TOMBSTONE_PATH.write_text(
+            "# 工作記憶 — 墓碑（append-only）\n\n"
+            "> **刪除可以, 失聯不行。** 每一行指向那個主題最後存在的 commit。\n"
+            "> 這個檔以 `_` 開頭 ⇒ topics/index 的目錄掃描天生略過它。\n\n", encoding="utf-8")
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with TOMBSTONE_PATH.open("a", encoding="utf-8") as fp:
+        fp.write(f"- `{args.topic}` 「{card.get('title', '')}」 — 刪於 {stamp} by "
+                 f"{args.by or 'unknown'}；{n} 個檔的內容在 commit `{sha or '（拿不到 HEAD sha）'}`\n")
+    print(f"🪦 已刪除 `{args.topic}`（{n} 個檔）並留墓碑：{TOMBSTONE_PATH.relative_to(REPO_ROOT)}")
+    print(f"   內容在 commit `{sha or '?'}` —— **刪除可以, 失聯不行。**")
+    print(f"\n📌 對每一張關聯單補上墓碑指標（契約①：那一格歸 Cmd_Task 寫）：")
+    print(f"   `run_cmd.py run Task --arg op=update --arg index=<n> --arg memory_archived_commit={sha or '<sha>'}`")
+    return 0
+
+
+# ===========================================================
 # main
 # ===========================================================
 def main() -> int:
@@ -562,10 +976,26 @@ def main() -> int:
     p.add_argument("--to", required=True)
     p = sub.add_parser("index")
     p.add_argument("--topic", default="")
+    # ── TASK-0017：反向索引 / 歸檔 / 刪除 ──────────────────────────
+    p = sub.add_parser("tasks", help="主題卡的 task_indices（反向索引）：不帶動作＝只印現況")
+    p.add_argument("--topic", required=True)
+    p.add_argument("--set", default="", help="整組覆寫，如 8,15,17")
+    p.add_argument("--add", default="")
+    p.add_argument("--remove", default="")
+    p = sub.add_parser("archive", help="主題退場（status→archived）；前置 git 守衛")
+    p.add_argument("--topic", required=True)
+    p.add_argument("--commit", default="", help="不給則取 HEAD")
+    p.add_argument("--undo", action="store_true", help="改回 active（不跑 git 守衛：它只保護退場方向）")
+    p = sub.add_parser("delete", help="刪除主題並留墓碑；不帶 --confirm 是 dry-run")
+    p.add_argument("--topic", required=True)
+    p.add_argument("--commit", default="")
+    p.add_argument("--by", default="")
+    p.add_argument("--confirm", action="store_true")
 
     args = ap.parse_args()
     return {"topics": op_topics, "init": op_init, "add": op_add, "read": op_read,
-            "supersede": op_supersede, "link": op_link, "index": op_index}[args.op](args)
+            "supersede": op_supersede, "link": op_link, "index": op_index,
+            "tasks": op_tasks, "archive": op_archive, "delete": op_delete}[args.op](args)
 
 
 if __name__ == "__main__":

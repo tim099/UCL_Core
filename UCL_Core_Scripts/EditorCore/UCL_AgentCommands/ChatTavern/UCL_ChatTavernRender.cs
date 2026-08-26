@@ -125,9 +125,17 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 var aCtx = UCL_AgentCmdContexts.Get(cmdId);
                 if (aCtx != null && !string.IsNullOrEmpty(aCtx.AgentId))
                 {
+                    // ⚠ AgentId 是 **lane id 不是保證裸 persona** —— per-room 子佇列的 lane 長
+                    //   `summit/chess-5`（queues/<persona>/queue-<room>.json），直接餵 CmdPayload
+                    //   會在 letters/<persona>/ 底下長出 <room>/cmd/ 雜物目錄（2026-08-26 當天實撞：
+                    //   chess-5/ 與 share/ 兩坨）。persona ＝ lane 的第一段，其餘是房間路由不是身分。
+                    string aPersona = aCtx.AgentId;
+                    int aSep = aPersona.IndexOfAny(new[] { '/', '\\' });
+                    if (aSep >= 0) aPersona = aPersona.Substring(0, aSep);
+                    if (aPersona.Length == 0) return;
                     int aCut = cmdId.LastIndexOf('-');
                     string aSlug = aCut >= 0 && aCut < cmdId.Length - 1 ? cmdId.Substring(aCut + 1) : "cmd";
-                    string aPayload = UCL_LettersPath.CmdPayload(aCtx.AgentId, aSlug, "last_op");
+                    string aPayload = UCL_LettersPath.CmdPayload(aPersona, aSlug, "last_op");
                     Directory.CreateDirectory(Path.GetDirectoryName(aPayload));
                     File.WriteAllText(aPayload, md, new System.Text.UTF8Encoding(false));
                     aCtx.AddOutput(aPayload);

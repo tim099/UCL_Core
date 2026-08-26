@@ -17,6 +17,7 @@
 // 2026-08-24 summit（TASK-0015）
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -71,6 +72,60 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         /// <summary>主題的 `status`（active / archived / …）。讀不到回空字串 —— 不假設 active。</summary>
         public static string TopicStatus(string iTopic)
             => ReadFrontmatterField(Path.Combine(TopicDir(iTopic), "_topic.md"), "status");
+
+        // ===========================================================
+        // 區塊職責：主題卡的 `key_docs`（單子帶出關聯文件，TASK-0037；Tim 2026-08-25「單子可以關聯相關文件」）。
+        // 物理意義：欄位早已存在於 _topic.md frontmatter，缺的一直只是讀取端（2026-08-25 實測本檔零命中 key_docs）。
+        // 數值影響：回傳三態由呼叫端分形 —— **null＝沒有主題可讀**（沒綁／主題不在磁碟／讀失敗）；
+        //   **空清單＝主題在而 key_docs 沒列**；有內容＝照列。
+        //   「沒綁主題」與「key_docs 為空」不可同形（TASK-0037 讀數 E）⇒ 用 null 與空清單分開回，
+        //   讀失敗也回 null —— 把例外吞成「清單是空的」會讓壞連結長得像沒文件。
+        // ⚠ 同時吃 inline `[a, b]` 與 block `- item` 兩種 YAML 清單寫法 —— 只吃一種會靜默漏另一種。
+        // ===========================================================
+        public static List<string> KeyDocs(UCL_TaskEntry e)
+        {
+            string aTopic = (e?.memory_topic ?? "").Trim();
+            if (aTopic.Length == 0 || !TopicExists(aTopic)) return null;
+            var aOut = new List<string>();
+            try
+            {
+                string aPath = Path.Combine(TopicDir(aTopic), "_topic.md");
+                if (!File.Exists(aPath)) return null;
+                var aLines = File.ReadAllLines(aPath, Encoding.UTF8);
+                int i = 0;
+                while (i < aLines.Length && aLines[i].Trim().Length == 0) ++i;
+                if (i >= aLines.Length || aLines[i].Trim() != "---") return aOut;   // 沒有 frontmatter＝沒列
+                bool aInList = false;
+                for (++i; i < aLines.Length; ++i)
+                {
+                    string aLine = aLines[i];
+                    if (aLine.Trim() == "---") break;
+                    if (aInList)
+                    {
+                        string aT = aLine.Trim();
+                        if (aT.StartsWith("- ", StringComparison.Ordinal))
+                        { aOut.Add(aT.Substring(2).Trim().Trim('"', '\'')); continue; }
+                        aInList = false;   // 縮排清單結束，落回一般欄位解析
+                    }
+                    int c = aLine.IndexOf(':');
+                    if (c <= 0) continue;
+                    if (aLine.Substring(0, c).Trim() != "key_docs") continue;
+                    string aVal = aLine.Substring(c + 1).Trim();
+                    if (aVal.Length == 0) { aInList = true; continue; }            // block list 從下一行開始
+                    if (aVal.StartsWith("[", StringComparison.Ordinal))            // inline list
+                    {
+                        foreach (var s in aVal.Trim('[', ']').Split(','))
+                        {
+                            string aItem = s.Trim().Trim('"', '\'');
+                            if (aItem.Length > 0) aOut.Add(aItem);
+                        }
+                    }
+                    else aOut.Add(aVal.Trim('"', '\''));                           // 單值寫法
+                }
+            }
+            catch { return null; }
+            return aOut;
+        }
 
         /// <summary>單一 fragment 的 `status`。空字串一律**當成 active**（舊檔沒有這欄）。</summary>
         public static bool IsRetired(string iPath)

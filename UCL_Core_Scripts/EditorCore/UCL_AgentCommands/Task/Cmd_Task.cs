@@ -72,7 +72,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 {
                     case "create": await OpCreate(args, aActor, aR); break;
                     case "list": OpList(args, aR); break;
-                    case "show": OpShow(args, aR); break;
+                    case "show": OpShow(args, aActor, aR); break;
                     case "claim": await OpClaim(args, aActor, aR); break;
                     case "assign": await OpAssign(args, aActor, aR); break;
                     case "unassign": OpUnassign(args, aActor, aR); break;
@@ -284,19 +284,35 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             }
         }
 
-        void OpShow(Dictionary<string, string> iArgs, StringBuilder ioR)
+        void OpShow(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
         {
             var e = Require(iArgs, out int aIndex);
             string aPath = UCL_TaskIO.TaskPath(aIndex);
             ioR.AppendLine($"## {e.Id} — {e.title}");
             ioR.AppendLine($"- `{e.type}` / `{e.priority}` / `{e.status}`　開單：{e.reporter}");
             ioR.AppendLine($"- 參與：{Participants(e)}");
+            ioR.AppendLine($"- {LastCommentLine(e, iActor)}");
             ioR.AppendLine($"- blocked_by: {Ids(e.blocked_by)}　blocks: {Ids(e.blocks)}　related_to: {Ids(e.related_to)}");
             var aBlockers = UCL_TaskIO.OpenBlockers(e);
             if (aBlockers.Count > 0) ioR.AppendLine($"- 🛑 **未解 blocker**：{string.Join("；", aBlockers)}");
             if (e.epic_id.Length > 0) ioR.AppendLine($"- 屬於主 Task：**{e.epic_id}**");
             // 記憶錨點 —— 四種答案（沒掛／主題在／已歸檔／連結壞了）刻意各自不同形
             ioR.AppendLine($"- 工作記憶：{UCL_TaskMemoryLink.Describe(e)}");
+            // 📎 關聯文件（TASK-0037；Tim 2026-08-25「單子可以關聯相關文件」）——
+            //   key_docs 早已存在於主題卡，缺的一直只是讀取端。null＝沒有主題可讀（工作記憶那行已講）⇒ 不印；
+            //   空清單＝主題在而沒列 ⇒ 必須與「沒綁主題」不同形（讀數 E）。
+            var aKeyDocs = UCL_TaskMemoryLink.KeyDocs(e);
+            if (aKeyDocs != null)
+            {
+                if (aKeyDocs.Count == 0)
+                    ioR.AppendLine("- 📎 關聯文件：主題卡的 `key_docs` **沒列任何文件**"
+                        + "（有綁主題、清單是空的 —— 跟「沒掛工作記憶」是兩回事）");
+                else
+                {
+                    ioR.AppendLine($"- 📎 關聯文件（主題卡 `key_docs`，{aKeyDocs.Count} 份）：");
+                    foreach (var aDoc in aKeyDocs) ioR.AppendLine($"    · {aDoc}");
+                }
+            }
             if (e.tags.Count > 0) ioR.AppendLine($"- tags: {string.Join(" ", e.tags.Select(t => "`" + t + "`"))}");
             // 子任務進度 —— 主 Task 的意義就是這個數字（沒有它，subtask_indices 只是一串號碼）
             UCL_TaskIO.SubtaskProgress(e, out int aSubTotal, out int aSubClosed,
@@ -318,6 +334,98 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine("```markdown");
             ioR.AppendLine(File.ReadAllText(aPath, Encoding.UTF8).TrimEnd());
             ioR.AppendLine("```");
+        }
+
+        // ===========================================================
+        // 區塊職責：摘要區的「最後留言」行（TASK-0037）—— 四種形狀各自不同形。
+        // 🩸 血證（PM 本人，2026-08-24）：留言 04:15 已在，07:21 還寫「還剩：等她回」並照那句收工
+        //   ⇒ 單卡一天。卡的不是回覆，是「有人回了而我沒讀」沒有任何機械會說。
+        // 基準＝caller 在這張單上的**最後一次動作**（留言／開單／認領／指派／收工／commit／update／跳過皆算）
+        //   —— gura 拍板：「我在這張單上最後做過什麼」對每一個讀的人都成立；
+        //   「我的 wrapup」「我的留言」當基準只對特定人成立（沒收過工的人拿不到基準）。
+        // ⚠ 「沒有基準可比」與「零留言」都**不可以印成「你已是最新」**——
+        //   兩種狀態摺進一句好話正是彙總漂白（2026-08-25 抓了一整天的同形）。
+        // ===========================================================
+        static string LastCommentLine(UCL_TaskEntry e, string iActor)
+        {
+            if (e.comments == null || e.comments.Count == 0)
+                return "💬 最後留言：—（**這張單零留言**，沒有「最新」可言）";
+            var aLast = e.comments[e.comments.Count - 1];
+            string aWhen = FmtLocal(aLast.at);
+            DateTime aBase = LastActionUtc(e, iActor);
+            if (aBase == DateTime.MinValue)
+                return $"💬 最後留言：{aLast.persona} @ {aWhen} —— "
+                    + "**你從未在這張單上動過，沒有基準可比**（這不是「已是最新」）";
+            if (ParseUtc(aLast.at) > aBase)
+                return $"💬 最後留言：{aLast.persona} @ {aWhen} —— ⚠ **在你上次操作之後有新留言**";
+            return $"💬 最後留言：{aLast.persona} @ {aWhen} —— 你已是最新";
+        }
+
+        // ===========================================================
+        // 區塊職責：caller 在這張單上最後一次動作的時戳（UTC）；沒有動過回 MinValue。
+        // 物理意義：留言有結構化 persona 欄直接比；時間線的 actor **不是結構化欄位**，
+        //   靠事件文字裡的固定措辭認人 —— ⚠ 只認「actor 是動作主詞」的措辭，
+        //   「被指派」「被 @」不算你的動作（那正是血證那格：被動出現 ≠ 我讀過）。
+        // ⚠ 讀不到／解析不出 ⇒ 少一些基準候選，最壞退成「沒有基準可比」——
+        //   那一形不會冒充「已是最新」，倒向的是提醒那一側。
+        // ===========================================================
+        static DateTime LastActionUtc(UCL_TaskEntry e, string iActor)
+        {
+            var aOut = DateTime.MinValue;
+            if (string.IsNullOrWhiteSpace(iActor) || iActor == "unknown") return aOut;
+            if (e.comments != null)
+                foreach (var c in e.comments)
+                    if (string.Equals(c.persona, iActor, StringComparison.OrdinalIgnoreCase))
+                    { var t = ParseUtc(c.at); if (t > aOut) aOut = t; }
+            // 措辭清單對齊本檔與 UCL_TaskReconcile 實際寫進時間線的每一種事件行 ——
+            // 新增事件措辭時這裡要跟著補，漏了的症狀是「自己動過卻顯示沒有基準」（吵的那形，不是靜默的那形）。
+            string[] aPatterns = {
+                $"由 {iActor} 開單", $"{iActor} 認領", $"{iActor} 指派", $"{iActor} 收工",
+                $"by {iActor}", $"{iActor} 留言", $"{iActor}：", $"{iActor} 加入為", $"{iActor} 顯式跳過",
+            };
+            try
+            {
+                string aPath = UCL_TaskIO.TaskPath(e.index);
+                if (File.Exists(aPath))
+                {
+                    bool aIn = false;
+                    foreach (var aLine in File.ReadAllLines(aPath, Encoding.UTF8))
+                    {
+                        if (aLine.StartsWith("## 活動與討論時間線", StringComparison.Ordinal)) { aIn = true; continue; }
+                        if (aIn && aLine.StartsWith("## ", StringComparison.Ordinal)) break;
+                        if (!aIn) continue;
+                        string aTrim = aLine.TrimStart();
+                        if (!aTrim.StartsWith("- ", StringComparison.Ordinal)) continue;
+                        bool aMine = false;
+                        foreach (var p in aPatterns)
+                            if (aLine.IndexOf(p, StringComparison.Ordinal) >= 0) { aMine = true; break; }
+                        if (!aMine) continue;
+                        string aStamp = aTrim.Substring(2).TrimStart();
+                        int aCut = aStamp.IndexOfAny(new[] { ' ', '\t', '　' });
+                        if (aCut > 0) aStamp = aStamp.Substring(0, aCut);
+                        var t = ParseUtc(aStamp);
+                        if (t > aOut) aOut = t;
+                    }
+                }
+            }
+            catch { /* 同上：退成「沒有基準可比」，不冒充「已是最新」 */ }
+            return aOut;
+        }
+
+        static DateTime ParseUtc(string iIso)
+        {
+            if (DateTime.TryParse(iIso ?? "", System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AdjustToUniversal
+                    | System.Globalization.DateTimeStyles.AssumeUniversal, out var aUtc)) return aUtc;
+            return DateTime.MinValue;
+        }
+
+        /// <summary>UTC ISO → 本地 `MM-dd HH:mm`（顯示層才轉當地 —— utc-everywhere-local-display）。</summary>
+        static string FmtLocal(string iIso)
+        {
+            var aUtc = ParseUtc(iIso);
+            if (aUtc == DateTime.MinValue) return iIso ?? "";
+            return DateTime.SpecifyKind(aUtc, DateTimeKind.Utc).ToLocalTime().ToString("MM-dd HH:mm");
         }
 
         // ===========================================================

@@ -551,11 +551,22 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             string aMemSha = GetArg(iArgs, "memory_archived_commit", "").Trim();
             if (aMemSha.Length > 0)
             { aChanges.Add($"memory_archived_commit → {aMemSha}"); e.memory_archived_commit = aMemSha; }
+            // criteria / description 是 Save 的參數不是 entry 欄位 —— 但它們一樣是變更（TASK-0033 ③）。
+            // 🩸 血證（Tim 2026-08-25 撞到）：只給 --arg criteria= 是**靜默 no-op** ——
+            //   它沒進 aChanges ⇒ 走「沒有任何變更」那條路 ⇒ 單子一個字都不變，而回傳檔看起來像判斷。
+            //   而「擴充當前 Task 的驗收細項」是收斂機制的主要出口，等於主要出口需要 workaround（多帶 title）才會開。
+            string aCriteria = GetArg(iArgs, "criteria", "");
+            if (aCriteria.Trim().Length > 0) aChanges.Add("criteria 整段改寫");
+            string aDescription = GetArg(iArgs, "description", "");
+            if (aDescription.Trim().Length > 0) aChanges.Add("description 整段改寫");
 
             if (aChanges.Count == 0)
             {
                 ioR.AppendLine($"## {e.Id} 沒有任何變更");
-                ioR.AppendLine("- 沒給任何可更新的欄位（status / priority / title / milestone）⇒ **什麼都沒寫**。");
+                // ⚠ 欄位清單要列全 —— 錯誤訊息自己低報的話，讀的人分不出
+                //   「這不是欄位」與「這是欄位但沒被計入」（TASK-0033 ③ 的第二格）。
+                ioR.AppendLine("- 沒給任何可更新的欄位（status / priority / title / milestone /"
+                    + " memory_topic / memory_archived_commit / criteria / description）⇒ **什麼都沒寫**。");
                 return;
             }
             UCL_TaskIO.Touch(e, aNow);
@@ -633,16 +644,25 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             if (!int.TryParse(GetArg(iArgs, "target", "").Trim(), out int aTarget))
                 throw new Exception("[Task] op=link 需要 --arg target=<對方單號>");
 
-            bool aChanged = UCL_TaskIO.Link(aIndex, aTarget, aKind, iActor, out string aErr);
+            // 解除關聯（TASK-0033 ②）：同一個 op、帶 remove=1 —— 建與解共用 kind 語彙，不另造第二套詞
+            bool aRemove = GetArg(iArgs, "remove", "").Trim() == "1";
+            bool aChanged;
+            string aErr;
+            if (aRemove) aChanged = UCL_TaskIO.Unlink(aIndex, aTarget, aKind, iActor, out aErr);
+            else aChanged = UCL_TaskIO.Link(aIndex, aTarget, aKind, iActor, out aErr);
             if (aErr.Length > 0)
             {
                 ioR.AppendLine("## blocked");
                 ioR.AppendLine($"- reason: {aErr}");
-                throw new Exception($"[Task] link 失敗：{aErr}");
+                throw new Exception($"[Task] {(aRemove ? "unlink" : "link")} 失敗：{aErr}");
             }
             var a = UCL_TaskIO.Find(aIndex);
             var b = UCL_TaskIO.Find(aTarget);
-            ioR.AppendLine($"## {(aChanged ? "✅ 已建立關聯" : "（關聯本來就存在，沒有重複寫）")}");
+            string aHead = aRemove
+                ? (aChanged ? "✅ 已解除關聯（雙向對稱移除，時間線兩邊都留了一筆）"
+                            : "（這個關聯本來就不存在，沒有東西可解）")
+                : (aChanged ? "✅ 已建立關聯" : "（關聯本來就存在，沒有重複寫）");
+            ioR.AppendLine($"## {aHead}");
             ioR.AppendLine($"- `{aKind}`：{a.Id} ↔ {b.Id}");
             // 🩸 2026-08-24：首版這裡只印 blocked_by / blocks / related_to 三格 ——
             //   而 `subtask_of` 改的是 `epic_id` 與 `subtask_indices`，**兩格都不在印出來的欄位裡**。
@@ -817,9 +837,15 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 + (aShaNew ? "" : "（這個 sha 本來就在，沒重複加）"));
 
             ioR.AppendLine($"## {e.Id} ← commit `{aSha}`（mode=`{aMode}`）");
+            // ♻ 重複 sha 要在**回傳檔**分形（TASK-0033 ①）——
+            //   時間線那句一直有寫，但「有印」與「印在被讀的地方」是兩件事：
+            //   🩸 探針 TASK-0031 同一顆 sha 打兩次，兩次回傳檔逐字相同。時間線那筆照留（稽核），這裡是補不是搬。
+            if (!aShaNew)
+                ioR.AppendLine($"- ♻ **這顆 sha 本來就在單上，這次呼叫沒有改變 `commit_shas`**（重複掛載，不是新進度）");
             ioR.AppendLine($"- 狀態: `{aFrom}` {(aFrom == e.status ? "（不變）" : $"→ `{e.status}`")}");
             ioR.AppendLine($"- 判定: {aVerdict}");
-            ioR.AppendLine($"- commit_shas 回讀: {string.Join(" ", e.commit_shas)}");
+            ioR.AppendLine($"- commit_shas 回讀: {string.Join(" ", e.commit_shas)}"
+                + (aShaNew ? "" : $"（{e.commit_shas.Count} 顆，本次 0 新增）"));
             if (e.status == "in_review")
             {
                 var aQa = e.QaPersonas();

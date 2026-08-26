@@ -509,6 +509,90 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         }
 
         // ===========================================================
+        // 區塊職責：解除關聯 —— Link 的**雙向對稱**反操作（TASK-0033 ②）。
+        // 物理意義：link 只能建不能解 ⇒ 掛錯或探針用的關聯**永久留在對方單子上**，
+        //   而「探針用完當場標記」是慣例 ⇒ 每張有掛關聯的探針都留一行拆不掉的殘骸。
+        //   （blocker 閘只認未關單 ⇒ 殘骸不影響判定，影響的是讀的人看到什麼 —— 可讀性帳，不是正確性帳。）
+        // ⚠ 解除要留時間線紀錄 —— **移除關聯是一個決定，不是打掃**；
+        //   兩張單各留一筆 `unlink`，跟 Link 的雙寫完全對稱（單向移除是靜默錯的鏡像）。
+        // 數值影響：回傳「有沒有真的拆掉東西」；關聯本來就不存在 ⇒ false 且不寫檔（跟 Link 的冪等同形）。
+        // ===========================================================
+        public static bool Unlink(int iIndex, int iTarget, string iKind, string iActor, out string oError)
+        {
+            oError = "";
+            if (iIndex == iTarget) { oError = "不能對自己解除關聯"; return false; }
+            var a = Find(iIndex);
+            var b = Find(iTarget);
+            if (a == null) { oError = $"TASK-{iIndex} 不存在"; return false; }
+            if (b == null) { oError = $"TASK-{iTarget} 不存在"; return false; }
+
+            string aNow = NowUtc();
+            bool aChanged = false;
+            if (string.Equals(iKind, "blocked_by", StringComparison.OrdinalIgnoreCase))
+            {
+                aChanged |= a.blocked_by.Remove(iTarget);
+                aChanged |= b.blocks.Remove(iIndex);
+                if (aChanged)
+                {
+                    Touch(a, aNow); Touch(b, aNow);
+                    Save(a, "", "", $"{aNow}　`unlink`　{iActor} 解除「被 {b.Id} 阻塞」");
+                    Save(b, "", "", $"{aNow}　`unlink`　{iActor} 解除「它阻塞了 {a.Id}」");
+                }
+            }
+            else if (string.Equals(iKind, "blocks", StringComparison.OrdinalIgnoreCase))
+            {
+                aChanged |= a.blocks.Remove(iTarget);
+                aChanged |= b.blocked_by.Remove(iIndex);
+                if (aChanged)
+                {
+                    Touch(a, aNow); Touch(b, aNow);
+                    Save(a, "", "", $"{aNow}　`unlink`　{iActor} 解除「它阻塞了 {b.Id}」");
+                    Save(b, "", "", $"{aNow}　`unlink`　{iActor} 解除「被 {a.Id} 阻塞」");
+                }
+            }
+            else if (string.Equals(iKind, "subtask_of", StringComparison.OrdinalIgnoreCase))
+            {
+                if (a.epic_id == b.Id) { a.epic_id = ""; aChanged = true; }
+                aChanged |= b.subtask_indices.Remove(iIndex);
+                if (aChanged)
+                {
+                    Touch(a, aNow); Touch(b, aNow);
+                    Save(a, "", "", $"{aNow}　`unlink`　{iActor} 解除「它是 {b.Id} 的子任務」（epic_id 清空）");
+                    Save(b, "", "", $"{aNow}　`unlink`　{iActor} 移出子任務 {a.Id}");
+                }
+            }
+            else if (string.Equals(iKind, "has_subtask", StringComparison.OrdinalIgnoreCase))
+            {
+                aChanged |= a.subtask_indices.Remove(iTarget);
+                if (b.epic_id == a.Id) { b.epic_id = ""; aChanged = true; }
+                if (aChanged)
+                {
+                    Touch(a, aNow); Touch(b, aNow);
+                    Save(a, "", "", $"{aNow}　`unlink`　{iActor} 移出子任務 {b.Id}");
+                    Save(b, "", "", $"{aNow}　`unlink`　{iActor} 解除「它是 {a.Id} 的子任務」（epic_id 清空）");
+                }
+            }
+            else if (string.Equals(iKind, "related_to", StringComparison.OrdinalIgnoreCase))
+            {
+                aChanged |= a.related_to.Remove(iTarget);
+                aChanged |= b.related_to.Remove(iIndex);
+                if (aChanged)
+                {
+                    Touch(a, aNow); Touch(b, aNow);
+                    Save(a, "", "", $"{aNow}　`unlink`　{iActor} 解除與 {b.Id} 的關聯");
+                    Save(b, "", "", $"{aNow}　`unlink`　{iActor} 解除與 {a.Id} 的關聯");
+                }
+            }
+            else
+            {
+                oError = $"認不得的關聯種類 '{iKind}'"
+                    + "（blocked_by|blocks|subtask_of|has_subtask|related_to）";
+                return false;
+            }
+            return aChanged;
+        }
+
+        // ===========================================================
         // 區塊職責：**還沒關掉的 blocker 清單** —— 結單守衛的唯一輸入。
         // 物理意義：`blocked_by` 裡指到的單只要還沒關，這張就不准推 Done（機械攔截，不是提醒）。
         //   ⚠ 指到一張**不存在**的單也算未解 —— 「查不到」不等於「已經解決」。

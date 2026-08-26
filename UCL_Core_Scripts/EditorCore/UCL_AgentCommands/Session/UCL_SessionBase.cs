@@ -25,14 +25,13 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// ⚠⚠ **欄位名刻意不走 `m_PascalCase` 慣例** —— 這裡的欄位名**就是 JSON 的鍵名**
     /// （<see cref="UnityJsonSerializable"/> 走 `FieldNameUnityVer`，只脫 `m_` 前綴，其餘原樣輸出）。
     ///
-    /// 為什麼不能改名：這些檔的讀取端**不只有 C#** ——
-    /// `Tools~/AgentCommands/freetime.py` 讀 `active` 與 `end_ts` 判斷「某人此刻在不在自由時間」，
-    /// `canvas.py` 讀同一份檔判免費像素。欄位改名 = JSON 鍵跟著改 =
-    /// python 端 `s.get("active")` 拿到 None ⇒ **全員被判成不在 session，而且不報錯**
-    /// （那邊的例外處理會把它吞成 False）。
+    /// 讀取端現況（2026-08-26 起）：**只剩 C#**。曾經的 python 讀取端
+    /// （freetime.py 判「在不在自由時間」、canvas.py 判免費像素）已依 Tim 拍板退役 ——
+    /// python 不直讀 session，一律問 Cmd（`SessionStatus` 的機讀 values）。
     ///
-    /// ⇒ 動任何一個欄位名**必須同時改 python 兩端**。這條註解就是改名前會先撞到的東西，
-    /// 別把它當風格瑕疵順手修掉。
+    /// ⚠ 但改欄位名仍然不是免費的：磁碟上有既有 session 檔（鍵名即相容面），
+    /// 改名＝舊檔讀回預設值，而 `active=false` 跟「沒這場」長得一樣。
+    /// 要動 schema 走儲存統一那類的單（TASK-0054），不要順手改。
     /// </remarks>
     public class UCL_SessionBase : UnityJsonSerializable
     {
@@ -60,8 +59,10 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          `json.loads` 讀到 `"active":"False"` 得到字串 `"False"`，而它在 Python 裡是 **truthy**。
         // 🩸 2026-08-18 實測（round-trip 既有 Sirius.json 才發現）：改用 typed model 之後
         //          `"active":false` 變成 `"active":"False"`。後果不是解析失敗（那會喊），
-        //          是 `freetime.py` 的 `if not s.get("active")` 通過 ⇒ **提前收工的人**
+        //          是當時的 python 讀取端 `if not s.get("active")` 通過 ⇒ **提前收工的人**
         //          （end_ts 還在未來）會被判成「還在自由時間」，而且完全不報錯。
+        //          （2026-08-26 python 讀取端已退役；本 override 留著 —— 原生 bool 是正確的
+        //          wire format，且磁碟上既有檔已是這個形狀，拆掉反而製造第二種形。）
         // 數值影響：序列化後 active 為原生 true/false，與 typed model 之前的手搭格式逐鍵相同。
         //          ⇒ 既有檔不需遷移，python 兩端不受影響。
         // ⛔ 別把這個 override 當樣板套用：它存在的理由是**這份檔有非 C# 讀取端**。

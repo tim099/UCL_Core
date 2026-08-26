@@ -1,8 +1,9 @@
 # FreeTime Activities — 自由時間活動資料夾（UCL_Core 共用層）
 
 > 本資料夾是自由時間「可做活動清單」的**跨專案共用層**（Tim 2026-06-11 拍板文件驅動 + 跨專案化）。
-> 每個 `*.md` = 一個活動，`<UCL_Core>/Tools~/AgentCommands/freetime.py` 掃描產生 shuffle / list 輸出 —
+> 每個 `*.md` = 一個活動，C# `Cmd_FreeTime` 掃描產生骰面與 list/shuffle/show 輸出 —
 > **新增或更新活動 = 直接增改 md 檔，工具即自動同步**，不需要再改任何 code / JSON。
+> （掃描端曾有 python 鏡像 freetime.py，2026-08-26 退役刪除 —— 實作只剩 C# 一份。）
 
 ## 雙層設計
 
@@ -65,9 +66,8 @@ steps_need_persona: shelf, resume=--reader   # 選填 — 這些 step 由 op=ste
 
 **組項的時間不夠 ＝ 組內全員都不夠** —— 有一個做得成就不該把整組標成做不完。
 
-> ⚠ **python `freetime.py shuffle` 不做組項收合**（它是純參考擲骰，活動層逐項列出、
-> 組名印成行首 `[組名]`）。收合邏輯只在 C# `Cmd_FreeTime` 一份 ——
-> 這是**宣告過的差異**，不是漂移；兩邊各實作一次的話，排序遲早對同一份 md 講出不同的話。
+> ℹ 收合邏輯只有 C# `Cmd_FreeTime` 一份。（曾經的宣告差異「python freetime.py shuffle
+> 不做組項收合」隨該工具 2026-08-26 退役而消滅 —— 純參考擲骰現在走 `step=shuffle`，同一份實作。）
 
 ## `kind` — 特殊邏輯標記（Tim 2026-08-17 拍板）
 
@@ -108,5 +108,5 @@ steps_need_persona: shelf, resume=--reader   # 選填 — 這些 step 由 op=ste
     而在回來之前「遊戲組怎麼只剩下棋」需要 md 自己回答。
   ⇒ 判準不是「暫時或永久」，是**刪掉之後那個問題還有沒有地方能答**。
 - 對齊 EOV `docs/Glossary/` 的 per-entry md + frontmatter 前例
-- 工具：`python <UCL_Core>/Tools~/AgentCommands/freetime.py shuffle|list|show|init`
+- 工具：`run_cmd.py --persona <me> run FreeTime --arg step=shuffle|list|show`（freetime.py 已於 2026-08-26 退役）
 - 三池 spec：[`<UCL_Core>/Docs~/zh-Hant/Mechanics/FreeTime_System.md`](../../Mechanics/FreeTime_System.md) §4（2026-06-11 同步搬入 UCL_Core）

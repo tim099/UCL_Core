@@ -10,7 +10,8 @@ dice.py — 通用骰子工具 (DND 風格但更自由) + 酒館同步
 物理意義:
   - 亂數用 SystemRandom (OS entropy), 不可預測、不可重播 — 骰子的公正性就是它的全部價值。
   - 帶 --persona 時結果自動 post 進聊天酒館 (meta tag:free-time subtag:dice-roll),
-    對齊 freetime.py shuffle 的同步慣例; 不帶 = 純本地擲骰。
+    不帶 = 純本地擲骰。(此同步慣例源自已退役的 freetime.py shuffle, 2026-08-26 起
+    擲骰的權威實作在 Cmd_FreeTime step=shuffle — 本工具只管泛用骰, 不管活動骰。)
   - 酒館 post 委派 awakening.tavern_post (絕不直寫 jsonl — T36 P0 教訓); fail-swallow,
     post 失敗不影響擲骰輸出與 exit code。
 
@@ -64,7 +65,7 @@ def _validate(count: int, faces: int):
         raise ValueError(f"面數需在 2~{MAX_FACES}: {faces}")
 
 
-# ── 酒館同步 (對齊 freetime.py 慣例: registry 反查 sender + awakening.tavern_post) ──
+# ── 酒館同步 (registry 反查 sender + awakening.tavern_post — 各 py 工具共用的慣例) ──
 
 def _resolve_sender(persona: str):
     try:

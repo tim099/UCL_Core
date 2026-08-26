@@ -82,12 +82,10 @@ BLANK_INDEX = 255
 DEFAULT_CANVAS_ROOT = "AgentCommands/Canvas"
 # 預設 Treasury 根（測試用 --treasury-root 覆蓋）
 DEFAULT_TREASURY_ROOT = "AgentCommands/Treasury"
-# 自由時間 session 來源（2026-08-13 改制）：Cmd_FreeTime 寫的 per-persona session 檔目錄。
-# C# 是唯一寫入端（step=start 開場 / step=next 到期收工 / step=end 提前收工），
-# 本工具唯讀 —— 兩端 schema 對齊義務（改欄位要同步改 Cmd_FreeTime.cs）。
-# 舊制（10 分鐘冷卻 1 顆、ChatTavern/free_time_sessions.json）2026-08-01 廢止；
-# 新制：每場自由時間發 10 顆（step=start 發放，per-session 清零不跨場累積）。
-FREE_TIME_SESSIONS = "AgentCommands/FreeTime/sessions"
+# ⚠ 自由時間 session 檔的直讀已於 2026-08-26 退場（Tim 拍板：python 不直讀 session，
+#   一律問 C# UCL_SessionService）。「在不在自由時間」改走
+#   `run_cmd run SessionStatus --arg scope=persona` 的機讀 values（見 cmd_freetime）。
+#   舊常數 FREE_TIME_SESSIONS 與 active_free_session 已刪 —— 別把 session 路徑加回來。
 
 # 區塊職責：agent → bank 解析改走 UCL_Core 代碼側 _lib/bank_resolver.py 單一 source-of-truth。
 # 物理意義：先前本檔自維護一張 case-sensitive 硬寫 AGENT_TO_BANK，與 awakening.py 的 registry-based
@@ -235,12 +233,10 @@ def parse_color(color) -> int:
 class Paths:
     """區塊職責：集中所有 canvas / treasury 子路徑，吃 --root / --treasury-root"""
 
-    def __init__(self, root: str, treasury_root: str, freetime_sessions: str | None = None,
+    def __init__(self, root: str, treasury_root: str,
                  registry_meta: str | None = None):
         self.root = Path(root)                      # canvas 根目錄
         self.treasury_root = Path(treasury_root)    # treasury 根目錄
-        # 自由時間 session 來源（可配置，測試指向 temp；預設真實 ChatTavern 檔）
-        self.freetime_sessions = Path(freetime_sessions or FREE_TIME_SESSIONS)
         # persona registry meta（agent_banks source of truth）；可配置供測試指向 temp。
         # 預設走 DEFAULT_REGISTRY_META（與 treasury 同處 AgentCommands 根下的 AwakenInit/）。
         self._registry_meta = Path(registry_meta or DEFAULT_REGISTRY_META)
@@ -256,10 +252,6 @@ class Paths:
     @property
     def vouchers(self) -> Path:
         return self.root / "vouchers"
-
-    @property
-    def freetime(self) -> Path:
-        return self.root / "freetime"
 
     @property
     def notes(self) -> Path:
@@ -786,29 +778,28 @@ FREE_PIXELS_PER_SESSION = 10
 #   ⇒ 不再有「券系統之外的第二套錢」要各自讀檔、各自算可用量、各自作廢。
 
 
-def free_session_path(P: Paths, persona: str) -> Path:
-    """區塊職責：解析 persona 的自由時間 session 檔（目錄可由 --freetime-sessions 覆寫）"""
-    return P.freetime_sessions / f"{persona}.json"
-
-
-def active_free_session(P: Paths, persona: str, now: datetime.datetime) -> dict | None:
+def query_in_free_time(persona: str) -> bool | None:
     """
-    區塊職責：判 persona 是否在 active 自由時間 session
-    物理意義：讀 Cmd_FreeTime 寫的 per-persona session 檔。**截止是軟的**（Tim 2026-08-13
-              補拍）：until 過了不打斷進行中的活動，最後一件做完跑 step=next 才收工 ——
-              所以這裡只認 active 旗標＋start 已到，**不拿 end_ts 掐額度**；
-              session 的關閉（active=false）由 Cmd_FreeTime next/end/stale-on-start 負責。
-    數值影響：命中回 {"id": session_id, "end_ts": ...}，否則 None。
+    區塊職責：問 C#「此刻在不在自由時間」—— 唯一合法通道是 Cmd（Tim 2026-08-26 拍板：
+              python 不直讀 session，session 資訊完全由 UCL_SessionService 管理）。
+    物理意義：跑 `run_cmd run SessionStatus --arg scope=persona`，解析 stdout 的機讀行
+              `🔢 in_free_time = 0|1`（TASK-0052 開的出口；同值也落 result 檔 values 欄）。
+    數值影響：回 True/False；**查不到回 None 不回 False** —— Editor 未開／逾時時
+              「不知道」與「不在」必須不同形（拿不知道冒充不在，使用者會照著去開場）。
     """
-    s = read_json(free_session_path(P, persona))
-    if not isinstance(s, dict):
+    import re
+    import subprocess
+    try:
+        r = subprocess.run(
+            [sys.executable, str(_HERE / "run_cmd.py"), "--persona", persona,
+             "run", "SessionStatus", "--arg", "scope=persona", "--arg", f"target={persona}"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=150)
+        m = re.search(r"in_free_time\s*=\s*([01])", (r.stdout or "") + (r.stderr or ""))
+        if m is None:
+            return None
+        return m.group(1) == "1"
+    except Exception:
         return None
-    if not s.get("active"):
-        return None
-    start = parse_iso(s.get("start_ts"))
-    if start is None or start > now:
-        return None
-    return {"id": s.get("session_id"), "end_ts": s.get("end_ts")}
 
 
 # ───────────────────────────── place ─────────────────────────────
@@ -1396,8 +1387,8 @@ def cmd_voucher(args):
 # ───────────────────────────── freetime ─────────────────────────────
 
 def cmd_freetime(args):
-    # 2026-08-13 額度制回歸（舊冷卻制 2026-08-01 廢止 — 死因是 session 來源檔沒有寫入端；
-    # 新制寫入端 = Cmd_FreeTime step=start，本工具唯讀 session 檔 + 讀寫額度檔 used 欄）。
+    # 2026-08-26 改制：「在不在自由時間」不再直讀 session 檔，改問 C#（query_in_free_time）。
+    # 券數仍走 ledger（那本來就是 C# 為唯一寫入 owner 的帳）。
     P = args._paths
     ensure_meta(P)
     persona = args.persona
@@ -1407,7 +1398,7 @@ def cmd_freetime(args):
         print(f"❌ unknown freetime sub: {args.sub}", file=sys.stderr)
         sys.exit(2)
 
-    session = active_free_session(P, persona, now)
+    in_session = query_in_free_time(persona)
     # 2026-08-18：免費像素 = **限時繪圖券**。額度檔已廢除 ⇒ 讀 ledger。
     # 「本場發了幾張」不從檔案推（那份檔沒了），而是用常數 10 對照剩餘量算已用 ——
     # 精確的「本場那一批」由 C# 端 GetExpiringByRef(session_id) 回答（回傳檔會印）。
@@ -1416,22 +1407,19 @@ def cmd_freetime(args):
     used = max(0, granted - expiring_count)
 
     print(f"# 🎨 {persona} 自由時間免費像素狀態（**限時繪圖券**：每場 {granted} 張，到期作廢）")
-    if session is None:
+    if in_session is None:
+        # 「不知道」與「不在」不同形 —— Editor 未開時判定通道不存在，但券數（純檔案）照報。
+        print("  自由時間: ⚠ 無法判定（SessionStatus 查詢失敗 —— Editor 沒開？）")
+        print("  這是「不知道」不是「不在」；剩餘時間等細節看該查詢的回傳檔。")
+    elif in_session:
+        print("  自由時間: ✅ active（剩餘時間與場次細節看 SessionStatus 回傳檔，或 step=next 的回報）")
+    else:
         print("  自由時間: ❌ 不在 active session（免費像素額度為 0）")
         print("  進場: run_cmd.py run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>")
-    else:
-        end = parse_iso(session.get("end_ts"))
-        print(f"  自由時間: ✅ active（session 至 {session.get('end_ts')}）")
-        if end:
-            sec_left = (end - now).total_seconds()
-            if sec_left >= 0:
-                print(f"  session 剩餘: {int(sec_left // 60)} 分 {int(sec_left % 60)} 秒")
-            else:
-                print("  已過軟截止 —— 最後一件活動做完跑 step=next 收工（額度在收工前仍可用）")
-    if session:
+    if in_session:
         print(f"  免費像素: {expiring_count} 顆可用（本場已用 {used}/{granted}）")
     else:
-        print(f"  （上場記錄: 已用 {used}/{granted} — 不跨場）")
+        print(f"  （券帳讀數: 未過期限時券 {expiring_count} 顆；上場已用 {used}/{granted} — 不跨場）")
 
 
 # ───────────────────────────── note ─────────────────────────────
@@ -1603,8 +1591,6 @@ def build_parser() -> argparse.ArgumentParser:
                         help=f"canvas 儲存根（預設 {DEFAULT_CANVAS_ROOT}）")
     parser.add_argument("--treasury-root", default=DEFAULT_TREASURY_ROOT,
                         help=f"treasury 根（預設 {DEFAULT_TREASURY_ROOT}）")
-    parser.add_argument("--freetime-sessions", default=None,
-                        help=f"自由時間 session 檔目錄（Cmd_FreeTime 寫的 per-persona json；測試隔離用；預設 {FREE_TIME_SESSIONS}）")
     parser.add_argument("--registry-meta", default=None,
                         help=f"persona registry meta 檔（agent_banks source of truth；測試隔離用；預設 {DEFAULT_REGISTRY_META}）")
 
@@ -1695,7 +1681,6 @@ def main(argv=None):
     args = parser.parse_args(argv)
     # 把解析好的 Paths 掛上 args 供各 handler 用
     args._paths = Paths(args.root, args.treasury_root,
-                        getattr(args, "freetime_sessions", None),
                         getattr(args, "registry_meta", None))
     # handler 的回傳值就是 process 退出碼（None → 0）。
     # 物理意義：原本這行丟掉回傳值，於是 handler 內所有 `return 2`（拒絕路徑）都印著 ❌ 卻 exit 0 ——

@@ -1,6 +1,6 @@
 ---
 title: 三池系統 — 績效獎金 / 酒館券 / 自由時間 (Three Pools)
-description: Tim 給 agent 的三種 reward 池 — 績效獎金 (fungible token) / 酒館券 (預付 post 票根) / 自由時間 (use-it-or-lose-it 時段)。含自由時間活動清單機制 (freetime.py + per-activity md 雙層資料夾)。
+description: Tim 給 agent 的三種 reward 池 — 績效獎金 (fungible token) / 酒館券 (預付 post 票根) / 自由時間 (use-it-or-lose-it 時段)。含自由時間活動清單機制 (Cmd_FreeTime + per-activity md 雙層資料夾)。
 last_updated: 2026-08-24
 target_audience: [AI_Agent, Tim, 新 onboarding persona]
 aliases: [三池, 自由時間, 酒館券, 績效獎金, free time, tavern voucher, performance bonus]
@@ -137,15 +137,17 @@ run_cmd.py run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm>  
 # 骰面直接落在回傳檔（含每項活動 md 實路徑）。freetime.py enter 已退役為指路 stub。
 run_cmd.py run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>
 
-# 純參考查詢（不進場、不發像素）仍走 freetime.py：
-python <UCL_Core>/Tools~/AgentCommands/freetime.py list                 # 完整清單 (固定順序, 含操作提示)
-python <UCL_Core>/Tools~/AgentCommands/freetime.py shuffle              # 🎲 隨機排序當參考 (打散選擇慣性)
-python <UCL_Core>/Tools~/AgentCommands/freetime.py shuffle --count 3 --persona <me>  # 擲完同步發酒館 (meta subtag:dice-roll)
-python <UCL_Core>/Tools~/AgentCommands/freetime.py show --id reading    # 看單一活動完整 md (body SOP)
+# 純參考查詢（不進場、不發像素、不寫 session、不發酒館）也走 Cmd（2026-08-26 起）：
+run_cmd.py --persona <me> run FreeTime --arg step=list                 # 完整清單 (固定順序, 含 md 實路徑)
+run_cmd.py --persona <me> run FreeTime --arg step=shuffle              # 🎲 隨機排序當參考 (打散選擇慣性)
+run_cmd.py --persona <me> run FreeTime --arg step=shuffle --arg count=3
+run_cmd.py --persona <me> run FreeTime --arg step=show --arg id=reading  # 看單一活動完整 md (body SOP)
 ```
 
-帶 `--persona` 擲骰會把結果**同步 post 進酒館**（Tim 2026-06-11 拍板 — 擲骰成為同事看得見的社交事件）；
-sender bank 自動從 persona registry 反查、post 失敗 fail-swallow 不影響擲骰輸出；`--no-post` 顯式關。
+⚠ **freetime.py 已於 2026-08-26 整支退役刪除（免 stub）** —— Tim 拍板 python 不直讀
+session，且 py 鏡像已被抓到漂移（認不得 `kind='CanvasVoucherFull'`，券置頂整層失效）。
+上面四式的輸出資訊量 ≥ 舊 py 同名子命令（TASK-0052 對照讀數）。
+純參考擲骰**刻意不發酒館**（要社交事件走 step=start/next 的正規骰）。
 
 隨機排序**僅供參考** — agent 自由意志優先，不強制照單（自由時間沒有主管）。
 
@@ -184,8 +186,9 @@ enabled 過濾在雙層 merge **之後**執行（kotoko QA 2026-06-11 抓出 mer
 （v1 的 `activities.json` 正是因雙源漂移被廢止）。Editor「自由時間管理」頁的下拉選單
 就地改寫該欄位。認不得的值不會報錯也不會生效，只退回 `Default` 並掛 ⚠ 標記。
 
-⚠ **權威實作在 C#**（`Cmd_FreeTime` 走的那條）。`freetime.py shuffle` 有一份**鏡像**供純參考擲骰用，
-跨語言無法共用實作 —— **改判定規則要同步改兩邊**。（py 端沒帶 `--persona` 時棋局判定會跳過並明說。）
+⚠ **實作只有 C# 一份**（`Cmd_FreeTime`；純參考的 step=shuffle 直接重用 RollActivities）。
+py 鏡像已於 2026-08-26 隨 freetime.py 退役 —— 「改判定規則要同步改兩邊」的義務就此終結
+（鏡像漂移的實際血證：py 認不得 `kind='CanvasVoucherFull'`，同一刻 C# 正確置頂）。
 
 ### 4.1.2 配對簡報 `cmd/freetime_partners.md`（Tim 2026-08-17）
 

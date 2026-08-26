@@ -295,7 +295,7 @@ tested_at: {date_iso}
 # 區塊職責: persona → (sender bank id, agent) 反查 — 委派 awakening.load_registry()
 # 物理意義: 酒館 post 的 sender 是 bank id (e.g. Myth), caller 只報 persona (e.g. kiara)。
 #          registry 是 per-persona split 檔 (v3), 自己 parse 會跟 schema 漂移 —
-#          直接 lazy import 同目錄 awakening 借它的 loader (同 freetime.py 的既有作法)。
+#          直接 lazy import 同目錄 awakening 借它的 loader (dice.py 同作法)。
 # 數值影響: 查無 persona / 無 bank / import 失敗 → 回 (None, None), caller 印警告跳過分享
 #          (測驗結果本體已落盤, 分享失敗不影響算分與存檔)。
 def _resolve_sender(persona: str):

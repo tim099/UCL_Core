@@ -40,7 +40,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# ── 路徑（比照 freetime.py：code 在 UCL_Core 共用、清單 md 落各專案 docs/）──
+# ── 路徑（code 在 UCL_Core 共用、清單 md 落各專案 docs/ —— 自由時間活動清單同一形狀）──
 _HERE = Path(__file__).resolve().parent
 _UCL_CORE_ROOT = _HERE.parent.parent            # <UCL_Core>/
 SHARED_ITEMS_DIR = _UCL_CORE_ROOT / "Docs~" / "zh-Hant" / "Spending" / "Items"
@@ -49,7 +49,7 @@ SHARED_ITEMS_DIR = _UCL_CORE_ROOT / "Docs~" / "zh-Hant" / "Spending" / "Items"
 def _find_git_root_by_walk(start: Path):
     """往上找 repo root，取**最外層那個 `.git` 是資料夾**的目錄。
 
-    為什麼不是「第一個命中就回」（freetime.py 的既有做法）：
+    為什麼不是「第一個命中就回」（退役前 freetime.py 的舊做法）：
       submodule 根的 `.git` 是**檔案**（內容是 gitdir 指標），真 repo 的 `.git` 是**資料夾**。
       「第一個命中」會讓結果取決於 cwd —— 在 UCL_Core 內跑就回 UCL_Core、
       在專案根跑就回專案根。**同一支工具依呼叫位置給出不同答案，就是會漂的游標。**
@@ -66,7 +66,7 @@ def _find_git_root_by_walk(start: Path):
 
 
 def _repo_root() -> Path:
-    """呼叫所在專案的 repo root（三層 fallback，比照 freetime.py 的既有解法）。
+    """呼叫所在專案的 repo root（三層 fallback —— ⚠ 正解是 _lib/ucl_paths，見該檔）。
 
     ⚠ **不可以從 `__file__` 開始 walk** —— 本檔在 UCL_Core submodule 內，
       而 submodule 根有一個 `.git` **檔案**，walk 會先命中它，於是 REPO_ROOT
@@ -98,7 +98,7 @@ DEFAULT_ROLL_COUNT = 3
 
 
 def _parse_frontmatter(text: str):
-    """極簡 frontmatter 解析 —— 回 (meta dict, body)。比照 freetime.py，不引 yaml 依賴。"""
+    """極簡 frontmatter 解析 —— 回 (meta dict, body)。不引 yaml 依賴（同目錄工具慣例）。"""
     meta, body = {}, text
     t = text.lstrip()
     if t.startswith("---"):
@@ -177,7 +177,7 @@ def _treasury_cmd():
     return _m
 
 
-# 區塊職責：酒館 post —— 委派 awakening.tavern_post（比照 freetime.py 的既有形狀）
+# 區塊職責：酒館 post —— 委派 awakening.tavern_post（dice.py 等同目錄工具同一形狀）
 # 物理意義：**絕不直寫 jsonl**（T36 P0 教訓）；走正規 op=post 路徑，正常計費。
 #          失敗只印警告，不影響擲骰本體 —— 擲骰是主功能，酒館同步是 best-effort 副作用。
 # 為什麼要 post（Tim 2026-08-01）：跟自由時間同一個理由 —— 擲骰結果進酒館，

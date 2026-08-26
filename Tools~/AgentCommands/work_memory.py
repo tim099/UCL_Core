@@ -41,7 +41,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Windows cp950 終端強制 utf-8（對齊 freetime.py 慣例）
+# Windows cp950 終端強制 utf-8（同目錄工具共通慣例）
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -57,7 +57,7 @@ TOPIC_STATUS = ("active", "archived")
 
 
 # ===========================================================
-# 路徑解析 — repo root（對齊 freetime.py / knowledge_base.py 慣例）
+# 路徑解析 — repo root（對齊 knowledge_base.py 等同目錄工具慣例）
 # ===========================================================
 def _resolve_repo_root() -> Path:
     """委派 _lib/ucl_paths —— python 端路徑解析的唯一擁有者（Tim 2026-08-17 定調）。

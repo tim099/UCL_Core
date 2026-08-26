@@ -16,7 +16,8 @@ related:
 > [!WARNING]
 > **本索引不完整**：UCL_Core 現有 **62 支** .py，本檔只列到 21 支
 > （`canvas.py` / `library.py` / `memory.py` / `knowledge_base.py` / `work_memory.py` /
-> `freetime.py` / `git_commit.py` / `chess.py` … 皆未列入）。
+> `git_commit.py` / `chess.py` … 皆未列入；`freetime.py` 已於 2026-08-26 退役刪除，
+> 純參考查詢改走 `run FreeTime --arg step=list|shuffle|show`）。
 >
 > ⇒ 查不到某支工具**不代表它不存在** —— 直接 `ls <UCL_Core>/Tools~/AgentCommands/`
 > 是比本索引可信的來源。

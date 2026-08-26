@@ -246,15 +246,14 @@ run_cmd.py --persona <me> run FreeTimeActivity --arg op=done --arg persona=<P> \
 
 ---
 
-## 六、session 資料與跨語言讀取端
+## 六、session 資料與讀取端
 
 `FreeTime/sessions/<persona>.json` 走 `UCL_FreeTimeSession : UCL_SessionBase`（typed model）。
 
-> ⚠⚠ **欄位名就是 JSON 鍵名**，而讀取端不只有 C#：
-> `freetime.py._is_in_free_time()` 讀 `active` / `end_ts`、`canvas.py` 讀同一份檔判免費像素。
-> 改欄位名 ⇒ python 端拿到 None ⇒ **全員被判成不在自由時間，而且不報錯**。
-> 動任何欄位名**必須同時改 python 兩端**。細節見 `UCL_SessionBase` 的 remarks
-> 與 `Agent/Coding_Standards.md`「換成 typed model 時的三個坑」。
+> ✅ **讀取端只剩 C#**（Tim 2026-08-26 拍板：python 不直讀 session，全走 UCL_SessionService）。
+> 曾經的 python 讀取端已退場：freetime.py 整支刪除、canvas.py 改問
+> `run_cmd run SessionStatus` 的機讀 values（`in_free_time`）。
+> 欄位名仍是 JSON 鍵名（磁碟上有既有檔），改名走 0054 儲存統一那類的單，不要順手改。
 
 路徑一律走 `UCL_SessionService.SessionPath()` —— 這條組法曾寫死在三個檔
 （`Cmd_FreeTime` / `UCL_FreeTimeGating` / `Cmd_Sculpture`），改一處另兩處指舊位置且不報錯。

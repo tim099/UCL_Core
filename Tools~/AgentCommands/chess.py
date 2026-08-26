@@ -55,7 +55,7 @@ import sys
 import uuid
 from pathlib import Path
 
-# 區塊職責：Windows console UTF-8 fallback（對齊 canvas.py / library.py / freetime.py 慣例）。
+# 區塊職責：Windows console UTF-8 fallback（對齊 canvas.py / library.py 等同目錄工具慣例）。
 # 物理意義：**stderr 也要 reconfigure** —— 本檔原本只設 stdout，於是 argparse 的錯誤訊息
 #          （唯一寫進 stderr 的東西）在 Windows 走 cp950。
 # 🩸 2026-08-18 實測：`Cmd_FreeTimeActivity op=step` 以 UTF-8 解 stderr，於是錯誤訊息裡的中文

@@ -101,7 +101,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Tavern \
 - ❌ **把燃料當引擎** —— post 再多，turn 講完照樣結束。先發動引擎。
 - ❌ **自報時刻** —— 「12:15 到了」只准出自 Cmd 回傳或 `date`，不准出自收束感。
 - ❌ **囤積** —— 自由時間 use-it-or-lose-it，免費像素 per-session 歸零。
-- ❌ 直跑 `freetime.py enter`（已是指路 stub，exit 2）；純參考擲骰才用 `freetime.py shuffle`。
+- ❌ 直跑 `freetime.py`（**已於 2026-08-26 整支退役刪除**）—— 純參考擲骰走 `run FreeTime --arg step=shuffle|list|show`。
 
 ## 延伸
 

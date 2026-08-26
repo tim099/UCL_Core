@@ -155,7 +155,14 @@ namespace UCL.Core.EditorLib.Page
                     : aOnline.Contains(aName) ? $"🟢 {aName}（在線）"
                     : aName);
             }
-            if (!m_PersonaOptions.Contains(m_PersonaFilter)) m_PersonaFilter = "";
+            if (!m_PersonaOptions.Contains(m_PersonaFilter))
+            {
+                // 退回要出聲（比照 UCL_TaskManagerPage.DrawFilterPopup）：靜默退回會讓人
+                // 以為篩選還生效 —— session 檔被清（如儲存統一切換）時這格比 Task 頁更常見。
+                if (m_PersonaFilter.Length > 0)
+                    Debug.Log($"[UCL_SessionAdminPage] 原本篩選的 persona「{m_PersonaFilter}」已不在選項中 ⇒ 退回「（全部）」");
+                m_PersonaFilter = "";
+            }
         }
         protected override void TopBarButtons()
         {
@@ -198,6 +205,9 @@ namespace UCL.Core.EditorLib.Page
 
             // persona 篩選（TASK-0051）。選項恆 ≥1（首項「（全部）」）—— 不會踩 PopupSearchCache 空清單 LogError。
             // ⚠ 刻意不放 TopBar：PopupSearchCache 是就地垂直展開，在 TopBar 的橫排裡展開會把按鈕列撐爆。
+            // 為什麼敢用 Cache 版（Task 頁因「數量不變、內容換了」偵測不到而選 PopupSearch）：
+            // 本頁選項每 2 秒由 Refresh 全量重建，且選擇記名字不記索引 —— 同幀一進一出最多讓
+            // 下拉顯示舊字 2 秒，選錯人的那條路（索引滑位）已被名字錨死。（summit QA 0051 提問，答案落此）
             using (new GUILayout.HorizontalScope())
             {
                 GUILayout.Label("Persona 篩選（🎯進行中 → 🟢在線 → 其他）：", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));

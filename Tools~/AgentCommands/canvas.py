@@ -792,7 +792,7 @@ def query_in_free_time(persona: str) -> bool | None:
     try:
         r = subprocess.run(
             [sys.executable, str(_HERE / "run_cmd.py"), "--persona", persona,
-             "run", "SessionStatus", "--arg", "scope=persona", "--arg", f"target={persona}"],
+             "run", "SessionStatus", "--arg", "scope=persona", "--arg", f"persona={persona}"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=150)
         m = re.search(r"in_free_time\s*=\s*([01])", (r.stdout or "") + (r.stderr or ""))
         if m is None:

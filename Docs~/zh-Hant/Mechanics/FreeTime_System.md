@@ -134,7 +134,7 @@ run_cmd.py run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm>  
 
 ```bash
 # 進場/換輪擲骰已收進 Cmd_FreeTime（2026-08-13）：step=start 開場擲、step=next 換輪擲，
-# 骰面直接落在回傳檔（含每項活動 md 實路徑）。freetime.py enter 已退役為指路 stub。
+# 骰面直接落在回傳檔（含每項活動 md 實路徑）。freetime.py 已於 2026-08-26 整支刪除。
 run_cmd.py run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>
 
 # 純參考查詢（不進場、不發像素、不寫 session、不發酒館）也走 Cmd（2026-08-26 起）：

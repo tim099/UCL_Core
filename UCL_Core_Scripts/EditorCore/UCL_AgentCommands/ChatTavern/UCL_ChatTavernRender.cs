@@ -104,7 +104,40 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     ? md.Substring(0, nl + 1) + stamp + "\n" + md.Substring(nl + 1)
                     : md + "\n" + stamp + "\n";
             }
+            // ⚠ 全域 `_last_op.md` **保留、內容不變** —— 它不是只給人讀的：run_cmd 的
+            //   fail-detection（check_cmd_result_file）與 tavern_cmd.py 等仍讀這一份，
+            //   第一行 marker ＋ cmd_id 章是那條通道的 wire format，stub 化＝拆掉活的偵測。
+            //   （TASK-0059：全域槽的「互相覆蓋」由 cmd_id 章擋在讀取端；閱讀通道遷 per-persona，見下）
             File.WriteAllText(UCL_ChatTavernIO.GetLastOpPath(), md, new System.Text.UTF8Encoding(false));
+
+            // ===========================================================
+            // 區塊職責：per-persona 鏡寫（TASK-0059，對齊 0026/0044 搬法）。
+            // 物理意義：全域槽 last-write-wins —— 兩人先後跑同 op，慢的那份蓋掉快的那份，
+            //   而讀自己那次結果的人拿到別人的視圖（0026 ① 的原始病）。
+            //   persona 從 cmd context 拿（AgentId＝lane persona）；回傳檔名的 cmd 段取自
+            //   cmd_id 尾段（`20260826-…-tavern` → `tavern_last_op.md`）—— 本函式收 16 支
+            //   Cmd 的輸出，不逐支傳型別，從 id 取是唯一不用改每個呼叫端的路。
+            // ⚠ context 拿不到（IMGUI 手動操作等非 queue 路徑）⇒ 只寫全域，行為與舊版全等。
+            // 數值影響：AddOutput 讓 run_cmd 印「📄 回傳檔：<per-persona 路徑>」指向本次這個人。
+            // ===========================================================
+            try
+            {
+                var aCtx = UCL_AgentCmdContexts.Get(cmdId);
+                if (aCtx != null && !string.IsNullOrEmpty(aCtx.AgentId))
+                {
+                    int aCut = cmdId.LastIndexOf('-');
+                    string aSlug = aCut >= 0 && aCut < cmdId.Length - 1 ? cmdId.Substring(aCut + 1) : "cmd";
+                    string aPayload = UCL_LettersPath.CmdPayload(aCtx.AgentId, aSlug, "last_op");
+                    Directory.CreateDirectory(Path.GetDirectoryName(aPayload));
+                    File.WriteAllText(aPayload, md, new System.Text.UTF8Encoding(false));
+                    aCtx.AddOutput(aPayload);
+                }
+            }
+            catch (System.Exception e)
+            {
+                // 鏡寫失敗不影響主通道（全域檔已落）—— 但要出聲，安靜的鏡寫失敗長得像「沒有這個功能」
+                UnityEngine.Debug.LogWarning($"[ChatTavernRender] per-persona 鏡寫失敗（全域 _last_op.md 已寫）：{e.Message}");
+            }
         }
     }
 }

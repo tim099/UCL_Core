@@ -39,6 +39,17 @@ namespace UCL.Core.EditorLib.Page
         double m_ArmedTime = -1.0;
         const double ARM_WINDOW_SEC = 5.0;
 
+        // ===========================================================
+        // 區塊職責: persona 篩選下拉（TASK-0051）—— 選一人只看他的列。
+        // 物理意義: 選擇記**名字**不記索引 —— 選項排序隨「進行中/在線」即時變動，
+        //           記索引會在某人上線的那一刻讓選擇無聲滑到別人身上。
+        // 數值影響: 空字串＝「（全部）」＝不過濾（與加下拉之前的行為逐項相同）。
+        // ===========================================================
+        string m_PersonaFilter = "";
+        readonly List<string> m_PersonaOptions = new();   // 原始名（[0] 恆為 "" ＝全部），與顯示清單對位
+        readonly List<string> m_PersonaDisplay = new();   // 下拉顯示字串（含 🎯/🟢 標記）
+        readonly UCL.Core.UCL_ObjectDictionary m_PopupDic = new UCL.Core.UCL_ObjectDictionary();
+
         struct Row
         {
             public string Kind;
@@ -85,6 +96,66 @@ namespace UCL.Core.EditorLib.Page
                 int aKind = string.CompareOrdinal(a.Kind, b.Kind);
                 return aKind != 0 ? aKind : string.CompareOrdinal(a.Persona, b.Persona);
             });
+            RebuildPersonaOptions();
+        }
+
+        // ===========================================================
+        // 區塊職責: 重建 persona 下拉選項 —— 來源＝session 檔的 persona ∪ 在線 lock 的 persona。
+        // 物理意義: 兩個來源缺一不可 —— 只掃 session 檔會漏掉「在線但沒開過場」的人
+        //           （正是最可能接著要開場的人）；只掃 lock 會漏掉「離線但留著殘留檔」的人
+        //           （正是本頁要處置的對象）。
+        //           排序＝進行中 → 在線 → 其餘字典序（Tim 2026-08-26:「目前在 Session 中的優先」）。
+        // 數值影響: 每次 Refresh 重建（呼叫端已有 2 秒節流）；
+        //           選中者從選項消失時退回「（全部）」，不滑到排序上的下一位。
+        // ===========================================================
+        void RebuildPersonaOptions()
+        {
+            var aRunning = new HashSet<string>(StringComparer.Ordinal);
+            var aAll = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var aRow in m_Rows)
+            {
+                aAll.Add(aRow.Persona);
+                if (aRow.Running) aRunning.Add(aRow.Persona);
+            }
+            // 在線判定的真相源是 lock 檔（_session/_persona_<name>.json，見 UCL_AwakeningService.LockPath）。
+            var aOnline = new HashSet<string>(StringComparer.Ordinal);
+            try
+            {
+                string aDir = AgentCommands.Awakening.UCL_AwakeningService.SessionDir;
+                if (Directory.Exists(aDir))
+                {
+                    const string PREFIX = "_persona_";
+                    foreach (string aFile in Directory.GetFiles(aDir, PREFIX + "*.json"))
+                    {
+                        string aName = Path.GetFileNameWithoutExtension(aFile).Substring(PREFIX.Length);
+                        if (aName.Length == 0) continue;
+                        aOnline.Add(aName);
+                        aAll.Add(aName);
+                    }
+                }
+            }
+            catch (Exception e) { Debug.LogWarning($"[UCL_SessionAdminPage] 列舉在線 lock 失敗: {e.Message}"); }
+
+            var aNames = new List<string>(aAll);
+            int Rank(string iName) => aRunning.Contains(iName) ? 0 : aOnline.Contains(iName) ? 1 : 2;
+            aNames.Sort((a, b) =>
+            {
+                int aRankCmp = Rank(a).CompareTo(Rank(b));
+                return aRankCmp != 0 ? aRankCmp : string.CompareOrdinal(a, b);
+            });
+
+            m_PersonaOptions.Clear();
+            m_PersonaDisplay.Clear();
+            m_PersonaOptions.Add("");
+            m_PersonaDisplay.Add("（全部）");
+            foreach (string aName in aNames)
+            {
+                m_PersonaOptions.Add(aName);
+                m_PersonaDisplay.Add(aRunning.Contains(aName) ? $"🎯 {aName}（session 進行中）"
+                    : aOnline.Contains(aName) ? $"🟢 {aName}（在線）"
+                    : aName);
+            }
+            if (!m_PersonaOptions.Contains(m_PersonaFilter)) m_PersonaFilter = "";
         }
         protected override void TopBarButtons()
         {
@@ -125,6 +196,21 @@ namespace UCL.Core.EditorLib.Page
                           + "　—— 未登記的種類不在其中（見 UCL_SessionKind.Kinds 註解）", WrapStyle);
             GUILayout.Space(6);
 
+            // persona 篩選（TASK-0051）。選項恆 ≥1（首項「（全部）」）—— 不會踩 PopupSearchCache 空清單 LogError。
+            // ⚠ 刻意不放 TopBar：PopupSearchCache 是就地垂直展開，在 TopBar 的橫排裡展開會把按鈕列撐爆。
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("Persona 篩選（🎯進行中 → 🟢在線 → 其他）：", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            }
+            int aFilterIdx = Mathf.Max(0, m_PersonaOptions.IndexOf(m_PersonaFilter));
+            int aNewFilterIdx = UCL_GUILayout.PopupSearchCache(aFilterIdx, m_PersonaDisplay, m_PopupDic, "PersonaFilter",
+                GUILayout.MaxWidth(UCL_GUIStyle.GetScaledSize(340)));
+            if (aNewFilterIdx != aFilterIdx && aNewFilterIdx >= 0 && aNewFilterIdx < m_PersonaOptions.Count)
+            {
+                m_PersonaFilter = m_PersonaOptions[aNewFilterIdx];
+            }
+            GUILayout.Space(6);
+
             if (m_Rows.Count == 0)
             {
                 GUILayout.Label("（已登記的種類底下沒有任何 session 檔）",
@@ -137,8 +223,12 @@ namespace UCL.Core.EditorLib.Page
 
             var aOldColor = GUI.backgroundColor;
             bool aDirty = false;
+            int aShownCount = 0;
             foreach (var aRow in m_Rows)
             {
+                // persona 篩選：空字串＝全部（沿用既有排序，不另做一份清單）
+                if (m_PersonaFilter.Length > 0 && aRow.Persona != m_PersonaFilter) continue;
+                aShownCount++;
                 GUI.backgroundColor = aRow.Running ? new Color(0.25f, 0.45f, 0.25f)
                     : aRow.Stale ? new Color(0.6f, 0.35f, 0.1f)
                     : new Color(0.35f, 0.35f, 0.35f);
@@ -201,6 +291,13 @@ namespace UCL.Core.EditorLib.Page
                 }
             }
             GUI.backgroundColor = aOldColor;
+            // 「篩選後為空」與「本來就沒有檔」要不同形 —— 前者是視圖窄了，後者是資料沒有；
+            // 印成同一句會讓人以為選中的 persona 沒有殘留可處置。
+            if (aShownCount == 0 && m_PersonaFilter.Length > 0)
+            {
+                GUILayout.Label($"（persona「{m_PersonaFilter}」在已登記種類底下沒有 session 檔 —— 在線 ≠ 開過場）",
+                    new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Italic });
+            }
             if (aDirty) Refresh();
         }
 

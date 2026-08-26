@@ -75,6 +75,18 @@ namespace UCL.Core.EditorLib.AgentCommands
             if (aScope == "persona")
             {
                 var aRunning = UCL_SessionService.FindRunning(aPersona);
+                // ===========================================================
+                // 機讀出口（TASK-0052）：python 消費端（canvas.py 免費像素資格等）退出直讀 session 檔後，
+                // 「在不在自由時間」的答案從這裡拿 —— run_cmd 會把 values 隨 verdict 印出（🔢 key = value），
+                // result 檔的 values 欄也帶著，機器不必 parse 人讀報告。
+                // ⚠ 在算出結果的當下 push（ReportOutputValue 的 remarks：不要事後 pull static）。
+                // ===========================================================
+                var aKindNames = new List<string>();
+                foreach (var aKv in aRunning) aKindNames.Add(aKv.Key);
+                UCL_AgentCommandRunner.ReportOutputValue(args, "running_kinds",
+                    aKindNames.Count == 0 ? "-" : string.Join(",", aKindNames));
+                UCL_AgentCommandRunner.ReportOutputValue(args, "in_free_time",
+                    aKindNames.Contains(UCL_SessionKind.FreeTime) ? "1" : "0");
                 if (aRunning.Count == 0)
                 {
                     aR.AppendLine($"## 結果：{aPersona} 目前**不在**任何已登記的 session 中");

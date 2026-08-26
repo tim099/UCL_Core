@@ -38,14 +38,17 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         public override string CommandType => "FreeTime";
 
         public override string ShortDescription =>
-            "自由時間流程 Cmd（step=start/next/end）。start 註冊截止時刻＋發 10 顆免費像素＋開場擲骰；" +
-            "活動事件自然結束時跑 next（未到期重擲、到期收工）；end 提前收工（附 reason）。";
+            "自由時間流程 Cmd（step=start/next/end ＋ 純參考查詢 list/shuffle/show）。start 註冊截止時刻＋發 10 顆免費像素＋開場擲骰；" +
+            "活動事件自然結束時跑 next（未到期重擲、到期收工）；end 提前收工（附 reason）；" +
+            "list/shuffle/show 純讀（不進場、不發券、不寫 session、不發酒館 —— freetime.py 退役後的查詢出口，TASK-0052）。";
 
         public override string ArgsSchema =>
-            "step=start|next|end (必填) — start: 守衛+session 註冊+免費像素+開場擲骰+宣告; " +
-            "next: 活動事件結束時跑(未到期→重擲, 到期→收工宣告+關 session); end: 提前收工 | " +
+            "step=start|next|end|list|shuffle|show (必填) — start: 守衛+session 註冊+免費像素+開場擲骰+宣告; " +
+            "next: 活動事件結束時跑(未到期→重擲, 到期→收工宣告+關 session); end: 提前收工; " +
+            "list: 固定順序看完整清單(純讀); shuffle: 兩層隨機排序當參考(純讀); show: 看單一活動完整 md(純讀) | " +
             "persona=<name> — 全步驟必填 | until=<HH:mm 本地> — start 必填 | " +
             "reason=<一句> — end 選填(提前收工的形狀要可觀測) | " +
+            "id=<活動 id> — show 必填 | count=<N> — shuffle 選填(截前 N 項) | " +
             "回傳落檔 letters/<persona>/cmd/freetime_<step>.md（路徑隨 run_cmd verdict 印出）";
 
         public override string ExampleArgs => "step=start;persona=Template;until=23:59";
@@ -71,8 +74,13 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 case "start": await StepStart(args, aPersona, GetArg(args, "until", "").Trim(), token); return;
                 case "next":  await StepNext(args, aPersona, token, iEarlyEnd: false, iReason: null); return;
                 case "end":   await StepNext(args, aPersona, token, iEarlyEnd: true, iReason: GetArg(args, "reason", "").Trim()); return;
+                // 純參考查詢三式（TASK-0052）—— 不進場、不發券、不寫 session、不發酒館。
+                // freetime.py 的 list/shuffle/show 退役後，這裡是唯一出口（權威實作本來就在 C# 這側）。
+                case "list":    StepList(args, aPersona); return;
+                case "shuffle": StepShuffle(args, aPersona); return;
+                case "show":    StepShow(args, aPersona, GetArg(args, "id", "").Trim()); return;
                 default:
-                    throw new Exception($"[FreeTime] step 必為 start|next|end（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
+                    throw new Exception($"[FreeTime] step 必為 start|next|end|list|shuffle|show（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
             }
         }
 
@@ -620,6 +628,108 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         //
         // 數值影響：純顯示結構，不參與可用性判定（那在 UCL_FreeTimeGating）。
         // ===========================================================
+        // ===========================================================
+        // 區塊：純參考查詢三式（TASK-0052 —— freetime.py 退役的 C# 出口）。
+        // 物理意義：**純讀** —— 不進場、不發券、不寫 session、不發酒館、不推活動統計。
+        //   freetime.py 的 list/shuffle/show 是 C# 的鏡像（鏡像即漂移源，Tim 2026-08-26 拍板整支退役），
+        //   這三式讓查詢直接走權威實作 —— 不是把 python 的邏輯搬過來，是把出口開在邏輯本來住的地方。
+        // ⚠ 刻意不套「必須在線」守衛：參考查詢離線也該答（py 版本來就是），守衛只屬於會動狀態的 step。
+        // ===========================================================
+        static void StepList(IDictionary<string, string> iArgs, string iPersona)
+        {
+            string aPath = PayloadPath(iPersona, "list");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# FreeTime step=list persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+            var aScanned = UCL_FreeTimeIO.ScanActivities();
+            int aShared = 0, aProject = 0, aDisabled = 0;
+            var aEnabled = new List<UCL_FreeTimeActivity>();
+            foreach (var a in aScanned)
+            {
+                if (!a.enabled) { aDisabled++; continue; }
+                aEnabled.Add(a);
+                if (a.isProjectLayer) aProject++; else aShared++;
+            }
+            aR.AppendLine($"## 📋 活動清單（固定順序，{aEnabled.Count} 項 enabled｜來源：UCL_Core 共用 {aShared} ＋ 專案 {aProject}"
+                          + (aDisabled > 0 ? $"｜另有 {aDisabled} 項 disabled 未列" : "") + "）");
+            for (int i = 0; i < aEnabled.Count; i++)
+            {
+                var a = aEnabled[i];
+                aR.AppendLine($"{i + 1}. [`{a.id}`]{(string.IsNullOrEmpty(a.group) ? "" : $"（{a.group}）")} **{a.name}**"
+                              + (string.IsNullOrEmpty(a.how) ? "" : $" — {a.how}"));
+                aR.AppendLine($"    · md: `{(string.IsNullOrEmpty(a.path) ? "（無 md 檔 —— 內建 fallback 項）" : a.path)}`");
+            }
+            aR.AppendLine();
+            aR.AppendLine("- ℹ 本查詢**純讀**：不進場、不發券、不寫 session。要真的開場走 step=start。");
+            WritePayload(iArgs, aPath, aR.ToString());
+        }
+
+        static void StepShuffle(IDictionary<string, string> iArgs, string iPersona)
+        {
+            string aPath = PayloadPath(iPersona, "shuffle");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# FreeTime step=shuffle persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+            // iRemainMinutes=0 ⇒ 時間感知那道自動跳過（純參考沒有「剩幾分」可言 —— 不假裝知道）
+            var (aList, aSource, aIsLive) = RollActivities(iPersona, 0);
+            // count 截在排序**之後** —— 先截會把剛頂上來的優先項截掉（與 freetime.py 同一個坑的同一個解）
+            iArgs.TryGetValue("count", out string aCountStr);
+            if (int.TryParse((aCountStr ?? "").Trim(), out int aCount) && aCount > 0 && aCount < aList.Count)
+            {
+                aR.AppendLine($"- ✂ count={aCount}：只列前 {aCount} 項（完整候選 {aList.Count} 項）");
+                aList = aList.GetRange(0, aCount);
+            }
+            AppendDiceSection(aR, aList, aSource, aIsLive);
+            aR.AppendLine();
+            aR.AppendLine("- ℹ 本查詢**純讀**：不進場、不發券、不寫 session、不發酒館、不推活動統計 —— 擲骰結果只落在這份回傳檔。");
+            WritePayload(iArgs, aPath, aR.ToString());
+        }
+
+        static void StepShow(IDictionary<string, string> iArgs, string iPersona, string iId)
+        {
+            string aPath = PayloadPath(iPersona, "show");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# FreeTime step=show persona={iPersona} id={iId}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+            if (string.IsNullOrEmpty(iId))
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine("- reason: 缺 `--arg id=<活動 id>` —— 跑 step=list 看可用 id");
+                WritePayload(iArgs, aPath, aR.ToString());
+                throw new Exception($"[FreeTime] step=show 需要 --arg id=<活動 id>（詳見 {aPath}）");
+            }
+            UCL_FreeTimeActivity aHit = null, aDisabledHit = null;
+            foreach (var a in UCL_FreeTimeIO.ScanActivities())
+            {
+                if (a.id != iId) continue;
+                if (a.enabled) { aHit = a; break; }
+                aDisabledHit = a;
+            }
+            if (aHit == null)
+            {
+                aR.AppendLine("## blocked");
+                // 「id 存在但 disabled」與「id 不存在」是兩種狀態，不可印成同一句
+                aR.AppendLine(aDisabledHit != null
+                    ? $"- reason: 活動 `{iId}` 存在但 **enabled:false**（`{aDisabledHit.path}`）—— 這不是「找不到」，是被停用"
+                    : $"- reason: 找不到活動 id `{iId}` —— 跑 step=list 看可用 id");
+                WritePayload(iArgs, aPath, aR.ToString());
+                throw new Exception($"[FreeTime] step=show 查無 enabled 活動 '{iId}'（詳見 {aPath}）");
+            }
+            if (!string.IsNullOrEmpty(aHit.path) && File.Exists(aHit.path))
+            {
+                aR.AppendLine($"## 📄 `{aHit.path}`");
+                aR.AppendLine();
+                aR.AppendLine(File.ReadAllText(aHit.path, Encoding.UTF8).TrimEnd());
+            }
+            else
+            {
+                aR.AppendLine($"## {aHit.name}（無 md 檔 —— 內建 fallback 項，以下為 how 欄位）");
+                aR.AppendLine();
+                aR.AppendLine(aHit.how);
+            }
+            WritePayload(iArgs, aPath, aR.ToString());
+        }
+
         class DiceEntry
         {
             /// <summary>顯示標題：分組名，或單獨項的活動名。</summary>

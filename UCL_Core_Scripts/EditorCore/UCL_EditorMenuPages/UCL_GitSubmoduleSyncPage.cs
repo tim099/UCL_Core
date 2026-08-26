@@ -793,8 +793,14 @@ namespace UCL.Core.EditorLib.Page
                             // 啟發式預設 branch（規則見 TargetBranch 註解）——
                             // branch 清單本地 + origin 一起看：submodule update 完常常一條本地
                             // branch 都沒有（detached），只看本地會讓啟發式整批失效。
+                            // ⚠ 用完整 %(refname) 不用 :short —— `refs/remotes/origin/HEAD` 的 short 是
+                            //   **字面上的 `origin`**（不以 `origin/` 開頭），會掉進本地分支清單：
+                            //   local 從 1 變 2 ⇒ 下面 `locals.Count == 1` 啟發式整格失效，而失效的樣子
+                            //   是「挑了另一條看起來合理的分支」。calli 2026-08-26 移植 SCP_Git 實測抓到
+                            //   （修前 local=2 all=2 [master,origin]，修後 local=1 all=1 [master]，seq 14385）。
+                            //   完整 refname 的前綴無歧義 —— 結構解，不留「再多排除一個名字」的特例清單。
                             var (e6, o6, _) = Git(abs,
-                                "for-each-ref --format=%(refname:short) refs/heads refs/remotes/origin");
+                                "for-each-ref --format=%(refname) refs/heads refs/remotes/origin");
                             if (e6 == 0)
                             {
                                 var locals = new List<string>();
@@ -803,15 +809,16 @@ namespace UCL.Core.EditorLib.Page
                                 {
                                     string b = raw6.Trim();
                                     if (b.Length == 0) continue;
-                                    if (b.StartsWith("origin/"))
+                                    if (b.StartsWith("refs/heads/"))
                                     {
-                                        string n = b.Substring("origin/".Length);
-                                        if (n != "HEAD") all.Add(n);
+                                        string n = b.Substring("refs/heads/".Length);
+                                        locals.Add(n);
+                                        all.Add(n);
                                     }
-                                    else
+                                    else if (b.StartsWith("refs/remotes/origin/"))
                                     {
-                                        locals.Add(b);
-                                        all.Add(b);
+                                        string n = b.Substring("refs/remotes/origin/".Length);
+                                        if (n != "HEAD") all.Add(n);
                                     }
                                 }
                                 // branch 清單存給下拉選單用（本地+origin 合併去重）

@@ -28,12 +28,17 @@ namespace UCL.Core.EditorLib
             string workDir, string args, string procTag, string owner, int timeoutMs)
         {
             // 薄殼：Process 樣板本體在 UCL_ProcessCli（2026-08-11 抽出）。
-            // 本檔只保留「git 專屬」的兩件事，其餘一行都不重複：
+            // 本檔只保留「git 專屬」的三件事，其餘一行都不重複：
             //   ① 執行檔名 "git"
             //   ② GIT_TERMINAL_PROMPT=0 —— 認證失敗時 git 會停在終端等輸入，而這裡沒有終端。
             //      關掉讓它直接 fail，錯誤才會離開私有欄位（卡住的失敗最難抓）。
+            //   ③ `-c core.quotepath=false` —— 預設 quotepath=true 會把非 ASCII 路徑印成
+            //      八進位轉義（一個中文字＝三段反斜線碼），任何比對中文檔名的呼叫端都靜默失配。
+            //      此前只有 AutoCommit 自己釘（Cmd_AutoCommit :512），其他呼叫端裸奔 ——
+            //      calli 2026-08-26 移植 SCP_Git 時點名這格（seq 14385），護欄回釘在唯一出口上。
+            //      AutoCommit 自己那份重複帶同值無害，不逼它同步改。
             // 簽名刻意不變 —— 既有呼叫端（SubmoduleSync / AutoCommit）一行都不用改。
-            return UCL_ProcessCli.Run("git", args, workDir, procTag, owner, timeoutMs,
+            return UCL_ProcessCli.Run("git", "-c core.quotepath=false " + args, workDir, procTag, owner, timeoutMs,
                 env: new System.Collections.Generic.Dictionary<string, string>
                 {
                     ["GIT_TERMINAL_PROMPT"] = "0",

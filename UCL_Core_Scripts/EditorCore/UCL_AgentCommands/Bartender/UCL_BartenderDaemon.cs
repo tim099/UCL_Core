@@ -945,6 +945,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         {
             var state = UCL_BartenderIO.LoadState();
             // 區塊職責：日期一律走 **UTC**（Tim 2026-08-04 拍板統一時區）
+            //          規則本身（含 2026-08-25 全系統拍板與選擇判準）→ repo:docs/Glossary/utc-everywhere-local-display.md
+            //          —— 本註解是史料出處，別只讀這裡（TASK-0046：拍板只活在這裡時咬過人）
             // 物理意義：ledger 日期夾用 UTC，本流程原本用 local（台灣 +8）——
             //          於是 local 00:00~08:00 產生的 entry 會落在**前一天**的 UTC 夾。
             //          兩套曆並存時，結帳邊界會跟檔案位置對不上，

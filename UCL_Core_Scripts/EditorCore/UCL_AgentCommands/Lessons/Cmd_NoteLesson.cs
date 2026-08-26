@@ -115,7 +115,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Lessons
                     $"- **category**: `{category}`\n\n" +
                     $"已存在於 `{Rel(jsonlPath)}`，未重複 append（dedupe 防噪音）。\n" +
                     $"如要 force append，請改寫 body 內容。\n";
-                File.WriteAllText(confirmMdPath, dupMd, new UTF8Encoding(false));
+                WriteConfirm(args, confirmMdPath, dupMd);
                 Debug.Log($"[NoteLesson] dup skip: '{Truncate(body, 40)}' (actor={actor})");
                 return;
             }
@@ -164,7 +164,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Lessons
             confirmMd = aConfirmSb.ToString();
             try
             {
-                File.WriteAllText(confirmMdPath, confirmMd, new UTF8Encoding(false));
+                WriteConfirm(args, confirmMdPath, confirmMd);
             }
             catch (Exception ex)
             {
@@ -172,6 +172,32 @@ namespace UCL.Core.EditorLib.AgentCommands.Lessons
             }
 
             Debug.Log($"[NoteLesson] +1 lesson by {actor} ({category}): {Truncate(body, 50)}");
+        }
+
+        // ===========================================================
+        // 區塊職責：確認檔落地 —— 全域 `_last_lesson.md` ＋ per-persona 鏡寫（TASK-0059 第五宿主）。
+        // 物理意義：全域檔**保留、內容不變** —— run_cmd 的 fail-detection（CMD_OUTPUT_FILES
+        //   的 "notelesson" 項）讀它的 mtime＋首行 marker，stub 化＝拆掉活的偵測（同 _last_op 的偏離）。
+        //   閱讀通道遷 per-persona：兩人先後記 lesson，各自的回傳檔互不覆蓋，
+        //   run_cmd 印的「📄 回傳檔」指向本次這個人（ReportOutputFile）。
+        // ⚠ persona 從 args 拿（--persona 旗標注入）；拿不到（後台頁等非 queue 路徑）⇒ 只寫全域，與舊版全等。
+        // ===========================================================
+        static void WriteConfirm(Dictionary<string, string> iArgs, string iGlobalPath, string iContent)
+        {
+            File.WriteAllText(iGlobalPath, iContent, new UTF8Encoding(false));
+            try
+            {
+                string aPersona = iArgs != null && iArgs.TryGetValue("persona", out var p) ? p.Trim() : "";
+                if (aPersona.Length == 0) return;
+                string aPayload = UCL_LettersPath.CmdPayload(aPersona, "notelesson", "last_op");
+                Directory.CreateDirectory(Path.GetDirectoryName(aPayload));
+                File.WriteAllText(aPayload, iContent, new UTF8Encoding(false));
+                UCL_AgentCommandRunner.ReportOutputFile(iArgs, aPayload);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[NoteLesson] per-persona 鏡寫失敗（全域 _last_lesson.md 已寫）：{e.Message}");
+            }
         }
 
         // ===========================================================

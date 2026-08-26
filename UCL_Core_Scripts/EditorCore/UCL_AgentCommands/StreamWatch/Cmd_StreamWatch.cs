@@ -445,8 +445,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!aAutoExport)
                 aR.AppendLine("- ⏸ `auto_export=false` ⇒ 本媒材收工**不自動匯出**（回傳檔仍會印手動指令）");
             else if (string.IsNullOrEmpty(aChapterTitle))
-                aR.AppendLine("- ⛔ **未啟用** —— `chapter_title` 沒填。章名要親筆，工具不代取（不拿影片標題頂替）。\n"
-                    + $"  ⇒ 要啟用：重跑本步並帶 `--arg chapter_title=\"<章名>\"`（prepare 可重入）");
+                aR.AppendLine("- ⚠ **章名未填 —— 收工仍會自動匯出**，章名用哨兵值 `##None##`（TASK-0064）。\n"
+                    + "  章名不由工具代取；哨兵是「還沒有名字」的記號。事後補名走 `--force` 重出，**不能手改 .txt**（機械產物會被覆寫）。\n"
+                    + "  查哪些章還掛著哨兵：`python <UCL_Core>/Tools~/AgentCommands/library.py list-untitled`\n"
+                    + $"  ⇒ 現在就定名（建議）：重跑本步並帶 `--arg chapter_title=\"<章名>\"`（prepare 可重入）");
             else
                 aR.AppendLine($"- ✅ **已啟用** —— 主觀影者收工時自動匯出成章 `{(string.IsNullOrEmpty(aExportChapter) ? aChapterId : aExportChapter)}`"
                     + $"：「{aChapterTitle}」（陪同場區間會一併併入；同章舊場次也會一起重匯）");
@@ -816,7 +818,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                             $"跑 step=cycle 繼續；到期或 Tim 停錄影時 cycle 會自己判定收工");
                     throw new Exception($"[StreamWatch] step=start blocked：session 已存在（詳見 {aPath}）");
                 }
-                aR.AppendLine($"- ℹ 偵測到過期殘留 session（{aOld.session_id}）已自動收掉，開新場。");
+                // 🩸 TASK-0065：原本這裡只印一行就走 —— 而 `SettleAsync` 是 `AppendSessionLog` 的**唯一**呼叫點，
+                //    於是沒跑到「cycle 判定收工」的場次：① 酬勞蒸發 ② **seq 區間永久消失 ⇒ 那場觀察再也匯不進書**
+                //    ③ 印出來的字跟正常收工一模一樣。⇒ 補結算，不是 active=false 一筆帶過。
+                //    ⚠ 計費上限仍是 ends_at（SettleAsync 內兩者取小）—— 回得越晚領越多那條沒有被打開。
+                aR.AppendLine($"- ℹ 偵測到過期殘留 session（{aOld.session_id}）—— **補結算後**開新場：");
+                await SettleAsync(iArgs, iPersona, aOld, false, aNow, aOldEnd, aR, iToken, "residue-settled");
             }
 
             // ── 守衛③.5：全場同時只能有一個主觀影者（Tim 2026-08-25 拍板「不管是否帶錯參數」）──
@@ -1156,6 +1163,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             public string WmNote;
             /// <summary>「進度檔位」讀數行（回傳檔原樣印 —— 做了什麼要看得見）。</summary>
             public string TierLine;
+            /// <summary>檔位短名（自動標頭用）—— **不要從 TierLine 反解字串**，那是投影不是欄位。</summary>
+            public string TierLabel;
+            /// <summary>本檔窗口目標秒數（0＝檔位關閉／表無效）。</summary>
+            public int WindowSec;
+            /// <summary>重疊秒數（接力交接不留縫）。</summary>
+            public int OverlapSec;
         }
 
         /// <summary>選檔：取 `lag_min_sec ≤ 落後量` 中門檻最高者；全都比落後量大（含落後量為負）就取門檻最小那檔。
@@ -1189,6 +1202,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aCfgSrc = aCfg != null ? "後台設定" : "⚠ 保底值（讀不到 _config.json）";
 
             var aPlan = new WatchWindowPlan();
+            aPlan.OverlapSec = aOverlap;
             DateTime aBegin = DateTime.Now;
             double aCur = iCursor;   // 本輪段起點 —— 等待中可能被共享前緣往前帶（見下）
             while (true)
@@ -1211,6 +1225,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (!aTierOn)
                 {
                     aPlan.Before = aPlayable;
+                    aPlan.TierLabel = "關閉"; aPlan.WindowSec = 0;
                     aPlan.TierLine = $"- 進度檔位 : **關閉**（`watch_pacing_tiers` 空）"
                                    + $"｜可播放前緣 {FromEpochLocal(aPlayable):HH:mm:ss}（{aFrontierNote}）｜重疊 {aOverlap}s";
                     break;
@@ -1219,6 +1234,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (aTier == null)
                 {
                     aPlan.Before = aPlayable;
+                    aPlan.TierLabel = "檔位表無效"; aPlan.WindowSec = 0;
                     aPlan.TierLine = "- 進度檔位 : ⚠ 檔位表無有效項（`window_sec` 全 ≤0）—— 視同關閉"
                                    + $"｜可播放前緣 {FromEpochLocal(aPlayable):HH:mm:ss}（{aFrontierNote}）｜重疊 {aOverlap}s";
                     break;
@@ -1236,6 +1252,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         : aEnough ? $"｜等水位 {aWaited:F0}s ✓ 滿足"
                         : $"｜等水位 {aWaited:F0}s 仍不足（可讀 {Math.Max(0, aLag):F0}s < 目標 {aTier.window_sec}s，先吃現有的）";
                     string aLabel = string.IsNullOrEmpty(aTier.label) ? $"檔位(≥{aTier.lag_min_sec}s)" : aTier.label;
+                    aPlan.TierLabel = aLabel; aPlan.WindowSec = aTier.window_sec;
                     aPlan.TierLine = $"- 進度檔位 : **{aLabel}**（可讀落後 {Math.Max(0, aLag):F0}s，門檻 ≥{aTier.lag_min_sec}s）"
                                    + $"｜窗口目標 {aTier.window_sec}s｜重疊 {aOverlap}s{aWaitNote}\n"
                                    + $"　　　　　　 來源：{aCfgSrc} `watch_pacing_tiers`（{aTiers.Count} 檔）"
@@ -1306,6 +1323,34 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     aRelay = new UCL_StreamWatchRelay { session_id = aRelaySid };
                 // 段起點來自共享前緣，不來自個人游標 —— 這一行就是「接力」與「平行覆蓋」的分水嶺
                 if (aRelay.frontier_epoch > 0) aCursor = aRelay.frontier_epoch;
+            }
+
+            // ── 游標下限＝ring buffer 最舊那張（2026-08-26 修，Tim 點出「最多只能錄 2400」）──
+            // 物理意義：buffer 只留 max_frames 張，**比最舊那張更舊的時間點在磁碟上已經不存在**。
+            //          游標若落在那之前，每一輪都會取到 0 格，而系統原本印的是
+            //          「畫面有，但字幕/語音還沒辨識到那裡」——**那句話在這種情況下是假的**，
+            //          它會讓人以為再等一下就好，實際上要等的東西已經被覆蓋掉了。
+            // 🩸 實撞（今晚開場）：STT 水位停在前一場的 21:19，錄影 22:24 才開 ⇒
+            //          前緣被 seed 在一小時前，接著花了約 20 輪走一段永遠不會有 frame 的時間。
+            // ⇒ 夾上去，並且**說出來**（夾了什麼、跳過多久）——靜默夾住會讓「跳過」看起來像「看過」。
+            double aOldestFrame = OldestFrameEpoch();
+            if (aOldestFrame > 0 && aCursor > 0 && aCursor < aOldestFrame)
+            {
+                double aSkipped = aOldestFrame - aCursor;
+                aR.AppendLine($"- ⚠ 游標下限夾正 : 原游標 {FromEpochLocal(aCursor):HH:mm:ss} **早於 buffer 最舊 frame** "
+                            + $"{FromEpochLocal(aOldestFrame):HH:mm:ss} ⇒ 那段已被 ring buffer 覆蓋、**永遠不會出現**，"
+                            + $"已跳到最舊可讀處（跳過 {aSkipped:F0}s ≒ {aSkipped / 60:F0} 分鐘）");
+                aR.AppendLine($"　　　　　　 ⇒ 這 {aSkipped / 60:F0} 分鐘**沒有人看過也看不到**，"
+                            + "不要當成「有人看過」或「等一下就有」。");
+                aCursor = aOldestFrame;
+                if (aRelay != null && aRelay.frontier_epoch < aCursor)
+                {
+                    // 前緣一起推上去 —— 否則同場其他人會各自再走一遍同一段空白。
+                    aRelay.frontier_epoch = aCursor;
+                    aRelay.updated_by = iPersona;
+                    aRelay.updated_at = UCL_AwakeningService.NowIso();
+                    SaveRelay(aRelayKey, aRelay);
+                }
             }
 
             // ── 終止判定（唯一的一處；Tim 2026-08-25 拍板「觀影結束看實際錄製時間」）──
@@ -1398,18 +1443,29 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 兩人同時回來也拿不到同一段；montage 若短交，短差由下一段的重疊補。
             // ⚠ 佔段前**重讀**前緣：等待期間別人可能已把前緣推得更遠，拿等待前的舊物件直接覆寫
             //   會把前緣往回拉（單調性破壞 —— 這格是 2026-08-25 自己 code review 抓到的，未實撞先修）。
+            int aSegIndex = 0;
             if (aRelay != null)
             {
+                // ⚠ 兩個欄位都要取 max —— 只比 frontier 的話，別人剛發過號而前緣沒動時，
+                //   我會拿到同一個號（單調性要逐欄保證，不能靠「它們總是一起動」這個假設）。
                 var aFresh = LoadRelay(aRelayKey);
-                if (aFresh != null && aFresh.session_id == aRelaySid && aFresh.frontier_epoch > aRelay.frontier_epoch)
-                    aRelay = aFresh;
-                if (aWin.Before > aRelay.frontier_epoch)
+                if (aFresh != null && aFresh.session_id == aRelaySid)
                 {
-                    aRelay.frontier_epoch = aWin.Before;
-                    aRelay.updated_by = iPersona;
-                    aRelay.updated_at = UCL_AwakeningService.NowIso();
-                    SaveRelay(aRelayKey, aRelay);
+                    if (aFresh.frontier_epoch > aRelay.frontier_epoch) aRelay.frontier_epoch = aFresh.frontier_epoch;
+                    if (aFresh.next_seg_index > aRelay.next_seg_index) aRelay.next_seg_index = aFresh.next_seg_index;
                 }
+                // 發號＋佔段＝同一次寫入（TASK-0060）：先佔段再取材的語意不變，號跟著段一起被佔走。
+                aSegIndex = ++aRelay.next_seg_index;
+                if (aWin.Before > aRelay.frontier_epoch) aRelay.frontier_epoch = aWin.Before;
+                aRelay.updated_by = iPersona;
+                aRelay.updated_at = UCL_AwakeningService.NowIso();
+                SaveRelay(aRelayKey, aRelay);
+            }
+            else
+            {
+                // relay 關閉／讀不到 ⇒ 退用個人輪數（單人場下兩者等價）。
+                // **不是靜默退化**：回傳檔的「接力」行本來就會印「關閉／讀不到」，段號來源跟著它。
+                aSegIndex = aS.cycles + 1;
             }
             DateTime aRunStart = DateTime.Now;
             // 酒館已讀游標：優先用 session 記的 `tavern_seq`；沒有就退回 `start_seq`（＝開播那則，本場起點）。
@@ -1453,6 +1509,32 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 // 落了之後，下一次呼叫由 AwaitCycleSlotAsync 自己等到格線 ⇒ 呼叫端不必再自己數 30-60 秒。
                 aS.last_cycle_ts = UCL_AwakeningService.NowIso();
                 SaveSession(iPersona, aS);
+                // 🩸 TASK-0060 首次實跑抓到的洞（2026-08-26 22:24）：段號在**佔段時**就發掉了，
+                //    而這條「無新素材」是提早返回 ⇒ 台帳沒有那一行 ⇒ 號碼序列留一個缺口。
+                //    而缺口的意思在設計上是「有人佔了段卻沒交觀察」（要被追的），
+                //    跟「這一輪水位沒追上」完全是兩件事 —— **兩者不可同形**。
+                //    ⇒ 照樣寫一行，tiles=0 並在 header 說明是水位未追上，號碼因此連續。
+                if (aSegIndex > 0)
+                    AppendSegmentLine(new UCL_StreamWatchSegmentRecord
+                    {
+                        record_type = "segment",
+                        relay_key = aRelayKey,
+                        session_id = aS.session_id,
+                        persona = iPersona,
+                        seg_index = aSegIndex,
+                        from_epoch = aWin.After,
+                        to_epoch = aWin.Before,
+                        tiles = 0,
+                        span_sec = 0,
+                        tier = string.IsNullOrEmpty(aWin.TierLabel) ? "—" : aWin.TierLabel,
+                        window_sec = aWin.WindowSec,
+                        overlap_sec = aWin.OverlapSec,
+                        watermark = aWin.Watermark,
+                        margin_sec = 0,
+                        clamped = false,
+                        header = $"【段 #{aSegIndex}｜無新素材 —— 感官水位未追上（不是漏看，也不是有人沒交）】",
+                        claimed_at = UCL_AwakeningService.NowIso(),
+                    });
                 AppendPacingLine(aR, aS, aWaited);
                 aR.AppendLine();
                 aR.AppendLine("## next");
@@ -1513,6 +1595,48 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aS.tiles_total += aInfo.Tiles;
             aS.last_tiles = aInfo.Tiles;
             aS.last_span_seconds = aInfo.SpanSeconds;
+            aS.last_seg_index = aSegIndex;
+
+            // ── 段台帳（TASK-0060）：一段一行，含渲染好的標頭 ──
+            // ⚠ 這一筆**無論 montage 成功或短交都要寫** —— 段已經被佔走了，
+            //   不寫就會在段號上留一個「不存在的洞」，而洞跟「有人逾時未交」同形。
+            double aSegTo = aInfo.NextCursor > 0 ? aInfo.NextCursor : aWin.Before;
+            double aSegFrom = aSegTo - Math.Max(0, aInfo.SpanSeconds);
+            double aMargin = (aWatermark > 0 && aInfo.NextCursor > 0) ? aWatermark - aInfo.NextCursor : 0;
+            bool aClamped = aWatermark > 0 && aInfo.NextCursor > 0 && aMargin >= -1.0;
+            string aClampText = aWatermark <= 0
+                ? "⚠ 無感官水位（以保底前緣夾）"
+                : (aInfo.NextCursor <= 0
+                   ? "⚠ 無 next-cursor 讀數 ⇒ 當成夾子沒生效"
+                   : (aClamped
+                      ? $"尾端 {FromEpochLocal(aInfo.NextCursor):HH:mm:ss} ≤ 水位 {FromEpochLocal(aWatermark):HH:mm:ss} ✅ 餘裕 {aMargin:F0}s"
+                      : $"⚠ 尾端 {FromEpochLocal(aInfo.NextCursor):HH:mm:ss} **>** 水位 {FromEpochLocal(aWatermark):HH:mm:ss} ❌ "
+                        + $"夾子沒生效，尾端那 {-aMargin:F0}s 的「沒字幕」不可信"));
+            string aTierText = string.IsNullOrEmpty(aWin.TierLabel) ? "—" : aWin.TierLabel;
+            string aHeader = $"【觀察 #{aSegIndex}｜{FromEpochLocal(aSegFrom):HH:mm:ss}–{FromEpochLocal(aSegTo):HH:mm:ss}"
+                           + $"（{aInfo.Tiles} 格／每格 ≈{aInfo.PerTileSeconds:F0}s／檔位 {aTierText}"
+                           + (aWin.WindowSec > 0 ? $"・窗口目標 {aWin.WindowSec}s" : "")
+                           + $"・重疊 {aWin.OverlapSec}s）{aClampText}】";
+            AppendSegmentLine(new UCL_StreamWatchSegmentRecord
+            {
+                record_type = "segment",
+                relay_key = aRelayKey,
+                session_id = aS.session_id,
+                persona = iPersona,
+                seg_index = aSegIndex,
+                from_epoch = aSegFrom,
+                to_epoch = aSegTo,
+                tiles = aInfo.Tiles,
+                span_sec = aInfo.SpanSeconds,
+                tier = aTierText,
+                window_sec = aWin.WindowSec,
+                overlap_sec = aWin.OverlapSec,
+                watermark = aWatermark,
+                margin_sec = aMargin,
+                clamped = aClamped,
+                header = aHeader,
+                claimed_at = UCL_AwakeningService.NowIso(),
+            });
             // 格線錨點＝**這一輪實際回傳的時刻**（不是被呼叫的時刻）——
             // 遲到那一輪就以遲到點重新起算，欠帳不累積（Tim 2026-08-24：t=2 → t=5 就從 5 起算）。
             // ⚠ 存 UTC ISO（跟 start_ts / end_ts 同一種形狀）—— ParseIsoLocal 是 AssumeUniversal，
@@ -1637,9 +1761,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                             "跑 step=cycle 繼續你自己那場");
                     throw new Exception($"[StreamWatch] step=join blocked：已有 session（詳見 {aPath}）");
                 }
-                aR.AppendLine($"- ℹ 偵測到過期殘留 session（{aOwn.session_id}）已自動收掉，加入新場。");
-                aOwn.active = false;
-                SaveSession(iPersona, aOwn);
+                // 🩸 TASK-0065：同 StepStart —— 只翻 active 會讓那場的錢與 seq 區間一起消失。
+                aR.AppendLine($"- ℹ 偵測到過期殘留 session（{aOwn.session_id}）—— **補結算後**加入新場：");
+                await SettleAsync(iArgs, iPersona, aOwn, false, aNow, aOwnEnd, aR, iToken, "residue-settled");
             }
 
             // 找一個進行中的 primary（不是自己）
@@ -1772,8 +1896,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         const int BASE_MINUTES_PER_TOKEN = 10;
         const int BASE_CAP = 6;
 
+        // ⚠ `iReasonOverride`（TASK-0065）：殘留補結算走這條 —— 它與「正常到期」在台帳上**必須可分**，
+        //    否則「主人沒回來收工」與「照流程收工」同形，而前者是要被追的。
         static async UniTask SettleAsync(IDictionary<string, string> iArgs, string iPersona, UCL_StreamWatchSession ioS, bool iByInterrupt,
-                                         DateTime iNow, DateTime? iEnd, StringBuilder ioR, CancellationToken iToken)
+                                         DateTime iNow, DateTime? iEnd, StringBuilder ioR, CancellationToken iToken,
+                                         string iReasonOverride = null)
         {
             // 熱路徑判重
             string aSettledAt = ioS.settled_at;
@@ -1870,7 +1997,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             // 收播公告（記 end_seq —— 匯出區間右端點）
             var aBody = new StringBuilder();
-            aBody.AppendLine($"📺 [{iPersona} 大小姐] 收播 — {(iByInterrupt ? "**Tim 停止錄影**" : "**到期**")}｜媒材 `{aMedia}`");
+            string aReasonLabel = !string.IsNullOrEmpty(iReasonOverride)
+                                  ? "**逾時殘留補結算**（主人沒回來收工）"
+                                  : (iByInterrupt ? "**Tim 停止錄影**" : "**到期**");
+            aBody.AppendLine($"📺 [{iPersona} 大小姐] 收播 — {aReasonLabel}｜媒材 `{aMedia}`");
             aBody.AppendLine();
             aBody.AppendLine($"- 本場：{ioS.cycles} 輪 ／ **{aObs} 筆觀戰評論** ／ 在場 {aPaidMin} 分鐘");
             aBody.AppendLine($"- 結算：{aPayNote}");
@@ -1881,7 +2011,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             ioS.active = false;
             ioS.settled_at = UCL_AwakeningService.NowIso();
-            ioS.end_reason = iByInterrupt ? "recording-stopped" : "expired";
+            ioS.end_reason = !string.IsNullOrEmpty(iReasonOverride) ? iReasonOverride
+                             : (iByInterrupt ? "recording-stopped" : "expired");
             ioS.paid_minutes = aPaidMin;
             ioS.paid_total = aTotal;
             ioS.end_seq = aSeq;
@@ -1902,10 +2033,32 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   （主場 ∪ 其 companions ∪ 已匯進同一章的舊場次），所以自動化不會把第二場漏掉。
             // 數值影響：只有 **primary** 觸發（陪同者收工不觸發，否則同一章會被每個人各匯一次）；
             //   準備檔沒填章名或 auto_export=false ⇒ 完全不跑，退回原本的手動指令。
-            bool aIsPrimary = ioS.role != "companion";
+            // ⭐ **最後收工的人觸發匯出**（Tim 2026-08-26 拍板；取代原本的「只有 primary 觸發」）
+            // 🩸 為什麼要換：primary 的 ends_at 通常先到 ⇒ 她收工時陪看者還 active ⇒
+            //    那些場次**還不在台帳上**（AppendSessionLog 只在結算時跑）⇒
+            //    `--from-session` 撈不到它們 ⇒ 它們的 `exported_chapter` 永遠不會被回填，
+            //    於是「已匯出」與「還沒匯出」在台帳上同形（BUG-9 那一族）。
+            //    實撞（今晚 charlie 第一場）：書收錄 4 人 38 筆，而 `場次` 只列 2 場。
+            // ⇒ 改成「同組沒有人還在線 ⇒ 由我觸發」：等到那一刻，台帳上一定有全部場次。
+            // ⚠ 併發：兩人幾乎同時收工可能都判定自己是最後一個 ⇒ 兩次匯出。
+            //    後者帶 --force 覆寫同一章、內容相同 ⇒ **良性重覆**，不加鎖（加鎖的失敗模式更難查）。
+            // ⚠ 有人整場沒回來收工 ⇒ 匯出不會觸發；那條路由 TASK-0065（殘留補結算）接手 ——
+            //    下一次 start/join 會把它結算掉，屆時最後一個收工的人就出現了。
+            string aGroupSid = (ioS.role == "companion" && !string.IsNullOrEmpty(ioS.parent_session_id))
+                               ? ioS.parent_session_id : ioS.session_id;
+            var aStillOn = ActiveGroupPeers(aGroupSid, iPersona);
+            bool aIsLastOut = aStillOn.Count == 0;
             var (aAutoOn, aAutoWhy) = ReadAutoExportSetting(ioS.library_media_id);
             bool aExported = false;
-            if (aIsPrimary && aAutoOn)
+            if (!aIsLastOut)
+            {
+                ioR.AppendLine();
+                ioR.AppendLine("## 實錄匯出（自動）");
+                ioR.AppendLine($"- ⏸ **還不是最後一個** —— 同場仍在線：{string.Join(" / ", aStillOn.Select(p => "@" + p))}");
+                ioR.AppendLine("- ⇒ 匯出留給**最後收工的人**觸發（那時台帳上才有全部場次；"
+                             + "現在匯會漏掉還沒結算的那幾場，而漏掉的樣子跟「沒有那幾場」一模一樣）");
+            }
+            if (aIsLastOut && aAutoOn)
             {
                 var (aOk, aOut, aErr) = await RunExportWatch(aSessionId, iToken);
                 aExported = aOk;
@@ -1936,8 +2089,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 ioR.AppendLine("   （併章時的副標保留、跨作品併章仍是人的判斷，工具只覆蓋「一場＝一章」與「同章多場併區間」）");
                 return;
             }
-            if (aIsPrimary && !aAutoOn)
+            if (aIsLastOut && !aAutoOn)
                 ioR.AppendLine($"   ℹ 自動匯出未啟用：{aAutoWhy}");
+            else if (!aIsLastOut)
+                ioR.AppendLine($"   ℹ 本場尚有人在線（{string.Join(" / ", aStillOn.Select(p => "@" + p))}）"
+                             + "—— 匯出由**最後收工的人**觸發；要現在手動出章就用下面的指令。");
             // 實錄匯出：沒啟用自動時**不自動跑**。章 ≠ 場（重播、殘場、一話跨數場都發生過，001 章末就記了一次併章），
             // 而章名要親筆 ⇒ 這裡只把可直接貼的指令連同已量到的區間交出去，別讓它變成要人自己記得的事。
             ioR.AppendLine($"3. 本場實錄可匯出成章（章 ≠ 場：一話跨數場就把區間一起給）：");
@@ -2008,7 +2164,23 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             // ① 先發文
             double aSpan = aS.last_span_seconds;
+            // ── 自動標頭（TASK-0060）──
+            // 物理意義：標頭原本由 agent 手抄 cycle 回傳檔 ⇒ 格式漂移、會漏帶（實例 seq 17066），
+            //          而「觀察 #N」用的是各人的 cycles 計數 ⇒ 跨人撞號（一話兩個 #1）。
+            // ⚠ 只自動帶**事實欄**；判讀（例如「那幾格的沒字幕不可信要怎麼處理」）仍然要人自己寫。
+            //   夾子沒生效時標頭印 ⚠ 而不是 ✅ —— 讓它刺眼，不讓它變成樣板。
+            string aRelayKeyObs = (aS.role == "companion" && !string.IsNullOrEmpty(aS.parent_persona))
+                                  ? aS.parent_persona : iPersona;
+            var aSeg = aS.last_seg_index > 0 ? FindSegment(aRelayKeyObs, aS.last_seg_index) : null;
+            string aAutoHeader = aSeg != null && !string.IsNullOrEmpty(aSeg.header)
+                ? aSeg.header
+                : (aS.last_seg_index > 0
+                   ? $"【觀察 #{aS.last_seg_index}｜⚠ 段紀錄讀不到 —— 標頭欄位缺（段台帳裡沒有這一段，不是「這段沒素材」）】"
+                   : "【觀察 ⚠ 無段號 —— 本場在段台帳上線前開始，或 relay 讀不到】");
+
             var aBody = new StringBuilder();
+            aBody.AppendLine(aAutoHeader);
+            aBody.AppendLine();
             aBody.AppendLine(iBody.TrimEnd());
             aBody.AppendLine();
             aBody.AppendLine($"— 本輪素材：{aLastTiles} 格／涵蓋 {aSpan:F0}s（**每格 ≈{(aLastTiles > 0 ? aSpan / aLastTiles : 0):F0}s**）｜媒材 `{aS.media_id}`");
@@ -2027,6 +2199,23 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aS.observations = aObs;
             aS.last_observe_seq = aSeq;
             SaveSession(iPersona, aS);
+
+            // ── seg_index ↔ tavern seq 對照（TASK-0060 / Tim 2026-08-26 拍板）──
+            // **發文成功才寫** —— 對照表是匯出排序的事實源，不能有指向不存在訊息的行。
+            // ⚠ 排序讀這份，不解析訊息本文、也不以 message meta 為主：
+            //   meta 漏寫會長出「一則沒有段號的觀察」而看起來完全正常；
+            //   這裡缺一筆會顯示成「這段沒有 seq」——**讀不到與沒有可分**。
+            if (aS.last_seg_index > 0)
+                AppendSegmentLine(new UCL_StreamWatchSegmentRecord
+                {
+                    record_type = "observe",
+                    relay_key = aRelayKeyObs,
+                    session_id = aS.session_id,
+                    persona = iPersona,
+                    seg_index = aS.last_seg_index,
+                    seq = aSeq,
+                    at = UCL_AwakeningService.NowIso(),
+                });
 
             DateTime? aEnd = ParseIsoLocal(aS.end_ts);
             int aRemain = aEnd.HasValue ? (int)Math.Max(0, (aEnd.Value - DateTime.Now).TotalMinutes) : 0;
@@ -2544,7 +2733,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             AtomicWrite(HotspotsPath(), iH.SerializeToJson().ToJsonBeautify());
         }
 
-        /// <summary>磁碟上最舊 frame 的 epoch（ring buffer 左界）。讀不到回 0 —— 呼叫端**不可把 0 當成「都還在」**。</summary>
+        /// <summary>磁碟上最舊 frame 的 epoch（ring buffer 左界）。讀不到回 0 —— 呼叫端**不可把 0 當成「都還在」**。
+        /// ⚠ 2026-08-26 補記：這個左界原本**只套在熱點**（標記／認領／清單三處都查），
+        /// 而 `step=cycle` 的觀看游標**沒有查** ⇒ 游標可以停在已被覆蓋的時間上，
+        /// 每輪取 0 格卻印「字幕還沒辨識到那裡」。同一條判準，兩個姊妹路徑只保護了一邊。
+        /// ⇒ 現已加到 StepCycle 的游標種子之後（搜 `游標下限夾正`）。</summary>
         static double OldestFrameEpoch()
         {
             try
@@ -2927,8 +3120,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     return (false, "準備檔 `auto_export=false`（本媒材刻意關掉）");
                 string aTitle = aP.chapter_title;
                 if (string.IsNullOrWhiteSpace(aTitle))
-                    return (false, "準備檔沒有 `chapter_title` —— 章名要親筆，工具不代取"
-                        + "（prepare 可重入：`--arg chapter_title=\"<章名>\"`）");
+                    // TASK-0064 / Tim 2026-08-26：沒章名**照樣出書**，章名由 python 端填哨兵值 `##None##`。
+                    // 🩸 原本擋在這裡的後果是「整本書不存在」，而它跟「這一話沒人看」在產物上同形，
+                    //    沒有任何一層會喊（ep10 實撞：四場全收工、48 則觀察在河道上，書一章都沒有）。
+                    //    章名仍然不由工具代取 —— 哨兵是「還沒有名字」的記號，不是一個名字。
+                    return (true, "(章名未定 ⇒ 哨兵值出書，收工後補名)");
                 return (true, aTitle);
             }
             catch (Exception e) { return (false, $"準備檔解析失敗：{e.Message}"); }
@@ -2978,6 +3174,107 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         }
 
         const string SESSION_LOG_NAME = "sessions_log.jsonl";
+
+        // ===========================================================
+        // 區塊職責：段台帳（`StreamWatch/segments.jsonl`，append-only、**永不覆寫**）—— TASK-0060。
+        // 物理意義：接力狀態原本只有一個「游動的 frontier_epoch」⇒ 段沒有持久指涉物 ⇒
+        //          ① 訊息無法按素材順序重排 ② 標頭只能 agent 手抄（漂移／漏帶）
+        //          ③ 「觀察 #N」是各人的 cycles 計數，跨人撞號（一話出現兩個 #1）。
+        // 🩸 血證：Books/watch-apocalypse-hotel/010.txt —— 章內素材時間來回跳
+        //          （20:51:59 → 20:52:31 → **20:52:19** → 20:53:51 → 20:55:51 → **20:54:21**），
+        //          且同章有兩個「觀察 #1」、兩個「#2」。
+        // 兩種 record（用 record_type 分）：
+        //   segment —— 一段一行（佔段＋取材完的事實）
+        //   observe —— seg_index ↔ tavern seq 的對照（**發文成功才寫**）
+        // ⚠ 對照表是**排序的事實源**，不是訊息本文、也不是 message meta（Tim 2026-08-26 拍板）：
+        //   meta 漏寫會長出「一則沒有段號的觀察」而看起來完全正常；
+        //   台帳的缺漏會顯示成「這段沒有 seq」——**讀不到與沒有，在輸出上可分**。
+        // ⚠ 這份**不是暫存**：書可能幾週後才重出（TASK-0061），對照表必須跟書一樣長壽 ⇒ 進版控。
+        // ===========================================================
+        /// <summary>同一場（同 relay 組）**還在線**的其他人 —— 給「最後收工的人觸發匯出」用。
+        /// 判定只認 session 檔的顯式 `active` 欄位，不推論。
+        /// ⚠ 呼叫端必須**先**把自己存成 active=false 再問，否則永遠問不到 0。</summary>
+        static List<string> ActiveGroupPeers(string iGroupSessionId, string iSelfPersona)
+        {
+            var aOut = new List<string>();
+            try
+            {
+                string aDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "sessions");
+                if (!Directory.Exists(aDir)) return aOut;
+                foreach (string aFile in Directory.GetFiles(aDir, "*.json"))
+                {
+                    try
+                    {
+                        var aJd = JsonData.ParseJson(File.ReadAllText(aFile, Encoding.UTF8));
+                        if (aJd == null) continue;
+                        var aS = new UCL_StreamWatchSession();
+                        aS.DeserializeFromJson(aJd);
+                        if (!aS.active) continue;
+                        if (string.Equals(aS.persona, iSelfPersona, StringComparison.OrdinalIgnoreCase)) continue;
+                        string aTheirGroup = !string.IsNullOrEmpty(aS.parent_session_id)
+                                             ? aS.parent_session_id : aS.session_id;
+                        if (aTheirGroup == iGroupSessionId) aOut.Add(aS.persona);
+                    }
+                    catch { /* 壞檔跳過 —— 一個人的檔壞掉不該讓全場的匯出判定失準到「以為沒人在線」 */ }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[StreamWatch] 同場在線掃描失敗: {e.Message}");
+            }
+            return aOut;
+        }
+
+        const string SEGMENT_LOG_NAME = "segments.jsonl";
+
+        static string SegmentLogPath()
+            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", SEGMENT_LOG_NAME);
+
+        static void AppendSegmentLine(UnityJsonSerializable iRec)
+        {
+            try
+            {
+                string aPath = SegmentLogPath();
+                Directory.CreateDirectory(Path.GetDirectoryName(aPath));
+                File.AppendAllText(aPath, iRec.SerializeToJson().ToJson() + "\n", new UTF8Encoding(false));
+            }
+            catch (Exception e)
+            {
+                // 台帳寫不進去不該讓取材／發文失敗 —— 但**必須留痕**，否則排序會安靜地少一段。
+                Debug.LogWarning($"[StreamWatch] 段台帳 append 失敗（不影響本輪）: {e.Message}");
+            }
+        }
+
+        /// <summary>找某段的紀錄（同 relay_key + seg_index 取**最後一筆**）。找不到回 null —— 呼叫端要能區分「沒有」與「讀失敗」。</summary>
+        static UCL_StreamWatchSegmentRecord FindSegment(string iRelayKey, int iSegIndex)
+        {
+            try
+            {
+                string aPath = SegmentLogPath();
+                if (!File.Exists(aPath)) return null;
+                UCL_StreamWatchSegmentRecord aHit = null;
+                foreach (string aLine in File.ReadAllLines(aPath, Encoding.UTF8))
+                {
+                    if (string.IsNullOrWhiteSpace(aLine)) continue;
+                    if (aLine.IndexOf("\"segment\"", StringComparison.Ordinal) < 0) continue;   // 便宜的前置過濾
+                    var aJd = JsonData.ParseJson(aLine);
+                    if (aJd == null) continue;
+                    var aRec = new UCL_StreamWatchSegmentRecord();
+                    aRec.DeserializeFromJson(aJd);
+                    if (aRec.record_type != "segment") continue;
+                    if (aRec.seg_index != iSegIndex) continue;
+                    if (!string.Equals(aRec.relay_key, iRelayKey, StringComparison.OrdinalIgnoreCase)) continue;
+                    aHit = aRec;   // 取最後一筆（append-only 的修訂語意）
+                }
+                return aHit;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[StreamWatch] 段台帳讀取失敗: {e.Message}");
+                return null;
+            }
+        }
+
 
         static void AppendSessionLog(UCL_StreamWatchSession iS, string iPersona, int iEndSeq, int iPaidMin, int iPaidTotal)
         {
@@ -3072,6 +3369,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             public double frontier_epoch = 0;
             /// <summary>綁定的 primary session id —— 開新場（step=start）就重置，舊前緣不跨場。</summary>
             public string session_id = "";
+            /// <summary>全場共用的段序發號器（TASK-0060）—— 下一段要拿的號。
+            /// 與 <see cref="frontier_epoch"/> **同一次寫入** ⇒ 發號與佔段是同一個原子動作，
+            /// 兩人同時回來不會拿到同一個號（沿用「寫前重讀、只前進」的防回退寫法）。
+            /// ⚠ 開新場重置為 0 ⇒ **段號只在一場內唯一**；跨場（中斷重看）排序要再帶場次世代，見 TASK-0061。</summary>
+            public int next_seg_index = 0;
             public string updated_by = "";
             public string updated_at = "";
         }
@@ -3342,6 +3644,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public int end_seq = 0;
         /// <summary>酒館段已讀水位（本場語意）。⚠ 只在真的顯示過訊息時才前進。</summary>
         public int tavern_seq = 0;
+        /// <summary>本輪拿到的全場段序（TASK-0060）—— observe 靠它找回段紀錄組標頭。0＝還沒取材。</summary>
+        public int last_seg_index = 0;
         public int last_tiles = 0;
         public double last_span_seconds = 0;
         public int last_observe_seq = 0;
@@ -3428,6 +3732,39 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         /// <summary>認領者（空＝未認領）。**一個熱點只能被領一次** —— 目的是把眼睛分散到不同段。</summary>
         public string claimed_by = "";
         public string claimed_at = "";
+    }
+
+    /// <summary>段台帳的一行（`StreamWatch/segments.jsonl`，append-only）—— TASK-0060。
+    /// `record_type=segment` 是段本身；`record_type=observe` 只填 relay_key/seg_index/seq/persona/at
+    /// （seg_index ↔ tavern seq 對照，**匯出排序的事實源**）。</summary>
+    public class UCL_StreamWatchSegmentRecord : UnityJsonSerializable
+    {
+        public string record_type = "segment";
+        /// <summary>接力組鍵＝primary persona（companion 走 parent_persona）—— 同一場的人共用。</summary>
+        public string relay_key = "";
+        public string session_id = "";
+        public string persona = "";
+        /// <summary>全場共用的段序（1 起算）。**顯示與跨人引用一律用這個**，不是個人 cycles。</summary>
+        public int seg_index = 0;
+        public double from_epoch = 0;
+        public double to_epoch = 0;
+        public int tiles = 0;
+        public double span_sec = 0;
+        public string tier = "";
+        public int window_sec = 0;
+        public int overlap_sec = 0;
+        /// <summary>本輪感官水位（0＝讀不到）。</summary>
+        public double watermark = 0;
+        /// <summary>窗口尾端與水位的餘裕秒數（負＝夾子沒生效）。</summary>
+        public double margin_sec = 0;
+        /// <summary>夾子是否生效 —— false 時尾端那幾格的「沒字幕」不可信。</summary>
+        public bool clamped = false;
+        /// <summary>渲染好的觀察標頭（人可讀投影；結構化事實在上面各欄）。</summary>
+        public string header = "";
+        public string claimed_at = "";
+        /// <summary>observe 記錄用：這則觀察的 tavern seq。</summary>
+        public int seq = 0;
+        public string at = "";
     }
 
     /// <summary>熱點清單（`StreamWatch/hotspots.json`）。`List&lt;model&gt;` 的巢狀存取由序列化器負責。</summary>

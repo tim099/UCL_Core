@@ -40,11 +40,65 @@ related:
 
 **全場同時只有一個主觀影者**（同日拍板，硬守衛）：`step=start` 掃 `sessions/*.json`，
 存在別人的 active 且未過期 primary ⇒ blocked 指路 catchup→join（過期殘留不擋）。
-primary 的職責＝準備階段設定＋熱點**標記**＋開收場結算；**取材上全員平等**（同一條接力段）。
+primary 的職責＝準備階段設定＋開收場結算；**取材上全員平等**（同一條接力段）。
+
+⚠ **熱點誰能標／誰能追**（2026-08-26 釐清，本行舊版寫錯過）：
+`step=hotspot` **人人可標，含 primary**（code 沒有角色守衛 —— 接力後每個人都有自己獨看的段）；
+`step=claim`（細看）**只給陪看者**，primary 撞硬守衛。primary 的差別是**不追蹤**，不是不能標。
+
+⚠ **收工自動匯出的觸發者＝最後收工的那個人**（2026-08-26 拍板，取代「只有 primary 觸發」）：
+`SettleAsync` 掃 `sessions/*.json`，同組（自己的 `session_id` 或 `parent_session_id` 相同）
+還有人 `active` ⇒ **不匯出**，回傳檔印出還在線的是誰；一個都沒有 ⇒ 由我觸發。
+🩸 為什麼換：primary 的 `ends_at` 通常先到 ⇒ 她收工時陪看者還在線 ⇒ 那些場次**還不在台帳上**
+（`AppendSessionLog` 只在結算時跑）⇒ `--from-session` 撈不到 ⇒ 它們的 `exported_chapter` 永遠不回填，
+於是「已匯出」與「還沒匯出」在台帳上同形（BUG-9 那族）。
+實撞（2026-08-26 charlie 第一場）：書收錄 4 人 38 筆，而表頭的 `場次` 只列 2 場。
+- 併發：兩人幾乎同時收工可能都自認最後 ⇒ 兩次匯出，後者 `--force` 覆寫同章、內容相同 ⇒ **良性重覆**，不加鎖。
+- 有人整場沒回來收工 ⇒ 匯出不觸發；由「殘留補結算」接手（下次 start/join 會結算它，屆時最後一個人就出現）。
+- ⚠ 連帶修好 python 端：`_resolve_from_session` 原本**假設傳進來的是 primary**（只收 parent 指向自己的場次），
+  觸發者是 companion 時只會匯出他自己那一段 —— 現在會先**錨定到主場**再收全組。
 
 ⚠ 中斷**只認 `enabled` 這個顯式欄位，不推論 frame 新鮮度** ——
 實測活樣本 `enabled=false` 而近千張 frame 仍在磁碟上；用 frame 推論會把 daemon 打嗝讀成中斷，
 而 **session 誤殺加結算已發生、收不回**。
+
+⚠ **過期殘留一律補結算**（2026-08-26，TASK-0065）：`step=start` 守衛③ 與 `step=join` 撞到
+自己的過期 active session 時，**走 `SettleAsync`**（結算＋`AppendSessionLog`＋收播公告，
+`end_reason=residue-settled`），不是把 `active` 翻成 false 就走。
+🩸 為什麼：`SettleAsync` 是 `AppendSessionLog` 的**唯一**呼叫點 ⇒ 沒跑到「cycle 判定收工」的場次
+① 酬勞蒸發 ② **seq 區間永久消失 ⇒ 那場觀察再也匯不進書**（正是台帳存在的理由）
+③ 印出來的字跟正常收工同形。計費上限仍是 `ends_at`（兩者取小），「回得越晚領越多」沒有被打開。
+
+## 1.5 段台帳與自動標頭（2026-08-26，TASK-0060）
+
+`StreamWatch/segments.jsonl`（append-only，**進版控** —— 不是暫存）：
+
+| record_type | 何時寫 | 內容 |
+|---|---|---|
+| `segment` | `cycle` 取材完（**成功或短交都寫**） | `relay_key` / `session_id` / `persona` / `seg_index` / `from_epoch` / `to_epoch` / `tiles` / `span_sec` / `tier` / `window_sec` / `overlap_sec` / `watermark` / `margin_sec` / `clamped` / `header` |
+| `observe` | `observe` **發文成功後** | `relay_key` / `seg_index` / `seq` / `persona` / `at` ＝ **seg_index ↔ tavern seq 對照** |
+
+- **段序發號**：`relay/<primary>.json` 的 `next_seg_index`，**與 `frontier_epoch` 同一次寫入**
+  ⇒ 發號與佔段是同一個原子動作。寫前重讀時**兩個欄位各自取 max**
+  （只比 frontier 的話，別人剛發過號而前緣沒動時會發出重號）。
+- **段序只在一場內唯一**（開新場重置為 0）⇒ 同一話跨場（中斷後重看）排序要再帶場次世代，見 TASK-0061。
+- `relay` 關閉／讀不到 ⇒ 段號退用個人 `cycles+1`。**不是靜默退化** —— 回傳檔的「接力」行本來就會印關閉／讀不到。
+- **匯出排序讀這份對照表，不解析訊息本文、也不以 message meta 為主**（Tim 2026-08-26 拍板）：
+  meta 漏寫會長出「一則沒有段號的觀察」而看起來完全正常；台帳缺一筆會顯示成「這段沒有 seq」——
+  **讀不到與沒有，在輸出上可分**。
+- `observe` 的標頭由 Cmd 自動組（取自該段的 `header`），agent **不再手抄**。
+  夾子沒生效時標頭印 **⚠** 不是 ✅ —— 自動化只帶事實欄，判讀仍是人的事。
+
+## 1.6 熱點：只是一個時間段，沒有層級（2026-08-26，TASK-0063）
+
+`step=hotspot` **只擋兩件事**：區間解析失敗／首尾顛倒（`to` 必須晚於 `from`）、`why` 為空。
+
+⇒ **不擋重疊、不擋包含。** 所以在既有熱點區間內再標一段更短的（20s → 6s）是
+**支援的用法，不是漏擋** —— 讀到「這裡沒有守衛」時**不要去補一個守衛**，那會剛好把這個用法擋掉。
+
+- **沒有 `parent_id` / `depth`，也不需要有**：包含關係比較兩筆的 `from/to` 就看得出來。
+  另外用 `why` 或編號再寫一次 ＝ 同一個量兩個說法 ⇒ 漂移源（文字寫錯、母段後來改了，兩邊都不會報錯）。
+- 熱點**不吃主線 `seg_index`**（`step=claim` 不套進度檔位，它是刻意離開主線去細看的）。
 
 ## 2. `cycle` 的三種回傳形狀
 

@@ -2334,6 +2334,39 @@ def _iter_tavern_messages(room: str, seq_lo: int, seq_hi: int):
     return out
 
 
+# 章名未定的哨兵值（TASK-0064 / Tim 2026-08-26）。
+# 選字要求：**不可能是任何人真的會打的章名**，且不與匯出表頭的 markdown / regex 衝突。
+# 哨兵必須**可查**，否則書有了而名字永遠是它，沒有人會發現 —— 那只是把一種靜默換成另一種。
+# 查法：`library.py list-untitled`。
+UNTITLED_MARKER = "##None##"
+
+
+def cmd_list_untitled(args):
+    """列出章名仍掛哨兵的章 —— 哨兵可查性由這支提供。"""
+    root = _DATA_ROOT / "Books"
+    if not root.is_dir():
+        print(f"❌ 找不到 Books/（{root}）", file=sys.stderr)
+        return 1
+    hits = []
+    for book in sorted(root.iterdir()):
+        if not book.is_dir():
+            continue
+        for ch in sorted(book.glob("[0-9][0-9][0-9].txt")):
+            head = ch.read_text(encoding="utf-8", errors="replace")[:2000]
+            if UNTITLED_MARKER in head:
+                first = (head.splitlines() or [""])[0]
+                hits.append((book.name, ch.name, first.strip()))
+    if not hits:
+        print(f"✅ 沒有任何章掛著 {UNTITLED_MARKER}")
+        return 0
+    print(f"⚠ {len(hits)} 章章名未定（{UNTITLED_MARKER}）：")
+    for b, c, first in hits:
+        print(f"  {b}/{c}  {first}")
+    print("補名：改 prepared/<media_id>.json 的 chapter_title 後 --force 重出"
+          "（不能手改 .txt）")
+    return 0
+
+
 def _parse_seq_ranges(spec: str):
     """'15440-15459,15430-15433' → [(15440,15459),(15430,15433)]（排序、不合併）。"""
     ranges = []
@@ -2436,6 +2469,19 @@ def _resolve_from_session(session_id: str):
     me = state.get(session_id)
     if not me:
         raise SystemExit(f"❌ sessions_log 裡查不到場次 {session_id} —— 不猜區間。")
+    # ⚠ 錨定到主場（2026-08-26，TASK-0060 家族）：本函式原本**假設傳進來的就是 primary**
+    #   （只收 parent_session_id == session_id 的場次）。而「最後收工的人觸發匯出」之後，
+    #   觸發者很可能是 companion ⇒ 沒有任何場次的 parent 指向他 ⇒ 只會匯出他自己那一段。
+    #   🩸 徵狀會長得像「章匯出成功」（有檔、有行數），只是內容少了主場與其他陪看者。
+    if me.get("parent_session_id"):
+        parent_sid = me["parent_session_id"]
+        if parent_sid in state:
+            session_id = parent_sid
+            me = state[parent_sid]
+        else:
+            print(f"⚠ 觸發者 {session_id} 的主場 {parent_sid} 還不在台帳上 "
+                  f"（主場尚未結算？）⇒ 本次只能以觸發者自己的區間匯出，可能不完整。",
+                  file=sys.stderr)
     media = me.get("media_id") or ""
     lib_media = me.get("library_media_id") or ""
     sessions = [session_id]
@@ -2503,10 +2549,20 @@ def cmd_export_watch(args):
                                               or prep.get("show_title") or "").strip() or None
         if not args.title:
             # ⛔ 章名一定要親筆 —— 不拿影片標題（show_title）當預設值。
-            print("❌ 準備檔沒有 chapter_title —— 章名要親筆，工具不代取。\n"
-                  "   補法：prepare 時帶 --arg chapter_title=\"<章名>\"（可重入），或手動 export-watch --title。",
+            # ✅ 但「沒有章名」不該讓**整本書不存在**（Tim 2026-08-26 拍板，TASK-0064）：
+            #    🩸 ep10 實撞：四場全收工、48 則觀察都在河道上，而書一章都沒有 ——
+            #    而「書不存在」跟「這一話沒人看」在產物上**完全同形**，沒有任何一層會喊。
+            #    ⇒ 改成用哨兵值出書：工具仍然沒有代取章名，只是把「還沒有名字」寫成明確記號。
+            args.title = UNTITLED_MARKER
+            _note_add = (f"⚠ 章名未定（{UNTITLED_MARKER}）—— 匯出時準備檔沒有 chapter_title。"
+                         "補名**不能手改本檔**（機械產物，下次匯出會覆寫）："
+                         "改 prepared/<media_id>.json 的 chapter_title 後 --force 重出，"
+                         "或 export-watch --force --title 《章名》。")
+            args.note = ((args.note + " ") if args.note else "") + _note_add
+            print(f"⚠ 準備檔沒有 chapter_title ⇒ 章名用哨兵值 {UNTITLED_MARKER} 出書"
+                  f"（章名仍要人親筆補）。補名："
+                  f"library.py export-watch --from-session {args.from_session} --force --title <章名>",
                   file=sys.stderr)
-            return 1
         print(f"↩ from-session {args.from_session}："
               f"media={args.media} 章={args.chapter or '(自動)'} "
               f"區間={args.seq_ranges} 場次={args.sessions}")
@@ -2946,6 +3002,9 @@ def build_parser():
     a.set_defaults(func=cmd_export_watch)
 
     # 打賞 (Plan_Reading_Library_Tip v2 — token 燒掉, 受益 persona 收雙券 1+1)
+    a = sub.add_parser("list-untitled", help="列出章名仍掛哨兵的章")
+    a.set_defaults(func=cmd_list_untitled)
+
     a = sub.add_parser("tip", help="打賞一本書 (燒 token; 作者/捐贈者 persona 收 繪圖券+酒館券, 匯率 1+1)")
     a.add_argument("--book", help="Books/<slug> 的 slug")
     a.add_argument("--tipper", help="打賞者 agent id (Treasury caller 必須==此帳戶)")

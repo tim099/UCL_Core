@@ -45,7 +45,9 @@ namespace UCL.Core.EditorLib.Page
 
         // 篩選：預設只看沒關的 —— 開這頁的人要處理的是還開著的單，不是看歷史。
         bool m_ShowClosed = false;
-        string m_StatusFilter = "";       // 空＝全部（未關）
+        // 狀態篩選直接用 UCL_TaskStatus（Tim 2026-08-26：不另開第二個 enum，`all` 加在同一份）——
+        // 成員名即顯示文字（PopupAuto enum 版回 key 原文）。all 不是狀態、只給篩選用，守衛見 enum 註解。
+        UCL_TaskStatus m_StatusFilter = UCL_TaskStatus.all;
         string m_PersonaFilter = "";      // 空＝全部人
         int m_Expanded = -1;
 
@@ -54,12 +56,8 @@ namespace UCL.Core.EditorLib.Page
         //   `Clear()` 會把另一邊的值一起清掉（症狀是「收不起來」而沒有任何錯誤）。
         readonly UCL_ObjectDictionary m_Dic = new UCL_ObjectDictionary();
 
-        // 狀態下拉的選項 —— **值與顯示分開兩張表**：值要跟磁碟上的 `status` 逐字相同，
-        // 顯示要給人看。混成一張表就會有人拿中文去比對 frontmatter，而那永遠不相等。
-        static readonly List<string> STATUS_VALUES = new List<string>
-        { "", "backlog", "todo", "in_progress", "in_review", "done", "cancelled" };
-        static readonly List<string> STATUS_LABELS = new List<string>
-        { "全部", "backlog", "todo", "進行中", "待驗收", "已完成", "已取消" };
+        // 🗑 STATUS_VALUES / STATUS_LABELS 兩張字串表已退場（Tim 2026-08-26 改用 enum）——
+        //   「值與顯示分開兩張表」的維護債由 enum 一次收掉：成員名既是 wire 值也是顯示文字。
 
         // 破壞性動作二段確認（照母版的手勢）。
         // 物理意義：**結單是對別人的宣告** —— 清單上少一筆等於大家不再看它。
@@ -119,8 +117,10 @@ namespace UCL.Core.EditorLib.Page
                 .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
 
             GUILayout.Label("狀態", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-            DrawFilterPopup(ref m_StatusFilter, STATUS_VALUES, STATUS_LABELS, "StatusFilter",
-                GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+            // enum 下拉（Tim 2026-08-26）：顯示即成員名原文；真相源是 enum 值本身，
+            // 沒有「index 指到別人」的問題（那是字串清單版需要 DrawFilterPopup 防的坑）。
+            m_StatusFilter = UCL_GUILayout.PopupAuto(m_StatusFilter, m_Dic, "StatusFilter",
+                10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
 
             GUILayout.Space(12);
             GUILayout.Label("參與者", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
@@ -182,7 +182,7 @@ namespace UCL.Core.EditorLib.Page
 
             // ⚠ 篩到已關的狀態卻沒開「含已關」⇒ 清單必定是空的，而**兩個設定各自看起來都正常**。
             //   ⇒ 這裡直接放行並說明，不讓人對著一個空清單找原因。
-            bool aClosedFilter = m_StatusFilter == "done" || m_StatusFilter == "cancelled";
+            bool aClosedFilter = m_StatusFilter == UCL_TaskStatus.done || m_StatusFilter == UCL_TaskStatus.cancelled;
             if (aClosedFilter && !m_ShowClosed)
                 GUILayout.Label($"ℹ 狀態選了 `{m_StatusFilter}`（已關）⇒ 本次自動含已關的單"
                     + "（否則清單必定是空的，而那看起來像「沒有這種單」）", SmallStyle);
@@ -194,8 +194,8 @@ namespace UCL.Core.EditorLib.Page
             {
                 bool aClosed = e.IsClosed();
                 if (!m_ShowClosed && !aClosedFilter && aClosed) continue;
-                if (!string.IsNullOrEmpty(m_StatusFilter)
-                    && !string.Equals(e.status, m_StatusFilter, StringComparison.OrdinalIgnoreCase)) continue;
+                if (m_StatusFilter != UCL_TaskStatus.all
+                    && !string.Equals(e.status, m_StatusFilter.ToString(), StringComparison.OrdinalIgnoreCase)) continue;
                 if (!string.IsNullOrEmpty(m_PersonaFilter) && e.RolesOf(m_PersonaFilter).Count == 0) continue;
                 DrawRow(e, aNowUtc, aClosed);
                 aShown++;
@@ -248,7 +248,7 @@ namespace UCL.Core.EditorLib.Page
         {
             int aDays = e.DaysSinceUpdate(iNowUtc);
             bool aStale = !iClosed && aDays >= UCL_TaskIO.STALE_DAYS
-                          && string.Equals(e.status, "in_progress", StringComparison.OrdinalIgnoreCase);
+                          && e.StatusEnum() == UCL_TaskStatus.in_progress;
             var aBlockers = Blockers(e);
 
             using (new GUILayout.VerticalScope(GUI.skin.box))
@@ -308,13 +308,13 @@ namespace UCL.Core.EditorLib.Page
                     }
                     if (!iClosed)
                     {
-                        // 狀態推進（非破壞性 ⇒ 單擊即動，不必二段）
-                        if (!string.Equals(e.status, "in_progress", StringComparison.OrdinalIgnoreCase)
-                            && GUILayout.Button("→ 進行中", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            ApplyStatus(e, "in_progress");
-                        if (!string.Equals(e.status, "in_review", StringComparison.OrdinalIgnoreCase)
-                            && GUILayout.Button("→ 待驗收", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                            ApplyStatus(e, "in_review");
+                        // 狀態推進（非破壞性 ⇒ 單擊即動，不必二段）—— 按鈕文字＝enum key 原文（Tim 2026-08-26）
+                        if (e.StatusEnum() != UCL_TaskStatus.in_progress
+                            && GUILayout.Button($"→ {UCL_TaskStatus.in_progress}", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            ApplyStatus(e, UCL_TaskStatus.in_progress);
+                        if (e.StatusEnum() != UCL_TaskStatus.in_review
+                            && GUILayout.Button($"→ {UCL_TaskStatus.in_review}", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                            ApplyStatus(e, UCL_TaskStatus.in_review);
 
                         // 結單：破壞性 ⇒ 二段確認，且 blocker 未解時**按鈕本身就不給按**
                         if (aBlockers.Count > 0)
@@ -326,9 +326,9 @@ namespace UCL.Core.EditorLib.Page
                         }
                         else
                         {
-                            DrawArmedButton(e, "done", "結單（done）");
+                            DrawArmedButton(e, UCL_TaskStatus.done, UCL_TaskStatus.done.ToString());
                         }
-                        DrawArmedButton(e, "cancelled", "取消（cancelled）");
+                        DrawArmedButton(e, UCL_TaskStatus.cancelled, UCL_TaskStatus.cancelled.ToString());
                     }
                     GUILayout.FlexibleSpace();
                 }
@@ -419,10 +419,10 @@ namespace UCL.Core.EditorLib.Page
 
         // 區塊職責：二段確認按鈕 —— 第一次點只 arm，ARM_WINDOW_SEC 秒內再點同一顆才真的動手。
         // 數值影響：arm 狀態只存在記憶體；換頁 / 逾時自動失效（不留一顆待爆的按鈕）。
-        void DrawArmedButton(UCL_TaskEntry e, string iAction, string iLabel)
+        void DrawArmedButton(UCL_TaskEntry e, UCL_TaskStatus iAction, string iLabel)
         {
             double aNow = UnityEditor.EditorApplication.timeSinceStartup;
-            bool aArmed = m_ArmedIndex == e.index && m_ArmedAction == iAction
+            bool aArmed = m_ArmedIndex == e.index && m_ArmedAction == iAction.ToString()
                           && aNow - m_ArmedTime < ARM_WINDOW_SEC;
             var c = GUI.color;
             if (aArmed) GUI.color = new Color(1f, 0.5f, 0.5f);
@@ -436,7 +436,7 @@ namespace UCL.Core.EditorLib.Page
                 }
                 else
                 {
-                    m_ArmedIndex = e.index; m_ArmedAction = iAction; m_ArmedTime = aNow;
+                    m_ArmedIndex = e.index; m_ArmedAction = iAction.ToString(); m_ArmedTime = aNow;
                 }
             }
             GUI.color = c;
@@ -451,9 +451,16 @@ namespace UCL.Core.EditorLib.Page
         //   ② 單上有 QA 而按鈕是「別人」按的 ⇒ 後台頁的操作者是 Tim，
         //     所以這裡帶 `qa_note` 等價於 RFC §2④ 的「附驗收紀錄」，並在時間線寫明是後台代簽。
         // ===========================================================
-        void ApplyStatus(UCL_TaskEntry e, string iStatus)
+        void ApplyStatus(UCL_TaskEntry e, UCL_TaskStatus iStatus)
         {
-            if (iStatus == "done")
+            // 守衛之二（見 UCL_TaskStatus 的 all 註解）：all 是篩選成員不是狀態 ——
+            // 少了這道，`status: all` 會落盤而且看起來像一張正常的單。
+            if (iStatus == UCL_TaskStatus.all)
+            {
+                Debug.LogError($"[TaskManager] {e.Id} 拒寫 status=all —— all 是篩選用成員，不是任務狀態");
+                return;
+            }
+            if (iStatus == UCL_TaskStatus.done)
             {
                 var aBlockers = UCL_TaskIO.OpenBlockers(e);
                 if (aBlockers.Count > 0)
@@ -467,12 +474,12 @@ namespace UCL.Core.EditorLib.Page
             string aNow = UCL_TaskIO.NowUtc();
             var aQa = e.QaPersonas();
             string aNote = "";
-            if (iStatus == "done" && aQa.Count > 0)
+            if (iStatus == UCL_TaskStatus.done && aQa.Count > 0)
                 aNote = $"（後台頁代簽 —— 單上的 QA 是 {string.Join(" / ", aQa)}）";
 
             string aFrom = e.status;
-            e.status = iStatus;
-            if (iStatus == "done" || iStatus == "cancelled") e.closed_at = aNow;
+            e.status = iStatus.ToString();   // wire 欄位仍是字串；成員名＝wire 字串（UCL_TaskStatus 的約定）
+            if (iStatus == UCL_TaskStatus.done || iStatus == UCL_TaskStatus.cancelled) e.closed_at = aNow;
             UCL_TaskIO.Touch(e, aNow);
             UCL_TaskIO.Save(e, "", "", $"{aNow}　`{iStatus}`　由後台頁操作（原狀態 {aFrom}）{aNote}");
             Refresh();

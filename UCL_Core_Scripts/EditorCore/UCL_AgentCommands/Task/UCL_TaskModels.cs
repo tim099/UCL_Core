@@ -40,16 +40,28 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
     //     指不出來的那個狀態，欄位會永遠停在初始值，而那看起來跟「正在進行」一模一樣。
     //     現行掛點：Todo→InProgress 掛在 `op=claim`／InProgress→InReview 掛在 commit
     //     訊息的 `Fixes TASK-n`／InReview→Done 掛在 QA 的 `op=resolve`。
-    // 數值影響：Done / Cancelled 視為已關（不進 open 讀數）。
+    // 數值影響：done / cancelled 視為已關（不進 open 讀數）。
+    //
+    // ⚠ 成員名 ＝ frontmatter `status` 的 wire 字串，**逐字相同**（刻意小寫蛇形，不遵 C# PascalCase）：
+    //   ToString()/TryParse 即完成雙向轉換，沒有第二張對照表可以漂。UI 顯示直接用成員名原文
+    //   （Tim 2026-08-26 拍板；PopupAuto 的 enum 版沒 localize 詞條時本來就回 key 原文）。
+    //   改名或增減成員＝改 wire format —— python 端與所有既有單檔都讀這些字串，動之前先盤消費端。
+    //   🩸 本 enum 原以 PascalCase 定義且**零消費端**（2026-08-26 grep 證實）——「寫得進查不出來」同族；
+    //   本次收斂成 wire-exact 並接上頁面消費端，才第一次真的被用。
     // ===========================================================
     public enum UCL_TaskStatus
     {
-        Backlog,
-        Todo,
-        InProgress,
-        InReview,
-        Done,
-        Cancelled,
+        // ⚠ `all` 不是生命週期狀態 —— 它是**篩選用**的成員（Tim 2026-08-26：不另開第二個 enum，
+        //   直接加在這裡）。放第一位讓它成為 default(UCL_TaskStatus)（篩選的預設就是全部）。
+        //   兩個守衛擋它流進資料：StatusEnum() 不把 "all" 當合法 status、
+        //   UCL_TaskManagerPage.ApplyStatus 拒寫 all —— 少任何一個，`status: all` 就會落盤。
+        all,
+        backlog,
+        todo,
+        in_progress,
+        in_review,
+        done,
+        cancelled,
     }
 
     /// <summary>參與者身分。**角色不是欄位問題，是「誰真的會做」的問題** —— 掛名而沒有判準的角色等於沒有人。</summary>
@@ -153,6 +165,20 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public List<UCL_TaskComment> comments = new List<UCL_TaskComment>();
 
         public string Id => "TASK-" + index.ToString("0000", System.Globalization.CultureInfo.InvariantCulture);
+
+        // 區塊職責：`status` 的 enum 視圖（wire 欄位仍是字串 —— 這是讀法不是搬家）。
+        // 物理意義：解析不出（手改壞檔／未知字串）回 **null**，不回任何合法狀態 ——
+        //   「壞值」跟六種合法狀態的任何一種同形，都會讓壞檔看起來像一張正常的單。
+        // ⚠ TryParse 會把 "5" 這種數字字串解析成功 —— IsDefined 擋掉（數字不是狀態）；
+        // ⚠ `all` 是篩選成員不是狀態 —— 這裡是守衛之一（見 enum 上的註解），一樣回 null。
+        public UCL_TaskStatus? StatusEnum()
+        {
+            if (System.Enum.TryParse<UCL_TaskStatus>((status ?? "").Trim(), true, out var aS)
+                && System.Enum.IsDefined(typeof(UCL_TaskStatus), aS)
+                && aS != UCL_TaskStatus.all)
+                return aS;
+            return null;
+        }
 
         public string ParticipantsName => participants.ConcatToString();
         /// <summary>已關（不進 open 讀數）。</summary>

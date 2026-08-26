@@ -108,7 +108,7 @@ namespace UCL.Core.EditorLib.Page
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
-            if (GUILayout.Button("重新整理", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) Refresh();
+            if (GUILayout.Button("Refresh", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false))) Refresh();
 
             // 人員清單：從**現有單子上實際出現過的 persona** 產生，不寫死名單
             //（寫死的名單會在有人加入時安靜地漏掉他）
@@ -116,13 +116,12 @@ namespace UCL.Core.EditorLib.Page
                 .Where(s => !string.IsNullOrEmpty(s))
                 .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
 
-            GUILayout.Label("狀態", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            GUILayout.Label("Status", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             // enum 下拉（Tim 2026-08-26）：顯示即成員名原文；真相源是 enum 值本身，
             // 沒有「index 指到別人」的問題（那是字串清單版需要 DrawFilterPopup 防的坑）。
             m_StatusFilter = UCL_GUILayout.PopupAuto(m_StatusFilter, m_Dic, "StatusFilter",
-                10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
 
-            GUILayout.Space(12);
             GUILayout.Label("參與者", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
 
             // 選項永遠 ≥ 1（第一項是「全部」）—— PopupSearch 空清單會 LogError
@@ -131,7 +130,7 @@ namespace UCL.Core.EditorLib.Page
             var aPersonaLabels = new List<string> { "全部" };
             aPersonaLabels.AddRange(aPersonas);
             DrawFilterPopup(ref m_PersonaFilter, aPersonaValues, aPersonaLabels, "PersonaFilter",
-                GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
+                GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
 
 
             if (GUILayout.Button("開啟資料夾", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))

@@ -150,7 +150,19 @@ namespace UCL.Core.EditorLib.Page
         protected override void TopBarButtons()
         {
             base.TopBarButtons();
+            // frontmatter（折疊）：保留原樣 YAML 顯示供 debug / 校稿
+            // 區塊職責：用 UCL_GUILayout.Toggle(bool, int size) — 顯示 ▼/► 折疊圖示，
+            //          比一般 checkbox 更貼近「展開 / 收起」語意
+            // 物理意義：見 Overview.md §3.1（基礎欄位 → Toggle(value, size)）
+            if (!string.IsNullOrEmpty(m_Frontmatter))
+            {
+                m_ShowFrontmatter = UCL_GUILayout.Toggle(m_ShowFrontmatter);
+            }
+
+
             if (string.IsNullOrEmpty(m_RelativePath)) return;
+
+
 
             if (GUILayout.Button(UCL_CodeLocalize.Get("DocSearch.Reveal"),
                 UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
@@ -178,28 +190,6 @@ namespace UCL.Core.EditorLib.Page
             // 物理意義：統一走 GUILayout.Label + UCL_GUIStyle.LabelStyle 模式，
             //          避免 UCL_GUILayout.Label 多一層包裝（該 API 已標示廢棄）
             GUILayout.Label(m_RelativePath ?? "", UCL_GUIStyle.LabelStyle);
-
-            // frontmatter（折疊）：保留原樣 YAML 顯示供 debug / 校稿
-            // 區塊職責：用 UCL_GUILayout.Toggle(bool, int size) — 顯示 ▼/► 折疊圖示，
-            //          比一般 checkbox 更貼近「展開 / 收起」語意
-            // 物理意義：見 Overview.md §3.1（基礎欄位 → Toggle(value, size)）
-            if (!string.IsNullOrEmpty(m_Frontmatter))
-            {
-                //using (new GUILayout.HorizontalScope())
-                //{
-                //    m_ShowFrontmatter = UCL_GUILayout.Toggle(m_ShowFrontmatter);
-                //    GUILayout.Label(UCL_CodeLocalize.Get("MdViewer.Frontmatter"), UCL_GUIStyle.LabelStyle);
-                //    GUILayout.FlexibleSpace();
-                //}
-                m_ShowFrontmatter = UCL_GUILayout.Toggle(m_ShowFrontmatter);
-                if (m_ShowFrontmatter)
-                {
-                    using (new GUILayout.VerticalScope("box"))
-                    {
-                        GUILayout.Label(m_Frontmatter, m_CodeBlockStyle);
-                    }
-                }
-            }
         }
 
         // ===========================================================
@@ -207,6 +197,13 @@ namespace UCL.Core.EditorLib.Page
         // ===========================================================
         protected override void ContentOnGUI()
         {
+            if (m_ShowFrontmatter)
+            {
+                using (new GUILayout.VerticalScope("box"))
+                {
+                    GUILayout.Label(m_Frontmatter, m_CodeBlockStyle);
+                }
+            }
             EnsureStyles();
             if (m_LoadFailed)
             {

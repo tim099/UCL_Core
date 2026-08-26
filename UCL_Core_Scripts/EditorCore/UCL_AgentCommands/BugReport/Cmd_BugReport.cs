@@ -44,24 +44,52 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
         {
             await UniTask.Yield();
             string aOp = GetArg(args, "op", "report").Trim().ToLowerInvariant();
+            string aActor = GetArg(args, "persona", "unknown").Trim();
             var aR = new StringBuilder();
-            aR.AppendLine($"# BugReport op={aOp}  ts=`{DateTime.Now:yyyy-MM-dd HH:mm:sszzz}`（本地時間）");
+            aR.AppendLine($"# BugReport op={aOp} persona={aActor}  ts=`{DateTime.Now:yyyy-MM-dd HH:mm:sszzz}`（本地時間）");
             aR.AppendLine();
 
-            switch (aOp)
+            // 回傳檔**不論成功或失敗都要寫出來**（TASK-0044；對齊 Cmd_Task 2026-08-25 的搬法）——
+            // 尤其 OpReport 缺必填會 throw，而擋下原因正是 caller 最需要讀到的東西。
+            try
             {
-                case "report": OpReport(args, aR); break;
-                case "list": OpList(args, aR); break;
-                case "show": OpShow(args, aR); break;
-                case "claim": OpClaim(args, aR); break;
-                case "resolve": OpResolve(args, aR); break;
-                default:
-                    throw new Exception($"[BugReport] 認不得的 op='{aOp}'（report|list|show|claim|resolve）");
+                switch (aOp)
+                {
+                    case "report": OpReport(args, aR); break;
+                    case "list": OpList(args, aR); break;
+                    case "show": OpShow(args, aR); break;
+                    case "claim": OpClaim(args, aR); break;
+                    case "resolve": OpResolve(args, aR); break;
+                    default:
+                        throw new Exception($"[BugReport] 認不得的 op='{aOp}'（report|list|show|claim|resolve）");
+                }
             }
+            finally
+            {
+                // ===========================================================
+                // 區塊職責：回傳檔落 **per-persona**，不再落全域單槽（TASK-0044）。
+                // 🩸 與 TASK-0026 ① 完全同族：`_last_bug_report.md` 是同一隻病的第二個宿主，
+                //   而這條路本來還多毒一格 —— `op=report` 缺必填時**先把 blocked 內容寫進全域檔再 throw**
+                //   （失敗路徑也在寫它）：兩個人同時報單，其中一個看到的可能是另一個人的擋下原因。
+                //   ⇒ 成功與失敗現在都只落自己的檔（finally 統一寫，blocked 路徑不再另寫一份）。
+                // ⚠ 舊路徑不留空殼也不刪檔：覆寫成內容固定的指路 stub（多人同時寫也不會漂）——
+                //   「內容過期但長得正常」比檔不見了更毒。
+                // ===========================================================
+                string aPayload = UCL_LettersPath.CmdPayload(aActor, "bugreport", aOp);
+                Directory.CreateDirectory(Path.GetDirectoryName(aPayload));
+                File.WriteAllText(aPayload, aR.ToString(), new UTF8Encoding(false));
+                UCL_AgentCommandRunner.ReportOutputFile(args, aPayload);
+                Debug.Log($"[BugReport] op={aOp} persona={aActor} → {aPayload}");
 
-            UCL_BugReportIO.EnsureDir();
-            File.WriteAllText(UCL_BugReportIO.LastReportPath, aR.ToString(), new UTF8Encoding(false));
-            Debug.Log($"[BugReport] op={aOp} → {UCL_BugReportIO.LastReportPath}");
+                UCL_BugReportIO.EnsureDir();
+                File.WriteAllText(UCL_BugReportIO.LastReportPath,
+                    "# （已退場）BugReport 回傳檔不再寫在這裡\n\n"
+                    + "> 這裡曾是**全域單槽**，兩個人同時跑 `run BugReport` 會互相覆蓋，\n"
+                    + "> 而且失敗路徑也在寫它 —— 你可能讀到**別人的**擋下原因（TASK-0044，與 TASK-0026 ① 同族）。\n\n"
+                    + "回傳檔現在落在 **`letters/<persona>/cmd/bugreport_<op>.md`** ——\n"
+                    + "`run_cmd.py` 會直接印出「📄 回傳檔：<路徑>」，照那一行讀，不要背路徑。\n",
+                    new UTF8Encoding(false));
+            }
         }
 
         // ===========================================================
@@ -89,8 +117,7 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
                 ioR.AppendLine($"- reason: 缺必填欄位：{string.Join(" / ", aMissing)}");
                 ioR.AppendLine("- `evidence` 要放**感官騙不了的硬證**：error code、log 行號、round-trip diff、");
                 ioR.AppendLine("  重現指令、`Cmd_Invoke` 的回傳值。重述現象不算證據。");
-                UCL_BugReportIO.EnsureDir();
-                File.WriteAllText(UCL_BugReportIO.LastReportPath, ioR.ToString(), new UTF8Encoding(false));
+                // blocked 內容不再另寫全域檔 —— ExecuteAsync 的 finally 會把整份（含本段）落進 per-persona 檔（TASK-0044）
                 throw new Exception($"[BugReport] report 缺必填：{string.Join(",", aMissing)}");
             }
 
@@ -228,8 +255,15 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
         void OpResolve(Dictionary<string, string> iArgs, StringBuilder ioR)
         {
             var e = RequireEntry(iArgs, ioR, out _);
-            string aRes = GetArg(iArgs, "resolution", "fixed").Trim().ToLowerInvariant();
-            e.status = aRes == "wontfix" ? "wontfix" : aRes == "duplicate" ? "duplicate" : "resolved";
+            // 只對枚舉值正規化，自由文字保留原樣（TASK-0044 順帶格）——
+            // 🩸 2026-08-25：resolution 收到「轉為 TASK-0026（Tim 拍板…）」被整句 ToLower 成
+            //   「task-0026（tim …」⇒ 單號與人名被弄壞，搜 `TASK-0026` 找不到那一筆。
+            //   狀態要正規化，自由文字不該 —— 判準是「它是不是三個已知值之一」，不是「一律壓小寫」。
+            string aResRaw = GetArg(iArgs, "resolution", "fixed").Trim();
+            string aResLower = aResRaw.ToLowerInvariant();
+            bool aKnown = aResLower == "fixed" || aResLower == "wontfix" || aResLower == "duplicate";
+            string aRes = aKnown ? aResLower : aResRaw;
+            e.status = aResLower == "wontfix" ? "wontfix" : aResLower == "duplicate" ? "duplicate" : "resolved";
             e.resolution = aRes;
             e.resolution_note = GetArg(iArgs, "note", "").Trim();
             e.commit_sha = GetArg(iArgs, "commit_sha", "").Trim();

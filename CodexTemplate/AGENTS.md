@@ -21,6 +21,31 @@ Codex 不支援 Claude Code 的 `@<path>` inline 載入語法。需要 UCL_Core 
 
 個人化偏好放 `Codex.local.md`（不入版控）；專案規則不寫在那裡。
 
+### Python 執行器
+
+Windows 的 Codex shell 不保證有 `python` 在 `PATH`。執行任何
+`{{UCL_CORE_PATH}}/Tools~/AgentCommands/run_cmd.py`（包括早安／晚安與酒館）前，先從目前電腦的
+PATH／Python Launcher 解析並驗證 Python，再只透過解析結果呼叫 Cmd：
+
+```powershell
+$pythonExe = Get-Command python, py -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1 -ExpandProperty Source
+if (-not $pythonExe) { throw "找不到 Python；請安裝 Python 或將 python／py 加入 PATH" }
+& $pythonExe --version
+& $pythonExe "{{UCL_CORE_PATH}}/Tools~/AgentCommands/run_cmd.py" --help
+```
+
+對應的 Git Bash 變數如下；內文含中文時，仍必須使用下節的單引號 heredoc。
+
+```bash
+PYTHON_EXE="$(command -v python || command -v python3 || command -v py || true)"
+[ -n "$PYTHON_EXE" ] || { echo "找不到 Python；請安裝 Python 或將 python／python3／py 加入 PATH" >&2; exit 1; }
+"$PYTHON_EXE" --version
+"$PYTHON_EXE" "$UCL_CORE/Tools~/AgentCommands/run_cmd.py" --help
+```
+
+找不到 Python 就明確停止；不要寫死特定電腦的安裝路徑，也不要因此改用不安全的文字管線或跳過 Cmd。
+
 ### PowerShell 文字編碼
 
 含中文、emoji 或其他非 ASCII 的管線文字，首選 Git Bash（`C:\Program Files\Git\bin\bash.exe`）的**單引號 heredoc**；不要用 Windows PowerShell 5.1 的 pipe／here-string，它可能把文字替換成 `?`。
@@ -31,15 +56,14 @@ Codex 不支援 Claude Code 的 `@<path>` inline 載入語法。需要 UCL_Core 
 UTF-8、Markdown、反引號與 `$`，不讓 shell 展開訊息內文：
 
 ```bash
-python "$UCL_CORE/Tools~/AgentCommands/run_cmd.py" run Tavern \
+"$PYTHON_EXE" "$UCL_CORE/Tools~/AgentCommands/run_cmd.py" run Tavern \
   --arg op=post --arg room=tavern --arg agent=<agent> --arg persona=<persona> \
   --arg-stdin body <<'BODY'
 這是一則可含中文、emoji 與 Markdown 的酒館訊息。
 BODY
 ```
 
-在 Git Bash 找不到 `python` 時，改用本機已確認可執行的 Python 路徑；不要因此退回
-PowerShell pipe。`$UCL_CORE` 必須先依 `ucl-core-paths` 的 resolve-once 流程設定。
+`$UCL_CORE` 必須先依 `ucl-core-paths` 的 resolve-once 流程設定；`$PYTHON_EXE` 則依上節設定。
 
 若只能用 PowerShell，先把內文寫成 **UTF-8（無 BOM）檔案**，再以
 `--arg-file body=<檔案路徑>` 傳入。不得以 `Write-Output`、管線或 here-string 直接餵中文：

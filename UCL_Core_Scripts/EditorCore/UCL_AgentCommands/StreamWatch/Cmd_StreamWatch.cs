@@ -833,23 +833,19 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //          她照 prepare 回傳檔的慣性跑了 start ⇒ 兩主場並行 —— 靠「記得先查」擋不住，擋在必經路上。
             // 邊界：過期（now > end_ts）或已結算（active=false）的殘留 session 不擋 —— 主人沒回來收工
             //       不該把整個系統卡死；同 persona 的疊開由守衛③管。
-            string aSessDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "sessions");
-            if (Directory.Exists(aSessDir))
+            foreach (var aKv in EnumerateSessions())
             {
-                foreach (var aFile in Directory.GetFiles(aSessDir, "*.json"))
-                {
-                    string aWho = Path.GetFileNameWithoutExtension(aFile);
-                    if (string.Equals(aWho, iPersona, StringComparison.OrdinalIgnoreCase)) continue;
-                    var aOther = LoadSessionAt(aFile);
-                    if (aOther == null || !aOther.active || aOther.role != "primary") continue;
-                    DateTime? aOtherEnd = ParseIsoLocal(aOther.end_ts);
-                    if (!aOtherEnd.HasValue || aNow > aOtherEnd.Value) continue;   // 過期殘留不擋
-                    Blocked(iArgs, aR, aPath,
-                        $"已有主觀影者 @{aWho}（media={aOther.media_id}，至 {aOtherEnd.Value:HH:mm} 本地）—— 全場同時只能有一個 primary",
-                        $"加入她的場：run_cmd.py run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id=<準備公告那個 id>（缺集才需要）→ --arg step=join --arg persona={iPersona}；"
-                        + "或等該場到期／主觀影者收工後再 start");
-                    throw new Exception($"[StreamWatch] step=start blocked：已有主觀影者 @{aWho}（詳見 {aPath}）");
-                }
+                string aWho = aKv.Key;
+                if (string.Equals(aWho, iPersona, StringComparison.OrdinalIgnoreCase)) continue;
+                var aOther = aKv.Value;
+                if (!aOther.active || aOther.role != "primary") continue;
+                DateTime? aOtherEnd = ParseIsoLocal(aOther.end_ts);
+                if (!aOtherEnd.HasValue || aNow > aOtherEnd.Value) continue;   // 過期殘留不擋
+                Blocked(iArgs, aR, aPath,
+                    $"已有主觀影者 @{aWho}（media={aOther.media_id}，至 {aOtherEnd.Value:HH:mm} 本地）—— 全場同時只能有一個 primary",
+                    $"加入她的場：run_cmd.py run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id=<準備公告那個 id>（缺集才需要）→ --arg step=join --arg persona={iPersona}；"
+                    + "或等該場到期／主觀影者收工後再 start");
+                throw new Exception($"[StreamWatch] step=start blocked：已有主觀影者 @{aWho}（詳見 {aPath}）");
             }
 
             // 守衛④：media 是共享鍵 —— 不給就 blocked，不猜
@@ -1768,23 +1764,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             // 找一個進行中的 primary（不是自己）
             UCL_StreamWatchSession aPrimary = null; string aPrimaryPersona = "";
-            try
+            foreach (var aKv in EnumerateSessions())
             {
-                string aDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "sessions");
-                if (Directory.Exists(aDir))
-                {
-                    foreach (var f in Directory.GetFiles(aDir, "*.json"))
-                    {
-                        string aWho = Path.GetFileNameWithoutExtension(f);
-                        if (aWho == iPersona) continue;
-                        var aOther = LoadSessionAt(f);
-                        if (aOther == null || !aOther.active) continue;
-                        if (aOther.role != "primary") continue;
-                        aPrimary = aOther; aPrimaryPersona = aWho; break;
-                    }
-                }
+                if (aKv.Key == iPersona) continue;
+                var aOther = aKv.Value;
+                if (!aOther.active) continue;
+                if (aOther.role != "primary") continue;
+                aPrimary = aOther; aPrimaryPersona = aKv.Key; break;
             }
-            catch { }
 
             if (aPrimary == null)
             {
@@ -1890,7 +1877,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ⚠ paid_min 的上限方向：
         //   到期 ⇒ 算到 **ends_at**（不是 agent 回來呼叫的時間，否則回得越晚領越多）
         //   中斷 ⇒ 算到 **中斷被發現的時刻**（沒看的不能領）
-        // ⚠ 判重兩層：熱路徑讀 session 的 settled_at（本來就在讀那個檔，零額外成本）；
+        // ⚠ 判重兩層：熱路徑讀 session 的 `ended_at`（本來就在讀那個檔，零額外成本）；
         //   寫入閘讀 ledger 的 useRef（事實源）。代理可以錯，只要它錯的方向是「多問一次」。
         // ===========================================================
         const int BASE_MINUTES_PER_TOKEN = 10;
@@ -1903,7 +1890,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                                          string iReasonOverride = null)
         {
             // 熱路徑判重
-            string aSettledAt = ioS.settled_at;
+            string aSettledAt = ioS.ended_at;
             if (!string.IsNullOrEmpty(aSettledAt))
             {
                 ioR.AppendLine($"- 結算: **已於 {aSettledAt} 結算過**（熱路徑判重，未重複發薪）");
@@ -2009,14 +1996,15 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aBody.AppendLine($"- 場次紀錄：seq {ioS.start_seq} → 本則（`tavern` 房；中間混雜其他訊息是刻意的）");
             int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-end", iToken);
 
-            ioS.active = false;
-            ioS.settled_at = UCL_AwakeningService.NowIso();
-            ioS.end_reason = !string.IsNullOrEmpty(iReasonOverride) ? iReasonOverride
-                             : (iByInterrupt ? "recording-stopped" : "expired");
             ioS.paid_minutes = aPaidMin;
             ioS.paid_total = aTotal;
             ioS.end_seq = aSeq;
-            SaveSession(iPersona, ioS);
+            // ⚠ 收工三欄（active / end_reason / ended_at）**一起翻**，而且只有 service 那一個寫入點 ——
+            //   散在各處各寫一次時，漏掉時刻欄位不會有任何症狀（沒人讀它），
+            //   直到有人要對帳「這場實際跑多久」才發現沒紀錄。Close 內含 Save。
+            UCL_SessionService.Close(UCL_SessionKind.StreamWatch, iPersona, ioS,
+                !string.IsNullOrEmpty(iReasonOverride) ? iReasonOverride
+                : (iByInterrupt ? "recording-stopped" : "expired"));
             AppendSessionLog(ioS, iPersona, aSeq, aPaidMin, aTotal);
 
             ioR.AppendLine($"- 本場統計: cycles={ioS.cycles}｜observations={aObs}｜在場 {aPaidMin} 分鐘");
@@ -2303,10 +2291,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             string aMedia = aS.media_id;
-            // ⚠ 欄位名是 `settled_at`（SettleAsync 寫的），不是 `ended_at`。
-            //   typed model 之後這件事變成編譯期的問題 —— 打錯欄位名編不過，
-            //   而舊寫法 `ReadStr(aS,"ended_at")` 會靜默回空，回傳檔印出「結束時刻未記」這句**假話**。
-            string aEnded = aS.settled_at;
+            // ⚠ 收工時刻的欄位名是 **`ended_at`**（TASK-0054 收斂；SettleAsync 經 UCL_SessionService.Close 寫的）。
+            //   這裡原本寫的是「欄位名是 `settled_at` 不是 `ended_at`」—— **反過來了**，本單一併翻正。
+            //   台帳層（sessions_log.jsonl）的鍵名仍叫 `settled_at`，那是**另一個東西**：結算紀錄，不是 session 狀態。
+            //   🩸 而這一格為什麼要註解：舊的手搭寫法 `ReadStr(aS,"ended_at")` 打錯欄位名會**靜默回空**，
+            //   回傳檔於是印出「結束時刻未記」這句假話。typed model 讓它變成編譯錯。
+            string aEnded = aS.ended_at;
             var aBody = new StringBuilder();
             aBody.AppendLine($"📌 [{iPersona} 大小姐] 觀影接續點 — 媒材 `{aMedia}`"
                            + (aLate ? "　**（補寫：本場已於收工時結算）**" : ""));
@@ -3084,8 +3074,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ===========================================================
         // 區塊：路徑 / IO helpers（與 Cmd_FreeTime 同慣例）
         // ===========================================================
-        static string SessionPath(string iPersona)
-            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "sessions", $"{iPersona}.json");
+        // ⚠ TASK-0054 之後本檔**不再自己組 session 路徑** —— 唯一組法在 UCL_SessionService.SessionPath，
+        //   路徑扁平化為 `<DataRoot>/sessions/<persona>.json`（kind 改存 json 欄位）。
+        //   舊路徑 `<DataRoot>/StreamWatch/sessions/` **自本單起停用**（不做 migration：殘檔不搬不轉、
+        //   已從版控移出並加 ignore 規則）。留這個 wrapper 只為了回傳檔印路徑時仍有一處可問。
+        static string SessionPath(string iPersona) => UCL_SessionService.SessionPath(iPersona);
 
         // ===========================================================
         // 區塊職責：收工時把本場的 seq 區間 append 進一份**永不覆寫**的台帳。
@@ -3197,30 +3190,16 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         static List<string> ActiveGroupPeers(string iGroupSessionId, string iSelfPersona)
         {
             var aOut = new List<string>();
-            try
+            // ⚠ 壞檔／kind 不符由 EnumerateSessions 跳過 —— 一個人的檔壞掉不該讓全場的匯出判定
+            //   失準到「以為沒人在線」。
+            foreach (var aKv in EnumerateSessions())
             {
-                string aDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "sessions");
-                if (!Directory.Exists(aDir)) return aOut;
-                foreach (string aFile in Directory.GetFiles(aDir, "*.json"))
-                {
-                    try
-                    {
-                        var aJd = JsonData.ParseJson(File.ReadAllText(aFile, Encoding.UTF8));
-                        if (aJd == null) continue;
-                        var aS = new UCL_StreamWatchSession();
-                        aS.DeserializeFromJson(aJd);
-                        if (!aS.active) continue;
-                        if (string.Equals(aS.persona, iSelfPersona, StringComparison.OrdinalIgnoreCase)) continue;
-                        string aTheirGroup = !string.IsNullOrEmpty(aS.parent_session_id)
-                                             ? aS.parent_session_id : aS.session_id;
-                        if (aTheirGroup == iGroupSessionId) aOut.Add(aS.persona);
-                    }
-                    catch { /* 壞檔跳過 —— 一個人的檔壞掉不該讓全場的匯出判定失準到「以為沒人在線」 */ }
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[StreamWatch] 同場在線掃描失敗: {e.Message}");
+                var aS = aKv.Value;
+                if (!aS.active) continue;
+                if (string.Equals(aS.persona, iSelfPersona, StringComparison.OrdinalIgnoreCase)) continue;
+                string aTheirGroup = !string.IsNullOrEmpty(aS.parent_session_id)
+                                     ? aS.parent_session_id : aS.session_id;
+                if (aTheirGroup == iGroupSessionId) aOut.Add(aS.persona);
             }
             return aOut;
         }
@@ -3293,7 +3272,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     library_media_id = iS.library_media_id,
                     parent_session_id = iS.parent_session_id,
                     start_ts = iS.start_ts,
-                    settled_at = iS.settled_at,
+                    // ⚠ 左右不同名是**刻意**的，不是漏改：左側 `settled_at` 是**台帳層**的鍵名（拍板：結算紀錄的家在這裡，
+                    //   那一層不動）；右側 `ended_at` 是 session 狀態收斂後的單欄。⇒ 這一行是兩層之間的接縫。
+                    settled_at = iS.ended_at,
                     end_reason = iS.end_reason,
                     start_seq = iS.start_seq,
                     end_seq = iEndSeq,
@@ -3330,25 +3311,48 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         }
 
         /// <summary>讀本人的觀影 session；不存在或壞檔回 null（**不回空 model** —— 那會讓「沒有場次」看起來像「有一場但什麼都沒做」）。</summary>
-        static UCL_StreamWatchSession LoadSession(string iPersona) => LoadSessionAt(SessionPath(iPersona));
+        /// <remarks>
+        /// ⚠ 扁平化之後**一人一檔位**：讀到的可能是這個人**別種** session（例：自由時間）的檔。
+        /// service 的 <c>Load</c> 會拿 `kind` 欄位比對，不符回 null ——
+        /// 那個 null 的語意是「他不在觀影場」，不是「檔案不存在」，兩者在這裡剛好可以合併處理。
+        /// 🩸 若不比對就回傳：一份自由時間的檔有 active/end_ts ⇒ 守衛判定會**成功，只是量錯了東西**。
+        /// </remarks>
+        static UCL_StreamWatchSession LoadSession(string iPersona)
+            => UCL_SessionService.Load<UCL_StreamWatchSession>(UCL_SessionKind.StreamWatch, iPersona);
 
-        static UCL_StreamWatchSession LoadSessionAt(string iPath)
+        // ===========================================================
+        // 區塊職責：全場掃描（找別人的場）—— 唯一入口。
+        // 物理意義：扁平化之前這裡是「列 StreamWatch/sessions/ 目錄」，而目錄本身就是 kind 過濾器；
+        //          扁平化之後**目錄裡混著所有 kind 的檔**，於是「列目錄」這個動作不再等於「列觀影場」。
+        // ⚠ 所以本函式必經 service 的 kind 過濾，且**不得**再有第二處自己列目錄 ——
+        //   漏過濾的症狀是：把一個正在自由時間的人當成同場觀影者，而 active/end_ts 都讀得出來
+        //   ⇒ 守衛會擋、公告會 @ 他，沒有任何一層會喊。
+        // 數值影響：從「列目錄」變成「列目錄＋逐檔讀」，代價是每檔多一次讀（人數量級，可忽略）。
+        // ===========================================================
+        static List<KeyValuePair<string, UCL_StreamWatchSession>> EnumerateSessions()
         {
+            var aOut = new List<KeyValuePair<string, UCL_StreamWatchSession>>();
             try
             {
-                if (!File.Exists(iPath)) return null;
-                var aJd = JsonData.ParseJson(File.ReadAllText(iPath, Encoding.UTF8));
-                if (aJd == null) return null;
-                var aS = new UCL_StreamWatchSession();
-                aS.DeserializeFromJson(aJd);
-                return aS;
+                foreach (string aWho in UCL_SessionService.ListPersonas(UCL_SessionKind.StreamWatch))
+                {
+                    var aS = LoadSession(aWho);
+                    if (aS == null) continue;   // 壞檔／kind 不符：跳過（一個人的檔壞掉不該讓全場判定失準）
+                    aOut.Add(new KeyValuePair<string, UCL_StreamWatchSession>(aWho, aS));
+                }
             }
-            catch { return null; }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[StreamWatch] session 掃描失敗: {e.Message}");
+            }
+            return aOut;
         }
 
-        /// <summary>寫回 session（**唯一寫入點** —— 落檔格式與路徑各只有一份實作）。</summary>
+        /// <summary>寫回 session（**唯一寫入點** —— 落檔格式與路徑各只有一份實作，都在 UCL_SessionService）。</summary>
+        /// <remarks>⚠ 由 service 蓋寫 `kind` 欄位：kind 與檔案位置本來由同一個動作決定，
+        /// 拆成兩個責任就會長出「檔在、kind 空」的檔，而那種檔讀取端一律當成不符 ⇒ 靜默消失。</remarks>
         static void SaveSession(string iPersona, UCL_StreamWatchSession iS)
-            => AtomicWrite(SessionPath(iPersona), iS.SerializeToJson().ToJsonBeautify());
+            => UCL_SessionService.Save(UCL_SessionKind.StreamWatch, iPersona, iS);
 
         // ===========================================================
         // 區塊：接力前緣（Tim 2026-08-25 拍板「除熱點外，觀看區段要接力」）
@@ -3573,8 +3577,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
     //          start / join / cycle / observe / note / settle 六處各打一次字。
     //          打錯不會編譯錯、也不會執行錯 —— **只會讀回預設值**，
     //          而 0 / "" 這種預設值在回傳檔上長得跟「這件事沒發生」一模一樣。
-    //          🩸 本檔既有註解記過同族一次：`settled_at` 被讀成 `ended_at` ⇒
+    //          🩸 本檔既有註解記過同族一次：收工時刻欄位被讀錯名 ⇒
     //          回傳檔印出「結束時刻未記」這句**假話**。typed model 讓它變成編譯錯。
+    //          （那次的兩個名字是 `settled_at` 與 `ended_at`；TASK-0054 之後 session 狀態層
+    //          只剩 `ended_at` 一個名字，`settled_at` 只活在台帳層 —— 血證留著，字面已更新。）
     // 數值影響：序列化結果與手搭格式**逐鍵相同**（鍵序可能不同 —— 兩端都按鍵取值）。
     //          唯一差別：過去「值為空就不寫鍵」的欄位（session 的 up/video_* 等）現在一律寫出來。
     //          加鍵相容（讀取端本來就用預設值判空），少鍵才是查不出來的那種差異。
@@ -3583,16 +3589,21 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
     //   改名 ＝ 改契約。動任何一個欄位名要同時改那邊。
     // ===========================================================
 
-    /// <summary>一場觀影 session（`StreamWatch/sessions/&lt;persona&gt;.json`；開下一場就覆寫）。</summary>
+    /// <summary>一場觀影 session（`&lt;DataRoot&gt;/sessions/&lt;persona&gt;.json`，`kind="StreamWatch"`；開下一場就覆寫）。</summary>
     /// <remarks>
-    /// 刻意**不繼承** <c>UCL_SessionBase</c>：那邊的收工時刻欄位叫 `ended_at`，本檔叫 `settled_at`。
-    /// 繼承會多出一個永遠空著的 `ended_at`，於是同一件事有兩個欄位 ——
-    /// 而「兩份真相」正是這次重構要消滅的東西。共用的只有觀念，不是欄位。
+    /// **繼承 <c>UCL_SessionBase</c>**（TASK-0054 拍板）：收工時刻收斂成單欄 `ended_at`，
+    /// 本檔原本的 `settled_at` 已從 session 狀態**移除** —— 它是**結算紀錄**，
+    /// 家在 `sessions_log.jsonl` 台帳層，那一層的 `settled_at` 鍵名**不動**
+    /// （見 <see cref="UCL_StreamWatchSessionLogRecord"/>）。
+    /// 📌 這段話的前一版寫的是「刻意**不繼承**：那邊叫 `ended_at`，本檔叫 `settled_at`」——
+    /// 判準沒錯（兩個欄位講同一件事就是要消滅的東西），錯的是處置：
+    /// 消滅的方式是**收斂成一欄**，不是保留兩份再用註解說明它們的差異。
+    /// ⚠ 繼承來的欄位（`persona` / `kind` / `session_id` / `start_ts` / `end_ts` / `until_local` /
+    /// `active` / `end_reason` / `ended_at`）**不要在這裡重新宣告** —— 重宣告會 shadow 掉 base，
+    /// 而 shadow 的症狀是「寫進子類、讀出 base 的預設值」：不編譯錯，也不執行錯。
     /// </remarks>
-    public class UCL_StreamWatchSession : UnityJsonSerializable
+    public class UCL_StreamWatchSession : UCL_SessionBase
     {
-        public string persona = "";
-        public string session_id = "";
         /// <summary>`primary`（主觀影者，帶主劇情）／`companion`（陪看者，挑段細看）。</summary>
         public string role = "";
         /// <summary>本場的媒材鍵。⚠ 與 `work_id` 是兩種鍵，混用會長出平行宇宙（見 ResolveWatchTarget）。</summary>
@@ -3605,11 +3616,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public string parent_session_id = "";
         public string parent_persona = "";
 
-        public string start_ts = "";
-        /// <summary>預定收工 UTC ISO。</summary>
-        public string end_ts = "";
-        /// <summary>預定收工的本地時刻字串（給人讀的，不參與判定）。</summary>
-        public string until_local = "";
+        // ⚠ start_ts / end_ts / until_local 已在 UCL_SessionBase —— 這裡不再宣告（見類別 remarks 的 shadow 說明）。
 
         /// <summary>取材游標（epoch 秒）。0＝尚未取材，首輪窗口由 montage 決定。</summary>
         public double cursor_epoch = 0;
@@ -3661,23 +3668,24 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         /// <summary>接續點是收工之後才補寫的（不冒充當場記的）。</summary>
         public bool note_late = false;
 
-        public bool active = false;
-        /// <summary>實際收工時刻 UTC ISO。⚠ 欄位名是 `settled_at`，不是 `ended_at`。</summary>
-        public string settled_at = "";
-        /// <summary>`expired`（到期）／`recording-stopped`（Tim 停錄影）。</summary>
-        public string end_reason = "";
+        // ⚠ active / ended_at / end_reason 已在 UCL_SessionBase。
+        //   收工時刻的欄位名是 **`ended_at`**（TASK-0054 收斂）——
+        //   本檔原本叫 `settled_at`，那個名字現在**只存在於台帳層**（sessions_log.jsonl）。
+        //   end_reason 的值域仍是 `expired`（到期）／`recording-stopped`（Tim 停錄影）
+        //   ／`residue-settled`（逾時殘留補結算）。
         public int paid_minutes = 0;
         public int paid_total = 0;
 
         /// <summary>bool 寫回原生 —— 沿用這份檔既有的形狀（`new JsonData(true)` 寫出來的原生 bool）。
         /// 不 override 的話會變成 `"True"` 字串：C# 載入端雙接看不出來，但**檔案的形狀被改了**，
-        /// 而日後若有 python 讀取端（台帳與準備檔已經有）就會踩到 truthy 字串那顆雷。</summary>
+        /// 而日後若有 python 讀取端（台帳與準備檔已經有）就會踩到 truthy 字串那顆雷。
+        /// ⚠ `active` 不在這裡處理 —— <see cref="UCL_SessionBase.SerializeToJson"/> 已經寫成原生 bool，
+        /// 這裡再寫一次就是同一件事有兩個寫入點（本次重構要消滅的正是那個形狀）。</summary>
         public override JsonData SerializeToJson()
         {
             var aData = base.SerializeToJson();
             aData["note_written"] = new JsonData(note_written);
             aData["note_late"] = new JsonData(note_late);
-            aData["active"] = new JsonData(active);
             return aData;
         }
     }

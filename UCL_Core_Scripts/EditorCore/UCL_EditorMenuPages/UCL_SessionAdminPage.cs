@@ -176,7 +176,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 try
                 {
-                    string aDir = UCL_SessionService.SessionsDir(UCL_SessionKind.FreeTime);
+                    string aDir = UCL_SessionService.SessionsDir();   // 單一目錄，各 kind 同住
                     if (!Directory.Exists(aDir)) Directory.CreateDirectory(aDir);
                     UnityEditor.EditorUtility.RevealInFinder(aDir);
                 }
@@ -289,7 +289,7 @@ namespace UCL.Core.EditorLib.Page
                         if (GUILayout.Button("📄 開啟檔案", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                         {
                             UnityEditor.EditorUtility.RevealInFinder(
-                                UCL_SessionService.SessionPath(aRow.Kind, aRow.Persona));
+                                UCL_SessionService.SessionPath(aRow.Persona));
                         }
                     }
                     GUILayout.Label($"　session_id: {aS.session_id}", SmallStyle);

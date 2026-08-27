@@ -48,13 +48,24 @@ namespace UCL.Core.EditorLib.AgentCommands
     // ===========================================================
     public static class UCL_SessionService
     {
-        /// <summary>`<DataRoot>/<kind>/sessions/<persona>.json` —— 所有 session 檔的唯一路徑組法。</summary>
-        public static string SessionPath(string iKind, string iPersona)
-            => Path.Combine(UCL_AgentCommandsPath.DataRoot, iKind, "sessions", $"{iPersona}.json");
+        // ===========================================================
+        // 區塊職責：session 檔的唯一路徑組法 —— **一人一檔位**。
+        // 物理意義（TASK-0054 拍板⑤）：路徑從 `<DataRoot>/<kind>/sessions/<persona>.json`
+        //          扁平化為 `<DataRoot>/sessions/<persona>.json`，kind 改存進 json 欄位。
+        //          ⇒ 「同一個人同時兩種 session」變成**資料形狀層的不可能**，而不是靠守衛擋。
+        //          （守衛仍在，它負責擋下並指路 —— 但那是操作層；這裡是形狀層。）
+        // ⚠ **路徑不再吃 kind**：留一個不影響結果的參數就是死參數，而死參數會被下一個人
+        //   讀成「這裡有做 kind 隔離」。⇒ 要 kind 的地方一律去讀檔案裡的欄位。
+        // ⚠ 不做 migration（Tim 拍板）：舊 `<Kind>/sessions/` 的檔不搬不轉，
+        //   切換後它們就不再被讀到。切之前要確認沒有進行中的場（active 全 false）。
+        // ===========================================================
+        /// <summary>`<DataRoot>/sessions/<persona>.json` —— 所有 session 檔的唯一路徑組法。</summary>
+        public static string SessionPath(string iPersona)
+            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "sessions", $"{iPersona}.json");
 
-        /// <summary>該 kind 的 sessions 資料夾（列舉用）。</summary>
-        public static string SessionsDir(string iKind)
-            => Path.Combine(UCL_AgentCommandsPath.DataRoot, iKind, "sessions");
+        /// <summary>單一 sessions 資料夾（列舉用）。</summary>
+        public static string SessionsDir()
+            => Path.Combine(UCL_AgentCommandsPath.DataRoot, "sessions");
 
         // ===========================================================
         // 區塊職責：讀一份 session（不存在 / 壞檔一律回 null）。
@@ -62,16 +73,24 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          呼叫端要自己再問 IsRunningAt（active 為 true 但過期的檔會被讀出來）。
         // 數值影響：純讀取；壞檔印 warning 不丟例外（一份壞檔不該讓整個 step 死掉）。
         // ===========================================================
+        // ⚠ 扁平化之後 `iKind` **仍然有實際作用，而且作用變了**：它不再選路徑，而是**過濾**。
+        //   一人一檔位 ⇒ 讀到的可能是這個人**別種** session 的檔。
+        //   對「他在不在這個 kind」這個問題，那份檔的答案是**不在** ⇒ 回 null。
+        //   🩸 若不比對就回傳，FreeTime 的額度判定會拿到一份 StreamWatch 的檔，
+        //     而它有 active/end_ts ⇒ **判定會成功，只是量錯了東西**（沒有任何一層會喊）。
+        // ⚠ 空 kind（舊檔沒有這個欄位）一律視為不符 —— 舊檔不該被當成任何 kind 的現行 session。
         public static T Load<T>(string iKind, string iPersona) where T : UCL_SessionBase, new()
         {
             try
             {
-                string aPath = SessionPath(iKind, iPersona);
+                string aPath = SessionPath(iPersona);
                 if (!File.Exists(aPath)) return null;
                 var aJson = JsonData.ParseJson(File.ReadAllText(aPath, Encoding.UTF8));
                 if (aJson == null) return null;
                 var aSession = new T();
                 aSession.DeserializeFromJson(aJson);
+                if (!string.IsNullOrEmpty(iKind)
+                    && !string.Equals(aSession.kind, iKind, StringComparison.Ordinal)) return null;
                 return aSession;
             }
             catch (Exception e)
@@ -81,11 +100,15 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
         }
 
+        // ⚠ `iKind` 在寫入端的作用是**落進 json 欄位**（扁平化後那是 kind 的唯一存放處）。
+        //   在這裡蓋寫而不是要求呼叫端自己填：kind 與檔案位置本來由同一個動作決定，
+        //   拆成兩個責任就會長出「檔在、kind 空」的檔，而那種檔讀取端一律當成不符 ⇒ 靜默消失。
         /// <summary>寫一份 session（atomic —— 半寫的 session 檔會讓下一次讀取判成無 session）。</summary>
         public static void Save(string iKind, string iPersona, UCL_SessionBase iSession)
         {
             if (iSession == null) return;
-            string aPath = SessionPath(iKind, iPersona);
+            if (!string.IsNullOrEmpty(iKind)) iSession.kind = iKind;
+            string aPath = SessionPath(iPersona);
             Directory.CreateDirectory(Path.GetDirectoryName(aPath));
             AtomicWrite(aPath, iSession.SerializeToJson().ToJsonBeautify());
         }
@@ -116,17 +139,20 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
         public static List<KeyValuePair<string, UCL_SessionBase>> FindRunning(string iPersona)
         {
+            // ⚠ 扁平化後這裡**只讀一個檔**（一人一檔位），不再遍歷 Kinds ——
+            //   回傳仍是清單，因為「一人一場」是資料形狀給的保證，
+            //   而呼叫端的問題（「他現在在哪些 session」）本身沒有變成單值。
+            //   ⚠ 但仍過濾 `Kinds`：讀到一個未登記的 kind ⇒ 不列（同下方 ScannedKinds 的語意）。
             var aResult = new List<KeyValuePair<string, UCL_SessionBase>>();
             if (string.IsNullOrEmpty(iPersona)) return aResult;
             DateTime aNow = DateTime.Now;
-            foreach (string aKind in UCL_SessionKind.Kinds)
+            var aSession = Load<UCL_SessionBase>(null, iPersona);   // null ＝ 不過濾，先看它是哪一種
+            if (aSession == null) return aResult;
+            if (string.IsNullOrEmpty(aSession.kind)) return aResult;              // 舊檔／缺欄位：不當成任何 kind
+            if (Array.IndexOf(UCL_SessionKind.Kinds, aSession.kind) < 0) return aResult;  // 未登記的種類
+            if (aSession.IsRunningAt(aNow, out _))
             {
-                var aSession = Load<UCL_SessionBase>(aKind, iPersona);
-                if (aSession == null) continue;
-                if (aSession.IsRunningAt(aNow, out _))
-                {
-                    aResult.Add(new KeyValuePair<string, UCL_SessionBase>(aKind, aSession));
-                }
+                aResult.Add(new KeyValuePair<string, UCL_SessionBase>(aSession.kind, aSession));
             }
             return aResult;
         }
@@ -143,16 +169,21 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 物理意義：檔名即 persona。給後台頁做總覽用 —— 包含已收工的（那是歷史，不是雜訊）。
         // 數值影響：純列舉；資料夾不存在回空清單。
         // ===========================================================
+        // ⚠ 扁平化後檔名不再帶 kind 資訊 ⇒ 必須**開檔讀 kind 欄位**才知道那是不是這一種。
+        //   代價是列舉從「列目錄」變成「列目錄＋逐檔讀」；不付這個代價的話，
+        //   後台頁的 FreeTime 列表會列出正在觀影的人 —— 而那看起來完全正常。
         public static List<string> ListPersonas(string iKind)
         {
             var aList = new List<string>();
             try
             {
-                string aDir = SessionsDir(iKind);
+                string aDir = SessionsDir();
                 if (!Directory.Exists(aDir)) return aList;
                 foreach (string aFile in Directory.GetFiles(aDir, "*.json"))
                 {
-                    aList.Add(Path.GetFileNameWithoutExtension(aFile));
+                    string aPersona = Path.GetFileNameWithoutExtension(aFile);
+                    if (!string.IsNullOrEmpty(iKind) && Load<UCL_SessionBase>(iKind, aPersona) == null) continue;
+                    aList.Add(aPersona);
                 }
                 aList.Sort(StringComparer.Ordinal);
             }

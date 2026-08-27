@@ -37,6 +37,18 @@ namespace UCL.Core.EditorLib.AgentCommands
     {
         /// <summary>這場屬於誰（＝檔名，冗餘存一份供人直讀 json 時對帳）。</summary>
         public string persona = "";
+        // ===========================================================
+        // 區塊職責：這場是哪一種 session（`UCL_SessionKind` 的值）。
+        // 物理意義：路徑扁平化（TASK-0054 拍板⑤）之後，kind **從路徑段變成資料欄位** ——
+        //          檔案位置只剩 `<DataRoot>/sessions/<persona>.json`，一人一檔位，
+        //          於是「同一個人同時開兩種 session」在**資料形狀層**就不可能發生
+        //          （守衛仍在，負責擋下並指路；但它擋的是操作，這裡擋的是形狀）。
+        // ⚠ 因此本欄位是**讀取端的判別依據**，不是裝飾：`Load<T>(kind, persona)` 拿它比對，
+        //   不符就回 null（＝「這個人不在這個 kind 的 session」）。
+        //   空字串一律視為不符 —— 舊檔沒有這個欄位，而**舊檔不該被當成任何 kind 的現行 session**。
+        // ===========================================================
+        /// <summary>這場是哪一種 session（<see cref="UCL_SessionKind"/> 的值）。</summary>
+        public string kind = "";
         /// <summary>場次 id。額度／統計類資料以此綁定場次。</summary>
         public string session_id = "";
         /// <summary>開場 UTC ISO。</summary>

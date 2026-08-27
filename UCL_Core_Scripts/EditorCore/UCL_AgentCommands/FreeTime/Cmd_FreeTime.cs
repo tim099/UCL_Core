@@ -4,8 +4,8 @@
 // 物理意義：時間感由 Cmd 供給（每步回傳三個時間欄），agent 不自己心算 —— 時限判定只認時鐘，
 //          不認收束感（w44/w45 血證）。step=next 的觸發時間點＝活動事件的自然結束（棋局終局／
 //          繪圖收筆／聊天告一段落）——「完成的時刻」從 stop signal 變成回 loop 的通道。
-// 數值影響：session state 落 <DataRoot>/FreeTime/sessions/<persona>.json（C# 唯一寫入端；
-//          canvas.py 讀它判免費像素額度 —— 兩端 schema 對齊義務）；免費像素每場 10 顆
+// 數值影響：session state 落 <DataRoot>/sessions/<persona>.json（C# 唯一寫入端；一人一檔位，
+//          kind 存 json 欄位而非路徑段 —— TASK-0054 拍板⑤ 扁平化）；免費像素每場 10 顆
 //          per-session 清零；回傳檔 letters/<persona>/cmd/freetime_<step>.md（機械產物，
 //          路徑經 ReportOutputFile 進 result 檔 outputs 欄）。blocked＝payload 落檔＋非零退出。
 #if UNITY_EDITOR
@@ -928,7 +928,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // 路徑委派 UCL_SessionService —— 這條組法曾在三個檔各寫一份
         // （本檔、UCL_FreeTimeGating、Cmd_Sculpture），改一處另兩處指舊位置且不報錯。
         static string SessionPath(string iPersona)
-            => UCL_SessionService.SessionPath(UCL_SessionKind.FreeTime, iPersona);
+            => UCL_SessionService.SessionPath(iPersona);   // 扁平化後路徑不吃 kind（TASK-0054 拍板⑤）
 
         // 區塊職責：session 檔的讀 / 寫 / 收工 —— 三處都走 typed model，不再逐鍵手搭。
         // 物理意義：鍵名從「字串」變成「欄位」⇒ 打錯是編譯期錯誤，不是讀回預設值。

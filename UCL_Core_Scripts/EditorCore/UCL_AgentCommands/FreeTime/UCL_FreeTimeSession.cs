@@ -8,14 +8,16 @@ namespace UCL.Core.EditorLib.AgentCommands
 {
     // ===========================================================
     // 區塊職責：一場自由時間 session 的持久化資料模型。
-    // 物理意義：對應 AgentCommands/FreeTime/sessions/<persona>.json（一 persona 一檔，開新場覆寫）。
+    // 物理意義：對應 AgentCommands/sessions/<persona>.json（**一 persona 一檔位**，開新場覆寫）。
+    //          ⚠ 路徑不含 kind（TASK-0054 拍板⑤ 扁平化）—— kind 是 UCL_SessionBase 的 json 欄位，
+    //          於是「同一個人同時兩種 session」在資料形狀層就不可能。舊 <Kind>/sessions/ 不做 migration。
     //          共通欄位（persona / session_id / start_ts / end_ts / until_local /
     //          active / end_reason / ended_at）在 UCL_SessionBase；這裡只加自由時間自己的。
     // 數值影響：序列化結果與 typed model 之前的手搭格式**逐鍵相同**
     //          （鍵的先後順序可能不同 —— 兩端都按鍵取值，不靠順序）。既有檔不需遷移。
     // ===========================================================
     /// <summary>
-    /// 自由時間 session（`FreeTime/sessions/&lt;persona&gt;.json`）。
+    /// 自由時間 session（`sessions/&lt;persona&gt;.json`，`kind` 欄位為 <c>FreeTime</c>）。
     /// 欄位命名規則與跨語言讀取端的約束見 <see cref="UCL_SessionBase"/> 的 remarks。
     /// </summary>
     public class UCL_FreeTimeSession : UCL_SessionBase

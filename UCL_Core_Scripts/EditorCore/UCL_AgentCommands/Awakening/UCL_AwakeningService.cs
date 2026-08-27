@@ -1197,7 +1197,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             // ⚠ **只印不改**：邏輯在 TaskMgmt.UCL_TaskReconcile（本檔不重寫任何 Task 規則）；
             //   逾期認領的釋放是顯式的 `op=sweep`，不在這一步偷偷跑。
             aR.AppendLine(TaskMgmt.UCL_TaskReconcile.BuildReport(iPersona, KeysPath(iPersona)));
-            aR.AppendLine("## next（人工收尾清單 —— 標 **required** 的兩項會實擋；其餘提示型）");
+            // ⚠ 標題**不寫死數字**（TASK-0019 QA 2026-08-27 併修）：原字面是「標 required 的**兩項**會實擋」，
+            //   而實擋的是**三道**（portrait／letter／收工閘）—— 收工閘不在本清單上，所以數它不到。
+            //   📌 那是判準⑤的鏡像：**訊息比事實小也是錯，而且更難抓** ——
+            //     高報第一次用就炸，低報只會讓人少防一道，且不會叫。
+            //   ⇒ 修法是拿掉那個數字，不是把它改成 3：清單會再長，而數字不會跟著長。
+            aR.AppendLine("## next（人工收尾清單 —— 標 **required** 的會實擋；其餘提示型）");
+            aR.AppendLine("⚠ 本清單**之外**還有一道實擋：**收工閘**（擋在 `step=sleep`）——"
+                + "它現在會擋什麼，上面 Task 對帳 ⑤ 已經列出來了。");
             aR.AppendLine($"1. 見叢交棒：awakening.py keys --persona {iPersona} --add \"<明天必須知道的一句話>\"");
             // ⛔ commit／submodule bump 不進見叢（Tim 2026-08-21 拍板）—— 晚安之後他自己收尾全部 commit。
             //   這一行印在**必經路上**而不是只寫進文件：舊的見叢裡塞了五六條「某層未 commit／父層未 bump」，

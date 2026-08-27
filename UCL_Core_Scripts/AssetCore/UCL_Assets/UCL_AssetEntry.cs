@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using UCL.Core;
 using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
+using UCL.Core.Page;
 using UCL.Core.UI;
 using UnityEngine;
 
@@ -313,14 +314,22 @@ namespace UCL.Core
             GUILayout.BeginHorizontal();
             bool aIsPreview = UCL.Core.UI.UCL_GUILayout.Toggle(iDic, "PreviewToggle");
             //Debug.LogError($"aIsPreview:{aIsPreview}");
-            GUILayout.Label(UCL_LocalizeManager.Get("Preview"), UCL_GUIStyle.LabelStyle);
+            GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+
+            bool edit = GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle);
+
             GUILayout.EndHorizontal();
+            if (edit)
+            {
+                var aData = Util.GetAsset(ID);
+                if(aData != null) UCL_CommonEditPage.Create(aData);
+            }
             if (aIsPreview)
             {
                 var aData = Util.GetAsset(ID);
                 if (aData != null)
                 {
-                    aData.Preview(iDic.GetSubDic("Preview"), true);
+                    aData.Preview(iDic.GetSubDic("Preview"), false);
                 }
             }
         }

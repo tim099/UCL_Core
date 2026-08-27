@@ -283,6 +283,8 @@ namespace UCL.Core.UI {
         static StyleData EditorWindowData => s_EditorWindowData == null ? s_EditorWindowData = new StyleData() : s_EditorWindowData;
         /// <summary>把指定尺寸乘上當前 GUI 縮放比例（DPI / 使用者設定）。</summary>
         public static int GetScaledSize(float iSize) => Mathf.RoundToInt(iSize * StyleData.Scale);
+        public static GUILayoutOption Width(float iSize) => GUILayout.Width(GetScaledSize(iSize));
+        public static GUILayoutOption Height(float iSize) => GUILayout.Height(GetScaledSize(iSize));
 #if UNITY_EDITOR
         /// <summary>當前生效的 StyleData（依 <see cref="IsInEditorWindow"/> 自動切 EditorWindow / Runtime 兩份 cache）。</summary>
         public static StyleData CurStyleData => IsInEditorWindow ? EditorWindowData : Data;

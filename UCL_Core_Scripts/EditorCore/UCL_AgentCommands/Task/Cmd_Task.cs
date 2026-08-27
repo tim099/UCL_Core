@@ -188,7 +188,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine($"- 做完 commit 訊息帶 `Fixes {e.Id}`（提交時自動推進 —— 有 QA 進 in_review，沒 QA 直接 done）");
             ioR.AppendLine();
             bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Created, iActor,
-                GetArg(iArgs, "description", "").Trim());
+                GetArg(iArgs, "description", "").Trim(), iCallerArgs: iArgs);
             AppendNotifyLine(ioR, e, iActor, aOk);
         }
 
@@ -482,7 +482,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
                 aWhyNoMove == null
                     ? $"{aFrom} → **in_progress**（{iActor} 認領 role={aRole}）"
-                    : $"{iActor} 加入為 `{aRole}`（狀態維持 `{aFrom}` —— {aWhyNoMove}）");
+                    : $"{iActor} 加入為 `{aRole}`（狀態維持 `{aFrom}` —— {aWhyNoMove}）", iCallerArgs: iArgs);
             AppendNotifyLine(ioR, e, iActor, aOk);
         }
 
@@ -502,7 +502,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine($"- {(aNew ? "新增" : "已存在，未重複加")}：{aTarget}（{aRole}）");
             ioR.AppendLine($"- 參與：{Participants(e)}");
             bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Assigned, iActor,
-                $"{aTarget} ← `{aRole}`");
+                $"{aTarget} ← `{aRole}`", iCallerArgs: iArgs);
             AppendNotifyLine(ioR, e, iActor, aOk);
             ioR.AppendLine($"- ⚠ 被指派的人若沒在見叢寫一行 `[{e.Id}]`，他的**早安 brief 不會提這張單**");
             ioR.AppendLine("  （早安流程刻意零改動 —— Tim 2026-08-24 拍板）。酒館通知是他知道這件事的那條路。");
@@ -604,7 +604,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine(aBody);
             ioR.AppendLine("```");
             ioR.AppendLine();
-            bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Comment, iActor, "", aBody);
+            bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Comment, iActor, "", aBody, iArgs);
             AppendNotifyLine(ioR, e, iActor, aOk);
             ioR.AppendLine("- ⚠ 留言**會推進 `updated_at`** ⇒ 它會讓 stale 計時歸零。");
             ioR.AppendLine("  所以「留言說我還在做」跟「真的有做」在 stale 讀數上長得一樣 —— 這是這個讀數的邊界。");
@@ -755,7 +755,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 }
             }
             bool aNotified = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
-                $"{aFrom} → **{aStatus}**" + (aNote.Length == 0 ? "" : $"：{aNote}"));
+                $"{aFrom} → **{aStatus}**" + (aNote.Length == 0 ? "" : $"：{aNote}"), iCallerArgs: iArgs);
             AppendNotifyLine(ioR, e, iActor, aNotified);
         }
 
@@ -858,7 +858,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             if (aFrom != e.status)
             {
                 bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
-                    $"{aFrom} → **{e.status}**（commit `{aSha}`）");
+                    $"{aFrom} → **{e.status}**（commit `{aSha}`）", iCallerArgs: iArgs);
                 AppendNotifyLine(ioR, e, iActor, aOk);
             }
             else
@@ -993,7 +993,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             }
 
             bool aNotified = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Comment, iActor,
-                "", "**[收工 wrapup]**\n\n" + aProgress);
+                "", "**[收工 wrapup]**\n\n" + aProgress, iArgs);
             AppendNotifyLine(ioR, e, iActor, aNotified);
         }
 
@@ -1053,7 +1053,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 UCL_TaskIO.Save(e, "", "", $"{aTs}　`todo`　sweep 釋放（{aFrom} 已 {aDays} 天沒動作，"
                     + $"逾期 {UCL_TaskIO.STALE_DAYS} 天門檻）by {iActor}");
                 bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
-                    $"{aFrom} → **todo**（sweep：認領後 {aDays} 天沒動，釋放回待領）");
+                    $"{aFrom} → **todo**（sweep：認領後 {aDays} 天沒動，釋放回待領）", iCallerArgs: iArgs);
                 AppendNotifyLine(ioR, e, iActor, aOk);
                 aDone++;
             }

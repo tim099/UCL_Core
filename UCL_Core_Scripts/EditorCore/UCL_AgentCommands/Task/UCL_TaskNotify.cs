@@ -44,8 +44,19 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         /// 發一則任務通知。<paramref name="iActor"/> 是動手的人（他自己不會被 @，避免自己敲自己）。
         /// 回 false 時已經印過警告；一律不拋（通知失敗不汙染主動作）。
         /// </summary>
+        /// <param name="iCallerArgs">
+        /// 呼叫端那一筆 cmd 的 args —— **只為了把 `_cmd_id` 帶進子 Cmd**。
+        /// 🩸 2026-08-27 summit：本函式原本新造 args 卻沒帶它，於是 `Cmd_Tavern.Op_Post`
+        /// 在 <c>UCL_AgentCmdContexts.FromArgs</c> 那裡喊「args 缺 `_cmd_id`…本次回報不會進 result 檔」——
+        /// 而**通知本身照樣發出去了**，所以這隻的症狀是「訊息有、回報沒有」，不是「沒發文」。
+        /// ⇒ 那正是本檔開頭自己寫的「兩條發文路就是兩套規則，其中一條遲早會漏掉某個欄位」——
+        /// 我沒有另開發文路（走的是 Cmd_Tavern），但**漏掉欄位那半還是發生了**：
+        /// 同一條路，穿透規則卻少一份。既有正確樣板在 `Cmd_Library.share` 與 `StreamWatch.TavernPost`。
+        /// null ＝ 後台頁按鈕那種非 queue 路徑（警告的①，正常）—— 不造假、不猜。
+        /// </param>
         public static async UniTask<bool> PostAsync(UCL_TaskEntry e, Kind iKind, string iActor,
-            string iDetail = "", string iCommentBody = "")
+            string iDetail = "", string iCommentBody = "",
+            IDictionary<string, string> iCallerArgs = null)
         {
             if (e == null) return false;
             try
@@ -60,6 +71,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     // tag 給後續分流用；`task` 這一族的訊息可以被獨立撈出來對帳
                     { "meta", "{\"tag\":\"task\",\"task\":\"" + e.Id + "\",\"kind\":\"" + iKind.ToString().ToLowerInvariant() + "\"}" },
                 };
+                // `_cmd_id` 隨子 args 穿透 —— 子 Cmd 的回報才回得到本筆 context（併行下唯一正確的路徑）。
+                UCL_AgentCmdContexts.PropagateCmdId(iCallerArgs, aArgs);
                 var aCmd = new Cmd_Tavern();
                 await aCmd.ExecuteAsync(aArgs, default);
                 return true;
@@ -74,9 +87,13 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         }
 
         /// <summary>同步呼叫端（後台頁的按鈕）用的射後不理版本 —— 失敗照樣會印警告。</summary>
+        /// <remarks>⚠ 後台頁沒有 cmd context（不是 queue 路徑）⇒ <c>iCallerArgs</c> 天生為 null，
+        /// 那條路上的「缺 `_cmd_id`」警告是**正常的①**，不是漏帶。
+        /// 若哪天有 queue 路徑的同步呼叫端，它要自己把 args 傳進來。</remarks>
         public static void PostFireAndForget(UCL_TaskEntry e, Kind iKind, string iActor,
-            string iDetail = "", string iCommentBody = "")
-            => PostAsync(e, iKind, iActor, iDetail, iCommentBody).Forget();
+            string iDetail = "", string iCommentBody = "",
+            IDictionary<string, string> iCallerArgs = null)
+            => PostAsync(e, iKind, iActor, iDetail, iCommentBody, iCallerArgs).Forget();
 
         // ===========================================================
         // 區塊職責：組訊息本體。

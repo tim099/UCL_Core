@@ -4,7 +4,8 @@
 // 物理意義：**沒有 step=end** —— agent 不能自己結束 session；兩個終止（到期／Tim 停錄影）
 //          都由 cycle 對系統時鐘與 _screenstream/_config.json 的 enabled 判定。
 //          「自動」指的是**判斷自動**（Cmd 算好告訴你），不是觸發自動 —— 不新增任何常駐偵測。
-// 數值影響：session state 落 <DataRoot>/StreamWatch/sessions/<persona>.json（C# 唯一寫入端）；
+// 數值影響：session state 落 <DataRoot>/sessions/<persona>.json、`kind="StreamWatch"`（TASK-0054 拍板⑤ 扁平化）——
+//          寫入端是 UCL_SessionService（本檔不自己組路徑、不自己落檔）；
 //          回傳檔 letters/<persona>/cmd/streamwatch_<step>.md（路徑經 ReportOutputFile 進 result outputs）。
 // ⚠ 阻塞紀律（Tim 2026-08-15 指示 + WorkMemory/unitask-editor-async）：
 //   縮圖牆是外部 process，**一律 await Task.Run 包起來**，不得在主執行緒輪詢 WaitForExit。

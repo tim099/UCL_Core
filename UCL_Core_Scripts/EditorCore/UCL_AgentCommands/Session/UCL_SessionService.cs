@@ -26,17 +26,24 @@ namespace UCL.Core.EditorLib.AgentCommands
     {
         /// <summary>自由時間（Cmd_FreeTime 管理，本 service 的首位租客）。</summary>
         public const string FreeTime = "FreeTime";
-        /// <summary>觀影（Cmd_StreamWatch）。⚠ 目前**尚未**改用本 service 寫入，見 Kinds 註解。</summary>
+        /// <summary>觀影（Cmd_StreamWatch）。2026-08-27 起經本 service 讀寫並已登記進 <see cref="Kinds"/>。</summary>
         public const string StreamWatch = "StreamWatch";
 
         // ⚠ **只列已經確認 schema 對得上的種類。**
         // FreeTime：已改由 UCL_FreeTimeSession 讀寫，欄位對齊（2026-08-18 round-trip 實測）。
-        // StreamWatch：檔案裡確實有 active，但 session_id / end_ts / until_local 是否齊備
-        //   **我沒有實測**（撰寫時磁碟上沒有任何進行中的觀影 session 可對帳）——
-        //   所以它不在 Kinds 裡。列進去會讓查詢結果多一格「看起來查過了」的假讀數：
-        //   欄位缺席時 typed model 只會拿到預設值，而 active=false 跟「沒這場」長得一樣。
-        //   ⇒ 要納管請先實測一場，再把它加進來。
-        public static readonly string[] Kinds = { FreeTime };
+        // StreamWatch：**2026-08-27 納管**（TASK-0054）。納管前它刻意不在這裡，理由是
+        //   「欄位缺席時 typed model 只會拿到預設值，而 active=false 跟『沒這場』長得一樣」
+        //   ⇒ 列進去會多一格「看起來查過了」的假讀數。當時的條件是**先實測一場**。
+        //   🩸 而它是這樣被驗掉的（Tim 的看電影場當夾具，四個 persona 同場）：
+        //   · 開場活體：`<DataRoot>/sessions/<persona>.json` 生成，38 鍵
+        //     ＝ 舊 37 −`settled_at` ＋`ended_at` ＋`kind`（鍵集合相減，不是逐欄目視）
+        //   · 收工：三個**不同 persona、三個不同收工時刻**（14:37:27 / 14:38:21 / 14:38:47）
+        //     三欄一起翻（active=false ＋ end_reason=expired ＋ ended_at 有值）⇒ 單一寫入點 Close 成立
+        //   · ⭐ 反向對照：其中一份收工時，**另一個還在跑的 persona 那份仍 active=true／ended_at=''**
+        //     ⇒ 判它的不是「看起來對」，是**一個此刻應該還沒被寫的檔沒有被寫**（若寫錯 persona
+        //     或寫成全域，那一份會跟著翻）。⇒ 這一格擋的是「有出現」驗不到的那一族。
+        // ⇒ 新增種類的門檻不變：**先跑一場真的，再加進來。**
+        public static readonly string[] Kinds = { FreeTime, StreamWatch };
     }
 
     // ===========================================================

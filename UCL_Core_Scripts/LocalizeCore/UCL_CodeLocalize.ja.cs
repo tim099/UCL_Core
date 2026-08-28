@@ -39,8 +39,6 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ScreenStream.Desc" => "画面録画 / STT / OCR デーモンのコンソール（配信の同時視聴、音声文字起こし）。",
                 "ToolBox.ProcessAdmin" => "プロセス管理",
                 "ToolBox.ProcessAdmin.Desc" => "C# から起動した外部プロセスの確認と処置（PID + 名前 + 起動時刻の三重照合で誤終了とゾンビ増殖を防ぐ）。",
-                "ToolBox.BugReportAdmin" => "問題報告管理",
-                "ToolBox.BugReportAdmin.Desc" => "構造化された課題チケット。バグだけでなく、古いドキュメント・不十分なヒント・手順の摩擦も対象。放置されたチケットは自動で警告表示。",
                 "ToolBox.TaskManager" => "タスク・プロジェクト管理",
                 "ToolBox.TaskManager.Desc" => "エージェント横断のタスクチケット（1件1ファイル）。他者が待つ約束は Task、自分だけの自律は見叢へ。未解決の blocker がある間は完了不可、in_progress は 14 日で stale 表示。",
                 "ToolBox.Relationship" => "関係（Relationship）",

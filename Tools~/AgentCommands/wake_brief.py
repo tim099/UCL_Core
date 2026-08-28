@@ -1027,79 +1027,81 @@ def _next_actions_lines(persona: str, st: dict, fst: dict, threshold: int) -> li
     return out
 
 
-# ─── 組裝 ────────────────────────────────────────────────────────────────
-# 區塊職責：問題回報單的 open / stale 讀數 —— 早安 brief 的 §6 掛點。
-# 物理意義：**這是 BugReport 系統兩條防死機制的其中一條**（另一條是 commit 的 Fixes BUG-n 閉環）。
-#          `status: open` 的失效方式是沉默的：一張沒人動的 open 單跟沒有那張單長得一模一樣，
-#          而且它會主動誤導（open 讀起來像「還壞著」，但可能三週前就被順手修好了）。
-#          ⇒ 把讀數掛在**每個人每天早上一定會讀的那份檔**上，不開新 daemon
-#            （不做 daemon 的理由抄自 subconscious.py 的死法：排程它的東西退場後
-#             它安靜了 2.7 個月，零錯誤零警告零人察覺）。
-# 數值影響：純讀 reports/*.md 的 frontmatter；資料夾不存在或全空 → 回 None（該區塊整段不印，
-#          不印「0 筆」—— 系統還沒被用過跟系統很乾淨是兩件事，不要用同一句話講）。
-def _bugreport_line(persona: str) -> "str | None":
+# 區塊職責：缺陷單（Task type=bug）的 open / stale 讀數 —— 早安 brief 的 §6 掛點。
+# 物理意義：`status: todo` 的失效方式是沉默的：一張沒人動的缺陷單跟沒有那張單長得一模一樣。
+#          ⇒ 把讀數掛在**每個人每天早上一定會讀的那份檔**上，不開新 daemon。
+#          （前身是 BugReport 體系的同名讀數；TASK-0086 整併後入口統一指 Task，
+#           歷史 BUG-1~50 凍結在 BugReports/reports/，不再進讀數。）
+# 數值影響：純讀 Tasks/tasks/*.md 的 frontmatter；資料夾不存在或零張 bug 單 → 回 None
+#          （整段不印 —— 「還沒有缺陷單」跟「系統很乾淨」是兩件事，不用同一句話講）。
+def _bug_task_line(persona: str) -> "str | None":
     try:
         import pathlib as _pl
         from _lib.ucl_paths import data_root
-        d = _pl.Path(data_root()) / "BugReports" / "reports"
+        d = _pl.Path(data_root()) / "Tasks" / "tasks"
     except Exception as _e:
         # ⚠ 不要靜默 —— 掃描壞掉與「沒有單子」都表現成少一行，兩者長得一模一樣。
-        #   2026-08-18 實際被這個吞過一次（pathlib 沒 import ⇒ NameError ⇒ 看起來像沒單子）。
         import sys as _sys
-        print(f"[wake_brief] BugReport 讀數掃描失敗（brief 照常產出）：{_e}", file=_sys.stderr)
+        print(f"[wake_brief] 缺陷單讀數掃描失敗（brief 照常產出）：{_e}", file=_sys.stderr)
         return None
     if not d.is_dir():
         return None
     import datetime as _dt
-    CLOSED = ("resolved", "wontfix", "duplicate")
+    CLOSED = ("done", "cancelled")
     STALE_DAYS = 14
     now = _dt.datetime.now(_dt.timezone.utc)
-    total = open_n = stale_n = broken = 0
+    total = open_n = stale_n = 0
     mine = []
     for f in sorted(d.glob("*.md")):
-        fm = {}
         try:
-            lines = f.read_text(encoding="utf-8").splitlines()
+            fm, in_fm, participants = {}, False, []
+            for line in f.read_text(encoding="utf-8").splitlines():
+                if line.startswith("---"):
+                    if in_fm:
+                        break
+                    in_fm = True
+                    continue
+                if not in_fm:
+                    continue
+                s = line.strip()
+                if s.startswith("- persona:"):
+                    participants.append(s.split(":", 1)[1].strip())
+                    continue
+                if line.startswith(" "):
+                    continue
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    fm[k.strip()] = v.strip()
         except Exception:
             continue
-        if not lines or lines[0].strip() != "---":
-            continue
-        for ln in lines[1:]:
-            if ln.strip() == "---":
-                break
-            if ":" in ln:
-                k, v = ln.split(":", 1)
-                fm[k.strip()] = v.strip()
-        if not fm.get("index"):
+        if fm.get("type") != "bug":
             continue
         total += 1
-        if fm.get("status", "").lower() in CLOSED:
+        if fm.get("status") in CLOSED:
             continue
         open_n += 1
+        days = -1
         try:
             ts = _dt.datetime.fromisoformat(fm.get("updated_at", "").replace("Z", "+00:00"))
             days = (now - ts).days
         except Exception:
-            broken += 1
-            days = -1
+            pass
         if days >= STALE_DAYS:
             stale_n += 1
-        if fm.get("assignee", "") == persona and days >= 0:
-            mine.append((fm.get("index"), days, fm.get("title", "")))
-    if total == 0:
+        if persona in participants:
+            mine.append(fm.get("id", f"TASK-{fm.get('index', '?')}"))
+    if total == 0 or open_n == 0:
         return None
-    out = f"- 🐛 問題回報：open **{open_n}** 筆"
+    out = f"- 🐛 缺陷單（type=bug）：open **{open_n}** 張"
     if stale_n:
-        out += f"，其中 **{stale_n}** 筆超過 {STALE_DAYS} 天沒動作（**stale**）"
-    if broken:
-        out += f"；⚠ {broken} 筆時戳壞掉算不出天數"
+        out += f"，其中 **{stale_n}** 張超過 {STALE_DAYS} 天沒動作（**stale**）"
     if mine:
-        idx = ", ".join(f"BUG-{i}" for i, _, _ in mine[:3])
-        out += f"\n- 🧷 **你認領著 {len(mine)} 筆**：{idx}"
-    out += "\n（清單 → `run_cmd.py run BugReport --arg op=list`；後台頁 → ToolBox → 問題回報管理）"
+        out += f"\n- 🧷 **你參與其中 {len(mine)} 張**：{', '.join(mine[:3])}"
+    out += "\n（清單 → `run_cmd.py run Task --arg op=list`；後台頁 → ToolBox → 任務與專案管理）"
     return out
 
 
+# ─── 組裝 ────────────────────────────────────────────────────────────────
 def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None) -> tuple:
     """組裝 wake brief → (主檔文字, 續讀檔文字 or None)。
 
@@ -1255,8 +1257,8 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
         if pf is not None:
             todo6.append(f"- 🧬 fork 初醒：額外讀母 persona '{parent}' 的 "
                          f"`{pf.relative_to(aw._REPO_ROOT)}` 接血統")
-    # 問題回報讀數 —— 沒有單子（或系統還沒被用過）就整段不印，不用「0 筆」佔一行
-    _bug = _bugreport_line(persona)
+    # 缺陷單讀數 —— 沒有 open 的 bug 單就整段不印，不用「0 張」佔一行
+    _bug = _bug_task_line(persona)
     if _bug:
         todo6.append(_bug)
     sections.append(("📋 §6 記憶維護狀態", todo6, True))

@@ -39,8 +39,6 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ScreenStream.Desc" => "Console for the screen recording / STT / OCR daemon (watch-along streams, media transcription).",
                 "ToolBox.ProcessAdmin" => "Process Admin",
                 "ToolBox.ProcessAdmin.Desc" => "Inspect and manage external processes spawned from C# (identity verified by PID + name + start time — prevents wrong kills and zombie pile-ups).",
-                "ToolBox.BugReportAdmin" => "Bug Reports",
-                "ToolBox.BugReportAdmin.Desc" => "Structured issue tickets — not only bugs: outdated docs, half-written hints and process friction all belong here. Stale tickets are flagged automatically.",
                 "ToolBox.TaskManager" => "Tasks & Projects",
                 "ToolBox.TaskManager.Desc" => "Cross-agent task tickets (one file per task) — commitments others wait on become Tasks; personal accountability stays in the keys file. Closing is blocked while any blocker is open; in_progress goes stale after 14 days.",
                 "ToolBox.Relationship" => "Relationship",

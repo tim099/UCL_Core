@@ -252,6 +252,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             sb.Append($"id: {e.Id}\n");
             sb.Append($"type: {e.type}\n");
             sb.Append($"priority: {e.priority}\n");
+            // severity=none 不落行 —— 缺席即 none（非缺陷單常態），既有單零 diff
+            if (e.severity != UCL_TaskSeverity.none) sb.Append($"severity: {e.severity}\n");
             sb.Append($"status: {e.status}\n");
             sb.Append($"title: {OneLine(e.title)}\n");
             sb.Append($"reporter: {OneLine(e.reporter)}\n");
@@ -279,7 +281,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             sb.Append("---\n\n");
 
             sb.Append($"# {e.Id} — {e.title}\n\n");
-            sb.Append($"> `{e.type}` / `{e.priority}` / `{e.status}`　開單：{Nz2(e.reporter)}");
+            sb.Append($"> `{e.type}` / "
+                + (e.severity == UCL_TaskSeverity.none ? "" : $"`{e.severity}` / ")
+                + $"`{e.priority}` / `{e.status}`　開單：{Nz2(e.reporter)}");
             if (e.participants.Count > 0)
             {
                 sb.Append("　參與：");
@@ -384,8 +388,16 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     switch (k)
                     {
                         case "index": int.TryParse(v, out e.index); break;
-                        case "type": e.type = UCL_TaskWire.ParseOr(v, UCL_TaskType.feature, $"{iPath} type"); break;
+                        case "type":
+                            e.type = UCL_TaskWire.ParseOr(v, UCL_TaskType.feature, $"{iPath} type");
+                            if (e.type == UCL_TaskType.all)
+                            {
+                                UnityEngine.Debug.LogError($"[Task] {iPath} type: `all` 是篩選成員不是任務種類 —— 落回 `feature`，去修單檔 frontmatter");
+                                e.type = UCL_TaskType.feature;
+                            }
+                            break;
                         case "priority": e.priority = UCL_TaskWire.ParseOr(v, UCL_TaskPriority.normal, $"{iPath} priority"); break;
+                        case "severity": e.severity = UCL_TaskWire.ParseOr(v, UCL_TaskSeverity.none, $"{iPath} severity"); break;
                         case "status":
                             e.status = UCL_TaskWire.ParseOr(v, UCL_TaskStatus.todo, $"{iPath} status");
                             // `all` / `open` 是篩選成員不是狀態 —— 落盤檔帶著它們＝壞檔，一樣出聲退回 todo

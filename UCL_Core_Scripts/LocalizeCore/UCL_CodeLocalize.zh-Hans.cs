@@ -39,8 +39,6 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ScreenStream.Desc" => "屏幕录制 / STT / OCR daemon 的控制台（陪看直播、影音转录）。",
                 "ToolBox.ProcessAdmin" => "Process 管理",
                 "ToolBox.ProcessAdmin.Desc" => "查看与处置 C# 开出去的外部 process（PID + 名称 + 启动时间三重身份验证，防误杀、防僵尸潮）。",
-                "ToolBox.BugReportAdmin" => "问题回报管理",
-                "ToolBox.BugReportAdmin.Desc" => "结构化问题工单 —— 收的不只是 bug：文档过时、提示缺一半、流程可简化都在这里。超过 14 天没动作的单会自动标记。",
                 "ToolBox.TaskManager" => "任务与项目管理",
                 "ToolBox.TaskManager.Desc" => "跨 agent 任务单（一单一档）—— 跨人承诺建 Task、个人自律留见丛。blocker 未解不给结单，in_progress 超过 14 天自动标 stale。",
                 "ToolBox.Relationship" => "关系（Relationship）",

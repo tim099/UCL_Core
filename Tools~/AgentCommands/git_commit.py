@@ -175,53 +175,8 @@ def build_announcement(message: str, sha: str, repo: str, personas: list, intro:
 ANNOUNCE_ACK_TIMEOUT_SEC = 240
 
 
-# 區塊職責：commit 訊息裡的 `Fixes BUG-<n>` → 自動把那幾張單關掉。
-# 物理意義：**這是 BugReport 系統兩條防死機制的其中一條**（另一條是早安 brief 的 stale 讀數）。
-#          `status: open` 的失效方式是沉默的 —— 一張沒人回來按 resolve 的單，
-#          跟一張還真的壞著的單長得一模一樣，而且它會主動誤導。
-#          修好東西的人本來就要 commit，所以把關單掛在**他一定會走的那條路**上，
-#          不要另外要求他記得再跑一支指令（「記得」正是這套系統不能依賴的東西）。
-# 數值影響：一張單一次 Cmd 呼叫；失敗只警告不影響 commit 與領薪（關單失敗不該讓 commit 看起來失敗）。
-# ⚠ 刻意放在**公告成功之後**才跑：commit 與領薪是主線，關單是附帶效果。
-def resolve_fixed_bugs(message: str, sha: str, persona: str) -> None:
-    idxs = []
-    # ⚠ **頂格錨定**（`^Fixes`，不允許行首空白）而不是 `\bFixes`。
-    # 🩸 2026-08-24 summit：我在 commit 訊息裡**引述**上一筆的 `Fixes TASK-n`（描述那一筆發生過什麼），
-    #   而 regex 分不出「這一筆要關」與「我在講那一筆」⇒ 兩張單被重複掛上這一筆 sha。
-    #   trailer 的定義本來就是「獨占一行」（文件寫的是「在 commit 訊息裡寫一行就好」）,
-    #   所以錨定行首不是收緊規則，是**把規則寫成它本來的形狀**。
-    # 🩸 2026-08-28 BUG-8 補刀：`^[ \t]*` 仍放行**縮排引用** —— 而 `git log` 的輸出
-    #   正好是四空白縮排，貼一段 git log 進 bump 訊息就會誤觸。trailer 頂格寫，
-    #   縮排的那行在定義上是引用，不是宣告。
-    for m in re.finditer(r"^Fixes[ \t]+BUG-(\d+)\b", message,
-                         re.IGNORECASE | re.MULTILINE):
-        n = m.group(1)
-        if n not in idxs:
-            idxs.append(n)
-    if not idxs:
-        return
-    run_cmd = Path(__file__).with_name("run_cmd.py")
-    for n in idxs:
-        cmd = [sys.executable, str(run_cmd), "--persona", persona, "run", "BugReport",
-               "--arg", "op=resolve", "--arg", f"index={n}",
-               "--arg", "resolution=fixed", "--arg", f"commit_sha={sha}",
-               "--arg", f"note=由 git_commit.py 自動關單（commit 訊息含 Fixes BUG-{n}）",
-               "--wait-reply", "0"]
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=180)
-            if r.returncode == 0 and "Success" in (r.stdout or ""):
-                print(f"🐛 BUG-{n} 已自動關單（{sha}）")
-            else:
-                # 大聲但不致命 —— commit 已經落地，這裡失敗只是那張單還開著
-                print(f"⚠ BUG-{n} 自動關單失敗，單子還開著：手動補 "
-                      f"run BugReport --arg op=resolve --arg index={n} --arg commit_sha={sha}",
-                      file=sys.stderr)
-        except Exception as e:
-            print(f"⚠ BUG-{n} 自動關單失敗（{e}）—— 單子還開著，需手動 resolve。", file=sys.stderr)
-
-
 # 區塊職責：commit 訊息裡的 `Fixes TASK-<n>` / `Refs TASK-<n>` → 推進那幾張任務單。
-# 物理意義：跟 `Fixes BUG-<n>` 同一條理由 —— 把狀態推進掛在**修東西的人一定會走的路**上。
+# 物理意義：把狀態推進掛在**修東西的人一定會走的路**上（唯一提交手勢，TASK-0086）。
 #          舊的 AgentTasks（2026-05）死因就是「狀態要有人專程回來推」，而沒有人會專程回來。
 # ⚠ **狀態機不在這裡**：這支只抓單號與 mode，剩下的判斷（有 blocker 不推進 / 有 QA 推 in_review /
 #   沒 QA 才 done）全在 `Cmd_Task op=commit`。複製一份到 python 就是兩份產線 ——
@@ -232,7 +187,7 @@ def advance_tasks(message: str, sha: str, persona: str) -> None:
     # (index, mode) 保序去重 —— 同一張單同時寫 Fixes 與 Refs 時，**Fixes 優先**（它是較強的宣告）
     seen: dict = {}
     for kw, mode in (("Fixes", "fixes"), ("Refs", "refs")):
-        # 頂格錨定 —— 理由同 resolve_fixed_bugs（引述別人的 trailer 不該觸發推進；
+        # 頂格錨定（引述別人的 trailer 不該觸發推進；
         # 縮排＝引用，git log 貼上是四空白，BUG-8）
         for m in re.finditer(rf"^{kw}[ \t]+TASK-(\d+)\b", message,
                              re.IGNORECASE | re.MULTILINE):
@@ -483,7 +438,6 @@ def main() -> int:
             print(f"📣 酒館公告已發（sha={sha} / persona={primary}）—— 不要再手動貼一次，同 SHA 貼兩次會付兩次錢。")
         else:
             print(f"✓ {sha} 已提交並公告（{primary}{'／bump of ' + args.bump_of if args.bump_of else ''}）")
-        resolve_fixed_bugs(message, sha, primary)
         advance_tasks(message, sha, primary)
         return EXIT_OK
     # commit 已經落地了，這裡失敗只有錢沒領到 —— 講清楚是哪一半失敗，別讓人以為 commit 也沒成功。

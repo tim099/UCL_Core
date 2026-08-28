@@ -48,6 +48,9 @@ namespace UCL.Core.EditorLib.Page
         // 狀態篩選直接用 UCL_TaskStatus（Tim 2026-08-26：不另開第二個 enum，`all` 加在同一份）——
         // 成員名即顯示文字（PopupAuto enum 版回 key 原文）。all 不是狀態、只給篩選用，守衛見 enum 註解。
         UCL_TaskStatus m_StatusFilter = UCL_TaskStatus.all;
+        // type 篩選同一個模式（Tim 2026-08-28：`all` 入 UCL_TaskType）——
+        // bug/epic 混在任務海裡，沒有一鍵篩等於沒有清單（問題回報頁母版的三不可丟之一）。
+        UCL_TaskType m_TypeFilter = UCL_TaskType.all;
         string m_PersonaFilter = "";      // 空＝全部人
         int m_Expanded = -1;
 
@@ -122,6 +125,10 @@ namespace UCL.Core.EditorLib.Page
             m_StatusFilter = UCL_GUILayout.PopupAuto(m_StatusFilter, m_Dic, "StatusFilter",
                 10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
 
+            GUILayout.Label("Type", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            m_TypeFilter = UCL_GUILayout.PopupAuto(m_TypeFilter, m_Dic, "TypeFilter",
+                10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+
             GUILayout.Label("參與者", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
 
             // 選項永遠 ≥ 1（第一項是「全部」）—— PopupSearch 空清單會 LogError
@@ -189,11 +196,18 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(6);
             var aNowUtc = DateTime.UtcNow;
             int aShown = 0;
-            foreach (var e in m_Rows)
+            // stale 置頂（Tim 2026-08-28，抄問題回報頁母版：警告不藏在排序後面）——
+            // 判準與 DrawRow 的標色同一把尺（in_progress 且 ≥ STALE_DAYS 沒動），其餘維持單號序。
+            var aOrdered = m_Rows.OrderByDescending(e => !e.IsClosed()
+                    && e.status == UCL_TaskStatus.in_progress
+                    && e.DaysSinceUpdate(aNowUtc) >= UCL_TaskIO.STALE_DAYS)
+                .ThenBy(e => e.index);
+            foreach (var e in aOrdered)
             {
                 bool aClosed = e.IsClosed();
                 if (!m_ShowClosed && !aClosedFilter && aClosed) continue;
                 if (m_StatusFilter != UCL_TaskStatus.all && e.status != m_StatusFilter) continue;
+                if (m_TypeFilter != UCL_TaskType.all && e.type != m_TypeFilter) continue;
                 if (!string.IsNullOrEmpty(m_PersonaFilter) && e.RolesOf(m_PersonaFilter).Count == 0) continue;
                 DrawRow(e, aNowUtc, aClosed);
                 aShown++;
@@ -263,7 +277,8 @@ namespace UCL.Core.EditorLib.Page
                     else if (iClosed) GUI.color = new Color(0.6f, 0.6f, 0.6f);
                     GUILayout.Label(e.Id, UCL_GUIStyle.LabelStyle,
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(110)));
-                    GUILayout.Label($"[{e.type}/{e.priority}]", SmallStyle,
+                    GUILayout.Label($"[{e.type}/{e.priority}"
+                        + (e.severity == UCL_TaskSeverity.none ? "" : $"/{e.severity}") + "]", SmallStyle,
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
                     GUILayout.Label(e.status.ToString(), SmallStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
                     //GUILayout.Label(aDays < 0 ? "⚠ 壞時戳" : (aStale ? $"⚠ {aDays} 天" : $"{aDays} 天"),

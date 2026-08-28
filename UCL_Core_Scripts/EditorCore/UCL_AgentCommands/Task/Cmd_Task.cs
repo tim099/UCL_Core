@@ -33,9 +33,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public override string ArgsSchema =>
             "op=create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|sweep|wrapup|kanban（預設 list） | " +
             "sha=<commit SHA，op=commit 必填> | mode=fixes|refs（op=commit 用，預設 fixes） | " +
-            "title=<標題，create 必填> | criteria=<驗收標準，create 必填> | description= | " +
-            "type=feature|improvement|refactor|spike|subtask（預設 feature） | " +
+            "title=<標題，create 必填> | criteria=<驗收標準，create 必填；type=bug 可省（三段骨架自帶）> | description= | " +
+            "evidence=<硬證＋讀數怎麼拿到的，type=bug create 必填；不確定算不算就報 —— 拿不出硬證改 type=improvement + tags=friction|suggestion> | " +
+            "type=feature|improvement|refactor|spike|subtask|bug|epic（預設 feature；epic＝主 Task 傘；all 僅供篩選不可落盤） | " +
             "priority=urgent|high|normal|low（預設 normal） | " +
+            "severity=none|blocking|wrong|annoying（傷害形狀；type=bug 預設 wrong，其餘 none 不落行） | " +
             "status=<create/update 設定值；list 篩選：open（預設）/all/backlog/todo/in_progress/in_review/done/cancelled> | " +
             "index=<單號：show/claim/assign/update/comment/link/resolve 必填> | " +
             "role=dev|design|qa|pm|reviewer|sound|art（claim/assign 用，預設 dev） | " +
@@ -150,15 +152,40 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             string aTitle = GetArg(iArgs, "title", "").Trim();
             string aCriteria = GetArg(iArgs, "criteria", "").Trim();
 
+            // ===========================================================
+            // 區塊職責：必填閘依 type 分流（TASK-0086）。
+            // 物理意義：bug 單的可驗性來自 evidence（硬證＋出處），criteria 由三段骨架自帶
+            //   ⇒ evidence 必填、criteria 可省；其餘 type 照舊 criteria 必填。
+            //   繼承自 BugReport：**守則靠人記得，欄位靠 schema 擋。**
+            // ===========================================================
+            string aEvidence = GetArg(iArgs, "evidence", "").Trim();
+            var aType = ParseEnumArg(iArgs, "type", UCL_TaskType.feature);
+            if (aType == UCL_TaskType.all)
+                throw new Exception("[Task] type=`all` 是篩選用的成員，不是任務種類");
             var aMissing = new List<string>();
             if (string.IsNullOrWhiteSpace(aTitle)) aMissing.Add("title");
-            if (string.IsNullOrWhiteSpace(aCriteria)) aMissing.Add("criteria");
+            if (aType == UCL_TaskType.bug)
+            {
+                if (aEvidence.Length == 0) aMissing.Add("evidence");
+            }
+            else if (string.IsNullOrWhiteSpace(aCriteria)) aMissing.Add("criteria");
             if (aMissing.Count > 0)
             {
                 ioR.AppendLine("## blocked");
                 ioR.AppendLine($"- reason: 缺必填欄位：{string.Join(" / ", aMissing)}");
-                ioR.AppendLine("- `criteria` 要寫**可以被客觀量測**的條件（QA 有權以「這條驗不了」退回）。");
-                ioR.AppendLine("  例：`- [ ] run_cmd op=link 之後兩張單的 blocked_by/blocks 各自讀回有對方`");
+                if (aMissing.Contains("evidence"))
+                {
+                    ioR.AppendLine("- `evidence` 要放**感官騙不了的硬證**（error code／log 行號／重現指令／round-trip diff），");
+                    ioR.AppendLine("  並寫明**這個讀數是怎麼拿到的** —— 閘擋得住「沒證據」，出處才擋得住「假證據」。重述現象不算。");
+                    ioR.AppendLine("  用法：`--arg-file evidence=<檔>`（走檔案，內文不經過命令列）");
+                    ioR.AppendLine("- 📣 **不確定算不算，就報** —— 判斷夠不夠格開單的成本，比誤開一張高；");
+                    ioR.AppendLine("  提示缺漏／流程摩擦這類拿不出硬證的，改 `--arg type=improvement --arg tags=friction`（或 `suggestion`）照樣開。");
+                }
+                else
+                {
+                    ioR.AppendLine("- `criteria` 要寫**可以被客觀量測**的條件（QA 有權以「這條驗不了」退回）。");
+                    ioR.AppendLine("  例：`- [ ] run_cmd op=link 之後兩張單的 blocked_by/blocks 各自讀回有對方`");
+                }
                 throw new Exception($"[Task] create 缺必填：{string.Join(",", aMissing)}");
             }
 
@@ -166,8 +193,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var e = new UCL_TaskEntry
             {
                 index = UCL_TaskIO.IncrementAndGetIndex(),
-                type = ParseEnumArg(iArgs, "type", UCL_TaskType.feature),
+                type = aType,
                 priority = ParseEnumArg(iArgs, "priority", UCL_TaskPriority.normal),
+                // 傷害形狀（TASK-0086）：bug 單沒給就沿 BugReport 舊預設 wrong，其餘 none（未標注）
+                severity = ParseEnumArg(iArgs, "severity",
+                    aType == UCL_TaskType.bug ? UCL_TaskSeverity.wrong : UCL_TaskSeverity.none),
                 status = ParseEnumArg(iArgs, "status", UCL_TaskStatus.todo),
                 title = aTitle,
                 reporter = iActor,
@@ -182,14 +212,31 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 throw new Exception($"[Task] status=`{e.status}` 是篩選用的成員，不是可落盤的狀態");
             foreach (var t in SplitList(GetArg(iArgs, "tags", ""))) e.tags.Add(t);
 
+            // evidence 落進任務描述的固定子區 —— 描述整段由 Save/ReadSection 原樣保存，免動檔案 schema
+            string aDescription = GetArg(iArgs, "description", "").Trim();
+            if (aEvidence.Length > 0)
+                aDescription = (aDescription.Length == 0 ? "" : aDescription + "\n\n")
+                    + "### 🔬 證據（開單時附；含「讀數怎麼拿到的」）\n\n" + aEvidence;
+            // bug 單 criteria 三段骨架（TASK-0086）：開單人只負責 ①（＝evidence），②③ 骨架自帶
+            if (aType == UCL_TaskType.bug)
+            {
+                string aSkeleton = "- [ ] ① 重現讀數：見「任務描述 › 🔬 證據」（讀數＋怎麼拿到的）\n"
+                    + $"- [ ] ② 修正落盤（commit 帶 `Fixes {e.Id}`）\n"
+                    + "- [ ] ③ 異源複驗（不重用 ① 的量測路徑 —— 同源多量只證明一致性）";
+                aCriteria = aCriteria.Length == 0 ? aSkeleton : aCriteria.TrimEnd() + "\n" + aSkeleton;
+            }
+
             // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, aCriteria, GetArg(iArgs, "description", "").Trim(),
+            UCL_TaskIO.Save(e, aCriteria, aDescription,
                 $"{aNow}　`{e.status}`　由 {iActor} 開單");
 
             ioR.AppendLine($"## ✅ 已建單 **{e.Id}**");
-            ioR.AppendLine($"- `{e.type}` / `{e.priority}` / `{e.status}`　開單：{e.reporter}");
+            ioR.AppendLine($"- `{e.type}` / "
+                + (e.severity == UCL_TaskSeverity.none ? "" : $"`{e.severity}` / ")
+                + $"`{e.priority}` / `{e.status}`　開單：{e.reporter}");
             ioR.AppendLine($"- title: {e.title}");
             ioR.AppendLine($"- 單檔：`{UCL_TaskIO.TaskPath(e.index)}`");
+            AppendSimilar(ioR, e);
             ioR.AppendLine();
             ioR.AppendLine("## ⚠ 這張單現在沒有任何參與者");
             ioR.AppendLine("- 指派走後台頁或 `op=assign`（Tim 2026-08-24：指派與通知由 Tim 在後台管理）。");
@@ -203,8 +250,47 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine($"- 做完 commit 訊息帶 `Fixes {e.Id}`（提交時自動推進 —— 有 QA 進 in_review，沒 QA 直接 done）");
             ioR.AppendLine();
             bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Created, iActor,
-                GetArg(iArgs, "description", "").Trim(), iCallerArgs: iArgs);
+                aDescription, iCallerArgs: iArgs);
             AppendNotifyLine(ioR, e, iActor, aOk);
+        }
+
+        // ===========================================================
+        // 區塊職責：查重提示 —— 只呈現，不阻擋（v1 粗篩，TASK-0086 自 BugReport 搬入）。
+        // 物理意義：「回報前先檢索」寫成守則會失敗：關鍵字查失敗的樣子跟「不存在」一模一樣，
+        //   所以它不會叫 —— 照守則辦事的人拿到乾淨的空結果，開一張重複單，還以為查證過了。
+        // ⚠ 標題字詞重疊＋tags 交集，**不是語意檢索** —— 查不到 ≠ 不存在。
+        //   刻意不阻擋：阻擋要判斷「這算不算同一件」，而那正是會判錯的地方。
+        // ===========================================================
+        static void AppendSimilar(StringBuilder ioR, UCL_TaskEntry iNew)
+        {
+            var aHits = new List<(int score, UCL_TaskEntry t)>();
+            var aWords = Tokens(iNew.title);
+            foreach (var t in UCL_TaskIO.LoadAll())
+            {
+                if (t.index == iNew.index || t.IsClosed()) continue;
+                int aScore = 0;
+                foreach (var w in Tokens(t.title)) if (aWords.Contains(w)) aScore++;
+                foreach (var aTag in iNew.tags)
+                    if (t.tags.Contains(aTag)) { aScore += 1; break; }
+                if (aScore > 0) aHits.Add((aScore, t));
+            }
+            if (aHits.Count == 0) return;
+            aHits.Sort((a, b) => b.score.CompareTo(a.score));
+            ioR.AppendLine();
+            ioR.AppendLine("⚠ **可能重複（未阻擋，請自行判斷）** —— v1 粗篩：標題字詞重疊＋tags 交集，");
+            ioR.AppendLine("　 **不是語意檢索**。查不到 ≠ 不存在。");
+            for (int i = 0; i < aHits.Count && i < 3; i++)
+                ioR.AppendLine($"  - {aHits[i].t.Id}　`{aHits[i].t.status}`　{aHits[i].t.title}");
+        }
+
+        static HashSet<string> Tokens(string s)
+        {
+            var aSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(s)) return aSet;
+            foreach (var t in s.Split(new[] { ' ', '\t', '/', '\\', '(', ')', '[', ']', '，', '、', '：', ':', '。', '—' },
+                         StringSplitOptions.RemoveEmptyEntries))
+                if (t.Length >= 2) aSet.Add(t);
+            return aSet;
         }
 
         // ===========================================================
@@ -304,7 +390,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var e = Require(iArgs, out int aIndex);
             string aPath = UCL_TaskIO.TaskPath(aIndex);
             ioR.AppendLine($"## {e.Id} — {e.title}");
-            ioR.AppendLine($"- `{e.type}` / `{e.priority}` / `{e.status}`　開單：{e.reporter}");
+            ioR.AppendLine($"- `{e.type}` / "
+                + (e.severity == UCL_TaskSeverity.none ? "" : $"`{e.severity}` / ")
+                + $"`{e.priority}` / `{e.status}`　開單：{e.reporter}");
             ioR.AppendLine($"- 參與：{Participants(e)}");
             ioR.AppendLine($"- {LastCommentLine(e, iActor)}");
             ioR.AppendLine($"- blocked_by: {Ids(e.blocked_by)}　blocks: {Ids(e.blocks)}　related_to: {Ids(e.related_to)}");
@@ -558,6 +646,14 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 var aPri = ParseEnumArg(iArgs, "priority", UCL_TaskPriority.normal);
                 aChanges.Add($"priority {e.priority} → {aPri}");
                 e.priority = aPri;
+            }
+            // 傷害形狀（TASK-0086）：severity=none 即顯式清回「未標注」，合法
+            string aSeverityArg = GetArg(iArgs, "severity", "").Trim();
+            if (aSeverityArg.Length > 0)
+            {
+                var aSev = ParseEnumArg(iArgs, "severity", UCL_TaskSeverity.none);
+                aChanges.Add($"severity {e.severity} → {aSev}");
+                e.severity = aSev;
             }
             string aTitle = GetArg(iArgs, "title", "").Trim();
             if (aTitle.Length > 0) { aChanges.Add("title 改寫"); e.title = aTitle; }

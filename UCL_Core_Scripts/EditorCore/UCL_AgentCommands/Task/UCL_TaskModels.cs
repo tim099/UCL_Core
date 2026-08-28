@@ -19,6 +19,10 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
     /// <summary>任務種類。</summary>
     public enum UCL_TaskType
     {
+        // ⚠ `all` 不是任務種類 —— **篩選用**成員（同 UCL_TaskStatus 的約定，Tim 2026-08-28）。
+        //   放第一位讓它成為 default(UCL_TaskType)（篩選的預設就是全部）。
+        //   兩個守衛擋它流進資料：Cmd_Task create 拒收、UCL_TaskIO.LoadFile 讀檔拒收。
+        all,
         feature,
         improvement,
         refactor,
@@ -26,9 +30,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         spike,
         subtask,
         /// <summary>缺陷修復（Tim 2026-08-28 拍板入詞彙表，活體 TASK-0065）。
-        /// BugReport 體系規劃整併進 Task —— 這個型別是為那條路先鋪的格子，
-        /// 整併前兩邊並存：BugReport 收「壞了」的回報，這裡是排進看板的修復工作。</summary>
+        /// 缺陷單一律走這裡（TASK-0086 整併後唯一入口）：evidence 必填、criteria 三段骨架自帶、
+        /// severity 標傷害形狀。歷史 BUG-1~50 凍結在 AgentCommands/BugReports/reports/。</summary>
         bug,
+        /// <summary>主 Task（傘）—— 大項目的收納單位，子單以 `epic_id` 指回來（Tim 2026-08-28 拍板入詞彙表；
+        /// 前身是 `tags=[epic]` 慣例，型別化後篩選與看板可直取）。開法見 Task_Management_Workflow §1.6。</summary>
+        epic,
     }
 
     public enum UCL_TaskPriority
@@ -37,6 +44,24 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         high,
         normal,
         low,
+    }
+
+    // ===========================================================
+    // 區塊職責：傷害形狀（TASK-0086，Tim 2026-08-28 拍板入 schema）。
+    // 物理意義：跟 priority 是兩把尺 —— priority 是排程語言（先做誰），
+    //   severity 是診斷語言（現在誰被怎樣了）。折進 priority 會丟掉
+    //   「wrong＝會騙人但能跑」這個資訊，而那正是最該被看見的一種。
+    //   判準沿 BugReport：blocking＝有人被擋住做不下去；wrong＝產出錯的結果
+    //   但還能跑（安靜的錯）；annoying＝會嘴，但不會騙人。
+    // ⚠ `none` 是「未標注」不是第四種傷害 —— 非缺陷單的常態。放首位當 default；
+    //   wire 上 none **不落行**（缺席即 none，既有單零 diff）。
+    // ===========================================================
+    public enum UCL_TaskSeverity
+    {
+        none,
+        blocking,
+        wrong,
+        annoying,
     }
 
     // ===========================================================
@@ -160,6 +185,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public int index = 0;
         public UCL_TaskType type = UCL_TaskType.feature;
         public UCL_TaskPriority priority = UCL_TaskPriority.normal;
+        /// <summary>傷害形狀（none＝未標注；type=bug 開單預設 wrong）—— 見 <see cref="UCL_TaskSeverity"/>。</summary>
+        public UCL_TaskSeverity severity = UCL_TaskSeverity.none;
         public UCL_TaskStatus status = UCL_TaskStatus.todo;
         public string title = "";
         public string milestone = "";

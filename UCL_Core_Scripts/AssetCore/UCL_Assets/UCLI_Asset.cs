@@ -156,10 +156,14 @@ namespace UCL.Core
                             }
                             catch (Exception iE)
                             {
-                                Debug.LogError($"UCLI_Asset.GetUtilByType aType:{iType.FullName},Exception:{iE}");
+                                Debug.LogError($"{nameof(UCLI_Asset)}.{nameof(GetUtilByType)} Type:{iType.FullName},Exception:{iE}");
                                 Debug.LogException(iE);
                             }
                         }
+                    }
+                    else
+                    {
+                        Debug.LogError($"{nameof(UCLI_Asset)}.{nameof(GetUtilByType)} Type:{iType.FullName}, not found");
                     }
                 }
                 catch(Exception e)

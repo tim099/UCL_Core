@@ -42,7 +42,7 @@ namespace UCL.Core.ServiceLib
                     bool aIsShow = false;
                     using (var aScope2 = new GUILayout.HorizontalScope())
                     {
-                        aIsShow = UCL_GUILayout.Toggle(iDataDic, UCL_GUILayout.IsShowFieldKey);
+                        aIsShow = UCL_GUILayout.ShowFieldToggle(iDataDic);
                         using (var aScope3 = new GUILayout.VerticalScope())
                         {
                             Color aTextColor = Color.white;

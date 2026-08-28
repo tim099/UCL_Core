@@ -406,6 +406,10 @@ namespace UCL.Core.UI {
             }
             return iVal;
         }
+        static public bool ShowFieldToggle(UCL_ObjectDictionary iDataDic, int iSize = 21, bool iDefaultValue = false)
+        {
+            return Toggle(iDataDic, IsShowFieldKey, iSize, iDefaultValue);
+        }
         static public bool Toggle(UCL_ObjectDictionary iObjectDic, string iKey, int iSize = 21, bool iDefaultValue = false)
         {
             int aSize = UCL_GUIStyle.GetScaledSize(iSize);

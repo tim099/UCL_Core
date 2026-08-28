@@ -16,6 +16,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 
@@ -89,6 +90,17 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                             + "（create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|sweep|wrapup|kanban）");
                 }
             }
+            catch (Exception e)
+            {
+                // 例外的**原因**必須落進回傳檔 —— caller 保證會讀的只有這一份
+                //（result json 的 error 與 _cmd_errors/ 是第二現場，不是每個人都會追過去）。
+                // 各 op 自己寫的 `## blocked` 段照舊保留，這裡是兜底：沒寫過原因的 throw
+                //（例如 enum 參數打錯字）也一定看得到為什麼。
+                aR.AppendLine();
+                aR.AppendLine("## ❌ 失敗");
+                aR.AppendLine($"- reason: {e.Message}");
+                throw;
+            }
             finally
             {
                 // ===========================================================
@@ -154,9 +166,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var e = new UCL_TaskEntry
             {
                 index = UCL_TaskIO.IncrementAndGetIndex(),
-                type = Norm(GetArg(iArgs, "type", "feature")),
-                priority = Norm(GetArg(iArgs, "priority", "normal")),
-                status = Norm(GetArg(iArgs, "status", "todo")),
+                type = ParseEnumArg(iArgs, "type", UCL_TaskType.feature),
+                priority = ParseEnumArg(iArgs, "priority", UCL_TaskPriority.normal),
+                status = ParseEnumArg(iArgs, "status", UCL_TaskStatus.todo),
                 title = aTitle,
                 reporter = iActor,
                 milestone = GetArg(iArgs, "milestone", "").Trim(),
@@ -165,6 +177,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 created_at = aNow,
                 updated_at = aNow,
             };
+            // `all` / `open` 是篩選成員不是狀態 —— 開單不准帶著它們落盤
+            if (e.status == UCL_TaskStatus.all || e.status == UCL_TaskStatus.open)
+                throw new Exception($"[Task] status=`{e.status}` 是篩選用的成員，不是可落盤的狀態");
             foreach (var t in SplitList(GetArg(iArgs, "tags", ""))) e.tags.Add(t);
 
             // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
@@ -198,7 +213,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         // ===========================================================
         void OpList(Dictionary<string, string> iArgs, StringBuilder ioR)
         {
-            string aFilter = Norm(GetArg(iArgs, "status", "open"));
+            var aFilter = ParseEnumArg(iArgs, "status", UCL_TaskStatus.open);
             string aAssignee = GetArg(iArgs, "assignee", "").Trim();
             string aMilestone = GetArg(iArgs, "milestone", "").Trim();
             var aAll = UCL_TaskIO.LoadAll();
@@ -211,9 +226,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
             var aList = aAll.Where(e =>
             {
-                if (aFilter == "all") return true;
-                if (aFilter == "open") return !e.IsClosed();
-                return string.Equals(e.status, aFilter, StringComparison.OrdinalIgnoreCase);
+                if (aFilter == UCL_TaskStatus.all) return true;
+                if (aFilter == UCL_TaskStatus.open) return !e.IsClosed();
+                return e.status == aFilter;
             }).ToList();
             if (aAssignee.Length > 0)
                 aList = aList.Where(e => e.RolesOf(aAssignee).Count > 0
@@ -438,10 +453,10 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         async UniTask OpClaim(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
         {
             var e = Require(iArgs, out int aIndex);
-            string aRole = Norm(GetArg(iArgs, "role", "dev"));
+            var aRole = ParseEnumArg(iArgs, "role", UCL_TaskRole.dev);
             string aNow = UCL_TaskIO.NowUtc();
             bool aNew = AddParticipant(e, iActor, aRole, aNow);
-            string aFrom = e.status;
+            var aFrom = e.status;
 
             // ===========================================================
             // 區塊職責：認領要不要推狀態，**由角色決定**。
@@ -453,13 +468,14 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             //   才推進；驗收角色（qa/reviewer/pm）與已在 in_progress/in_review 的單一律不動狀態，
             //   並且**明說為什麼沒動** —— 靜默不動跟「推了」在回傳檔上不能長得一樣。
             // ===========================================================
-            bool aDoingRole = aRole == "dev" || aRole == "design" || aRole == "sound" || aRole == "art";
-            bool aNotStarted = aFrom == "backlog" || aFrom == "todo";
+            bool aDoingRole = aRole == UCL_TaskRole.dev || aRole == UCL_TaskRole.design
+                || aRole == UCL_TaskRole.sound || aRole == UCL_TaskRole.art;
+            bool aNotStarted = aFrom == UCL_TaskStatus.backlog || aFrom == UCL_TaskStatus.todo;
             string aWhyNoMove = null;
             if (!aDoingRole) aWhyNoMove = $"`{aRole}` 是驗收／協調角色，不是「開工」⇒ 狀態不動";
             else if (!aNotStarted) aWhyNoMove = $"單子已經在 `{aFrom}` ⇒ 不往回推（認領只從 backlog/todo 推進）";
 
-            if (aWhyNoMove == null) e.status = "in_progress";
+            if (aWhyNoMove == null) e.status = UCL_TaskStatus.in_progress;
             UCL_TaskIO.Touch(e, aNow);
             // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
             UCL_TaskIO.Save(e, "", "", aWhyNoMove == null
@@ -491,7 +507,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var e = Require(iArgs, out int aIndex);
             string aTarget = GetArg(iArgs, "target_persona", "").Trim();
             if (aTarget.Length == 0) throw new Exception("[Task] op=assign 需要 --arg target_persona=<誰>");
-            string aRole = Norm(GetArg(iArgs, "role", "dev"));
+            var aRole = ParseEnumArg(iArgs, "role", UCL_TaskRole.dev);
             string aNow = UCL_TaskIO.NowUtc();
             bool aNew = AddParticipant(e, aTarget, aRole, aNow);
             UCL_TaskIO.Touch(e, aNow);
@@ -517,10 +533,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             string aStatus = GetArg(iArgs, "status", "").Trim();
             if (aStatus.Length > 0)
             {
-                string aNorm = Norm(aStatus);
+                var aNorm = ParseEnumArg(iArgs, "status", UCL_TaskStatus.todo);
+                if (aNorm == UCL_TaskStatus.all || aNorm == UCL_TaskStatus.open)
+                    throw new Exception($"[Task] status=`{aNorm}` 是篩選用的成員，不是可落盤的狀態");
                 // ⛔ 結單只能走 resolve —— 那條路上有 blocker 與 QA 兩道閘。
                 //    留一個「用 update 也能推 done」的旁路等於那兩道閘不存在。
-                if (aNorm == "done" || aNorm == "cancelled")
+                if (aNorm == UCL_TaskStatus.done || aNorm == UCL_TaskStatus.cancelled)
                     throw new Exception("[Task] 結單請走 `op=resolve`（那條路上有 blocker 與 QA 兩道閘，"
                         + "而 update 沒有）。這不是麻煩，是刻意不留旁路。");
                 aChanges.Add($"status {e.status} → {aNorm}");
@@ -535,7 +553,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 }
             }
             string aPriority = GetArg(iArgs, "priority", "").Trim();
-            if (aPriority.Length > 0) { aChanges.Add($"priority {e.priority} → {Norm(aPriority)}"); e.priority = Norm(aPriority); }
+            if (aPriority.Length > 0)
+            {
+                var aPri = ParseEnumArg(iArgs, "priority", UCL_TaskPriority.normal);
+                aChanges.Add($"priority {e.priority} → {aPri}");
+                e.priority = aPri;
+            }
             string aTitle = GetArg(iArgs, "title", "").Trim();
             if (aTitle.Length > 0) { aChanges.Add("title 改寫"); e.title = aTitle; }
             string aMilestone = GetArg(iArgs, "milestone", "").Trim();
@@ -688,8 +711,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         async UniTask OpResolve(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
         {
             var e = Require(iArgs, out int aIndex);
-            string aStatus = Norm(GetArg(iArgs, "status", "done"));
-            if (aStatus != "done" && aStatus != "cancelled")
+            var aStatus = ParseEnumArg(iArgs, "status", UCL_TaskStatus.done);
+            if (aStatus != UCL_TaskStatus.done && aStatus != UCL_TaskStatus.cancelled)
                 throw new Exception($"[Task] resolve 的 status 只能是 done|cancelled（收到 '{aStatus}'）");
             string aNote = GetArg(iArgs, "note", "").Trim();
             string aQaNote = GetArg(iArgs, "qa_note", "").Trim();
@@ -698,7 +721,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
             // ① blocker 閘 —— cancelled 不受此限（取消一張被卡住的單是合理的）
             var aBlockers = UCL_TaskIO.OpenBlockers(e);
-            if (aStatus == "done" && aBlockers.Count > 0)
+            if (aStatus == UCL_TaskStatus.done && aBlockers.Count > 0)
             {
                 ioR.AppendLine($"- 🛑 **擋下**：還有 {aBlockers.Count} 個未解 blocker —— {string.Join("；", aBlockers)}");
                 ioR.AppendLine("  這是機械攔截：blocker 沒解而推 Done，等於宣告一件還做不到的事已經完成。");
@@ -709,7 +732,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
             // ② QA 閘
             string aQaBlock = UCL_TaskIO.QaGateBlocked(e, iActor, aQaNote);
-            if (aStatus == "done" && aQaBlock != null)
+            if (aStatus == UCL_TaskStatus.done && aQaBlock != null)
             {
                 ioR.AppendLine($"- 🛑 **擋下（QA 閘）**：{aQaBlock}");
                 throw new Exception("[Task] resolve 擋下：QA 未簽");
@@ -729,7 +752,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             }
 
             string aNow = UCL_TaskIO.NowUtc();
-            string aFrom = e.status;
+            var aFrom = e.status;
             e.status = aStatus;
             e.closed_at = aNow;
             if (aNote.Length > 0) e.resolution_note = aNote;
@@ -785,7 +808,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             bool aShaNew = !e.commit_shas.Contains(aSha);
             if (aShaNew) e.commit_shas.Add(aSha);
 
-            string aFrom = e.status;
+            var aFrom = e.status;
             string aVerdict;
             var aBlockers = UCL_TaskIO.OpenBlockers(e);
             if (e.IsClosed())
@@ -806,13 +829,13 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 var aQa = e.QaPersonas();
                 if (aQa.Count > 0)
                 {
-                    e.status = "in_review";
+                    e.status = UCL_TaskStatus.in_review;
                     aVerdict = $"→ **in_review**（單上有 QA：{string.Join(" / ", aQa)}"
                         + " —— commit 不能替 QA 簽名）";
                 }
                 else
                 {
-                    e.status = "done";
+                    e.status = UCL_TaskStatus.done;
                     e.closed_at = aNow;
                     aVerdict = "→ **done**（這張單沒有指名 QA ⇒ 沒有人要驗，commit 直接結）";
                     // ⚠ 落差要出聲（basecamp 拍板 ③，TASK-0015）：
@@ -822,7 +845,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     //     而她一整天都在驗我的交付。閘做對了它的事 —— 錯的是沒有人被告知。
                     //   ⛔ **警示不是擋**：擋會讓真正不需要 QA 的小單無法自動結，而那是設計要的。
                     var aNonDev = e.participants
-                        .Where(p => !string.Equals(p.role, "dev", StringComparison.OrdinalIgnoreCase))
+                        .Where(p => p.role != UCL_TaskRole.dev)
                         .Select(p => $"{p.persona}({p.role})").Distinct().ToList();
                     if (aNonDev.Count > 0)
                         aVerdict += $"\n  ⚠ **本單沒有 QA 卻有其他角色：{string.Join("、", aNonDev)}**"
@@ -846,7 +869,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine($"- 判定: {aVerdict}");
             ioR.AppendLine($"- commit_shas 回讀: {string.Join(" ", e.commit_shas)}"
                 + (aShaNew ? "" : $"（{e.commit_shas.Count} 顆，本次 0 新增）"));
-            if (e.status == "in_review")
+            if (e.status == UCL_TaskStatus.in_review)
             {
                 var aQa = e.QaPersonas();
                 ioR.AppendLine($"- ▶ 等 QA 結單：`run Task --arg op=resolve --arg index={e.index}"
@@ -914,7 +937,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             }
 
             string aNow = UCL_TaskIO.NowUtc();
-            string aFrom = e.status;
+            var aFrom = e.status;
 
             // ① progress → Task 留言（＋時間線一筆 `wrapup` 事件，供晚安閘判定「今天收工過了」）
             var aComment = new UCL_TaskComment
@@ -1016,7 +1039,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var aNow = DateTime.UtcNow;
             string aOnly = GetArg(iArgs, "assignee", "").Trim();   // 空＝全部人
             var aCandidates = UCL_TaskIO.LoadAll().Where(e => !e.IsClosed()
-                    && string.Equals(e.status, "in_progress", StringComparison.OrdinalIgnoreCase)
+                    && e.status == UCL_TaskStatus.in_progress
                     && e.DaysSinceUpdate(aNow) >= UCL_TaskIO.STALE_DAYS
                     && (aOnly.Length == 0 || e.RolesOf(aOnly).Count > 0)).ToList();
 
@@ -1044,8 +1067,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             {
                 string aTs = UCL_TaskIO.NowUtc();
                 int aDays = e.DaysSinceUpdate(aNow);
-                string aFrom = e.status;
-                e.status = "todo";
+                var aFrom = e.status;
+                e.status = UCL_TaskStatus.todo;
                 UCL_TaskIO.Touch(e, aTs);
                 // ⚠ 時間線一定要留一行說**為什麼**被釋放 ——
                 //   沒有這行的話，明天看到它從 in_progress 變回 todo 會像有人手動改的
@@ -1072,19 +1095,20 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var e = Require(iArgs, out int aIndex);
             string aTarget = GetArg(iArgs, "target_persona", "").Trim();
             if (aTarget.Length == 0) throw new Exception("[Task] op=unassign 需要 --arg target_persona=<誰>");
-            string aRole = GetArg(iArgs, "role", "").Trim();   // 空＝該 persona 的所有角色
+            bool aHasRole = GetArg(iArgs, "role", "").Trim().Length > 0;   // 沒帶＝該 persona 的所有角色
+            var aRole = aHasRole ? ParseEnumArg(iArgs, "role", UCL_TaskRole.dev) : default;
 
             int aBefore = e.participants.Count;
             e.participants.RemoveAll(p =>
                 string.Equals(p.persona, aTarget, StringComparison.OrdinalIgnoreCase)
-                && (aRole.Length == 0 || string.Equals(p.role, Norm(aRole), StringComparison.OrdinalIgnoreCase)));
+                && (!aHasRole || p.role == aRole));
             int aRemoved = aBefore - e.participants.Count;
 
             if (aRemoved == 0)
             {
                 ioR.AppendLine($"## {e.Id} 沒有變更");
                 ioR.AppendLine($"- {aTarget}"
-                    + (aRole.Length == 0 ? "" : $"（role={Norm(aRole)}）")
+                    + (!aHasRole ? "" : $"（role={aRole}）")
                     + " 不在參與者裡 ⇒ **什麼都沒寫**（這是「找不到」，不是「移除成功」）");
                 ioR.AppendLine($"- 現有參與：{Participants(e)}");
                 return;
@@ -1093,9 +1117,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             UCL_TaskIO.Touch(e, aNow);
             // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
             UCL_TaskIO.Save(e, "", "", $"{aNow}　`unassign`　{iActor} 移除 {aTarget}"
-                + (aRole.Length == 0 ? "（全部角色）" : $"（role={Norm(aRole)}）") + $"　共 {aRemoved} 筆");
+                + (!aHasRole ? "（全部角色）" : $"（role={aRole}）") + $"　共 {aRemoved} 筆");
             ioR.AppendLine($"## ✅ {e.Id} 已移除 {aRemoved} 筆參與");
-            ioR.AppendLine($"- 移除：{aTarget}{(aRole.Length == 0 ? "（全部角色）" : $"（{Norm(aRole)}）")}");
+            ioR.AppendLine($"- 移除：{aTarget}{(!aHasRole ? "（全部角色）" : $"（{aRole}）")}");
             ioR.AppendLine($"- 現有參與：{Participants(e)}");
             if (e.QaPersonas().Count == 0)
                 ioR.AppendLine("- ⚠ 這張單**現在沒有 QA** ⇒ `resolve` 沒有閘會擋，結單由開單人或 PM 做。");
@@ -1110,14 +1134,15 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         void OpKanban(StringBuilder ioR)
         {
             var aAll = UCL_TaskIO.LoadAll();
-            string[] aCols = { "backlog", "todo", "in_progress", "in_review", "done", "cancelled" };
+            UCL_TaskStatus[] aCols = { UCL_TaskStatus.backlog, UCL_TaskStatus.todo, UCL_TaskStatus.in_progress,
+                UCL_TaskStatus.in_review, UCL_TaskStatus.done, UCL_TaskStatus.cancelled };
             UCL_TaskIO.CountStats(out int aOpen, out int aStale, out int aBroken, out int aBlocked);
             ioR.AppendLine($"## kanban —— 總 **{aAll.Count}** 張／未關 **{aOpen}**／被阻塞 **{aBlocked}**"
                 + $"／stale **{aStale}**" + (aBroken > 0 ? $"／時戳壞掉 **{aBroken}**" : ""));
             ioR.AppendLine();
             foreach (var aCol in aCols)
             {
-                var aIn = aAll.Where(e => string.Equals(e.status, aCol, StringComparison.OrdinalIgnoreCase)).ToList();
+                var aIn = aAll.Where(e => e.status == aCol).ToList();
                 ioR.AppendLine($"### {aCol}　（{aIn.Count}）");
                 if (aIn.Count == 0) { ioR.AppendLine("- —"); continue; }
                 foreach (var e in aIn)
@@ -1141,11 +1166,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             return e;
         }
 
-        static bool AddParticipant(UCL_TaskEntry e, string iPersona, string iRole, string iNow)
+        static bool AddParticipant(UCL_TaskEntry e, string iPersona, UCL_TaskRole iRole, string iNow)
         {
             foreach (var p in e.participants)
                 if (string.Equals(p.persona, iPersona, StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(p.role, iRole, StringComparison.OrdinalIgnoreCase)) return false;
+                    && p.role == iRole) return false;
             e.participants.Add(new UCL_TaskParticipant
             { persona = iPersona, role = iRole, assigned_at = iNow });
             return true;
@@ -1177,6 +1202,17 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         {
             string s = (iRaw ?? "").Trim().ToLowerInvariant().Replace("-", "_").Replace(" ", "_");
             return s;
+        }
+
+        // 區塊職責：--arg 的 enum 解析（type / priority / status / role 共用）。
+        // 物理意義：打錯字要**當場炸並列出合法值** —— 舊版裸字串照單全收，
+        //   "featur" 會安靜落盤成一張篩選查不到的單，而那看起來像「單不存在」。
+        static T ParseEnumArg<T>(Dictionary<string, string> iArgs, string iKey, T iDefault) where T : struct, Enum
+        {
+            string v = Norm(GetArg(iArgs, iKey, ""));
+            if (v.Length == 0) return iDefault;
+            if (UCL_TaskWire.TryParse(v, out T aV)) return aV;
+            throw new Exception($"[Task] --arg {iKey}={v} 不是合法值（{string.Join("|", Enum.GetNames(typeof(T)))}）");
         }
 
         static List<string> SplitList(string iRaw)

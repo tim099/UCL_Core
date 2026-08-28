@@ -117,7 +117,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 // ③ 逾期認領（占位）
                 var aNow = DateTime.UtcNow;
                 var aStaleClaims = aAll.Where(e => !e.IsClosed()
-                        && string.Equals(e.status, "in_progress", StringComparison.OrdinalIgnoreCase)
+                        && e.status == UCL_TaskStatus.in_progress
                         && e.RolesOf(iPersona).Count > 0
                         && e.DaysSinceUpdate(aNow) >= UCL_TaskIO.STALE_DAYS).ToList();
                 sb.AppendLine(aStaleClaims.Count == 0
@@ -388,7 +388,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         static List<string> RolesOrReporter(UCL_TaskEntry e, string iPersona)
         {
             var aRoles = e.RolesOf(iPersona);
-            if (aRoles.Count > 0) return aRoles;
+            if (aRoles.Count > 0) return aRoles.Select(r => r.ToString()).ToList();
             return new List<string> { "reporter（開單人，未列參與者）" };
         }
 

@@ -133,7 +133,7 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
 
 
-            if (GUILayout.Button("開啟資料夾", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+            if (GUILayout.Button("Open Folder", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
             {
                 UCL_TaskIO.EnsureDir();
                 UnityEditor.EditorUtility.RevealInFinder(UCL_TaskIO.TasksDir);
@@ -193,8 +193,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 bool aClosed = e.IsClosed();
                 if (!m_ShowClosed && !aClosedFilter && aClosed) continue;
-                if (m_StatusFilter != UCL_TaskStatus.all
-                    && !string.Equals(e.status, m_StatusFilter.ToString(), StringComparison.OrdinalIgnoreCase)) continue;
+                if (m_StatusFilter != UCL_TaskStatus.all && e.status != m_StatusFilter) continue;
                 if (!string.IsNullOrEmpty(m_PersonaFilter) && e.RolesOf(m_PersonaFilter).Count == 0) continue;
                 DrawRow(e, aNowUtc, aClosed);
                 aShown++;
@@ -247,7 +246,7 @@ namespace UCL.Core.EditorLib.Page
         {
             int aDays = e.DaysSinceUpdate(iNowUtc);
             bool aStale = !iClosed && aDays >= UCL_TaskIO.STALE_DAYS
-                          && e.StatusEnum() == UCL_TaskStatus.in_progress;
+                          && e.status == UCL_TaskStatus.in_progress;
             var aBlockers = Blockers(e);
 
             using (new GUILayout.VerticalScope(GUI.skin.box))
@@ -266,7 +265,7 @@ namespace UCL.Core.EditorLib.Page
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(110)));
                     GUILayout.Label($"[{e.type}/{e.priority}]", SmallStyle,
                         GUILayout.Width(UCL_GUIStyle.GetScaledSize(150)));
-                    GUILayout.Label(e.status, SmallStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
+                    GUILayout.Label(e.status.ToString(), SmallStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
                     //GUILayout.Label(aDays < 0 ? "⚠ 壞時戳" : (aStale ? $"⚠ {aDays} 天" : $"{aDays} 天"),
                     //SmallStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
                     GUILayout.Label(e.ParticipantsName, SmallStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(100)));
@@ -308,10 +307,10 @@ namespace UCL.Core.EditorLib.Page
                     if (!iClosed)
                     {
                         // 狀態推進（非破壞性 ⇒ 單擊即動，不必二段）—— 按鈕文字＝enum key 原文（Tim 2026-08-26）
-                        if (e.StatusEnum() != UCL_TaskStatus.in_progress
+                        if (e.status != UCL_TaskStatus.in_progress
                             && GUILayout.Button($"→ {UCL_TaskStatus.in_progress}", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                             ApplyStatus(e, UCL_TaskStatus.in_progress);
-                        if (e.StatusEnum() != UCL_TaskStatus.in_review
+                        if (e.status != UCL_TaskStatus.in_review
                             && GUILayout.Button($"→ {UCL_TaskStatus.in_review}", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
                             ApplyStatus(e, UCL_TaskStatus.in_review);
 
@@ -476,8 +475,8 @@ namespace UCL.Core.EditorLib.Page
             if (iStatus == UCL_TaskStatus.done && aQa.Count > 0)
                 aNote = $"（後台頁代簽 —— 單上的 QA 是 {string.Join(" / ", aQa)}）";
 
-            string aFrom = e.status;
-            e.status = iStatus.ToString();   // wire 欄位仍是字串；成員名＝wire 字串（UCL_TaskStatus 的約定）
+            var aFrom = e.status;
+            e.status = iStatus;   // 成員名＝wire 字串（UCL_TaskStatus 的約定；frontmatter 落盤仍是字串）
             if (iStatus == UCL_TaskStatus.done || iStatus == UCL_TaskStatus.cancelled) e.closed_at = aNow;
             UCL_TaskIO.Touch(e, aNow);
             UCL_TaskIO.Save(e, "", "", $"{aNow}　`{iStatus}`　由後台頁操作（原狀態 {aFrom}）{aNote}");

@@ -259,7 +259,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             foreach (var p in e.participants)
             {
                 sb.Append($"  - persona: {OneLine(p.persona)}\n");
-                sb.Append($"    role: {OneLine(p.role)}\n");
+                sb.Append($"    role: {p.role}\n");
                 sb.Append($"    assigned_at: {OneLine(p.assigned_at)}\n");
             }
             sb.Append($"milestone: {OneLine(e.milestone)}\n");
@@ -372,7 +372,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                         continue;
                     }
                     if (aCur != null && aTrim.StartsWith("role:", StringComparison.Ordinal))
-                    { aCur.role = After(aTrim, "role:"); continue; }
+                    { aCur.role = UCL_TaskWire.ParseOr(After(aTrim, "role:"), UCL_TaskRole.dev, $"{iPath} participants.role"); continue; }
                     if (aCur != null && aTrim.StartsWith("assigned_at:", StringComparison.Ordinal))
                     { aCur.assigned_at = After(aTrim, "assigned_at:"); continue; }
 
@@ -384,9 +384,17 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     switch (k)
                     {
                         case "index": int.TryParse(v, out e.index); break;
-                        case "type": e.type = v; break;
-                        case "priority": e.priority = v; break;
-                        case "status": e.status = v; break;
+                        case "type": e.type = UCL_TaskWire.ParseOr(v, UCL_TaskType.feature, $"{iPath} type"); break;
+                        case "priority": e.priority = UCL_TaskWire.ParseOr(v, UCL_TaskPriority.normal, $"{iPath} priority"); break;
+                        case "status":
+                            e.status = UCL_TaskWire.ParseOr(v, UCL_TaskStatus.todo, $"{iPath} status");
+                            // `all` / `open` 是篩選成員不是狀態 —— 落盤檔帶著它們＝壞檔，一樣出聲退回 todo
+                            if (e.status == UCL_TaskStatus.all || e.status == UCL_TaskStatus.open)
+                            {
+                                UnityEngine.Debug.LogError($"[Task] {iPath} status: `{v}` 是篩選成員不是狀態 —— 落回 `todo`，去修單檔 frontmatter");
+                                e.status = UCL_TaskStatus.todo;
+                            }
+                            break;
                         case "title": e.title = v; break;
                         case "reporter": e.reporter = v; break;
                         case "milestone": e.milestone = v; break;
@@ -668,7 +676,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 if (e.IsClosed()) continue;
                 oOpen++;
                 if (OpenBlockers(e).Count > 0) oBlocked++;
-                if (!string.Equals(e.status, "in_progress", StringComparison.OrdinalIgnoreCase)) continue;
+                if (e.status != UCL_TaskStatus.in_progress) continue;
                 int aDays = e.DaysSinceUpdate(aNow);
                 if (aDays < 0) oBroken++;
                 else if (aDays >= STALE_DAYS) oStale++;

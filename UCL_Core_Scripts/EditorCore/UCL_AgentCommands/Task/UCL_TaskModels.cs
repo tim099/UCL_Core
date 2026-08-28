@@ -2,8 +2,9 @@
 // 物理意義：對應 AgentCommands/Tasks/tasks/<index>.md 的 frontmatter。
 //          Task 是**跨人協作的交付承諾**；只有自己要記住的事留在見叢（`_keys_open.md`），
 //          分流判準是一句當下答得出來的話：「有沒有第二個人在等這件事？」
-// 數值影響：純資料，無 IO。列舉一律**用字串進出** —— 這份資料有 python 讀取端，
-//          enum 序號跨語言沒有意義（BugReport 同一條規矩，照抄不改）。
+// 數值影響：純資料，無 IO。列舉欄位在 C# 端用 enum、**wire 上一律是字串（成員名逐字＝wire 字串）**——
+//          這份資料有 python 讀取端，enum 序號跨語言沒有意義（BugReport 同一條規矩，照抄不改）；
+//          字串只存在於 IO 邊界，唯一轉換點是 UCL_TaskWire。
 // 設計沿革：Plan_Task_Management_System.md（gura 撰寫 / Tim 2026-08-24 拍板；
 //          RFC 酒館 seq 13303 → 評審 13306 → 收斂 13307 → 邊界 13308 → 計畫確認 13310）。
 #if UNITY_EDITOR
@@ -12,23 +13,26 @@ using System.Collections.Generic;
 
 namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 {
+    // ⚠ 下列列舉全部遵守 UCL_TaskStatus 的同一條約定：**成員名＝frontmatter wire 字串，逐字相同**
+    //   （刻意小寫，不遵 C# PascalCase）—— ToString()/TryParse 即完成雙向轉換，沒有第二張對照表可以漂。
+    //   改名或增減成員＝改 wire format，動之前先盤 python 端與既有單檔。
     /// <summary>任務種類。</summary>
     public enum UCL_TaskType
     {
-        Feature,
-        Improvement,
-        Refactor,
+        feature,
+        improvement,
+        refactor,
         /// <summary>技術調研 —— 產出是「知道了什麼」而不是「做好了什麼」。</summary>
-        Spike,
-        Subtask,
+        spike,
+        subtask,
     }
 
     public enum UCL_TaskPriority
     {
-        Urgent,
-        High,
-        Normal,
-        Low,
+        urgent,
+        high,
+        normal,
+        low,
     }
 
     // ===========================================================
@@ -53,9 +57,10 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
     {
         // ⚠ `all` 不是生命週期狀態 —— 它是**篩選用**的成員（Tim 2026-08-26：不另開第二個 enum，
         //   直接加在這裡）。放第一位讓它成為 default(UCL_TaskStatus)（篩選的預設就是全部）。
-        //   兩個守衛擋它流進資料：StatusEnum() 不把 "all" 當合法 status、
+        //   兩個守衛擋它流進資料：UCL_TaskIO.LoadFile 的 status parse 不把 "all"/"open" 當合法 status、
         //   UCL_TaskManagerPage.ApplyStatus 拒寫 all —— 少任何一個，`status: all` 就會落盤。
         all,
+        open,
         backlog,
         todo,
         in_progress,
@@ -67,20 +72,47 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
     /// <summary>參與者身分。**角色不是欄位問題，是「誰真的會做」的問題** —— 掛名而沒有判準的角色等於沒有人。</summary>
     public enum UCL_TaskRole
     {
-        Dev,
-        Design,
-        QA,
-        PM,
-        Reviewer,
-        Sound,
-        Art,
+        dev,
+        design,
+        qa,
+        pm,
+        reviewer,
+        sound,
+        art,
+    }
+
+    // ===========================================================
+    // 區塊職責：wire 字串 ↔ enum 的**唯一轉換點**（四個列舉共用）。
+    // 物理意義：frontmatter 與 python 端仍以字串進出，C# 端欄位改用 enum 之後，
+    //   字串只存在於 IO 邊界 —— 這個 class 就是那條邊界。
+    // ⚠ 純數字不收：TryParse 會把 "3" 解析成序號 3 的成員，而數字不是狀態。
+    // ===========================================================
+    public static class UCL_TaskWire
+    {
+        public static bool TryParse<T>(string iWire, out T oValue) where T : struct, Enum
+        {
+            oValue = default;
+            string s = (iWire ?? "").Trim();
+            if (s.Length == 0 || char.IsDigit(s[0]) || s[0] == '-') return false;
+            return Enum.TryParse(s, true, out oValue) && Enum.IsDefined(typeof(T), oValue);
+        }
+
+        // 讀檔專用：解析不出要**出聲**再落回 iFallback —— 一個壞值不該讓整張單消失，
+        // 但也不准安靜地變成一個合法值（錯誤要離開私有欄位才算存在）。
+        public static T ParseOr<T>(string iWire, T iFallback, string iContext) where T : struct, Enum
+        {
+            if (TryParse(iWire, out T aV)) return aV;
+            UnityEngine.Debug.LogError($"[Task] {iContext}: '{iWire}' 不是合法的 {typeof(T).Name}"
+                + $"（{string.Join("|", Enum.GetNames(typeof(T)))}）—— 落回 `{iFallback}`，去修單檔 frontmatter");
+            return iFallback;
+        }
     }
 
     /// <summary>一位參與者：誰、什麼身分、什麼時候被指派。</summary>
     public class UCL_TaskParticipant
     {
         public string persona = "";
-        public string role = "dev";
+        public UCL_TaskRole role = UCL_TaskRole.dev;
         public string assigned_at = "";
 
         public override string ToString()
@@ -116,15 +148,15 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
     /// ⚠ **本型別刻意沒有任何 bool 欄位。** `UnityJsonSerializable` 會把 bool 寫成
     /// <c>"True"</c>/<c>"False"</c> 字串，而 python 端讀到的 <c>"False"</c> 是 **truthy**
     /// （2026-08-18 實證：`freetime.py` 因此把已收工的 session 判成還在跑，且完全不報錯）。
-    /// 狀態一律用 <see cref="UCL_TaskStatus"/> 的字串表達。
+    /// 狀態一律用 <see cref="UCL_TaskStatus"/> 表達（wire 上是成員名字串）。
     /// </remarks>
-    public class UCL_TaskEntry
+    public class UCL_TaskEntry : UCL.Core.JsonLib.UnityJsonSerializable
     {
         // ⚠ 欄位名 = frontmatter 鍵名 —— 改名等於改 wire format，python 端與後台頁會讀不到。
         public int index = 0;
-        public string type = "feature";
-        public string priority = "normal";
-        public string status = "todo";
+        public UCL_TaskType type = UCL_TaskType.feature;
+        public UCL_TaskPriority priority = UCL_TaskPriority.normal;
+        public UCL_TaskStatus status = UCL_TaskStatus.todo;
         public string title = "";
         public string milestone = "";
         public string epic_id = "";
@@ -166,25 +198,10 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
         public string Id => "TASK-" + index.ToString("0000", System.Globalization.CultureInfo.InvariantCulture);
 
-        // 區塊職責：`status` 的 enum 視圖（wire 欄位仍是字串 —— 這是讀法不是搬家）。
-        // 物理意義：解析不出（手改壞檔／未知字串）回 **null**，不回任何合法狀態 ——
-        //   「壞值」跟六種合法狀態的任何一種同形，都會讓壞檔看起來像一張正常的單。
-        // ⚠ TryParse 會把 "5" 這種數字字串解析成功 —— IsDefined 擋掉（數字不是狀態）；
-        // ⚠ `all` 是篩選成員不是狀態 —— 這裡是守衛之一（見 enum 上的註解），一樣回 null。
-        public UCL_TaskStatus? StatusEnum()
-        {
-            if (System.Enum.TryParse<UCL_TaskStatus>((status ?? "").Trim(), true, out var aS)
-                && System.Enum.IsDefined(typeof(UCL_TaskStatus), aS)
-                && aS != UCL_TaskStatus.all)
-                return aS;
-            return null;
-        }
-
         public string ParticipantsName => participants.ConcatToString();
         /// <summary>已關（不進 open 讀數）。</summary>
         public bool IsClosed()
-            => string.Equals(status, "done", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(status, "cancelled", StringComparison.OrdinalIgnoreCase);
+            => status == UCL_TaskStatus.done || status == UCL_TaskStatus.cancelled;
 
         // 區塊職責：距離最後一次動作幾天。
         // 物理意義：stale 判定的唯一輸入。updated_at 解析不出來時**回 -1 而不是 0** ——
@@ -198,9 +215,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         }
 
         /// <summary>某 persona 在這張單上的角色清單（可能不只一個）。</summary>
-        public List<string> RolesOf(string iPersona)
+        public List<UCL_TaskRole> RolesOf(string iPersona)
         {
-            var aList = new List<string>();
+            var aList = new List<UCL_TaskRole>();
             if (string.IsNullOrEmpty(iPersona)) return aList;
             foreach (var p in participants)
                 if (string.Equals(p.persona, iPersona, StringComparison.OrdinalIgnoreCase))
@@ -213,7 +230,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         {
             var aList = new List<string>();
             foreach (var p in participants)
-                if (string.Equals(p.role, "qa", StringComparison.OrdinalIgnoreCase))
+                if (p.role == UCL_TaskRole.qa)
                     aList.Add(p.persona);
             return aList;
         }

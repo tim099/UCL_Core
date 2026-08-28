@@ -155,7 +155,7 @@ namespace UCL.Core
             public string m_GroupID = null;
             public System.DateTime? lastUpdateTime = null;
         }
-        virtual protected void SelectIDOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic)
+        virtual public void SelectIDOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic)
         {
             SelectIDOnGUICache cache = null;
             void RefreshCache(SelectIDOnGUICache cache)

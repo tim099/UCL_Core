@@ -49,6 +49,11 @@ Senate 的官方來源是 [tim099/Senate](https://github.com/tim099/Senate.git)�
 安裝、取得或設定 Senate 時，才可 clone 此 repo 並依其 `Docs/Workflows/Setup_And_Build.md` 執行
 `setup.ps1`／`install.ps1`；clone、建置與寫入使用者 PATH 都不是 Python 缺席時的預設動作。
 
+> [!TIP]
+> **Windows「找不到 Python / 跳出 Microsoft Store」排查**：
+> Windows 10/11 預設開啟「應用程式執行別名 (App Execution Aliases)」，會搶先攔截 `python.exe`、`python3.exe`、`pymanager.exe` 與 `py.exe` 並重定向至 Microsoft Store，導致 Codex 等沙盒／子行程無法識別真實 Python。
+> 若電腦已安裝 Python 但 Codex 依然找不到，請至 **Windows 設定 ➔ 應用程式 ➔ 應用程式執行別名 (Manage app execution aliases)** 將上述 4 個開關切換為 **「關閉 (Off)」** 並重啟終端。
+
 ### PowerShell 文字編碼
 
 含中文、emoji 或其他非 ASCII 的管線文字，首選 Git Bash（`C:\Program Files\Git\bin\bash.exe`）的**單引號 heredoc**；不要用 Windows PowerShell 5.1 的 pipe／here-string，它可能把文字替換成 `?`。

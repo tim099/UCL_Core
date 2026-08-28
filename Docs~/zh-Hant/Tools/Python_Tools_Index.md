@@ -1,7 +1,7 @@
 ---
 title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
 description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。
-last_updated: 2026-08-18
+last_updated: 2026-08-28
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md | Awakening Init Protocol | morning/goodnight 三步驟設計
@@ -239,6 +239,34 @@ UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle 
 - subcommand: `add <asset_id> <key> <value>` / `remove <asset_id> <key>` / `list <asset_id>`
 - 寫入 `<.BuiltinModules>/.../UCL_LocalizeAsset/<asset_id>.json` 或 LocalizeDatas/<asset>/<lang>.txt
 - 對齊既有 UCL_LocalizeAsset C# 端 parse 規則 (line-range 格式)
+
+---
+
+## 🪟 Windows 環境 Python 與 Codex 排查指南 (Troubleshooting)
+
+在 Windows 環境下，若 Agent / Codex CLI 出現「找不到 Python」或執行失敗（Exit Code 9009 / 自動彈出 Microsoft Store），請依序排查以下常見陷阱：
+
+### 1. ⚠️ 微軟「應用程式執行別名 (App Execution Aliases)」幽靈攔截（最常見）
+* **現象**：在終端輸入 `python` / `py` 時跳出 Microsoft Store，或在 Codex 等子行程中回報找不到直譯器。
+* **原因**：Windows 10/11 預設開啟了指向微軟商店的別名捷徑，會優先於實際安裝的 Python 攔截呼叫。
+* **解決方式**：
+  1. 按 `Win + I` 打開 Windows 設定 ➔ 進入「應用程式 (Apps)」➔「進階應用程式設定」➔「應用程式執行別名 (Manage app execution aliases)」。
+  2. 將以下 4 個開關全數切換為 **「關閉 (Off)」**：
+     - `Python (default) - python.exe`
+     - `Python (default) - python3.exe`
+     - `Python install manager - pymanager.exe`
+     - `Python install manager - py.exe`
+  3. 重啟終端或 Codex 即可正常識別真實的 Python 直譯器。
+
+### 2. 🌐 系統環境變數 (System PATH) 缺失
+* **現象**：一般終端可執行，但在沙盒、服務或不同權限子行程中找不到 Python。
+* **解決方式**：確認 Python 安裝目錄（如 `C:\Python312` 與 `C:\Python312\Scripts`）已加入 **「系統變數 (System PATH)」**，而非僅使用者變數 (User PATH)。
+
+### 3. 📜 PowerShell 腳本執行原則阻擋
+* **解決方式**：以管理員或當前使用者權限放寬限制：
+  ```powershell
+  Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+  ```
 
 ---
 

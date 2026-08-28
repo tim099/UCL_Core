@@ -15,36 +15,11 @@
 
 ## Codex 專屬
 
-Codex 不支援 Claude Code 的 `@<path>` inline 載入語法。需要 UCL_Core 的跨專案 agent
-規則時，請顯式讀取
+Codex 不支援 `@<path>` inline 載入語法。需要 UCL_Core 的跨專案 agent 規則時，請顯式讀取
 [`{{UCL_CORE_PATH}}/AgentEntry/UCL_Core_Entry.md`]({{UCL_CORE_PATH}}/AgentEntry/UCL_Core_Entry.md)。
 
-個人化偏好放 `Codex.local.md`（不入版控）；專案規則不寫在那裡。
-
 ### Python 執行器
-
-Windows 的 Codex shell 不保證有 `python` 在 `PATH`。執行任何
-`{{UCL_CORE_PATH}}/Tools~/AgentCommands/run_cmd.py`（包括早安／晚安與酒館）前，先從目前電腦的
-PATH／Python Launcher 解析並驗證 Python，再只透過解析結果呼叫 Cmd：
-
-```powershell
-$pythonExe = Get-Command python, py -CommandType Application -ErrorAction SilentlyContinue |
-    Select-Object -First 1 -ExpandProperty Source
-if (-not $pythonExe) { throw "找不到 Python；請安裝 Python 或將 python／py 加入 PATH" }
-& $pythonExe --version
-& $pythonExe "{{UCL_CORE_PATH}}/Tools~/AgentCommands/run_cmd.py" --help
-```
-
-對應的 Git Bash 變數如下；內文含中文時，仍必須使用下節的單引號 heredoc。
-
-```bash
-PYTHON_EXE="$(command -v python || command -v python3 || command -v py || true)"
-[ -n "$PYTHON_EXE" ] || { echo "找不到 Python；請安裝 Python 或將 python／python3／py 加入 PATH" >&2; exit 1; }
-"$PYTHON_EXE" --version
-"$PYTHON_EXE" "$UCL_CORE/Tools~/AgentCommands/run_cmd.py" --help
-```
-
-找不到 Python 就明確停止；不要寫死特定電腦的安裝路徑，也不要因此改用不安全的文字管線或跳過 Cmd。
+找不到 Python 環境時 請提示使用者安裝python並配置系統環境變數
 
 ### PowerShell 文字編碼
 

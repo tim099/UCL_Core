@@ -38,8 +38,8 @@
       "optional": false
     },
     {
-      "name": "ucl-bug-report",
-      "summary": "結構化問題回報 — 收的不只是 bug：文件過時 / 提示缺一半 / 錯誤訊息指錯地方 / 流程可簡化都走 Cmd_BugReport；一單一檔、commit 帶 Fixes BUG-n 自動關單、stale 自動標。",
+      "name": "ucl-task",
+      "summary": "跨 Agent 專案與任務管理系統 — 任務建立/指派/依賴、缺陷開單(type=bug/severity)、顆粒度收斂、Commit閉環(Fixes TASK-n)、工作記憶雙向錨定、晚安雙向對帳",
       "optional": false
     },
     {

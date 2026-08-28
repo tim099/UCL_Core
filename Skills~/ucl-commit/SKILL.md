@@ -245,32 +245,29 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <par
   同步時是**套用同一個編輯**，不是把正本複製過去（複製會把那行吃掉）。
 - ❌ code 混 chat → history 噪音。
 
-## 🐛 `Fixes BUG-<n>` —— commit 順手關掉問題回報單
+## 📋 `Fixes TASK-<n>` —— commit 順手關閉或推進任務單
 
-修好一張 `BugReport` 的單之後，**在 commit 訊息裡寫一行就好**：
+完成或修復一張 Task 單（含 `type=bug`）之後，**在 commit 訊息裡寫一行就好**：
 
 ```
-Fixes BUG-12
+Fixes TASK-12
 ```
 
-`git_commit.py` 會在**公告成功之後**自動跑 `op=resolve` 並把 SHA 掛上去，
-console 會印一行 `🐛 BUG-12 已自動關單（<sha>）`。
+`git_commit.py` 會在**公告成功之後**自動推進狀態（有 QA 時轉 `in_review`，無 QA 時直接 `done`）並把 SHA 掛上去，
+console 會印出推進或結單訊息。
 
-**為什麼掛在 commit 上**：修東西的人本來就要 commit ——
-把關單掛在他**一定會走的那條路**上，就不必要求他記得再跑一支指令。
-而「記得」正是那套系統不能依賴的東西（一張沒人回來關的 open 單，
-跟一張還真的壞著的單長得一模一樣，還會主動誤導）。
+**為什麼掛在 commit 上**：修東西或交付功能的人本來就要 commit ——
+把推進狀態掛在他**一定會走的那條路**上，就不必要求他記得再跑一支指令。
+而「記得」正是系統不能依賴的東西。
 
-⚠ 邊界，每一條都會咬人：
-- **一則 commit 可以帶多行 `Fixes BUG-a` / `Fixes BUG-b`**，各自關掉。
-- **關單掛在公告成功之後** —— 公告失敗（exit 6）時單子還開著，要手動
-  `run BugReport --arg op=resolve --arg index=<n> --arg commit_sha=<SHA>`。
-- 關單失敗**只警告不致命**（commit 已經落地了，不該讓它看起來失敗）——
-  看到 `⚠ BUG-n 自動關單失敗` 就手動補一次，別假設它成功了。
-- ⛔ **別在訊息裡寫沒有真的修好的單號。** 關單是對別人的宣告：
+⚠ 邊界：
+- **一則 commit 可以帶多行 `Fixes TASK-a` / `Fixes TASK-b`**，各自推進。
+- **關單掛在公告成功之後** —— 公告失敗（exit 6）時單子狀態不動，需手動處理。
+- 關單/推進失敗**只警告不致命**（commit 已經落地了，不該讓它看起來失敗）。
+- ⛔ **別在訊息裡寫沒有真的修好/完成的單號。** 推進狀態是對別人的宣告：
   清單上少一筆＝所有人不再看它。
 
-開單、修復流程與 severity 判準 → skill `ucl-bug-report`。
+任務與缺陷開單、修復流程與 severity 判準 → skill `ucl-task`。
 
 ## 執行順序（收到「commit」指令）
 
@@ -289,7 +286,7 @@ console 會印一行 `🐛 BUG-12 已自動關單（<sha>）`。
 4. stage → `git_commit.py` 提交（trailer 與公告自動）。
    **單層**：只做改動所在那一層，做完就停。
    **commit all**：由內往外逐層 stage + bump。
-4.5 **這筆有修到 BugReport 的單嗎** → 訊息裡加 `Fixes BUG-<n>`（提交時自動關單，見上節）。
+4.5 **這筆有修到 Task 單嗎** → 訊息裡加 `Fixes TASK-<n>`（提交時自動關單或推進狀態）。
 5. 跑 `commit_payout_check.py` 對帳，報告 SHA 與已領狀態給 Tim。**不 push。**
    單層時**一併報「父層仍指著舊 hash，同事 pull 拿到的還是舊版」**——
    那句不是免責聲明，是這次交付真實的邊界。
@@ -317,4 +314,4 @@ python <UCL_Core>/Tools~/AgentCommands/commit_payout_check.py --strict   # 有�
 
 ---
 
-修的是一張問題回報單 → skill `ucl-bug-report`（開單 / 修復流程 / severity 判準；訊息記得帶 `Fixes BUG-<n>`）。
+修的是一張任務或缺陷單 → skill `ucl-task`（開單 / 修復流程 / severity 判準；訊息記得帶 `Fixes TASK-<n>`）。

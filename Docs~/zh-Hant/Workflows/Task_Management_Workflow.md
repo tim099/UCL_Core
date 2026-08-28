@@ -42,6 +42,36 @@ graph TD
 
 ---
 
+## 1.2 任務顆粒度與細項規範
+
+> **「Task 不要切太細 —— 具體細節與驗收點收斂在 Task criteria 細項中。」**
+
+1. **粗顆粒原則**：一個功能模組、一次架構重構或一個缺陷修復**對應一張 Task**。避免為單一函式改名、補幾行註解、修改單一文件或執行單次測試而拆出碎片單。
+2. **細項管理**：實作流程、子步驟與檢查點直接列在 Task 的 **`criteria`（驗收標準）** 細項清單中。
+3. **文件修正（Doc）收斂**：
+   - **`doc` 不獨立為 TaskType**：程式碼修改伴隨的文件更新與註解同步，**直接併在相關 Task 內處理（作為 criteria 細項之一）**，不單獨為修幾行文件開單。
+   - 只有「完全獨立且具有跨人交付價值的大型文件編撰/重構」才獨立開 Task（type 使用 `improvement` 或 `refactor`，帶 `docs` 標籤）。
+
+---
+
+## 1.3 缺陷（Bug）與改善回報規範
+
+系統性錯誤、流程摩擦與改善建議統一透過 Task 體系建立與管理：
+
+1. **缺陷開單**：走 `op=create --arg type=bug`。
+2. **`severity` 傷害形狀欄位**（`blocking` / `wrong` / `annoying`）：
+   - **傷害形狀 (`severity`) ≠ 排程優先度 (`priority`)**：兩者是不同維度的尺。`wrong`（會產出假讀數但能跑的安靜錯誤）為預設值；`severity=none` 為未標註狀態（frontmatter 不落行）。
+3. **`friction` / `suggestion` 標籤**：
+   - 提示缺漏、流程摩擦與改善建議，統一使用 `tags: [friction]` 或 `tags: [suggestion]` 標記。
+   - **「不確定算不算，就報」**：判斷夠不夠格開單的成本高於誤開一張單的成本，避免沉默的放棄。
+4. **`evidence` 必填守衛與 criteria 三段骨架**：
+   - `type=bug` 開單必須提供 `evidence`（附帶量測讀數與出處說明，防假證據）。
+   - bug 任務 criteria 預設三段骨架：①重現讀數（開單人填寫） ②修正落盤 ③異源複驗。
+5. **提交閉環**：
+   - Commit trailer 統一使用 `Fixes TASK-<n>` 自動推進關單。
+
+---
+
 ## 1.5 收斂機制與 PM 的收斂例行 (Convergence)
 
 > ⚠ **規範本體在 `ucl_core:Skills~/ucl-task/SKILL.md` §0.5**（四階梯 Q0-Q3）。
@@ -260,4 +290,4 @@ sequenceDiagram
   1. QA 執行 `op=update --arg index=<N> --arg status=in_progress` 將單子退回。
   2. 透過 `op=comment --arg index=<N>` 留言詳細記錄未通過項目、量測讀數與重現步驟。
   3. Dev 於原單進行返工修正後再次提交。
-- **說明**：BugReport 系統是針對「已結案 / 已發布上線」之系統性缺陷或外部回報；施工驗收中之瑕疵屬於正常迭代，於原 Task 閉環追蹤。
+- **說明**：獨立缺陷任務（`type=bug`）是針對已發布/已結案之系統性故障或外部回報；施工驗收中之瑕疵屬於正常迭代，一律於原 Task 退回返工並閉環追蹤。

@@ -25,6 +25,10 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         /// <summary>技術調研 —— 產出是「知道了什麼」而不是「做好了什麼」。</summary>
         spike,
         subtask,
+        /// <summary>缺陷修復（Tim 2026-08-28 拍板入詞彙表，活體 TASK-0065）。
+        /// BugReport 體系規劃整併進 Task —— 這個型別是為那條路先鋪的格子，
+        /// 整併前兩邊並存：BugReport 收「壞了」的回報，這裡是排進看板的修復工作。</summary>
+        bug,
     }
 
     public enum UCL_TaskPriority

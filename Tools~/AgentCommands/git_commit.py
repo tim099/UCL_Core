@@ -185,12 +185,15 @@ ANNOUNCE_ACK_TIMEOUT_SEC = 240
 # ⚠ 刻意放在**公告成功之後**才跑：commit 與領薪是主線，關單是附帶效果。
 def resolve_fixed_bugs(message: str, sha: str, persona: str) -> None:
     idxs = []
-    # ⚠ **行首錨定**（`^[ \t]*Fixes`）而不是 `\bFixes`。
+    # ⚠ **頂格錨定**（`^Fixes`，不允許行首空白）而不是 `\bFixes`。
     # 🩸 2026-08-24 summit：我在 commit 訊息裡**引述**上一筆的 `Fixes TASK-n`（描述那一筆發生過什麼），
     #   而 regex 分不出「這一筆要關」與「我在講那一筆」⇒ 兩張單被重複掛上這一筆 sha。
     #   trailer 的定義本來就是「獨占一行」（文件寫的是「在 commit 訊息裡寫一行就好」）,
     #   所以錨定行首不是收緊規則，是**把規則寫成它本來的形狀**。
-    for m in re.finditer(r"^[ \t]*Fixes[ \t]+BUG-(\d+)\b", message,
+    # 🩸 2026-08-28 BUG-8 補刀：`^[ \t]*` 仍放行**縮排引用** —— 而 `git log` 的輸出
+    #   正好是四空白縮排，貼一段 git log 進 bump 訊息就會誤觸。trailer 頂格寫，
+    #   縮排的那行在定義上是引用，不是宣告。
+    for m in re.finditer(r"^Fixes[ \t]+BUG-(\d+)\b", message,
                          re.IGNORECASE | re.MULTILINE):
         n = m.group(1)
         if n not in idxs:
@@ -229,8 +232,9 @@ def advance_tasks(message: str, sha: str, persona: str) -> None:
     # (index, mode) 保序去重 —— 同一張單同時寫 Fixes 與 Refs 時，**Fixes 優先**（它是較強的宣告）
     seen: dict = {}
     for kw, mode in (("Fixes", "fixes"), ("Refs", "refs")):
-        # 行首錨定 —— 理由同 resolve_fixed_bugs（引述別人的 trailer 不該觸發推進）
-        for m in re.finditer(rf"^[ \t]*{kw}[ \t]+TASK-(\d+)\b", message,
+        # 頂格錨定 —— 理由同 resolve_fixed_bugs（引述別人的 trailer 不該觸發推進；
+        # 縮排＝引用，git log 貼上是四空白，BUG-8）
+        for m in re.finditer(rf"^{kw}[ \t]+TASK-(\d+)\b", message,
                              re.IGNORECASE | re.MULTILINE):
             n = str(int(m.group(1)))          # TASK-0001 與 TASK-1 是同一張單
             if n not in seen:

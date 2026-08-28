@@ -33,6 +33,7 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
             "repro_steps= | expected= | actual= | " +
             "index=<單號，show/claim/resolve 必填> | assignee=<claim 用> | " +
             "resolution=fixed|wontfix|duplicate（resolve 用，預設 fixed） | note= | commit_sha= | " +
+            "overwrite_sha=1（resolve 用：已關且已有 commit_sha 的單預設不覆寫，顯式帶 1 才改） | " +
             "status=<list 篩選：open（預設）/all/stale>";
 
         public override string ExampleArgs =>
@@ -255,6 +256,24 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
         void OpResolve(Dictionary<string, string> iArgs, StringBuilder ioR)
         {
             var e = RequireEntry(iArgs, ioR, out _);
+            // 區塊職責：已關且已有 commit_sha 的單，**再次 resolve 不覆寫**（BUG-8 修法①）。
+            // 物理意義：commit_sha 是「修法在哪」的唯一索引；後來的重複命中（父層 bump 引用、
+            //   描述觸發器的那句話本身）在定義上不含修法 —— 覆寫＝把索引指去一筆不相關的 commit，
+            //   而單子看起來完全正常（🩸 BUG-8：三張單全指向一筆 3 行 gitlink 位移的 bump）。
+            // 數值影響：命中守衛時只追加一行變更紀錄後返回，欄位零改動；
+            //   顯式 --arg overwrite_sha=1 才放行（資料修復的合法通道，取代手改 md）。
+            bool aAlreadyClosed = e.status == "resolved" || e.status == "wontfix" || e.status == "duplicate";
+            string aNewSha = GetArg(iArgs, "commit_sha", "").Trim();
+            if (aAlreadyClosed && !string.IsNullOrEmpty(e.commit_sha)
+                && GetArg(iArgs, "overwrite_sha", "") != "1")
+            {
+                string aNow = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+                UCL_BugReportIO.Save(e, "", "", "", "", "",
+                    $"{aNow}　`skip-reclose`　{(string.IsNullOrEmpty(aNewSha) ? "（無 SHA）" : aNewSha)} —— 已由 {e.commit_sha} 關過，本次不覆寫");
+                ioR.AppendLine($"## ⏭ BUG-{e.index} 已由 `{e.commit_sha}` 關過（{e.status}），本次不覆寫");
+                ioR.AppendLine($"- 本次命中已追加進變更紀錄；確定要改 SHA（資料修復）→ 加 `--arg overwrite_sha=1`");
+                return;
+            }
             // 只對枚舉值正規化，自由文字保留原樣（TASK-0044 順帶格）——
             // 🩸 2026-08-25：resolution 收到「轉為 TASK-0026（Tim 拍板…）」被整句 ToLower 成
             //   「task-0026（tim …」⇒ 單號與人名被弄壞，搜 `TASK-0026` 找不到那一筆。
@@ -266,7 +285,7 @@ namespace UCL.Core.EditorLib.AgentCommands.BugReport
             e.status = aResLower == "wontfix" ? "wontfix" : aResLower == "duplicate" ? "duplicate" : "resolved";
             e.resolution = aRes;
             e.resolution_note = GetArg(iArgs, "note", "").Trim();
-            e.commit_sha = GetArg(iArgs, "commit_sha", "").Trim();
+            e.commit_sha = aNewSha;
             e.updated_at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
             UCL_BugReportIO.Save(e, "", "", "", "", "",
                 $"{e.updated_at}　`{e.status}`　{(string.IsNullOrEmpty(e.commit_sha) ? "手動關單" : e.commit_sha)}"

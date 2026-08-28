@@ -497,6 +497,48 @@ namespace UCL.Core.EditorLib.AgentCommands
             return true;
         }
 
+        /// <summary>
+        /// 把一個 `profile/&lt;field&gt;.md` 還原成「不存在」—— `op=set` 的逆操作（BUG-16）。
+        /// 語意是**移除新結構的覆蓋**，不是「刪除這個欄位」：讀取端會退回 legacy（若有 key），
+        /// legacy 也沒有才回到 absent。actor / reason 必填；審計標 `(unset)`，
+        /// 讓查帳分得出「取消設定」與「設成空」（後者是 set value=）。
+        /// ⚠ legacy 仍有 key 的欄，下一次消費端存取會被 lazy migration 再抄回 profile/
+        ///   （§8.4 存取即遷移）—— 對那種欄 unset 是暫時的；能停在 absent 的只有 legacy 也沒有的欄。
+        ///   這件事由呼叫端（Cmd）讀回來源後照實印，不在這裡吞掉。
+        /// 冪等：檔本來就不存在 ⇒ 回 true、<paramref name="oHadFile"/>=false、**零寫入**
+        ///   （不審計不刷快照 —— 沒有發生的事不留一筆看起來發生過的帳）。
+        /// </summary>
+        public static bool UnsetProfileField(string iPersona, string iField,
+            string iActor, string iReason, out bool oHadFile, out string oError)
+        {
+            oError = "";
+            oHadFile = false;
+            if (string.IsNullOrWhiteSpace(iPersona)) { oError = "persona 必填"; return false; }
+            if (string.IsNullOrWhiteSpace(iField)) { oError = "field 必填"; return false; }
+            if (!IsIdentityField(iField))
+            { oError = $"{iField} 不是 identity 欄 —— profile/ 只收身分欄（§8.3）"; return false; }
+            if (string.IsNullOrWhiteSpace(iActor) || string.IsNullOrWhiteSpace(iReason))
+            {
+                oError = "actor 與 reason 必填（§8.6）—— 寫入要能回答「是誰、憑什麼」；匿名寫入不收";
+                return false;
+            }
+            try
+            {
+                string aPath = UCL_LettersPath.ProfileField(iPersona, iField);
+                oHadFile = File.Exists(aPath);
+                if (!oHadFile) return true;                  // 冪等：本來就不存在＝零動作
+                File.Delete(aPath);
+            }
+            catch (Exception e)
+            {
+                oError = e.Message;
+                return false;
+            }
+            AppendAudit(iPersona, "profile/" + iField + " (unset)", iActor, iReason);
+            WriteSnapshot();
+            return true;
+        }
+
         // ===========================================================
         // 區塊職責：persona 的**銀行綁定**讀寫（`letters/<persona>/bank/<currencyId>.md`）。
         // 物理意義：Tim 2026-08-20 拍板 —— 「這個 persona 在某個區域用哪個帳號」是**該區域的宣告**，

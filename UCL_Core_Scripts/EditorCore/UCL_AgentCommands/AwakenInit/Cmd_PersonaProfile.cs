@@ -29,6 +29,10 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
             "op=refresh（預設）— 重寫 _persona_profile_snapshot.json 並回報路徑/人數 | " +
             "op=set persona=<name> field=<欄> value=<值：純量欄字面收／結構欄(identity_vector,vector_history,fork_lineage)必須是合法 JSON 陣列，parse 或形狀失敗即擋；長 JSON 走 --arg-file value=> actor=<誰寫的> reason=<憑什麼> — " +
             "§8.6 寫入接縫：單欄 patch（actor/reason 必填，缺了直接擋；附審計 jsonl＋快照刷新） | " +
+            "op=unset persona=<name> field=<欄> actor=<誰> reason=<憑什麼> — 刪掉 profile/<欄>.md"
+            + "（op=set 的逆操作，BUG-16：唯一能把欄位還原成非 profile 來源的正道；審計標 (unset)。"
+            + "⚠ 語意是「移除新結構的覆蓋」：legacy 有 key 會退回 legacy 且下次存取自動再遷回 profile，"
+            + "legacy 也沒有才真的回到 absent） | " +
             "op=get_bank persona=<name> [currency=<區域ID，預設本專案>] — 讀該 persona 在該區域的帳號"
             + "（回報 account / source / note；source != currency ＝跨區借用，不是本區宣告） | " +
             "op=set_bank persona=<name> account=<agent id> actor=<誰> reason=<憑什麼> [currency=<區域ID>] — "
@@ -64,6 +68,11 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                 {
                     Required = new[] { "persona", "field", "actor", "reason" },
                     RequiredPresent = new[] { "value" },
+                },
+                // BUG-16：set 的逆操作 —— 沒有 value（要刪的就是那個檔），其餘判準與 set 同。
+                ["unset"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "field", "actor", "reason" },
                 },
                 // 區域銀行綁定（Tim 2026-08-20）。currency 省略＝用本專案的 CurrencyId ——
                 // 顯式給是為了測試與跨區操作，不是給日常用的（日常不該記得自己在哪一區）。
@@ -115,6 +124,44 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                 UCL_AgentCommandRunner.ReportOutputValue(args, "old_value", oldVal);
                 UCL_AgentCommandRunner.ReportOutputValue(args, "new_value", value);
                 UnityEngine.Debug.Log($"[PersonaProfile] set {persona}.{field}：'{oldVal}' → '{value}'（actor={actor}）");
+                return;
+            }
+            // ===========================================================
+            // 區塊職責：op=unset —— set 的逆操作（BUG-16）。
+            // 物理意義：三態 profile/legacy/absent 是設計的一部分，而 set 只能前進不能後退，
+            //          唯一復原手段變成手刪 profile/ 檔（繞過接縫與審計）。本 op 補上那條正道。
+            // 數值影響：刪一個檔＋審計一行＋快照刷新；讀回複驗一律走 GetRaw(migrate:false) ——
+            //          ⚠ GetString 會觸發 lazy migration，unset 完用它驗會**當場把檔生回來**。
+            // ===========================================================
+            if (op == "unset")
+            {
+                string persona = GetArg(args, "persona", "").Trim();
+                string field = GetArg(args, "field", "").Trim();
+                string actor = GetArg(args, "actor", "").Trim();
+                string reason = GetArg(args, "reason", "").Trim();
+                // 舊值用不遷移的讀法取（這裡讀一下不該留下任何寫入）
+                var rawBefore = UCL_PersonaProfile.GetRaw(persona, false);
+                string oldVal = rawBefore == null ? "" : rawBefore.GetString(field, "");
+                if (!UCL_PersonaProfile.UnsetProfileField(persona, field, actor, reason,
+                        out bool hadFile, out string unsetErr))
+                    throw new Exception($"[PersonaProfile] unset 失敗：{unsetErr}");
+                // 讀回複驗：來源必須不再是 profile（用不觸發遷移的總表讀）。
+                var srcs = UCL_PersonaProfile.GetFieldSources(persona);
+                string nowSrc = (srcs != null && srcs.TryGetValue(field, out var s0))
+                    ? s0 : UCL_PersonaProfile.SRC_ABSENT;
+                if (nowSrc == UCL_PersonaProfile.SRC_PROFILE)
+                    throw new Exception($"[PersonaProfile] unset 後 {persona}.{field} 來源仍是 profile —— 未生效");
+                var rawAfter = UCL_PersonaProfile.GetRaw(persona, false);
+                string nowVal = rawAfter == null ? "" : rawAfter.GetString(field, "");
+                UCL_AgentCommandRunner.ReportOutputValue(args, "had_file", hadFile ? "1" : "0");
+                UCL_AgentCommandRunner.ReportOutputValue(args, "old_value", oldVal);
+                UCL_AgentCommandRunner.ReportOutputValue(args, "now_value", nowVal);
+                UCL_AgentCommandRunner.ReportOutputValue(args, "now_source", nowSrc);
+                string aLegacyNote = nowSrc == UCL_PersonaProfile.SRC_LEGACY
+                    ? "　⚠ legacy 仍有此欄：讀取端退回 legacy，且**下一次消費端存取會 lazy migration 抄回 profile/**（unset 對這種欄是暫時的）"
+                    : "";
+                UnityEngine.Debug.Log($"[PersonaProfile] unset {persona}.{field}："
+                    + $"'{oldVal}'（had_file={(hadFile ? 1 : 0)}）→ '{nowVal}'（source={nowSrc}，actor={actor}）{aLegacyNote}");
                 return;
             }
             // ===========================================================
@@ -364,7 +411,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
 
             if (op != "refresh")
                 throw new Exception($"[PersonaProfile] 未知 op '{op}'"
-                    + "（refresh / set / get_bank / set_bank / migrate_bank / rebind_region / unbind）");
+                    + "（refresh / set / unset / get_bank / set_bank / migrate_bank / rebind_region / unbind / rename_agent）");
 
             var (ok, count, error) = UCL_PersonaProfile.WriteSnapshot();
             if (!ok)

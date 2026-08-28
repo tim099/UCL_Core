@@ -115,7 +115,8 @@ graph TD
 
 ### 傘怎麼開
 
-1. **傘是一張普通的單**，用 `tags=epic,main` ＋ `related_to` 標記；子單掛傘走
+1. **傘是一張 `type=epic` 的單**（2026-08-28 起 `epic` 入 UCL_TaskType；早期以 `tags=epic,main`
+   標記的傘不重開，新傘一律用型別）；子單掛傘走
    `op=link --arg op_link=subtask_of --arg target=<傘>`（`epic_id` 與 `subtask_indices` 雙向自動連動）。
 2. **PM 第一個動作是把自己的角色宣告完整** —— TASK-0008 的第一課：PM 掛的是 `pm` 不是 `qa`，
    結單閘照規則判「沒有指名 QA ⇒ 沒有人要驗」。**「有人管」不等於「有人驗」**，每張子單都要明確填 QA。
@@ -162,7 +163,7 @@ graph TD
 
 | 身分 (`role`) | 中文名稱 | 核心職責與在系統中的行為 |
 |---|---|---|
-| **`PM`** | **專案管理** | **大項目拆解與相依性統籌**：<br>① **大型模組拆分**：將 Epic 或大型需求拆解為具體、可獨立驗收的 Task 與 Subtask。<br>② **相依性分析**：釐清各任務間的阻塞關係（設定 `blocked_by` / `blocks`），找出關鍵路徑 (Critical Path)。<br>③ **順序與優先度排序**：依據相依性與緊急程度調整 `priority`（Urgent/High/Normal/Low），規劃執行順序，避免團隊被 Blocker 卡死。 |
+| **`PM`** | **專案管理** | **大項目拆解與相依性統籌**：<br>① **大型模組拆分**：將 Epic 或大型需求拆解為具體、可獨立驗收的 Task 與 Subtask。<br>② **相依性分析**：釐清各任務間的阻塞關係（設定 `blocked_by` / `blocks`），找出關鍵路徑 (Critical Path)。<br>③ **順序與優先度排序**：依據相依性與緊急程度調整 `priority`（`urgent`/`high`/`normal`/`low` —— 小寫即 wire 字串），規劃執行順序，避免團隊被 Blocker 卡死。 |
 | **`Design`** | **企劃 / 規格** | **規格制定與驗收初審**：定義功能規格與詳細說明，負責撰寫清單中的 **Acceptance Criteria（驗收標準）**，確保目標明確可度量。 |
 | **`Dev`** | **程式 / 執行** | **主要實作與交付**：認領任務（`op=claim --arg role=dev`），實作程式碼或產出檔案，提交 Commit 時帶 `Fixes TASK-N` 推進狀態至 `in_review` / `done`。 |
 | **`QA`** | **測試 / 驗收看門狗** | **品質把關與結單簽核**：<br>① 任務若指定 QA，結單前必須由 QA 覆核驗收標準，並於 `resolve` 時簽署 `qa_note`。<br>② **驗收退回返工規範（Tim 2026-08-25 拍板）**：驗收過程若發現不符標準或瑕疵，**一律走退回返工（`op=update --arg status=in_progress`）並在該 Task 留言提供失敗讀數與重現步驟，嚴禁另開 Bug 單！**（Bug 單僅限已發布/已結案的系統性故障或外部回報）。 |
@@ -211,9 +212,10 @@ $R --arg op=comment --arg index=42 --arg body="今日完成 P1~P6 分鏡，預�
 $R --arg op=link --arg index=43 --arg op_link=blocked_by --arg target=42
 $R --arg op=link --arg index=43 --arg op_link=subtask_of --arg target=42
 
-# 9. 屬性更新（吃 6 欄位：status/priority/title/milestone/memory_topic/memory_archived_commit；⛔ 嚴禁直接推 done/cancelled，結單必須走 resolve）
+# 9. 屬性更新（吃 7 欄位：status/priority/severity/title/milestone/memory_topic/memory_archived_commit；⛔ 嚴禁直接推 done/cancelled，結單必須走 resolve）
 $R --arg op=update --arg index=42 [--arg status=in_progress|in_review|todo|backlog] \
-   [--arg priority=urgent|high|normal|low] [--arg title="<新標題>"] [--arg milestone="comic-vol-1"] \
+   [--arg priority=urgent|high|normal|low] [--arg severity=none|blocking|wrong|annoying] \
+   [--arg title="<新標題>"] [--arg milestone="comic-vol-1"] \
    [--arg memory_topic="task-mgmt"] [--arg memory_archived_commit=<sha>]
 
 # 10. 結單關閉任務（需 confirm=1；提示回寫工作記憶；若 blocker 未解或無 qa_note 則機械阻擋）

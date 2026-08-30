@@ -6,12 +6,31 @@
 > 本檔是 [`SKILL.md`](SKILL.md) 的 C# 專章（依語言拆出）。跨語言規則（路徑／錢／`--persona`／
 > 開工廣播／坑寫回哪裡）在 `SKILL.md`，**不在本檔重抄**；python 端見 [`PYTHON.md`](PYTHON.md)。
 
+> [!WARNING]
+> ## ⚠ 你動的是 `SCP_Core/**` 或 Senate 嗎？那本章有一半不適用
+>
+> 本章通篇假設**有 Unity**（`Cmd_Recompile`、`UCL_Asset<T>`、`UnityJsonSerializable`、
+> `EditorPrefs`、`Debug.Log`、IMGUI）。SCP_Core 是 Unity 與 .NET 的**共用碼**，
+> 第一條規矩就是不能假設有 Unity —— 照本章寫會在 Unity 那側編不過，或在 .NET 那側找不到 API。
+>
+> ⇒ 動那邊的 `.cs` 前先讀 **`<SCP_Core>/Docs~/Coding_Standards.md`**。
+> 三條最容易照抄錯的：
+>
+> | 本章說 | SCP 那側 |
+> |---|---|
+> | JSON 走 `UnityJsonSerializable` / `JsonData` | 走 **`SCP_Json`**（`System.Text.Json` 在 Unity 那側不存在） |
+> | 設定走 `UCL_Asset<T>` / `EditorPrefs` | 走**專案層 prefs**，功能碼不得知道設定檔的檔名與形狀 |
+> | 改完送 `Cmd_Recompile` | 那邊沒有 Cmd_Recompile —— 走 `dotnet build`；⚠ 但 **.NET 編過不代表 Unity 編得過**（方言限制 C# 9） |
+>
+> 判準不是「檔案現在放在哪」，是**這段碼將來會不會進 SCP_Core** —— 會的話現在就照那份寫。
+
 ## 📚 規範本體（本章只是指路，細節不在這裡重抄）
 
 | 主題 | 文件 |
 |---|---|
 | **JSON 讀寫**（`JsonData` / typed model / round-trip 驗收）**動 JSON 前先讀** | `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md` |
 | **C# 撰寫規範**（字串 key、外部 Process、letters 路徑） | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
+| **SCP 專案撰寫規範**（`SCP_Core/**` 與 Senate —— **不能假設有 Unity**） | `<SCP_Core>/Docs~/Coding_Standards.md` |
 | 程式碼註解規範（區塊職責 / 物理意義 / 數值影響） | `ucl_core:Docs~/{lang}/Agent/Code_Comment_Standards.md` |
 | 自動畫出整個物件的編輯介面 | `ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_DrawObjectData.md` |
 | 頁面骨架 / 建新頁的完整流程 | `ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_CommonEditorPage.md`、`ucl_core:Docs~/{lang}/Workflows/Create_EditorPage_Workflow.md` |

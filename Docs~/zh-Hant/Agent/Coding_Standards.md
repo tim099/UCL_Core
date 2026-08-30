@@ -1,7 +1,7 @@
 ---
 title: C# Coding Standards
 description: UCL_Core C# 設定資料、字串 key 與外部 Process 的共用撰寫規範。
-last_updated: 2026-08-21
+last_updated: 2026-08-30
 target_audience: [AI_Agent, Gameplay_Programmer, Tools_Maintainer]
 related:
   - Json_Coding_Standards.md | JSON 讀寫規範 | JsonData / typed model / round-trip 驗收
@@ -10,6 +10,17 @@ related:
 ---
 
 # C# Coding Standards
+
+> [!WARNING]
+> **適用範圍：有 Unity 的那一側。** 本檔通篇假設 `UnityEngine` / `UnityEditor` 可用
+> （`UCL_Asset<T>`、`UnityJsonSerializable`、`EditorPrefs`、`Debug.Log`、IMGUI）。
+>
+> ⛔ **`SCP_Core/**` 與 Senate 不適用** —— 那是 Unity 與 .NET 的共用碼，
+> `asmdef` 帶 `"noEngineReferences": true`，引用 `UnityEngine` 會被擋；語法還釘在 **C# 9 / netstandard2.1**。
+> ⇒ 動那邊之前讀 **`<SCP_Core>/Docs~/Coding_Standards.md`**（JSON 走 `SCP_Json`、
+> 設定走專案層 prefs、純函式邊界）。
+>
+> 判準是**這段碼將來會不會進 SCP_Core**，不是它現在放在哪個資料夾。
 
 ## 設定與 JSON 資料 → **獨立成一份規範**
 

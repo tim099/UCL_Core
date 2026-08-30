@@ -4,7 +4,7 @@ description: UCL_Core 的 JSON 讀寫硬規則 — 已知 schema 一律 typed mo
 tags: [json, jsondata, unityjsonserializable, typed-model, serialization, coding-standards]
 aliases: [json 規範, JsonData, UCL_JsonData, typed model, 序列化規範, 反序列化, round-trip]
 target_audience: [AI_Agent, Gameplay_Programmer, Tools_Maintainer]
-last_updated: 2026-08-21
+last_updated: 2026-08-30
 related:
   - Coding_Standards.md | C# Coding Standards | C# 其他共用規範
   - Python_Coding_Standards.md | Python 撰寫規範 | python 端讀同一批 JSON 的規則
@@ -21,6 +21,19 @@ related:
 適用範圍：UCL_Core 與消費端 repo 裡所有 C# 的 JSON 讀寫。
 python 端讀同一批檔的規則見 [`Python_Coding_Standards.md`](Python_Coding_Standards.md)；
 **跨語言的檔（C# 寫、python 讀）額外受本檔 §3.4 的 bool 規則約束。**
+
+> [!WARNING]
+> ⛔ **`SCP_Core/**` 與 Senate 不適用本檔的 API 部分** —— 那邊沒有 Unity，
+> `UnityJsonSerializable` 與 `UCL.Core.JsonLib.JsonData` 都不存在，`System.Text.Json` 也用不了
+> （Unity 不吃 NuGet）。⇒ **那側一律走 `SCP_Json`**，規範在
+> **`<SCP_Core>/Docs~/Coding_Standards.md` §2**。
+>
+> **判準是「這段碼將來會不會進 SCP_Core」，不是「它現在放在哪」** —— 會的話現在就用 `SCP_Json`，
+> 不要「搬的時候再改」（搬家那天要同時處理「換 JSON 層」與「拆宿主依賴」，而兩者的失敗互相遮蔽）。
+>
+> ⭐ 但本檔的**判準**兩邊都成立，而且 `SCP_Json` 是照著它們設計的：已知 schema 走 typed model
+> （`SCP_JsonMapper`）、讀不到要能跟「讀到空值」分辨（`SCP_JsonData` 的 `Missing` 是型別不是空值）、
+> 未知欄位要原樣寫回。**換的是 API，不是規則。**
 
 ---
 

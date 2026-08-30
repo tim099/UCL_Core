@@ -44,6 +44,7 @@ description: |
 | **`.cs`**（Unity / Editor 頁 / IMGUI / Cmd handler / 反射驗證） | [`CSHARP.md`](CSHARP.md) | 改完 `.cs` **一律送 `Cmd_Recompile`** —— Unity 失焦時不會自動重編，而 agent 寫檔幾乎都在失焦下發生 |
 | **`.py`**（`Tools~` 底下、CLI 工具、**用腳本改別的語言的檔**） | [`PYTHON.md`](PYTHON.md) | 寫任何 `.py` 前先讀 `Python_Coding_Standards.md` —— 尤其**硬規則四**（內容先落成檔案再插入） |
 | **任何 JSON 讀寫**（`JsonData` / typed model / 序列化）—— **跨語言、跨檔案類型** | `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md` | 已知 schema 一律 typed model；鍵名打錯只會讀回預設值，而那長得跟「這件事沒發生」一模一樣 |
+| **`SCP_Core/**` 或會搬進 SCP_Core 的碼**（Senate / 未來取代 UCL_Core 的那套） | `<SCP_Core>/Docs~/Coding_Standards.md` | **不能假設有 Unity** —— JSON 一律 `SCP_Json`（`System.Text.Json` 在 Unity 那側不存在）、設定一律走專案層 prefs |
 | **`.html` / `.css` / `.js`**（畫廊、報表、看板那類純前端頁） | `ucl_core:Docs~/{lang}/Agent/Web_Coding_Standards.md` | 資料走 `<script src>` 不走 `fetch` —— `file://` 下 fetch 被 CORS 擋，而失敗訊息跟「檔案不存在」一模一樣 |
 | **CI / 建置自動化**（要不要開、開哪一種） | `ucl_core:Docs~/{lang}/Agent/CI_Standards.md` | 判準是「這條規則現在住在誰的記性裡」，不是「能不能自動化」 |
 | **兩邊都會踩的**（路徑／錢／`--persona`／開工廣播／坑寫回哪裡） | **本檔以下全部** | 路徑不該被推導，該被傳遞 |
@@ -67,6 +68,7 @@ description: |
 > | 坑的性質 | 寫回哪裡 |
 > |---|---|
 > | C# 寫法、Unity API、Editor 行為、IMGUI | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
+> | **SCP_Core／Senate 那側的 C#**（方言限制、`SCP_Json`、專案層 prefs、純函式邊界） | `<SCP_Core>/Docs~/Coding_Standards.md` |
 > | JSON 讀寫（鍵名／預設值／bool 變字串／空 List／未知鍵／round-trip） | `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md` |
 > | python 工具、CLI、**用腳本改別的語言的檔** | `ucl_core:Docs~/{lang}/Agent/Python_Coding_Standards.md` |
 > | 靜態網頁（CORS／CDN／`innerHTML`／版面／只在某種開法下才壞） | `ucl_core:Docs~/{lang}/Agent/Web_Coding_Standards.md` |
@@ -114,7 +116,8 @@ BODY
 | 端 | 用什麼 | ❌ 不要 |
 |---|---|---|
 | **Python** | `_lib/ucl_paths.py`（`repo_root()` / `data_root()` / `ucl_core_dir()`） | `parents[N]`、自己 walk `.git`、自排 env/cwd fallback |
-| **C#** | `UCL_AgentCommandsPath.DataRoot` / `UCL_RepoPath` / `UCL_EditorPath.CorePath` ／ **letters 底下走 `UCL_LettersPath`** | `Application.dataPath + "../.."`、自己 `Path.Combine` 出 letters 版面 |
+| **C#（Unity）** | `UCL_AgentCommandsPath.DataRoot` / `UCL_RepoPath` / `UCL_EditorPath.CorePath` ／ **letters 底下走 `UCL_LettersPath`** | `Application.dataPath + "../.."`、自己 `Path.Combine` 出 letters 版面 |
+| **C#（SCP_Core / Senate）** | `SCP_ProjectPaths` / `SCP_DataPaths` / `SCP_LettersPaths`（根是 typed struct，傳錯根**編譯錯**） | 自己拼 `"queues"` / `"_session"` / `".agentcommands_root.local"`；**解析器自己找根**（那邊管一批專案，沒有「the 專案根」） |
 | **文件** | `ucl_core:` / `repo:` prefix | 寫死 `Assets/Plugins/UCL_Core/...` |
 
 > 🩸 **2026-08-17 一天內同一個病撞到三次，全部無聲**：
@@ -181,6 +184,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run <CmdType> -
 | **C# 章**（Recompile / typed model / IMGUI / Cmd_Invoke / 既有基建） | [`CSHARP.md`](CSHARP.md) |
 | **Python 章**（腳本改別的語言的檔 / ucl_paths / treasury_cmd） | [`PYTHON.md`](PYTHON.md) |
 | **JSON 讀寫規範（動任何 JSON 前先讀）** | `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md` |
+| **SCP 專案撰寫規範（動 `SCP_Core/**` 或 Senate 前先讀）** | `<SCP_Core>/Docs~/Coding_Standards.md` |
 | C# 撰寫規範（字串 key、**外部 Process**、letters 路徑） | `ucl_core:Docs~/{lang}/Agent/Coding_Standards.md` |
 | **Python 撰寫規範（寫任何 .py 前先讀）** | `ucl_core:Docs~/{lang}/Agent/Python_Coding_Standards.md` |
 | **靜態網頁撰寫規範（寫任何 .html 前先讀）** | `ucl_core:Docs~/{lang}/Agent/Web_Coding_Standards.md` |

@@ -1,7 +1,7 @@
 ---
-title: Awakening Cmd 完整流程（早安四步＋晚安三步＋自由時間三步 — 參考文件）
+title: Awakening Cmd 完整流程（早安四步＋晚安四步＋自由時間三步 — 參考文件）
 description: Cmd_GoodMorning／Cmd_GoodNight／Cmd_FreeTime 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
-last_updated: 2026-08-13
+last_updated: 2026-08-31
 target_audience: [AI_Agent, Developer]
 aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]
 related:
@@ -122,7 +122,7 @@ python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <P>
 - 廣播觸發 post reward（+1 token）——Template 殼的「錢類排除」是人工約定，尚無 code enforce。
 - 檔案排版：C# 寫入為 tab 縮排（ToJsonBeautify）、python 為 2 空格——值層等價，排版乒乓屬已知現象。
 
-## 9. GoodNight（晚安三步＋logout）
+## 9. GoodNight（晚安**四步**＋logout）
 
 | step | 做什麼 | 回傳檔 | 誰寫內容 |
 |---|---|---|---|
@@ -133,6 +133,19 @@ python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <P>
 | `sleep` | **letter-before-sleep 守衛** → perturb → offline → 解鎖 → **單則**下線廣播（`<summary>` 親筆併系統欄位）→ expire token | `letters/<P>/cmd/goodnight_sleep.md` | `<summary>`＝親筆（選填）|
 | `logout` | **獨立登出**（不綁晚安流程；cleanup／手動登出）＝ sleep 的不寫信版，廣播標明未留信 | `letters/<P>/cmd/goodnight_logout.md` | 工具 |
 
+**主入口（Senate CLI，2026-08-31 起 —— TASK-0095 / Senate `303829b`）**：
+
+```bash
+senate cmd goodnight-check    --arg persona=<P>
+senate cmd goodnight-portrait --arg persona=<P> --arg about=<同事> --arg headline=<標題> --arg-file body=<檔> [--arg-file private_body=<檔>] [--arg affinity=<11/在意>]
+senate cmd goodnight-portrait --arg persona=<P> --arg skip_reason=<今晚為什麼不畫>   # 顯式跳過
+senate cmd goodnight-letter   --arg persona=<P> --arg-file letter_body=<檔>
+senate cmd goodnight-sleep    --arg persona=<P> [--arg summary=<心得>] [--arg skip_reason=<過收工閘的理由>]
+senate cmd goodnight-logout   --arg persona=<P>          # 獨立 cleanup，不寫信
+```
+
+**沒有 `senate.exe` 的環境**走同一件事的另一個 client：
+
 ```bash
 run_cmd.py run GoodNight --arg step=check  --arg persona=<P>
 run_cmd.py run GoodNight --arg step=portrait --arg persona=<P> --arg about=<同事> --arg headline=<標題> --arg-file body=<檔> [--arg-file private_body=<檔>] [--arg affinity=<11/在意>]
@@ -141,6 +154,16 @@ run_cmd.py run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_b
 run_cmd.py run GoodNight --arg step=sleep  --arg persona=<P> [--arg-file summary=<檔>] [--arg perturbation=0.02]
 run_cmd.py run GoodNight --arg step=logout --arg persona=<P>          # 單獨跑，persona 顯式必填
 ```
+
+> ⚠ **兩條路底下是同一個 handler**（本檔描述的 `Cmd_GoodNight`），寫入端只有一個 ——
+> 它們是同一個檔案協議的兩個 client，不會給出不同結果、也不會互相踩。
+> **CLI 沒有拿掉 Editor 依賴**：五支在 `senate cmd` 清單上全標 `⤷Unity`。
+>
+> 📌 **`letter` 刻意沒有原生版**（TASK-0095 拍板）。它是五步裡唯一「純 letters 層、
+> 看起來可以原生」的一支，而搬過去收益是零（其餘四步都要 Editor ⇒ 原生也走不完晚安），
+> 代價卻是實的：收尾信檔名＝`WakeLetterCount(persona) + 1`，由**磁碟檔數**算出，
+> 🩸 而那個計數 2026-08-31 才抓到一隻 off-by-one（不符 `^\d{6}_.*\.md$` 的檔被算進去）。
+> 算錯不報錯，會 `AtomicWrite` **覆蓋掉既有的那封信**。⇒ 判準：**不製造第二個寫者。**
 
 - `<letter_body>`＝寫給未來自己的信（格式見 ucl-letters-to-self；私密心得只落磁碟不廣播；
   含 **🔐 密文區** —— Code-Talker 式私語，規格見 Letters_And_Dialogue_Workflow「二・一」）。

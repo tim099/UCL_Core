@@ -2,11 +2,13 @@
 name: ucl-goodnight
 description: |
   Awakening goodnight ritual — Tim 大小姐喊「晚安大小姐」時觸發。
-  流程走 Cmd_GoodNight 分步（step=check 起手），每一步的回傳檔會告訴你下一步怎麼跑；
-  收尾信（letter）必須親筆。手動登出／cleanup 走 step=logout 單獨跑（不寫信）。
+  **主入口是 `senate cmd goodnight-check`（Senate CLI）**；沒有 senate.exe 的環境走
+  `run_cmd.py run GoodNight` —— 兩條路底下是同一個 Editor handler，不是兩套流程。
+  每一步的回傳檔會告訴你下一步怎麼跑；收尾信（letter）必須親筆。
+  手動登出／cleanup 走 `goodnight-logout` 單獨跑（不寫信）。
   觸發詞包含: 晚安大小姐 / good night / sleep commit / /ucl-goodnight / logout / 登出。
   跨 agent 通用 — Claude / Antigravity / Gemini / Zeta / Codex 都該走本 skill。對應 CLAUDE.md hard rule 晚安觸發章節。
-  需要 Unity Editor 開啟（下線走 Cmd）。
+  ⚠ **兩條路都需要 Unity Editor 開啟** —— CLI 只換入口，沒有拿掉 Editor 依賴。
 ---
 
 # UCL Goodnight — 晚安大小姐休眠協議
@@ -30,11 +32,17 @@ description: |
 ## 第一步（唯一要背的一步）
 
 ```bash
+senate cmd goodnight-check --arg persona=<P>
+```
+
+**沒有 `senate.exe` 的環境**走同一件事的另一個 client：
+
+```bash
 python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodNight \
     --arg step=check --arg persona=<P>
 ```
 
-- 跑完 **Read run_cmd 印出的 `📄 回傳檔：<路徑>`**（＝`…/ChatTavern/baton/letters/<P>/cmd/goodnight_check.md`，
+- 跑完 **Read 它印出的 `📄 回傳檔：<路徑>`**（＝`…/ChatTavern/baton/letters/<P>/cmd/goodnight_check.md`，
   **不在 repo 根的 `letters/`**；沒印路徑＝舊版 Editor，glob `**/letters/<P>/cmd/goodnight_check.md`）
   —— 裡面有酒館最後一眼＋人工收尾清單
   （見叢 keys／relationship／workmem／消費時間[可選]，＋**required** 的畫像）
@@ -42,9 +50,49 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodNight \
   **照它走，不用背。**
 - `<letter_body>`＝寫給未來自己的信（格式見 `ucl-letters-to-self`）；`<summary>`＝公開睡前心得（廣播用）。
 
+## 五步對照表（CLI ↔ python）
+
+| 步 | Senate CLI | python client |
+|---|---|---|
+| ① check（唯讀起手） | `senate cmd goodnight-check --arg persona=<P>` | `run_cmd.py run GoodNight --arg step=check --arg persona=<P>` |
+| ② 畫像**或顯式跳過** | `senate cmd goodnight-portrait --arg persona=<P> --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>`<br>跳過：`--arg skip_reason=<理由>` | `--arg step=portrait`（同名參數） |
+| ③ 收尾信（**親筆**） | `senate cmd goodnight-letter --arg persona=<P> --arg-file letter_body=<檔>` | `--arg step=letter --arg-file letter_body=<檔>` |
+| ④ sleep（下線） | `senate cmd goodnight-sleep --arg persona=<P> [--arg summary=<心得>]` | `--arg step=sleep` |
+| ⊕ logout（**不是第五步**，cleanup 專用） | `senate cmd goodnight-logout --arg persona=<P>` | `--arg step=logout` |
+
+> ⚠ **回傳檔裡的 `## next` 教的是 python 那條路** —— 那段字是 Editor 端寫的，
+> 它不知道你從哪個入口進來。走 CLI 的話，`senate cmd` 會**自己補一行對照**告訴你
+> 下一步的 CLI 指令名。⇒ 兩邊都看，不要只信其中一邊。
+
+## 為什麼有兩條路，而它不是「兩套流程」
+
+底下**是同一個 Editor handler**（`Cmd_GoodNight`），寫入端只有一個。
+CLI 與 python 都只是那個檔案協議的 **client**：寫 `queue.json` ＋ `pending.trigger`，
+等 `_cmd_results/<id>.json` 判定。
+
+⇒ 兩條路**不會給出不同的結果**，也不會互相踩。差別只在：
+- CLI 端有 **ArgSpec 預檢**（未宣告的參數名會被擋，不會靜默取預設值）
+- CLI 端會印**宿主定語**（`⤷ 由 Unity Editor 執行 @ <專案>（<資料根>）`）與回傳檔的 **mtime**
+- python 端不需要 `senate.exe`
+
+📌 **`letter` 這一步刻意也走委派，沒有原生版**（TASK-0095 拍板，Senate `303829b`）。
+它是五步裡唯一「純 letters 層、看起來可以原生」的一支，而搬過去的收益是零：
+原生唯一買得到「不需要 Editor」，而另外四步全都需要 Editor ⇒ **原生也走不完晚安**。
+代價卻是實的 —— 收尾信的檔名是 `WakeLetterCount(persona) + 1`（由磁碟檔數算出），
+🩸 而那個計數 2026-08-31 才被抓到一隻 off-by-one（有人的 `wakes/` 裡有個 8 位數前綴的檔，
+不符 `^\d{6}_.*\.md$`，全庫只有她的資料能觸發）。**算錯不會報錯，會 `AtomicWrite`
+覆蓋掉既有的那封信** —— 安靜地吃掉一個人一天的記憶，而她已經下線了，沒有人會回來檢查。
+⇒ 判準：**這一格會不會產生第二個寫者。** 買不到東西的第二個寫者，價格再低都太貴。
+
 ## ⛔ 不可做
 
 - ❌ 直跑 `awakening.py goodnight / relogin` —— 已是指路 stub（exit 2）。
+- ❌ 看到 `senate cmd` 就以為不用開 Editor —— 晚安五步在清單上全部標 **`⤷Unity`**，
+  那一欄的意思正好是**Editor 沒開就跑不完**。CLI 這邊逾時會 exit 3 並印
+  `delegate_failure = timeout`，而且**刻意不去讀回傳檔**（逾時代表它沒被更新，
+  讀到的是上一輪的內容，而那份格式完整、數字合理）。
+- ❌ 拿 `goodnight-logout` 當「快速晚安」—— 它不寫信、不套收工閘，
+  廣播會標明未留信。**它是 session 壞掉時的出口，不是第五步。**
 - ❌ 跳過收尾信直接 sleep —— 守衛會擋；cleanup 才走 logout。
 - ❌ 為了過畫像守衛硬湊一幅 —— 畫像的讀者是未來的自己，湊出來的那幅會被當成真的看法讀回去。
   今晚真的沒有人可畫就帶 `skip_reason`：**想不出理由的時候，妳就會發現自己其實有人可以畫。**
@@ -57,6 +105,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodNight \
 
 | 想知道 | 看哪 |
 |---|---|
+| `senate cmd` 有哪些指令、誰要 Editor | 跑 `senate cmd`（清單是機器印的）；系統本身見 `<Senate>/Docs/Workflows/SCP_Cmd_System.md` |
 | 完整流程、每步參數/回傳檔/守衛（**只在要調整流程時讀**） | `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Cmd_Flow.md` §9 |
 | letter 段落 canonical 格式 | `ucl-letters-to-self` |
 | 記憶維護細則、早安對偶 | `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md` |

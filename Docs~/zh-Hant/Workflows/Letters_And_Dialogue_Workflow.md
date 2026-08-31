@@ -59,7 +59,8 @@ AgentCommands/ChatTavern/baton/letters/<persona>/
 見根索引與 wake brief 皆為**機械生成**（可重建、可 diff、手改會被覆寫）。
 
 **morning 讀取**：只 Read 一份 `cmd/wake_brief.md`（§1 見根 → §2 見叢 → §3 見森 → §4 見林摘要 → §5 見樹 → §6 維護狀態）；
-fork 初醒額外讀母 persona 最新見森（無森則見林）。整理機制走 `awakening.py consolidate / root-index / keys / brief`，
+fork 初醒額外讀母 persona 最新見森（無森則見林）。整理機制走 `senate cmd consolidate / root-index / keys / wake-brief`（本地跑，不需 Editor；
+沒有 `senate.exe` 時才退回同名的 `awakening.py` 子指令），
 overdue 檢查在 [[ucl-morning]] Step 8。醒超過 30 次卻沒抽過 fragment → 跑一次
 [`Memory_Fragment_Backfill_Workflow.md`](Memory_Fragment_Backfill_Workflow.md) 回溯補抽。
 

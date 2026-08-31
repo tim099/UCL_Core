@@ -981,7 +981,7 @@ def _people_lines(aw, persona: str) -> list:
     return out
 
 
-def _next_actions_lines(persona: str, st: dict, fst: dict, threshold: int) -> list:
+def _next_actions_lines(aw, persona: str, st: dict, fst: dict, threshold: int) -> list:
     """§9 今日動作清單 — 把 §6 的機械判定翻成**當場可執行的完整配方**。
 
     區塊職責：待辦觸發時，該做的每一步都寫在這裡，讀 brief 的人不必再去翻 workflow。
@@ -989,29 +989,43 @@ def _next_actions_lines(persona: str, st: dict, fst: dict, threshold: int) -> li
              brief 每次醒來重生成、而且一定會被讀；workflow 是要另外開的檔。
              **只在條件命中時才展開**，沒待辦的日子這區塊仍然只有三行（不為了完整而變吵）。
     """
+    # 區塊職責：把 CLI 入口的完整配方印出來（letters_root 是必填，所以直接填好）。
+    # 物理意義：這區是 agent 每天早上**一定會經過**的指路牌 ——
+    #          印錯了不是一個人走錯，是每個人都會照走一次。
+    # 數值影響：⚙ 2026-08-31 由 `awakening.py consolidate` 換成 `senate cmd consolidate`。
+    #          舊入口**會順手寫 registry**，Editor 忙的時候撞 save_registry 守衛
+    #          ⇒ 「檔寫成功卻 exit=1」，calli wake#35 實測。CLI 那支不寫任何
+    #          registry/profile 欄位（書籤是掃磁碟算出來的），且不需要 Editor。
+    aroot = str(aw._LETTERS_DIR_TPL).replace("\\", "/")
     out = []
     if st["overdue"]:
         out += [
             f"### ⚠ 見林 OVERDUE（gap={st['gap']}/{threshold}，待濃縮 {len(st['pending_letters'])} 封）",
             "",
-            f"1. `awakening.py consolidate --persona {persona}` —— 看 span 與待濃縮 letters 清單",
+            f"1. `senate cmd consolidate --arg letters_root={aroot} --arg persona={persona}`"
+            f" —— 看 span 與待濃縮 letters 清單",
             "2. **讀那批 letters 反思濃縮**（跨夜主題／沉澱教訓／關係演變／identity 漂移／未解線／"
             "這個時代一句精華）—— 不是機械貼信",
-            f"3. `awakening.py consolidate --persona {persona} --digest-body \"<濃縮>\"` —— 寫入 + 推進度",
+            f"3. `senate cmd consolidate --arg letters_root={aroot} --arg persona={persona}"
+            f" --arg-file digest_body=<檔>` —— 寫入 + 推進度（**長內文一律走檔案，不塞 argv**）",
             "4. **寫完 digest 必抽 fragment**（Tim 拍板「fragment 在見林時抽」，goodnight 保持輕）：",
             f"   - 寫 `fragments/<type>_<slug>.md`（type：lesson / unsolved / relation / identity / philosophy）",
-            f"   - `awakening.py root-index --persona {persona}` 重建索引",
+            f"   - `senate cmd root-index --arg letters_root={aroot} --arg persona={persona}` 重建索引",
             "   - 同一教訓再踩到 = **追加 origin + bump recurrence，不開新檔**；每個 origin 標 layer"
             "（Syntactic / Identity / Status / Content / Aggregate）與當次 context",
             "",
             "⛔ OVERDUE 卻跳過 = 沒走完 protocol。關鍵記憶沒進見根 = 下次醒來讀不到。",
+            "",
+            f"（沒有 `senate.exe` 的環境才退回 `awakening.py consolidate --persona {persona}` ——"
+            f" ⚠ 它會順手寫 registry，Editor 忙時會**檔寫成功卻 exit=1**。）",
             "",
         ]
     if fst["overdue"]:
         out += [
             f"### ⚠ 見森待折（{fst['pending']} 份新見林未折疊）",
             "",
-            f"- `awakening.py consolidate --persona {persona} --level forest`（不帶 body = 先看狀態與輸入清單）",
+            f"- `senate cmd consolidate --arg letters_root={aroot} --arg persona={persona} --arg level=forest`"
+            f"（不帶 digest_body = 先看狀態與輸入清單）",
             "- 首折要讀全部見林（唯一一次多輸入）；之後 rolling fold 只讀「上代森 + 新見林」2 份，"
             "成本不隨壽命成長。舊世代全保留（append-only）。",
             "",
@@ -1019,9 +1033,11 @@ def _next_actions_lines(persona: str, st: dict, fst: dict, threshold: int) -> li
     if not out:
         out.append("- 記憶維護無待辦（見 §6）。")
     out += [
-        f"- 隨時可丟未解線（不限儀式）：`awakening.py keys --persona {persona} --add \"<一句話>\"`",
-        f"- **下一步**：讀完本 brief → `run_cmd.py run GoodMorning --arg step=intro --arg persona={persona} --arg-stdin body`（<body> 親筆）；"
-        "之後照回傳檔 next 跑酒館 catchup（在線同事＋未讀＋inbox 都在那，不強制回）。",
+        f"- 隨時可丟未解線（不限儀式）：`senate cmd keys --arg letters_root={aroot}"
+        f" --arg persona={persona} --arg add=<一句話>`",
+        f"- **下一步**：讀完本 brief → `senate cmd morning-intro --arg persona={persona} --arg-file body=<檔>`（<body> 親筆）；"
+        "之後 `senate cmd morning-catchup --arg persona=" + persona + "`（在線同事＋未讀＋inbox 都在那，不強制回）。",
+        f"  （沒有 `senate.exe` 時走 `run_cmd.py run GoodMorning --arg step=intro --arg persona={persona} --arg-stdin body`）",
         "- 本檔是機械產物，**手改無效**（下次覆寫）—— 要改去改 fragment / letter / 見叢原檔。",
     ]
     return out
@@ -1241,12 +1257,12 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
     if st["overdue"]:
         todo6.append(f"- ⚠ **見林 OVERDUE**：gap={st['gap']}/{threshold}，"
                      f"待濃縮 {len(st['pending_letters'])} 封 → "
-                     f"`awakening.py consolidate --persona {persona}`")
+                     f"`senate cmd consolidate --arg letters_root={str(aw._LETTERS_DIR_TPL).replace(chr(92), chr(47))} --arg persona={persona}`")
     else:
         todo6.append(f"- ✓ 見林進度：gap={st['gap']}/{threshold}（上次到 wake {st['last_consolidated_wake']}）")
     if fst["overdue"]:
         todo6.append(f"- ⚠ **見森待折**：{fst['pending']} 份新見林未折疊 → "
-                     f"`awakening.py consolidate --persona {persona} --level forest`")
+                     f"`senate cmd consolidate --arg letters_root={str(aw._LETTERS_DIR_TPL).replace(chr(92), chr(47))} --arg persona={persona} --arg level=forest`")
     elif fst["eligible"]:
         todo6.append(f"- ✓ 見森已折到第 {fst['folded_digest_count']} 份見林（gen{fst['forest_count']}）")
     else:
@@ -1275,7 +1291,7 @@ def build_wake_brief(aw, persona: str, reg: dict, p: dict, threshold: int = None
     # （cursor 由 catchup 在實際閱讀時推進 ——「讀完的證據是開口」語意由 ding 流程承接）。
     # _inbox_lines / _tavern_catchup_lines 保留：後台「⚙ 參數設定」與 ding 工具仍是消費者的
     # 潛在共用點，等 P4b 收攏歸屬時一起處置，本輪不動實作只斷接線。
-    sections.append(("🎯 §9 今日動作清單", _next_actions_lines(persona, st, fst, threshold), True))
+    sections.append(("🎯 §9 今日動作清單", _next_actions_lines(aw, persona, st, fst, threshold), True))
 
     # 儀器：把「哪一段吃了多少時間」寫進 frontmatter（見 _TimedSections）。
     # 🩸 2026-08-16：brief 曾被單一區塊拖到 112s（§0 的餘額全掃帳本），而當時**板子上什麼都看不到**

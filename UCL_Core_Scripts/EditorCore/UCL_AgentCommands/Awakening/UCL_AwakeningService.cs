@@ -972,8 +972,21 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine("   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。");
             aR.AppendLine("（⚠ Windows 主控台 stdin 撞 surrogates/encoding error 時，改 --arg-file body=<檔> —— gura wake#31 實測）");
             aR.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");
+            // 區塊職責：見林 OVERDUE 那一步的指路。
+            // 物理意義：上面 1-3 步刻意寫 python —— Editor 端不知道呼叫者從哪個入口進來，
+            //          而走 CLI 時 `senate cmd` 會自己補一行對照。**但那份對照只涵蓋早安四步**，
+            //          consolidate 不在裡面 ⇒ 這一行是整份回傳檔唯一沒有翻譯的 python 指令。
+            // 數值影響：⚙ 2026-08-31 改指 CLI。舊入口 `awakening.py consolidate` 會順手寫 registry，
+            //          Editor 忙時撞 save_registry 守衛 ⇒ **檔寫成功卻 exit=1**（calli wake#35 實測）；
+            //          CLI 那支不寫任何 registry/profile 欄位，書籤是掃磁碟算的，也不需要 Editor。
             if (aGap >= CONSOLIDATE_GAP_THRESHOLD)
-                aR.AppendLine($"{aStepNo++}. 見林 OVERDUE → awakening.py consolidate --persona {iPersona}");
+            {
+                aR.AppendLine($"{aStepNo++}. 見林 OVERDUE → senate cmd consolidate "
+                              + $"--arg letters_root={LettersDir.Replace('\\', '/')} --arg persona={iPersona}");
+                aR.AppendLine("   （不帶 digest_body ＝ 只列狀態與待濃縮信件；寫入時長內文走 --arg-file digest_body=<檔>）");
+                aR.AppendLine($"   （沒有 senate.exe 的環境才退回 awakening.py consolidate --persona {iPersona} —— "
+                              + "⚠ 它會順手寫 registry，Editor 忙時會檔寫成功卻 exit=1）");
+            }
             aRes.ok = true; aRes.report = aR.ToString();
             return aRes;
         }

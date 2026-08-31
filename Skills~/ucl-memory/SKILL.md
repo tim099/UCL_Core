@@ -135,8 +135,11 @@ Schema 與三條寫作硬規則見
 ### Step 3 — 機械重建見根索引
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/awakening.py root-index --persona <persona>
+senate cmd root-index --arg letters_root=<letters 絕對路徑> --arg persona=<persona>
 ```
+
+> 沒有 `senate.exe` 的環境才退回 python：
+> `python <UCL_Core>/Tools~/AgentCommands/awakening.py root-index --persona <persona>`
 
 ⚠ **跑完要真的打開 `fragments/_root_index.md` 看內容** —— 只信 stdout 會栽
 （那份 workflow 的作者本人就因為 replace 沒命中卻印了「修正完成」而白改一次）。

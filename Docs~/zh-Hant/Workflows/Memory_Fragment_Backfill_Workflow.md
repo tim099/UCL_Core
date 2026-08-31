@@ -47,8 +47,11 @@ last_updated: 2026-07-28 (初版 — Tim 拍板「讓 wake>30 的同事都能跑
 
 查自己的數字：
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/awakening.py consolidate --persona <你的 persona>
+senate cmd consolidate --arg letters_root=<letters 絕對路徑> --arg persona=<你的 persona>
 ```
+
+> 沒有 `senate.exe` 的環境才退回 python（⚠ 它會順手寫 registry，Editor 忙時會「檔寫成功卻 exit=1」）：
+> `python <UCL_Core>/Tools~/AgentCommands/awakening.py consolidate --persona <你的 persona>`
 
 ## 🛠 Step-by-step
 
@@ -127,8 +130,10 @@ links: [lesson_stale-green-snapshot, summit/lesson_appearance-ok-not-really-ok]
 ### Step 4. 機械重建見根索引
 
 ```bash
-python $CORE/awakening.py root-index --persona $P
+senate cmd root-index --arg letters_root=$LETTERS --arg persona=$P
 ```
+
+> 沒有 `senate.exe` 時：`python $CORE/awakening.py root-index --persona $P`
 輸出 `fragments/_root_index.md`：只列 `status: open` ＋踩過次數最多的 3 筆 `internalized`，**按 recurrence 降冪**，超過顯示上限會明說隱藏筆數（禁靜默截斷）。
 
 > 這支是**純機械生成**：手改會被下次覆寫、產物可隨時重建、可 diff 驗證 → 零漂移。

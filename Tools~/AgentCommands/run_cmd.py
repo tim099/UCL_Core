@@ -701,6 +701,15 @@ def append_cmd(cmd_type: str, mode: str, args: dict, description: str) -> str:
     # 數值影響: 已帶 _caller_env_marker (test override) → 不覆寫; 沒帶 → 走 _detect_caller_env_marker
     if "_caller_env_marker" not in args:
         args["_caller_env_marker"] = _detect_caller_env_marker()
+    # 區塊職責: caller-side **client** 標記（basecamp 2026-08-31）。
+    # 物理意義: env_marker 分得出**環境**（claude-code / codex），分不出**哪個 client 送的** ——
+    #          早安改走 Senate CLI 之後，兩個 client 在 Claude Code 底下都回 claude-code，
+    #          於是「某人今天走了新入口」這件事**系統本身答不出來**，只能去問本人。
+    # 數值影響: Editor 端 WriteCmdResult 把它寫進 _cmd_results/<id>.json 的 `client` 欄；
+    #          缺席時那邊寫 "unstated"（「沒說」與「這欄還沒接上」不可同形）。
+    #          已帶 → 不覆寫（測試 override 用），與上面 env_marker 同一個形狀。
+    if "_caller_client" not in args:
+        args["_caller_client"] = "run_cmd.py"
     # 區塊職責: cmd-identity P1 —— 顯式 --persona 戳進 args（tier 1）
     # 物理意義: 沿用上面 _caller_env_marker 的同一個形狀（caller 端偵測後傳進 args，
     #          2026-05-11 Treasury bug 的修法）。下游拿得到 persona 就不必反查 session lock，

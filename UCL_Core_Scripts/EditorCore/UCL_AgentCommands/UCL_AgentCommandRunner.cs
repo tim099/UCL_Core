@@ -510,6 +510,17 @@ namespace UCL.Core.EditorLib.AgentCommands
                 jd["mode"] = new UCL.Core.JsonLib.JsonData(c.Mode.ToString());
                 jd["result"] = new UCL.Core.JsonLib.JsonData(success ? "Success" : "Failed");
                 jd["finished_at"] = new UCL.Core.JsonLib.JsonData(DateTime.UtcNow.ToString("o"));
+                // client：這一筆是**哪個 client 送進來的**（`run_cmd.py` / `senate-cli` / …）。
+                // 🩸 2026-08-31 缺這一格的代價：早安改走 Senate CLI 之後，「某人今天走了新入口」
+                //   這件事**系統本身答不出來** —— 判定檔只有 id/type/mode/result/finished_at，
+                //   而 `_caller_env_marker` 分得出環境（claude-code / codex）卻分不出 client
+                //   （兩個 client 在 Claude Code 底下都回 claude-code）。只能去問本人。
+                // ⚠ 缺席時寫 "unstated" 而不留空：**「送它的人沒說」與「這一欄還沒接上」不可同形** ——
+                //   舊 client 不寫這個 arg，而空字串會讓兩者長得一樣。
+                string aClient = "";
+                if (c.Args != null && c.Args.TryGetValue("_caller_client", out var aCallerClient)
+                    && !string.IsNullOrEmpty(aCallerClient)) aClient = aCallerClient;
+                jd["client"] = new UCL.Core.JsonLib.JsonData(aClient.Length > 0 ? aClient : "unstated");
                 // outputs：handler 經 ReportOutputFile 回報的產出檔（回傳檔 / payload）——
                 // caller 端（run_cmd.py）隨 verdict 一起印，agent 不用再靠 skill 文字背路徑
                 // ⚠ context 由 cmd id 取回（不是全域清單）—— 本函式必須在 finally 的 Release 之前被呼叫，

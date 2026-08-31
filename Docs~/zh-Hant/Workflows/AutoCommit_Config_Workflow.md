@@ -1,7 +1,7 @@
 ---
 title: 自動提交設定 — 把 repo 加入管理與設定分群規則
 description: 把一個 submodule（或任何 repo）加入 AutoCommit 管理的步驟、`.ucl_autocommit.json` 的欄位與判準、設定檔掀不動的地板、以及「怎麼確認真的照設定分群」的驗收法。
-last_updated: 2026-08-22
+last_updated: 2026-08-31
 target_audience: [AI_Agent, Tools_User]
 status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔宣告)
 ---
@@ -70,6 +70,36 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run AutoCommit 
 - **`disabled_repos` +1 ⇒ 設定還是停用的**（`Enabled=false`）。這不是錯誤，所以刻意**不計入** `blocked_repos` —— 但也不會靜默消失，Editor log 會印
   `・<repo>：設定為停用（Enabled=false）`。⚠ 自動建立的設定就是這個狀態，「我明明加了設定檔卻什麼都沒發生」多半是這一格
 - `blocked_repos` +1 ⇒ 被發現但**設定不合法或讀不出來**，原因印在 Editor log（壞檔會明說，不會靜默跳過）
+
+### `commits` 是 0 的時候，讀哪幾格（2026-08-31 起）
+
+`commits=0` 有四種成因，而在 2026-08-31 之前它們在機讀值上**長得一模一樣** ——
+唯一的真因寫在 Editor log 裡，而 log 不是呼叫端的通道。⇒ 現在四格都是**機讀欄位，0 也印**：
+
+| 欄位 | 語意 |
+|---|---|
+| `failed_groups` | 這幾群的 `git add` / `git commit` **失敗了**。原因逐群印在 Editor log（`✗ … 失敗 —— <stderr>`）。⚠ 非 0 時本 Cmd **丟例外**（值先報完再丟）—— git 操作失敗過的一輪不該被判 Success |
+| `empty_groups` | 選到的群裡沒有候選檔（正常狀態） |
+| `other_files` | 候選檔落在 `__other`（規則沒認出來）⇒ **永遠不自動收** |
+| `subptr_files` | 候選檔是巢狀 submodule pointer ⇒ **永遠不自動收** |
+
+**對帳式**：`candidate_files − other_files − subptr_files` ＝ 現在可自動收的檔數。
+差額 > 0 而 `commits` 是 0 ⇒ **真的有事發生**（看 `failed_groups` / `blocked_repos` / `prestaged_repos`）；
+差額 ＝ 0 才叫「沒東西可收」。⚠ `op=scan` 的 `commits` **恆為 0**（它不提交），別拿它當讀數。
+
+> 🩸 **現場（2026-08-31，summit）**：`op=commit` 回 `candidate_files=270 / commits=0`，
+> 而 `blocked_repos` / `prestaged_repos` / `disabled_repos` **全部 0** ⇒ 呼叫端手上沒有任何一格
+> 能解釋那個 0。真因是 `git add` 撞 `index.lock: File exists`（另一個 git process 握著 index）。
+> **那是空讀數**：工具什麼都沒說，於是填空的人填「大概沒東西可收」。
+
+> 🩸 **而它還會把自己鎖在門外**：分段 `add` 是逐 CHUNK 送的，失敗時前幾段**已經進 index**，
+> 舊實作直接 return ⇒ 那批殘留留在 index 裡，正好命中硬擋④（index 非空就跳過該 repo，沒有繞法）。
+> 於是**下一次、下下一次都被自己的殘留擋著**，而擋下的理由（`prestaged_repos`）跟真因（撞 lock）
+> 長得完全不一樣。實測殘留 80 檔。⇒ 現在失敗會 **`git reset --` 把那幾個路徑從 index 還原**
+> （**只動 index，工作區一個位元組都不碰**；前提是走到那裡時 index 本來是空的），
+> Editor log 印 `↩ … 已把這一群從 index 還原（工作區未動）—— 可直接重試`。
+> ⚠ 本 Cmd **不重試、不刪 lock** —— 刪別人的 lock 會讓那個 process 寫壞 index。重試是呼叫端的決定。
+> **守衛多半只擋去路，不擋歸路** —— 這一格補的是歸路。
 
 ### Step 3 — ⚠ 確認「真的照設定分群」（**這步不可省**）
 
@@ -161,6 +191,8 @@ ToolBox →「自動提交」頁 →「⚙ Submodule 自動提交設定」折疊
 | 加了設定檔卻什麼都沒收 | `Enabled` 還是 `false`（自動建立的預設值）⇒ 看 `disabled_repos` |
 | 設定檔自己出現在候選清單 | 正常 —— 它沒被任何群命中 ⇒ 落 `__other` ⇒ 不會被自動收 |
 | `blocked_repos` 有數字 | 設定壞掉或讀取失敗。**「設定寫錯」與「這個 repo 沒設定」刻意是兩種可分辨的結果** |
+| `commits=0` 而候選檔不是 0 | 先看 `failed_groups`（git 失敗，Editor log 有 stderr）→ `prestaged_repos`（index 本來就不乾淨）→ `other_files`＋`subptr_files`（那些本來就不自動收）。四格都 0 且對帳式差額為 0 ＝ 真的沒東西可收 |
+| 失敗一次之後每次都被 `prestaged_repos` 擋 | 舊實作的殘留（2026-08-31 前）。`git -C <repo> reset` 清掉 index 即可重試 —— **工作區沒有被動過** |
 
 ## 7. 為什麼是設定檔而不是寫死（沿革）
 

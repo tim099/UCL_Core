@@ -161,6 +161,27 @@ namespace UCL.Core.EditorLib.AgentCommands
             foreach (var t in targets) ephemeral += ScanOne(t, DefsOf(t, defs), ref scannedFiles);
 
             int committed = 0, skippedRepos = 0, emptyGroups = 0, disabledRepos = 0, preStagedRepos = 0;
+            // 🩸 2026-08-31（summit）：`op=commit` 回 `candidate_files=270 / commits=0`，
+            //   而 blocked／prestaged／disabled **全部 0** ⇒ 呼叫端手上沒有任何一格能解釋那個 0。
+            //   真因在 Editor log 裡（`git add` 撞 `index.lock: File exists`），
+            //   而那條路徑呼叫端看不到 ⇒ 那是**空讀數**：工具什麼都沒說，於是填空的人填「大概沒東西可收」。
+            //   ⇒ 修法不是讓它更會 commit，是讓「為什麼是 0」變成一個**機讀欄位**。
+            //   commits=0 有三種成因，過去三種在機讀值上長得一模一樣：
+            //     ① git 操作失敗（本欄 failed_groups）② 選到的群都是空的（empty_groups）
+            //     ③ 候選檔全落在不自動收的 `__other`（other_files）
+            //   ④ 候選檔是 submodule pointer（subptr_files）—— bump 了別人會 pull 不到 hash，所以永遠不自動收
+            // ⇒ 對帳式（實測 2026-08-31）：
+            //   `candidate_files − other_files − subptr_files` ＝ **現在可自動收的檔數**。
+            //   那個差額 > 0 而 `commits` 是 0 ⇒ 真的有事發生（看 failed_groups / blocked_repos）；
+            //   差額 ＝ 0 才叫「沒東西可收」。⚠ `op=scan` 的 commits 恆為 0（它不提交），別拿它當讀數。
+            //   當日讀數：候選 25 ＝ `__other` 7（Lessons/Plurk/PromptQueue）
+            //   ＋ `__subptr` 10（ArtGallery／Chess／Tasks ＋ 7 個 persona 信件庫）＋ 可收的 8。
+            int failedGroups = 0, otherFiles = 0, subPtrFiles = 0;
+            foreach (var t in targets)
+            {
+                if (t.Groups.TryGetValue(UCL_AutoCommitRules.KEY_OTHER, out var aOther)) otherFiles += aOther.Count;
+                if (t.Groups.TryGetValue(UCL_AutoCommitRules.KEY_SUBPTR, out var aPtr)) subPtrFiles += aPtr.Count;
+            }
             var shas = new List<string>();
             foreach (var t in targets)
             {
@@ -210,13 +231,16 @@ namespace UCL.Core.EditorLib.AgentCommands
                     }
                     string sha = CommitGroup(t, files, label, sb);
                     if (!string.IsNullOrEmpty(sha)) { committed++; shas.Add($"{t.Name}:{sha}"); }
+                    // 失敗要被**數**出來 —— CommitGroup 已經把原因寫進 oLog，但 log 不是呼叫端的通道。
+                    else failedGroups++;
                 }
                 if (!any) sb.AppendLine($"  ・{t.Name}：這幾群都沒有候選檔");
             }
 
             sb.AppendLine($"  ⇒ {(op == "scan" ? "掃描" : "提交")}完成："
                 + $"候選檔 {scannedFiles}／ephemeral 略過 {ephemeral}／"
-                + $"commit {committed}／擋下的 repo {skippedRepos}");
+                + $"commit {committed}／失敗的群 {failedGroups}／空的群 {emptyGroups}／"
+                + $"__other（不自動收）{otherFiles}／__subptr（不自動收）{subPtrFiles}／擋下的 repo {skippedRepos}");
             Debug.Log(sb.ToString());
 
             UCL_AgentCommandRunner.ReportOutputValue(args, "op", op);
@@ -229,8 +253,27 @@ namespace UCL.Core.EditorLib.AgentCommands
             // 這個數字要**一直印**（0 也印）：只在非零時才出現的欄位，讀者分不出「乾淨」與「沒量」。
             UCL_AgentCommandRunner.ReportOutputValue(args, "prestaged_repos", preStagedRepos.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "disabled_repos", disabledRepos.ToString());
+            // 這三個跟 prestaged_repos 同理：**0 也印**。它們合起來就是「commits 為什麼是這個數」的答案，
+            // 而只在非零時才出現的欄位，讀者分不出「乾淨」與「沒量」。
+            UCL_AgentCommandRunner.ReportOutputValue(args, "failed_groups", failedGroups.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "empty_groups", emptyGroups.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "other_files", otherFiles.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "subptr_files", subPtrFiles.ToString());
             if (shas.Count > 0)
                 UCL_AgentCommandRunner.ReportOutputValue(args, "shas", string.Join(" ", shas.ToArray()));
+
+            // ⚠ 值先報完再丟 —— 呼叫端要的是「幾群失敗、為什麼」，而那些欄位不能被例外吃掉。
+            //   丟例外的理由：git 操作失敗過的一輪**不該被判 Success**。
+            //   已經成功的那幾群是真的（SHA 在 shas 欄），所以這不是回滾，是**拒絕把部分成功說成完成**。
+            if (failedGroups > 0)
+            {
+                string aMsg = $"[AutoCommit] {failedGroups} 個群的 git 操作失敗（commit {committed} 群成功）"
+                    + " —— 原因逐群印在上面那段 Editor log（`✗ … git add/commit 失敗 —— <stderr>`）。"
+                    + " 常見一種是 `index.lock: File exists`：另一個 git process 正握著這個 repo 的 index"
+                    + "（本 Cmd 刻意**不重試、不刪 lock** —— 刪別人的 lock 會讓那個 process 寫壞 index）。";
+                Debug.LogError(aMsg);
+                throw new Exception(aMsg);
+            }
         }
 
         // 區塊職責：要做哪幾群 —— 已拆成兩支（2026-08-21 設定檔化）。
@@ -437,6 +480,17 @@ namespace UCL.Core.EditorLib.AgentCommands
                 if (add.exit != 0)
                 {
                     oLog.AppendLine($"  ✗ {iRepo.Name}：git add 失敗 —— {add.stderr.Trim()}");
+                    // 🩸 2026-08-31（summit）：**擋去路的守衛不擋歸路。**
+                    //   分段 add 是逐 CHUNK 送的 ⇒ 前幾段可能已經進 index，而這裡直接 return ""
+                    //   把那批**留在 index 裡**。而 index 非空正好命中檔頭硬擋④（`op=commit` 直接跳過
+                    //   該 repo，**沒有繞法**）⇒ **失敗會把自己鎖在門外**：下一次、下下一次都被擋，
+                    //   而擋下的理由（prestaged）跟真因（撞 index.lock）長得完全不一樣。
+                    //   現場讀數：13:29 那次失敗留下 80 個 staged 檔（messages seq 15022–15092 ＝
+                    //   排序後的第一個 CHUNK ＋ inbox），此後每一次 op=commit 都被自己的殘留擋著。
+                    //   ⇒ 失敗要**把 index 還原成呼叫前的樣子**。這裡可以安全地 reset 這幾個路徑，
+                    //     因為走到 CommitGroup 的前提就是 `PreStaged.Count == 0`（index 本來是空的）
+                    //     —— 所以 unstage 這批不可能動到別人放進去的東西。
+                    RollbackStaged(iRepo, iFiles, oLog);
                     return "";
                 }
             }
@@ -452,6 +506,8 @@ namespace UCL.Core.EditorLib.AgentCommands
                 {
                     oLog.AppendLine($"  ✗ {iRepo.Name}：git commit 失敗 —— "
                         + $"{(string.IsNullOrEmpty(c.stderr.Trim()) ? c.stdout.Trim() : c.stderr.Trim())}");
+                    // 同上：commit 失敗時那批檔還在 index 裡，留著會擋住之後每一次 op=commit。
+                    RollbackStaged(iRepo, iFiles, oLog);
                     return "";
                 }
             }
@@ -466,6 +522,30 @@ namespace UCL.Core.EditorLib.AgentCommands
             oLog.AppendLine($"  ✓ {iRepo.Name} [{sha}] {iMessage}");
             ReconcileCommit(iRepo, iFiles, sha, oLog);
             return sha;
+        }
+
+        // 區塊職責：失敗時把 index 還原成呼叫前的樣子（unstage 這一群挑到的路徑）。
+        // 物理意義：**只 unstage，不碰工作區** —— `reset --` 是 mixed reset 的 pathspec 形式，
+        //          它把 index 拉回 HEAD 而檔案內容一個位元組都不動。⛔ 這裡永遠不用 `--hard`
+        //          / `checkout --`：那會刪掉別人剛落盤的資料，而那是回不來的。
+        // 數值影響：index 回到空；工作區不變 ⇒ 下一次 op=commit 可以重試（歸路存在）。
+        // ⚠ 還原本身也會失敗（例如仍然握不到 index.lock）—— 那要說出來，因為那時
+        //   「殘留還在」而下一次會被 prestaged 擋，人得知道去手動 unstage。
+        static void RollbackStaged(RepoTarget iRepo, List<string> iFiles, StringBuilder oLog)
+        {
+            for (int i = 0; i < iFiles.Count; i += CHUNK)
+            {
+                var sb = new StringBuilder("reset --quiet --");
+                for (int j = i; j < iFiles.Count && j < i + CHUNK; j++)
+                    sb.Append(" \"").Append(iFiles[j]).Append('"');
+                var r = Git(iRepo.Root, sb.ToString());
+                if (r.exit == 0) continue;
+                oLog.AppendLine($"  ⚠ {iRepo.Name}：失敗後還原 index 也失敗 —— {r.stderr.Trim()}"
+                    + "　⇒ **index 裡還留著這一群的殘留**，下一次 op=commit 會被 prestaged 擋下；"
+                    + "請手動 `git -C <repo> reset` 之後再跑（工作區沒有被動過）");
+                return;
+            }
+            oLog.AppendLine($"  ↩ {iRepo.Name}：已把這一群從 index 還原（工作區未動）—— 可直接重試");
         }
 
         // 區塊職責：提交後對帳 —— 這一筆**實際**含哪些路徑，跟我挑的那份清單並排。

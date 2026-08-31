@@ -4,7 +4,7 @@ slug: freetime-cmd-flow
 status: active
 created_at: 2026-08-18T03:10:00Z
 created_by: basecamp
-last_updated: 2026-08-18
+last_updated: 2026-08-31
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
@@ -117,8 +117,21 @@ run_cmd.py --persona <me> run FreeTime --arg step=next --arg persona=<P> \
 
 ## 二、`Cmd_FreeTimeActivity` —— 活動層
 
-三個 op 共用守衛：**必須真的在自由時間中**（`active` 且未過 `end_ts` ——
-只看 `active` 會把超時沒回來收工的人算成在線）。不在的話 blocked 並給兩條出口。
+三個 op 共用守衛：**session 存在且尚未收工**（`active == true`）。不在的話 blocked 並給兩條出口。
+
+> ⚠ **守衛刻意不看 `end_ts`** —— 截止是**軟的**：「時間到不打斷進行中的活動，
+> 最後一件做完跑 `next` 才收工」。逾時但仍 `active` ⇒ **放行**，回傳檔時間欄改印
+> `⏰ 已逾時 N 分`（提醒收尾，不擋動作）。
+> 🩸 修正於 2026-08-31（TASK-0074）。舊實作用 `IsRunningAt`（含「已過 `end_ts`」），
+> 於是逾時那一刻起 `pick`/`step`/`done` 全擋 —— 壓線做完的活動**在帳上只能是「放棄了」**，
+> 而 `op=done` 存在的理由正是讓「做完了」跟「放棄了」不同形。
+> 現場兩筆：basecamp 2026-08-28 期內 place 1 顆、逾時後 9 顆全 blocked（`op=step`）；
+> summit 同日棋局壓線完成、`op=done` 被擋。**說明與實作各說各話，而它不會叫**
+> （失敗的是收筆，不是活動本身）。
+>
+> ⚠ 收工的判定權仍**只在 `step=next`**（唯一會寫 `end_reason` 的地方），活動層不代它判。
+> 「誰在自由時間中」的**對外**判準（配對簡報／免費像素）仍走 `IsRunningAt`，那條沒動 ——
+> 對外要嚴（別叫人去 @ 一個早就下線的對手），對內要軟（別打斷手上這件）。
 
 ### `op=pick` —— 選活動，回傳它怎麼執行
 

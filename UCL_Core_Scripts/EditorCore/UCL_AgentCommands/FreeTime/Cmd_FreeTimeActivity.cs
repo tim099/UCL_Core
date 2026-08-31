@@ -84,29 +84,39 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine($"# FreeTimeActivity op={aOp} persona={aPersona}  ts=`{DateTime.Now:yyyy-MM-dd HH:mm:sszzz}`（本地時間）");
             aR.AppendLine();
 
-            // ── 守衛：必須真的在自由時間中 ────────────────────────────────
-            // 只看 active 不夠（超時沒收工的人會停在 true）—— 判準走 session base 的唯一那條。
+            // ── 守衛：session 必須存在且尚未收工 ──────────────────────────
+            // ⚠ 判準刻意**不是** IsRunningAt —— 那條含「已過 end_ts」，而截止是**軟的**：
+            //   「時間到不打斷進行中的活動，最後一件做完跑 next 才收工」。
+            //   拿 IsRunningAt 當活動層守衛的話，逾時那一刻起 op=done 進不來，
+            //   ⇒ 在截止後收筆的活動在帳上永遠只能是「放棄了」，而 op=done 存在的理由
+            //     正是讓「做完了」跟「放棄了」不同形（skill ucl-free-time 明寫）。
+            //   🩸 活體：summit 2026-08-31 12:10:21 棋局收筆被擋，而同一份回傳檔抬頭
+            //     還印著「軟截止」—— 說明與實作各說各話，且它不會叫（失敗的是收筆不是活動）。
+            // ⇒ 只擋兩種真的不能做事的狀態：沒有 session／已經收工。
+            //   逾時但仍 active ＝ 正在進行的那件事還沒收 ⇒ **放行**，並在時間欄明講已逾時。
+            //   收工的判定權留在 step=next（它是唯一會寫 end_reason 的地方），本檔不代它判。
             var aSession = Cmd_FreeTime.LoadSession(aPersona);
             DateTime aNow = DateTime.Now;
-            bool aRunning = aSession != null && aSession.IsRunningAt(aNow, out DateTime? aEnd);
-            aEnd = aSession != null ? UCL_SessionBase.ParseIsoToLocal(aSession.end_ts) : null;
-            if (!aRunning)
+            DateTime? aEnd = aSession != null ? UCL_SessionBase.ParseIsoToLocal(aSession.end_ts) : null;
+            if (aSession == null || !aSession.active)
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine(aSession == null
                     ? "- reason: 沒有自由時間 session"
-                    : aSession.active
-                        ? $"- reason: session 已過期（預定收工 {aSession.until_local}）—— 超時未收工的殘留"
-                        : $"- reason: session 已收工（{(string.IsNullOrEmpty(aSession.end_reason) ? "未記原因" : aSession.end_reason)}）");
+                    : $"- reason: session 已收工（{(string.IsNullOrEmpty(aSession.end_reason) ? "未記原因" : aSession.end_reason)}）");
                 aR.AppendLine($"- exit①: 開新場 → run_cmd.py run FreeTime --arg step=start --arg persona={aPersona} --arg until=<HH:mm>");
                 aR.AppendLine($"- exit②: 過期殘留要結算 → run_cmd.py run FreeTime --arg step=next --arg persona={aPersona}（它會宣布收工）");
                 Cmd_FreeTime.WritePayload(args, aPath, aR.ToString());
                 throw new Exception($"[FreeTimeActivity] blocked：不在自由時間中（詳見 {aPath}）");
             }
 
+            bool aOvertime = aEnd.HasValue && aNow > aEnd.Value;
             int aRemain = aEnd.HasValue ? (int)Math.Max(0, (aEnd.Value - aNow).TotalMinutes) : 0;
+            int aOverBy = aOvertime ? (int)Math.Max(0, (aNow - aEnd.Value).TotalMinutes) : 0;
             aR.AppendLine("## time（時間感由 Cmd 供給 —— 別自己心算）");
-            aR.AppendLine($"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　自由時間到: **{aSession.until_local}**　剩餘: **{aRemain} 分**");
+            aR.AppendLine(aOvertime
+                ? $"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　自由時間到: **{aSession.until_local}**　⏰ **已逾時 {aOverBy} 分**（軟截止 —— 手上這件做完就跑 step=next 收工，別再開新的）"
+                : $"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　自由時間到: **{aSession.until_local}**　剩餘: **{aRemain} 分**");
             aR.AppendLine($"- 本場換骰 {aSession.rounds} 輪｜活動實作 {aSession.activities_done} 件");
             aR.AppendLine();
 

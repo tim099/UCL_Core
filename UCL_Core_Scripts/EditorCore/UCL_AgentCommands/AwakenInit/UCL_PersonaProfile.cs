@@ -58,35 +58,18 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         public static HashSet<string> PoolNames()
         {
+            // 判準與掃描本體在 SCP_Core（`SCP_PersonaProfile.PoolNames`）。
+            // 留在這裡的只有 **dir-mtime 快取** —— 那是宿主層的效能決定（每筆酒館 post 都會查白名單），
+            // 不是判準。⚠ 快取的鍵是 letters 根的 mtime：新增／刪除 persona 目錄會動它，
+            // 目錄「內部」改動不會 —— 而 pool 名單只關心有哪些目錄。
             string dir = UCL_LettersPath.Root;
             long mtime;
             try { mtime = Directory.Exists(dir) ? Directory.GetLastWriteTimeUtc(dir).Ticks : -1L; }
             catch { mtime = -1L; }
             if (mtime == s_NamesCacheMtime && s_NamesCache != null) return s_NamesCache;
 
-            var set = new HashSet<string>();
-            try
-            {
-                if (Directory.Exists(dir))
-                {
-                    foreach (var d in Directory.GetDirectories(dir))
-                    {
-                        string name = Path.GetFileName(d);
-                        if (name.StartsWith("_") || name.StartsWith(".")) continue;
-                        if (!Directory.Exists(Path.Combine(d, UCL_LettersPath.ProfileDirName))) continue;
-                        set.Add(name);
-                    }
-                }
-                else Debug.LogError($"[PersonaProfile] letters 根目錄不存在：`{dir}` —— pool 名單會是空的");
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[PersonaProfile] pool 掃描失敗：{e.Message}");
-            }
-            if (set.Count == 0)
-                Debug.LogError("[PersonaProfile] pool 名單掃到 **0 位** —— 幾乎不可能是真的："
-                             + $"要嘛 letters 根路徑錯（`{dir}`），要嘛 submodule 沒 init（空目錄沒有 profile/）。"
-                             + "此時錢與登入都會查無此人，而下游多半只會靜靜地少一個人。");
+            var set = new HashSet<string>(
+                SCP.Core.Letters.SCP_PersonaProfile.PoolNames(dir, w => Debug.LogError(w)));
             s_NamesCache = set;
             s_NamesCacheMtime = mtime;
             return set;
@@ -105,9 +88,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// 兩個判準給不同答案是紅隊（seq 12274 洞②）點名的病理型（同一個問題兩個真相源）。
         /// </summary>
         public static bool Exists(string iPersona)
-            => !string.IsNullOrEmpty(iPersona)
-               && !iPersona.StartsWith("_") && !iPersona.StartsWith(".")
-               && Directory.Exists(UCL_LettersPath.ProfileDir(iPersona));
+            => SCP.Core.Letters.SCP_PersonaProfile.Exists(UCL_LettersPath.Root, iPersona);
 
         /// <summary>路由欄（§8.3 綁專案組）。查無此人回 null。缺欄回空字串。</summary>
         public static Dictionary<string, string> GetRouting(string iPersona)
@@ -142,67 +123,21 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// </summary>
         public static JsonData GetRaw(string iPersona, bool iAllowMigrate)
         {
-            var jd = BuildPersonaRaw(iPersona);
-            if (jd == null) return null;
-            return MergeProfile(iPersona, jd, iAllowMigrate);
-        }
-
-        // ===========================================================
-        // 區塊職責：persona 的**非 profile 欄**組裝 —— 真相源全部在 `letters/<persona>/`。
-        // 物理意義：`AwakenInit/personas/<p>.json` 於 2026-08-21 退場（Tim 拍板：persona 相關資料
-        //          整合到 letters）。本函式回的是「除了 profile/ 以外」那些欄，MergeProfile 再把
-        //          profile/ 疊上去 ⇒ 30 幾個既有讀取端一行都不必改。
-        //   · `agent`（＝帳號 id）← `bank/<本專案區域>.md`。實測 21/21 與舊 registry 的 agent 欄
-        //     逐字相同 ⇒ 這不是換語意，是拿掉重複的那一份。⚠ 沒綁定要出聲：靜默回空會讓錢落央行。
-        //   · `status` / `last_active` ← **lock**（`_session/_persona_<p>.json`）。
-        //     舊 registry 的 status 欄是快取，而登入路徑早就寫著「registry 說 online 但查無 lock
-        //     ⇒ 以 lock 為準」—— 既然結論永遠是 lock，那個欄位就不該存在。
-        //   · `wake_count` ← `wakes/` 的收尾信數（在線＝本次還沒寫信 ⇒ +1）。
-        //   · `last_consolidated_wake` / `_at` ← `longterm/wake_<a>-<b>.md` 檔名與 frontmatter
-        //     （BUG-4 就是那個快取落後而磁碟沒落後）。
-        // 數值影響：純唯讀。`profile/` 不存在 ⇒ 回 null（＝查無此人，與 Exists 同一套判準）。
-        // ===========================================================
-        static JsonData BuildPersonaRaw(string iPersona)
-        {
-            if (!Exists(iPersona)) return null;
-            var jd = new JsonData();
-
-            string aRegion = Treasury.UCL_CentralBankSettings.CurrencyId;
-            string aAgent = GetBankAccount(iPersona, aRegion, out string aBankSrc, out string aBankNote);
-            if (!string.IsNullOrEmpty(aAgent))
-            {
-                jd["agent"] = new JsonData(aAgent);
-                if (!string.Equals(aBankSrc, aRegion, StringComparison.Ordinal))
-                    Debug.LogWarning($"[PersonaProfile] {iPersona} 的 agent 借用了別區的綁定"
-                                   + $"（本區 {aRegion} 沒有宣告，來源 {aBankSrc}）：{aBankNote}");
-            }
-            else
-            {
-                // 不填空字串頂替：下游 bank 解析拿到空 agent 會落央行，而那是一個看起來合理的處置
-                // 掛在錯誤的原因上（真正的原因是「這個人沒有本區綁定」）。
-                Debug.LogWarning($"[PersonaProfile] {iPersona} 在區域 {aRegion} 查無帳號綁定"
-                                 + $"（bank/{aRegion}.md 不存在）—— agent 欄留缺席，呼叫端請攤給人看。");
-            }
-
-            var aLock = Awakening.UCL_AwakeningService.ReadLock(iPersona);
-            jd["status"] = new JsonData(aLock != null ? "online" : "offline");
-            if (aLock != null && !string.IsNullOrEmpty(aLock.locked_at))
-                jd["last_active"] = new JsonData(aLock.locked_at);
-
-            // wake_count：`wakes/` 信數是既成事實；「本次編號」由 lock 蓋章的 `wake_expected` 供給。
-            // ⚠ 不可寫成「在線就 +1」：收尾信寫完之後信數已經追上期望，硬加 1 會讓顯示值多一歲，
-            //   而 sleep 端的 letter 閘門就是拿這兩個數在對帳（2026-08-21 實測恆擋）。
-            int aLetters = Awakening.UCL_AwakeningService.WakeLetterCount(iPersona);
-            int aExpected = aLock?.wake_expected ?? 0;
-            jd["wake_count"] = new JsonData(aExpected > aLetters ? aExpected : aLetters);
-
-            var (aSpanEnd, aAt) = Awakening.UCL_AwakeningService.MaxDigestSpan(iPersona);
-            if (aSpanEnd > 0)
-            {
-                jd["last_consolidated_wake"] = new JsonData(aSpanEnd);
-                if (!string.IsNullOrEmpty(aAt)) jd["last_consolidated_at"] = new JsonData(aAt);
-            }
-            return jd;
+            // ⚠ 本體已收斂到 SCP_Core（`SCP_PersonaProfile.GetRaw`）——
+            //   LY 掛了 SCP_Core 且 Unity 真的編它，所以 Editor 與 senate.exe 走**同一份實作**。
+            //   ⛔ 這裡不准長出任何邏輯：一旦 facade「順手多做一點」，那就是第二份實作，
+            //      而兩份實作對同一個 persona 給出不同答案時，不會有任何一層報錯。
+            // ⚠ iAllowMigrate 目前無作用：lazy migration 已是死碼
+            //   （實測 2026-08-31 本 repo 全庫 `_field_sources` legacy=0；SCP 側**只讀不遷**）。
+            //   參數保留是為了不動既有呼叫端的簽章；兩個值都等於「只合併不寫任何檔」。
+            var aScp = SCP.Core.Letters.SCP_PersonaProfile.GetRaw(
+                UCL_LettersPath.Root, iPersona,
+                Treasury.UCL_CentralBankSettings.CurrencyId,
+                w => Debug.LogWarning(w));
+            if (aScp == null) return null;
+            // 型別邊界只有這一個點：SCP_JsonData → 文字 → JsonData。
+            // 收成一個點的理由是**它可驗**（全庫 21 人 GetRaw 對拍）。
+            return JsonData.ParseJson(aScp.ToJson(false));
         }
 
         public static string GetString(string iPersona, string iField, string iDefault = "")
@@ -314,79 +249,6 @@ namespace UCL.Core.EditorLib.AgentCommands
             foreach (var f in IDENTITY_FIELDS)
                 d[f] = (src != null && src.Contains(f)) ? src.GetString(f, SRC_ABSENT) : SRC_ABSENT;
             return d;
-        }
-
-        /// <summary>把 `profile/` 疊到 legacy 之上，補 `_field_sources`；必要且獲准時當場遷移。</summary>
-        static JsonData MergeProfile(string iPersona, JsonData iLegacy, bool iAllowMigrate)
-        {
-            var aSources = new JsonData();
-            foreach (var f in IDENTITY_FIELDS)
-            {
-                if (TryReadProfileField(iPersona, f, out var aVal))
-                {
-                    iLegacy[f] = aVal;                          // profile/ 為準
-                    aSources[f] = new JsonData(SRC_PROFILE);
-                    continue;
-                }
-                if (!iLegacy.Contains(f))
-                {
-                    // ⚠ legacy 也沒有這個 key ⇒ **缺席**，不是「空值」。
-                    //   絕對不生一個空的 profile/ 檔：那會讓從來不存在的欄長出看似有資料的空檔
-                    //   （Q5 拍板，酒館 seq 12452）。讓「沒有」自己有名字，不靠檔案不存在來暗示。
-                    aSources[f] = new JsonData(SRC_ABSENT);
-                    continue;
-                }
-                bool aMigrated = iAllowMigrate && MayMigrate(iPersona)
-                    && WriteProfileField(iPersona, f, iLegacy[f], ACTOR_LAZY_MIGRATION,
-                        "phase1 auto-migrate " + f + " from personas/" + iPersona + ".json", false, out _);
-                aSources[f] = new JsonData(aMigrated ? SRC_PROFILE : SRC_LEGACY);
-            }
-            iLegacy[FIELD_SOURCES_KEY] = aSources;
-            return iLegacy;
-        }
-
-        /// <summary>讀一個 `profile/&lt;field&gt;.md`。檔不存在或壞掉回 false（壞掉會警告 —— 靜默退 legacy 會讓壞檔跟未遷移同形）。</summary>
-        static bool TryReadProfileField(string iPersona, string iField, out JsonData oValue)
-        {
-            oValue = null;
-            string aPath = UCL_LettersPath.ProfileField(iPersona, iField);
-            if (!File.Exists(aPath)) return false;
-            string aText;
-            try { aText = File.ReadAllText(aPath); }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[PersonaProfile] profile/{iField}.md 讀取失敗（{iPersona}）：{e.Message}");
-                return false;
-            }
-            aText = aText.TrimEnd('\r', '\n');
-
-            if (STRUCTURED_FIELDS.Contains(iField))
-            {
-                try
-                {
-                    var jd = JsonData.ParseJson(aText);
-                    if (jd == null)
-                    {
-                        Debug.LogWarning($"[PersonaProfile] profile/{iField}.md（{iPersona}）內文不是合法 JSON —— 退 legacy；請修那個檔");
-                        return false;
-                    }
-                    oValue = jd;
-                    return true;
-                }
-                catch (Exception e)
-                {
-                    Debug.LogWarning($"[PersonaProfile] profile/{iField}.md（{iPersona}）JSON 解析失敗：{e.Message} —— 退 legacy");
-                    return false;
-                }
-            }
-
-            if (NULLABLE_SCALAR_FIELDS.Contains(iField) && aText.Length == 0)
-            {
-                oValue = new JsonData();                         // JsonType.None ⇒ 序列化成 null
-                return true;
-            }
-            oValue = new JsonData(aText);
-            return true;
         }
 
         // ===========================================================
@@ -571,51 +433,13 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// <param name="oNote">給人看的補充（借用哪一區／有哪幾個候選）。無事時為空字串。</param>
         public static string GetBankAccount(string iPersona, string iCurrencyId,
             out string oSource, out string oNote)
-        {
-            oSource = BankSourceAbsent; oNote = "";
-            if (string.IsNullOrWhiteSpace(iPersona) || string.IsNullOrWhiteSpace(iCurrencyId)) return "";
-
-            // ① 本區
-            string aOwn = ReadBankFile(UCL_LettersPath.BankField(iPersona, iCurrencyId));
-            if (!string.IsNullOrEmpty(aOwn)) { oSource = iCurrencyId; return aOwn; }
-
-            // ② 其他區域（跨區借用）
-            string aDir = UCL_LettersPath.BankDir(iPersona);
-            if (!Directory.Exists(aDir)) return "";
-            var aHits = new List<KeyValuePair<string, string>>();
-            string[] aFiles;
-            try { aFiles = Directory.GetFiles(aDir, "*.md"); }
-            catch (Exception e)
-            {
-                // 讀不到要出聲：靜默回空會把「讀取失敗」講成「沒有綁定」，
-                // 而後者的處置是落央行 —— 一個看起來合理的錯誤處置，掛在錯誤的原因上。
-                Debug.LogWarning($"[PersonaProfile] 掃 bank/ 失敗（{iPersona}）：{e.Message}");
-                return "";
-            }
-            foreach (var f in aFiles)
-            {
-                string aRegion = Path.GetFileNameWithoutExtension(f);
-                if (string.Equals(aRegion, iCurrencyId, StringComparison.Ordinal)) continue;
-                string v = ReadBankFile(f);
-                if (!string.IsNullOrEmpty(v)) aHits.Add(new KeyValuePair<string, string>(aRegion, v));
-            }
-            if (aHits.Count == 1)
-            {
-                oSource = aHits[0].Key;
-                oNote = $"本區（{iCurrencyId}）無綁定，借用區域 `{aHits[0].Key}` 的帳號";
-                return aHits[0].Value;
-            }
-            if (aHits.Count > 1)
-            {
-                // 不挑一個 —— 判準同 §8.1 撞名：這裡不替你挑。
-                var aList = new List<string>();
-                foreach (var kv in aHits) aList.Add($"{kv.Key}={kv.Value}");
-                oSource = BankSourceAmbiguous;
-                oNote = $"本區（{iCurrencyId}）無綁定，而其他區域有 {aHits.Count} 個候選："
-                      + string.Join("／", aList.ToArray()) + " —— 拒絕挑選，請顯式指定";
-            }
-            return "";
-        }
+            // 讀綁定的本體在 SCP_Core（`SCP_PersonaProfile.GetBankAccount`）。
+            // ⚠ **讀綁定不是動錢，寫綁定是**（Tim 2026-08-31 拍板）：這支讀的是
+            //   `letters/<p>/bank/<region>.md` 一個純文字檔，不碰帳本也不碰餘額；
+            //   而本檔底下那幾支 Write/Rename/Copy/Delete 會改「錢進哪個帳戶」，**沒有搬**。
+            => SCP.Core.Letters.SCP_PersonaProfile.GetBankAccount(
+                UCL_LettersPath.Root, iPersona, iCurrencyId,
+                out oSource, out oNote, w => Debug.LogWarning(w));
 
         /// <summary>讀一個綁定檔：裸值 ＋ 換行（同 profile/ 的格式）。缺檔／空檔回空字串。</summary>
         static string ReadBankFile(string iPath)
@@ -688,7 +512,8 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         /// <summary>該 persona 在該區域**自己**有沒有綁定（跨區借用不算）。</summary>
         public static bool HasOwnBankBinding(string iPersona, string iCurrencyId)
-            => !string.IsNullOrEmpty(ReadBankFile(UCL_LettersPath.BankField(iPersona, iCurrencyId)));
+            => SCP.Core.Letters.SCP_PersonaProfile.HasOwnBankBinding(
+                UCL_LettersPath.Root, iPersona, iCurrencyId);
 
         /// <summary>刪一個區域的綁定檔（＋審計）。檔不存在視為成功（idempotent）。</summary>
         /// <remarks>

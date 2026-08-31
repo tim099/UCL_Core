@@ -259,19 +259,27 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public static List<UCL_TaskEntry> PendingWrapups(string iPersona)
         {
             var aOut = new List<UCL_TaskEntry>();
+            // ⚠ **判準本體已移進 SCP_Core**（`SCP_TaskReconcile.PendingWrapups`，2026-08-31 Tim 拍板）。
+            //   本檔不再自己判 —— 兩份各算一次的症狀是「後台頁說 2 張、CLI 說 3 張」而**兩邊都不報錯**。
+            // 📌 而 session 起點仍由**本檔**算並傳進去（不用 SCP 那支自己讀 lock 的版本）：
+            //   這邊走 `UCL_AwakeningService.ReadLock` 的 typed model，SCP 那邊是手撈 JSON 欄位 ——
+            //   後者解析失敗會降級成「UTC 今天 00:00」，那是**把閘放寬**。
+            //   ⇒ 有 typed model 可用的那一側就該用它；SCP 那條路留給沒有 model 的 CLI（那裡失敗會出聲）。
+            // 📌 型別留 UCL：SCP 決定**哪幾張**，本檔用自己的 loader 把那幾張讀成 `UCL_TaskEntry`
+            //   ⇒ 零轉換器（一個 25 欄的 converter 就是下一個會漂的地方），呼叫端簽章一個字沒動。
             DateTime aSince = SessionStartUtc(iPersona);
-            foreach (var e in UCL_TaskIO.LoadAll())
+            var aRoot = new SCP.Core.Paths.SCP_DataRoot(UCL_AgentCommandsPath.DataRoot);
+            foreach (var aPicked in SCP.Core.Tasks.SCP_TaskReconcile.PendingWrapups(
+                         aRoot, iPersona, aSince, m => UnityEngine.Debug.LogWarning(m)))
             {
-                if (e.IsClosed()) continue;                       // 已關的不看（反向驗收要求）
-                if (e.RolesOf(iPersona).Count == 0) continue;      // 別人的單不看
-                if (!IsAfterUtc(e.updated_at, aSince)) continue;   // ① 本次上線後沒動過的不看
-                // ② 因果判準：**最後一次收工之後，有沒有又動過**（TASK-0036）。
-                //   舊版問的是「本次上線後有沒有收過工」⇒ 10:00 收工、11:00 又改了照樣放行，
-                //   而那正是閘要防的東西：**收工留言寫完之後又動了，那份收工紀錄就過期了。**
-                //   🩸 讀數 2026-08-25（探針 TASK-0042）：wrapup 02:19:50 → updated_at 推到 02:59
-                //     ⇒ 舊版收工閘**零命中**。
-                DateTime aLastWrapup = LastWrapupUtc(e);
-                if (aLastWrapup != DateTime.MinValue && !IsAfterUtc(e.updated_at, aLastWrapup)) continue;
+                var e = UCL_TaskIO.Find(aPicked.index);
+                // 判準說它在、而本檔的 loader 讀不到 ⇒ **那是兩份 parser 分岔的訊號**，要出聲。
+                if (e == null)
+                {
+                    UnityEngine.Debug.LogError($"[Task] 收工閘：SCP 判定 TASK-{aPicked.index:0000} 命中，"
+                        + "而 UCL_TaskIO.Find 讀不到那張單 —— 兩側 parser 對同一個磁碟給出不同答案，這格要人看");
+                    continue;
+                }
                 aOut.Add(e);
             }
             return aOut;

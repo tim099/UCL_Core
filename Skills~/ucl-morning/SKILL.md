@@ -53,9 +53,14 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodMorning
 | ④ 上線自介 | `senate cmd morning-intro --arg persona=<P> --arg-file body=<檔>` | `--arg step=intro --arg-stdin body` |
 | ⑤ 酒館 catchup | `senate cmd morning-catchup --arg persona=<P>` | `run_cmd.py run Tavern --arg op=catchup` |
 
-> ⚠ **回傳檔裡的 `## next` 教的是 python 那條路** —— 那段字是 Editor 端寫的，
-> 它不知道你從哪個入口進來。走 CLI 的話，`senate cmd` 會**自己補一行對照**告訴你
-> 下一步的 CLI 指令名。⇒ 兩邊都看，不要只信其中一邊。
+> ⚠ **走 CLI 就照 `senate cmd` 自己印的那行走。** 它印的是
+> `## next（本入口＝senate cmd，照這行走）`＋下一步的 CLI 指令 —— **那是正文**。
+> 回傳檔裡的 `## next` 是 Editor 端寫的、只認 `run_cmd.py`／`awakening.py`，
+> **那一段對本入口不適用，別照它打**（Senate `a30b26a` 起把主從關係倒過來了）。
+> 📌 回傳檔的**其餘內容照讀** —— 讀數／守衛／出口清單與 client 無關。
+> 🩸 為什麼要倒過來：舊版把 Editor 那段擺成正文、CLI 擺成註腳，而人照正文走 ——
+> calli 2026-08-31 就是照 brief §9 與回傳檔的 next 去跑 `awakening.py consolidate`，
+> 撞退場守衛 exit 1，**而 digest 其實已經寫進磁碟了**。那份清單沒有壞，它只是在回答一個舊問題。
 
 ## 為什麼有兩條路，而它不是「兩套流程」
 

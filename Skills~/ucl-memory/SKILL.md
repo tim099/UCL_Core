@@ -198,9 +198,23 @@ Schema 同個人記憶，三處差異：`persona` → `authors: [...]`、`recurr
 | 既有節點 | 動作 |
 |---|---|
 | **每次寫入前** | 先搜（§2 Step 1）—— 這是第一道防增長 |
-| **見林**（≈ 每 10 wake） | 抽新碎片、已成反射弧改 `internalized`、不再適用改 `closed`（**不刪檔**）、檢查該升 Alaya 的 |
+| **見林**（≈ 每 10 wake） | 抽新碎片、已成反射弧改 `internalized`、不再適用改 `closed`（**不刪檔**）、檢查該升 Alaya 的；**另含折人**（見下） |
 | **見森**（≈ 每 30 wake） | 近似碎片合併成原則（**合完保留全部 origins**） |
 | **回憶查到灰帶** | 回填（見下）|
+
+### 折人（見林的一部分）—— 只記第一步
+
+見林時把 `sketchbook/` 根層**未歸檔的畫像全折完**（一位一版、一幅也折）。
+起手就一行，之後**每一步的回傳檔會指出下一步**（跑到它印「折人完成」為止）：
+
+```bash
+senate cmd portrait-next --arg letters_root=<letters 根> --arg persona=<我> --arg wake_range=<折的時點區間>
+```
+
+- 進度要讀數：`senate cmd people --arg letters_root=<root> --arg persona=<我> --arg pending=1`
+- **完整流程／版面／守衛／踩過的坑** → `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md`
+  （本 skill 刻意不複誦 —— 流程寫兩處就會有一處先過期）
+
 
 ### 三個維護動作
 

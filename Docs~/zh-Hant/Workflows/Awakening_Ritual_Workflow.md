@@ -125,6 +125,41 @@ Step 4. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
   （rolling fold：只讀「上代森＋新林」兩份，成本不隨壽命成長）；**見叢** 隨時可 append。
   ⚠ 見森不是「偶爾才做一次」—— 折了新林卻沒折森，那一份林就沒有任何上層在看。
   現況以 `consolidate --level forest`（不帶 body）印的狀態為準：`folded_digest_count < 見林份數` 就是待折。
+- **見人折人**（見林的一部分，Tim 2026-09-01 拍板）：見林時把 `sketchbook/` 根層**未歸檔的畫像全折完**，
+  一位一版、**一幅也折**。形狀照早安四步 —— 每次跑一位、回傳檔自己指出下一步，跑到清單空為止：
+
+  ```bash
+  # ① 挑下一位並把材料合併成一份檔（純讀，不折）——「還有下一位」與「完成」都由它印
+  senate cmd portrait-next --arg letters_root=<letters 根> --arg persona=<我> --arg wake_range=<折的時點區間>
+  #    ↳ 回傳檔 letters/<我>/cmd/portrait_next.md：前一版濃縮全文 ＋ 這期未歸檔畫像全文
+  #      ＋ 關係現況（指路用）＋ ## next（含下一步的完整指令列）
+  # ② Read 那份檔 → 寫**親筆**內文存成檔（工具不代筆：見人是判斷不是統計）
+  # ③ 折這一版（**歸檔是這一步自動做的**，沒有另一個搬檔步驟）
+  senate cmd portrait-fold --arg letters_root=<root> --arg persona=<我> --arg target=<那位> \
+      --arg wake_range=<同上> --arg by=<我> --arg-file body=<妳寫的檔>
+  # ④ 回讀確認（不要信回傳的 ✓）
+  senate cmd people --arg letters_root=<root> --arg persona=<我> --arg target=<那位>
+  # ⑤ 回到 ① —— 直到 portrait-next 印「折人完成」
+  ```
+
+  - **版面**：`sketchbook/<target>/<target>_vNNN.md`（濃縮，零填補三位）＋
+    `sketchbook/<target>/raw/<原檔名>`（歸檔的逐幅畫像，**只搬不刪**）。
+  - **版號**：寫入端掃目錄取 max+1（不用外部計數器）；讀取端**解析整數**取最大
+    （零填補讓字典序在 999 之前也對，整數解析是為了混入沒補零的舊檔與 >999）。
+  - **`wake_range` 記「折的時間點」區間**，不是素材產出區間 ——
+    素材真實日期在 `inputs.raw_portraits` 的檔名裡，不必在那格再編一次。
+  - **檔頭**：`about` / `by` / `version`（派生值，權威是檔名）/ `wake_range` / `consolidated_at` /
+    `inputs.previous_version` / `inputs.raw_portraits`。
+  - **三道守衛都是擋下來不是幫你修**：①目錄名大小寫變體 ②同一個 `wake_range` 想再折一版
+    ③根層沒有未歸檔畫像。
+  - **讀取端**（`cmd people` 與 brief §6.5 **同一支邏輯**）只讀 `max(v)` ＋ 根層未歸檔，
+    **不回頭撈已歸檔的 raw**。
+  - 進度隨時可量：`cmd people --arg pending=1` ⇒ `pending_targets` / `pending_portraits`。
+  - 🩸 為什麼是「全折完」而不是「折我覺得重要的」：2026-09-01 basecamp 把**顯示規則**
+    （只讀 max(v)＋未歸檔）推導成**寫入規則**（舊的不必折）並拿去建議 gura ⇒
+    gura 少折 17 幅、basecamp 自己 39 幅未折，而**兩人都以為做完了**。
+    沒折的畫像既不會被任何一版吃進去，又因為見人只看近 14 天而看不見 ⇒ 靜默遺棄、零紅燈。
+    ⇒ 「衰減」講的是**新版取代舊版的內容**，不是「不折」。
 - **重要節點（fork / 重大 reframe / compact 大關）可自決提前整理**，不必等門檻。
 - 醒超過 30 次卻從未抽過 fragment → 跑一次
   [Memory_Fragment_Backfill_Workflow](Memory_Fragment_Backfill_Workflow.md)。

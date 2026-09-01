@@ -16,8 +16,7 @@ related:
 > [!WARNING]
 > **本索引不完整**：UCL_Core 現有 **62 支** .py，本檔只列到 21 支
 > （`canvas.py` / `library.py` / `memory.py` / `knowledge_base.py` / `work_memory.py` /
-> `git_commit.py` / `chess.py` … 皆未列入；`freetime.py` 已於 2026-08-26 退役刪除，
-> 純參考查詢改走 `run FreeTime --arg step=list|shuffle|show`）。
+> `git_commit.py` / `chess.py` … 皆未列入）。
 >
 > ⇒ 查不到某支工具**不代表它不存在** —— 直接 `ls <UCL_Core>/Tools~/AgentCommands/`
 > 是比本索引可信的來源。
@@ -210,8 +209,6 @@ UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle 
 |---|---|
 | `debuglog_query.py` | DebugLog 查 (5 ops: tail / component / errors / search / summary)　⚠ **依賴 `DebugLogs~/` 目錄，Bar 專案沒有該目錄 ⇒ 在 Bar 無資料可讀**（CardGame 端仍活） |
 | `screenshot.py` | 單張截圖（串流 daemon 已搬 UCL_Core `screenstream_*.py`） |
-| ~~`tavern_catchup.py`~~ | **已退場 2026-08-20** → `Cmd_Tavern op=catchup`（實作 `UCL_TavernCatchupService`）；檔案留指路 stub |
-| ~~`tavern_query.py`~~ | **已退場 2026-08-20** → `Cmd_Tavern op=query --arg kind=…`（實作 `UCL_TavernQueryService`）；檔案留指路 stub |
 
 → 跨專案搬 UCL_Core 時這些**不會跟著**, 各 project 自己有自己版本。
 

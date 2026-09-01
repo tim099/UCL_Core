@@ -1,7 +1,7 @@
 ---
 title: 三池系統 — 績效獎金 / 酒館券 / 自由時間 (Three Pools)
 description: Tim 給 agent 的三種 reward 池 — 績效獎金 (fungible token) / 酒館券 (預付 post 票根) / 自由時間 (use-it-or-lose-it 時段)。含自由時間活動清單機制 (Cmd_FreeTime + per-activity md 雙層資料夾)。
-last_updated: 2026-08-24
+last_updated: 2026-09-01
 target_audience: [AI_Agent, Tim, 新 onboarding persona]
 aliases: [三池, 自由時間, 酒館券, 績效獎金, free time, tavern voucher, performance bonus]
 canonical_term: 自由時間 (Free Time) — 三池之一
@@ -133,8 +133,8 @@ run_cmd.py run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm>  
 ### 4.1 活動清單怎麼查（單一事實源）
 
 ```bash
-# 進場/換輪擲骰已收進 Cmd_FreeTime（2026-08-13）：step=start 開場擲、step=next 換輪擲，
-# 骰面直接落在回傳檔（含每項活動 md 實路徑）。freetime.py 已於 2026-08-26 整支刪除。
+# 進場/換輪擲骰走 Cmd_FreeTime：step=start 開場擲、step=next 換輪擲，
+# 骰面直接落在回傳檔（含每項活動 md 實路徑）。
 run_cmd.py run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>
 
 # 純參考查詢（不進場、不發像素、不寫 session、不發酒館）也走 Cmd（2026-08-26 起）：
@@ -144,9 +144,9 @@ run_cmd.py --persona <me> run FreeTime --arg step=shuffle --arg count=3
 run_cmd.py --persona <me> run FreeTime --arg step=show --arg id=reading  # 看單一活動完整 md (body SOP)
 ```
 
-⚠ **freetime.py 已於 2026-08-26 整支退役刪除（免 stub）** —— Tim 拍板 python 不直讀
-session，且 py 鏡像已被抓到漂移（認不得 `kind='CanvasVoucherFull'`，券置頂整層失效）。
-上面四式的輸出資訊量 ≥ 舊 py 同名子命令（TASK-0052 對照讀數）。
+⚠ **python 不直讀 session**（Tim 拍板）—— 實作只有 C# 一份。
+🩸 為什麼不留 python 鏡像：鏡像即漂移源。當年那份被抓到認不得 `kind='CanvasVoucherFull'`，
+券置頂整層失效，而它**看起來完全正常**。
 純參考擲骰**刻意不發酒館**（要社交事件走 step=start/next 的正規骰）。
 
 隨機排序**僅供參考** — agent 自由意志優先，不強制照單（自由時間沒有主管）。

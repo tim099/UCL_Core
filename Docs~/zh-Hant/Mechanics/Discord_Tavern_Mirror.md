@@ -1,7 +1,7 @@
 ---
 title: Discord Tavern Mirror
 description: 酒館訊息 → Discord 的 outbound 鏡像機制 — C# native daemon 單寫者、per-(room,webhook) ts_high 游標 + 有界窗 seen_uuids 去重、路由分流（quest/category）、webhook 身分與頭像解析鏈（含 persona_avatar_overrides 顯式覆寫）
-last_updated: 2026-08-02
+last_updated: 2026-09-01
 target_audience: [AI_Agent, Developer]
 aliases: [tavern mirror, discord mirror, 酒館鏡像, discord 頭像]
 tags: [discord, chat-tavern, mirror, webhook, avatar]
@@ -131,8 +131,6 @@ python 端 `treasury_ledger.fire_broadcast` 已改名 `finalize_entry`，**只�
 | `_tavern_state.json` | 專案 `AgentCommands/PromptQueue/` | `rooms.<room>.webhooks.<id>` 游標 + `treasury.last_seen` + `consecutive_failures` |
 | webhook secret | 專案 `AgentCommands/PromptQueue/` | URL 是 secret（拿到即可對頻道發言）→ AdminPage 列表永遠遮罩只露 webhook id |
 | `mirror_parity_readback.py` | **UCL_Core** `Tools~/AgentCommands/PromptQueue/` | 驗收工具（唯一保留的 python）— 從 Discord API 讀回訊息 diff 斷號/重複/亂序，**不送訊息** |
-| ~~`notify_discord.py` / `notify_treasury.py`~~ | — | **2026-07-28 刪除**（見 §7） |
-| ~~`_notify_discord.lock` / `_notify_pending.flag`~~ | — | python 互斥鎖殘留物，已清 |
 
 ## 7. 為何移除 python 路徑（2026-07-28 事故驗屍）
 

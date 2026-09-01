@@ -73,6 +73,24 @@ namespace UCL.Core.EditorLib.AgentCommands
                 Message = "chore(runtime): sync agent runtime state (auto)",
                 DefaultOn = true,
             },
+            new GroupDef
+            {
+                Key = "queue_state",
+                Label = "PromptQueue 狀態（daemon 游標 —— 不含該目錄下的原始碼）",
+                // ⚠ 判準刻意**不是目錄前綴**（`PromptQueue/`）——那底下住著一票 tracked 的 .py
+                //   （qadd / qdrain / messages_dedupe …），前綴會把**有作者的產出**當成機器狀態
+                //   自動收走：掛不到作者、領不到薪、而且訊息會寫成「sync state」。
+                //   那種錯不會當場叫，它長得就像一筆正常的自動 commit。
+                // ⇒ 只收頂層的 `_*_state.json`（daemon 自己寫的游標），子目錄一律不碰。
+                // 🩸 這一格補的是見叢老帳：這兩個檔原本落在 `__other`（未分類永不自動收）
+                //   ⇒ `git status` 天天髒著，而髒久了人就會開始忽略整張表。
+                //   （Tim 2026-09-01 拍板「加一個群去收」。）
+                Match = p => p.StartsWith("PromptQueue/")
+                             && p.EndsWith("_state.json")
+                             && p.IndexOf('/', "PromptQueue/".Length) < 0,
+                Message = "chore(queue): sync prompt queue state (auto)",
+                DefaultOn = true,
+            },
         };
 
         // ── persona 信件庫（letters/<persona>/，各自一個 repo）───────────

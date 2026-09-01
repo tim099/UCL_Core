@@ -1,8 +1,8 @@
 // 區塊職責：Cmd_GoodMorning — 早安流程的 Cmd 入口（Plan_Awakening_Flow_Simplification §8.8-§8.9）。
 //          同一支 Cmd 以 step 參數分步，每步回傳「下一步怎麼操作、傳哪些參數」（R16 next 導引）。
 // 物理意義：實際邏輯全在 UCL_AwakeningService（static，後台頁共用，R14）；本檔只做參數解析、
-//          步驟分派、回傳落檔。四步：wake（守衛+狀態寫入，不廣播）→ brief（經 UCL_ProcessCli
-//          spawn python，R20）→ [agent Read brief] → intro（單則上線廣播＋next 指路 catchup，R21）。
+//          步驟分派、回傳落檔。四步：wake（守衛+狀態寫入，不廣播）→ brief（就地跑 SCP_WakeBrief，
+//          2026-09-01 起不再 spawn python）→ [agent Read brief] → intro（單則上線廣播＋next 指路 catchup，R21）。
 // 數值影響：每一步的回傳值落檔（Tim 2026-08-13 拍板供 QA）——
 //          persona 步驟 → letters/<persona>/cmd/goodmorning_<step>.md（回傳檔一律住 cmd/，
 //          目錄本身即宣告「機器寫的、該步驟重跑即覆寫」）；全域步驟 audit → AwakenInit/_goodmorning_audit.md。
@@ -35,7 +35,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public override string CommandType => "GoodMorning";
 
         public override string ShortDescription =>
-            "早安流程 Cmd（step=wake/brief/intro/audit，每步回傳 next 導引並落檔）。Editor 未開時的備援：awakening.py brief（僅 brief）。";
+            "早安流程 Cmd（step=wake/brief/intro/audit，每步回傳 next 導引並落檔）。brief 就地跑 SCP_WakeBrief；"
+            + "Editor 未開時的備援是 `senate cmd wake-brief`（原生）或 awakening.py brief —— 兩者產出的都是**另一份**。";
 
         public override string ArgsSchema =>
             "step=wake|brief|intro|audit (必填) — wake: 守衛+狀態寫入(不廣播); brief: 生成 wake brief; " +
@@ -84,7 +85,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 {
                     RequirePersona(aStep, aPersona);
                     // 路徑解析在主執行緒先做（CorePath 走 AssetDatabase，main-thread-only）；
-                    // 長跑段（spawn python + WaitForExit）才丟背景執行緒，不擋 Editor 主執行緒。
+                    // 長跑段（brief 組裝要讀幾十個檔）仍丟背景執行緒，不擋 Editor 主執行緒。
                     string aScript = UCL_AwakeningService.ResolveAwakeningScriptPath();
                     string aWarmLetters = UCL_LettersPath.Root;   // 暖 DataRoot 快取（PlayerPrefs 同屬主執行緒資源）
                     // 餘額也在主緒先查好餵過去（同理由：Treasury 路徑解析走 DataRoot）。

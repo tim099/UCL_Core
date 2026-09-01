@@ -304,16 +304,22 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         }
 
         // ===========================================================
-        // 區塊：brief 生成觸發鏈（R19/R20）— spawn python awakening.py brief，Cmd 與後台頁共用
-        // 物理意義：brief 生成留 Python（R18 非登入功能）；正常流程一律經本鏈觸發（Cmd step=brief
-        //          或後台按鈕），agent 直跑 awakening.py brief 只是 Editor 未開時的備援。
-        // 數值影響：Process 走 UCL_ProcessCli（ProcessRegistry 登記＋逾時 kill，硬規則不裸 Process.Start）。
-        //          回傳含 brief 絕對路徑＋行數 —— 路徑必須進 Cmd 回傳值（Tim 2026-08-13 拍板）。
+        // 區塊：brief 生成觸發鏈 — **就地呼叫 SCP_WakeBrief（C#）**，Cmd 與後台頁共用
+        // 物理意義：2026-09-01 起 brief 的生產端搬進 SCP_Core（TASK-0097）—— 不再 spawn python。
+        //          ⇒ 少一個 process、少一組編碼／環境變數的坑，而且 §6.5 見人與 `cmd people`
+        //            從此**是同一支邏輯**（兩處各組一次的症狀不是報錯，是兩邊都不紅的兩個答案）。
+        //          Editor 未開時的備援仍是 `senate cmd wake-brief`（原生，不需要 Editor）。
+        // 數值影響：回傳含 brief 絕對路徑＋行數 —— 路徑必須進 Cmd 回傳值（Tim 2026-08-13 拍板）。
+        //          ⚠ 新鮮度判定**照舊保留**：它擋的是「檔在但不是這次產生的」，
+        //            而那隻病與生產端是誰無關（wake#49 讀到前一天那份 1271 行的血證）。
         // ===========================================================
         public const string PROC_TAG = "awakening_service_brief";
 
         /// <summary>
-        /// awakening.py 絕對路徑解析。⚠ **只能在主執行緒呼叫**（內部走 UCL_EditorPath.CorePath =
+        /// awakening.py 絕對路徑解析。
+        /// <para>⚠ 2026-09-01 起 <see cref="RunBrief"/> **不再用它**（brief 生產端已搬進 SCP_Core）。
+        /// 留著是因為還有別的呼叫端；哪天真的零呼叫端就直接刪，不留 stub。</para>
+        /// ⚠ **只能在主執行緒呼叫**（內部走 UCL_EditorPath.CorePath =
         /// AssetDatabase.FindAssets）——背景緒要用時，先在主執行緒解析好再把結果傳進去
         /// （RunBrief 的 iScriptPath 參數就是為此存在；快取暖了之後背景緒僥倖能跑，冷啟動必炸）。
         /// </summary>
@@ -333,12 +339,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         //    🩸 它同時是一隻 bug 的載體：它用**正向鏈** `ResolveBankAccount` 解帳號，
         //    解出 `claude-da-xiaojie`（`Treasury/accounts/` 裡**不存在**）並印「餘額 0」，
         //    而錢實際在 `claude-code`。查無此帳戶與沒錢印成同一個字，就沒有人會去追。
+        /// <summary>
+        /// 生成 brief（就地呼叫 <see cref="SCP.Core.Letters.SCP_WakeBrief"/>，不 spawn 任何 process）。
+        /// </summary>
+        /// <param name="iTimeoutMs">保留參數 —— 已無 process 可逾時，留著是為了不動呼叫端簽章。</param>
+        /// <param name="iScriptPath">保留參數 —— 同上（python 腳本路徑已不再需要）。</param>
         public static (bool ok, string report, string briefPath, int briefLines) RunBrief(
             string iPersona, string iCallerName, int iTimeoutMs = 120000, string iScriptPath = null)
         {
-            string aScript = iScriptPath ?? ResolveAwakeningScriptPath();
-            if (string.IsNullOrEmpty(aScript))
-                return (false, "✗ 解析不到 awakening.py（CorePath 空或檔案不存在；背景緒呼叫請先在主執行緒 ResolveAwakeningScriptPath）", null, 0);
 
             // 區塊職責：記下本次執行的起始時刻 —— brief 檔的驗收要靠它
             // 物理意義：驗收條件原本是「檔存在 + 行數 > 0」，而**隔夜殘留完全滿足這兩項**。
@@ -350,28 +358,35 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             //          前者自成一格、不必多讀一個檔，而且語意更強：檔案必須是**這一次**寫出來的。
             DateTime aStartedUtc = DateTime.UtcNow;
 
-            string aArgs = $"\"{aScript}\" brief --persona \"{iPersona}\"";
-            // ⚠ `UCL_PP_SKIP_CMD=1` 是**必要的**，不是最佳化：
-            //   awakening.py 的 persona 讀取已改走接縫（Tim 2026-08-19 拍板），
-            //   而接縫的主路徑是「發一個 Cmd 問 C#」。這支 python 是**從 Cmd 裡面被 spawn 的**
-            //   ⇒ 不擋的話就是「在 Cmd 執行中再排一個 Cmd」，卡到 timeout 才會有人發現。
-            //   而讀快照不是降級：**呼叫它的就是快照的作者**（每次 Cmd／每次寫入都重寫），
-            //   拿到的是最新值。備援語意也照 Tim 拍的：Editor 沒開時只需要 brief 生得出來。
-            var aEnv = new Dictionary<string, string>
-            {
-                ["PYTHONIOENCODING"] = "utf-8",     // cp950 主控台會把中文報表變亂碼，而亂碼看起來像工具壞了
-                ["UCL_PP_SKIP_CMD"] = "1",
-            };
-            var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python", aArgs, UCL_RepoPath.RepoRoot,
-                PROC_TAG, iCallerName, iTimeoutMs, aEnv);
-
-            // stderr 不丟掉 —— awakening.py 把警告印在 stderr，只收 stdout 會讓報告假乾淨。
+            // ⚠ 這一段刻意**不吞例外**：brief 生不出來要當場說原因，
+            //   而「回一個空 report ＋ ok=false」會讓呼叫端印出一句沒有成因的失敗。
             var aSb = new StringBuilder();
-            aSb.AppendLine($"$ python awakening.py brief --persona {iPersona}   (exit={aExit})");
-            aSb.AppendLine(aSo ?? "");
-            if (!string.IsNullOrEmpty(aSe)) aSb.AppendLine("── stderr ──").AppendLine(aSe);
+            int aExit = 0;
+            try
+            {
+                string aOutDir = Path.GetDirectoryName(UCL_LettersPath.CmdPayload(iPersona, "wake", "brief"));
+                int aWake = WakeLetterCount(iPersona) + 1;   // 本次 wake 編號（信數 + 1，本次還沒寫信）
+                var (aWrittenTo, aBriefResult) = SCP.Core.Letters.SCP_WakeBrief.Write(
+                    LettersDir, iPersona, aWake, aOutDir, UCL_AgentCommandsPath.DataRoot);
 
-            // 驗收看落地檔不看 stdout：brief 檔存在且行數 > 0 才算生成成功。
+                aSb.AppendLine($"⤷ SCP_WakeBrief（C#，就地執行）persona={iPersona} wake={aWake}");
+                aSb.AppendLine($"· 主檔 {aBriefResult.MainLineCount} 行 / 上限 {SCP.Core.Letters.SCP_WakeBrief.BriefLineCap}");
+                if (aBriefResult.MovedSections.Count > 0)
+                    aSb.AppendLine("· 移進續讀檔：" + string.Join(" / ", aBriefResult.MovedSections));
+                // 自癒發生了就要說 —— 靜默校正等於「我改了你的指標而你不知道」。
+                if (aBriefResult.LatestPointerHealed)
+                    aSb.AppendLine("🔧 `_latest.md` 落後，已校正為目錄內最新的自寫 letter");
+                aSb.AppendLine($"· 寫到：{aWrittenTo}");
+            }
+            catch (Exception e)
+            {
+                aExit = 1;
+                aSb.AppendLine($"✗ SCP_WakeBrief 丟例外：{e.GetType().Name}: {e.Message}");
+                aSb.AppendLine(e.StackTrace ?? "");
+            }
+
+            // 驗收看落地檔不看回傳值：brief 檔存在且行數 > 0 才算生成成功。
+            //   🩸 這一格與生產端是誰無關 —— 換成 C# 之後「我回報成功」依然不等於「檔在磁碟上」。
             string aBriefPath = UCL_LettersPath.CmdPayload(iPersona, "wake", "brief");
             int aLines = 0;
             bool aExists = File.Exists(aBriefPath);

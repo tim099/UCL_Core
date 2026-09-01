@@ -782,18 +782,35 @@ namespace UCL.Core.UI
             var dic = iDataDic.GetSubDic(iKey);
             bool clearCache = false;
 
-            // --- 區塊職責：分組推導（快取, 選項數量變動時重建）---
+            // --- 區塊職責：分組推導（快取, **選項內容**變動時重建）---
             // 物理意義：每個選項的組名 = 第一個分隔符「前」的字串（單層分組）；
             //           無分隔符、或分隔符在字首（組名為空）→ 歸入 Other（未分組）。
             // 數值影響：groupNames 為組序清單（首次出現順序, Other 恆排最後）; optionGroups[i] = 第 i 個選項的組名。
+            // 🩸 2026-09-01：失效判準由「數量」改成「內容 hash」，且**移到展開判斷之外**。
+            //   舊版兩個問題疊在一起才會現形（實測：新增 / 刪除 UCL_Asset 後 ID 下拉永遠不更新）：
+            //   ① 只比 count ⇒ 同時增刪、改名、內容換人而個數不變時完全看不出來。
+            //   ② clearCache 在這裡算好，卻**只在 `if (aIsShow)` 展開分支裡被消費** ——
+            //      下拉收合時清單變動的話，那一幀 count 被更新成新值、clearCache 卻沒有人用，
+            //      下一幀 count 已經相等 ⇒ 失效訊號**永久遺失**，`dic["aIDs"]` 那份舊清單再也不會被清。
+            //   ⇒ 一般形：**在 A 處計算、只在 B 分支消費的失效旗標，B 沒跑到時訊號就沒了**。
+            //     症狀是「快取永遠不更新」而不是「錯了一次」—— 後者會被回報，前者會被當成規格。
+            //   📌 內容 hash 的寫法沿用同檔 ValueDropdown（GetListHashCode），不另造第二套。
+            int aOptionsHash = iDisplayOptions.GetListHashCode();
             int count = dic.GetData(nameof(count), -1);
             List<string> groupNames = dic.GetData<List<string>>(nameof(groupNames), null);
             string[] optionGroups = dic.GetData<string[]>(nameof(optionGroups), null);
-            if (count != iDisplayOptions.Count || groupNames == null || optionGroups == null)
+            if (dic.GetData(nameof(aOptionsHash), 0) != aOptionsHash || groupNames == null || optionGroups == null)
             {
                 count = iDisplayOptions.Count;
                 dic.SetData(nameof(count), count);
+                dic.SetData(nameof(aOptionsHash), aOptionsHash);
                 clearCache = true;
+
+                // 清單換了 ⇒ 過濾結果與搜尋 regex 一律作廢。**在這裡清而不是等展開時清** ——
+                // 收合狀態下也會走到這裡，這正是舊版把失效訊號弄丟的那一格。
+                dic.Remove("aIDs");
+                dic.Remove("indexMapping");
+                dic.Remove("regex");
 
                 groupNames = new List<string>();
                 optionGroups = new string[count];
@@ -903,6 +920,17 @@ namespace UCL.Core.UI
                 // 計算邏輯：先依 groupSel 過濾（All = 不過濾）, 再依 regex 過濾; 每層都維護「顯示序 → 原始 index」映射。
                 IList<string> aIDs = iDisplayOptions;
                 Dictionary<int, int> indexMapping = null;
+                // ⭐ 沒有組過濾也沒有搜尋 ⇒ **不吃快取，直接用當幀傳進來的清單**（對齊舊版 PopupSearchCache）。
+                //   舊版在常態下根本沒有清單快取（`if (regex != null)` 才進快取），所以它永遠是最新的；
+                //   分組版把它改成無條件快取，於是「常態」從沒有快取變成一定有快取 —— 那才是回歸的來源。
+                //   ⇒ 這裡把常態還原成沒有快取：快取只服務真的需要它的那兩種情況（選了組 / 打了搜尋字）。
+                bool aNeedFilter = groupSel != AllGroup || regex != null;
+                if (!aNeedFilter)
+                {
+                    dic.Remove(nameof(aIDs));
+                    dic.Remove(nameof(indexMapping));
+                }
+                else
                 {
                     string key = nameof(aIDs);
                     if (clearCache)

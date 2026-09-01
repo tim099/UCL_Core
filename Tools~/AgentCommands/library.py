@@ -2500,6 +2500,21 @@ def _resolve_from_session(session_id: str):
                 prepared = json.loads(pp.read_text(encoding="utf-8")) or {}
             except Exception as e:
                 print(f"⚠ 準備檔讀不動 {pp.name}: {e}", file=sys.stderr)
+            # ── TASK-0076：準備檔的「檔名」與「內容 media_id」交叉對帳（與 C# 端 LoadPrepared 同一條規則）──
+            # 🩸 側門：C# 那側的守衛掛在 LoadPrepared，而**本函式是直接讀檔** ——
+            #    守衛沒蓋到這條路時，它的失效樣子跟「沒有守衛」一模一樣（kiara 2026-09-01 指出的射程洞）。
+            # ⛔ 一樣**不挑一邊、不自動修**：矛盾就把 prepared 清空，讓章號／章名退回「要人明示」，
+            #    而不是拿一份不知道自己是誰的檔去決定這一章叫什麼、編號幾號。
+            inner = str(prepared.get("media_id") or "")
+            if prepared and inner and inner != lib_media:
+                print(
+                    f"⚠ 準備檔 {pp.name} **自己的兩個鍵對不上** —— 檔名說 `{lib_media}`，"
+                    f"內容 media_id 說 `{inner}`"
+                    + ("（檔名剛好等於它自己的 work_id ⇒ 用 work slug 落的舊檔）"
+                       if str(prepared.get("work_id") or "") == lib_media else "")
+                    + " ⇒ ⛔ 不採用這份準備檔（章號與章名請以 --chapter / --title 明示）。",
+                    file=sys.stderr)
+                prepared = {}
     chapter = str(prepared.get("export_chapter") or prepared.get("chapter_id") or "").strip()
     # 同一章的舊場次也要一起收（重播／殘場／一話跨數場）
     if chapter:

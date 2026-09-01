@@ -135,20 +135,56 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         static string PreparedPath(string iMediaId)
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "prepared", $"{iMediaId}.json");
 
-        /// <summary>讀準備檔；不存在或壞檔回 null（呼叫端據此擋下 join / catchup，並印出要跑 prepare）。</summary>
-        static UCL_StreamWatchPrepared LoadPrepared(string iMediaId)
+        /// <summary>讀準備檔；不存在／壞檔／**兩個鍵對不上**都回 null（呼叫端據此擋下 join / catchup）。</summary>
+        static UCL_StreamWatchPrepared LoadPrepared(string iMediaId) => LoadPrepared(iMediaId, out _);
+
+        /// <summary>
+        /// 讀準備檔，並**交叉對帳「檔名」與「內容的 media_id」**（TASK-0076 第①刀）。
+        /// </summary>
+        /// <remarks>
+        /// 🩸 血證（2026-09-01，七人同場）：`prepared/apocalypse-hotel.json`（檔名＝**work_id**）
+        ///    內容的 `media_id` 卻是 `anim-apocalypse-hotel` ⇒ 這份檔的兩個鍵互相矛盾。
+        ///    join 撈到它之後給出章 `0009`（正解 `0011`）—— **兩條路都回 Success，差兩話**，
+        ///    而第 11 話的心得若落進空著的 `0009`，會長得像「終於補寫了」，沒有一格會紅。
+        ///    當天全庫 9 份準備檔有 **2 份**是這個形狀（另一份 `ying-he-hen-ren`，只是還沒有人 join 那部）。
+        /// 物理意義：一份準備檔**自帶兩個獨立來源的鍵** —— 檔名是一條路徑（誰落的檔），
+        ///    內容欄位是另一條（那一次 prepare 認定的媒材）。兩者不一致 ⇒ 這份檔已經不知道自己是誰。
+        ///    ⇒ 這是「走不同路徑的證言」的機械版，**不是優先序**：矛盾時**拒絕**，不挑一邊。
+        /// ⛔ 刻意不自動修（不改檔名、不改內容、不猜哪個對）：沉默地選一邊就是把撞名換成優先序問題，
+        ///    而**優先序錯的時候讀數仍然全綠**（TASK-0076 §⛔ 明文擋掉的那條修法）。
+        /// ⚠ 射程邊界（本刀擋不到的）：它擋得住**已經歪掉的那一份檔**，
+        ///    擋不住**兩份各自自洽、卻指向同一部片**的情況 —— 那要靠第②刀（鍵在 start 定死）。
+        /// </remarks>
+        /// <param name="oReject">非空＝檔案存在但被拒用，字串是要印給人看的成因（含兩個鍵的實際值）。
+        /// 空字串＋回 null ＝ 這個鍵**沒有準備檔**（與「有檔但壞了」必須長得不一樣）。</param>
+        static UCL_StreamWatchPrepared LoadPrepared(string iMediaId, out string oReject)
         {
+            oReject = "";
+            string aP = PreparedPath(iMediaId);
             try
             {
-                string aP = PreparedPath(iMediaId);
                 if (!File.Exists(aP)) return null;
                 var aJd = JsonData.ParseJson(File.ReadAllText(aP, Encoding.UTF8));
-                if (aJd == null) return null;
+                if (aJd == null) { oReject = $"`prepared/{iMediaId}.json` 解析失敗（壞檔）"; return null; }
                 var aOut = new UCL_StreamWatchPrepared();
                 aOut.DeserializeFromJson(aJd);
+                if (!string.Equals(aOut.media_id, iMediaId, StringComparison.Ordinal))
+                {
+                    oReject = $"準備檔 `prepared/{iMediaId}.json` **自己的兩個鍵對不上** —— "
+                            + $"檔名說 `{iMediaId}`，內容 `media_id` 說 `{aOut.media_id}`"
+                            + (string.Equals(aOut.work_id, iMediaId, StringComparison.Ordinal)
+                                ? "（而檔名剛好等於它自己的 `work_id` ⇒ 這是用 work slug 落的舊檔）"
+                                : "")
+                            + "。⛔ **不挑一邊、不自動修**：矛盾的檔一律不使用（TASK-0076）。";
+                    return null;
+                }
                 return aOut;
             }
-            catch { return null; }
+            catch (Exception e)
+            {
+                oReject = $"讀 `prepared/{iMediaId}.json` 例外：{e.GetType().Name}：{e.Message}";
+                return null;
+            }
         }
 
         /// <summary>寫回準備檔（**唯一寫入點**）。</summary>
@@ -304,7 +340,24 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             {
                 aMediaId = aMediaArg;
                 bool aExists = Directory.Exists(UCL_ReadingLibraryIO.MediaRoot(aMediaId));
-                aR.AppendLine($"- 明示 `media_id={aMediaId}`（{(aExists ? "閱讀庫**已存在**" : "⚠ 閱讀庫**尚不存在** —— 要建請走 `Cmd_Library op=media_init`，本步不代建")}）");
+                // ── TASK-0076 第③刀：把幽靈準備檔的**產地**封起來 ──────────────────
+                // 🩸 這裡原本只印一句「⚠ 閱讀庫尚不存在」就照樣落檔 ⇒ 給錯的 id（例如給了 work slug）
+                //    會生出一份 `prepared/<不是 media_id 的東西>.json`，而它跟正牌準備檔**長得一樣**。
+                //    2026-09-01 咬人的那份就是這個形狀（檔名＝work_id）。
+                // ⇒ 準備檔的鍵必須是**閱讀庫裡真的存在的 media** —— 落檔前擋，不是事後對帳。
+                if (!aExists)
+                {
+                    var aCandFix = ResolveMediaCandidates(aMediaId);
+                    var aSb = new StringBuilder();
+                    aSb.Append($"`media_id={aMediaId}` 在閱讀庫**不存在**（`Library/media/{aMediaId}/`）—— 準備檔的鍵不能是不存在的媒材");
+                    if (aCandFix != null && aCandFix.Count > 0)
+                        aSb.Append($"。ℹ 以它查到的候選：{string.Join(" / ", aCandFix.Select(c => $"`{c}`"))}　←　妳要的多半是其中一個（給的若是 **work slug**，真正的 media_id 通常帶 `anim-`/`film-`/`series-`/`stream-` 前綴）");
+                    Blocked(iArgs, aR, aPath, aSb.ToString(),
+                            $"run_cmd.py run StreamWatch --arg step=prepare --arg persona={iPersona} --arg media_id=<閱讀庫既有的 media_id> --arg episode={aEpisodeIn}"
+                            + "；真的是新作品 ⇒ 先 `Cmd_Library op=media_init`（媒材 id 由那邊生成），本步不代建");
+                    throw new Exception($"[StreamWatch] step=prepare blocked：media_id `{aMediaId}` 不存在於閱讀庫（詳見 {aPath}）");
+                }
+                aR.AppendLine($"- 明示 `media_id={aMediaId}`（閱讀庫**已存在** —— 落檔前驗過，不是事後對帳）");
             }
             else
             {
@@ -486,11 +539,22 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             SavePrepared(aP);                                          // work_id 也要進準備檔
 
             aR.AppendLine("## next");
+            // ── TASK-0076 第④刀：next 改印 **media_id**，不再印 work slug ─────────────
+            // 🩸 為什麼倒過來（這是「拿掉」不是「補」）：
+            //    `ResolveWatchTarget` 對 **media_id 是一對一**（讀 media.json 直接拿到 work），
+            //    對 **work slug 卻可能一對多** —— `apocalypse-hotel` 底下有 `anim-apocalypse-hotel`
+            //    與 `book-watch-apocalypse-hotel` 兩個 media ⇒ 解析器（正確地）不自動選，
+            //    於是 `session.library_media_id` **留空**，而後面每一個讀它的地方都靜默退回原字串：
+            //    join 撈到舊準備檔（章號差兩話）、收工自動匯出走不了 `--from-session`（第 11 話沒進書）。
+            //    ⇒ 2026-09-01 六場的 `sessions_log.jsonl` 裡 `library_media_id` **全部是空字串**，
+            //      而那一整天沒有任何一格報錯。
+            // ⚠ 08-17 有一條相反的血證（prepare 印 media_id ⇒ start 生出假 work）——
+            //    那是在 `ResolveWatchTarget` 存在**之前**；解析器上線後，給 media_id 才是零歧義的那條路。
             aR.AppendLine($"1. **開場**：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> "
-                + $"--arg media={(string.IsNullOrEmpty(aWorkId) ? aMediaId : aWorkId)}"
-                + (string.IsNullOrEmpty(aWorkId)
-                    ? "　⚠ 讀不到 media.json 的 work_id，這裡退回 media_id —— **開場前先確認 works/ 底下是不是已有對應的 work**，否則會生出重複 work"
-                    : $"　←　`media=` 吃的是 **work slug**（讀自 media.json 的 `work_id`），不是 media_id"));
+                + $"--arg media={aMediaId}"
+                + $"　←　這裡給的是 **media_id**（不是 work slug）：解析器對 media_id 一對一，"
+                + $"對 work 可能一對多而**留空** ⇒ 那正是 TASK-0076 那一族的入口"
+                + (string.IsNullOrEmpty(aWorkId) ? "　⚠ 讀不到 media.json 的 work_id（本檔的 `work_id` 欄會是空的）" : $"（work `{aWorkId}` 由解析器自己讀出來）"));
             aR.AppendLine($"2. 陪同者：先 `step=catchup --arg media_id={aMediaId}`（缺集才需要），再 `step=join`");
             if (aUnfilled.Count > 0)
                 aR.AppendLine($"3. ⚠ 補課地圖有缺 —— 重跑本步並帶 `--arg catchup_map=\"…\"` 補齊（prepare 可重入，會覆寫準備檔）");
@@ -519,13 +583,22 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         $"run_cmd.py run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id=<id>");
                 throw new Exception($"[StreamWatch] step=catchup blocked：缺 media_id（詳見 {aPath}）");
             }
-            var aP = LoadPrepared(aMediaId);
+            var aP = LoadPrepared(aMediaId, out string aCatchupReject);
             if (aP == null)
             {
+                // ⚠ 兩種失敗**不可以長成同一句**（TASK-0076）：
+                //    ①「這個鍵沒有準備檔」＝ 還沒 prepare　②「有檔但它自己的兩個鍵對不上」＝ 檔壞了。
+                //    前者的出口是去 prepare，後者的出口是**先弄清楚該用哪個 media_id**（去 prepare 只會再生一份）。
+                bool aRejected = !string.IsNullOrEmpty(aCatchupReject);
                 Blocked(iArgs, aR, aPath,
-                        $"`{aMediaId}` 還沒有準備檔 —— 主觀影者要先跑 step=prepare（媒材 id／章號／補課地圖都在那一步定）",
-                        "run_cmd.py run StreamWatch --arg step=prepare --arg persona=<主觀影者> --arg title=<片名> --arg episode=<N>");
-                throw new Exception($"[StreamWatch] step=catchup blocked：無準備檔（詳見 {aPath}）");
+                        aRejected
+                            ? aCatchupReject
+                            : $"`{aMediaId}` 還沒有準備檔 —— 主觀影者要先跑 step=prepare（媒材 id／章號／補課地圖都在那一步定）",
+                        aRejected
+                            ? "先確認本場真正的 media_id（看主觀影者的準備公告，或 `Library/media/` 底下實際的目錄名），用那個 id 重跑本步；"
+                              + "⛔ 不要直接改檔名或改內容 —— 那是在猜哪一邊對"
+                            : "run_cmd.py run StreamWatch --arg step=prepare --arg persona=<主觀影者> --arg title=<片名> --arg episode=<N>");
+                throw new Exception($"[StreamWatch] step=catchup blocked：{(aRejected ? "準備檔兩鍵不一致" : "無準備檔")}（詳見 {aPath}）");
             }
 
             int aEpisode = aP.episode;
@@ -913,6 +986,36 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   於是那份清單只證明「Library 有什麼」，不證明「觀影用過什麼」，而它的標題讓人以為是後者。
             string aWorkNote = aIsNewWork ? CreateWork(aResolvedWork, iSrc) : "";
 
+            // ── 本場準備檔綁定（TASK-0076 第②刀）─────────────────────────
+            // 物理意義：**「本場用哪一份準備檔」是開場時就該定死的事實**，不是每個人進場時各自去搜。
+            // 🩸 舊行為：join 拿 `session.media_id`（＝start 收到的原字串，可能是 work slug）去撈，
+            //    撈不到才退到 `library_media_id` ⇒ `prepared/<work_slug>.json` 舊檔**先命中**，
+            //    整場章號差兩話（2026-09-01 七人同場，兩個 companion 各自察覺才沒出事）。
+            // ⇒ 候選**只有一個**：解析後的真 media_id（`aLibMediaId`）。
+            //    ⚠ 它為空時（這部片在閱讀庫還沒有 media）退回 `iMedia` —— 那不是「兩個都試」，
+            //      而是「還沒有解析結果時，原字串就是我們僅有的那一個鍵」；兩種來源都印出來。
+            //    ⚠ 綁不到準備檔**不擋 start**（單人開場、還沒 prepare 都是合法場景）——
+            //      擋的是 join，因為陪同者進場時章號必須已經是定值。
+            string aPrepKeyTry = !string.IsNullOrEmpty(aLibMediaId) ? aLibMediaId : iMedia;
+            string aPrepKeySrc = !string.IsNullOrEmpty(aLibMediaId) ? "library_media_id（解析後的真 media_id）" : "start 的原字串（尚未解析出 media）";
+            var aPrepBound = LoadPrepared(aPrepKeyTry, out string aPrepReject);
+            string aPrepKey = aPrepBound != null ? aPrepKeyTry : "";
+            string aPrepBindNote;
+            if (aPrepBound != null)
+            {
+                string aPrepFile = PreparedPath(aPrepKeyTry);
+                string aMtime = "";
+                try { aMtime = File.GetLastWriteTime(aPrepFile).ToString("yyyy-MM-dd HH:mm:ss"); } catch { }
+                aPrepBindNote = $"✅ `{aPrepKeyTry}`（來源：{aPrepKeySrc}）—— 第 {aPrepBound.episode} 話／章 `{aPrepBound.chapter_id}`"
+                              + (string.IsNullOrEmpty(aMtime) ? "" : $"／檔案 mtime {aMtime}");
+            }
+            else if (!string.IsNullOrEmpty(aPrepReject))
+                aPrepBindNote = $"⛔ **拒用** —— {aPrepReject}\n"
+                              + $"  ⇒ 陪同者的 `step=join` 會被擋下（本場沒有可信的準備檔）。修法：主觀影者重跑 `step=prepare`。";
+            else
+                aPrepBindNote = $"⚠ `{aPrepKeyTry}` **沒有準備檔**（來源：{aPrepKeySrc}）—— 單人場可以繼續；"
+                              + "**要讓別人 join 就得先跑 `step=prepare`**（章號與接續基準在那一步定）。";
+
             // session 註冊（C# 唯一寫入端）
             string aSessionId = $"sw-{DateTime.UtcNow:yyyyMMddTHHmmssZ}-{iPersona}";
             // ⚠ 本方法的 iArgs 是 IDictionary，而 GetArg 的簽章吃 Dictionary ⇒ 直接讀，不繞 GetArg。
@@ -926,6 +1029,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 media_id = iMedia,
                 work_id = aResolvedWork,          // 解析後的 work（可能與 media_id 不同）
                 library_media_id = aLibMediaId,   // 寫心得要用的那個 id；空＝還沒有對應 media
+                prepared_key = aPrepKey,          // TASK-0076：本場準備檔的鍵，在此定死；join 只讀它
                 start_ts = UCL_AwakeningService.NowIso(),
                 end_ts = aUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
                 until_local = aUntil.ToString("yyyy-MM-dd HH:mm"),
@@ -980,6 +1084,34 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!string.IsNullOrEmpty(aResolveNote)) aR.AppendLine($"- 防呆解析: {aResolveNote}");
             if (aResolvedWork != iMedia) aR.AppendLine($"- work    : `{aResolvedWork}`　←　**沒有用妳給的字串當 work**（那是 media_id）");
             if (!string.IsNullOrEmpty(aLibMediaId)) aR.AppendLine($"- 寫心得用: `media_id={aLibMediaId}`（已解析，下面 next 的指令已填好）");
+            aR.AppendLine($"- 準備檔綁定: {aPrepBindNote}");
+            if (string.IsNullOrEmpty(aLibMediaId))
+            {
+                // 🩸 TASK-0076：`library_media_id` 空掉過去是**靜默**的 —— 而它一空，
+                //    收工自動匯出的 `--from-session` 就查不到準備檔（它靠這個 id 去讀 `prepared/<id>.json`）。
+                //    2026-09-01 六場全空，第 11 話因此**沒有進書**，而當天沒有任何一格報錯。
+                //    ⇒ 空值要在**開場**就說出後果，不要等到收工才發現東西沒出去。
+                aR.AppendLine("- ⚠ **本場 `library_media_id` 是空的** ⇒ 兩件事會受影響（現在改還來得及，收工後就是補跑）：");
+                aR.AppendLine("  ① 陪同者 `step=join`（沒有可信的準備檔鍵）　② **收工自動匯出實錄**（`--from-session` 靠它讀準備檔）");
+                aR.AppendLine($"  ⇒ 修法：收工後改用 `--arg media=<media_id>` 重開場（**給 media_id，不要給 work slug** —— "
+                    + "解析器對 media_id 一對一，對 work 可能一對多而留空）。");
+                // 🩸 kiara 2026-09-01 量到的觸發條件：一對多**最常見的成因是這個 work 自己的實錄成書**
+                //    （匯出實錄會在同一個 work 底下長出 `book-watch-<work>` 這個 media）。
+                //    ⇒ 也就是說：**這隻專咬已經被好好看完、而且匯出過書的作品**，
+                //      而那個一對多是**永久的、不會自己好** —— 所以這裡要說「每次都會」，不是「這次剛好」。
+                var aOwnNow = new List<string>();
+                try
+                {
+                    foreach (var m in UCL_ReadingLibraryIO.ListMediaEntries())
+                        if ((m.WorkId ?? "") == aResolvedWork) aOwnNow.Add(m.MediaId);
+                }
+                catch { }
+                if (aOwnNow.Count > 1)
+                    aR.AppendLine($"  ⚠ work `{aResolvedWork}` 底下有 **{aOwnNow.Count}** 個 media"
+                        + $"（{string.Join(" / ", aOwnNow.Select(m => $"`{m}`"))}）⇒ 解析器**不自動選**，"
+                        + "所以只要用 work slug 開場，**每一次都會是空的**（不是這次剛好）。"
+                        + "ℹ 多出來的那個常常是**實錄成書**自己建的 `book-watch-…`。");
+            }
             if (!string.IsNullOrEmpty(aWorkNote)) aR.AppendLine($"- work 建檔: {aWorkNote}");
             if (!string.IsNullOrEmpty(iSrc.Up)) aR.AppendLine($"- UP 主  : **{iSrc.Up}**（work 認這個；影片標題/介紹記在場次上）");
             if (!string.IsNullOrEmpty(iSrc.VideoTitle)) aR.AppendLine($"- 本場影片: {iSrc.VideoTitle}");
@@ -989,7 +1121,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             AppendRetentionLine(aR);
             aR.AppendLine();
             // 續看／續集的入口 —— 印在**開場那一步**，因為那是唯一還來得及追回的時刻（Tim 2026-08-16）
-            aR.Append(ReaderProgressBlock(iMedia, iPersona));
+            aR.Append(ReaderProgressBlock(iMedia, iPersona, out var aProgressMediaHits));
             aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine($"1. **取素材**：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
@@ -1013,10 +1145,27 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     + "--arg title=<話名> --arg-file body=<心得>`"
                     + (string.IsNullOrEmpty(aCh2) ? "　（章號查不到 ⇒ 走過 step=prepare 就會自動帶）" : ""));
             }
+            else if (aProgressMediaHits != null && aProgressMediaHits.Count == 1)
+            {
+                // 🩸 BUG-40：這一格過去無條件印「還沒有 media」，而**上面「既有進度」那段剛印了「妳讀過這部」**
+                //    —— 同一份檔兩個相反的答案。成因不是判定錯，是兩段各用一個實作查同一件事。
+                //    ⇒ 這裡改用上半段**實際印出來的那個命中**，一份實作、一個答案。
+                string aHit = aProgressMediaHits[0];
+                var aPrepHit = LoadPrepared(aHit, out _);
+                aR.AppendLine($"5. ⚠ `ResolveWatchTarget` **沒有解析出 media**，但上面「既有進度」那段以 work 後綴比對命中 "
+                    + $"**`{aHit}`** ⇒ 以它為準（兩段同源，TASK-0076）："
+                    + $"`run_cmd.py run Library --arg op=note_chapter --arg persona={iPersona} --arg media_id={aHit} "
+                    + $"--arg chapter={(aPrepHit != null ? aPrepHit.chapter_id : "<四位數話號>")} --arg title=<話名> --arg-file body=<心得>`");
+            }
+            else if (aProgressMediaHits != null && aProgressMediaHits.Count > 1)
+            {
+                aR.AppendLine($"5. ⚠ 解析不出單一 media —— 上面「既有進度」命中 **{aProgressMediaHits.Count}** 個"
+                    + $"（{string.Join(" / ", aProgressMediaHits.Select(m => $"`{m}`"))}）⇒ **不猜**，寫心得前自己挑一個。");
+            }
             else
             {
-                aR.AppendLine($"5. ⚠ 這部片在閱讀庫**還沒有 media** ⇒ 寫心得前先 `Cmd_Library op=media_init`"
-                    + "（媒材 id 由那邊生成，這是唯一需要人取 id 的情況）。");
+                aR.AppendLine($"5. ⚠ 這部片在閱讀庫**還沒有 media**（`ResolveWatchTarget` 與「既有進度」兩段都零命中）"
+                    + " ⇒ 寫心得前先 `Cmd_Library op=media_init`（媒材 id 由那邊生成，這是唯一需要人取 id 的情況）。");
             }
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=start 完成 session={aSessionId} media={iMedia} → {aPath}");
@@ -1790,22 +1939,52 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   而兩邊各自都能寫心得、都不報錯。
             // 邊界：這裡**不擋死**成無路可走 —— 缺準備檔就明說要主觀影者跑 prepare（一行指令），
             //   並把本場 media 帶進那行指令裡（不要求對方自己回想）。
-            var aPrep = LoadPrepared(aMedia);
-            if (aPrep == null && !string.IsNullOrEmpty(aLibMediaId))
+            // ── 準備檔：**只認 primary 在 start 綁定的那一個鍵**（TASK-0076 第②刀）──────
+            // 🩸 舊行為（2026-09-01 咬人的那一段）：
+            //      aPrep = LoadPrepared(aMedia);                       // aMedia = primary.media_id ＝ start 的原字串
+            //      if (aPrep == null) aPrep = LoadPrepared(aLibMediaId);
+            //    ⇒ `prepared/<work_slug>.json` 這種舊檔**先命中**，於是 join 給出章 `0009` 而正解是 `0011`；
+            //      兩條路都回 Success，差兩話，而空著的 `0009` 會讓錯章號的心得看起來像「終於補寫了」。
+            // ⇒ 現在**零 fallback**：鍵在 start 那一刻定死（`session.prepared_key`），這裡只讀它。
+            //    找不到就 blocked —— 「我搜不到」與「本場沒 prepare」不再長成同一個樣子。
+            string aPrepKey = aPrimary.prepared_key;
+            string aPrepKeyNote;
+            if (string.IsNullOrEmpty(aPrepKey))
             {
-                aPrep = LoadPrepared(aLibMediaId);
+                // 相容：本場 session 是舊格式（prepared_key 上線前開的）。
+                // ⚠ 這裡**只退回 library_media_id**（解析後的真 media_id），**不退回 media_id**
+                //    —— 退回原字串正是這隻 bug 本身。
+                aPrepKey = aLibMediaId;
+                aPrepKeyNote = string.IsNullOrEmpty(aPrepKey)
+                    ? "（本場 session 無 `prepared_key` 且無 `library_media_id`）"
+                    : $"（⚠ 本場 session 無 `prepared_key`（開場早於本修法）⇒ 退回 `library_media_id`；**不退回 `media_id`**）";
             }
+            else aPrepKeyNote = "（來源：primary 在 `step=start` 綁定的 `prepared_key`）";
+
+            UCL_StreamWatchPrepared aPrep = null;
+            string aPrepReject = "";
+            if (!string.IsNullOrEmpty(aPrepKey)) aPrep = LoadPrepared(aPrepKey, out aPrepReject);
             if (aPrep == null)
             {
-                Blocked(iArgs, aR, aPath,
-                        $"`{aMedia}` 還沒有準備檔 —— 準備階段未完成，陪同者先不進場（章號與接續基準還沒定，現在寫心得就是漂移的起點）",
+                string aWhy = !string.IsNullOrEmpty(aPrepReject)
+                    ? aPrepReject
+                    : (string.IsNullOrEmpty(aPrepKey)
+                        ? $"本場沒有綁定任何準備檔鍵 {aPrepKeyNote} —— 準備階段未完成，陪同者先不進場"
+                        : $"`{aPrepKey}` 沒有準備檔 {aPrepKeyNote} —— 準備階段未完成，陪同者先不進場"
+                          + "（章號與接續基準還沒定，現在寫心得就是漂移的起點）");
+                Blocked(iArgs, aR, aPath, aWhy,
                         $"請主觀影者（`{aPrimaryPersona}`）先跑：run_cmd.py run StreamWatch --arg step=prepare "
-                        + $"--arg persona={aPrimaryPersona} --arg media_id={aMedia} --arg episode=<第幾集>");
-                throw new Exception($"[StreamWatch] step=join blocked：媒材 {aMedia} 無準備檔（詳見 {aPath}）");
+                        + $"--arg persona={aPrimaryPersona} --arg media_id={(string.IsNullOrEmpty(aLibMediaId) ? "<閱讀庫 media_id>" : aLibMediaId)} --arg episode=<第幾集>"
+                        + "，然後**重開場**（`prepared_key` 在 `step=start` 綁定）；本場若已在跑，收工後再開一場。");
+                throw new Exception($"[StreamWatch] step=join blocked：無可信準備檔（key={aPrepKey}；詳見 {aPath}）");
             }
             string aPrepChapter = aPrep.chapter_id;
             string aPrepRef = aPrep.reference_reader;
-            string aLibId = !string.IsNullOrEmpty(aLibMediaId) ? aLibMediaId : aMedia;
+            // TASK-0076（kiara 2026-09-01 那格）：**拆彈先於改名** —— `session.media_id` 這個錯位欄位還躺著
+            // （舊資料與 python 端還在讀），但 join 這裡**不再據它做任何決定**：
+            // 章號、進度、缺集一律以「本場準備檔的鍵」為準（那是 prepare 釘死、start 綁定的真 media_id）。
+            string aLibId = !string.IsNullOrEmpty(aPrepKey) ? aPrepKey
+                          : (!string.IsNullOrEmpty(aLibMediaId) ? aLibMediaId : aMedia);
             var aMyChapters = ReaderChapters(aLibId, iPersona);
             var aMyGaps = new List<string>();
             for (int e = 1; e < aPrep.episode; e++)
@@ -1823,6 +2002,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 media_id = aMedia,                            // ← 繼承，不自己解析
                 work_id = aPrimary.work_id,
                 library_media_id = aLibMediaId,
+                prepared_key = aPrepKey,                      // TASK-0076：跟 primary 用同一把鍵，不各自搜
                 parent_session_id = aPrimary.session_id,
                 parent_persona = aPrimaryPersona,
                 start_ts = UCL_AwakeningService.NowIso(),
@@ -1854,6 +2034,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine();
             aR.AppendLine("## 準備階段給你的定值（**不要自己打字**，那是漂移的來源）");
             aR.AppendLine($"- 本場章號: `{aPrepChapter}`（第 {aPrep.episode} 話）／節目名 `{aPrep.show_title}`");
+            aR.AppendLine($"- 準備檔  : `prepared/{aPrepKey}.json` {aPrepKeyNote}　←　**一場一把鍵，join 不自己搜第二個檔名**（TASK-0076）");
             aR.AppendLine($"- 接續基準: `{aPrepRef}`（由 `{aPrep.prepared_by}` 在 prepare 指定）");
             aR.AppendLine($"- 我的進度: 已有 {aMyChapters.Count} 章"
                 + (aMyGaps.Count == 0 ? "，**本場之前的集數沒有缺**" : $"，⚠ **缺 {aMyGaps.Count} 集：{string.Join(" ", aMyGaps)}**"));
@@ -2964,8 +3145,23 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // 數值影響：純讀，不建檔。媒材比對用「目錄名 == work 或以 -<work> 結尾」，
         //          因此 anim- / film- / comic- / book- 全涵蓋，不必先知道 media_kind。
         // ⚠ 沒有進度時**也要印一行**：「查過了沒有」與「沒查」在畫面上同形，而後者會讓人以為系統壞了。
-        static string ReaderProgressBlock(string iWork, string iPersona)
+        static string ReaderProgressBlock(string iWork, string iPersona) => ReaderProgressBlock(iWork, iPersona, out _);
+
+        /// <summary>
+        /// 同上，並把**命中的媒材 id** 交還給呼叫端（TASK-0076／BUG-40）。
+        /// </summary>
+        /// <remarks>
+        /// 🩸 BUG-40 的成因就在這裡：start 回傳檔**上半段**（本區塊）用「work 後綴比對」找媒材，
+        ///    印出「✅ 妳讀過這部（1 個媒材）」；**下半段** next 卻用 `ResolveWatchTarget` 的
+        ///    `library_media_id` 判空，印「⚠ 這部片還沒有 media」。
+        ///    ⇒ **同一份檔對同一個問題給了兩個相反的答案，而兩段各自都沒有錯** —— 它們問的是兩個實作。
+        /// ⇒ 修法不是改判定，是**共用同一份命中結果**：一份實作、一個答案。
+        /// </remarks>
+        /// <param name="oMediaHits">命中的媒材 id（本區塊實際印出來的那幾個）。</param>
+        static string ReaderProgressBlock(string iWork, string iPersona, out List<string> oMediaHits)
         {
+            oMediaHits = new List<string>();
+            var aMediaIds = oMediaHits;
             var aSb = new StringBuilder();
             aSb.AppendLine("## 既有進度（讀回的事實）");
             var aHits = new List<string>();
@@ -2986,6 +3182,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         string aCh = aProg != null ? ReadStr(aProg, "current_chapter_id") : "";
                         string aLast = aProg != null ? ReadStr(aProg, "last_read") : "";
                         aHits.Add($"- `{aMid}` — status **{aStatus}**｜章 `{(string.IsNullOrEmpty(aCh) ? "(未開始)" : aCh)}`｜最後閱讀 {aLast}");
+                        aMediaIds.Add(aMid);
                     }
                 }
             }
@@ -3612,6 +3809,16 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public string work_id = "";
         /// <summary>寫心得要用的閱讀庫 media id；空＝還沒有對應 media。</summary>
         public string library_media_id = "";
+        /// <summary>本場**準備檔的鍵**（＝`prepared/&lt;此值&gt;.json`）。空＝開場時沒有綁到任何準備檔。</summary>
+        /// <remarks>
+        /// 🩸 TASK-0076：`media_id` 這個欄位裝的是 **start 收到的原字串**（可能是 work slug），
+        ///    而 join 過去拿它去撈準備檔、撈不到才退而求其次 —— 於是 `prepared/&lt;work_slug&gt;.json`
+        ///    這種舊檔會**先命中**，整場章號差兩話而兩條路都回 Success。
+        /// ⇒ 本欄位把「本場用哪一份準備檔」**在 start 那一刻定死並落盤**，
+        ///    join 只讀它、**零 fallback 搜尋**（找不到就 blocked，指名 primary 去 prepare）。
+        ///    一場一個鍵，而那個鍵印在 start 回傳檔上 ⇒ 當場可被反駁。
+        /// </remarks>
+        public string prepared_key = "";
 
         /// <summary>陪看場才有：所陪的那一場。</summary>
         public string parent_session_id = "";

@@ -1,7 +1,7 @@
 ---
 title: Plurk 發文工作流（Cmd 版）
 description: 對外發噗的唯一流程 —— Cmd Plurk 的 lint / preview / post 三步、五欄交付單、排版與表情鐵律、公開度審查邊界，以及發完之後的對帳。
-last_updated: 2026-08-21
+last_updated: 2026-09-01
 target_audience: [All-Agents, All-Personas, Tim]
 status: v2.0（Tim 2026-08-21：「之後可以走 CMD 了」—— 本檔按新流程全部重寫，v1 手動代貼版已廢棄，史料見 git）
 ---
@@ -34,7 +34,7 @@ $R --arg op=post    --arg slip_file=<交付單> --arg confirm=1   # 真的發
 |---|---|
 | lint 有 error | `post` **拒絕，不送** —— 規則長在必經路上，繞不過 |
 | 沒帶 `confirm=1` | **dry-run**：只印完整 payload，什麼都不送 |
-| 送成功 | append 一筆 audit 到 `<data_root>/Plurk/post_audit.jsonl` |
+| 送成功 | append 一筆 audit 到 `<data_root>/Plurk/post_audit.jsonl`（**本機留存、不入版控**，見 Plurk_Maintenance §7） |
 
 - **發到哪個帳號**：有個人帳號走個人、沒有就走共用（Tim 2026-08-21 拍板）——
   ⚠ 這會隨 profile 變動，所以**每次要確認就跑 `op=resolve`**，不要靠記憶。

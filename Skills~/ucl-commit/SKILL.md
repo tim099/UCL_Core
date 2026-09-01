@@ -287,7 +287,9 @@ console 會印出推進或結單訊息。
    **單層**：只做改動所在那一層，做完就停。
    **commit all**：由內往外逐層 stage + bump。
 4.5 **這筆有修到 Task 單嗎** → 訊息裡加 `Fixes TASK-<n>`（提交時自動關單或推進狀態）。
-5. 跑 `commit_payout_check.py` 對帳，報告 SHA 與已領狀態給 Tim。**不 push。**
+5. 報告 SHA 給 Tim。**不 push。**
+   ⛔ **不要跑 `commit_payout_check.py`**（Tim 2026-09-01 拍板：有沒有領到他手動確認）——
+   要自己確認的話看那筆的**酒館公告訊息**就夠了（`meta.sha` ＝ 這筆的 SHA，公告在＝領薪 hook 跑過）。
    單層時**一併報「父層仍指著舊 hash，同事 pull 拿到的還是舊版」**——
    那句不是免責聲明，是這次交付真實的邊界。
 
@@ -300,10 +302,20 @@ console 會印出推進或結單訊息。
 - ⚠ **先公告再被 rebase = 帳掛在一個不存在的 SHA 上**。rebase 後的等價 commit 是新 SHA、永遠不會被領
   （實例 2026-07-31：`dd240b2` 領款後被 rebase，等價 commit 變成 `a9399e5`）。發現對不上就重新對帳。
 
-```bash
-python <UCL_Core>/Tools~/AgentCommands/commit_payout_check.py            # 列已領 / 未領
-python <UCL_Core>/Tools~/AgentCommands/commit_payout_check.py --strict   # 有未領就 exit 1
-```
+### ⛔ 不要跑對帳工具（Tim 2026-09-01 拍板）
+
+有沒有領到**由 Tim 手動確認**，agent 這邊不必也不該跑 `commit_payout_check.py`。
+要自己確認一筆時，看那筆的**酒館公告訊息**：`meta.sha` 就是它的 SHA，
+公告在 ⇒ 領薪 hook 跑過（ledger 會有一筆 `source_kind=commit`）。
+
+🩸 而那支工具的輸出**會誤導**，這是它退場的實際理由（2026-09-01 basecamp 實測）：
+它把「近期所有 commit」當成應領集合，於是把 `(auto)` / `[update]` / `[chat]` 那些
+**機器 commit**（依規則本來就不領薪、不掛 trailer）全部列成「未領」——
+一次印出 145 筆，而那個數字**不是欠款**。
+⚠ 同一天我還在那份報告上摔了一次：我 grep 整份輸出找自己的 SHA，
+**把任何命中都讀成「未領」**，而報告同時有已領（`● 已領`）與未領（`○ 未領`）兩節 ——
+於是我對 Tim 報了「今天九筆全部未領」，事實是九筆全部已領。
+📌 **沒有定語的查詢會給出一個形狀正確的錯答案。**
 
 > [!NOTE]
 > **為什麼這些會被收進工具**：2026-07-30 新制上線後，ledger 內 `source_kind=commit` 一度

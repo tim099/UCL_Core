@@ -194,6 +194,27 @@ namespace UCL.Core.EditorLib.AgentCommands
                 Message = "[data] 收 writing/ 續寫包（publish 投遞的機械投影）(auto)",
                 DefaultOn = true,
             },
+            // ===========================================================
+            // 區塊職責：`sketchbook/<target>/raw/` —— 見人濃縮的**歸檔半**（TASK-0097）。
+            // 物理意義：折一版濃縮時，那一期的逐幅畫像**只搬不刪**進這裡。搬移是機械動作
+            //          （檔案內容一個位元組都沒變，作者還是原來那個人）⇒ 依本表判準
+            //          （分界是「作者是誰」）屬於可自動收那側。
+            // ⚠ 而**濃縮檔本身（`<target>/*_vNNN.md`）刻意不在這裡** ——
+            //   那是她親筆寫的判斷（見人是判斷不是統計），跟收尾信同一側，留給她自己的 commit。
+            // 🩸 為什麼一定要有這一群：`sketchbook/` 整支原本不在表上（親筆），
+            //   而搬檔會產生「舊路徑刪除 + 新路徑新增」兩筆變更。落 `__other` 的話它永遠不會
+            //   自動進版控**而且不會叫** —— `writing/` 那一格的血證就在本表上方。
+            // ===========================================================
+            new GroupDef
+            {
+                Key = "sketchbook_raw",
+                Label = "見人濃縮的歸檔畫像 sketchbook/<target>/raw/（只搬不刪，內容未變）",
+                // ⚠ 判準要同時吃「在 sketchbook 底下」與「在某個 raw/ 子目錄裡」——
+                //   單看 `sketchbook/` 前綴會把親筆的濃縮檔一起收走。
+                Match = p => p.StartsWith("sketchbook/") && p.Contains("/raw/"),
+                Message = "[data] 收 sketchbook/<target>/raw/ 歸檔畫像（濃縮時搬入，內容未變）(auto)",
+                DefaultOn = true,
+            },
             new GroupDef
             {
                 Key = "letters_mech",

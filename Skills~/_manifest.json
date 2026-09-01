@@ -145,11 +145,6 @@
       "name": "ucl-work-memory",
       "summary": "工作記憶區 — 跨 agent 共用、以工作主題為單位的 knowhow 庫; 開工讀取/完工回寫, 換手不斷線",
       "optional": false
-    },
-    {
-      "name": "ucl-workflow-patch",
-      "summary": "Workflow 補丁 (Proposal #31) — QA confirm bug 後 register patch; 累積 ≥3 自動警示 refactor (anti-rot)",
-      "optional": false
     }
   ]
 }

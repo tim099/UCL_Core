@@ -75,7 +75,6 @@ description: |
 > | CI（該不該開、workflow 寫法、只在 runner 上才現形的坑） | `ucl_core:Docs~/{lang}/Agent/CI_Standards.md` |
 > | 註解該寫什麼／不該寫什麼 | `ucl_core:Docs~/{lang}/Agent/Code_Comment_Standards.md` |
 > | 跨語言、跨工作的通用教訓（不是寫法問題） | skill `agent-lessons-log`（`Cmd_NoteLesson`，跨 agent 共享） |
-> | 某支 workflow 的 ad-hoc 修正 | skill `ucl-workflow-patch`（累積 3 筆自動警示該 refactor） |
 > | 這項工作專屬的坑（換人接手才需要知道） | skill `ucl-work-memory`（`--type pitfall`） |
 >
 > **怎麼寫才有用**（三條都是踩出來的）：

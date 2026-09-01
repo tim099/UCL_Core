@@ -1,7 +1,7 @@
 ---
 title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
 description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。
-last_updated: 2026-08-28
+last_updated: 2026-09-01
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md | Awakening Init Protocol | morning/goodnight 三步驟設計
@@ -212,7 +212,6 @@ UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle 
 | `screenshot.py` | 單張截圖（串流 daemon 已搬 UCL_Core `screenstream_*.py`） |
 | ~~`tavern_catchup.py`~~ | **已退場 2026-08-20** → `Cmd_Tavern op=catchup`（實作 `UCL_TavernCatchupService`）；檔案留指路 stub |
 | ~~`tavern_query.py`~~ | **已退場 2026-08-20** → `Cmd_Tavern op=query --arg kind=…`（實作 `UCL_TavernQueryService`）；檔案留指路 stub |
-| `workflow_patch.py` | workflow-patch register |
 
 → 跨專案搬 UCL_Core 時這些**不會跟著**, 各 project 自己有自己版本。
 

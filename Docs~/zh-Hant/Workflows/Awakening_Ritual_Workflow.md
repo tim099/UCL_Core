@@ -1,6 +1,6 @@
 ---
 title: Awakening 儀式工作流 (Awakening Ritual Workflow)
-last_updated: 2026-08-25
+last_updated: 2026-09-01
 status: active
 theme: persona_lifecycle
 summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安四步（走 Cmd_GoodMorning，需 Editor）：step=wake（守衛+狀態寫入）→ step=brief → 讀 wake brief → step=intro（單則上線自介+catchup 指路）；晚安（走 Cmd_GoodNight）：step=check（收尾清單+酒館最後一眼）→ [人工收尾] → step=letter（親筆收尾信）→ step=sleep（單則下線廣播）；cleanup 走 step=logout 單獨跑。
@@ -60,8 +60,9 @@ Step 1. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
 
 Step 2. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
             --arg step=brief --arg persona=<P>
-        （brief 生成留 Python、但一律經本 Cmd 觸發，R20；
-          Editor 未開啟的純讀備援才是直跑 awakening.py brief）
+        （2026-09-01 起 brief 由 Editor **就地跑 SCP_WakeBrief（C#）**生成，不再 spawn python；
+          Editor 未開啟的純讀備援是 `senate cmd wake-brief` 或 awakening.py brief ——
+          ⚠ 那兩份與本步產出的不是同一份，見 Awakening_Cmd_Flow.md §7）
 
 Step 3. Read wake brief（路徑在 step=brief 的回傳檔）  ← 唯一一次 Read
         **2026-08-12 起：brief 在「上線廣播之前」落檔**（Step 4.5），不再是末尾順便生成 ——
@@ -73,7 +74,8 @@ Step 3. Read wake brief（路徑在 step=brief 的回傳檔）  ← 唯一一次
             那才是它存在的理由：Editor 未開時仍讀得到自己的信。）
           §5 見樹（收尾信全文；累積內文行數不夠讀時自動往前合併更早的收尾信，
           由早到近排列、最新那封在最後 —— 讀的人是在補一段連續的日子，時序要往前推。
-          行數門檻與封數上限見 wake_brief.py 頂部兩顆旋鈕，本檔不復誦數字。
+          行數門檻與封數上限見 `SCP_WakeBrief` 的 MergeStopLines / MergeMaxExtra（生產端），
+          本檔不復誦數字。
           **「啟動合併」與「停止合併」共用同一顆行數門檻**（互為否命題，各給一個值就會互相抵銷
           —— 2026-08-01 修的就是這個）；封數上限對齊見林一個單位（最新 1 + 往前 9 = 10 封）。
           ⚠ 尺只有「行數」與「封數」兩把，**沒有日期尺** —— 空窗久正是最需要把舊信端上來的
@@ -90,8 +92,11 @@ Step 3. Read wake brief（路徑在 step=brief 的回傳檔）  ← 唯一一次
           「這不是本線的記憶」警語（Fate 規則：召喚體不自動繼承別線的帳）。
           抽籤是 **deterministic** 的（種子＝persona+wake_count）—— 同一次醒來重跑必抽同一封，
           否則「今天回憶到哪一封」不可複驗、brief 的 git diff 也會無故翻動。
-          三顆旋鈕在 wake_brief.py 頂部：RECALL_MIN_WAKE / RECALL_MIN_AGE_WAKES /
-          RECALL_CROSS_WORLDLINE_P）/
+          三顆旋鈕在 `SCP_WakeBrief`：RecallMinWake / RecallMinAgeWakes /
+          RecallCrossWorldlinePercent。
+          ⚠ 抽籤演算法**兩端不同源**：C#（生產端）用穩定雜湊 FNV-1a，python（備援）用
+          `random.Random(字串種子)` ⇒ **同一個 wake 兩邊抽到的不是同一封**。
+          各自可複驗，但不可互相當驗收）/
           §6 記憶維護狀態 / §6.5 見人（sketchbook）/ §6.6 見書（隨機一張閱讀卡）/
           §9 今日動作清單
           ⚠ §7 收件匣 / §8 酒館 catch-up 於 2026-08-13 起退出 brief（R21）——

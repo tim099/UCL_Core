@@ -1,7 +1,7 @@
 ---
 title: Awakening Cmd 完整流程（早安四步＋晚安四步＋自由時間三步 — 參考文件）
 description: Cmd_GoodMorning／Cmd_GoodNight／Cmd_FreeTime 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
-last_updated: 2026-08-31
+last_updated: 2026-09-01
 target_audience: [AI_Agent, Developer]
 aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]
 related:
@@ -26,7 +26,7 @@ related:
 | step | 做什麼 | 回傳檔 | 誰寫內容 |
 |---|---|---|---|
 | `wake` | 守衛（在線即擋）＋ registry patch-write ＋ lock ＋ token ＋ memo。**不廣播** | `letters/<P>/cmd/goodmorning_wake.md` | 工具 |
-| `brief` | 經 `UCL_ProcessCli` spawn python 生成 `cmd/wake_brief.md`（R20 唯一正常通道） | `letters/<P>/cmd/goodmorning_brief.md` | 工具 |
+| `brief` | **就地跑 `SCP_WakeBrief`（C#）**生成 `cmd/wake_brief.md`（2026-09-01 起不再 spawn python） | `letters/<P>/cmd/goodmorning_brief.md` | 工具 |
 | （Read） | Read `cmd/wake_brief.md` —— 接回身分本身，**不自動化** | — | — |
 | `intro` | 前置守衛（見 §3）→ 發**單則**上線訊息（系統欄位＋親筆 `<body>`）→ next 指路 catchup | `letters/<P>/cmd/goodmorning_intro.md` | 系統欄位=工具；`<body>`=**persona 親筆** |
 | `audit` | （非儀式步驟）全 persona 對帳：C# 推導 vs registry 快取 vs lock 實況，唯讀 | `AwakenInit/_goodmorning_audit.md` | 工具 |
@@ -109,10 +109,16 @@ cursor 由 catchup 在實際閱讀時推進 —— brief 不再含 §7/§8，int
 
 ## 7. Editor 離線時
 
-登入**不可用**（R18）。可用的備援只有純讀記憶：
+登入**不可用**（R18）。可用的備援只有純讀記憶（兩條，都不需要 Editor）：
 ```bash
+senate cmd wake-brief --arg letters_root=<letters 根> --arg persona=<P> --arg out_dir=<落檔目錄>
 python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <P>
 ```
+⚠ **這兩份與 Cmd 產出的不是同一份**，不要互相當驗收：
+- `senate cmd wake-brief` 與 Cmd 是**同一支邏輯**，差在沒帶資料根（⇒ §6 缺陷單張數印「未量」）
+  與 wake 編號要自己給（Cmd 那邊由 Editor 推導＝wakes/ 信數 + 1）。
+- `awakening.py brief` 是**另一套實作**：§5.5／§6.6 的抽籤演算法不同源（抽到的不是同一封），
+  且見樹排序那隻 bug 還活著（TASK-0098）。
 `awakening.py morning / intro` 已是指路 stub（exit 2）——舊實作已刪除，不留第二份活實作。
 
 ## 8. 已知行為邊界（實測 2026-08-13）

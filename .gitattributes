@@ -20,3 +20,7 @@
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
 *.bat text eol=crlf
+
+# 本檔與 .editorconfig 自己也是文字檔（沒有副檔名，會被上面的 `* -text` 吃掉）
+.gitattributes text=auto
+.editorconfig  text=auto

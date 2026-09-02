@@ -409,6 +409,27 @@ namespace UCL.Core.EditorLib.AgentCommands
             return d;
         }
 
+        /// <summary>
+        /// 從 <paramref name="aStart"/> 起讀 4 位 hex（JSON \uXXXX 的那四位），成功回 true 並輸出 code unit。
+        /// ⚠ 不移動 pos —— 移動由呼叫端決定，因為代理對要先看完低位才知道要吃幾個字元。
+        /// </summary>
+        static bool TryReadHex4(string json, int aStart, out int aValue)
+        {
+            aValue = 0;
+            if (aStart + 4 > json.Length) return false;
+            for (int i = 0; i < 4; i++)
+            {
+                char c = json[aStart + i];
+                int v;
+                if (c >= '0' && c <= '9') v = c - '0';
+                else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
+                else if (c >= 'A' && c <= 'F') v = c - 'A' + 10;
+                else { aValue = 0; return false; }
+                aValue = (aValue << 4) | v;
+            }
+            return true;
+        }
+
         static string ParseString(string json, ref int pos)
         {
             ExpectChar(json, ref pos, '"');
@@ -425,9 +446,43 @@ namespace UCL.Core.EditorLib.AgentCommands
                         case 'n': sb.Append('\n'); break;
                         case 'r': sb.Append('\r'); break;
                         case 't': sb.Append('\t'); break;
+                        case 'b': sb.Append('\b'); break;
+                        case 'f': sb.Append('\f'); break;
                         case '"': sb.Append('"'); break;
                         case '\\': sb.Append('\\'); break;
                         case '/': sb.Append('/'); break;
+                        // \uXXXX —— 缺這一格時會落到 default 把反斜線吃掉，`🩸` 變成裸字 `uD83EuDE78`。
+                        // 🩸 2026-08-29 basecamp 開 TASK-0093；2026-09-02 summit 在開遷移單時撞到活體：
+                        //    同一份 criteria 走 senate CLI 落檔後非 BMP emoji 全損毀，走 run_cmd.py 完好（對照組在單上）。
+                        // 物理意義：兩個 client 對同一份內容的逃逸寫法不同（python json 預設 ensure_ascii 出 \uXXXX），
+                        //          而**每一層都回綠** —— Cmd Success、回傳檔正常、單子建得出來，只有內容是壞的。
+                        case 'u':
+                            if (TryReadHex4(json, pos, out int aHi))
+                            {
+                                pos += 4;
+                                // 代理對：C# string 本身就是 UTF-16，high+low 兩個 char 直接接上即是一個 code point。
+                                // ⚠ 單獨的 high surrogate 不合併就吐半個字 —— 所以低位不成對時只吐高位，交給上層顯示層決定怎麼畫。
+                                if (aHi >= 0xD800 && aHi <= 0xDBFF
+                                    && pos + 6 <= json.Length && json[pos] == '\\' && json[pos + 1] == 'u'
+                                    && TryReadHex4(json, pos + 2, out int aLo)
+                                    && aLo >= 0xDC00 && aLo <= 0xDFFF)
+                                {
+                                    pos += 6;
+                                    sb.Append((char)aHi);
+                                    sb.Append((char)aLo);
+                                }
+                                else sb.Append((char)aHi);
+                            }
+                            else
+                            {
+                                // 非法逃逸（hex 不足 4 位／非 hex）⇒ **原樣保留並喊出來**，不靜默吃掉反斜線。
+                                // ⛔ 不 throw：一筆壞 JSON 讓整條 queue 讀不了會把所有 persona 一起卡住，
+                                //    而「內容有一段沒解開」比「大家都動不了」輕。喊聲留給人判。
+                                Debug.LogWarning($"[AgentCommandQueue] 非法 \\u 逃逸（pos={pos}），原樣保留未解碼。");
+                                sb.Append('\\');
+                                sb.Append(esc);
+                            }
+                            break;
                         default: sb.Append(esc); break;
                     }
                 }

@@ -803,6 +803,41 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         const int InboxCapMax = 50;     // 觸發 trim 門檻
         const int InboxCapKeep = 50;    // trim 後保留最新 N 條
 
+        // ═══════════════════════════════════════════════════════════
+        // 區塊職責：inbox 條目的**年齡**上限 —— 數量之外的第二把尺（Tim 2026-09-02 拍板）。
+        // 物理意義：cap=50 是「數量」的閘，而它在目前流量下**恰好**約等於一週 ——
+        //          恰好不是設計。低頻／已退場的收件匣流量小，於是 50 條可以躺 111 天
+        //          （實測：`claude-da-xiaojie` 38/50 超過 7 天、最舊 116 天）。
+        //          太久以前的 @ 已經失去意義，卻照樣佔著「待處理」那個數字。
+        // 數值影響：搬到 `<id>_archive.md`（append-only）⇒ **不丟資料、可逆**；
+        //          inbox 只留最近 InboxMaxAgeDays 天。
+        // ⚠ 這支是 append 時的 lazy trim ⇒ **沒有人 append 的死信箱不會自己瘦**
+        //   （側房 18 個、合計 61 筆，最後訊息日全在 2026-05）。那半要靠掃描式清理，
+        //   不在本函式的射程內 —— 寫在這裡是為了讓下一個人不必自己去發現。
+        // ═══════════════════════════════════════════════════════════
+        public const int InboxMaxAgeDays = 7;
+
+        /// <summary>這筆 inbox 條目是不是「太舊」。⚠ 拿不到時戳一律當**舊**。</summary>
+        /// <remarks>
+        /// 判準來源是條目裡的 `_at &lt;ISO UTC&gt;_` 行 —— 那是唯一跨房可比的權威時戳
+        /// （標題列的 `(… +08)` 是本地時區投影，不可當判準）。
+        /// 🩸 為什麼「拿不到＝舊」是安全的：inbox 條目**只有** AppendInbox 一支在寫，
+        ///    而它那行是無條件寫的 ⇒ 任何新條目必有 `_at`。缺它的只有 2026-08-15
+        ///    回填之前的舊格式殘留（實測：缺 `_at` 的條目最新一筆是 2026-08-14，
+        ///    而 2026-08-17 之後的條目 100% 有）。
+        ///    反過來設（拿不到當新）的後果是那些條目**永遠**留在窗內 —— 窗等於沒開，
+        ///    而且不會有任何一行字說出來。
+        /// </remarks>
+        public static bool IsInboxEntryStale(string entry, System.DateTime nowUtc, int maxAgeDays = InboxMaxAgeDays)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(entry, @"(?m)^_at (\S+?)Z?_\s*$");
+            if (!m.Success) return true;
+            if (!System.DateTime.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+                    out var ts)) return true;
+            return (nowUtc - ts).TotalDays > maxAgeDays;
+        }
+
         static void TrimInboxIfOverCap(string roomId, string agentId)
         {
             string inboxPath = GetInboxPath(roomId, agentId);
@@ -811,9 +846,28 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (string.IsNullOrEmpty(raw)) return;
             // 切 entry：每個以 "## " 開頭（行首）
             var entries = SplitInboxEntries(raw);
-            if (entries.Count <= InboxCapMax) return;
+            if (entries.Count == 0) return;
 
-            int archiveCount = entries.Count - InboxCapKeep;
+            // ① 數量閘：超過 InboxCapMax 才動，保留最新 InboxCapKeep 條
+            int countCut = entries.Count > InboxCapMax ? entries.Count - InboxCapKeep : 0;
+
+            // ② 年齡閘：從最舊往新掃，連續的「太舊」前綴一律歸檔（條目是 append 序 ⇒ 前綴即最舊）
+            //   entries[0] 可能是檔頭（不以 "## " 開頭）—— 它跟著前綴走，但**不能自己驅動**歸檔，
+            //   否則沒有任何舊條目時每次 append 都在搬那行 header。
+            int ageCut = 0;
+            for (int i = 0; i < entries.Count; i++)
+            {
+                if (!entries[i].StartsWith("## ")) { ageCut = i + 1; continue; }
+                if (!IsInboxEntryStale(entries[i], System.DateTime.UtcNow)) break;
+                ageCut = i + 1;
+            }
+            if (ageCut > 0 && !entries[ageCut - 1].StartsWith("## ")) ageCut = 0;   // 只有 header ⇒ 不算
+
+            int archiveCount = System.Math.Max(countCut, ageCut);
+            if (archiveCount <= 0) return;
+            string why = countCut >= ageCut
+                ? (ageCut > 0 ? $"數量 >{InboxCapMax} 且有 >{InboxMaxAgeDays} 天的" : $"數量 >{InboxCapMax}")
+                : $">{InboxMaxAgeDays} 天";
             var archive = new StringBuilder();
             for (int i = 0; i < archiveCount; i++) archive.Append(entries[i]);
             // append archive (preserve order)
@@ -822,11 +876,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             // rewrite inbox：truncated marker + 最新 InboxCapKeep
             var newInbox = new StringBuilder();
-            newInbox.AppendLine($"> ⚠ **inbox truncated** — {archiveCount} 條較舊待辦已歸檔到 `{Path.GetFileName(archivePath)}`（{UCL_ChatTavernIO.NowUtcIso()}）");
+            newInbox.AppendLine($"> ⚠ **inbox truncated** — {archiveCount} 條較舊待辦已歸檔到 `{Path.GetFileName(archivePath)}`（規則：{why}；{UCL_ChatTavernIO.NowUtcIso()}）");
             newInbox.AppendLine();
             for (int i = archiveCount; i < entries.Count; i++) newInbox.Append(entries[i]);
             File.WriteAllText(inboxPath, newInbox.ToString(), new UTF8Encoding(false));
-            Debug.Log($"[Quest T21] inbox trim {agentId}@{roomId}: archived {archiveCount} entries → {Path.GetFileName(archivePath)}; kept latest {InboxCapKeep}");
+            Debug.Log($"[Quest T21] inbox trim {agentId}@{roomId}: archived {archiveCount} entries（{why}）→ {Path.GetFileName(archivePath)}; 剩 {entries.Count - archiveCount} 條");
         }
 
         /// <summary>把 inbox 內容切成 entries — 每個 entry 以 line "## " 為起點，包含到下個 "## " 之前。</summary>

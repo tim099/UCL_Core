@@ -1524,40 +1524,26 @@ def consolidation_status(persona: str, reg: dict,
     return _mem.consolidation_status(persona, reg["personas"].get(persona, {}), threshold)
 
 
-def write_longterm_digest(persona: str, reg: dict, body: str,
+def write_longterm_digest(persona: str, body: str,
                           span_start: int, span_end: int) -> Path:
-    """寫見林 digest（檔案側走 memory.py）＋更新 registry 的 last_consolidated_* 欄位。
+    """寫見林 digest（檔案側走 memory.py）。**不推進 registry 書籤** —— 書籤由磁碟算。
 
-    分工：memory.py 只碰記憶檔、不碰 registry；registry 是本檔的地盤 ——
-    所以「寫檔」與「推進書籤」的接縫刻意留在這裡，而不是讓記憶層反過來 import 登入工具。
+    區塊職責：本檔只負責讓 digest 落盤。`last_consolidated_wake` 不在這裡寫。
+    物理意義：書籤的既成事實是 digest 檔名（`longterm/wake_<start>-<end>.md`）——
+             `consolidation_status()` 無條件跟 `latest_digest_span()` 對帳並取較大者，
+             而那個欄位真正的寫入通道在 C# 端（`SCP_PersonaProfile` ← `senate cmd consolidate`）。
+    數值影響：🩸 原本這裡寫完 digest 還會 `save_registry(reg)` 推進書籤，而那條通道
+             2026-08-21 起**已經不落 persona 檔**，且 registry 讀回的 persona 全部帶
+             identity 欄（實測 21/21）⇒ 守衛**必然** SystemExit。
+             於是「digest 已經在磁碟上」被回報成 exit 1，靠 exit code 判成敗的呼叫端
+             會重跑一次見林、同名覆寫那份 digest。
+             ⇒ 三本帳分開結算：記憶檔那本結清了，不准被一本沒有落點的快取拖下水。
     """
-    path, ts = _mem.write_longterm_digest(persona, body, span_start, span_end)
-    if persona in reg.get("personas", {}):
-        reg["personas"][persona]["last_consolidated_wake"] = span_end
-        reg["personas"][persona]["last_consolidated_at"] = ts
-        save_registry(reg)
+    path, _ts = _mem.write_longterm_digest(persona, body, span_start, span_end)
     return path
 
 
 
-def heal_consolidation_bookmark(persona: str, reg: dict, st: dict) -> bool:
-    """書籤快取落後磁碟 digest 時，把快取修回磁碟值並存檔。回傳有沒有真的寫。
-
-    區塊職責：memory.py 只負責「讀的時候算對」（它不擁有 registry）；持久化在本檔。
-    物理意義：不寫回的話，每個直接讀 registry 欄位的消費端（C# 登入回傳檔的 gap、
-             後台頁）都還是看到落後值 —— 讀時自癒只治印出來的那一行，不治源頭。
-    數值影響：只動 last_consolidated_wake / last_consolidated_at 兩欄；
-             persona 不在 registry（孤兒 digest）時什麼都不做並回 False，不靜默假裝成功。
-    """
-    if not st.get("bookmark_behind_disk"):
-        return False
-    if persona not in reg.get("personas", {}):
-        return False
-    reg["personas"][persona]["last_consolidated_wake"] = st["last_consolidated_wake"]
-    if st.get("last_consolidated_at"):
-        reg["personas"][persona]["last_consolidated_at"] = st["last_consolidated_at"]
-    save_registry(reg)
-    return True
 
 
 def write_wake_brief_files(persona: str, reg: dict, p: dict,
@@ -2154,7 +2140,8 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
     """長期記憶整理 (T2 digest)。
     兩段式 (同 write_letter 分工: agent 寫 body, 工具持久化):
       1. inspect — 不帶 --digest-body: 印 overdue 狀態 + 列本段待濃縮 episodic letters 給 agent 讀
-      2. write   — 帶 --digest-body: 寫 longterm/wake_<N>-<M>.md + 更新 _index + last_consolidated_wake
+      2. write   — 帶 --digest-body: 寫 longterm/wake_<N>-<M>.md + 更新 _index
+                   （書籤不在這裡寫 —— 磁碟檔名就是既成事實）
     """
     reg = load_registry()
     persona = args.persona
@@ -2210,8 +2197,11 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
         if st.get("bookmark_behind_disk"):
             print(f"- 🔧 書籤對帳：registry 快取={st['bookmark_cached_value']} 落後磁碟 digest="
                   f"{st['bookmark_disk_value']} —— 採磁碟值（BUG-4）。")
-            healed = heal_consolidation_bookmark(persona, reg, st)
-            print(f"  ↳ {'已把快取修回磁碟值並存檔' if healed else '⚠ 快取修回失敗（registry 無此 persona）—— 讀數已對，但下次還會落後'}")
+            # 只報讀數、不自己寫回 —— python 端沒有這個欄位的寫入通道
+            # （`save_registry` 2026-08-21 起不落 persona 檔），原本那行
+            # 「已把快取修回磁碟值並存檔」是**假成功**：寫了沒生效與寫成功長得一樣。
+            print("  ↳ 本次讀數已對（採磁碟值）；快取要真的修回去走 "
+                  f"`senate cmd consolidate --persona {persona}`（C# 端才有寫入通道）")
         print(f"- gap: {st['gap']} (門檻 {st['threshold']}) → {'⚠ OVERDUE 該整理' if st['overdue'] else 'ok 尚未到門檻'}")
         print(f"- 建議 span: wake {st['span_start']}-{st['span_end']}")
         print(f"- 本段待濃縮 episodic letters ({len(st['pending_letters'])} 封):")
@@ -2228,10 +2218,11 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
     if span_end < span_start:
         print(f"❌ span_end({span_end}) < span_start({span_start})", file=sys.stderr)
         return 2
-    path = write_longterm_digest(persona, reg, args.digest_body, span_start, span_end)
+    path = write_longterm_digest(persona, args.digest_body, span_start, span_end)
     print(f"✅ 長期記憶 digest 寫入: {path.relative_to(_REPO_ROOT)}")
     print(f"   span: wake {span_start}-{span_end}")
-    print(f"   persona.last_consolidated_wake → {span_end}")
+    print(f"   見林書籤（last_consolidated_wake）由磁碟 digest 檔名供給 → {span_end}；"
+          f"registry 快取由 C# 端寫（本檔不寫）")
     print(f"   index: {(longterm_dir(persona) / '_index.md').relative_to(_REPO_ROOT)}")
 
     # 見林寫入後的三個連動（Tim 2026-07-28 拍板：fragment 在見林時抽）

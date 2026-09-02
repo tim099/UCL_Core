@@ -489,6 +489,57 @@ def _bookshelf_lines(aw, persona: str, p: dict) -> list:
 #     `UCL_AwakeningService` 的 `## identity` 區塊）。**本檔只保留信件／記憶層的解析**
 #     —— 那才是它存在的理由：Editor 未開時仍讀得到自己的信。
 
+# ═══════════════════════════════════════════════════════════════════
+# 區塊職責：inbox 條目的年齡判準（Tim 2026-09-02 拍板：只讀 N 天內）。
+# 物理意義：判準來源是條目裡的 `_at <ISO UTC>_` —— 唯一跨房可比的權威時戳
+#          （標題列的 `(… +08)` 是本地時區投影，不可當判準）。
+#          C# 那側的同一把尺在 `UCL_ChatTavernQuestIO.IsInboxEntryStale`；
+#          兩個 runtime 只能各有一份實作，但**規則與天數必須一致** ——
+#          改天數要兩邊一起改，否則早安 brief 與 catchup 會給出兩個不同的「待處理」。
+# 數值影響：⚠ 拿不到時戳一律當**舊**。這是安全的方向，因為 inbox 條目只有
+#          `AppendInbox` 一支在寫，而它那行是無條件寫的 ⇒ 新條目必有 `_at`；
+#          缺它的只有 2026-08-15 回填前的舊格式殘留（已於 2026-09-02 補完、剩 0 筆）。
+#          反過來設（拿不到當新）會讓那些條目**永遠**留在窗內，而且不會有任何一行字說出來。
+# ═══════════════════════════════════════════════════════════════════
+INBOX_MAX_AGE_DAYS = 7
+
+
+def _split_inbox_entries(raw: str) -> list:
+    """把 inbox 內容切成 [(標題, _at 行)]。錨點是 `## [seq=`（三個 parser 共用，不可改）。"""
+    import re as _re
+    out = []
+    title = None
+    at = ""
+    for ln in raw.splitlines():
+        t = ln.strip()
+        if t.startswith("## [seq="):
+            if title is not None:
+                out.append((title, at))
+            title, at = t[3:].strip(), ""
+        elif title is not None and t.startswith("_at ") and not at:
+            at = t
+    if title is not None:
+        out.append((title, at))
+    return out
+
+
+def _inbox_entry_stale(at_line: str, max_age_days: int = INBOX_MAX_AGE_DAYS) -> bool:
+    """這筆條目是不是太舊。拿不到時戳 → True（當舊）。"""
+    import re as _re
+    from datetime import datetime, timezone
+    m = _re.match(r"^_at (\S+?)Z?_$", (at_line or "").strip())
+    if not m:
+        return True
+    try:
+        ts = datetime.fromisoformat(m.group(1).rstrip("Z")).replace(tzinfo=timezone.utc)
+    except Exception:
+        return True
+    # ⚠ 用 total_seconds() 不用 `.days` —— `.days` 會把 7.1 天截斷成 7，
+    #   於是同一筆條目 python 判「不舊」而 C# 的 `TotalDays > 7` 判「舊」。
+    #   兩支給相反答案的形狀在畫面上完全同形（兩邊都印出一個合理的整數）。
+    return (datetime.now(timezone.utc) - ts).total_seconds() / 86400.0 > max_age_days
+
+
 def _inbox_lines(aw, persona: str, p: dict) -> list:
     """§7 待辦收件匣 — 酒保 pending assignments + inbox @mention 標題。
 
@@ -566,16 +617,22 @@ def _inbox_lines(aw, persona: str, p: dict) -> list:
                 if not f.exists():
                     continue
                 try:
-                    titles = [l.strip()[3:].strip() for l in f.read_text(encoding="utf-8").splitlines()
-                              if l.strip().startswith("## [seq=")]
+                    entries = _split_inbox_entries(f.read_text(encoding="utf-8"))
                 except Exception:
                     continue
-                if not titles:
+                if not entries:
                     continue
-                out.append(f"**📥 [{room_dir.name}] inbox/{box_id}.md（{layer} 層 · {len(titles)} 筆待處理）**")
-                out += [f"- {t}" for t in titles[:10]]
-                if len(titles) > 10:
-                    out.append(f"- …還有 {len(titles) - 10} 筆")
+                fresh = [t for t, at in entries if not _inbox_entry_stale(at)]
+                stale = len(entries) - len(fresh)
+                if not fresh and not stale:
+                    continue
+                out.append(f"**📥 [{room_dir.name}] inbox/{box_id}.md（{layer} 層 · "
+                           f"{len(fresh)} 筆待處理／{INBOX_MAX_AGE_DAYS} 天內）**"
+                           + (f"　·　⚠ 另有 {stale} 筆超過 {INBOX_MAX_AGE_DAYS} 天已折起（仍在檔裡，未歸檔）"
+                              if stale else ""))
+                out += [f"- {t}" for t in fresh[:10]]
+                if len(fresh) > 10:
+                    out.append(f"- …還有 {len(fresh) - 10} 筆")
                 out.append("")
     if not out:
         return ["(無待辦 / 無未讀 @mention)"]

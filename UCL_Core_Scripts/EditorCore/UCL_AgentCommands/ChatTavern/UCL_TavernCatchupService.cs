@@ -285,13 +285,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var snippets = new List<string>();
             string curTitle = null;
             string curFirstBody = null;
+            // 區塊職責：條目要能判年齡 ⇒ 連 `_at` 那一行一起收（原本它只在跳過清單裡當雜訊）。
+            // 物理意義：`_at <ISO UTC>` 是唯一跨房可比的權威時戳；標題列的 `(… +08)` 是本地投影。
+            var atLines = new List<string>();
+            string curAt = null;
             foreach (var ln in lines)
             {
                 if (ln.StartsWith("## [seq="))
                 {
-                    if (curTitle != null) { titles.Add(curTitle); snippets.Add(curFirstBody ?? ""); }
+                    if (curTitle != null) { titles.Add(curTitle); snippets.Add(curFirstBody ?? ""); atLines.Add(curAt ?? ""); }
                     curTitle = ln.Substring(3).Trim();
                     curFirstBody = null;
+                    curAt = null;
+                }
+                else if (curTitle != null && ln.TrimStart().StartsWith("_at "))
+                {
+                    curAt = ln.Trim();
                 }
                 else if (curTitle != null && curFirstBody == null)
                 {
@@ -300,12 +309,35 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         curFirstBody = t.Length > 90 ? t.Substring(0, 90) + "…" : t;
                 }
             }
-            if (curTitle != null) { titles.Add(curTitle); snippets.Add(curFirstBody ?? ""); }
+            if (curTitle != null) { titles.Add(curTitle); snippets.Add(curFirstBody ?? ""); atLines.Add(curAt ?? ""); }
 
-            sb.AppendLine($"## 📥 inbox（persona 層）　**{titles.Count}** 筆待處理"
-                + (titles.Count > iShow ? $"，以下為最新 {iShow} 筆" : ""));
-            for (int i = Math.Max(0, titles.Count - iShow); i < titles.Count; i++)
+            // ═══════════════════════════════════════════════════════════
+            // 區塊職責：只顯示 InboxMaxAgeDays 天內的條目（Tim 2026-09-02 拍板）。
+            // 物理意義：太久以前的 @ 已經失去意義，但它照樣佔著「待處理」那個數字 ——
+            //          實測全庫 732 筆有 425 筆超過 7 天（最舊 116 天）。
+            // 數值影響：**折起來不是丟掉** —— 條目原封不動留在 inbox 檔裡，
+            //          而且標題那行會把折起的筆數印出來。
+            // 🩸 為什麼一定要印：只是不顯示 ＝ 把警報關掉。那些條目不會因為看不見就被處理掉，
+            //    而「乾淨的 inbox」與「被藏起來的 inbox」在畫面上完全同形。
+            // ⚠ 判準委派給 UCL_ChatTavernQuestIO.IsInboxEntryStale —— 同一把尺只能有一份實作；
+            //    這裡自己再 parse 一次就是兩個會各自漂移的真相源。
+            // ═══════════════════════════════════════════════════════════
+            var nowUtc = System.DateTime.UtcNow;
+            var fresh = new List<int>();
+            int stale = 0;
+            for (int i = 0; i < titles.Count; i++)
             {
+                if (UCL_ChatTavernQuestIO.IsInboxEntryStale(atLines[i], nowUtc)) stale++;
+                else fresh.Add(i);
+            }
+
+            sb.AppendLine($"## 📥 inbox（persona 層）　**{fresh.Count}** 筆待處理"
+                + $"（{UCL_ChatTavernQuestIO.InboxMaxAgeDays} 天內）"
+                + (fresh.Count > iShow ? $"，以下為最新 {iShow} 筆" : "")
+                + (stale > 0 ? $"　·　⚠ 另有 **{stale}** 筆超過 {UCL_ChatTavernQuestIO.InboxMaxAgeDays} 天已折起（仍在 inbox 檔裡，未歸檔）" : ""));
+            for (int k = Math.Max(0, fresh.Count - iShow); k < fresh.Count; k++)
+            {
+                int i = fresh[k];
                 sb.AppendLine($"- {titles[i]}");
                 if (!string.IsNullOrEmpty(snippets[i])) sb.AppendLine($"    ↳ {snippets[i]}");
             }

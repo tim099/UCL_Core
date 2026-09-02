@@ -216,24 +216,6 @@ namespace UCL.Core
                     ID = aIDs[aAt];
                 }
             }
-
-            //var aIDs = GetAllIDs(true);
-
-            //if (!GroupID.IsNullOrEmpty())
-            //{
-            //    //GUILayout.Label(GroupID);
-            //    var assetMeta = AssetUtil.AssetMetaIns;
-            //    aIDs = assetMeta.GetAllShowData(Util, aIDs, GroupID, UCL_AssetCommonMeta.PlayerPrefsData.FilterType.Dropdown);
-            //}
-            //if (!aIDs.IsNullOrEmpty())
-            //{
-
-            //    var aAt = UCL.Core.UI.UCL_GUILayout.PopupAuto(aIDs.IndexOf(ID), GetLocalizeIDs(aIDs), iDataDic, "ID", 8, GUILayout.ExpandWidth(true));
-            //    if (aAt >= 0 && aAt < aIDs.Count)
-            //    {
-            //        ID = aIDs[aAt];
-            //    }
-            //}
         }
         virtual public void NameOnGUI(UCL.Core.UCL_ObjectDictionary iDataDic, string iDisplayName, UI.UCL_GUILayout.DrawObjectParams iParams)
         {
@@ -242,22 +224,6 @@ namespace UCL.Core
             {
                 fieldName = iParams.FieldName;
             }
-            //else
-            //{
-            //    if(iParams != null)
-            //    {
-            //        fieldName = $"iParams.m_FieldInfo != null:{iParams.m_FieldInfo != null}";
-            //        if(iParams.m_FieldInfo == null)
-            //        {
-            //            Debug.LogError($"{iDisplayName},iParams.m_FieldInfo == null");
-            //        }
-            //    }
-            //    else
-            //    {
-            //        fieldName = $"iParams == null";
-            //    }
-                
-            //}
 
             GUILayout.Label(fieldName, UCL.Core.UI.UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             //篩選時採用所有模組內可選的分組ID
@@ -313,10 +279,12 @@ namespace UCL.Core
         {
             GUILayout.BeginHorizontal();
             bool aIsPreview = UCL.Core.UI.UCL_GUILayout.Toggle(iDic, "PreviewToggle");
+
+            
             //Debug.LogError($"aIsPreview:{aIsPreview}");
             GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            bool edit = GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle, UCL_GUIStyle.Width(100));
 
-            bool edit = GUILayout.Button(UCL_LocalizeManager.Get("Edit"), UCL.Core.UI.UCL_GUIStyle.ButtonStyle);
 
             GUILayout.EndHorizontal();
             if (edit)
@@ -403,10 +371,6 @@ namespace UCL.Core
                     }
                 }
             };
-            //if (iParams != null)
-            //{
-            //    GUILayout.Label($"iFieldName:{iFieldName},DisplayName:{iParams.m_DisplayName},FieldInfo:{iParams.m_FieldInfo.AllFieldToString()}", UCL_GUIStyle.LabelStyle);
-            //}
             var aParams = iParams.Copy();
             aParams.m_DataDic = iDataDic.GetSubDic("Data");
             aParams.m_DrawObjExSetting = aSetting;

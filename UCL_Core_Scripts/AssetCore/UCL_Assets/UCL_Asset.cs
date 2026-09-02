@@ -81,22 +81,14 @@ namespace UCL.Core
         /// <param name="iIsShowEditButton"></param>
         virtual public void Preview(UCL.Core.UCL_ObjectDictionary iDataDic, bool iIsShowEditButton = false)
         {
-            //GUILayout.BeginHorizontal();
             using (var aScope = new GUILayout.VerticalScope("box", GUILayout.ExpandWidth(false)))//, GUILayout.MinWidth(130)
             {
                 if (iIsShowEditButton)
                 {
                     ShowEditButtonOnGUI();
                 }
-                GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
-
-                
-                //GUILayout.Label($"{this.UCL_ToString()}", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
                 UCL_GUILayout.Preview.OnGUI("Preview", this, iDataDic.GetSubDic("DrawPreview"));
-                //UCL_GUILayout.DrawObjectData(this, iDataDic.GetSubDic("Preview Data"), string.Empty, true);
-
             }
-            //GUILayout.EndHorizontal();
         }
         virtual protected void ShowEditButtonOnGUI()
         {

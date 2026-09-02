@@ -1,4 +1,4 @@
-﻿
+
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 11/23 2024
@@ -971,11 +971,10 @@ namespace UCL.Core
         /// <param name="iIsShowEditButton">Show edit button in preview window?</param>
         override public void Preview(UCL.Core.UCL_ObjectDictionary iDataDic, bool iIsShowEditButton = false)
         {
-            //GUILayout.BeginHorizontal();
             using (var aScope = new GUILayout.VerticalScope("box", GUILayout.ExpandWidth(false)))
             {
 
-                GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
+                //GUILayout.Label($"{UCL_LocalizeManager.Get("Preview")}({ID})", UCL.Core.UI.UCL_GUIStyle.LabelStyle);
 
                 if (iIsShowEditButton)
                 {
@@ -990,7 +989,6 @@ namespace UCL.Core
                     GUILayout.Label($"{UCL_LocalizeManager.GetLanguageCodeName(key)}({key})", UCL_GUIStyle.LabelStyle);
                 }
             }
-            //GUILayout.EndHorizontal();
         }
 
         public override void OnGUI(UCL_ObjectDictionary iDataDic)

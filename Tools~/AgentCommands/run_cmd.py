@@ -1549,7 +1549,52 @@ def main() -> int:
     return args.func(args)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 退場中（TASK-0107，Tim 2026-09-02 拍板）：本支全面改走 `senate ucmd`。
+# 觀察期內**只提示與記錄，不擋** —— 擋了會讓還沒改到的路徑當場停工，
+# 而「還沒改到」正是這段期間要找出來的東西。
+# 🩸 為什麼不只印字：寫下來 ≠ 生效（lex scripta ≠ lex vigens）。
+#    只印提示的話，讀到的人會跳過它，然後我方沒有任何一格讀數知道誰還在用。
+#    ⇒ 落檔那半不需要任何人記得，它是這段觀察期唯一不靠自覺的證據。
+# ─────────────────────────────────────────────────────────────────────────────
+_DEPRECATION_NOTICE = """\
+⚠  run_cmd.py 退場中 —— 本專案已全面改走 Senate CLI（TASK-0107）
+   等價寫法：senate ucmd run <CmdType> --persona <P> --arg k=v [--arg-file k=<路徑>]
+   狀態查詢：senate ucmd status
+
+📣 你是從哪裡被指到這支的？那份指路牌就是漏網的，請回報：
+   senate ucmd run Task --persona <你> --arg op=create --arg type=bug --arg tags=friction \\
+     --arg title="<哪份文件/skill/回傳檔還在指向 run_cmd.py>" \\
+     --arg evidence="<該檔路徑與行號；若是 Cmd 回傳檔請附 cmd 名>"
+"""
+
+
+def _log_deprecated_call(argv) -> None:
+    """把每次呼叫落成一行 jsonl —— 觀察期的收單條件讀的是這份檔，不是誰的印象。
+
+    ⛔ 任何失敗都吞掉：這是觀測儀，不是守衛。它壞掉不該讓真正的工作停下來。
+    """
+    try:
+        import datetime as _dt
+        aPath = DATA_ROOT / "_deprecated_calls" / "run_cmd_calls.jsonl"
+        aPath.parent.mkdir(parents=True, exist_ok=True)
+        aRow = {
+            "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            "argv": [str(x) for x in argv[1:]],
+            "cwd": str(Path.cwd()),
+            # 誰 spawn 的 —— 6 支同層工具轉接前會一直出現在這裡，那正是要看的讀數。
+            "env_marker": _detect_caller_env_marker(),
+            "parent": os.environ.get("UCL_CALLER") or None,
+        }
+        with aPath.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(aRow, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    print(_DEPRECATION_NOTICE, file=sys.stderr)
+    _log_deprecated_call(sys.argv)
     sys.exit(main())

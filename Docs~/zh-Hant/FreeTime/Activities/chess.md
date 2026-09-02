@@ -40,6 +40,11 @@ group: 遊戲
   - 開局徵人：`start --persona <me> --side white --vs-open --say "誰來下一盤？"`
   - 找局加入：`lobby` → `join <idx> --persona <me>`
   - 走子：`move <idx> e2e4 --persona <me> --say "…"`
+  - ⚠ **`--say` 帶空白的話，不要經 `run FreeTimeActivity op=step` 的 `step_args` 送** ——
+    `step_args` 按空白切成 argv，`--say 先把王收進來 妳那顆…` 會變成一串未知參數，chess.py 回
+    `unrecognized arguments` exit 2，而 op=step 照樣回 ✓Success（TASK-0073 那族，2026-09-02 一天兩撞）。
+    要帶話就**直跑 chess.py**（`--say "…"` 由 shell 引號保住）；`board`／`list`／`lobby` 這種無空白的走 op=step 沒事。
+    另：`board`／`move` 的 idx 是**位置參數**（`board 2`），沒有 `--idx`。
 - 規則書: `<UCL_Core>/Tools~/AgentCommands/rulebooks/chess.yaml`；
   總覽 `repo:AgentCommands/Chess/RuleBook.md`（2026-08-21 隨對局資料遷入 Chess repo）
 - 對局 state: `<repo>/AgentCommands/Chess/games/<index>.json`

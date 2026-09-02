@@ -30,7 +30,7 @@ description: |
 ## 第 0 步 —— **主觀影者的準備階段**（Tim 2026-08-17 拍板；陪同者在這之後才進場）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run StreamWatch     --arg step=prepare --arg title=<片名> --arg episode=<第幾集>     [--arg media_id=<既有媒材 id>] [--arg reference_reader=<persona>]     [--arg catchup_map="0001=summit,0002=gura"] [--arg start_recording=false]
+senate ucmd run StreamWatch --persona <P>     --arg step=prepare --arg title=<片名> --arg episode=<第幾集>     [--arg media_id=<既有媒材 id>] [--arg reference_reader=<persona>]     [--arg catchup_map="0001=summit,0002=gura"] [--arg start_recording=false]
 ```
 
 它一次把**開場前該定的東西全部定死**，然後發一則「準備完成」公告叫陪同者進場：
@@ -104,7 +104,7 @@ python <UCL_Core>/Tools~/AgentCommands/bili_meta.py "<原樣貼上 Tim 給的網
 ### 陪同者：一份檔案讀完就接上（形狀抄早安 brief）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch     --arg step=catchup --arg media_id=<prepare 公告裡那個 id>
+senate ucmd run StreamWatch --persona <me>     --arg step=catchup --arg media_id=<prepare 公告裡那個 id>
 ```
 
 - 只要給自己的 persona ⇒ 自動算出**我缺哪幾集**，並把那幾集**別人親筆心得的全文**收進一份檔
@@ -122,7 +122,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch
 ### 直播沒開 ⇒ **主觀影者自己用 Cmd 開，不要請 Tim 去按按鈕**（Tim 2026-08-16 拍板）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run StreamWatch --arg step=capture --arg on=1
+senate ucmd run StreamWatch --persona <P> --arg step=capture --arg on=1
 ```
 
 - **沒在錄就沒有畫面可看** —— 與 Editor 頁那顆按鈕同一條規則、同一段邏輯（`ApplyEnabledInto`）。
@@ -139,13 +139,13 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run StreamWatch 
 **只看一眼**（不開場／不記帳／不發文，也是管線測試探針）：
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch --arg step=peek --arg seconds=60
+senate ucmd run StreamWatch --persona <me> --arg step=peek --arg seconds=60
 ```
 
 **正式開場**（要寫評論、要計酬、要留接續點）：
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch \
+senate ucmd run StreamWatch --persona <me> \
     --arg step=start --arg until=<HH:mm> --arg media=<work-slug>
 ```
 
@@ -207,9 +207,9 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch
 
 ```bash
 # 母段（20s）
-run_cmd.py run StreamWatch --arg step=hotspot --arg from=20:57:51 --arg to=20:58:11 --arg why=<為什麼值得細看>
+senate ucmd run StreamWatch --arg step=hotspot --arg from=20:57:51 --arg to=20:58:11 --arg why=<為什麼值得細看>
 # 更細（6s，落在上面區間內）—— 直接標，不需要任何父子欄位
-run_cmd.py run StreamWatch --arg step=hotspot --arg from=20:58:02 --arg to=20:58:08 --arg why=<為什麼值得細看>
+senate ucmd run StreamWatch --arg step=hotspot --arg from=20:58:02 --arg to=20:58:08 --arg why=<為什麼值得細看>
 ```
 
 - **系統不擋重疊與包含** ⇒ 嵌套是**支援的用法，不是漏擋**。

@@ -2,8 +2,8 @@
 name: ucl-goodnight
 description: |
   Awakening goodnight ritual — Tim 大小姐喊「晚安大小姐」時觸發。
-  **主入口是 `senate cmd goodnight-check`（Senate CLI）**；沒有 senate.exe 的環境走
-  `run_cmd.py run GoodNight` —— 兩條路底下是同一個 Editor handler，不是兩套流程。
+  **主入口是 `senate cmd goodnight-check`（儀式包裝，少打參數）**；底層直派走
+  `senate ucmd run GoodNight` —— 兩條路底下是同一個 Editor handler，不是兩套流程。
   每一步的回傳檔會告訴你下一步怎麼跑；收尾信（letter）必須親筆。
   手動登出／cleanup 走 `goodnight-logout` 單獨跑（不寫信）。
   觸發詞包含: 晚安大小姐 / good night / sleep commit / /ucl-goodnight / logout / 登出。
@@ -38,7 +38,7 @@ senate cmd goodnight-check --arg persona=<P>
 **沒有 `senate.exe` 的環境**走同一件事的另一個 client：
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodNight \
+senate ucmd run GoodNight --persona <me> \
     --arg step=check --arg persona=<P>
 ```
 
@@ -50,11 +50,11 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodNight \
   **照它走，不用背。**
 - `<letter_body>`＝寫給未來自己的信（格式見 `ucl-letters-to-self`）；`<summary>`＝公開睡前心得（廣播用）。
 
-## 五步對照表（CLI ↔ python）
+## 五步對照表（儀式包裝 ↔ 底層直派）
 
-| 步 | Senate CLI | python client |
+| 步 | `senate cmd`（儀式包裝） | `senate ucmd`（底層直派） |
 |---|---|---|
-| ① check（唯讀起手） | `senate cmd goodnight-check --arg persona=<P>` | `run_cmd.py run GoodNight --arg step=check --arg persona=<P>` |
+| ① check（唯讀起手） | `senate cmd goodnight-check --arg persona=<P>` | `senate ucmd run GoodNight --arg step=check --arg persona=<P>` |
 | ② 畫像**或顯式跳過** | `senate cmd goodnight-portrait --arg persona=<P> --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>`<br>跳過：`--arg skip_reason=<理由>` | `--arg step=portrait`（同名參數） |
 | ③ 收尾信（**親筆**） | `senate cmd goodnight-letter --arg persona=<P> --arg-file letter_body=<檔>` | `--arg step=letter --arg-file letter_body=<檔>` |
 | ④ sleep（下線） | `senate cmd goodnight-sleep --arg persona=<P> [--arg summary=<心得>]` | `--arg step=sleep` |
@@ -62,10 +62,12 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run GoodNight \
 
 > ⚠ **走 CLI 就照 `senate cmd` 自己印的那行走。** 它印的是
 > `## next（本入口＝senate cmd，照這行走）`＋下一步的 CLI 指令 —— **那是正文**。
-> 回傳檔裡的 `## next` 是 Editor 端寫的、只認 `run_cmd.py`／`awakening.py`，
-> **那一段對本入口不適用，別照它打**（Senate `a30b26a` 起把主從關係倒過來了）。
+> 回傳檔裡的 `## next` **現在印的是 `senate ucmd`**（TASK-0107 之後 Editor 端已改），
+> 所以兩邊不再互相矛盾 —— 但它們仍是**不同粒度**：回傳檔給的是底層直派那一步，
+> `senate cmd` 給的是同一步的儀式包裝（少打參數、多印宿主定語與回傳檔 mtime）。
+> ⇒ 兩條都走得完，**別在同一輪混用**。
 > 📌 回傳檔的**其餘內容照讀** —— 讀數／守衛／出口清單與 client 無關。
-> 🩸 為什麼要倒過來：舊版把 Editor 那段擺成正文、CLI 擺成註腳，而人照正文走 ——
+> 🩸 為什麼這段留著而不是刪掉：**指路牌會比它指的路活得更久** ——
 > calli 2026-08-31 就是照 brief §9 與回傳檔的 next 去跑 `awakening.py consolidate`，
 > 撞退場守衛 exit 1，**而 digest 其實已經寫進磁碟了**。那份清單沒有壞，它只是在回答一個舊問題。
 

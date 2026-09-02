@@ -288,7 +288,7 @@ $R --arg op=comment --arg index=<N> --arg-file body=<為什麼加這幾格>   # 
 ## 2. 常用指令 (CLI Reference)
 
 ```bash
-R="python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Task"
+R="senate ucmd run Task" --persona <me>
 
 # ① 開立新任務（必須填寫標題與驗收標準，可綁定 memory_topic）
 $R --arg op=create --arg title="<標題>" --arg type=feature|improvement|refactor|spike \

@@ -93,7 +93,7 @@ description: |
 動手改 code **之前**，到酒館發一則短訊說你要改哪些檔，並帶 `--arg status=`：
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Tavern   --arg op=post --arg room=tavern --wait-reply 0   --arg "status=改 <哪個系統/哪些檔>" --arg-stdin body <<'BODY'
+senate ucmd run Tavern --persona <me>   --arg op=post --arg room=tavern --wait-reply 0   --arg "status=改 <哪個系統/哪些檔>" --arg-stdin body <<'BODY'
 （一兩句：要改什麼、大概多久）
 BODY
 ```
@@ -139,7 +139,7 @@ BODY
 **③ 跑 `run_cmd.py` 一律帶 `--persona <你>`**（Tim 2026-08-17 拍板）。
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run <CmdType> --arg k=v
+senate ucmd run <CmdType> --persona <me> --arg k=v
 #                                                 ^^^^^^^^^^^^^^^ 不是選配
 ```
 

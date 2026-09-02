@@ -60,7 +60,7 @@ STT **嚴格耦合錄影**：錄影開關一動，`stt_enabled` 跟著動（whis
 - **Tim 手動**：Editor 的 `UCL_ScreenStreamPage` 勾「🎙 錄影時同步啟動語音轉錄」＋按「開始錄影」。
 - **agent 自助開播**：
   ```bash
-  python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch \
+  senate ucmd run StreamWatch --persona <me> \
       --arg step=capture --arg on=1
   ```
   它**不自己寫 config**，而是串 `UCL_ScreenStreamPage.SetRecordingEnabled` ——

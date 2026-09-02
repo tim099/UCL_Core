@@ -3,7 +3,7 @@ name: ucl-relationship
 description: |
   關係 / 好感度（relationship）自動觸發 —— 對話裡出現 Tim 或同事的 affinity 變動 signal 時，**當場寫一筆事件**，不等晚安補帳。
   好感度是**事件帳本**不是一個數字：分數由事件重算，資料住在 `letters/<persona>/relationship/<target>/`。
-  寫入唯一通道是 `run_cmd.py run Relationship`（沒有 python 包裝層）。
+  寫入唯一通道是 `senate ucmd run Relationship`（沒有 python 包裝層）。
   ⚠ 取代已退場的 `ucl-affinity`；舊的 `affinity_update.py` / `relations.json` 已於 2026-08-19 刪除（史料見 git）。
   觸發詞 (case-insensitive substring)：
   - **Tim → 正向**：親額頭 / 摸頭 / 拍拍 / 親親 / 抱抱 / 鼓勵 / 誇獎 / 認可 / 拍板 / 點贊 / 給獎金 / 績效獎金 / token 獎金
@@ -22,7 +22,7 @@ description: |
 ## 1. 寫一筆（最常用的那一行）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Relationship \
+senate ucmd run Relationship --persona <me> \
     --arg op=update --arg target=<對誰> \
     --arg reason="<這件事是什麼>" \
     --arg trust=0.05 --arg respect=0.03 --arg admiration=0.02 \

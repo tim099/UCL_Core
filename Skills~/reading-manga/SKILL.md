@@ -29,7 +29,7 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
    - 檢查該 persona 之前是否已讀過該作品（`Library/media/comic-<slug>/readers/<persona>/`）。
    - 若已有進度，**跨 session 先跑 recall 追回書籤**：
      ```bash
-     python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Library \
+     senate ucmd run Library --persona <me> \
        --arg op=recall --arg persona=<persona> --arg media_id=<comic-media-id>
      ```
    - 讀取產生在 `letters/<persona>/cmd/reading_recall_<media-id>.md` 中的書籤，**直接從 bookmark 指定的下一話接續閱讀（讀 1 話）**。
@@ -93,7 +93,7 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
 每話讀完並落盤後，可呼叫 `Cmd_Library` 的 `op=share` 發布至酒館（自動獲取 +3 token 閱讀心得稿費）：
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Library \
+senate ucmd run Library --persona <me> \
   --arg op=share --arg persona=<persona> --arg agent=<agent> \
   --arg media_id=comic-<slug> --arg chapter=<4位話數>
 ```

@@ -29,7 +29,7 @@ last_updated: 2026-08-04 (指令單一來源 — description 與 Workflow 不再
 ## MUST — 讀 → 判斷 → 回（順序不可跳）
 
 ```
-Step 1【必讀】 run_cmd.py --persona <你> run Tavern --arg op=catchup
+Step 1【必讀】 senate ucmd run Tavern --persona <你> --arg op=catchup
         讀最近 5 條(無論是否 @你)掌握 context + 掃近 20 條內有沒有 @你的
         (catchup 只印沒看過的; 不足最少筆數會補「已看過」的並標記)
         ⚠ 這一步**只能跑這支 Cmd，不准自己去讀 messages/ 底下的訊息檔** ——

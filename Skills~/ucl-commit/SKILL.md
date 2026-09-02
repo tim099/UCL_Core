@@ -65,12 +65,12 @@ description: |
 >
 > ```bash
 > # 先掃（預設 op=scan，純讀不動 index）—— 看清分群再決定
-> run_cmd.py --persona <me> run AutoCommit --arg op=scan
-> run_cmd.py --persona <me> run AutoCommit --arg op=scan --arg mode=letters
+> senate ucmd run AutoCommit --persona <me> --arg op=scan
+> senate ucmd run AutoCommit --persona <me> --arg op=scan --arg mode=letters
 >
 > # 真的提交（逐群一筆 commit；不 push、不 bump 父層）
-> run_cmd.py --persona <me> run AutoCommit --arg op=commit
-> run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=letters
+> senate ucmd run AutoCommit --persona <me> --arg op=commit
+> senate ucmd run AutoCommit --persona <me> --arg op=commit --arg mode=letters
 > ```
 >
 > ⚠ 四個硬擋（都是「不會當場叫」的錯，所以擋在必經路上）：
@@ -94,8 +94,8 @@ description: |
 >   `[chat]` 獨立 commit 是 CLAUDE.md 等級的硬規則，能被參數亂改的規則等於沒有規則。
 > - **其他 repo** → 該 repo 根目錄的 `.ucl_autocommit.json`（自己宣告分群），走 `mode=submodules`：
 >   ```bash
->   run_cmd.py --persona <me> run AutoCommit --arg op=scan   --arg mode=submodules
->   run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=submodules
+>   senate ucmd run AutoCommit --persona <me> --arg op=scan   --arg mode=submodules
+>   senate ucmd run AutoCommit --persona <me> --arg op=commit --arg mode=submodules
 >   ```
 >   **沒有設定檔、或設定停用的 submodule 都不收**（不猜規則）。第一個消費者是 `Chess`（棋局狀態）。
    ⚠ 兩個條件缺一不可：**有 `.ucl_autocommit.json`** ＋ **`Enabled=true`**。

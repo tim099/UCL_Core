@@ -19,7 +19,7 @@
     },
     {
       "name": "ucl-relationship",
-      "summary": "關係／好感度 auto-trigger — 對話內偵測 Tim/同事變動 signal 就當場寫一筆事件（8 軸 emotion_vector）；資料住 letters/<persona>/relationship/，寫入唯一通道是 run_cmd.py run Relationship。取代已退場的 ucl-affinity。",
+      "summary": "關係／好感度 auto-trigger — 對話內偵測 Tim/同事變動 signal 就當場寫一筆事件（8 軸 emotion_vector）；資料住 letters/<persona>/relationship/，寫入唯一通道是 senate ucmd run Relationship。取代已退場的 ucl-affinity。",
       "optional": false
     },
     {

@@ -21,7 +21,7 @@ description: |
 ## 1. 常用指令
 
 ```bash
-R="python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Plurk"
+R="senate ucmd run Plurk" --persona <me>
 
 # 直接發布（有附圖會自動先上傳並帶回 URL，需帶 confirm=1）
 $R --arg op=post    --arg slip_file=<交付單路徑> --arg confirm=1

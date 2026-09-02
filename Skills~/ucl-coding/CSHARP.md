@@ -47,11 +47,11 @@
 > 而要**等到編完並拿到錯誤清單**，用 python 子命令（不是 `run Recompile`）：
 >
 > ```bash
-> python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> recompile
+> run_cmd.py --persona <me> recompile
 > ```
 >
 > 它會：記下 pre-mtime → 送 Cmd → **等 `.compile_status.json` 推進且 `in_progress=false`** → 印 errors/warnings。
-> 而 `run_cmd.py run Recompile` 只是**丟出請求就返回**（Cmd_Recompile 刻意這樣設計 —— domain reload 會殺掉
+> 而 `senate ucmd run Recompile` 只是**丟出請求就返回**（Cmd_Recompile 刻意這樣設計 —— domain reload 會殺掉
 > in-flight 的 async Cmd，所以它不能自己 await 編譯完成）。
 >
 > ⚠ **`Cmd 回 Success` 只證明「請求被 Unity 收下」，不證明編譯發生過。**
@@ -198,14 +198,14 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 
 ```bash
 # 靜態方法（最常用：自我檢查）
-run_cmd.py --persona <me> run Invoke --arg type=<Namespace.Type> --arg member=<Method>
+senate ucmd run Invoke --persona <me> --arg type=<Namespace.Type> --arg member=<Method>
 
 # 靜態屬性 → 存成變數（storeAs），供後續 invoke 當 target
-run_cmd.py --persona <me> run Invoke --arg type=UCL.Core.UCL_SpriteAsset --arg member=Util \
+senate ucmd run Invoke --persona <me> --arg type=UCL.Core.UCL_SpriteAsset --arg member=Util \
     --arg kind=property --arg storeAs=spriteUtil
 
 # 實例方法：target=$變數；有多載或帶預設參數時要給 paramTypes + args
-run_cmd.py --persona <me> run Invoke --arg target='$spriteUtil' --arg member=GetData \
+senate ucmd run Invoke --persona <me> --arg target='$spriteUtil' --arg member=GetData \
     --arg paramTypes='System.String;System.Boolean' --arg args='<ID>;false'
 ```
 
@@ -247,16 +247,16 @@ grep -n "AgentCmd:Invoke\] OK" ~/AppData/Local/Unity/Editor/Editor.log | tail -1
 實例（本專案 2026-08-14 實跑）：
 ```bash
 # ① 資料層自我檢查（不開遊戲）
-run_cmd.py --persona <me> run Invoke --arg type=LittleYellow.ClickAreaAsset --arg member=SelfTest
+senate ucmd run Invoke --persona <me> --arg type=LittleYellow.ClickAreaAsset --arg member=SelfTest
 
 # ② 三段式串接：Util → 取某份資產 → 呼叫它的方法 → 存檔
-run_cmd.py --persona <me> run Invoke --arg type=LittleYellow.SpriteAssetImporter --arg member=Util \
+senate ucmd run Invoke --persona <me> --arg type=LittleYellow.SpriteAssetImporter --arg member=Util \
     --arg kind=property --arg storeAs=impUtil
-run_cmd.py --persona <me> run Invoke --arg target='$impUtil' --arg member=GetData \
+senate ucmd run Invoke --persona <me> --arg target='$impUtil' --arg member=GetData \
     --arg paramTypes='System.String;System.Boolean' --arg args='ClickAreas_Scene2;false' \
     --arg storeAs=imp
-run_cmd.py --persona <me> run Invoke --arg target='$imp' --arg member=Import
-run_cmd.py --persona <me> run Invoke --arg target='$imp' --arg member=Save   # ← 漏掉這步 = 改動只在記憶體
+senate ucmd run Invoke --persona <me> --arg target='$imp' --arg member=Import
+senate ucmd run Invoke --persona <me> --arg target='$imp' --arg member=Save   # ← 漏掉這步 = 改動只在記憶體
 ```
 
 ### 🖱 觸發 Editor 頁的 UI 按鍵（Tim 2026-08-20 拍板）
@@ -266,13 +266,13 @@ run_cmd.py --persona <me> run Invoke --arg target='$imp' --arg member=Save   # �
 
 ```bash
 # ① 建頁面實例並存成變數
-run_cmd.py --persona <me> run Invoke     --arg type=UCL.Core.EditorLib.Page.UCL_BankAdminPage --arg member=Create --arg storeAs=page
+senate ucmd run Invoke --persona <me>     --arg type=UCL.Core.EditorLib.Page.UCL_BankAdminPage --arg member=Create --arg storeAs=page
 
 # ② 用 $page 呼叫按鍵背後的方法（多半是 private instance method ⇒ 要 nonPublic=true）
-run_cmd.py --persona <me> run Invoke     --arg target='$page' --arg member=LoadData --arg nonPublic=true
+senate ucmd run Invoke --persona <me>     --arg target='$page' --arg member=LoadData --arg nonPublic=true
 
 # 有參數的照常帶 paramTypes / args
-run_cmd.py --persona <me> run Invoke --arg target='$page'     --arg member=IsAgentBankRemoveArmed --arg paramTypes=System.String --arg args=Zeta --arg nonPublic=true
+senate ucmd run Invoke --persona <me> --arg target='$page'     --arg member=IsAgentBankRemoveArmed --arg paramTypes=System.String --arg args=Zeta --arg nonPublic=true
 ```
 
 實測讀數（2026-08-20，`UCL_BankAdminPage`）：

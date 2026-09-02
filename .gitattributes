@@ -1,0 +1,22 @@
+# 區塊職責：釘住行尾政策，讓 repo 裡存的永遠是 LF、不靠每台機器的 core.autocrlf。
+# 物理意義：本 repo 是 Unity package submodule。照 Unity 專案慣例先 `* -text`（.asset / .prefab 那族
+#           的行尾不可以被 git 動），再逐類放行人寫的文字檔。
+#           🩸 2026-09-02：這裡原本沒有這份檔，全靠 global autocrlf=true —— Mac／CI clone 就沒有那層。
+# 數值影響：只影響 checkout / add 時的行尾轉換。加上去 index 零 churn（量過：*.cs 699 檔全 i/lf）。
+* -text
+
+# 人寫的文字檔：repo 存 LF，工作區依平台
+*.cs    text=auto
+*.py    text=auto
+*.md    text=auto
+*.json  text=auto
+*.asmdef text=auto
+
+# 一定要 LF（sh 的 shebang 帶 \r 會 bad interpreter；.meta Unity 只寫 LF）
+*.sh   text eol=lf
+*.meta text eol=lf
+
+# Windows 這邊反過來要 CRLF
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf

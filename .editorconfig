@@ -1,0 +1,15 @@
+# 區塊職責：編輯器層的行尾與編碼統一（Rider / VS / VS Code 讀它；git 那層由 .gitattributes 管）。
+# 物理意義：repo 存 LF；工作區 Windows 上 .cs 用 CRLF、sh / py / .meta 用 LF。只管行尾與 charset，不動縮排。
+# ⚠ .ps1 必須 utf-8-bom：PowerShell 5.1 沒 BOM 用 ANSI 讀，中文直接壞。
+root = true
+
+[*]
+end_of_line = crlf
+charset = utf-8
+
+[*.{sh,py,meta,yml,yaml,toml}]
+end_of_line = lf
+
+[*.ps1]
+end_of_line = crlf
+charset = utf-8-bom

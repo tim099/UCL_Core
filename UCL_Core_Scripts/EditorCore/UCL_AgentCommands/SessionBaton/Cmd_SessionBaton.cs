@@ -29,7 +29,7 @@ namespace UCL.Core.EditorLib.AgentCommands.SessionBaton
     ///
     /// <para>典型用法：</para>
     /// <code>
-    /// python AgentCommands/run_cmd.py run SessionBaton \
+    /// senate ucmd run SessionBaton \
     ///   --arg actor="claude-da-xiaojie" \
     ///   --arg title="Marathon 21 cascade + T82 三輪 ship 收尾" \
     ///   --arg body="# 主軸\n...\n# 未完議題\n...\n# 鉤子\n..."

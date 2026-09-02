@@ -145,7 +145,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 sb.AppendLine("## 失敗項");
                 foreach (string f in failures) sb.AppendLine($"- {f}");
                 sb.AppendLine();
-                sb.AppendLine("修法：`run_cmd.py run ExportCmdSchema`，或重新編譯一次讓 AutoSync 補上。");
+                sb.AppendLine("修法：`senate ucmd run ExportCmdSchema`，或重新編譯一次讓 AutoSync 補上。");
                 sb.AppendLine();
                 if (verbose && diffLine >= 0)
                 {
@@ -171,7 +171,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             sb.AppendLine("  目前只服務 Tavern（`precheck_cmd_type` 那層才是全域的，它管的是 unknown type）。");
             sb.AppendLine("- 要驗那一環，手動跑一次故意缺參數的 Tavern 呼叫，確認 client 端擋下且未進 queue：");
             sb.AppendLine("  ```");
-            sb.AppendLine("  run_cmd.py run Tavern --arg op=post --arg persona=<你>   # 缺 room/agent/body");
+            sb.AppendLine("  senate ucmd run Tavern --arg op=post --arg persona=<你>   # 缺 room/agent/body");
             sb.AppendLine("  # 期望：✗ 預檢失敗、exit=2、輸出無 Submitted:");
             sb.AppendLine("  ```");
             sb.AppendLine("- 本 Cmd 通過**只代表**：來源與產物一致，且 ArgsSpec 有正確落進產物。");

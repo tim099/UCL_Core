@@ -131,7 +131,7 @@ namespace UCL.Core.EditorLib.AgentCommands
     // ===========================================================
     // 🩸 血證探針 —— 這個類**不是機制的一部分**，它存在的唯一理由是證明
     //    「ambient（AsyncLocal）方案在本專案不可用」，並讓任何人都能自己重跑一次。
-    // 跑法：run_cmd.py run Invoke --arg type=UCL.Core.EditorLib.AgentCommands.UCL_AgentCmdScopeProbe
+    // 跑法：senate ucmd run Invoke --arg type=UCL.Core.EditorLib.AgentCommands.UCL_AgentCmdScopeProbe
     //                            --arg member=SelfTest        （單流：會全綠 —— 而它證明不了併發）
     //                            --arg member=SelfTestConcurrent（雙流：LEAK 就在這裡）
     // 結論（basecamp 2026-08-16 實測）：SelfTestConcurrent → A 全 LEAK、A.seq 停在 0。

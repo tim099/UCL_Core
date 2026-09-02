@@ -959,7 +959,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===========================================================
         // 區塊：診斷 hook — 給 Cmd_Invoke reflection 驗「真實 runtime 狀態」用
         // 物理意義：compile 0 error 只證語法對，不證接線對。本方法把兩道閘門 / token / 路由 / 游標
-        //          一次吐成字串，經 `run_cmd.py run Invoke --arg member=SelfTest` 取得 → Editor.log
+        //          一次吐成字串，經 `senate ucmd run Invoke --arg member=SelfTest` 取得 → Editor.log
         //          的 `[AgentCmd:Invoke] OK (System.String) = ...` 才是 ground truth。
         // 數值影響：純唯讀（不發請求、不寫檔）；token 只報「就緒/缺席」絕不吐內容。
         // ===========================================================

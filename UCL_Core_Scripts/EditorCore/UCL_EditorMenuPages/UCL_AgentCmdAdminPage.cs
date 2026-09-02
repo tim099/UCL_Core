@@ -128,7 +128,7 @@ namespace UCL.Core.EditorLib.Page
                 if (showDetail)
                 {
                     GUILayout.Label("Python client 端 (`tavern_cmd.py`) 的參數預檢讀這份產物。"
-                        + "新增／修改 Cmd 後請按上面的按鈕，或跑 `run_cmd.py run ExportCmdSchema`（兩者等價）。",
+                        + "新增／修改 Cmd 後請按上面的按鈕，或跑 `senate ucmd run ExportCmdSchema`（兩者等價）。",
                         UCL_GUIStyle.LabelStyle);
                     GUILayout.Label("未同步不會擋住任何功能 —— Python 端偵測到 hash 不符會自動降級成「不做參數預檢」，"
                         + "把判斷權交還給 Editor。同步只是讓 client 能提早回報參數錯誤。",

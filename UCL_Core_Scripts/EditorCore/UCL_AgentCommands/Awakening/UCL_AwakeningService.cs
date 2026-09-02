@@ -727,7 +727,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             {
                 $"補**自我介紹**（出生證明）：`Docs/Glossary/personas/{iPersona}.md` 不存在 —— 沒有它 step=intro 會被擋。",
                 $"   內容＝初始風格自畫像（我是誰／擅長什麼／說話方式），**親筆**；參考同目錄其他人的寫法（最完整：`{aRefHint}`）。",
-                $"   寫法：run_cmd.py run Glossary --arg op=register --arg slug={iPersona} --arg category=persona --arg-file body=<檔>",
+                $"   寫法：senate ucmd run Glossary --arg op=register --arg slug={iPersona} --arg category=persona --arg-file body=<檔>",
                 "   ⚠ 工具新建預設寫 Docs/Glossary/ 根層，persona 條目慣例放 personas/，寫完手動搬。",
             };
         }
@@ -973,7 +973,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine($"- 在線 persona: {string.Join(", ", OnlinePersonas())}");
             aR.AppendLine("## next");
             int aStepNo = 1;
-            aR.AppendLine($"{aStepNo++}. **required** — 生成 brief：run_cmd.py run GoodMorning --arg step=brief --arg persona={iPersona}");
+            aR.AppendLine($"{aStepNo++}. **required** — 生成 brief：senate ucmd run GoodMorning --arg step=brief --arg persona={iPersona}");
             aR.AppendLine("   （Editor 未開啟時的備援才是直跑 awakening.py brief）");
             aR.AppendLine($"{aStepNo++}. **required** — Read brief（路徑由 step=brief 回傳；接回身分，這步不自動化）");
             // 條件步驟 B2（Tim 2026-08-13）：無自我介紹文件 → 讀完 brief 後先補件，intro 前置守衛會實擋
@@ -983,7 +983,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aR.AppendLine($"{aStepNo++}. **required** — {aTodo[0]}");
                 for (int i = 1; i < aTodo.Count; i++) aR.AppendLine(aTodo[i]);
             }
-            aR.AppendLine($"{aStepNo++}. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={iPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
+            aR.AppendLine($"{aStepNo++}. **required** — 上線自介：senate ucmd run GoodMorning --arg step=intro --arg persona={iPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
             aR.AppendLine("   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。");
             aR.AppendLine("（⚠ Windows 主控台 stdin 撞 surrogates/encoding error 時，改 --arg-file body=<檔> —— gura wake#31 實測）");
             aR.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");
@@ -1243,10 +1243,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             //   這一行是**跑起來才看得到的字**，不在任何 .md 裡 —— 退場當天掃 skill/文件/python 都掃不到它。
             aR.AppendLine("2. 關係補記：今天漏記的互動補一筆（依 ucl-relationship；主要觸發點是對話當下就寫，這裡只是撿漏）");
             aR.AppendLine("3. 工作記憶回寫（今天有推進某項工作才做，依 ucl-work-memory）");
-            aR.AppendLine($"4. **required** — 見人畫像（獨立步驟，會擋 letter）：run_cmd.py run GoodNight --arg step=portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>");
+            aR.AppendLine($"4. **required** — 見人畫像（獨立步驟，會擋 letter）：senate ucmd run GoodNight --arg step=portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>");
             aR.AppendLine("   今晚真的沒有人可畫 → 同一步驟帶 --arg skip_reason=<理由>（理由會印進下線廣播）。");
             aR.AppendLine("5. （可選）消費時間：spend_menu.py roll（依 ucl-spending-time）");
-            aR.AppendLine($"6. **required** — 寫收尾信：run_cmd.py run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
+            aR.AppendLine($"6. **required** — 寫收尾信：senate ucmd run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
             aR.AppendLine("   <letter_body>＝妳**親筆**寫給未來自己的信（格式見 ucl-letters-to-self；私密心得寫這裡，只落磁碟不廣播）。");
             // 區塊職責：把密文區的規格**印在這裡**，而不是指路到文件。
             // 物理意義：寫信這一步沒有 skill 觸發詞，手邊唯一會被讀到的東西就是本回傳檔 ——
@@ -1393,7 +1393,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aR.AppendLine("- ⚠ 這個理由會被印進下線廣播 —— 給了理由卻沒人看得見，那個參數就只是形式。");
                 aR.AppendLine();
                 aR.AppendLine("## next");
-                aR.AppendLine($"1. **required** — 寫收尾信：run_cmd.py run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
+                aR.AppendLine($"1. **required** — 寫收尾信：senate ucmd run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
                 aRes.ok = true; aRes.report = aR.ToString(); return aRes;
             }
 
@@ -1405,8 +1405,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aR.AppendLine("## blocked");
                 aR.AppendLine("- reason: 要投遞畫像需要 about ＋ body（親筆公開層）；本步驟不生成內容 —— 工具代筆的畫像不是妳的。");
                 aR.AppendLine("- exits:");
-                aR.AppendLine($"  · 畫一幅：run_cmd.py run GoodNight --arg step=portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<一句話標題> --arg-file body=<公開層檔> [--arg-file private_body=<私層檔>] [--arg affinity=<如 11/在意>]");
-                aR.AppendLine($"  · 今夜不畫：run_cmd.py run GoodNight --arg step=portrait --arg persona={iPersona} --arg skip_reason=<為什麼今晚沒有人值得畫>");
+                aR.AppendLine($"  · 畫一幅：senate ucmd run GoodNight --arg step=portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<一句話標題> --arg-file body=<公開層檔> [--arg-file private_body=<私層檔>] [--arg affinity=<如 11/在意>]");
+                aR.AppendLine($"  · 今夜不畫：senate ucmd run GoodNight --arg step=portrait --arg persona={iPersona} --arg skip_reason=<為什麼今晚沒有人值得畫>");
                 aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
             }
 
@@ -1463,7 +1463,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine("- 還想再畫一位 → 再跑一次 step=portrait（永不覆寫：同一天畫兩幅就是兩幅，改觀的形狀是多一個版本）");
-            aR.AppendLine($"1. **required** — 寫收尾信：run_cmd.py run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
+            aR.AppendLine($"1. **required** — 寫收尾信：senate ucmd run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
             aRes.ok = true; aRes.report = aR.ToString(); return aRes;
         }
 
@@ -1492,8 +1492,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aR.AppendLine("- reason: 今天還沒投遞畫像，也沒有顯式跳過的理由 —— 畫像是 brief §6.5「我認識誰」的唯一來源，");
                 aR.AppendLine("  漏掉不會有人喊，只會讓未來的自己醒來時少一整層。");
                 aR.AppendLine("- exits（二擇一，都會放行 letter）:");
-                aR.AppendLine($"  · 畫一幅：run_cmd.py run GoodNight --arg step=portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>");
-                aR.AppendLine($"  · 今夜不畫：run_cmd.py run GoodNight --arg step=portrait --arg persona={iPersona} --arg skip_reason=<理由>");
+                aR.AppendLine($"  · 畫一幅：senate ucmd run GoodNight --arg step=portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>");
+                aR.AppendLine($"  · 今夜不畫：senate ucmd run GoodNight --arg step=portrait --arg persona={iPersona} --arg skip_reason=<理由>");
                 aR.AppendLine("- ⚠ 這不是要妳每晚交作業 —— 想不出理由的時候，妳就會發現自己其實有人可以畫。");
                 aRes.blocked = true; aRes.report = aR.ToString(); return aRes;
             }
@@ -1519,7 +1519,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine($"- _latest.md 指標: `{aLatest}`（mtime 已更新={File.GetLastWriteTimeUtc(aLatest) > DateTime.UtcNow.AddMinutes(-1)}）");
             aR.AppendLine($"- registry wake_count → {aNumber}");
             aR.AppendLine("## next");
-            aR.AppendLine($"1. **required** — 下線：run_cmd.py run GoodNight --arg step=sleep --arg persona={iPersona} [--arg-file summary=<檔>] [--arg perturbation=0.02]");
+            aR.AppendLine($"1. **required** — 下線：senate ucmd run GoodNight --arg step=sleep --arg persona={iPersona} [--arg-file summary=<檔>] [--arg perturbation=0.02]");
             aR.AppendLine("   <summary>＝**親筆**公開睡前心得（廣播給同事/Tim 看的部分；私密的已在信裡，不用重複）。");
             aRes.ok = true; aRes.report = aR.ToString(); return aRes;
         }

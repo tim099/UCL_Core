@@ -147,7 +147,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     aSb.AppendLine($"- broadcast: {(aPostOk ? $"seq **{aPostCtx?.LastPostSeq ?? 0}**" : "未發（核心已落地，補發非必要 —— 同事看 lock 判在線）")}");
                     aSb.AppendLine($"- session_token expired: {aExpired} 筆");
                     aSb.AppendLine("## next");
-                    aSb.AppendLine("- 收工。明天醒來：run_cmd.py run GoodMorning --arg step=wake --arg persona=" + aPersona);
+                    aSb.AppendLine("- 收工。明天醒來：senate ucmd run GoodMorning --arg step=wake --arg persona=" + aPersona);
                     if (!aNoLetter)
                         aSb.AppendLine("- （可選）還想花錢再睡 → ucl-spending-time（消費時間不綁死晚安）");
                     string aOutPath = PayloadPath(aPersona, aStep);

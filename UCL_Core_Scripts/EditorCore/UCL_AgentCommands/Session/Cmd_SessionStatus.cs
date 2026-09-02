@@ -24,10 +24,10 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// <para>典型用法：</para>
     /// <code>
     /// # basecamp 現在在哪種 session
-    /// python run_cmd.py --persona basecamp run SessionStatus --arg persona=basecamp
+    /// senate ucmd run SessionStatus --persona basecamp --arg persona=basecamp
     ///
     /// # 全部 persona 的總覽（含已收工的歷史）
-    /// python run_cmd.py --persona basecamp run SessionStatus --arg scope=all
+    /// senate ucmd run SessionStatus --persona basecamp --arg scope=all
     /// </code>
     /// </summary>
     public class Cmd_SessionStatus : UCL_AgentCommandHandlerBase

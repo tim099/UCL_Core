@@ -34,13 +34,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
     /// <summary>
     /// 3D 雕刻 Cmd（扣費入口）。落子一律走本 Cmd，不直跑 sculpt.py（直跑＝繞過計費與序列化）。
     /// <code>
-    /// run_cmd.py run Sculpture --arg op=box   --arg persona=&lt;P&gt; --arg x1=10 --arg x2=19 --arg y1=10 --arg y2=19 --arg z1=1 --arg z2=5 [--arg color=19] [--arg pay=auto]
-    /// run_cmd.py run Sculpture --arg op=carve --arg persona=&lt;P&gt; --arg x1=.. .. z2=..
-    /// run_cmd.py run Sculpture --arg op=view  [--arg region=0..50,0..50,0..20] [--arg exclude_color=0,3]
-    /// run_cmd.py run Sculpture --arg op=stats
-    /// run_cmd.py run Sculpture --arg op=slice --arg region=212..223,212..223,210..211 [--arg axis=z+] [--arg out=&lt;png&gt;]
-    /// run_cmd.py run Sculpture --arg op=stamp2d  --arg persona=&lt;P&gt; --arg src_x1=1000 --arg src_y1=1000 --arg src_x2=1008 --arg src_y2=1005 --arg at=10,10,10 [--arg facing=z+] [--arg thickness=1] [--arg expect_pixels=37]
-    /// run_cmd.py run Sculpture --arg op=stampimg --arg persona=&lt;P&gt; --arg png=&lt;路徑&gt; --arg at=10,10,10 [--arg resize=64,64] [--arg expect_pixels=1234]
+    /// senate ucmd run Sculpture --arg op=box   --arg persona=&lt;P&gt; --arg x1=10 --arg x2=19 --arg y1=10 --arg y2=19 --arg z1=1 --arg z2=5 [--arg color=19] [--arg pay=auto]
+    /// senate ucmd run Sculpture --arg op=carve --arg persona=&lt;P&gt; --arg x1=.. .. z2=..
+    /// senate ucmd run Sculpture --arg op=view  [--arg region=0..50,0..50,0..20] [--arg exclude_color=0,3]
+    /// senate ucmd run Sculpture --arg op=stats
+    /// senate ucmd run Sculpture --arg op=slice --arg region=212..223,212..223,210..211 [--arg axis=z+] [--arg out=&lt;png&gt;]
+    /// senate ucmd run Sculpture --arg op=stamp2d  --arg persona=&lt;P&gt; --arg src_x1=1000 --arg src_y1=1000 --arg src_x2=1008 --arg src_y2=1005 --arg at=10,10,10 [--arg facing=z+] [--arg thickness=1] [--arg expect_pixels=37]
+    /// senate ucmd run Sculpture --arg op=stampimg --arg persona=&lt;P&gt; --arg png=&lt;路徑&gt; --arg at=10,10,10 [--arg resize=64,64] [--arg expect_pixels=1234]
     /// </code>
     /// </summary>
     public class Cmd_Sculpture : UCL_AgentCommandHandlerBase
@@ -198,7 +198,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             aR.AppendLine($"- pay_breakdown: freetime={aUsedFree} voucher={aUsedVoucher} token={aUsedToken}（pay={aPay}）");
             aR.AppendLine($"- event: `{aEventFile}`");
             aR.AppendLine("## next");
-            aR.AppendLine($"- 看成品：run_cmd.py run Sculpture --arg op=view [--arg region=…] [--arg exclude_color=…]（免費）");
+            aR.AppendLine($"- 看成品：senate ucmd run Sculpture --arg op=view [--arg region=…] [--arg exclude_color=…]（免費）");
             aR.AppendLine("- 驗收慣例：宣稱含內部結構的作品，交件附外觀＋室內（region 裁進去）各一張。");
             // 區塊職責：本人若正在自由時間中，回傳值尾端多附一段流程提示（Tim 2026-08-18）。
             // 物理意義：`sculpt-3d` 是自由時間「繪圖」組的活動，而它的入口是 Cmd 不是 python 腳本 ——
@@ -405,7 +405,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                     UCL_AgentCommandRunner.ReportOutputFile(iArgs, aEx.photo);
             }
             aR.AppendLine("## next");
-            aR.AppendLine($"- 看成品：run_cmd.py run Sculpture --arg op=view [--arg region=…]（免費）" +
+            aR.AppendLine($"- 看成品：senate ucmd run Sculpture --arg op=view [--arg region=…]（免費）" +
                           (aEx != null ? $"；或 --arg exhibit={aEx.id} 一鍵載入本作品 preset" : ""));
             aR.AppendLine("- 下次貼圖：先 `canvas.py view --region x,y,w,h` 看預覽 → 把它印的 non_transparent_pixels 當 expect_pixels 帶回來。");
             WritePayload(iArgs, aPath, aR.ToString());

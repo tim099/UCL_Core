@@ -6,7 +6,7 @@
 //          ②只有真的重繪才算數，本檔量不到，別把 SelfTest 綠燈讀成「分組畫對了」。
 // 數值影響：純測試型別，不參與任何執行期邏輯；SelfTest 唯讀（只建 cache、不改狀態）。
 // 用法：
-//   run_cmd.py --persona <me> run Invoke --arg type=UCL.Core.TestLib.UCL_FoldoutGroupSample --arg member=SelfTest
+//   senate ucmd run Invoke --persona <me> --arg type=UCL.Core.TestLib.UCL_FoldoutGroupSample --arg member=SelfTest
 using System.Text;
 using UCL.Core.ATTR;
 
@@ -38,7 +38,7 @@ namespace UCL.Core.TestLib
 
         /// <summary>
         /// 對**任意型別**印出每個欄位生效的折疊組（驗真實資產的分組是不是照你想的斷開）。
-        /// <code>run_cmd.py --persona &lt;me&gt; run Invoke --arg type=UCL.Core.TestLib.UCL_FoldoutGroupSample         ///     --arg member=Dump --arg paramTypes=System.String --arg args=LittleYellow.HSceneAsset</code>
+        /// <code>senate ucmd run Invoke --persona &lt;me&gt; --arg type=UCL.Core.TestLib.UCL_FoldoutGroupSample         ///     --arg member=Dump --arg paramTypes=System.String --arg args=LittleYellow.HSceneAsset</code>
         /// 找不到型別回一句話而不是丟例外 —— 打錯名字要看得出是打錯，不是「這型別沒有欄位」。
         /// </summary>
         public static string Dump(string iTypeName)

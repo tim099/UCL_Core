@@ -588,7 +588,7 @@ namespace UCL.Core.EditorLib.Page
             }
             var (x, y, w, h) = aRegion.Value;
             m_StampCmdLine =
-                $"python {CoreToolsRel}/run_cmd.py run Sculpture --arg op=stamp2d --arg persona={m_StampPersona} " +
+                $"senate ucmd run Sculpture --arg op=stamp2d --arg persona={m_StampPersona} " +
                 $"--arg src_x1={x} --arg src_y1={y} --arg src_x2={x + w - 1} --arg src_y2={y + h - 1} " +
                 $"--arg at={m_StampAt} --arg facing={m_StampFacing} --arg thickness={m_StampThickness} " +
                 $"--arg expect_pixels={aOpaque}";

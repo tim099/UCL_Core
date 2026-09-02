@@ -292,7 +292,7 @@ namespace UCL.Core.EditorLib.SecretManager
         // ===========================================================
         // 區塊職責：自測 — round-trip 多案例 + 錯密碼拒絕 + 竄改偵測（對齊 python _run_selftest）
         // 物理意義：可經 Cmd_Invoke（reflection）在 Editor 內觸發驗真正的 C# 實作，不必另寫測試場景。
-        //          呼叫：run_cmd.py run Invoke --arg type=UCL.Core.EditorLib.SecretManager.UCL_SecretCrypto --arg member=SelfTest
+        //          呼叫：senate ucmd run Invoke --arg type=UCL.Core.EditorLib.SecretManager.UCL_SecretCrypto --arg member=SelfTest
         // 數值影響：全過回摘要字串；任一斷言失敗 throw（Cmd 標 Failed，agent 端可見）。
         // ===========================================================
         public static string SelfTest()

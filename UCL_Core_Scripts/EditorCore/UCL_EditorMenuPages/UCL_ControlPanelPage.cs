@@ -226,7 +226,7 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (!aShow) return;
                 GUILayout.Label("已註冊 Agent Command 清單，以及 Python client 端預檢用的 commands_schema.json 同步狀態與手動刷新。"
-                    + "新增／修改 Cmd 後請按同步（或跑 `run_cmd.py run ExportCmdSchema`，兩者等價）。",
+                    + "新增／修改 Cmd 後請按同步（或跑 `senate ucmd run ExportCmdSchema`，兩者等價）。",
                     UCL_GUIStyle.LabelStyle);
             }
         }

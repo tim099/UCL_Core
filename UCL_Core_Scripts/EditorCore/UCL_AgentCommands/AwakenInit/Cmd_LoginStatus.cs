@@ -26,16 +26,16 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
     /// <para>典型用法：</para>
     /// <code>
     /// # 全部 personas + locks (預設)
-    /// python AgentCommands/run_cmd.py run LoginStatus
+    /// senate ucmd run LoginStatus
     ///
     /// # 只看 online
-    /// python AgentCommands/run_cmd.py run LoginStatus --arg filter_status=online
+    /// senate ucmd run LoginStatus --arg filter_status=online
     ///
     /// # 篩 agent
-    /// python AgentCommands/run_cmd.py run LoginStatus --arg filter_agent=claude-code
+    /// senate ucmd run LoginStatus --arg filter_agent=claude-code
     ///
     /// # 只要 JSON (給 agent programmatic 用)
-    /// python AgentCommands/run_cmd.py run LoginStatus --arg format=json
+    /// senate ucmd run LoginStatus --arg format=json
     /// </code>
     ///
     /// <para>輸出檔：</para>

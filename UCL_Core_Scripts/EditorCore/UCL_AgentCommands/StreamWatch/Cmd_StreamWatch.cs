@@ -32,10 +32,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
     /// 觀影模式流程 Cmd（step 分步 + 每步回傳檔指下一步）。
     /// <para>正常流程：</para>
     /// <code>
-    /// ① run_cmd.py run StreamWatch --arg step=start --arg persona=&lt;P&gt; --arg until=&lt;HH:mm&gt; [--arg media=&lt;work&gt;]
-    /// ② run_cmd.py run StreamWatch --arg step=cycle --arg persona=&lt;P&gt;      （取素材；到期/中斷判定在此）
+    /// ① senate ucmd run StreamWatch --arg step=start --arg persona=&lt;P&gt; --arg until=&lt;HH:mm&gt; [--arg media=&lt;work&gt;]
+    /// ② senate ucmd run StreamWatch --arg step=cycle --arg persona=&lt;P&gt;      （取素材；到期/中斷判定在此）
     /// ③ Read 回傳檔給的縮圖牆與字幕路徑 → 寫評論
-    /// ④ run_cmd.py run StreamWatch --arg step=observe --arg persona=&lt;P&gt; --arg-file body=&lt;評論&gt;
+    /// ④ senate ucmd run StreamWatch --arg step=observe --arg persona=&lt;P&gt; --arg-file body=&lt;評論&gt;
     /// </code>
     /// </summary>
     public class Cmd_StreamWatch : UCL_AgentCommandHandlerBase
@@ -317,13 +317,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (string.IsNullOrEmpty(aTitleIn) && string.IsNullOrEmpty(aMediaArg))
             {
                 Blocked(iArgs, aR, aPath, "title（片名）與 media_id 至少要有一個 —— 準備階段的產物就是那個 id，不能兩邊都空",
-                        $"run_cmd.py run StreamWatch --arg step=prepare --arg persona={iPersona} --arg title=末日後酒店 --arg episode=05");
+                        $"senate ucmd run StreamWatch --arg step=prepare --arg persona={iPersona} --arg title=末日後酒店 --arg episode=05");
                 throw new Exception($"[StreamWatch] step=prepare blocked：缺 title/media_id（詳見 {aPath}）");
             }
             if (string.IsNullOrEmpty(aEpisodeIn))
             {
                 Blocked(iArgs, aR, aPath, "episode（本場看第幾集）必填 —— 補課地圖與章號都靠它算",
-                        $"run_cmd.py run StreamWatch --arg step=prepare --arg persona={iPersona} --arg title={(string.IsNullOrEmpty(aTitleIn) ? "末日後酒店" : aTitleIn)} --arg episode=05");
+                        $"senate ucmd run StreamWatch --arg step=prepare --arg persona={iPersona} --arg title={(string.IsNullOrEmpty(aTitleIn) ? "末日後酒店" : aTitleIn)} --arg episode=05");
                 throw new Exception($"[StreamWatch] step=prepare blocked：缺 episode（詳見 {aPath}）");
             }
             if (!int.TryParse(aEpisodeIn.TrimStart('0').Length == 0 ? "0" : aEpisodeIn.TrimStart('0'), out int aEpisode) || aEpisode <= 0)
@@ -353,7 +353,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     if (aCandFix != null && aCandFix.Count > 0)
                         aSb.Append($"。ℹ 以它查到的候選：{string.Join(" / ", aCandFix.Select(c => $"`{c}`"))}　←　妳要的多半是其中一個（給的若是 **work slug**，真正的 media_id 通常帶 `anim-`/`film-`/`series-`/`stream-` 前綴）");
                     Blocked(iArgs, aR, aPath, aSb.ToString(),
-                            $"run_cmd.py run StreamWatch --arg step=prepare --arg persona={iPersona} --arg media_id=<閱讀庫既有的 media_id> --arg episode={aEpisodeIn}"
+                            $"senate ucmd run StreamWatch --arg step=prepare --arg persona={iPersona} --arg media_id=<閱讀庫既有的 media_id> --arg episode={aEpisodeIn}"
                             + "；真的是新作品 ⇒ 先 `Cmd_Library op=media_init`（媒材 id 由那邊生成），本步不代建");
                     throw new Exception($"[StreamWatch] step=prepare blocked：media_id `{aMediaId}` 不存在於閱讀庫（詳見 {aPath}）");
                 }
@@ -371,7 +371,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         ? $"閱讀庫查不到「{aTitleIn}」—— 新作品請先 `Cmd_Library op=media_init`（媒材 id 由那邊生成），再帶 --arg media_id=<id> 回來"
                         : $"「{aTitleIn}」命中 {aCand.Count} 筆，**不猜** —— 用 --arg media_id=<上面其中一個> 指定";
                     Blocked(iArgs, aR, aPath, aWhy,
-                            $"run_cmd.py run StreamWatch --arg step=prepare --arg persona={iPersona} --arg media_id=<id> --arg episode={aEpisodeIn}");
+                            $"senate ucmd run StreamWatch --arg step=prepare --arg persona={iPersona} --arg media_id=<id> --arg episode={aEpisodeIn}");
                     throw new Exception($"[StreamWatch] step=prepare blocked：媒材 id 未定（詳見 {aPath}）");
                 }
             }
@@ -516,7 +516,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (aUnfilled.Count > 0) aBody.AppendLine($"- ⚠ 補課地圖尚缺：{string.Join(" ", aUnfilled.Select(u => u.Substring(0, 4)))}（我會指定來源）");
             aBody.AppendLine();
             aBody.AppendLine("陪同者現在可以進場了 —— 進度有缺的先跑 catchup 讀一份補課簡報：");
-            aBody.AppendLine($"`run_cmd.py --persona <me> run StreamWatch --arg step=catchup --arg persona=<me> --arg media_id={aMediaId}`");
+            aBody.AppendLine($"`senate ucmd run StreamWatch --persona <me> --arg step=catchup --arg persona=<me> --arg media_id={aMediaId}`");
             aBody.AppendLine($"然後 `--arg step=join`（媒材與章號都已經配置好，不用自己填）。");
             int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-prepare", iToken);
 
@@ -550,7 +550,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //      而那一整天沒有任何一格報錯。
             // ⚠ 08-17 有一條相反的血證（prepare 印 media_id ⇒ start 生出假 work）——
             //    那是在 `ResolveWatchTarget` 存在**之前**；解析器上線後，給 media_id 才是零歧義的那條路。
-            aR.AppendLine($"1. **開場**：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> "
+            aR.AppendLine($"1. **開場**：senate ucmd run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> "
                 + $"--arg media={aMediaId}"
                 + $"　←　這裡給的是 **media_id**（不是 work slug）：解析器對 media_id 一對一，"
                 + $"對 work 可能一對多而**留空** ⇒ 那正是 TASK-0076 那一族的入口"
@@ -580,7 +580,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (string.IsNullOrEmpty(aMediaId))
             {
                 Blocked(iArgs, aR, aPath, "media_id 必填（準備階段公告裡有）",
-                        $"run_cmd.py run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id=<id>");
+                        $"senate ucmd run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id=<id>");
                 throw new Exception($"[StreamWatch] step=catchup blocked：缺 media_id（詳見 {aPath}）");
             }
             var aP = LoadPrepared(aMediaId, out string aCatchupReject);
@@ -597,7 +597,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         aRejected
                             ? "先確認本場真正的 media_id（看主觀影者的準備公告，或 `Library/media/` 底下實際的目錄名），用那個 id 重跑本步；"
                               + "⛔ 不要直接改檔名或改內容 —— 那是在猜哪一邊對"
-                            : "run_cmd.py run StreamWatch --arg step=prepare --arg persona=<主觀影者> --arg title=<片名> --arg episode=<N>");
+                            : "senate ucmd run StreamWatch --arg step=prepare --arg persona=<主觀影者> --arg title=<片名> --arg episode=<N>");
                 throw new Exception($"[StreamWatch] step=catchup blocked：{(aRejected ? "準備檔兩鍵不一致" : "無準備檔")}（詳見 {aPath}）");
             }
 
@@ -675,7 +675,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             catch { }
 
             aR.AppendLine("## next");
-            aR.AppendLine($"1. 進場：run_cmd.py run StreamWatch --arg step=join --arg persona={iPersona}");
+            aR.AppendLine($"1. 進場：senate ucmd run StreamWatch --arg step=join --arg persona={iPersona}");
             aR.AppendLine($"2. 寫心得時**章號一律用 `{aEpisode:0000}`**、媒材 `{aMediaId}` —— 那是 prepare 釘死的，別各自打字。");
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=catchup media={aMediaId} gaps={aGaps.Count} → {aPath}");
@@ -703,7 +703,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             else
             {
                 Blocked(iArgs, aR, aPath, $"on 必須是 1/0（true/false、on/off 亦可）—— 收到 '{iOn}'",
-                        $"run_cmd.py run StreamWatch --arg step=capture --arg persona={iPersona} --arg on=1");
+                        $"senate ucmd run StreamWatch --arg step=capture --arg persona={iPersona} --arg on=1");
                 throw new Exception($"[StreamWatch] step=capture blocked：on 參數無效（詳見 {aPath}）");
             }
 
@@ -716,8 +716,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine(aOn
-                ? $"1. 看一眼：run_cmd.py run StreamWatch --arg step=peek --arg seconds=60\n"
-                + $"2. 正式開場：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>"
+                ? $"1. 看一眼：senate ucmd run StreamWatch --arg step=peek --arg seconds=60\n"
+                + $"2. 正式開場：senate ucmd run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>"
                 : "1. 已停止擷取。進行中的觀影 session 會在下一次 cycle 被判定為「Tim 停止錄影」並結算。");
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=capture on={aOn} → {aPath}");
@@ -834,7 +834,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine("- 這是一次性的一眼；**沒有下一步**，也沒有進度可接。要正式看請開場：");
-            aR.AppendLine($"  run_cmd.py run StreamWatch --arg step=start --arg persona=<P> --arg until=<HH:mm> --arg media=<work>");
+            aR.AppendLine($"  senate ucmd run StreamWatch --arg step=start --arg persona=<P> --arg until=<HH:mm> --arg media=<work>");
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=peek tiles={aInfo.Tiles} → {aPath}");
         }
@@ -869,7 +869,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!UCL_AwakeningService.IsOnline(iPersona))
             {
                 Blocked(iArgs, aR, aPath, $"'{iPersona}' 不在線（無 session lock）",
-                        $"先跑 run_cmd.py run GoodMorning --arg step=wake --arg persona={iPersona}");
+                        $"先跑 senate ucmd run GoodMorning --arg step=wake --arg persona={iPersona}");
                 throw new Exception($"[StreamWatch] step=start blocked：persona 不在線（詳見 {aPath}）");
             }
 
@@ -917,7 +917,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (!aOtherEnd.HasValue || aNow > aOtherEnd.Value) continue;   // 過期殘留不擋
                 Blocked(iArgs, aR, aPath,
                     $"已有主觀影者 @{aWho}（media={aOther.media_id}，至 {aOtherEnd.Value:HH:mm} 本地）—— 全場同時只能有一個 primary",
-                    $"加入她的場：run_cmd.py run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id=<準備公告那個 id>（缺集才需要）→ --arg step=join --arg persona={iPersona}；"
+                    $"加入她的場：senate ucmd run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id=<準備公告那個 id>（缺集才需要）→ --arg step=join --arg persona={iPersona}；"
                     + "或等該場到期／主觀影者收工後再 start");
                 throw new Exception($"[StreamWatch] step=start blocked：已有主觀影者 @{aWho}（詳見 {aPath}）");
             }
@@ -1124,9 +1124,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.Append(ReaderProgressBlock(iMedia, iPersona, out var aProgressMediaHits));
             aR.AppendLine();
             aR.AppendLine("## next");
-            aR.AppendLine($"1. **取素材**：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            aR.AppendLine($"1. **取素材**：senate ucmd run StreamWatch --arg step=cycle --arg persona={iPersona}");
             aR.AppendLine("2. 依回傳檔給的**絕對路徑** Read 縮圖牆與字幕 → 寫觀戰評論");
-            aR.AppendLine($"3. **發評論**：run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
+            aR.AppendLine($"3. **發評論**：senate ucmd run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
             // ⚠ **next 只寫「往前」，不提收工**（Tim 2026-08-16 拍板）。
             //    原本這裡寫「收工不用你判斷 —— 到期時 cycle 會告訴你」，本意是防 agent 自行收手，
             //    🩸 結果反效果：basecamp 陪看第一輪讀到那句之後**就停了**（把「收工」放進視野，
@@ -1140,7 +1140,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 var aPrep2 = LoadPrepared(aLibMediaId);
                 string aCh2 = aPrep2 != null ? aPrep2.chapter_id : "";
                 aR.AppendLine($"5. 收工後寫心得（**id 已填好，不要自己打字**）："
-                    + $"`run_cmd.py run Library --arg op=note_chapter --arg persona={iPersona} "
+                    + $"`senate ucmd run Library --arg op=note_chapter --arg persona={iPersona} "
                     + $"--arg media_id={aLibMediaId} --arg chapter={(string.IsNullOrEmpty(aCh2) ? "<四位數話號>" : aCh2)} "
                     + "--arg title=<話名> --arg-file body=<心得>`"
                     + (string.IsNullOrEmpty(aCh2) ? "　（章號查不到 ⇒ 走過 step=prepare 就會自動帶）" : ""));
@@ -1154,7 +1154,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 var aPrepHit = LoadPrepared(aHit, out _);
                 aR.AppendLine($"5. ⚠ `ResolveWatchTarget` **沒有解析出 media**，但上面「既有進度」那段以 work 後綴比對命中 "
                     + $"**`{aHit}`** ⇒ 以它為準（兩段同源，TASK-0076）："
-                    + $"`run_cmd.py run Library --arg op=note_chapter --arg persona={iPersona} --arg media_id={aHit} "
+                    + $"`senate ucmd run Library --arg op=note_chapter --arg persona={iPersona} --arg media_id={aHit} "
                     + $"--arg chapter={(aPrepHit != null ? aPrepHit.chapter_id : "<四位數話號>")} --arg title=<話名> --arg-file body=<心得>`");
             }
             else if (aProgressMediaHits != null && aProgressMediaHits.Count > 1)
@@ -1274,7 +1274,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (aWarn > 0 && iS.cycle_interval_seconds >= aWarn)
                 {
                     ioR.AppendLine($"　　　　　　 ⚠ 間隔 {iS.cycle_interval_seconds}s ≥ {aWarn}s ——"
-                                 + " 呼叫端請加大 `run_cmd.py --timeout`（預設 120s），"
+                                 + " 呼叫端請加大 `senate ucmd --timeout`（預設 120s），"
                                  + "否則會出現「客戶端報 Timeout 而 Editor 其實跑完了」的脫鉤。");
                 }
             }
@@ -1430,7 +1430,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (aS == null || !aS.active)
             {
                 Blocked(iArgs, aR, aPath, "無進行中的觀影 session",
-                        $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
+                        $"先跑 senate ucmd run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
                 throw new Exception($"[StreamWatch] step=cycle blocked：無 active session（詳見 {aPath}）");
             }
 
@@ -1540,16 +1540,16 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     }
                     string aMidArg = string.IsNullOrEmpty(aLibId) ? "<閱讀庫 media_id — 先跑 Cmd_Library op=media_init>" : aLibId;
                     string aChArg = string.IsNullOrEmpty(aChId) ? "<四位數話號>" : aChId;
-                    aR.AppendLine($"   1. 心得：`run_cmd.py run Library --arg op=note_chapter --arg persona={iPersona} "
+                    aR.AppendLine($"   1. 心得：`senate ucmd run Library --arg op=note_chapter --arg persona={iPersona} "
                         + $"--arg media_id={aMidArg} --arg chapter={aChArg} --arg title=<話名> --arg display_number=<第 N 話> "
                         + "--arg-file body=<心得>`"
                         + (string.IsNullOrEmpty(aLibId) ? "" : "　←　**id 已自動填**，不要自己打字"));
-                    aR.AppendLine($"   2. 書籤：`run_cmd.py run Library --arg op=bookmark --arg persona={iPersona} "
+                    aR.AppendLine($"   2. 書籤：`senate ucmd run Library --arg op=bookmark --arg persona={iPersona} "
                         + $"--arg media_id={aMidArg} --arg note=<下次從哪接> --arg impression=<當前看法>`");
                     aR.AppendLine("   3. 人物：`op=add_character` / `op=revise_view`（改觀要寫 `change_reason`）");
                     aR.AppendLine("   ⚠ **一話一 round，場次中斷續寫同一個 round**；`r2` 只留給真正的重看。");
                     aR.AppendLine("      （場次是我的切法，話數是作品的切法 —— round 認後者。）");
-                    aR.AppendLine("   ⇒ 下次續看：`run_cmd.py run Library --arg op=recall --arg persona="
+                    aR.AppendLine("   ⇒ 下次續看：`senate ucmd run Library --arg op=recall --arg persona="
                         + iPersona + " --arg media_id=<同上>`");
                     aR.AppendLine();
                 }
@@ -1686,7 +1686,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine("## next");
                 // 措辭跟有素材那條路徑一致（祈使句＋指令直接附上）—— 兩條路徑都只給一個動作。
                 // ⛔ 不寫「等 N 秒再來」：等待已經是本 Cmd 的職責，寫在這裡等於把它還給呼叫端。
-                aR.AppendLine($"1. **請繼續觀看下一輪**：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+                aR.AppendLine($"1. **請繼續觀看下一輪**：senate ucmd run StreamWatch --arg step=cycle --arg persona={iPersona}");
                 WritePayload(iArgs, aPath, aR.ToString());
                 Debug.Log($"[StreamWatch] step=cycle 感官水位未追上 → {aPath}");
                 return;
@@ -1853,7 +1853,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine($"1. Read 上面的縮圖牆{(aHasSub ? "與字幕" : "")}路徑");
-            aR.AppendLine($"2. run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<你的評論>");
+            aR.AppendLine($"2. senate ucmd run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<你的評論>");
             // ⚠ **next 只寫「往前」，不提收工**（Tim 2026-08-16 拍板）。
             //    原本這裡寫「收工不用你判斷 —— 到期時 cycle 會告訴你」，本意是防 agent 自行收手，
             //    🩸 結果反效果：basecamp 陪看第一輪讀到那句之後**就停了**（把「收工」放進視野，
@@ -1869,7 +1869,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //    「請繼續觀看下一輪」沒有留任何一個可以權衡的變數 —— 而中性語氣有（agent 會拿剩餘分鐘去權衡）。
             //    ⛔ 想在這裡補一句「不然會丟畫面」之前先讀這行：那是**代價說明**，而代價說明可以被算贏；
             //       上一版就是敗在給了東西可以算。這裡只留動作。
-            aR.AppendLine($"3. **請繼續觀看下一輪**：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            aR.AppendLine($"3. **請繼續觀看下一輪**：senate ucmd run StreamWatch --arg step=cycle --arg persona={iPersona}");
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=cycle tiles={aInfo.Tiles} span={aInfo.SpanSeconds:F0}s → {aPath}");
         }
@@ -1892,7 +1892,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!UCL_AwakeningService.IsOnline(iPersona))
             {
                 Blocked(iArgs, aR, aPath, $"'{iPersona}' 不在線（無 session lock）",
-                        $"先跑 run_cmd.py run GoodMorning --arg step=wake --arg persona={iPersona}");
+                        $"先跑 senate ucmd run GoodMorning --arg step=wake --arg persona={iPersona}");
                 throw new Exception($"[StreamWatch] step=join blocked：persona 不在線（詳見 {aPath}）");
             }
 
@@ -1926,7 +1926,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (aPrimary == null)
             {
                 Blocked(iArgs, aR, aPath, "找不到進行中的主觀影場",
-                        $"自己開一場：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
+                        $"自己開一場：senate ucmd run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
                 throw new Exception($"[StreamWatch] step=join blocked：無 primary 場（詳見 {aPath}）");
             }
 
@@ -1973,7 +1973,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         : $"`{aPrepKey}` 沒有準備檔 {aPrepKeyNote} —— 準備階段未完成，陪同者先不進場"
                           + "（章號與接續基準還沒定，現在寫心得就是漂移的起點）");
                 Blocked(iArgs, aR, aPath, aWhy,
-                        $"請主觀影者（`{aPrimaryPersona}`）先跑：run_cmd.py run StreamWatch --arg step=prepare "
+                        $"請主觀影者（`{aPrimaryPersona}`）先跑：senate ucmd run StreamWatch --arg step=prepare "
                         + $"--arg persona={aPrimaryPersona} --arg media_id={(string.IsNullOrEmpty(aLibMediaId) ? "<閱讀庫 media_id>" : aLibMediaId)} --arg episode=<第幾集>"
                         + "，然後**重開場**（`prepared_key` 在 `step=start` 綁定）；本場若已在跑，收工後再開一場。");
                 throw new Exception($"[StreamWatch] step=join blocked：無可信準備檔（key={aPrepKey}；詳見 {aPath}）");
@@ -2039,12 +2039,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"- 我的進度: 已有 {aMyChapters.Count} 章"
                 + (aMyGaps.Count == 0 ? "，**本場之前的集數沒有缺**" : $"，⚠ **缺 {aMyGaps.Count} 集：{string.Join(" ", aMyGaps)}**"));
             if (aMyGaps.Count > 0)
-                aR.AppendLine($"  ⇒ 補課簡報（一份讀完就接上）：run_cmd.py run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id={aMedia}");
+                aR.AppendLine($"  ⇒ 補課簡報（一份讀完就接上）：senate ucmd run StreamWatch --arg step=catchup --arg persona={iPersona} --arg media_id={aMedia}");
             aR.AppendLine();
             aR.AppendLine("## next");
-            aR.AppendLine($"1. 取素材：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
-            aR.AppendLine($"2. 讀主觀影者的劇情線：run_cmd.py run Tavern --arg op=read --arg room=tavern --arg limit=20");
-            aR.AppendLine($"3. 發評論：run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
+            aR.AppendLine($"1. 取素材：senate ucmd run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            aR.AppendLine($"2. 讀主觀影者的劇情線：senate ucmd run Tavern --arg op=read --arg room=tavern --arg limit=20");
+            aR.AppendLine($"3. 發評論：senate ucmd run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
             aR.AppendLine($"4. 寫心得時用 `--arg media_id={aMedia} --arg chapter={aPrepChapter}` —— 那兩個值準備階段已經釘死。");
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=join {iPersona} → 陪同 {aPrimaryPersona} media={aMedia}");
@@ -2251,7 +2251,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             ioR.AppendLine();
             ioR.AppendLine("## next");
             ioR.AppendLine("1. 本場已收工結算，session 已關閉。");
-            ioR.AppendLine($"2. 要再看：run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
+            ioR.AppendLine($"2. 要再看：senate ucmd run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
             if (aExported)
             {
                 ioR.AppendLine("3. 實錄已自動匯出成章（見上）。要重出（改章名／併入別人的章）："
@@ -2314,7 +2314,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (aS == null || !aS.active)
             {
                 Blocked(iArgs, aR, aPath, "無進行中的觀影 session",
-                        $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
+                        $"先跑 senate ucmd run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
                 throw new Exception($"[StreamWatch] step=observe blocked：無 active session（詳見 {aPath}）");
             }
             if (string.IsNullOrWhiteSpace(iBody))
@@ -2328,7 +2328,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (aS.cycles <= 0 || aLastTiles <= 0)
             {
                 Blocked(iArgs, aR, aPath, "本場尚無取材紀錄 —— 沒看過就沒有可記的觀察",
-                        $"先跑 run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+                        $"先跑 senate ucmd run StreamWatch --arg step=cycle --arg persona={iPersona}");
                 throw new Exception($"[StreamWatch] step=observe blocked：無取材紀錄（詳見 {aPath}）");
             }
 
@@ -2427,7 +2427,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //    🩸 結果反效果：basecamp 陪看第一輪讀到那句之後**就停了**（把「收工」放進視野，
             //    等於在指路的位置提供了一個停下來的選項）。反向提示會被當成選項，不會被當成禁令。
             //    ⇒ 收工由 cycle 在**真的到期時**宣布即可，不必事先預告。
-            aR.AppendLine($"1. 繼續：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            aR.AppendLine($"1. 繼續：senate ucmd run StreamWatch --arg step=cycle --arg persona={iPersona}");
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=observe seq={aSeq} obs={aObs} → {aPath}");
         }
@@ -2456,7 +2456,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (aS == null)
             {
                 Blocked(iArgs, aR, aPath, "查無任何觀影 session（連已結束的都沒有）",
-                        $"先跑 run_cmd.py run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
+                        $"先跑 senate ucmd run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<work>");
                 throw new Exception($"[StreamWatch] step=note blocked：無 session 檔（詳見 {aPath}）");
             }
             bool aLate = !aS.active;
@@ -2502,7 +2502,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine("1. 本場已收工，這筆補寫就是最後一步 —— 沒有下一步。");
             else
             {
-                aR.AppendLine($"1. 跑 run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+                aR.AppendLine($"1. 跑 senate ucmd run StreamWatch --arg step=cycle --arg persona={iPersona}");
                 aR.AppendLine("   —— 若已到期／Tim 已停錄影，那一步會完成收工；否則會繼續給下一輪素材。");
             }
             WritePayload(iArgs, aPath, aR.ToString());
@@ -2870,13 +2870,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aBody = new StringBuilder();
             aBody.AppendLine($"🔍 [{iPersona}] 標記熱點 **[{aId}]** {FromEpochLocal(aFrom):HH:mm:ss}–{FromEpochLocal(aTo):HH:mm:ss}");
             aBody.AppendLine($"　理由：{iWhy.Trim()}");
-            aBody.AppendLine($"　認領：`run_cmd.py run StreamWatch --arg step=claim --arg persona=<你> --arg hotspot={aId}`");
+            aBody.AppendLine($"　認領：`senate ucmd run StreamWatch --arg step=claim --arg persona=<你> --arg hotspot={aId}`");
             aBody.AppendLine("　⚠ **一個熱點只能被領一次** —— 目的是把眼睛分散到不同段，不是疊在同一段。");
             int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), "watch-hotspot", iToken);
             aR.AppendLine($"- 公告   : {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
             aR.AppendLine();
             aR.AppendLine("## next");
-            aR.AppendLine($"1. 繼續取材：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            aR.AppendLine($"1. 繼續取材：senate ucmd run StreamWatch --arg step=cycle --arg persona={iPersona}");
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=hotspot {aId} → {aPath}");
         }
@@ -3045,9 +3045,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine("1. Read 上面的縮圖牆與字幕 → 細看");
-            aR.AppendLine($"2. 發評論：run_cmd.py run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
+            aR.AppendLine($"2. 發評論：senate ucmd run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
             aR.AppendLine("   ⚠ 評論裡註明這是熱點 " + aH.id + " 的細看結果 —— 讓開熱點的人知道有人看過了");
-            aR.AppendLine($"3. 回到一般取材：run_cmd.py run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            aR.AppendLine($"3. 回到一般取材：senate ucmd run StreamWatch --arg step=cycle --arg persona={iPersona}");
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=claim {iHotspot} by {iPersona} ok={aOk} → {aPath}");
         }
@@ -3082,11 +3082,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (aShown == 0)
             {
                 ioR.AppendLine("- **目前無熱點**（不是讀取失敗 —— 清單讀到了，內容是空的）");
-                ioR.AppendLine($"- 標一個：`run_cmd.py run StreamWatch --arg step=hotspot --arg persona={iPersona} "
+                ioR.AppendLine($"- 標一個：`senate ucmd run StreamWatch --arg step=hotspot --arg persona={iPersona} "
                     + "--arg from=<HH:mm:ss> --arg to=<HH:mm:ss> --arg why=<為什麼值得細看>`");
             }
             else if (aFree > 0)
-                ioR.AppendLine($"- ⇒ 還有 **{aFree}** 個沒人領：`run_cmd.py run StreamWatch --arg step=claim "
+                ioR.AppendLine($"- ⇒ 還有 **{aFree}** 個沒人領：`senate ucmd run StreamWatch --arg step=claim "
                     + $"--arg persona={iPersona} --arg hotspot=<id>`（**先領先得，一個熱點只能被領一次**）");
             else
                 ioR.AppendLine("- ⇒ 全部已認領或已過期 —— 沒有可領的");
@@ -3192,7 +3192,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             {
                 aSb.AppendLine($"- `Library/media/*-{iWork}/readers/{iPersona}/reader.json` **不存在** ⇒ 首次觀看");
                 aSb.AppendLine("- ⇒ 寫心得前要先建媒材（`media_kind` 前綴須與 `media_id` 同字）：");
-                aSb.AppendLine($"  `run_cmd.py run Library --arg op=media_init --arg persona={iPersona} "
+                aSb.AppendLine($"  `senate ucmd run Library --arg op=media_init --arg persona={iPersona} "
                     + $"--arg work_id={iWork} --arg media_id=<anim|film|series|stream>-{iWork} "
                     + "--arg media_kind=<同上> --arg title=<作品中文名>`");
             }
@@ -3201,7 +3201,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aSb.AppendLine($"- ✅ 妳讀過這部（{aHits.Count} 個媒材）：");
                 foreach (var h in aHits) aSb.AppendLine(h);
                 aSb.AppendLine("- ⚠ **開看前先追回** —— 否則等於從零開始看續篇：");
-                aSb.AppendLine($"  `run_cmd.py run Library --arg op=recall --arg persona={iPersona} --arg media_id=<上面那個>`");
+                aSb.AppendLine($"  `senate ucmd run Library --arg op=recall --arg persona={iPersona} --arg media_id=<上面那個>`");
                 aSb.AppendLine("  → 產物落 `letters/<persona>/cmd/reading_recall_<media-id>.md`，**Read 它**再開看。");
                 aSb.AppendLine("- ℹ 媒材進度各自獨立（改編不是原作的第二版）；跨媒材時仍值得先 recall 一次。");
             }

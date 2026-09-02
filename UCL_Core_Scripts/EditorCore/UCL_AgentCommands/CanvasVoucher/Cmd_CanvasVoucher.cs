@@ -1,6 +1,6 @@
 ﻿// 區塊職責：Cmd_CanvasVoucher — 繪圖券 CMD wrapper（thin），委派 UCL_CanvasVoucherLedger static API。
 // 物理意義：Tim 2026-07-22 拍板「券發放收攏 C# static class、python 端透過 CMD 操作」的 python 入口 —
-//          agent / python 透過 run_cmd.py run CanvasVoucher 觸發，寫入走 C# 單一 owner(UCL_CanvasVoucherLedger)，
+//          agent / python 透過 senate ucmd run CanvasVoucher 觸發，寫入走 C# 單一 owner(UCL_CanvasVoucherLedger)，
 //          不再各自直寫 vouchers/*.json（單寫者，杜絕跨 process 路徑 split + 兩寫者 drift）。
 // 數值影響：op-dispatch(balance / grant / consume)；結果寫 _last_op.md 給 caller 讀。
 // 對齊 Cmd_Treasury 結構(thin wrapper + WriteLastOp/RejectLastOp/FailLastOp)。

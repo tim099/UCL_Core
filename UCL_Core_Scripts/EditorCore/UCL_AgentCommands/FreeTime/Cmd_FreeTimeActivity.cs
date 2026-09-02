@@ -104,8 +104,8 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 aR.AppendLine(aSession == null
                     ? "- reason: 沒有自由時間 session"
                     : $"- reason: session 已收工（{(string.IsNullOrEmpty(aSession.end_reason) ? "未記原因" : aSession.end_reason)}）");
-                aR.AppendLine($"- exit①: 開新場 → run_cmd.py run FreeTime --arg step=start --arg persona={aPersona} --arg until=<HH:mm>");
-                aR.AppendLine($"- exit②: 過期殘留要結算 → run_cmd.py run FreeTime --arg step=next --arg persona={aPersona}（它會宣布收工）");
+                aR.AppendLine($"- exit①: 開新場 → senate ucmd run FreeTime --arg step=start --arg persona={aPersona} --arg until=<HH:mm>");
+                aR.AppendLine($"- exit②: 過期殘留要結算 → senate ucmd run FreeTime --arg step=next --arg persona={aPersona}（它會宣布收工）");
                 Cmd_FreeTime.WritePayload(args, aPath, aR.ToString());
                 throw new Exception($"[FreeTimeActivity] blocked：不在自由時間中（詳見 {aPath}）");
             }
@@ -170,7 +170,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     if (!a.enabled) continue;
                     ioR.AppendLine($"  - `{a.id}` — {a.name}");
                 }
-                ioR.AppendLine($"- 用法: run_cmd.py run FreeTimeActivity --arg op=pick --arg persona={iPersona} --arg activity=<id>");
+                ioR.AppendLine($"- 用法: senate ucmd run FreeTimeActivity --arg op=pick --arg persona={iPersona} --arg activity=<id>");
                 Cmd_FreeTime.WritePayload(iArgs, iPath, ioR.ToString());
                 throw new Exception($"[FreeTimeActivity] op=pick blocked：活動 id 無效（詳見 {iPath}）");
             }
@@ -219,7 +219,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             {
                 ioR.AppendLine($"**本活動支援 Cmd 代跑一步**（工具 `{aHit.tool}`）—— 一步一步來，每一步的回傳都會接上下一步：");
                 ioR.AppendLine("```bash");
-                ioR.AppendLine($"python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona {iPersona} run FreeTimeActivity \\");
+                ioR.AppendLine($"senate ucmd run FreeTimeActivity --persona {iPersona} \\");
                 ioR.AppendLine($"    --arg op=step --arg persona={iPersona} --arg activity={aHit.id} \\");
                 // 區塊職責：提示裡的 step_args 直接把身分旗標填好（Tim 2026-08-18）。
                 // 物理意義：本 Cmd 手上就有 persona，而且它已經內插進其他六處印出來的指令；
@@ -246,7 +246,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             ioR.AppendLine();
             ioR.AppendLine("這件活動告一段落再跑這行（**不要直接跳去換骰**）：");
             ioR.AppendLine("```bash");
-            ioR.AppendLine($"python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona {iPersona} run FreeTimeActivity \\");
+            ioR.AppendLine($"senate ucmd run FreeTimeActivity --persona {iPersona} \\");
             ioR.AppendLine($"    --arg op=done --arg persona={iPersona} [--arg-file body=<一句心得／收筆>]");
             ioR.AppendLine("```");
             ioR.AppendLine("- 走 op=done 而不是直接換骰，是為了讓「做完了」跟「放棄了」在帳上不同形。");
@@ -544,7 +544,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             ioR.AppendLine();
             ioR.AppendLine("## ▶ 下一步（換骰 —— **順便讀未讀訊息、順便跟同事講話**）");
             ioR.AppendLine("```bash");
-            ioR.AppendLine($"python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona {iPersona} run FreeTime \\");
+            ioR.AppendLine($"senate ucmd run FreeTime --persona {iPersona} \\");
             ioR.AppendLine($"    --arg step=next --arg persona={iPersona} [--arg-file body=<想跟同事說的話>]");
             ioR.AppendLine("```");
             ioR.AppendLine("- 換骰的回傳檔**同一份**就含：未讀酒館訊息（會推已讀游標）＋ 新骰面 ＋ 剩餘時間。");

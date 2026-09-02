@@ -27,12 +27,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
     /// <summary>
     /// 區塊職責：閱讀心得庫寫入指令（骨架）。
     /// 物理意義：唯一被允許寫 <c>BookNotes/Library/</c> 的程式入口；agent 端一律走
-    ///           <c>run_cmd.py run Library --arg op=...</c>，不再各自手寫 JSON。
+    ///           <c>senate ucmd run Library --arg op=...</c>，不再各自手寫 JSON。
     /// 數值影響：寫入本體未實作；目前只做路徑解析與參數驗證，並以 op=paths 供驗收。
     ///
     /// <para>典型用法（規格定案後）：</para>
     /// <code>
-    /// python &lt;UCL_Core&gt;/Tools~/AgentCommands/run_cmd.py run Library \
+    /// senate ucmd run Library \
     ///   --arg op=note_chapter --arg media_id=film-xxx --arg persona=summit \
     ///   --arg chapter=0001 --wait-reply 0 --arg-stdin body
     /// </code>

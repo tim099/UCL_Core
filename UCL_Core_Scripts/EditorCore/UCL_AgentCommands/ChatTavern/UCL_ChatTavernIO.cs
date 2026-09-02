@@ -1032,7 +1032,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         /// <summary>
         /// IsExternalRelay 判定自我檢查（不開遊戲）：涵蓋中繼來源 / 後台來源 / 純 agent 三類。
-        /// run_cmd.py run Invoke --arg type=UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO --arg member=SelfTestIsExternalRelay
+        /// senate ucmd run Invoke --arg type=UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO --arg member=SelfTestIsExternalRelay
         /// </summary>
         public static string SelfTestIsExternalRelay()
         {
@@ -1067,7 +1067,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// <summary>
         /// 驗收用：模擬「非 Op_Post 寫入端」（Discord daemon / 酒保）直呼 AppendMessage 時，
         /// mention 是否仍會寫進對方 inbox。回傳摘要（同時以 Warning 落 log 供 agent 對帳）。
-        /// 走 run_cmd.py run Invoke --arg type=UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO --arg member=SelfTestMentionNotify
+        /// 走 senate ucmd run Invoke --arg type=UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernIO --arg member=SelfTestMentionNotify
         /// </summary>
         public static string SelfTestMentionNotify()
         {

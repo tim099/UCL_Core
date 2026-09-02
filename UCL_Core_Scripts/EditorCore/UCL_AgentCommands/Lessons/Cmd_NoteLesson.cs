@@ -21,7 +21,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Lessons
     ///
     /// <para>典型用法：</para>
     /// <code>
-    /// python AgentCommands/run_cmd.py run NoteLesson \
+    /// senate ucmd run NoteLesson \
     ///   --arg body="UCL_Json bool 用 True/False 字串非 JSON bool" \
     ///   --arg actor="claude-da-xiaojie" \
     ///   --arg category="bug"

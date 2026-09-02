@@ -678,7 +678,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 var r = UCL_CmdSchemaExporter.Export();
                 Debug.Log($"[CmdSchema] 來源變動 → 自動同步：{(r.Written ? "已更新" : "內容未變")} "
                         + $"— {r.CommandCount} 個 cmd（{r.SpecCount} 個有 ArgsSpec）→ {r.Path}\n"
-                        + "（手動同步：控制台 → Cmd 後台管理頁，或 run_cmd.py run ExportCmdSchema）");
+                        + "（手動同步：控制台 → Cmd 後台管理頁，或 senate ucmd run ExportCmdSchema）");
             }
             catch (Exception e)
             {

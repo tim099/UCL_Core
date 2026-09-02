@@ -19,7 +19,7 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// 由 <c>UCL_CompileErrorTracker</c> 寫入 <c>AgentCommands/.compile_status.json</c>，Python 端 poll mtime 判定。
     /// </summary>
     /// <remarks>
-    /// 推薦走 <c>python run_cmd.py recompile</c> — 它會 record pre-mtime → submit Cmd → 等 mtime 推進 →
+    /// 推薦走 <c>run_cmd.py recompile</c> — 它會 record pre-mtime → submit Cmd → 等 mtime 推進 →
     /// 讀 errors / warnings 報告。直接 submit 本 Cmd 不會等到 compile 完，需自行 poll。
     /// </remarks>
     public class Cmd_Recompile : UCL_AgentCommandHandlerBase

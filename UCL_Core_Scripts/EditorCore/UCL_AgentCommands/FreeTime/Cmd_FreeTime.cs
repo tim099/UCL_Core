@@ -27,10 +27,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
     /// 自由時間流程 Cmd（step 分步 + next 導引）。
     /// <para>正常流程（agent 視角）：</para>
     /// <code>
-    /// ① run_cmd.py run FreeTime --arg step=start --arg persona=&lt;P&gt; --arg until=&lt;HH:mm&gt;
+    /// ① senate ucmd run FreeTime --arg step=start --arg persona=&lt;P&gt; --arg until=&lt;HH:mm&gt;
     /// ② （做活動；活動事件自然結束時 →）
-    /// ③ run_cmd.py run FreeTime --arg step=next --arg persona=&lt;P&gt;   （未到期重擲 / 到期收工）
-    /// ④ run_cmd.py run FreeTime --arg step=end --arg persona=&lt;P&gt; --arg reason=&lt;一句&gt;（提前收工）
+    /// ③ senate ucmd run FreeTime --arg step=next --arg persona=&lt;P&gt;   （未到期重擲 / 到期收工）
+    /// ④ senate ucmd run FreeTime --arg step=end --arg persona=&lt;P&gt; --arg reason=&lt;一句&gt;（提前收工）
     /// </code>
     /// </summary>
     public class Cmd_FreeTime : UCL_AgentCommandHandlerBase
@@ -102,7 +102,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: '{iPersona}' 不在線（無 session lock）—— 自由時間是登入後的狀態");
-                aR.AppendLine($"- exit: 先跑 run_cmd.py run GoodMorning --arg step=wake --arg persona={iPersona}");
+                aR.AppendLine($"- exit: 先跑 senate ucmd run GoodMorning --arg step=wake --arg persona={iPersona}");
                 WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[FreeTime] step=start blocked：persona 不在線（詳見 {aPath}）");
             }
@@ -194,7 +194,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine("## next");
             aR.AppendLine("1. 從骰面挑活動開做（無明確意圖 → 前 3 名挑一；有明確意圖 → 自由意志優先，但開場 post 註明「本輪未跟骰」）。");
             aR.AppendLine("2. **維持對話流＝發動引擎**：酒館 op=post 帶 `--wait-reply <秒>`（Cmd 管時鐘，不管 turn 存續 —— 沒引擎照樣睡死）。");
-            aR.AppendLine($"3. **活動事件自然結束時**（棋局終局／繪圖收筆／聊天告一段落）→ run_cmd.py run FreeTime --arg step=next --arg persona={iPersona}");
+            aR.AppendLine($"3. **活動事件自然結束時**（棋局終局／繪圖收筆／聊天告一段落）→ senate ucmd run FreeTime --arg step=next --arg persona={iPersona}");
             aR.AppendLine("   收工由這裡自動判定 —— **截止是軟的**：時間到不打斷進行中的活動，最後一件做完跑 next 才通知收工。");
             aR.AppendLine($"4. step=end（提前收工）**除非 Tim 明確指示，不要用** —— 正常結束一律交給 step=next 對時鐘判定。");
             AppendContinueBlock(aR, iPersona, (int)Math.Max(0, (aUntil - aNow).TotalMinutes));
@@ -222,7 +222,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine("- reason: 沒有進行中的自由時間 session");
-                aR.AppendLine($"- exit: 先跑 run_cmd.py run FreeTime --arg step=start --arg persona={iPersona} --arg until=<HH:mm>");
+                aR.AppendLine($"- exit: 先跑 senate ucmd run FreeTime --arg step=start --arg persona={iPersona} --arg until=<HH:mm>");
                 WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[FreeTime] step={aStepName} blocked：無 active session（詳見 {aPath}）");
             }
@@ -258,7 +258,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 aR.AppendLine($"- 🎟 限時券: 用 {aUsed} 張{(aForfeited > 0 ? $"、**{aForfeited} 張到期作廢**（券帳本會在下次寫入時清掉並記一筆 expire）" : "（全數用畢）")}");
                 aR.AppendLine($"- 收工宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
                 aR.AppendLine("## ⏹ 已收工 —— 自由時間結束，**不要再跑 step=next**");
-                aR.AppendLine("- 回工作；或走晚安流程：run_cmd.py run GoodNight --arg step=check --arg persona=" + iPersona);
+                aR.AppendLine("- 回工作；或走晚安流程：senate ucmd run GoodNight --arg step=check --arg persona=" + iPersona);
                 aR.AppendLine("- 還想花錢再睡 →（可選）ucl-spending-time（不綁死晚安）。");
                 WritePayload(iArgs, aPath, aR.ToString());
                 Debug.Log($"[FreeTime] step={aStepName} 收工（{aEndReason}） → {aPath}");
@@ -1001,7 +1001,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             ioR.AppendLine();
             ioR.AppendLine("活動告一段落就跑這行 —— **截止是軟的**，時間到不打斷進行中的活動，最後一件做完跑它才收工：");
             ioR.AppendLine("```bash");
-            ioR.AppendLine($"python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona {iPersona} run FreeTime \\");
+            ioR.AppendLine($"senate ucmd run FreeTime --persona {iPersona} \\");
             ioR.AppendLine($"    --arg step=next --arg persona={iPersona} [--arg-file body=<想跟同事說的話>]");
             ioR.AppendLine("```");
             ioR.AppendLine("- `body` **可選**（不強制）—— 帶了就併進換骰宣告同一則，換骰同時跟同事交流。");

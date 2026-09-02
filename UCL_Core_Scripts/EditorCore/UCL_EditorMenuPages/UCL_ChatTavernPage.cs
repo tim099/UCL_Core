@@ -1437,7 +1437,7 @@ namespace UCL.Core.EditorLib.Page
             if (string.IsNullOrEmpty(idntId)) { Debug.LogError(UCL_CodeLocalize.Get("Tavern.Err.NoIdentity")); return; }
             if (string.IsNullOrEmpty(SelectedRoomId)) { Debug.LogError(UCL_CodeLocalize.Get("Tavern.Err.NoRoom")); return; }
 
-            // 構造 args dict — schema 跟 run_cmd.py run Tavern --arg key=val 完全對齊
+            // 構造 args dict — schema 跟 senate ucmd run Tavern --arg key=val 完全對齊
             var args = new Dictionary<string, string>
             {
                 { "op", "post" },

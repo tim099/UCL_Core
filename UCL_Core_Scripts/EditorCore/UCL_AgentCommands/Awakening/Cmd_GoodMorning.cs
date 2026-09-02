@@ -23,10 +23,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
     ///
     /// <para>正常流程（agent 視角）：</para>
     /// <code>
-    /// ① run_cmd.py run GoodMorning --arg step=wake  --arg persona=&lt;P&gt; [--arg model=&lt;M&gt;] [--arg actual_agent=&lt;A&gt;]
-    /// ② run_cmd.py run GoodMorning --arg step=brief --arg persona=&lt;P&gt;
+    /// ① senate ucmd run GoodMorning --arg step=wake  --arg persona=&lt;P&gt; [--arg model=&lt;M&gt;] [--arg actual_agent=&lt;A&gt;]
+    /// ② senate ucmd run GoodMorning --arg step=brief --arg persona=&lt;P&gt;
     /// ③ Read（step=brief 回傳的 brief 路徑）
-    /// ④ run_cmd.py run GoodMorning --arg step=intro --arg persona=&lt;P&gt; --arg-stdin body   ← body 親筆
+    /// ④ senate ucmd run GoodMorning --arg step=intro --arg persona=&lt;P&gt; --arg-stdin body   ← body 親筆
     /// </code>
     /// <para>每步回傳值落檔 letters/&lt;persona&gt;/cmd/goodmorning_&lt;step&gt;.md；audit 落 AwakenInit/_goodmorning_audit.md。</para>
     /// </summary>
@@ -110,7 +110,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                             aSb.AppendLine($"{aNo++}. **required** — {aTodo[0]}");
                             for (int i = 1; i < aTodo.Count; i++) aSb.AppendLine(aTodo[i]);
                         }
-                        aSb.AppendLine($"{aNo++}. **required** — 上線自介：run_cmd.py run GoodMorning --arg step=intro --arg persona={aPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
+                        aSb.AppendLine($"{aNo++}. **required** — 上線自介：senate ucmd run GoodMorning --arg step=intro --arg persona={aPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
                         aSb.AppendLine("   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。");
                         aSb.AppendLine("（⚠ Windows 主控台 stdin 撞 surrogates/encoding error 時，改 --arg-file body=<檔> —— gura wake#31 實測）");
                         aSb.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");
@@ -200,7 +200,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     //    但**回傳檔的 next 是可直接照跑的指令** —— 這個預期是 R16/R17 整套流程的地基，
                     //    破一次，下一個人就得開始懷疑每一條 next（BUG-31，basecamp wake#68 實撞）。
                     aSb.AppendLine($"1. **required** — 酒館 catchup（知道在線同事＋追上訊息；照 ucl-ding 流程但**不強制回**）：");
-                    aSb.AppendLine($"   run_cmd.py --persona {aPersona} run Tavern --arg op=catchup");
+                    aSb.AppendLine($"   senate ucmd run Tavern --persona {aPersona} --arg op=catchup");
                     aSb.AppendLine($"   （回傳檔 `letters/{aPersona}/cmd/ding_brief.md`；`--persona` 同時決定 queue 路由並戳進 args，不必再寫 --arg persona=）");
                     aSb.AppendLine("2. 之後照 brief §9 的今日動作清單走（見林 OVERDUE / 見森待折是 morning 的一部分，不是選配）。");
                     WritePayload(args, aPath, aSb.ToString());

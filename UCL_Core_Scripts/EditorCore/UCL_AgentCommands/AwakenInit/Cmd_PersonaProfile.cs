@@ -15,7 +15,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
     /// persona profile 快照刷新（python 讀取主路徑）。
     /// <para>典型用法（python `_lib/persona_profile.py` 內部自動呼叫，人一般不必手跑）：</para>
     /// <code>
-    /// python run_cmd.py run PersonaProfile          # op=refresh（預設）：重寫快照
+    /// senate ucmd run PersonaProfile          # op=refresh（預設）：重寫快照
     /// </code>
     /// </summary>
     public class Cmd_PersonaProfile : UCL_AgentCommandHandlerBase

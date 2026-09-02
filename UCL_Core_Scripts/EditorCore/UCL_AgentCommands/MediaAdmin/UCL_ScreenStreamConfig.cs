@@ -138,7 +138,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
         public int watch_live_guard_sec = 20;
         /// <summary>可播放量不足本檔窗口長度時，cycle 最多等水位追上幾秒（0＝不等，直接回「無新素材」）。
         /// ⚠ 與呼叫端 timeout 耦合：本值＋`watch_cycle_interval_sec`＋montage 合成（~53s）若逼近
-        /// `run_cmd.py --timeout`（預設 120s）就會脫鉤 —— 加大本值時 timeout 要一起加。</summary>
+        /// `senate ucmd --timeout`（預設 120s）就會脫鉤 —— 加大本值時 timeout 要一起加。</summary>
         public int watch_water_wait_max_sec = 30;
         /// <summary>接力觀看（Tim 2026-08-25 拍板）：同場全員（primary＋companions）共用一條前緣，
         /// 誰的 cycle 先回來誰拿下一段 ⇒ 區段天生連續、個人有洞、覆蓋由全體保證。

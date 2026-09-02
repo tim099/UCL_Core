@@ -366,8 +366,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             {
                 string aOutDir = Path.GetDirectoryName(UCL_LettersPath.CmdPayload(iPersona, "wake", "brief"));
                 int aWake = WakeLetterCount(iPersona) + 1;   // 本次 wake 編號（信數 + 1，本次還沒寫信）
+                // 現地定語：region 只有宿主知道（央行設定），SCP_Core 那層刻意不長讀它的嘴。
                 var (aWrittenTo, aBriefResult) = SCP.Core.Letters.SCP_WakeBrief.Write(
-                    LettersDir, iPersona, aWake, aOutDir, UCL_AgentCommandsPath.DataRoot);
+                    LettersDir, iPersona, aWake, aOutDir, UCL_AgentCommandsPath.DataRoot,
+                    Treasury.UCL_CentralBankSettings.CurrencyId);
 
                 aSb.AppendLine($"⤷ SCP_WakeBrief（C#，就地執行）persona={iPersona} wake={aWake}");
                 aSb.AppendLine($"· 主檔 {aBriefResult.MainLineCount} 行 / 上限 {SCP.Core.Letters.SCP_WakeBrief.BriefLineCap}");
@@ -1130,6 +1132,37 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             return (aRest, aExtra);
         }
 
+        // ===========================================================
+        // 區塊職責：收尾信的**地理定語** —— 這封信是在哪一區、哪一個專案寫的。
+        // 物理意義：persona 的 letters 是**同一個 git repo 被多個專案掛著**
+        //          （UCL_CentralBankSettings 那邊有實測：LY 與 D:/Unity/Bar 的 letters/kiara
+        //           root commit 與 HEAD 完全相同）⇒ 一封信隔天會在**另一區**被讀。
+        //          而會隨 data_root 分岔的資料只有兩種：2026-09-02 實測 `Canvas/`（2D 畫布）與
+        //          `ChatTavern/`（酒館 seq）是一般目錄；`Sculpture/`（3D）／`Chess/`／`Tasks/`／
+        //          各 persona 信件庫都是 submodule ⇒ 單一全域軸，**不受本定語管**。
+        // 🩸 為什麼非印不可：2026-09-02 basecamp 讀自己昨天的信，信裡引的 `seq 15643`
+        //          在本區撈出來是 08-16 酒保的直播公告 —— **解析成功、格式完整、是別人的訊息**。
+        //          calli 同日量了四筆，四筆全中。seq 是稠密遞增整數 ⇒ 跨區撞號機率≈1，沿途零紅燈。
+        // 數值影響：純新增 frontmatter 欄位，不動編號／不動 body／不回填舊信
+        //          （磁碟上沒有舊信的區域資訊，補出來的是編的 —— 舊信無此欄＝未宣告，
+        //           ⛔ 讀取端不准腦補成「就是本區」）。
+        // ⚠ 為什麼要兩個欄位而不是只印 region：`CurrencyId` **缺值時會回預設 `Ducat` 而不是空**
+        //   （見 UCL_CentralBankSettings.CurrencyId）⇒ 兩個沒設定過的專案會印出同一個 region，
+        //   而那正是本定語要防的對撞。`project` 這一欄在那種情況下仍然分岔 ——
+        //   一個恆同的欄位不帶資訊（同檔 §registry 對帳那段已經踩過同一件事）。
+        // ===========================================================
+        /// <summary>data_root 所屬的專案名（＝ data_root 的上一層目錄名）。取不到回 `unstated` —— **不猜**。</summary>
+        static string ProjectNameOfDataRoot()
+        {
+            try
+            {
+                string aParent = Path.GetDirectoryName(DataRoot.Replace('\\', '/').TrimEnd('/'));
+                string aName = string.IsNullOrEmpty(aParent) ? "" : Path.GetFileName(aParent);
+                return string.IsNullOrWhiteSpace(aName) ? "unstated" : aName;
+            }
+            catch { return "unstated"; }
+        }
+
         /// <summary>收尾信落檔 —— port 自 awakening.write_letter（trigger=cmd_goodnight 固定走 wakes/；
         /// rest 信仍歸 python cmd_rest，本函式不管）。回 (信路徑, 信編號)。</summary>
         public static (string path, int number) WriteWakeLetter(string iActor, string iPersona, string iBody)
@@ -1147,6 +1180,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 { "written_at", NowIso() },
                 { "written_by_persona", iPersona },
                 { "trigger", "cmd_goodnight" },
+                // 地理定語（2026-09-02 上線，Tim 拍板）—— 只為本信引用的「2D 畫布座標」與
+                // 「酒館 seq」提供命名空間；TASK 單號／棋局／3D 座標是全域軸，不受它管。
+                { "region", Treasury.UCL_CentralBankSettings.CurrencyId },
+                { "project", ProjectNameOfDataRoot() },
             };
             var (aBody, aFixedNl) = NormalizeEscapedNewlines(iBody);
             var (aRest, aExtra) = SplitAuthorFrontmatter(aBody, aMachine);

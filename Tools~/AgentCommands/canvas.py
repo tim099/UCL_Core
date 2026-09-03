@@ -9,7 +9,7 @@ canvas.py — Shared Pixel Canvas MVP CLI（共用像素畫布）
 
 跨專案 / 路徑（比照 awakening.py：code 在 UCL_Core，state 留主專案）：
   - 本檔（code）跨專案共用，置於 <UCL_Core>/Tools~/AgentCommands/canvas.py
-  - state（Canvas/ 事件、券、筆記、宣稱區域）留主專案 AgentCommands/Canvas（CWD-relative 預設）
+  - state（Canvas/ 事件、券、筆記、宣稱區域）留主專案 AgentCommands/Canvas（相對 **repo root**，不相對 cwd —— TASK-0112）
   - 操作 SOP → ucl-canvas skill（跨專案）；完整設計 spec（含 EOV 經濟耦合）→
     主專案 docs/Plan/Plan_Shared_Pixel_Canvas.md
   - 一律以 CWD = 專案根 調用（同 awakening.py 慣例），相對路徑才解析到 per-project state
@@ -235,11 +235,27 @@ class Paths:
 
     def __init__(self, root: str, treasury_root: str,
                  registry_meta: str | None = None):
-        self.root = Path(root)                      # canvas 根目錄
-        self.treasury_root = Path(treasury_root)    # treasury 根目錄
+        # 區塊職責：相對路徑一律錨在 **repo root**（ucl_paths.repo_root 的 tier 鏈），不是 cwd。
+        # 🩸 TASK-0112（2026-09-03，Tim 抓到的）：三個預設根原本是相對 cwd 的字串；basecamp 的 shell cwd
+        #   停在 Assets/Plugins/UCL_Core 時跑 place ⇒ 工具在 UCL_Core 底下**長出一棵新的 AgentCommands 樹**，
+        #   事件、快取、預覽全寫進去，放完回讀同一棵樹所以全綠；真畫布 history 0，而 ledger 真的扣了 10 token。
+        #   「cwd 往上 walk」正是 ucl_paths 檔頭點名的 2026-06-16 路徑詐欺家族 —— 這裡是它沒被收掉的最後一格。
+        # 數值影響：`--root`／`--treasury-root`／`--registry-meta` 給**絕對路徑**照舊逐字採用（測試隔離用）；
+        #           給相對值 ⇒ 相對 repo root。repo_root 解析失敗會 raise（不猜一個看起來合理的根）。
+        self.root = self._anchor(root)                      # canvas 根目錄
+        self.treasury_root = self._anchor(treasury_root)    # treasury 根目錄
         # persona registry meta（agent_banks source of truth）；可配置供測試指向 temp。
         # 預設走 DEFAULT_REGISTRY_META（與 treasury 同處 AgentCommands 根下的 AwakenInit/）。
-        self._registry_meta = Path(registry_meta or DEFAULT_REGISTRY_META)
+        self._registry_meta = self._anchor(registry_meta or DEFAULT_REGISTRY_META)
+
+    @staticmethod
+    def _anchor(p: str) -> Path:
+        """絕對路徑原樣；相對路徑接在 repo root 後面（不是 cwd）。"""
+        path = Path(p)
+        if path.is_absolute():
+            return path
+        from _lib.ucl_paths import repo_root            # tier 鏈：pointer → env → 檔案位置 walk → gitlink 上溯
+        return Path(repo_root()) / path
 
     @property
     def meta(self) -> Path:

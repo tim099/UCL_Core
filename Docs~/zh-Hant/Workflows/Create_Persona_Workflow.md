@@ -112,7 +112,7 @@ graph TD
 1. **執行格式與引用驗證**：
    - 使用 `ValidateAssetFormat` 來檢查你建立的這兩個 JSON 檔案格式與引用是否正確（確保 `AvatarSprite` 所指的 ID 在 `UCL_SpriteAsset` 中真實存在）。
      ```bash
-     python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat --arg assetType=UCL_ChatTavernPersonaCardAsset --arg assetId=<persona> --arg checkRefs=1
+     senate ucmd run ValidateAssetFormat --arg assetType=UCL_ChatTavernPersonaCardAsset --arg assetId=<persona> --arg checkRefs=1
      ```
    - 確保無任何 `Missing` 引用，且 Verdict 狀態為 `PASS`。
 
@@ -120,7 +120,7 @@ graph TD
    - 為了將你的新 Persona 配置提交至 UCL_Core submodule，你**必須**將它從專案本地的 `.BuiltinModules` 備份回流至 UCL_Core 的 `Templates~` 目錄下。
    - **執行指令**：
      ```bash
-     python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate --arg id=<persona>
+     senate ucmd run MigrateAssetToTemplate --arg id=<persona>
      ```
      這會自動分析並將 `<persona>` 相關的 `PersonaCardAsset`、`SpriteAsset` 以及頭像 PNG 搬移複製至 `Templates~/Assets/.BuiltinModules/...` 底下。
      > [!TIP]

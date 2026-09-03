@@ -193,12 +193,12 @@ public float m_Timeout;                                       // 同組 —— �
 
 ```bash
 # 樣本型別
-run_cmd.py --persona <me> run Invoke --arg type=UCL.Core.TestLib.UCL_FoldoutGroupSample --arg member=SelfTest
+senate ucmd run Invoke --persona <me> --arg type=UCL.Core.TestLib.UCL_FoldoutGroupSample --arg member=SelfTest
 # → fields=8 | m_Plain1(-) m_AdvA(Advanced) m_AdvB(Advanced) m_AdvC(Advanced)
 #              m_DebugVerbose(Debug,open) m_DebugLevel(Debug,open) m_Plain2(-) m_Plain3(-)
 
 # 真實資產（換 --arg args= 就能問任何型別）
-run_cmd.py --persona <me> run Invoke --arg type=UCL.Core.TestLib.UCL_FoldoutGroupSample     --arg member=Dump --arg paramTypes=System.String --arg args=LittleYellow.HSceneAsset
+senate ucmd run Invoke --persona <me> --arg type=UCL.Core.TestLib.UCL_FoldoutGroupSample     --arg member=Dump --arg paramTypes=System.String --arg args=LittleYellow.HSceneAsset
 # → HSceneAsset fields=28 | hScene(場景與角色) skeletons(場景與角色) sceneObjects(場景與角色)
 #                           clickAreas(互動操作) … config(畫面顯示與特效)
 ```

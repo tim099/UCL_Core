@@ -12,7 +12,7 @@ enabled: true
 
 > **一步 ＝ 一份文件。** 改完之後跑：
 > ```bash
-> python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run DocEdit >     --arg kind=doc --arg persona=<me> --arg target=<改的那份 .md> [--arg note=<一句>]
+> senate ucmd run DocEdit --persona <me> >     --arg kind=doc --arg persona=<me> --arg target=<改的那份 .md> [--arg note=<一句>]
 > ```
 > ⚠ 那支 Cmd **不搬內容、不寫檔** —— 它站在「改完之後」：驗檔案真的動了（拿自由時間 session
 > 開場時刻當基準）、把這一步登記下來、並在回傳檔尾端指回 `op=done` / 換骰。

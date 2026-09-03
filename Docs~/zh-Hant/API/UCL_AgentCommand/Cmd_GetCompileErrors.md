@@ -24,13 +24,13 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `format=md|json (default md)`
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GetCompileErrors --arg <k>=<v>
+senate ucmd run GetCompileErrors --arg <k>=<v>
 ```
 
 ## 3. 注意
 
 - ⚠ **assembly 整個編不起來時這支也會失效**（它自己也在那個 assembly 裡）——那種情況要走 `Tools~/AgentCommands/check_compile.py`，那支是 standalone Python、不依賴 Cmd 系統。
-- 改完 .cs 的完整手勢是 `run_cmd.py recompile`（送編譯並等它跑完）；**Cmd 回 Success 只代表請求被收下，不代表編譯發生過。**
+- 改完 .cs 的完整手勢是 `senate ucmd run Recompile`（送編譯並等它跑完）；**Cmd 回 Success 只代表請求被收下，不代表編譯發生過。**
 
 ## 4. 關聯
 

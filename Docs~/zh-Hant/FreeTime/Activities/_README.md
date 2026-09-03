@@ -108,5 +108,5 @@ steps_need_persona: shelf, resume=--reader   # 選填 — 這些 step 由 op=ste
     而在回來之前「遊戲組怎麼只剩下棋」需要 md 自己回答。
   ⇒ 判準不是「暫時或永久」，是**刪掉之後那個問題還有沒有地方能答**。
 - 對齊 EOV `docs/Glossary/` 的 per-entry md + frontmatter 前例
-- 工具：`run_cmd.py --persona <me> run FreeTime --arg step=shuffle|list|show`（freetime.py 已於 2026-08-26 退役）
+- 工具：`senate ucmd run FreeTime --persona <me> --arg step=shuffle|list|show`（freetime.py 已於 2026-08-26 退役）
 - 三池 spec：[`<UCL_Core>/Docs~/zh-Hant/Mechanics/FreeTime_System.md`](../../Mechanics/FreeTime_System.md) §4（2026-06-11 同步搬入 UCL_Core）

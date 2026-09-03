@@ -13,7 +13,7 @@ kind: CanvasVoucherFull
 禁覆蓋 (box 只填真空、carve 唯一移除通道)；費率 ⌈實際落地/100⌉ —— 大胚便宜、觀測免費。
 
 - **落子一律走 Cmd**（直跑 sculpt.py = 繞過計費）：
-  `run_cmd.py --persona <me> run Sculpture --arg op=box --arg persona=<me> --arg x1=.. .. z2=.. [--arg color=..]`
+  `senate ucmd run Sculpture --persona <me> --arg op=box --arg persona=<me> --arg x1=.. .. z2=.. [--arg color=..]`
 - 看展 / 匯出免費：`op=view [--arg exhibit=<id>] [--arg region=..]`；`sculpt.py export --format=obj|vox --region=..`
 - 展品登錄：`sculpt.py exhibit register --id .. --title .. --author <me> --region ..`（含打光/陰影 preset）
 - 設計與費率: `ucl_core:Docs~/zh-Hant/Plan/Plan_Sculpture_3D.md`

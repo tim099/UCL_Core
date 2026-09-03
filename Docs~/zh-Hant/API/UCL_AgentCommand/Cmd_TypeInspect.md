@@ -26,7 +26,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `inspect_many: types=csv — 一次 inspect 多個 type`
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run TypeInspect --arg <k>=<v>
+senate ucmd run TypeInspect --arg <k>=<v>
 ```
 
 ## 3. 注意

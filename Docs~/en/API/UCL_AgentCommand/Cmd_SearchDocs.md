@@ -113,7 +113,7 @@ Includes `command`, `query`, `scanned`, `hitCount`, `expandedTerms`, `hits[]` (w
 Or Python wrapper:
 
 ```bash
-python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run SearchDocs \
+senate ucmd run SearchDocs \
     --arg "query=物品" --arg limit=10 --arg format=md \
     --arg synonymsPath=Docs/_synonyms.txt --timeout 30
 ```

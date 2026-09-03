@@ -16,7 +16,7 @@
  - 在編譯還有錯時跑 runtime（沒意義）
  - 用 `Recompile` AgentCommand 取代本工具（compile error 時 Cmd 本身可能掛）
  - 只看 `Simulation_*.log` 不看 `.compile_status.json`（前者混雜 Warning 雜訊）
-+- **只信 `run_cmd.py recompile` 子命令回報的 `errors=N` 就收工** — 它可能讀到 stale / intermediate `.compile_status.json` 而 **under-report `errors=0`**。改完 .cs **務必**用 `check_compile.py --errors-only` 二次確認。
++- **只信 `senate ucmd run Recompile` 子命令回報的 `errors=N` 就收工** — 它可能讀到 stale / intermediate `.compile_status.json` 而 **under-report `errors=0`**。改完 .cs **務必**用 `check_compile.py --errors-only` 二次確認。
 +  > 🩸 2026-05-22 血證:apex-two 的 `item.Data.name`(CS1061)被 `recompile` 子命令漏報成 `errors=0`,而 `Errors_latest.log`(runtime 層)也乾淨 → basecamp 誤判成「domain reload 沒生效」,繞一大圈才靠 `check_compile.py` 確診。**compile 層 ≠ runtime 層 ≠ recompile-cmd 回報層**,三層別混(對應「跨層次驗證」family)。
  
  ## 後續

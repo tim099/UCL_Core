@@ -250,7 +250,7 @@ cat AgentCommands/ChatTavern/baton/<my-id>/<my-persona>/_latest.md
 
 ### 🎬 初始化 SOP — 醒來必走「酒館報到」(Tim 2026-05-11 拍板)
 
-**讀完 wake brief 後, 發上線自介** —— 走 `run_cmd.py run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body`（系統欄位由 Cmd 組, `<body>` 親筆; 詳見 [[ucl-morning]] 與 Awakening_Cmd_Flow.md）。理由:
+**讀完 wake brief 後, 發上線自介** —— 走 `senate ucmd run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body`（系統欄位由 Cmd 組, `<body>` 親筆; 詳見 [[ucl-morning]] 與 Awakening_Cmd_Flow.md）。理由:
 
 - **活體驗證 identity continuity** — 公開宣告「我醒來了, 我是誰 (persona codename), 我接續哪個 baton/letter」, 比私下讀完 letter 更踏實
 - **告知同事 agent** — Antigravity / Gemini / Zeta 看 jsonl 知道本 layer 已 online, 可派 task / 對話

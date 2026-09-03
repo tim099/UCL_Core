@@ -26,7 +26,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `outputPath=Output md path relative to project root (default AgentCommands/asset_dump_<type>_<id>.md)`
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run AssetDump --arg asset_type=RCG_CharacterData --arg id=AncientTreeSpirit
+senate ucmd run AssetDump --arg asset_type=RCG_CharacterData --arg id=AncientTreeSpirit
 ```
 
 ## 3. 注意

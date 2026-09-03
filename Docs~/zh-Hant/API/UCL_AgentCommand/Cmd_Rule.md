@@ -28,7 +28,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `enforce: rule_id=<id> target=<context> (v1 未實作, 預留 future automation hook)`
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Rule --arg <k>=<v>
+senate ucmd run Rule --arg <k>=<v>
 ```
 
 ## 3. 注意

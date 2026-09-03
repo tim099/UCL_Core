@@ -79,13 +79,13 @@ dst = <projectRoot>/Assets/.BuiltinModules/ModulesRoot/Modules/Core/UCL_Assets/U
 
 ```bash
 # 名簿全員のテンプレートを自動生成（既存のものはデフォルトで上書きしません）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run SeedTavernIdentityAssets
+senate ucmd run SeedTavernIdentityAssets
 
 # 強制的に全員分を上書き生成
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run SeedTavernIdentityAssets --arg force=true
+senate ucmd run SeedTavernIdentityAssets --arg force=true
 
 # 特定のキャラクター1つだけ生成（テストや個別追加用）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run SeedTavernIdentityAssets --arg onlyId=claude-da-xiaojie
+senate ucmd run SeedTavernIdentityAssets --arg onlyId=claude-da-xiaojie
 ```
 
 ---

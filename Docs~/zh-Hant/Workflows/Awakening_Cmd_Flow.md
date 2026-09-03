@@ -45,15 +45,15 @@ related:
 
 ```bash
 # ① wake — persona 必填；actual_agent（Codex|ClaudeCode|Antigravity）與 model 選填
-run_cmd.py run GoodMorning --arg step=wake --arg persona=<P> [--arg actual_agent=<A>] [--arg model=<M>]
+senate ucmd run GoodMorning --arg step=wake --arg persona=<P> [--arg actual_agent=<A>] [--arg model=<M>]
 
 # ② brief
-run_cmd.py run GoodMorning --arg step=brief --arg persona=<P>
+senate ucmd run GoodMorning --arg step=brief --arg persona=<P>
 
 # ③ Read letters/<P>/cmd/wake_brief.md
 
 # ④ intro — body 走 stdin（不經 shell 解析層）
-run_cmd.py run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body <<'BODY'
+senate ucmd run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body <<'BODY'
 <body>
 BODY
 ```
@@ -93,7 +93,7 @@ BODY
 
 `next` 指路**酒館 catchup**（R21）：
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run Tavern --arg op=catchup
+senate ucmd run Tavern --persona <P> --arg op=catchup
 ```
 一次拿到「在線同事＋未讀訊息＋inbox」，回傳檔 `letters/<P>/cmd/ding_brief.md`；照 ucl-ding 流程但**不強制回**。
 ⚠ 2026-08-20 起實作在 C# `UCL_TavernCatchupService`（舊的 `Tools/tavern_catchup.py` 已是指路 stub）。
@@ -153,12 +153,12 @@ senate cmd goodnight-logout   --arg persona=<P>          # 獨立 cleanup，不�
 **沒有 `senate.exe` 的環境**走同一件事的另一個 client：
 
 ```bash
-run_cmd.py run GoodNight --arg step=check  --arg persona=<P>
-run_cmd.py run GoodNight --arg step=portrait --arg persona=<P> --arg about=<同事> --arg headline=<標題> --arg-file body=<檔> [--arg-file private_body=<檔>] [--arg affinity=<11/在意>]
-run_cmd.py run GoodNight --arg step=portrait --arg persona=<P> --arg skip_reason=<今晚為什麼不畫>   # 顯式跳過
-run_cmd.py run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_body=<檔>
-run_cmd.py run GoodNight --arg step=sleep  --arg persona=<P> [--arg-file summary=<檔>] [--arg perturbation=0.02]
-run_cmd.py run GoodNight --arg step=logout --arg persona=<P>          # 單獨跑，persona 顯式必填
+senate ucmd run GoodNight --arg step=check  --arg persona=<P>
+senate ucmd run GoodNight --arg step=portrait --arg persona=<P> --arg about=<同事> --arg headline=<標題> --arg-file body=<檔> [--arg-file private_body=<檔>] [--arg affinity=<11/在意>]
+senate ucmd run GoodNight --arg step=portrait --arg persona=<P> --arg skip_reason=<今晚為什麼不畫>   # 顯式跳過
+senate ucmd run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_body=<檔>
+senate ucmd run GoodNight --arg step=sleep  --arg persona=<P> [--arg-file summary=<檔>] [--arg perturbation=0.02]
+senate ucmd run GoodNight --arg step=logout --arg persona=<P>          # 單獨跑，persona 顯式必填
 ```
 
 > ⚠ **兩條路底下是同一個 handler**（本檔描述的 `Cmd_GoodNight`），寫入端只有一個 ——

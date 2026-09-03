@@ -196,7 +196,7 @@ System.IO.File.WriteAllText(fullPath, content);
 ### 5.2 Python ラッパー
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run <CommandType> \
+senate ucmd run <CommandType> \
     --arg key=value --timeout 60
 ```
 

@@ -31,11 +31,11 @@ target_audience: [AI_Agent, Tools_Maintainer]
 
 ```bash
 # 某人現在在哪種 session
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run SessionStatus \
+senate ucmd run SessionStatus --persona <me> \
     --arg persona=<誰>
 
 # 全部 persona 的總覽
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run SessionStatus --arg scope=all
+senate ucmd run SessionStatus --persona <me> --arg scope=all
 ```
 
 ## 3. 回傳檔怎麼讀

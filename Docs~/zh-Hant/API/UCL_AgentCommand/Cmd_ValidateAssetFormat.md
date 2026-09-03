@@ -153,12 +153,12 @@ reference_skipped_empty: 0
 
 ```bash
 # 基本驗證
-python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+senate ucmd run ValidateAssetFormat \
     --arg assetType=RCG_ItemData --arg assetId=ManaCore_Shard \
     --output-file CardGame/AgentCommands/asset_format_check_RCG_ItemData_ManaCore_Shard.md
 
 # 含引用檢查
-python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+senate ucmd run ValidateAssetFormat \
     --arg assetType=RCG_ItemData --arg assetId=Mana --arg checkRefs=1 \
     --output-file CardGame/AgentCommands/asset_format_check_RCG_ItemData_Mana.md
 ```

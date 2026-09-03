@@ -14,7 +14,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 ```bash
 # 寫完 asset 後，立刻驗證（路徑相對 git root）
-python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+senate ucmd run ValidateAssetFormat \
     --arg assetType=<C# Type> --arg assetId=<ID> --arg checkRefs=1 \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 
@@ -69,7 +69,7 @@ python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
 ### 3.1 最小驗證（schema only）
 
 ```bash
-python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+senate ucmd run ValidateAssetFormat \
     --arg assetType=<Type> --arg assetId=<ID> \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 ```
@@ -77,7 +77,7 @@ python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
 ### 3.2 含直接引用檢查（推薦預設）
 
 ```bash
-python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+senate ucmd run ValidateAssetFormat \
     --arg assetType=<Type> --arg assetId=<ID> --arg checkRefs=1 \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 ```
@@ -85,7 +85,7 @@ python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
 ### 3.3 跨資產 deep validation（複雜引用鏈）
 
 ```bash
-python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+senate ucmd run ValidateAssetFormat \
     --arg assetType=<Type> --arg assetId=<ID> --arg checkRefs=2 --arg verbose=true \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 ```
@@ -96,7 +96,7 @@ python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
 但若你要**排查一個既有 asset「哪些引用壞了」/ 看完整依賴樹**，用 `Cmd_ResolveAssetReferences` 更直觀 — 它遞迴走所有 `UCLI_AssetEntry`，每筆標 `Exists ✅/❌` + 印 `[MISSING]`，一次看完整條鏈：
 
 ```bash
-python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ResolveAssetReferences \
+senate ucmd run ResolveAssetReferences \
     --arg assetType=<Type> --arg assetIds=<ID>[,<ID2>] --arg maxDepth=2 --arg format=md
 # 產出 CardGame/AgentCommands/asset_refs_<Type>_<ts>.md
 # 看 "Found On Disk: N / Total" + Flat Path List 的 ❌ + Reference Tree 的 [MISSING]
@@ -187,7 +187,7 @@ python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ResolveAssetReferences \
 寫完 JSON 後 **必跑**：
 
 \`\`\`bash
-python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+senate ucmd run ValidateAssetFormat \
     --arg assetType=<Type> --arg assetId=<ID> --arg checkRefs=1 \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 \`\`\`

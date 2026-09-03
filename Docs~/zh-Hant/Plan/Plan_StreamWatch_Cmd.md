@@ -92,16 +92,16 @@ Tim 的原話是「時間到會自動通知結束而不用另外判斷」。
 ## 3. Cmd 介面
 
 ```
-run_cmd.py run StreamWatch --arg step=prepare --arg persona=<P> --arg title=<片名> --arg episode=<N>
+senate ucmd run StreamWatch --arg step=prepare --arg persona=<P> --arg title=<片名> --arg episode=<N>
                                              [--arg media_id=<id>] [--arg reference_reader=<P>]
                                              [--arg catchup_map="0001=summit,0002=gura"] [--arg start_recording=false]
-run_cmd.py run StreamWatch --arg step=catchup --arg persona=<P> --arg media_id=<id>
-run_cmd.py run StreamWatch --arg step=peek    [--arg persona=<P>] [--arg seconds=<5..600>] [--arg raw=1]
-run_cmd.py run StreamWatch --arg step=start   --arg persona=<P> --arg until=<HH:mm> [--arg media=<work>]
-run_cmd.py run StreamWatch --arg step=join    --arg persona=<P>
-run_cmd.py run StreamWatch --arg step=cycle   --arg persona=<P>
-run_cmd.py run StreamWatch --arg step=observe --arg persona=<P> --arg-file body=<評論>
-run_cmd.py run StreamWatch --arg step=note    --arg persona=<P> --arg-file body=<接續點>
+senate ucmd run StreamWatch --arg step=catchup --arg persona=<P> --arg media_id=<id>
+senate ucmd run StreamWatch --arg step=peek    [--arg persona=<P>] [--arg seconds=<5..600>] [--arg raw=1]
+senate ucmd run StreamWatch --arg step=start   --arg persona=<P> --arg until=<HH:mm> [--arg media=<work>]
+senate ucmd run StreamWatch --arg step=join    --arg persona=<P>
+senate ucmd run StreamWatch --arg step=cycle   --arg persona=<P>
+senate ucmd run StreamWatch --arg step=observe --arg persona=<P> --arg-file body=<評論>
+senate ucmd run StreamWatch --arg step=note    --arg persona=<P> --arg-file body=<接續點>
 ```
 
 | step | 做什麼 |

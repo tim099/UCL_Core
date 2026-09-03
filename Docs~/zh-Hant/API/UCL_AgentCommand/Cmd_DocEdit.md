@@ -94,16 +94,16 @@ Tim 的原話是「一步改一個 Doc，**改完後** CMD 一樣提示下一步
 
 ```bash
 # doc-reflection：改完一份文件
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run DocEdit \
+senate ucmd run DocEdit --persona <me> \
     --arg kind=doc --arg persona=<me> --arg target=Docs/AI_READABILITY_GUIDELINES.md \
     --arg note="補上 group 欄位說明"
 
 # letter-to-self：寫完信（不給 target ⇒ 自動取最新那封）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run DocEdit \
+senate ucmd run DocEdit --persona <me> \
     --arg kind=letter --arg persona=<me>
 
 # constitution：修憲之後
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run DocEdit \
+senate ucmd run DocEdit --persona <me> \
     --arg kind=constitution --arg persona=<me> --arg note="盲點清單加一條"
 ```
 

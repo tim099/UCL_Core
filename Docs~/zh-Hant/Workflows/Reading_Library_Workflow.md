@@ -75,7 +75,7 @@ chapters/0001/r1_2026-08-06.md
 ## 心得分享與稿費（op=share，2026-08-07 上線）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library \
+senate ucmd run Library \
   --arg op=share --arg persona=<persona> --arg media_id=<media-id> \
   --arg chapter=<0001> --arg agent=<錢包身分，例 Zeta> [--arg round=N] [--arg room=tavern]
 ```
@@ -93,7 +93,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library \
 隔日或切換工作階段後，使用 persona 與**實際媒材 id**（不是 work id）重建單一追回檔：
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library \
+senate ucmd run Library \
   --arg op=recall --arg persona=<persona> --arg media_id=<media-id>
 ```
 
@@ -113,7 +113,7 @@ round 的完整筆記，以及每位角色的 `profile.json` 和全部 `vN_*.md`
 ## 審計（op=scan，2026-08-07 上線）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Library --arg op=scan
+senate ucmd run Library --arg op=scan
 ```
 
 唯讀掃四類候選、印報告＋落 `BookNotes/_migration/scan_report.md`（機械產物）：

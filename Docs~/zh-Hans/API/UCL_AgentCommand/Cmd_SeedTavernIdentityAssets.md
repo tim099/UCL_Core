@@ -79,13 +79,13 @@ dst = <projectRoot>/Assets/.BuiltinModules/ModulesRoot/Modules/Core/UCL_Assets/U
 
 ```bash
 # 全 roster seed（默认不覆写已存在的）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run SeedTavernIdentityAssets
+senate ucmd run SeedTavernIdentityAssets
 
 # 强制全部覆写
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run SeedTavernIdentityAssets --arg force=true
+senate ucmd run SeedTavernIdentityAssets --arg force=true
 
 # 只 seed 单笔（测试 / 补件）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run SeedTavernIdentityAssets --arg onlyId=claude-da-xiaojie
+senate ucmd run SeedTavernIdentityAssets --arg onlyId=claude-da-xiaojie
 ```
 
 ---

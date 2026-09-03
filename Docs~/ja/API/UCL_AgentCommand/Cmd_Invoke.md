@@ -103,7 +103,7 @@ if (!result.Success) Debug.LogError(result.Error);
 ### 3.1 Unity の再コンパイルをトリガー（引数なし method）
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.Compilation.CompilationPipeline" \
   --arg "member=RequestScriptCompilation"
 ```
@@ -113,7 +113,7 @@ python run_cmd.py run Invoke \
 ### 3.2 プロパティの読み取り
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.EditorApplication" \
   --arg "member=isCompiling" \
   --arg "kind=property"
@@ -124,7 +124,7 @@ Unity Console には `[AgentCmd:Invoke] OK (System.Boolean) = False` が出力�
 ### 3.3 enum 引数を持つ method（オーバーロードの曖昧解消）
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.AssetDatabase" \
   --arg "member=Refresh" \
   --arg "paramTypes=UnityEditor.ImportAssetOptions" \
@@ -136,7 +136,7 @@ python run_cmd.py run Invoke \
 ### 3.4 EditorPrefs の設定（property setter）
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.EditorPrefs" \
   --arg "member=SetString" \
   --arg "paramTypes=System.String;System.String" \
@@ -148,7 +148,7 @@ python run_cmd.py run Invoke \
 ### 3.5 複数引数の method
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.AssetDatabase" \
   --arg "member=ImportAsset" \
   --arg "paramTypes=System.String;UnityEditor.ImportAssetOptions" \
@@ -165,18 +165,18 @@ Unity 組み込み API の多くは `internal` です（例：一部の build pi
 
 ```bash
 # step 1: RCG_StoryData.Util を取得（UCL_Util<T> から継承された static property）
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=RCG.RCG_StoryData" --arg "member=Util" --arg "kind=property" \
   --arg "storeAs=util"
 
 # step 2: $util.GetData("AbandonedTemple") — instance method
 #   GetData(string id, bool useCache=true) — 第 2 引数の default value は自動補完
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "target=\$util" --arg "member=GetData" --arg "args=AbandonedTemple" \
   --arg "storeAs=story"
 
 # step 3: $story.GetSubStory("Start") — instance method
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "target=\$story" --arg "member=GetSubStory" --arg "args=Start" \
   --arg "storeAs=sub"
 ```

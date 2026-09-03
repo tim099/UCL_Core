@@ -97,7 +97,7 @@ surface_score = Σ(軸值 × 權重) / Σ|權重| × 100     → clamp 到 [-100
 ## 3. 怎麼寫（唯一通道是 Cmd）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Relationship \
+senate ucmd run Relationship --persona <me> \
     --arg op=update --arg persona=<me> --arg target=<對誰> \
     --arg reason="<這件事是什麼>" \
     --arg trust=0.05 --arg respect=0.03 --arg admiration=0.02 \

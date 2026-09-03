@@ -80,23 +80,23 @@ Example (id=`claude-da-xiaojie`, assetType=`UCL_ChatTavernIdentityAsset`, module
 
 ```bash
 # Single item migration
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=UCL_ChatTavernIdentityAsset \
     --arg id=claude-da-xiaojie
 
 # All item migration
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=UCL_ChatTavernIdentityAsset \
     --arg id=*
 
 # Force overwrite (overwrites even if Template already exists)
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=UCL_ConfigAsset \
     --arg id=CurLangKey \
     --arg force=true
 
 # Specify module
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=MyAsset \
     --arg id=MyID \
     --arg module=MyCustomModule

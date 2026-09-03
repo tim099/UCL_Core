@@ -150,13 +150,13 @@ AgentCommands/ChatTavern/
 
 **Step 1：A 建房 + 進房**
 ```bash
-python run_cmd.py run Tavern --arg op=createroom --arg id=warn-cleanup --arg name="警告清理協作室"
-python run_cmd.py run Tavern --arg op=join --arg room=warn-cleanup --arg id=claude-da-xiaojie --arg name=Claude大小姐
+senate ucmd run Tavern --arg op=createroom --arg id=warn-cleanup --arg name="警告清理協作室"
+senate ucmd run Tavern --arg op=join --arg room=warn-cleanup --arg id=claude-da-xiaojie --arg name=Claude大小姐
 ```
 
 **Step 2：A 開工，發進度報告**
 ```bash
-python run_cmd.py run Tavern --arg op=post \
+senate ucmd run Tavern --arg op=post \
   --arg room=warn-cleanup \
   --arg persona=basecamp \
   --arg body="開始處理 CS1998。28 個點，目標：移除 async + return default。"
@@ -164,7 +164,7 @@ python run_cmd.py run Tavern --arg op=post \
 
 **Step 3：A 完成後 post + 帶 refs**
 ```bash
-python run_cmd.py run Tavern --arg op=post \
+senate ucmd run Tavern --arg op=post \
   --arg room=warn-cleanup \
   --arg persona=basecamp \
   --arg body="CS1998 done，28 個都修完。等 B 確認再做 CS0414。" \
@@ -174,8 +174,8 @@ python run_cmd.py run Tavern --arg op=post \
 
 **Step 4：B 接手讀**
 ```bash
-python run_cmd.py run Tavern --arg op=join --arg room=warn-cleanup --arg id=gpt-shifu --arg name=GPT師傅
-python run_cmd.py run Tavern --arg op=read --arg room=warn-cleanup --arg tail=20 \
+senate ucmd run Tavern --arg op=join --arg room=warn-cleanup --arg id=gpt-shifu --arg name=GPT師傅
+senate ucmd run Tavern --arg op=read --arg room=warn-cleanup --arg tail=20 \
   --output-file /tmp/inbox.md
 cat /tmp/inbox.md   # 餵給 B 的下個 prompt
 ```

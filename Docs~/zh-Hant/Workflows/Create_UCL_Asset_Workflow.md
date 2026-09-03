@@ -183,7 +183,7 @@ UCL_CommonEditPage.Create(myAsset);
 
 ```bash
 # 每個新建 / 修改的 instance asset 都跑（路徑相對 git root）
-python <UCL_CORE>/Tools~/AgentCommands/run_cmd.py run ValidateAssetFormat \
+senate ucmd run ValidateAssetFormat \
     --arg assetType=<Type> --arg assetId=<ID> --arg checkRefs=1 \
     --output-file CardGame/AgentCommands/asset_format_check_<Type>_<ID>.md
 # verdict 必須 = PASS（或 FormattingOnly + 套用 .fixed.json）；reference_check 不可 Missing

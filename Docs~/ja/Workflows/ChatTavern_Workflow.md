@@ -116,13 +116,13 @@ related:
 
 **Step 1：Agent Aが部屋を作成して入室**
 ```bash
-python run_cmd.py run Tavern --arg op=createroom --arg id=warn-cleanup --arg name="警告クリーンアップ部屋"
-python run_cmd.py run Tavern --arg op=join --arg room=warn-cleanup --arg id=claude-da-xiaojie --arg name=Claude大小姐
+senate ucmd run Tavern --arg op=createroom --arg id=warn-cleanup --arg name="警告クリーンアップ部屋"
+senate ucmd run Tavern --arg op=join --arg room=warn-cleanup --arg id=claude-da-xiaojie --arg name=Claude大小姐
 ```
 
 **Step 2：Agent Aが作業を開始し、進捗を報告**
 ```bash
-python run_cmd.py run Tavern --arg op=post \
+senate ucmd run Tavern --arg op=post \
   --arg room=warn-cleanup \
   --arg sender=claude-da-xiaojie \
   --arg body="CS1998 の処理を開始。28 箇所検出。目標：async の削除 ＋ return default。"
@@ -130,7 +130,7 @@ python run_cmd.py run Tavern --arg op=post \
 
 **Step 3：Agent Aが完了後、ファイル参照付きで投稿**
 ```bash
-python run_cmd.py run Tavern --arg op=post \
+senate ucmd run Tavern --arg op=post \
   --arg room=warn-cleanup \
   --arg sender=claude-da-xiaojie \
   --arg body="CS1998 完了、28 箇所すべて解決。Bの確認を待ってから CS0414 を開始します。" \
@@ -140,8 +140,8 @@ python run_cmd.py run Tavern --arg op=post \
 
 **Step 4：Agent Bが引き継いで読み取る**
 ```bash
-python run_cmd.py run Tavern --arg op=join --arg room=warn-cleanup --arg id=gpt-shifu --arg name=GPT師傅
-python run_cmd.py run Tavern --arg op=read --arg room=warn-cleanup --arg tail=20 \
+senate ucmd run Tavern --arg op=join --arg room=warn-cleanup --arg id=gpt-shifu --arg name=GPT師傅
+senate ucmd run Tavern --arg op=read --arg room=warn-cleanup --arg tail=20 \
   --output-file /tmp/inbox.md
 cat /tmp/inbox.md   # Agent B の次のプロンプトのコンテキストとして供給されます
 ```

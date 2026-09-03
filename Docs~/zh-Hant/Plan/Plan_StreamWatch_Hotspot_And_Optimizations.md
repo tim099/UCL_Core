@@ -38,14 +38,14 @@ basecamp 覆蓋 15:03:34–15:10:53、我覆蓋 15:04:22–15:07:08）——
 **主觀影者標記熱點**（發現值得細看的段落時）：
 
 ```bash
-run_cmd.py run StreamWatch --arg step=hotspot --arg persona=<P> \
+senate ucmd run StreamWatch --arg step=hotspot --arg persona=<P> \
     --arg from=<HH:mm:ss> --arg to=<HH:mm:ss> --arg why=<一句話：為什麼值得細看>
 ```
 
 **陪看者認領並細看**：
 
 ```bash
-run_cmd.py run StreamWatch --arg step=claim --arg persona=<P> --arg hotspot=<id>
+senate ucmd run StreamWatch --arg step=claim --arg persona=<P> --arg hotspot=<id>
 # → 回傳檔給該區間的**高密度** montage（每格 1–2s），細看完照常 observe
 ```
 

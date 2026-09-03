@@ -45,10 +45,10 @@ Tavern 的指令片段（`op=post --arg …`）散落在十幾份 workflow / ski
 ### B 類的示範寫法
 
 ```diff
-- python run_cmd.py run Tavern --arg op=post --arg room=design \
+- senate ucmd run Tavern --arg op=post --arg room=design \
 -   --arg agent=claude-da-xiaojie --arg body="..." --arg meta="tag:solo-brainstorm"
 + # 欄位一覽見 Cmd_Tavern.md；本節只示範三輪的順序與 meta 標記
-+ run_cmd.py run Tavern --arg op=post --arg room=design ... --arg meta="tag:solo-brainstorm"
++ senate ucmd run Tavern --arg op=post --arg room=design ... --arg meta="tag:solo-brainstorm"
 ```
 
 判準一句話：**讀者需要「順序」時留骨架，需要「欄位」時指路。**

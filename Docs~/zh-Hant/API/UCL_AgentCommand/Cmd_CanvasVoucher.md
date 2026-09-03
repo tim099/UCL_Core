@@ -25,7 +25,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `consume: persona=persona名 amount=N [source=canvas_place] [ref=...] — 用券（不足 fail）`
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run CanvasVoucher --arg <k>=<v>
+senate ucmd run CanvasVoucher --arg <k>=<v>
 ```
 
 ## 3. 注意

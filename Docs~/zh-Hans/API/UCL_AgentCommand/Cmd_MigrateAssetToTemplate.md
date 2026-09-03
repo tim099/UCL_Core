@@ -80,23 +80,23 @@ dst = <UCL_Core>/Templates~/Assets/.BuiltinModules/ModulesRoot/Modules/<module>/
 
 ```bash
 # 单笔迁移
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=UCL_ChatTavernIdentityAsset \
     --arg id=claude-da-xiaojie
 
 # 全部迁移
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=UCL_ChatTavernIdentityAsset \
     --arg id=*
 
 # 强制覆写（已有 Template 也覆盖）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=UCL_ConfigAsset \
     --arg id=CurLangKey \
     --arg force=true
 
 # 指定 module
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=MyAsset \
     --arg id=MyID \
     --arg module=MyCustomModule

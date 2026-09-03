@@ -10,7 +10,7 @@ enabled: true
 **性質**：transfer。**門檻：餘額須 >= 300**（防止清倉式提案）。
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Rule --arg op=propose --arg body="<規則內容>"
+senate ucmd run Rule --persona <me> --arg op=propose --arg body="<規則內容>"
 ```
 
 - 詞條：`docs/Glossary/tavern-rule-system.md`

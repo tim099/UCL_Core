@@ -28,7 +28,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `list: [category=...] — 列所有 glossary terms`
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Glossary --arg <k>=<v>
+senate ucmd run Glossary --arg <k>=<v>
 ```
 
 ## 3. 注意

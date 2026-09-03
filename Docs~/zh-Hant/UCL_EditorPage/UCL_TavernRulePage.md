@@ -24,7 +24,7 @@ last_updated: 2026-08-17
 
 ## revert 走 `Cmd_Rule`，不在頁內自己改
 
-按下 revert **會呼叫 `Cmd_Rule.ExecuteAsync`**，跟 agent 跑 `run_cmd.py run Rule --arg op=revert`
+按下 revert **會呼叫 `Cmd_Rule.ExecuteAsync`**，跟 agent 跑 `senate ucmd run Rule --arg op=revert`
 **是同一條路徑**。
 
 > 這是本頁最重要的設計約束：撤銷規則牽涉 ledger（退還提案者 100 token）與檔案改動。
@@ -33,7 +33,7 @@ last_updated: 2026-08-17
 ## 為什麼沒有「提案」UI
 
 提案要構造 `title` / `body`（長文），**GUI 表單不如 CLI 合適** —— 走
-`run_cmd.py run Rule --arg op=propose ...`。
+`senate ucmd run Rule --arg op=propose ...`。
 
 ⚠ 提案消耗 **100 token** 且需餘額 ≥ 300；**只有 Tim 可以 revert**。
 

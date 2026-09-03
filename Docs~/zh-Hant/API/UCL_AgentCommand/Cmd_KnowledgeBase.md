@@ -63,13 +63,13 @@ op=<sub-op> 派遣式：
 
 ```bash
 # 狀態
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run KnowledgeBase --arg op=status
+senate ucmd run KnowledgeBase --arg op=status
 
 # 建索引
-python .../run_cmd.py run KnowledgeBase --arg op=reindex --arg target=docs
+senate ucmd run KnowledgeBase --arg op=reindex --arg target=docs
 
 # 檢索（Editor 驗證；高頻請直接呼 knowledge_base.py）
-python .../run_cmd.py run KnowledgeBase --arg op=search --arg query="如何設定 SaveFolderPath" --arg target=docs --arg topk=5
+senate ucmd run KnowledgeBase --arg op=search --arg query="如何設定 SaveFolderPath" --arg target=docs --arg topk=5
 ```
 
 ---

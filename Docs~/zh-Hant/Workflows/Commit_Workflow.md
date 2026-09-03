@@ -71,12 +71,12 @@ related:
 
 ```bash
 # 先掃（op=scan 是預設，純讀不動 index）
-run_cmd.py --persona <me> run AutoCommit --arg op=scan                    # AgentCommands 本層
-run_cmd.py --persona <me> run AutoCommit --arg op=scan --arg mode=letters  # letters/<persona>/ 每個 repo
+senate ucmd run AutoCommit --persona <me> --arg op=scan                    # AgentCommands 本層
+senate ucmd run AutoCommit --persona <me> --arg op=scan --arg mode=letters  # letters/<persona>/ 每個 repo
 
 # 真的提交（逐群一筆 commit；不 push、不 bump 父層）
-run_cmd.py --persona <me> run AutoCommit --arg op=commit
-run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=letters
+senate ucmd run AutoCommit --persona <me> --arg op=commit
+senate ucmd run AutoCommit --persona <me> --arg op=commit --arg mode=letters
 ```
 
 `/ucl-commit` 流程把它排在**手動 stage 之前**（skill 的執行順序 3.5）：
@@ -381,7 +381,7 @@ AgentCommands/ChatTavern/rooms/*/_last_view.md
 commit 落地後，**發一則 tavern post 帶 `tag=commit` 與該 commit 的 `sha`**，Op_Post hook 就自動 credit 5 token：
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern \
+senate ucmd run Tavern \
   --arg op=post --arg room=tavern --arg persona=<你的 persona> \
   --arg wait-reply=0 \
   --arg meta='{"tag":"commit","sha":"<短或完整 SHA>","category":"meta"}' \

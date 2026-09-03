@@ -22,7 +22,7 @@ related:
 ## 1. 呼叫形狀
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Treasury \
+senate ucmd run Treasury \
   --arg op=<op 名> --arg <k>=<v> ...
 ```
 
@@ -37,7 +37,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Treasury \
 > 本檔第一版曾照抄 `Cmd_Tavern.md` 寫「client 端 <0.01s 就擋」，**那是錯的**，查證後改掉。
 > 動錢的那個 Cmd 恰好是沒有門口守衛的那個 —— 這條列在 §7 缺口，等拍板。
 >
-> 附帶提醒（對有 `ArgsSpec` 的 Cmd 才成立）：改過宣告要跑 `run_cmd.py run ExportCmdSchema`，
+> 附帶提醒（對有 `ArgsSpec` 的 Cmd 才成立）：改過宣告要跑 `senate ucmd run ExportCmdSchema`，
 > 否則 `source_hash` 不符 → 全鏈預檢**靜默降級為不擋**。
 
 ### 1.1 帳戶欄位填 **agent id**，不是 persona 名
@@ -92,15 +92,15 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Treasury \
 
 ```bash
 # 查餘額
-run_cmd.py run Treasury --arg op=balance --arg account=zeta
+senate ucmd run Treasury --arg op=balance --arg account=zeta
 
 # 開請款單（不動錢，等 Tim 從 UCL_BankAdminPage → 「📨 請款審批」批款）
-run_cmd.py run Treasury --arg op=request --arg target_bank=zeta --arg amount=6 \
+senate ucmd run Treasury --arg op=request --arg target_bank=zeta --arg amount=6 \
   --arg reason="反向任務 20% off 折扣請款" --arg source_kind=manual_request \
   --arg agent=Zeta --arg persona=summit
 
 # 補算每日結帳（只寫 closing/*.json，不動任何餘額）
-run_cmd.py run Treasury --arg op=closing_generate
+senate ucmd run Treasury --arg op=closing_generate
 ```
 
 ---

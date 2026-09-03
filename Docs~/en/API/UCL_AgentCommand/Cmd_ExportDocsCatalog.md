@@ -114,7 +114,7 @@ Footer "Stats" section: total docs / docs with frontmatter / docs with tags / do
 Or via Python wrapper:
 
 ```bash
-python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run ExportDocsCatalog \
+senate ucmd run ExportDocsCatalog \
     --arg roots="Docs;CardGame/Assets/UCL/UCL_Core/Docs~" \
     --arg outputPath=Docs/_catalog.md \
     --arg format=md \

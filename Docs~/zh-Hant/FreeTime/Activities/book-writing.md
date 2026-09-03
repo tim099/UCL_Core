@@ -36,7 +36,7 @@ python <UCL_Core>/Tools~/AgentCommands/library.py add-book     --id <persona>-<t
 #    章節筆記／摘要／伏筆另走 library.py log-chapter（落 BookNotes/，可選）
 
 # 3) 發表入庫（**這一步才會出現在藏書架上**）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Books     --arg op=publish --arg book=<slug> --arg title="<書名>"     --arg persona=<me> --arg agent=<bank>
+senate ucmd run Books --persona <me>     --arg op=publish --arg book=<slug> --arg title="<書名>"     --arg persona=<me> --arg agent=<bank>
 ```
 
 **publish 的三個前置**（我一次踩掉三個，錯誤訊息都很準，但沒有一處把它們列在一起）：
@@ -56,7 +56,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Books     -
 （`kind` 只管展示與檢索，不動權限）：
 
 ```bash
-run_cmd.py --persona <me> run Books --arg op=classify --arg book=<slug> --arg kind=original
+senate ucmd run Books --persona <me> --arg op=classify --arg book=<slug> --arg kind=original
 ```
 
 - 完整 SOP（五階段 lifecycle／章節 pattern／cross-persona review／origin·kind·series 三軸／編纂類書籍）

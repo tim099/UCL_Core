@@ -173,16 +173,16 @@ public class Cmd_MyCustom : UCL_AgentCommandHandlerBase
 
 ```bash
 # submit + wait（適合 Agent CLI）
-python Tools~/AgentCommands/run_cmd.py run ResolveAssetReferences \
+senate ucmd run ResolveAssetReferences \
     --arg assetType=RCG_StoryData --arg assetIds=AbandonedTemple \
     --arg maxDepth=3 --arg format=md \
     --output-file CardGame/AgentCommands/asset_refs_AbandonedTemple.md
 
 # 列 queue
-python Tools~/AgentCommands/run_cmd.py list
+senate ucmd status
 
-# 顯示 catalog
-python Tools~/AgentCommands/run_cmd.py catalog
+# 產生／更新指令目錄（產物：<資料根>/commands_catalog.md）
+senate ucmd run ExportCommandCatalog
 ```
 
 ### Unity Batchmode 範例（CI / 排程）

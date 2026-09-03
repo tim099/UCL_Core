@@ -25,7 +25,7 @@ tags: [workflow, agent, compile, recompile, error-fix]
 ```
 [1] 編輯 / 生成 .cs 檔（Edit / Write）
        ▼
-[2] python run_cmd.py recompile     ← 觸發 Unity 重編 + 等到完成
+[2] senate ucmd run Recompile     ← 觸發 Unity 重編 + 等到完成
        │
        ├── exit 0  → clean，繼續後續流程
        └── exit 1  → 有 compile error
@@ -118,7 +118,7 @@ else:
 
 ### 4.2 觸發 recompile
 ```bash
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" recompile
+senate ucmd run Recompile
 ```
 
 **Exit code 對照**：
@@ -194,23 +194,23 @@ python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" recompile
 ```bash
 # 1. 用 Edit / Write 建立 Cmd_Foo.cs
 # 2. 觸發 recompile
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" recompile
+senate ucmd run Recompile
 # → 預期 exit 0；若 exit 1 看 compile_status.json 修錯後再跑
 
 # 3. 確認新 Cmd 已註冊
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" catalog | grep "Foo"
+senate ucmd run ExportCommandCatalog | grep "Foo"
 
 # 4. 跑新 Cmd
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" run Foo --arg x=1
+senate ucmd run Foo --arg x=1
 ```
 
 ### 範例 B：agent 重構某個 EditorPage 後驗證
 ```bash
 # 1. 改 RCG_StoryDataEditorPage.cs
 # 2. recompile
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" recompile
+senate ucmd run Recompile
 # 3. 跑 ExportNotes 驗證輸出對齊
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" run ExportNotes --arg targets=story
+senate ucmd run ExportNotes --arg targets=story
 # 4. 開檔目視 / git diff 比對
 ```
 

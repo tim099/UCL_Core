@@ -45,7 +45,7 @@ C# 有、Python 沒有：['create_trpg_room']
 實跑驗證：
 
 ```
-$ run_cmd.py run Tavern --arg op=create_trpg_room --arg campaign=... --arg name=...
+$ senate ucmd run Tavern --arg op=create_trpg_room --arg campaign=... --arg name=...
 ✗ Tavern client-side 預檢失敗：
   Tavern op 'create_trpg_room' 未知；可用：createroom, events_since, ...
 exit=2
@@ -267,7 +267,7 @@ public class UCL_AgentCmdAdminPage : UCL_CommonEditorPage
 
 **文件義務**（Tim 明確要求）：`Docs~/{lang}/UCL_EditorPage/UCL_AgentCommandsPage.md`
 與新增 Cmd 的 SOP 文件都要加一句：**「新增／修改 Cmd 後，到 Cmd 後台管理頁按同步，
-或跑 `run_cmd.py run ExportCmdSchema`」**。
+或跑 `senate ucmd run ExportCmdSchema`」**。
 
 > ⚠ 但文件提示是**提醒**不是**保證** —— 它仍然長在人的自覺上。
 > 所以 §5 的三道防線一條都不能省：真正兜底的是「過期 → 預檢自動降級」，

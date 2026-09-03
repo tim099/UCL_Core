@@ -226,7 +226,7 @@ Add Command → ExportCommandCatalog → OneShot → Run Pending
 ### 5.3 Python Wrapper (agent angle)
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run <CommandType> \
+senate ucmd run <CommandType> \
     --arg key=value --timeout 60
 ```
 

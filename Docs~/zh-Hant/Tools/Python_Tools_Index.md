@@ -58,7 +58,7 @@ Tools~/
 
 | 用法 | 範例 |
 |---|---|
-| `run <Type> --arg key=value` | `python run_cmd.py run Tavern --arg op=post --arg room=tavern --arg body="..."` |
+| `run <Type> --arg key=value` | `senate ucmd run Tavern --arg op=post --arg room=tavern --arg body="..."` |
 | `info <Type>` | `python run_cmd.py info Bartender` (印 ArgsSchema) |
 | `list` | 列所有 Cmd Types |
 

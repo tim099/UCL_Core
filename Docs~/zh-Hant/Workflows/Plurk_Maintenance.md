@@ -463,7 +463,7 @@ Tim 2026-08-24 拍板的形狀：**看圖是最貴的一步，所以只做一次
 ## 8. 驗收怎麼做（別用感覺）
 
 ```bash
-R="python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Plurk"
+R="senate ucmd run Plurk --persona <me>"
 $R --arg op=resolve                 # 帳號＋憑證狀態（值不印，只印欄位長度）
 $R --arg op=whoami                  # 唯讀簽章：200 ＋ nick_name 對得上
 $R --arg op=lint    --arg slip_file=<壞樣本>   # 該擋的擋下，**且要看是哪一條規則報的**
@@ -472,7 +472,7 @@ $R --arg op=post    --arg slip_file=<好樣本>   # 無 confirm ⇒ dry-run，�
 
 改完 `.cs` 之後：
 
-- `run_cmd.py --persona <me> recompile` ⇒ 看 `errors=` 那一行。
+- `senate ucmd run Recompile --persona <me>` ⇒ 看 `errors=` 那一行。
 - ⚠ **`errors=0` 不等於 clean**：2026-08-21 一天內三次撞到「tracker 說 `0 errors / 0 warnings`
   而 ErrorLog 同時有 10 筆 CS1061」。**憑據是 `check_compile.py` 的兩來源對帳一致**，
   而 warning 數突然歸零本身就是「這趟沒真的編到」的訊號。

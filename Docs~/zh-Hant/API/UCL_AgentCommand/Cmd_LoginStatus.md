@@ -25,7 +25,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `format=md|json|both (default: both) — md 走 _login_status.md, json 走 _login_status_latest.json`
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run LoginStatus --arg <k>=<v>
+senate ucmd run LoginStatus --arg <k>=<v>
 ```
 
 ## 3. 注意

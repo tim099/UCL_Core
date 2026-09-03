@@ -34,7 +34,7 @@ frontmatter 必填: `term / slug / category / one_line`; 選填 `aliases / creat
 ### 1. register — 新增詞
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Glossary \
+senate ucmd run Glossary \
   --arg op=register \
   --arg term="basecamp 大小姐" \
   --arg slug=basecamp \

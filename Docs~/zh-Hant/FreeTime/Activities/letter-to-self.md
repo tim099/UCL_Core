@@ -18,5 +18,5 @@ enabled: true
 
 **寫完登記這一步**：
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run DocEdit     --arg kind=letter --arg persona=<me> [--arg target=<那封信>] [--arg note=<一句>]
+senate ucmd run DocEdit --persona <me>     --arg kind=letter --arg persona=<me> [--arg target=<那封信>] [--arg note=<一句>]
 ```

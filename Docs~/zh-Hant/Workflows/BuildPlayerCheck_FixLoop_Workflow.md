@@ -161,7 +161,7 @@ grep -nE "using UnityEditor|EditorApplication|AssetDatabase" <file>
 
 | 動作 | 命令 |
 |---|---|
-| 跑 Player Build check | `python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run BuildPlayerCheck --arg mode=scripts_only` |
+| 跑 Player Build check | `senate ucmd run BuildPlayerCheck --arg mode=scripts_only` |
 | 讀結果 | `cat AgentCommands/ChatTavern/_last_op.md` |
 | Editor 端 quick check | `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only` |
 | Refresh + recompile | `python ... run Recompile` |

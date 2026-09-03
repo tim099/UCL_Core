@@ -71,7 +71,7 @@ source: Cmd_ExportCommandCatalog or UCL_AgentCommandsPage "Export Cmd Catalog" b
 ## 5. Python 包裝器呼叫
 
 ```bash
-python Tools~/AgentCommands/run_cmd.py run ExportCommandCatalog \
+senate ucmd run ExportCommandCatalog \
     --output-file CardGame/AgentCommands/commands_catalog.md
 ```
 

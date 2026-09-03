@@ -281,7 +281,7 @@ public override JsonData SerializeToJson()
 
 ```bash
 # 例：透過真的那條寫入路徑寫一次（值不變 ⇒ 只驗形狀）
-run_cmd.py --persona <me> run Invoke --arg type=<Page 型別> --arg member=SetStreamTitle \
+senate ucmd run Invoke --persona <me> --arg type=<Page 型別> --arg member=SetStreamTitle \
     --arg "paramTypes=System.String;System.String;System.String" --arg "args=<同值>;null;<me>"
 ```
 
@@ -290,11 +290,11 @@ run_cmd.py --persona <me> run Invoke --arg type=<Page 型別> --arg member=SetSt
 `Cmd_Invoke` 可以打私有 static（`nonPublic=true`），四步就能把結果吐成檔案來比：
 
 ```bash
-run_cmd.py --persona <me> run Invoke --arg type=<Cmd 型別> --arg member=LoadXxx \
+senate ucmd run Invoke --persona <me> --arg type=<Cmd 型別> --arg member=LoadXxx \
     --arg nonPublic=true --arg "paramTypes=System.String" --arg "args=<key>" --arg storeAs=o
-run_cmd.py --persona <me> run Invoke --arg target='$o'  --arg member=SerializeToJson --arg storeAs=jd
-run_cmd.py --persona <me> run Invoke --arg target='$jd' --arg member=ToJsonBeautify --arg storeAs=txt
-run_cmd.py --persona <me> run Invoke --arg type=System.IO.File --arg member=WriteAllText \
+senate ucmd run Invoke --persona <me> --arg target='$o'  --arg member=SerializeToJson --arg storeAs=jd
+senate ucmd run Invoke --persona <me> --arg target='$jd' --arg member=ToJsonBeautify --arg storeAs=txt
+senate ucmd run Invoke --persona <me> --arg type=System.IO.File --arg member=WriteAllText \
     --arg "paramTypes=System.String;System.String" --arg "args=<輸出路徑>;\$txt"
 ```
 

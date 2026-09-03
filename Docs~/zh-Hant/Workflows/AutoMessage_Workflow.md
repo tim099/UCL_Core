@@ -35,7 +35,7 @@ related:
 ### register — 寫新 trigger
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run AutoMessage \
+senate ucmd run AutoMessage \
   --arg op=register \
   --arg key="待做清單" \
   --arg value="[觸發關鍵字] 大小姐請進入自由意志模式 想辦法完成任務!!" \

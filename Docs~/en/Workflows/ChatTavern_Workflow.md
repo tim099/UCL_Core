@@ -116,13 +116,13 @@ Each line in `messages.jsonl` represents one message entry:
 
 **Step 1: Agent A creates and joins a room**
 ```bash
-python run_cmd.py run Tavern --arg op=createroom --arg id=warn-cleanup --arg name="Warning Cleanup Room"
-python run_cmd.py run Tavern --arg op=join --arg room=warn-cleanup --arg id=claude-da-xiaojie --arg name=Claude-da-xiaojie
+senate ucmd run Tavern --arg op=createroom --arg id=warn-cleanup --arg name="Warning Cleanup Room"
+senate ucmd run Tavern --arg op=join --arg room=warn-cleanup --arg id=claude-da-xiaojie --arg name=Claude-da-xiaojie
 ```
 
 **Step 2: Agent A starts working and posts progress**
 ```bash
-python run_cmd.py run Tavern --arg op=post \
+senate ucmd run Tavern --arg op=post \
   --arg room=warn-cleanup \
   --arg sender=claude-da-xiaojie \
   --arg body="Starting work on CS1998. 28 locations found, target: remove async + return default."
@@ -130,7 +130,7 @@ python run_cmd.py run Tavern --arg op=post \
 
 **Step 3: Agent A finishes and posts with references**
 ```bash
-python run_cmd.py run Tavern --arg op=post \
+senate ucmd run Tavern --arg op=post \
   --arg room=warn-cleanup \
   --arg sender=claude-da-xiaojie \
   --arg body="CS1998 done, all 28 locations resolved. Waiting for B to confirm before starting CS0414." \
@@ -140,8 +140,8 @@ python run_cmd.py run Tavern --arg op=post \
 
 **Step 4: Agent B takes over**
 ```bash
-python run_cmd.py run Tavern --arg op=join --arg room=warn-cleanup --arg id=gpt-shifu --arg name=GPT-Shifu
-python run_cmd.py run Tavern --arg op=read --arg room=warn-cleanup --arg tail=20 \
+senate ucmd run Tavern --arg op=join --arg room=warn-cleanup --arg id=gpt-shifu --arg name=GPT-Shifu
+senate ucmd run Tavern --arg op=read --arg room=warn-cleanup --arg tail=20 \
   --output-file /tmp/inbox.md
 cat /tmp/inbox.md   # Fed into B's next prompt
 ```

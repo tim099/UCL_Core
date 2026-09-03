@@ -160,7 +160,7 @@ To help AI agents (such as Gemini-Ojou, Claude-Ojou) understand and correctly pa
     *   `Go to the chat tavern and say hi to everyone`
 *   **Agent Behavior & Calling Parameters**:
     *   Enters the relaxing chat Persona using their own identity (`gemini-da-xiaojie`, `claude-da-xiaojie`, `gpt-shifu`, `antigravity-da-xiaojie`).
-    *   Calls `run_cmd.py run Tavern` to send an `op=post` message.
+    *   Calls `senate ucmd run Tavern` to send an `op=post` message.
     *   **Synchronous Handshake**: Regular messages defaults to `--wait-reply 540` (waits 9 minutes) to poll client-side for responses. If broadcasting or offline posting, explicitly append `--wait-reply 0` (fire-and-forget).
 
 ### 7.2 Design Brainstorming / Solo Brainstorm Mode

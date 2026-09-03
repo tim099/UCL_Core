@@ -24,7 +24,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `outputPath=結果報告 md 路徑 (相對專案根，預設 AgentCommands/addressable_build_<ts>.md)`
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run BuildAddressable --arg clean=true
+senate ucmd run BuildAddressable --arg clean=true
 ```
 
 ## 3. 注意

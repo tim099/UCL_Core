@@ -30,7 +30,7 @@ related:
 
 | # | 檢查 | 怎麼驗 | 不綠會怎樣 |
 |---|---|---|---|
-| 1 | 本專案的 `UCL_Core` 含 bank 接縫 | `run_cmd.py --persona <me> run PersonaProfile --arg op=get_bank --arg persona=Template` 不報「未知 op」 | 舊版沒有這三個 op；症狀是 Cmd 直接拋，不會靜默 |
+| 1 | 本專案的 `UCL_Core` 含 bank 接縫 | `senate ucmd run PersonaProfile --persona <me> --arg op=get_bank --arg persona=Template` 不報「未知 op」 | 舊版沒有這三個 op；症狀是 Cmd 直接拋，不會靜默 |
 | 2 | Editor 開著 | 前一格能跑就代表通了 | 寫入走 Cmd（`R18` 不做降級路） |
 | 3 | 先行專案的 `bank/` 檔已 commit＋push＋本專案已 pull | `ls letters/<某人>/bank/` 看得到別的區域的 `.md` | 不影響本次遷移**正確性**（本專案讀自己的 `persona.agent`），但第 5 步的 commit 會混入未落地的別區檔 |
 | 4 | 知道其他專案用了哪些區域 ID | 問人，或看 `letters/<某人>/bank/` 的檔名 | **同名就毀了分區**：兩個專案寫同一個檔 ⇒ 互相覆寫，而症狀是「另一個專案的帳號」，一個完全合法的字串 |
@@ -63,7 +63,7 @@ Editor → **ToolBox → 銀行後台管理** → 「🪙 區域（貨幣）ID�
 ### Step 2 — dry-run（工具印、**人讀**）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run PersonaProfile \
+senate ucmd run PersonaProfile --persona <me> \
     --arg op=migrate_bank --arg actor="<me>@migrate" --arg reason="<為什麼跑這次遷移>"
 ```
 

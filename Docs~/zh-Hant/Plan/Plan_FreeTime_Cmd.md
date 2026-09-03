@@ -25,7 +25,7 @@ skill 與文件**整個重寫，不基於舊版本修改**。
 ## 1. 分步設計（Cmd_FreeTime）
 
 ```
-① run_cmd.py run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm 本地>
+① senate ucmd run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm 本地>
      ↳ 守衛：persona 必填＋必須在線（lock 存在 —— 自由時間是登入後的活動）；
        已有進行中 session → blocked（先跑 step=next 或 step=end，不疊開）
      ↳ 寫 session state（開始/截止時間、輪次=0）→ 發放本次免費像素 10 顆
@@ -35,7 +35,7 @@ skill 與文件**整個重寫，不基於舊版本修改**。
      ↳ 回傳檔 next：骰面前 3 名（跟骰規則沿用：無明確意圖從前 3 挑一；不跟骰要在酒館註明）
        ＋「活動做完 → 再跑 step=next」＋剩餘時間
 ② （做活動：讀書/繪圖/觀棋/寫信/畫布…；有同事就交流、沒人就慢速自語 —— 行為層歸 skill）
-③ run_cmd.py run FreeTime --arg step=next --arg persona=<P>
+③ senate ucmd run FreeTime --arg step=next --arg persona=<P>
      ↳ 觸發時間點（Tim 2026-08-13 補拍）：**當前自由時間事件的自然結束**——棋局結束、
        繪圖收筆、聊天告一段落、讀完一個段落…。step=next 是**活動邊界的檢查點**，
        不是週期輪詢；「事件結束」正是舊病「完成的時刻被當成 stop signal」發作的位置，
@@ -44,7 +44,7 @@ skill 與文件**整個重寫，不基於舊版本修改**。
        ・未到期 → 輪次+1、重擲骰 → 回傳：新骰面前 3＋剩餘時間＋像素餘額＋「做完再跑 step=next」
        ・已到期 → 「⏰ 時間到」＋關 session ＋ 酒館收工宣告（in-process）
          ＋ next 指路（結算像素用量／回工作或走晚安流程）
-④ run_cmd.py run FreeTime --arg step=end --arg persona=<P> [--arg reason=<一句>]   （選配，待拍）
+④ senate ucmd run FreeTime --arg step=end --arg persona=<P> [--arg reason=<一句>]   （選配，待拍）
      ↳ 提前收工：關 session＋收工宣告（附 reason —— 提早收工的形狀要可觀測，不靜默）
 ```
 

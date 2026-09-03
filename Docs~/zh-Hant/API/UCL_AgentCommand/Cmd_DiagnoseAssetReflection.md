@@ -23,7 +23,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `maxIdsPerType=Cap on IDs probed per type (default 0 = no cap)`
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run DiagnoseAssetReflection --arg maxIdsPerType=5
+senate ucmd run DiagnoseAssetReflection --arg maxIdsPerType=5
 ```
 
 ## 3. 注意

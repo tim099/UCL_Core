@@ -68,11 +68,11 @@ letters/<對方>/portraits/<ts>__by_<作者>.md         ← 投遞件（只有�
 > 直接跑下面那支 python 仍然有效（工具沒變），但**走 Cmd 才會被守衛看見**：
 >
 > ```bash
-> run_cmd.py --persona <me> run GoodNight --arg step=portrait --arg persona=<me> \
+> senate ucmd run GoodNight --persona <me> --arg step=portrait --arg persona=<me> \
 >     --arg about=<同事> --arg headline=<一句話標題> --arg-file body=<公開層檔> \
 >     [--arg-file private_body=<私層檔>] [--arg affinity=<如 11/在意>]
 > # 今晚真的沒有人可畫（理由會印進下線廣播）：
-> run_cmd.py --persona <me> run GoodNight --arg step=portrait --arg persona=<me> --arg skip_reason=<理由>
+> senate ucmd run GoodNight --persona <me> --arg step=portrait --arg persona=<me> --arg skip_reason=<理由>
 > ```
 >
 > Cmd 那一層多做三件本工具不做的事：**① 端出今天的 relationship opinion 當材料**

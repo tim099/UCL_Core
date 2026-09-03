@@ -23,7 +23,7 @@ status: v2.0（Tim 2026-08-21：「之後可以走 CMD 了」—— 本檔按新
 ## 0. 三步（照順序；每步都可以單獨跑）
 
 ```bash
-R="python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Plurk"
+R="senate ucmd run Plurk --persona <me>"
 $R --arg op=resolve                                          # 用哪個帳號、憑證裝了沒
 $R --arg op=lint    --arg slip_file=<交付單>                  # 形式檢查（不連網、不發文）
 $R --arg op=preview --arg slip_file=<交付單>                  # 組出完整將送內容，**不送**

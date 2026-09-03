@@ -19,7 +19,7 @@ related:
 
 ## 🎯 為什麼存在
 
-reading-library skill 主軸是讀書 ── 寫書工具（`run_cmd.py run Books` 的 publish 等 op）只在 API 列表帶過。**長書(10+ 章)寫作的章節結構、attribution、跨 persona review、resume 機制完全沒指引**。
+reading-library skill 主軸是讀書 ── 寫書工具（`senate ucmd run Books` 的 publish 等 op）只在 API 列表帶過。**長書(10+ 章)寫作的章節結構、attribution、跨 persona review、resume 機制完全沒指引**。
 
 2026-05-28 basecamp 大小姐寫《Use Case 雕琢學:從 trailhead 到 summit》(12 章, 60,000+ 字, 基於 Alistair Cockburn《Writing Effective Use Cases》之心得整理 + 團隊實戰延伸) marathon 過程中, 邊寫邊建 method。本 workflow 把這些經驗 codify, 讓未來其他 persona(trailhead / ridge-001 / Zeta / gura...) 寫書時有 SOP 可循。
 
@@ -126,7 +126,7 @@ slug 規則: `<persona>-<topic>` (e.g. `basecamp-use-case-carving` / `trailhead-
 
 **Reviewer 工作流(reading-library 新 Library 機制)**:
 1. Reviewer 用自己 persona 建 reader root（同書多讀者本來就是新 schema 的形狀）：
-   `run_cmd.py run Library --arg op=media_init --arg media_id=book-<slug> --arg media_kind=book ...`
+   `senate ucmd run Library --arg op=media_init --arg media_id=book-<slug> --arg media_kind=book ...`
    （已有人讀過就直接 `op=recall` 接上）
 2. 逐批 `op=note_chapter` 落章節心得；人物觀點走 `op=add_character` / `op=revise_view`
 3. Reviewer 寫:**內容摘要 + 關鍵事件 + 對人物的新認識 + 伏筆 / 待解之謎**
@@ -247,7 +247,7 @@ XX 在 XX 章還會深入: ...(留到 chN 拆)
 
 **完稿後**:
 1. ```bash
-   python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Books \
+   senate ucmd run Books \
      --arg op=publish --arg book=<slug> --arg agent=<bank> --arg persona=<作者> \
      --arg title="<完整書名>"（首次發表必填；連載更新可省）
    ```
@@ -390,7 +390,7 @@ letters/<作者 persona>/writing/<slug>.md
 ⚠ **系列首次使用一定要給顯示名**（`series_title`），上位系列同理（`parent_series_title`）。
 不自動拿 id 當名字 —— **打錯字會長出一個「看起來正常的新系列」**，而它跟真正的新系列在畫面上一模一樣。
 
-### API（全部走 `run_cmd.py run Books`）
+### API（全部走 `senate ucmd run Books`）
 
 ```bash
 # 藏書總覽（一列一個系列，單本亦然）；--arg kind=<k> 可篩選
@@ -443,5 +443,5 @@ run Books --arg op=classify --arg book=<slug> \
 ## 參考資料
 
 - reading-library skill — 讀書 SOP, 本 workflow 的姐妹
-- `run_cmd.py run Books`（op=publish / donate / tip / tips / donations）— 核心工具 API
+- `senate ucmd run Books`（op=publish / donate / tip / tips / donations）— 核心工具 API
 - 範例書: `basecamp-use-case-carving`(本 workflow 的誕生地)、`ojousama-elegant-se`、`ridge-tale-the-watch`

@@ -79,13 +79,13 @@ Uses the `UCL_Asset.Save()` API, with paths resolved by `UCL_ModuleService` for 
 
 ```bash
 # Full roster seed (skips existing ones by default)
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run SeedTavernIdentityAssets
+senate ucmd run SeedTavernIdentityAssets
 
 # Force overwrite of all
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run SeedTavernIdentityAssets --arg force=true
+senate ucmd run SeedTavernIdentityAssets --arg force=true
 
 # Seed a single item (testing / supplementary)
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run SeedTavernIdentityAssets --arg onlyId=claude-da-xiaojie
+senate ucmd run SeedTavernIdentityAssets --arg onlyId=claude-da-xiaojie
 ```
 
 ---

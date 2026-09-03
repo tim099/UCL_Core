@@ -25,7 +25,7 @@ tags: [workflow, agent, compile, recompile, error-fix]
 ```
 [1] .cs ファイルを編集 / 生成（Edit / Write）
        ▼
-[2] python run_cmd.py recompile     ← Unity のリコンパイルをトリガし、完了まで待機
+[2] senate ucmd run Recompile     ← Unity のリコンパイルをトリガし、完了まで待機
        │
        ├── exit 0  → clean、後続フローへ
        └── exit 1  → コンパイルエラーあり
@@ -112,7 +112,7 @@ else:
 
 ### 4.2 recompile をトリガ
 ```bash
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" recompile
+senate ucmd run Recompile
 ```
 
 **Exit code 対応表**：
@@ -188,23 +188,23 @@ recompile を再実行し、該当エラーが消えていること（および�
 ```bash
 # 1. Edit / Write で Cmd_Foo.cs を作成
 # 2. recompile をトリガ
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" recompile
+senate ucmd run Recompile
 # → exit 0 を期待；exit 1 なら compile_status.json を読んで修正後に再実行
 
 # 3. 新 Cmd が登録されていることを確認
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" catalog | grep "Foo"
+senate ucmd run ExportCommandCatalog | grep "Foo"
 
 # 4. 新 Cmd を実行
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" run Foo --arg x=1
+senate ucmd run Foo --arg x=1
 ```
 
 ### 例 B：agent が EditorPage をリファクタした後の検証
 ```bash
 # 1. RCG_StoryDataEditorPage.cs を編集
 # 2. recompile
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" recompile
+senate ucmd run Recompile
 # 3. ExportNotes で出力が揃っているか検証
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" run ExportNotes --arg targets=story
+senate ucmd run ExportNotes --arg targets=story
 # 4. ファイルを目視 / git diff で確認
 ```
 

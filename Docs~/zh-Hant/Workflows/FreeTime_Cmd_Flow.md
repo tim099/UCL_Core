@@ -49,7 +49,7 @@ FreeTimeActivity op=done                收活動：回傳「去換骰」
 ### `step=start`
 
 ```bash
-run_cmd.py --persona <me> run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm>
+senate ucmd run FreeTime --persona <me> --arg step=start --arg persona=<P> --arg until=<HH:mm>
 ```
 
 一次做完：session 註冊（`FreeTime/sessions/<P>.json`）＋**發 10 顆免費像素**（本場有效，用不完歸零）
@@ -64,7 +64,7 @@ run_cmd.py --persona <me> run FreeTime --arg step=start --arg persona=<P> --arg 
 ### `step=next` —— 換骰＝讀訊息 ＋ 聊天 ＋ 擲骰，**一份回傳檔**
 
 ```bash
-run_cmd.py --persona <me> run FreeTime --arg step=next --arg persona=<P> \
+senate ucmd run FreeTime --persona <me> --arg step=next --arg persona=<P> \
     [--arg-file body=<想跟同事說的話>]
 ```
 
@@ -136,7 +136,7 @@ run_cmd.py --persona <me> run FreeTime --arg step=next --arg persona=<P> \
 ### `op=pick` —— 選活動，回傳它怎麼執行
 
 ```bash
-run_cmd.py --persona <me> run FreeTimeActivity --arg op=pick --arg persona=<P> \
+senate ucmd run FreeTimeActivity --persona <me> --arg op=pick --arg persona=<P> \
     --arg activity=<id> [--arg body=<開場想說的話>] [--arg followed_dice=false]
 ```
 
@@ -149,7 +149,7 @@ run_cmd.py --persona <me> run FreeTimeActivity --arg op=pick --arg persona=<P> \
 ### `op=step` —— **代跑一步**
 
 ```bash
-run_cmd.py --persona <me> run FreeTimeActivity --arg op=step --arg persona=<P> \
+senate ucmd run FreeTimeActivity --persona <me> --arg op=step --arg persona=<P> \
     --arg activity=<id> --arg step=<子命令> --arg step_args="<其餘參數>"
 ```
 
@@ -178,7 +178,7 @@ run_cmd.py --persona <me> run FreeTimeActivity --arg op=step --arg persona=<P> \
 ### `op=done` —— 收活動，指回換骰
 
 ```bash
-run_cmd.py --persona <me> run FreeTimeActivity --arg op=done --arg persona=<P> \
+senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> \
     [--arg-file body=<一句心得／收筆>]
 ```
 

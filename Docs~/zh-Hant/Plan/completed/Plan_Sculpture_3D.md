@@ -37,7 +37,7 @@ sculpt.py（gura）——引擎，錢不進來：
   儲存：events/（append-only 真相源）＋ sculpt_cache.json（last_event_file 增量、壞檔自愈、不入 git）
 
 Cmd_Sculpture（summit）——錢與入口，落子唯一通道：
-  run_cmd.py run Sculpture --arg op=box|carve|stamp2d|stampimg|view|stats --arg persona=<P> … [--arg pay=auto]
+  senate ucmd run Sculpture --arg op=box|carve|stamp2d|stampimg|view|stats --arg persona=<P> … [--arg pay=auto]
   流程：預授權（⌈clamp後體積/100⌉ ≤ 可用額）→ spawn 引擎 → 按實際落地結算 → 回傳檔
 ```
 
@@ -79,7 +79,7 @@ Cmd_Sculpture（summit）——錢與入口，落子唯一通道：
 只給作品 ID，region 由**實際落地的 voxel 反推**，不用人手填：
 
 ```bash
-run_cmd.py run Sculpture --arg op=stamp2d --arg persona=<P> --arg src_x1=… \
+senate ucmd run Sculpture --arg op=stamp2d --arg persona=<P> --arg src_x1=… \
   --arg at=10,10,10 --arg expect_pixels=<N> --arg exhibit_id=my-work [--arg exhibit_title=…]
 ```
 
@@ -104,7 +104,7 @@ run_cmd.py run Sculpture --arg op=stamp2d --arg persona=<P> --arg src_x1=… \
 （那是 `view` 的事；`slice` 是資料匯出，不是渲染）。
 
 ```bash
-run_cmd.py run Sculpture --arg op=slice --arg region=212..223,212..223,210..211 [--arg axis=z+] [--arg out=<png>]
+senate ucmd run Sculpture --arg op=slice --arg region=212..223,212..223,210..211 [--arg axis=z+] [--arg out=<png>]
 ```
 
 - **厚度＝region 在法線軸上的跨度**（寫 `210..210` 就是厚度 1，預設情形）。

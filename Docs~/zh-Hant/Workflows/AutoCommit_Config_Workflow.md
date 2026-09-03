@@ -61,7 +61,7 @@ status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔
 建立出來的設定是停用的（`Enabled: false`）。開啟方式：後台頁把 `Enabled` 打勾後存檔，或直接改檔案。
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run AutoCommit \
+senate ucmd run AutoCommit --persona <me> \
     --arg op=scan --arg mode=submodules
 ```
 
@@ -109,7 +109,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run AutoCommit 
 
 ```bash
 echo '{"probe":true}' > <repo>/<某個群的前綴下>/_probe.json
-run_cmd.py --persona <me> run AutoCommit --arg op=scan --arg mode=submodules
+senate ucmd run AutoCommit --persona <me> --arg op=scan --arg mode=submodules
 ```
 
 Editor log 應該印出群名與訊息：
@@ -124,7 +124,7 @@ Editor log 應該印出群名與訊息：
 ### Step 4 — 提交
 
 ```bash
-run_cmd.py --persona <me> run AutoCommit --arg op=commit --arg mode=submodules
+senate ucmd run AutoCommit --persona <me> --arg op=commit --arg mode=submodules
 ```
 
 逐群一筆 commit，**純 git commit**（無 trailer／無公告／不領薪），**不 push、不 bump 父層**。

@@ -23,7 +23,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 （本 Cmd 未宣告 ArgsSchema —— 參數以原始碼為準。）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run ReadHierarchy --arg includeComponents=true
+senate ucmd run ReadHierarchy --arg includeComponents=true
 ```
 
 ## 3. 注意

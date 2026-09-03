@@ -80,23 +80,23 @@ dst = <UCL_Core>/Templates~/Assets/.BuiltinModules/ModulesRoot/Modules/<module>/
 
 ```bash
 # 単一アセットの移行
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=UCL_ChatTavernIdentityAsset \
     --arg id=claude-da-xiaojie
 
 # 全アセットの移行
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=UCL_ChatTavernIdentityAsset \
     --arg id=*
 
 # 強制上書き（テンプレートが既に存在していても上書き）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=UCL_ConfigAsset \
     --arg id=CurLangKey \
     --arg force=true
 
 # モジュールを指定
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run MigrateAssetToTemplate \
+senate ucmd run MigrateAssetToTemplate \
     --arg assetType=MyAsset \
     --arg id=MyID \
     --arg module=MyCustomModule

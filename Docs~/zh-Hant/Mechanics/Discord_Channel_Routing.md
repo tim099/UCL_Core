@@ -222,7 +222,7 @@ C# 端不用 `JsonData` 反序列化（會丟失 `_description` 等 meta 欄位�
 - **開啟即連 gateway → bot 在 Discord 顯示上線**（帶 activity「ChatTavern ⇄ Discord」）；
   **關閉即主動送 WebSocket Close → 立刻轉離線**（不主動關要等心跳逾時，綠點會殘留數十秒）。
 - routing 改完存檔 → 下一 tick 生效（mtime 快取）。不再需要 `kill python` 那套。
-- 診斷：`run_cmd.py run Invoke --arg type=…UCL_DiscordInboundDaemon --arg member=SelfTest`
+- 診斷：`senate ucmd run Invoke --arg type=…UCL_DiscordInboundDaemon --arg member=SelfTest`
   一行吐出兩道閘門 / token / 路由 / 游標 / gateway 狀態。
 
 ### 7.1 後台狀態總覽（`UCL_ChatTavernAdminPage` → 📥 Discord → 酒館 Inbound）

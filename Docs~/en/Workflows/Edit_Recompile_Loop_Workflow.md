@@ -25,7 +25,7 @@ tags: [workflow, agent, compile, recompile, error-fix]
 ```
 [1] Edit / generate .cs files (Edit / Write)
        ▼
-[2] python run_cmd.py recompile     ← triggers Unity recompile + waits for completion
+[2] senate ucmd run Recompile     ← triggers Unity recompile + waits for completion
        │
        ├── exit 0  → clean, continue downstream flow
        └── exit 1  → compile error(s) present
@@ -112,7 +112,7 @@ else:
 
 ### 4.2 Trigger recompile
 ```bash
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" recompile
+senate ucmd run Recompile
 ```
 
 **Exit code reference**:
@@ -188,23 +188,23 @@ Run recompile again, confirm the error is gone (and that no new error was introd
 ```bash
 # 1. Use Edit / Write to create Cmd_Foo.cs
 # 2. Trigger recompile
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" recompile
+senate ucmd run Recompile
 # → expect exit 0; if exit 1, read compile_status.json, fix, then run again
 
 # 3. Confirm the new Cmd is registered
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" catalog | grep "Foo"
+senate ucmd run ExportCommandCatalog | grep "Foo"
 
 # 4. Run the new Cmd
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" run Foo --arg x=1
+senate ucmd run Foo --arg x=1
 ```
 
 ### Example B: agent verifies after refactoring an EditorPage
 ```bash
 # 1. Edit RCG_StoryDataEditorPage.cs
 # 2. recompile
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" recompile
+senate ucmd run Recompile
 # 3. Run ExportNotes to verify the output stays aligned
-python "CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py" run ExportNotes --arg targets=story
+senate ucmd run ExportNotes --arg targets=story
 # 4. Eyeball the file / git diff for confirmation
 ```
 

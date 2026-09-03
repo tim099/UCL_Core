@@ -27,7 +27,7 @@ related:
 ## 怎麼跑
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run StreamWatch --arg step=<step> --arg persona=<P> [...]
+senate ucmd run StreamWatch --arg step=<step> --arg persona=<P> [...]
 ```
 
 - 跑完看 `run_cmd.py` 印的 **`📄 回傳檔：<路徑>`** → Read 它 → 照裡面的 `## next` 走。
@@ -40,20 +40,20 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run StreamWatch --arg step=<st
 **開／關直播錄影**（不必去點 Editor 頁；與那顆按鈕同一條規則）：
 
 ```bash
-run_cmd.py run StreamWatch --arg step=capture --arg persona=<P> --arg on=1   # 0 = 停
+senate ucmd run StreamWatch --arg step=capture --arg persona=<P> --arg on=1   # 0 = 停
 ```
 
 
 **看一眼就走**（不開場、不記帳、不發文，也是測試探針）：
 
 ```bash
-run_cmd.py run StreamWatch --arg step=peek [--arg seconds=<5..600>] [--arg raw=1]
+senate ucmd run StreamWatch --arg step=peek [--arg seconds=<5..600>] [--arg raw=1]
 ```
 
 **正式開場**（要寫評論、要計酬、要留接續點）：
 
 ```bash
-run_cmd.py run StreamWatch --arg step=start --arg persona=<P> --arg until=<HH:mm> --arg media=<work-slug>
+senate ucmd run StreamWatch --arg step=start --arg persona=<P> --arg until=<HH:mm> --arg media=<work-slug>
 ```
 
 - `media` 不給 ⇒ Cmd 會 blocked 並**列出既有 work 清單**；命中就用，不確定**問 Tim 不要猜**。

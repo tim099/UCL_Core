@@ -167,7 +167,7 @@ related:
 
 ```bash
 # 解析器自我檢查（純讀、零金流）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Invoke \
+senate ucmd run Invoke \
     --arg type=UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryAccountResolver \
     --arg member=SelfTest
 # 報告印在 Unity Editor log；grep "帳號解析 SelfTest"

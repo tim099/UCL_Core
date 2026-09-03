@@ -103,7 +103,7 @@ Goes through `AssemblyExtensions.GetTypeByFullName` for **strict matching**:
 ### 3.1 Trigger a Unity recompile (parameterless method)
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.Compilation.CompilationPipeline" \
   --arg "member=RequestScriptCompilation"
 ```
@@ -113,7 +113,7 @@ This is equivalent to the core logic of `Cmd_Recompile` (the differences: `Cmd_R
 ### 3.2 Read a property
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.EditorApplication" \
   --arg "member=isCompiling" \
   --arg "kind=property"
@@ -124,7 +124,7 @@ The Unity Console prints `[AgentCmd:Invoke] OK (System.Boolean) = False`.
 ### 3.3 Method with an enum argument (overload disambiguation)
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.AssetDatabase" \
   --arg "member=Refresh" \
   --arg "paramTypes=UnityEditor.ImportAssetOptions" \
@@ -136,7 +136,7 @@ python run_cmd.py run Invoke \
 ### 3.4 Set an EditorPrefs value (property setter)
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.EditorPrefs" \
   --arg "member=SetString" \
   --arg "paramTypes=System.String;System.String" \
@@ -148,7 +148,7 @@ python run_cmd.py run Invoke \
 ### 3.5 Multi-argument method
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.AssetDatabase" \
   --arg "member=ImportAsset" \
   --arg "paramTypes=System.String;UnityEditor.ImportAssetOptions" \
@@ -165,18 +165,18 @@ Multiple invokes can be chained — fetch a UCL_Asset, then call an instance met
 
 ```bash
 # step 1: grab RCG_StoryData.Util (a static property inherited from UCL_Util<T>)
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=RCG.RCG_StoryData" --arg "member=Util" --arg "kind=property" \
   --arg "storeAs=util"
 
 # step 2: $util.GetData("AbandonedTemple") — instance method
 #   GetData(string id, bool useCache=true) — the second parameter's default value is filled in automatically
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "target=\$util" --arg "member=GetData" --arg "args=AbandonedTemple" \
   --arg "storeAs=story"
 
 # step 3: $story.GetSubStory("Start") — instance method
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "target=\$story" --arg "member=GetSubStory" --arg "args=Start" \
   --arg "storeAs=sub"
 ```

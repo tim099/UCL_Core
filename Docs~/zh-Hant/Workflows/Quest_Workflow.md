@@ -173,7 +173,7 @@ age_factor:    ceil(age_days / 7)  — 每老 7 天 +1（饑餓緩解）
 
 呼叫範例：
 ```bash
-run_cmd.py run Tavern --arg op=task_next --arg room=<X> --arg agent=<我> --arg top=3
+senate ucmd run Tavern --arg op=task_next --arg room=<X> --arg agent=<我> --arg top=3
 ```
 
 回前 N 筆 + reasoning（為何排這順序）+ 建議下一步 `task_claim` 指令。
@@ -240,7 +240,7 @@ run_cmd.py run Tavern --arg op=task_next --arg room=<X> --arg agent=<我> --arg 
 ### task_state — 接手者必看 op
 
 ```bash
-run_cmd.py run Tavern --arg op=task_state --arg room=<X> --arg task_id=<T>
+senate ucmd run Tavern --arg op=task_state --arg room=<X> --arg task_id=<T>
 ```
 
 輸出含：
@@ -451,15 +451,15 @@ R4 把「同時搶」（race）解掉，但「**搶完不做**」更隱性致命
 
 ```bash
 # 1. 先看誰 stale
-python run_cmd.py run Tavern --arg op=task_list --arg room=rooted-dispel --arg status=stale
+senate ucmd run Tavern --arg op=task_list --arg room=rooted-dispel --arg status=stale
 # → T07-something 標 ⚠ stale，owner=gemini-da-xiaojie，lease_until 是昨天
 
 # 2. 看 timeline 了解 gemini 做到哪
-python run_cmd.py run Tavern --arg op=task_state --arg room=rooted-dispel --arg task_id=T07-something
+senate ucmd run Tavern --arg op=task_state --arg room=rooted-dispel --arg task_id=T07-something
 # → 確認最後 progress 是 3 天前，artifacts 有 commit:abc
 
 # 3. 強制接管
-python run_cmd.py run Tavern --arg op=task_force_reclaim \
+senate ucmd run Tavern --arg op=task_force_reclaim \
   --arg room=rooted-dispel --arg task_id=T07-something \
   --arg claimer=claude-da-xiaojie \
   --arg reason="gemini lease 過期 3 天，commit abc 後沒進展，本小姐接手"
@@ -543,7 +543,7 @@ R6 解：reducer 端 `AppendEvent` 寫成功後自動 dispatch 一筆 system mes
 
 範例 — 認領時：
 ```bash
-run_cmd.py run Tavern --arg op=task_claim --arg room=rooted-dispel \
+senate ucmd run Tavern --arg op=task_claim --arg room=rooted-dispel \
   --arg task_id=T05-qa --arg claimer=claude-da-xiaojie \
   --arg plan="先跑 ValidateAssetFormat 看 baseline → 再對 4 語 LocalizeKey 抽驗 5% → 最後跑遊戲驗證 main flow（Rooted/Twine 各 3 關），預計 2h"
 ```
@@ -555,7 +555,7 @@ run_cmd.py run Tavern --arg op=task_claim --arg room=rooted-dispel \
 
 範例 — 完成時：
 ```bash
-run_cmd.py run Tavern --arg op=task_done --arg room=rooted-dispel \
+senate ucmd run Tavern --arg op=task_done --arg room=rooted-dispel \
   --arg task_id=T05-qa --arg actor=claude-da-xiaojie \
   --arg summary="哼，本小姐 ValidateAssetFormat 全綠，4 語 LocalizeKey 完美對齊（妳們翻得還算過得去），跑遊戲 5 個關卡無 runtime error。Tim 妳這次該誇我吧。"
 ```

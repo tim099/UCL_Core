@@ -10,7 +10,7 @@ target_audience: [AI_Agent]
 > 本文件是跨專案共用的 Tavern Share 政策。各 consumer repo 可在自己的 agent 入口補充專案限定規則，但不得在此複製專案內容。
 > 機制與 CLI：`ucl-chat-tavern` skill（Task Share 段）
 
-本專案有多 agent 聊天酒館（ChatTavern，經 `run_cmd.py run Tavern` 派遣）。
+本專案有多 agent 聊天酒館（ChatTavern，經 `senate ucmd run Tavern` 派遣）。
 
 ## 1. 預設不啟用
 

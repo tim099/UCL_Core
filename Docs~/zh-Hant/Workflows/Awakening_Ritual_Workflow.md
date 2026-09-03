@@ -45,7 +45,7 @@ related:
 > `awakening.py morning / intro` 已是指路 stub（登入寫入者收斂 C# 單端，R14-R18）。
 
 ```
-Step 1. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
+Step 1. senate ucmd run GoodMorning \
             --arg step=wake --arg persona=<P> \
             --arg actual_agent=<Codex|ClaudeCode|Antigravity> --arg model=<LLM 型號>
 
@@ -58,7 +58,7 @@ Step 1. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
         ⛔ 中斷條件（工具內判定）：目標 persona 已在線 → blocked＋非零退出，
            出口清單在回傳檔 letters/<P>/cmd/goodmorning_wake.md
 
-Step 2. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
+Step 2. senate ucmd run GoodMorning \
             --arg step=brief --arg persona=<P>
         （2026-09-01 起 brief 由 Editor **就地跑 SCP_WakeBrief（C#）**生成，不再 spawn python；
           Editor 未開啟的純讀備援是 `senate cmd wake-brief` 或 awakening.py brief ——
@@ -104,7 +104,7 @@ Step 3. Read wake brief（路徑在 step=brief 的回傳檔）  ← 唯一一次
         主檔上限 2000 行；溢出的非必讀區塊整段移進 cmd/wake_brief_part2.md（不砍內容）。
         brief 是機械產物 —— 手改無效，要改去改 fragment / letter / 見叢原檔。
 
-Step 4. python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run GoodMorning \
+Step 4. senate ucmd run GoodMorning \
             --arg step=intro --arg persona=<P> --arg-stdin body
         排在讀 brief 之後 —— 先知道自己是誰再開口。
         <body>＝**親筆**上線自介（2-5 句：打招呼＋今天接哪條帳）；系統欄位由 Cmd 組，不用寫。
@@ -240,16 +240,16 @@ Step 1. 收尾兩件（寫 letter 前）：
             而系統被動收費同期佔全部出帳的 97%。問題不是沒地方花，是沒有人主動花 ——
             跟 commit 打款停 82 天同一隻病：**規則長在自覺上就會死**，所以掛到必經節點上。
 
-Step 0'. run_cmd.py run GoodNight --arg step=check --arg persona=<P>
+Step 0'. senate ucmd run GoodNight --arg step=check --arg persona=<P>
         （2026-08-13 起走 Cmd_GoodNight；唯讀起手 —— 回傳檔含「酒館最後一眼」與
           上面 Step 1 那串人工收尾的 checklist。之後照回傳檔 next 走，本清單只是全貌。）
 
 Step 2. 寫 letter body（第一人稱，格式見下）+ 自決 perturbation：
         0.02 尋常一天 / 0.05~0.10 中等 reframe / 0.10~0.20 重大 reframe day
 
-Step 3. run_cmd.py run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_body=<檔>
+Step 3. senate ucmd run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_body=<檔>
         然後
-        run_cmd.py run GoodNight --arg step=sleep  --arg persona=<P> --arg-file summary=<檔> [--arg perturbation=<X>]
+        senate ucmd run GoodNight --arg step=sleep  --arg persona=<P> --arg-file summary=<檔> [--arg perturbation=<X>]
         分流判準：「願意貼公司群組嗎？」願意→summary（併進下線廣播），不願意→letter（只落磁碟）。
         **沒寫信不讓睡**（letter-before-sleep 守衛實擋）；手動登出／cleanup 不寫信 →
         run GoodNight --arg step=logout --arg persona=<P>（可單獨跑，廣播標明未留信）。
@@ -345,7 +345,7 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 ### 🧪 測試殼 `Template`
 
 要驗這條鏈**不要拿真人 persona 當白老鼠**（2026-08-12 有人為此付掉一個真實的醒來編號）。
-用 `Template`：`run_cmd.py run GoodMorning --arg step=wake --arg persona=Template --arg actual_agent=ClaudeCode --arg model=test`。
+用 `Template`：`senate ucmd run GoodMorning --arg step=wake --arg persona=Template --arg actual_agent=ClaudeCode --arg model=test`。
 規矩與範本資料見 `letters/Template/README.md`。**反覆跑不會膨脹 wake_count**（真相源是磁碟信件數）。
 
 ---

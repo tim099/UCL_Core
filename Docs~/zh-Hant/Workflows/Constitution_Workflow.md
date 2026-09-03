@@ -125,7 +125,7 @@ python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <p>
 #     若仍印「⚠ 該立憲了」＝ 檔名／位置不對（必須是 letters/<p>/_constitution.md），不是快取
 
 # 登記與驗收（選用，但自由時間中做立憲時該跑 —— 它會回答「這份檔在本場真的被改過嗎」）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <p> run DocEdit --arg kind=constitution --arg persona=<p> --arg note="<一句心得>"
+senate ucmd run DocEdit --persona <p> --arg kind=constitution --arg persona=<p> --arg note="<一句心得>"
 ```
 
 > [!NOTE]
@@ -198,7 +198,7 @@ git log -p --follow <letters>/<persona>/_constitution.md   # 完整修憲史
 **自我介紹出生就能寫**（風格是出廠設定，不需要累積）。
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Glossary \
+senate ucmd run Glossary \
   --arg op=register --arg term="<persona> 大小姐" --arg slug=<persona> \
   --arg category=persona --arg created_by=<persona> \
   --arg one_line="<一句話>" --arg-file body=<內文檔>

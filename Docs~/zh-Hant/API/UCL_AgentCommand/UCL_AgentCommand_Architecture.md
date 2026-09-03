@@ -113,7 +113,7 @@ timeout → `ensure_idle` 60 秒放棄 → 「後續指令無法執行」。
 | 端 | 行為 |
 |---|---|
 | Editor Runner | 失敗（含 unknown type）→ 寫 `_cmd_errors/<id>.md`（stack 全文）＋ `_cmd_results/<id>.json`（機器可讀 verdict）→ **OneShot 直接出隊**；Repeatable 照舊留著（語意本來就是反覆跑） |
-| `run_cmd.py wait` | cmd 從 queue 消失 → **先讀 `_cmd_results/<id>.json` 判定**（Failed → 印錯誤簡報＋詳細錯誤檔路徑，exit 2）；無 result 檔才 fallback 舊推論（舊版 Editor） |
+| 等待端（`senate ucmd run`） | cmd 從 queue 消失 → **先讀 `_cmd_results/<id>.json` 判定**（Failed → 印錯誤簡報＋詳細錯誤檔路徑，exit 2）；無 result 檔才 fallback 舊推論（舊版 Editor）。⇒ 判定成功時印的是 `✓ Cmd completed → Success（result 檔判定，非推論）` —— **括號那句就是「走哪條路判的」的讀數** |
 
 成功也寫 result 檔 —— 失敗會出隊之後「消失」同時可能是成功或失敗，
 「沒有檔」不能再當判定依據。result 檔 3 天自動清（純 handshake）；
@@ -166,7 +166,7 @@ Python client (`run_cmd.py`) 在送出前會做**參數預檢**（少帶必填�
 | 入口 | 怎麼做 |
 |---|---|
 | 控制台 | `UCL_ControlPanelPage` → **🧾 Cmd 後台** → 開啟管理頁 → 「重新生成 commands_schema.json」 |
-| Cmd（給 agent） | `python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run ExportCmdSchema` |
+| Cmd（給 agent） | `senate ucmd run ExportCmdSchema` |
 | 自動 | 編譯完成時檢查，**每台機器每天最多自動觸發一次**（節流時間戳存 EditorPrefs，不入 git） |
 
 三者呼叫同一個 `UCL_CmdSchemaExporter.Export()`，產出逐字相同；內容未變則不寫檔。
@@ -219,16 +219,16 @@ Python client (`run_cmd.py`) 在送出前會做**參數預檢**（少帶必填�
 
 ```bash
 # submit + wait（適合 Agent CLI）
-python Tools~/AgentCommands/run_cmd.py run ResolveAssetReferences \
+senate ucmd run ResolveAssetReferences \
     --arg assetType=RCG_StoryData --arg assetIds=AbandonedTemple \
     --arg maxDepth=3 --arg format=md \
     --output-file CardGame/AgentCommands/asset_refs_AbandonedTemple.md
 
 # 列 queue
-python Tools~/AgentCommands/run_cmd.py list
+senate ucmd status
 
-# 顯示 catalog
-python Tools~/AgentCommands/run_cmd.py catalog
+# 產生／更新指令目錄（產物：<資料根>/commands_catalog.md）
+senate ucmd run ExportCommandCatalog
 ```
 
 ### Unity Batchmode 範例（CI / 排程）
@@ -291,25 +291,31 @@ python Tools~/AgentCommands/run_cmd.py catalog
   讓 `anonymous` 流進記帳層等於替一個不存在的人開戶。C# 端取值走 `UCL_AgentCommandQueue.GetDeclaredPersona()`，它對匿名回 `null`。
 - `queues/anonymous/` 的流量**自己就是「還有多少未署名派遣」的儀表** —— 不需要有人記得去統計。
 
-### Python CLI
+### CLI（`senate ucmd`）
 
 ```bash
 # 本命 queue（一般用法）
-python run_cmd.py --persona <你的persona> run <Type> --arg key=val
-
-# 子通道（同 persona 並行，見下）
-python run_cmd.py --persona <你的persona> --lane <通道> run <Type> --arg key=val
+senate ucmd run <Type> --persona <你的persona> --arg key=val
 
 # 不帶身分 → queues/anonymous/（能跑，但沒署名）
-python run_cmd.py run <Type> --arg key=val
+senate ucmd run <Type> --arg key=val
+
+# 子通道（同 persona 並行）——⚠ senate ucmd 目前沒有等價旗標，見下節
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <你的persona> --lane <通道> run <Type> --arg key=val
 ```
 
-**舊 `--agent-id` 不報錯，但整串會當成資料夾名** —— `--agent-id ame-sw` 會長出 `queues/ame-sw/`。
-它合法、能跑，但它是**遷移待辦的可見形式**：看到那種資料夾就表示該 caller 還沒改。
-（Tim 2026-08-01 選這個而不是報錯：不擋人做事，但讓沒改的地方看得見。
-刻意**不做字串轉譯** —— 任何轉譯都得回頭猜「`ame-sw` 是人還是人+通道」，而擺脫那個猜測正是本次改版的全部意義。）
+**`--agent-id` 已移除（Tim 2026-08-17 拍板）—— 打到會被明確擋下並指路（`exit 2`）。**
+理由：它是自由字串、沒有唯一性保證（打錯會長出 `queues/<那串>/` 而不報錯）；
+**唯一有守衛的身分是 persona**（同一 persona 不得同時登入兩次）。⇒ 一律改用 `--persona <名字>`。
 
 ### 同 Persona 並行子通道 `--lane` / `--parallel`（T06, 2026-06-07 summit）
+
+> ⚠ **射程：本節仍走 `run_cmd.py`，`senate ucmd` 沒有等價旗標。**
+> 全專案已改走 `senate ucmd`（TASK-0107），而 lane 分流是**唯一還沒搬過去的能力** ——
+> 那一格記在 TASK-0107 §一④，未解。⇒ 需要並行子通道時仍用下面這幾行；
+> 其餘一切走 `senate ucmd run <Type> --persona <p>`。
+> 📌 這一段刻意**不轉譯成 senate 寫法** —— 轉譯出來的指令跑不動，
+> 而「跑不動的範例」跟「還沒搬」長得不一樣：前者浪費下一個人二十分鐘，後者一眼看得出。
 
 **問題**：同一 persona 的本命 queue 是**串行**的 —— per-agent IsRunning 擋重入（防同一 queue.json 的 write race）。所以「同 persona 的下一筆 cmd 會等前一筆跑完」。
 
@@ -321,7 +327,7 @@ python run_cmd.py run <Type> --arg key=val
 
 ```bash
 # 前一筆長 cmd 在跑 (e.g. 啟動遊戲 / 進 PlayMode), 本命 queue 被佔住
-python run_cmd.py --persona summit run RCG_StartNewGame --arg from=reset
+senate ucmd run RCG_StartNewGame --persona summit --arg from=reset
 
 # 同 persona 同時插一筆快 cmd (讀畫面), 走 lane 不必等上面那筆結束
 python run_cmd.py --persona summit --lane read run BattleSnapshot --arg observer=zeta
@@ -388,15 +394,21 @@ null → legacy default 路徑（行為跟改動前完全相同）。
 
 ### 繞行：換一條 queue（最快，不必重啟 Editor）
 
-**default queue 卡住 ≠ 全系統卡** —— per-agent queue 各自獨立 running lock（§8.1）。直接換 `--agent-id` 走另一條 queue 即可繞過：
+**一條 queue 卡住 ≠ 全系統卡** —— 每條 queue 各自獨立 running lock（§8.1）。換一條 queue 即可繞過：
 
 ```bash
-# 本命 queue 卡住時 → 改走同 persona 的獨立子通道 (--lane)
-python run_cmd.py --agent-id <你的id> run <Type> --arg key=val
+# 本命 queue 卡住時 → 改走同 persona 的獨立子通道
+#   ⚠ 這條仍走 run_cmd.py：senate ucmd 沒有 lane 旗標（TASK-0107 §一④ 未解）
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <你的persona> --lane rescue run <Type> --arg key=val
 
-# 連該 agent queue 也卡了 → 換一個全新沒用過的 id（全新 queue 必乾淨）
-python run_cmd.py --agent-id <你的id>-2 run <Type> --arg key=val
+# 連該子通道也卡了 → 換一個全新沒用過的 lane 名（全新 queue 必乾淨）
+python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <你的persona> --lane rescue2 run <Type> --arg key=val
 ```
+
+> 🩸 **這一節原本教的是 `--agent-id`，而那個旗標 2026-08-17 就被擋掉了（`exit 2`）** ——
+> 文件教了十七天一個打下去必定失敗的繞行方法，**而繞行是給正在卡住的人看的**：
+> 他最沒有餘裕去分辨「這條路壞了」跟「我又踩到另一個坑」。
+> ⇒ 指路牌會比它指的路活得更久，**而急救用的指路牌壞掉的代價最大。**
 
 > 注意：**不進 PlayMode 的 cmd**（BattleSnapshot / BattleAction / Tavern 等，純讀寫不觸發 domain reload）走 per-agent queue 可正常完成；**會進 PlayMode 的 cmd** 換 queue 也救不了根因，要先把 Disable Domain Reload 設定打開。
 

@@ -162,7 +162,7 @@ Tim 的原始需求分四次給出，每一次都改變了前一次的形狀：
 C# ：Cmd_Library 新增 op=rate
      UCL_ReadingLibraryIO.WriteRating()        ← 唯一 writer
      op=note_chapter 加選填 --arg craft= --arg impact=，內部【呼叫】WriteRating
-Python：零新增邏輯，只有 run_cmd.py run Library --arg op=rate …
+Python：零新增邏輯，只有 senate ucmd run Library --arg op=rate …
 ```
 
 方向與 2026-08-07 已完成的 `library.py reading-recall` 退位一致（正本改指 `op=recall`）。

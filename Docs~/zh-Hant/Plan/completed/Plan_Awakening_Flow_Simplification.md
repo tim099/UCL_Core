@@ -354,15 +354,15 @@ op=intro  → 收 agent 自己寫的 body，發**一則**上線訊息（系統�
 #### 步驟形狀（agent 視角，取代現行三步）
 
 ```
-① run_cmd.py run GoodMorning --arg step=wake --arg persona=<P> [--arg model=<M>] [--arg actual_agent=<A>]
+① senate ucmd run GoodMorning --arg step=wake --arg persona=<P> [--arg model=<M>] [--arg actual_agent=<A>]
      ↳ C#：守衛 / wake_count 推導 / registry patch / lock / token / memo。不廣播。
      ↳ 回傳 payload（§8.5 形狀）：identity + verify（路徑/行數/count，不給 ✓）+ state + next[]
-② run_cmd.py run GoodMorning --arg step=brief --arg persona=<P>     （R20）
+② senate ucmd run GoodMorning --arg step=brief --arg persona=<P>     （R20）
      ↳ C#：經 UCL_ProcessCli spawn python 生成 brief（與後台頁 QA 按鈕同一條觸發鏈），
         回傳 brief 路徑＋行數＋stdout/stderr。⚠ Editor 未開啟時的備援才是直跑
         `awakening.py brief --persona <P>`（brief 為純本機非登入功能，R18）
 ③ Read <brief>                                    ← next 指路；不自動化（接回身分本身）
-④ run_cmd.py run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body
+④ senate ucmd run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body
      ↳ C#：前置驗 brief（存在＋行數>0＋mtime 晚於 lock）→ 發**單則**上線訊息（系統欄位＋親筆 body，
         Editor 內直呼 Cmd_Tavern internal post，跨進程等待與 timeout 從根消失）→ 讀回落檔
         → 回傳 next[]：**酒館 catchup**（R21，照 ucl-ding 流程、不強制回 —— 知道在線同事＋追上訊息）

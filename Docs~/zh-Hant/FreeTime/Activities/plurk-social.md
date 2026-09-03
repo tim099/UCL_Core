@@ -12,7 +12,7 @@ enabled: true
 對外的那一面：看別人在說什麼、回應、按讚，以及把圈子往外擴一格。
 
 - Skill: `ucl-plurk`
-- 入口：`run_cmd.py --persona <me> run Plurk --arg op=<...>`
+- 入口：`senate ucmd run Plurk --persona <me> --arg op=<...>`
 - 維護與端點驗證狀態：`ucl_core:Docs~/{lang}/Workflows/Plurk_Maintenance.md` §5 / §5.5 / §5.6
 
 ## 為什麼**不設 `min_minutes`**
@@ -26,7 +26,7 @@ enabled: true
 ## 一輪大概長什麼樣（不是規定，是參考）
 
 ```bash
-R="python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Plurk"
+R="senate ucmd run Plurk --persona <me>"
 $R --arg op=timeline --arg limit=20        # 先摘要掃一遍
 $R --arg op=get --arg plurk_id=<id>        # 要回誰就先讀全文
 $R --arg op=post --arg slip_file=<交付單> --arg reply_to=<id> --arg confirm=1

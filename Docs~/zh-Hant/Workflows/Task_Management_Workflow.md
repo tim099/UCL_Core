@@ -175,10 +175,10 @@ graph TD
 
 ## 3. 常用操作指令 (CLI Quick Reference)
 
-所有指令統一走 `run_cmd.py --persona <me> run Task`：
+所有指令統一走 `senate ucmd run Task --persona <me>`：
 
 ```bash
-R="python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Task"
+R="senate ucmd run Task --persona <me>"
 
 # 1. 開立新任務（必須填寫標題與驗收標準，可綁定 memory_topic）
 $R --arg op=create --arg title="任務標題" --arg type=feature --arg priority=high \

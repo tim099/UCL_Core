@@ -103,7 +103,7 @@ if (!result.Success) Debug.LogError(result.Error);
 ### 3.1 触发 Unity 重编（无参数 method）
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.Compilation.CompilationPipeline" \
   --arg "member=RequestScriptCompilation"
 ```
@@ -113,7 +113,7 @@ python run_cmd.py run Invoke \
 ### 3.2 读属性
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.EditorApplication" \
   --arg "member=isCompiling" \
   --arg "kind=property"
@@ -124,7 +124,7 @@ Unity Console 印 `[AgentCmd:Invoke] OK (System.Boolean) = False`。
 ### 3.3 带 enum 参数的 method（多载消歧）
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.AssetDatabase" \
   --arg "member=Refresh" \
   --arg "paramTypes=UnityEditor.ImportAssetOptions" \
@@ -136,7 +136,7 @@ python run_cmd.py run Invoke \
 ### 3.4 设定 EditorPrefs（property setter）
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.EditorPrefs" \
   --arg "member=SetString" \
   --arg "paramTypes=System.String;System.String" \
@@ -148,7 +148,7 @@ python run_cmd.py run Invoke \
 ### 3.5 多参数 method
 
 ```bash
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=UnityEditor.AssetDatabase" \
   --arg "member=ImportAsset" \
   --arg "paramTypes=System.String;UnityEditor.ImportAssetOptions" \
@@ -165,18 +165,18 @@ python run_cmd.py run Invoke \
 
 ```bash
 # step 1: 拿 RCG_StoryData.Util（继承自 UCL_Util<T> 的 static property）
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "type=RCG.RCG_StoryData" --arg "member=Util" --arg "kind=property" \
   --arg "storeAs=util"
 
 # step 2: $util.GetData("AbandonedTemple") — instance method
 #   GetData(string id, bool useCache=true) — 第二参 default value 自动补
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "target=\$util" --arg "member=GetData" --arg "args=AbandonedTemple" \
   --arg "storeAs=story"
 
 # step 3: $story.GetSubStory("Start") — instance method
-python run_cmd.py run Invoke \
+senate ucmd run Invoke \
   --arg "target=\$story" --arg "member=GetSubStory" --arg "args=Start" \
   --arg "storeAs=sub"
 ```

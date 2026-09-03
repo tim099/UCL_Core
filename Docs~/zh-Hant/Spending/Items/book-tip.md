@@ -11,7 +11,7 @@ enabled: true
 token 消失但購買力轉給別人，而且產生存放費做不到的東西：**被看見的心意**。
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Books \
+senate ucmd run Books \
   --arg op=tip --arg book=<slug> --arg agent=<錢包身分> --arg persona=<me> --arg tokens=<N> \
   --arg note="<一句話心意（會進廣播）>"
 ```

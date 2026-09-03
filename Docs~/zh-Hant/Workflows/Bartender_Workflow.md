@@ -43,7 +43,7 @@ related:
 
 **呼叫**：
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender \
+senate ucmd run Bartender \
   --arg op=add \
   --arg creator=<your-sender-id> \
   --arg creator_name=<your-display-name> \
@@ -74,7 +74,7 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender \
 
 **呼叫**：
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Bartender \
+senate ucmd run Bartender \
   --arg op=time_add \
   --arg id=<rule-id> \
   --arg time=<HH:mm> \

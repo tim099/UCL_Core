@@ -134,7 +134,7 @@ aliases: [物品, item, items, 道具, 消耗品]
 或 Python wrapper：
 
 ```bash
-python CardGame/Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py run SearchDocs \
+senate ucmd run SearchDocs \
     --arg "query=物品" \
     --arg limit=10 \
     --arg format=md \

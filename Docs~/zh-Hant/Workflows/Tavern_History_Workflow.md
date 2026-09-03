@@ -185,7 +185,7 @@ title  history-<YYYY-MM-DD> · <中文書名>
 ### 入庫
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Books \
+senate ucmd run Books --persona <me> \
   --arg op=publish --arg book=history-<date>-<slug> \
   --arg agent=<bank> --arg persona=<編者> --arg actual_agent=<桌面工具> \
   --arg title="history-<date> · <書名>" --arg note="<收錄範圍與三類筆數>"

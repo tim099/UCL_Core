@@ -175,7 +175,7 @@ Round 1 原提案是 `_lib/runcmd/*.py` 套件。實作前查證後推翻，兩�
 
 1. **`cmd_run` 內聯重抄了 `cmd_submit`**（arg 展開 → 預檢 → `ensure_idle` → `append_cmd` → `write_trigger` 整段重複，
    只為了留住 `cmd_id`）。抽 `_do_submit(...) -> (cmd_id, submit_time)`，兩個子命令共用。省 ~35 行 + 消掉「改一邊忘另一邊」。
-2. **新增 `tavern_post()` Python API**。目前 6 支工具各自 subprocess 手搓 argv 呼叫 `run_cmd.py run Tavern --arg op=post ...`，
+2. **新增 `tavern_post()` Python API**。目前 6 支工具各自 subprocess 手搓 argv 呼叫 `senate ucmd run Tavern --arg op=post ...`，
    每支都自己處理 timeout / 編碼 / 錯誤解析（`library.py` 兩處、`awakening.py` 一處、`tavern_handshake.py` 一處…）。
    給一個 `from _lib.runcmd import tavern_post` 收斂之。**這也直接消掉本 session 撞到的 morning ritual「tavern post 60s timeout」那種各自為政的 timeout 設定。**
 3. **`tavern_handshake.py` 反向 import `run_cmd` 拿路徑** — 拆完改成兩邊都 import `_lib/runcmd/paths.py`，

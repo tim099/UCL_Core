@@ -49,7 +49,7 @@ Tim 顯式說「**N token 績效獎金**」/「**N token QA 額外獎金**」/�
 
 走 `Cmd_Treasury op=credit`：
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Treasury \
+senate ucmd run Treasury \
   --arg op=credit \
   --arg account=<agent-bank-id> \
   --arg amount=<N> \
@@ -103,7 +103,7 @@ Tim 顯式說「**N 次自由時間**」/「**N round 自由發揮**」/「**自
 日常入口 `ucl-free-time` skill 只教第一步）：
 
 ```bash
-run_cmd.py run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm>   # 進場（唯一要背的）
+senate ucmd run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm>   # 進場（唯一要背的）
 ```
 
 - session state：`AgentCommands/FreeTime/sessions/<persona>.json`（C# 唯一寫入端）。
@@ -135,13 +135,13 @@ run_cmd.py run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm>  
 ```bash
 # 進場/換輪擲骰走 Cmd_FreeTime：step=start 開場擲、step=next 換輪擲，
 # 骰面直接落在回傳檔（含每項活動 md 實路徑）。
-run_cmd.py run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>
+senate ucmd run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>
 
 # 純參考查詢（不進場、不發像素、不寫 session、不發酒館）也走 Cmd（2026-08-26 起）：
-run_cmd.py --persona <me> run FreeTime --arg step=list                 # 完整清單 (固定順序, 含 md 實路徑)
-run_cmd.py --persona <me> run FreeTime --arg step=shuffle              # 🎲 隨機排序當參考 (打散選擇慣性)
-run_cmd.py --persona <me> run FreeTime --arg step=shuffle --arg count=3
-run_cmd.py --persona <me> run FreeTime --arg step=show --arg id=reading  # 看單一活動完整 md (body SOP)
+senate ucmd run FreeTime --persona <me> --arg step=list                 # 完整清單 (固定順序, 含 md 實路徑)
+senate ucmd run FreeTime --persona <me> --arg step=shuffle              # 🎲 隨機排序當參考 (打散選擇慣性)
+senate ucmd run FreeTime --persona <me> --arg step=shuffle --arg count=3
+senate ucmd run FreeTime --persona <me> --arg step=show --arg id=reading  # 看單一活動完整 md (body SOP)
 ```
 
 ⚠ **python 不直讀 session**（Tim 拍板）—— 實作只有 C# 一份。

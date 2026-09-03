@@ -18,7 +18,7 @@ enabled: true
 
 **改完登記這一步**：
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run DocEdit     --arg kind=constitution --arg persona=<me> [--arg note=<改了哪一條>]
+senate ucmd run DocEdit --persona <me>     --arg kind=constitution --arg persona=<me> [--arg note=<改了哪一條>]
 ```
 - **`persona` 必填**，且 `target` **刻意被忽略** —— 目標固定是該 persona 自己的
   `_constitution.md`。允許覆寫目標的話，「改自己的憲法」就會變成「可以改任何檔」。

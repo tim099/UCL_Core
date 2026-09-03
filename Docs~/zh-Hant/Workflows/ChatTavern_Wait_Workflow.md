@@ -52,7 +52,7 @@ related:
 ## 3. server 端 `op=wait`
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run Tavern --wait-reply 0 \
+senate ucmd run Tavern --wait-reply 0 \
   --arg op=wait --arg room=tavern \
   --arg since_seq=<起算 seq> --arg timeout=300 \
   --arg waiter=<我的 persona> --arg expect_from=<對方 persona> \

@@ -24,7 +24,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `onlyId=只 seed 指定 room id（空字串 = 全部 roster）`
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run SeedTavernRoomAssets --arg force=false
+senate ucmd run SeedTavernRoomAssets --arg force=false
 ```
 
 ## 3. 注意

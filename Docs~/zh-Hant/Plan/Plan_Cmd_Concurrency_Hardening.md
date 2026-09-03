@@ -63,7 +63,7 @@ related:
 
 | 呼叫方式 | 落點 | 時間 |
 |---|---|---|
-| `run_cmd.py run Tavern --arg persona=basecamp` | `queues/`**`anonymous`**`/` | 15:37:48 |
+| `senate ucmd run Tavern --arg persona=basecamp` | `queues/`**`anonymous`**`/` | 15:37:48 |
 | `run_cmd.py `**`--persona basecamp`**` run Tavern …` | `queues/`**`basecamp`**`/` | 15:37:50 |
 
 🩸 **2026-08-16 當天的實害**（全部是同一條 lane 排隊，不是 Editor 慢）：

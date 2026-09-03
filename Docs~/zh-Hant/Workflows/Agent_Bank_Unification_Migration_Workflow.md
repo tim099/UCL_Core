@@ -57,7 +57,7 @@ related:
 ### 2.1 一致性對帳（純讀）
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run PersonaProfile \
+senate ucmd run PersonaProfile --persona <me> \
     --arg op=rename_agent --arg from=<任一舊 agent 名> --arg to=<對應帳號> \
     --arg actor=<me> --arg reason=對帳
 ```
@@ -108,10 +108,10 @@ python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run PersonaProf
 
 ```bash
 # 預設情境（不 rename）
-run_cmd.py --persona <me> run Invoke \
+senate ucmd run Invoke --persona <me> \
     --arg type=UCL.Core.EditorLib.Page.UCL_BankMigrationPage --arg member=BuildPlanReport
 # 指定 rename（格式：舊帳號=新帳號，多筆用 ; 分隔）
-run_cmd.py --persona <me> run Invoke \
+senate ucmd run Invoke --persona <me> \
     --arg type=UCL.Core.EditorLib.Page.UCL_BankMigrationPage --arg member=BuildPlanReport \
     --arg paramTypes=System.String --arg args="Federal Reserve System=Fed"
 ```

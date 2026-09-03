@@ -191,7 +191,7 @@ Unity 重新編譯後，`HelloWorld` 會自動出現在 **Available Commands** �
 > `<RepoRoot>/AgentCommands/commands_schema.json`，那是 C# 反射 handler `ArgsSpec` 生成的產物。
 > 三個等價入口：
 > 1. 控制台 → **🧾 Cmd 後台** → 「重新生成 commands_schema.json」
-> 2. `run_cmd.py run ExportCmdSchema`
+> 2. `senate ucmd run ExportCmdSchema`
 > 3. 編譯完成自動檢查（**每台機器每天最多一次**）
 >
 > 忘了同步不會壞掉 —— Python 端比對內容雜湊，不符就把參數預檢**自動降級為不擋**。

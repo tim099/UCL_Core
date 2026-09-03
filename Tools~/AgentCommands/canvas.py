@@ -896,7 +896,7 @@ def plan_payment(P: Paths, persona: str, bank: str, n: int, pay: str,
     elif pay == "voucher":
         # 只用券
         if n > voucher_avail:
-            raise ValueError(f"永久繪畫券不足：需 {n}，{persona} 永久券 {voucher_avail}"
+            raise ValueError(f"永久券不足：需 {n}，{persona} 永久券 {voucher_avail}"
                              f"（未過期限時券另有 {free_avail} 張，用 --pay auto 會先花它們）")
         use_voucher = n
     elif pay == "token":
@@ -1052,8 +1052,15 @@ def cmd_place(args):
     print(f"# 🎨 placed {n} pixel(s)")
     print(f"  event       : {ev_path}")
     print(f"  persona     : {persona} (agent={agent}, bank={bank})")
-    print(f"  pay_breakdown: freetime={plan['free']} voucher={plan['voucher']} token={plan['token']}")
-    print(f"  voucher bal : {voucher_balance(P, persona)}")
+    # ⚠ 欄位名 `freetime` / `voucher` 是**事件檔的 key**（不改，改了弄壞既有事件與 replay）——
+    #   所以這裡把 key→顯示名的對映**印在同一行**。TASK-0085：`freetime=N voucher=0` 在兩種
+    #   世界裡同形（① 限時券已由 freetime 欄結清 ② 限時券沒被動到），而它一個字都沒印去分辨。
+    print(f"  pay_breakdown: freetime(限時券)={plan['free']} voucher(永久券)={plan['voucher']} "
+          f"token={plan['token']}")
+    # `voucher_balance` 是**可花總額**（未過期限時 ＋ 永久）—— 名字沿用是為了不動呼叫端，
+    # 但印出來時必須說清楚，否則它看起來像「永久券還有這麼多」（BUG-27 引的 134 就是它）。
+    print(f"  可花總額     : {voucher_balance(P, persona)}"
+          f"（限時券 {voucher_expiring(P, persona)} ＋ 永久券 {voucher_permanent(P, persona)}）")
     _bal = ledger_balance(P, bank)
     print(f"  token bal   : {_bal if _bal is not None else '查不到（需 Editor 開著；不是 0）'}")
     print(f"  ledger_refs : {ledger_refs}")
@@ -1370,8 +1377,11 @@ def cmd_voucher(args):
     now = utcnow()
 
     if sub == "balance":
+        # 三個數字，因為一個名字回答不了三個問題（對側 C# `Cmd_CanvasVoucher op=balance` 同形）：
+        # 可花總額 ＝ 未過期限時券 ＋ 永久券。單印總額會被讀成「永久券有這麼多」（TASK-0085）。
         bal = voucher_balance(P, persona)
-        print(f"# 🎟 {persona} 繪畫券餘額: {bal}")
+        print(f"# 🎟 {persona} 可花總額: {bal}"
+              f"（限時券 {voucher_expiring(P, persona, now)} ＋ 永久券 {voucher_permanent(P, persona)}）")
     elif sub == "grant":
         if args.amount is None or args.amount <= 0:
             print("❌ grant 需 --amount > 0", file=sys.stderr)
@@ -1387,11 +1397,15 @@ def cmd_voucher(args):
         if not ok:
             print(f"❌ 發券失敗（未寫入任何東西）: {msg}", file=sys.stderr)
             sys.exit(1)
-        print(f"# 🎟 granted {args.amount} 繪畫券 → {persona}")
-        print(f"  new balance: {voucher_balance(P, persona)}")   # 讀回來，不用記憶體值假裝已生效
+        # 這條路發的是**永久券**（不帶 expires_at）—— 限時券只由 Cmd_FreeTime step=start 發。
+        print(f"# 🎟 granted {args.amount} 永久券 → {persona}")
+        print(f"  new 可花總額: {voucher_balance(P, persona)}")  # 讀回來，不用記憶體值假裝已生效
     elif sub == "history":
         v = load_voucher(P, persona)
-        print(f"# 🎟 {persona} 繪畫券歷史 (balance={v.get('balance', 0)}):")
+        # ⛔ 刻意**不印** v['balance'] —— C# 端（方案乙）已不再寫那個欄位，讀到的是舊快照。
+        #   印它會給出一個「看起來是餘額」的過期數字，那正是 ledger 檔頭第 ① 條在防的事。
+        print(f"# 🎟 {persona} 券帳歷史 (此刻可花總額={voucher_balance(P, persona, now)}"
+              f"：限時券 {voucher_expiring(P, persona, now)} ＋ 永久券 {voucher_permanent(P, persona)}):")
         for h in v.get("history", []):
             print(f"  {h.get('ts')}  {h.get('type'):<8} {h.get('amount'):>4}  "
                   f"{h.get('source', '')} {h.get('ref', '')}")
@@ -1422,7 +1436,8 @@ def cmd_freetime(args):
     granted = FREE_PIXELS_PER_SESSION
     used = max(0, granted - expiring_count)
 
-    print(f"# 🎨 {persona} 自由時間免費像素狀態（**限時繪圖券**：每場 {granted} 張，到期作廢）")
+    print(f"# 🎨 {persona} 自由時間**限時券**狀態（每場 {granted} 張，到期作廢）"
+          f"　※ 舊稱「免費像素」／「限時繪圖券」＝同一個量（TASK-0085 統一為「限時券」）")
     if in_session is None:
         # 「不知道」與「不在」不同形 —— Editor 未開時判定通道不存在，但券數（純檔案）照報。
         print("  自由時間: ⚠ 無法判定（SessionStatus 查詢失敗 —— Editor 沒開？）")
@@ -1430,12 +1445,13 @@ def cmd_freetime(args):
     elif in_session:
         print("  自由時間: ✅ active（剩餘時間與場次細節看 SessionStatus 回傳檔，或 step=next 的回報）")
     else:
-        print("  自由時間: ❌ 不在 active session（免費像素額度為 0）")
-        print("  進場: run_cmd.py run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>")
+        print("  自由時間: ❌ 不在 active session（本場限時券為 0）")
+        print("  進場: senate ucmd run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>")
     if in_session:
-        print(f"  免費像素: {expiring_count} 顆可用（本場已用 {used}/{granted}）")
+        print(f"  限時券: {expiring_count} 張可用（本場已用 {used}/{granted}）"
+              f"　※ `--pay auto` 先花這批；付款回報裡它是 `freetime` 欄")
     else:
-        print(f"  （券帳讀數: 未過期限時券 {expiring_count} 顆；上場已用 {used}/{granted} — 不跨場）")
+        print(f"  （券帳讀數: 未過期限時券 {expiring_count} 張；上場已用 {used}/{granted} — 不跨場）")
 
 
 # ───────────────────────────── note ─────────────────────────────
@@ -1652,7 +1668,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_snapshot)
 
     # voucher
-    p = sub.add_parser("voucher", help="繪畫券 balance/grant/history")
+    p = sub.add_parser("voucher", help="券帳 balance/grant/history（balance 回：可花總額＝限時券＋永久券）")
     p.add_argument("--sub", required=True, choices=["balance", "grant", "history"])
     p.add_argument("--persona", required=True)
     p.add_argument("--amount", type=int, default=None, help="grant 用")
@@ -1661,7 +1677,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_voucher)
 
     # freetime（2026-08-13 額度制回歸：每場 10 顆，發放端 = Cmd_FreeTime step=start）
-    p = sub.add_parser("freetime", help="自由時間免費像素狀態（額度制：每場 10 顆，不跨場累積）")
+    p = sub.add_parser("freetime", help="自由時間限時券狀態（每場 10 張，到期作廢、不跨場）")
     p.add_argument("--sub", required=False, choices=["status"], default="status")
     p.add_argument("--persona", required=True)
     p.set_defaults(func=cmd_freetime)

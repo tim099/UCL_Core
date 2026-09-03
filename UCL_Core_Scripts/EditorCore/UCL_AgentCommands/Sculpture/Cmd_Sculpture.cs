@@ -195,7 +195,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             aR.AppendLine("## result（引擎回報＝結算依據）");
             aR.AppendLine($"- {(iOp == "box" ? "placed" : "carved")}: **{aActual}**{(aSkipped > 0 ? $"（skip {aSkipped} —— 禁覆蓋，不收費）" : "")} / 體積 {aVolume:N0}");
             aR.AppendLine($"- charged: **{aCharge} 單位**（⌈{aActual}/{VOXELS_PER_UNIT}⌉；帳單跟著事實走，不跟著意圖走）");
-            aR.AppendLine($"- pay_breakdown: freetime={aUsedFree} voucher={aUsedVoucher} token={aUsedToken}（pay={aPay}）");
+            aR.AppendLine($"- pay_breakdown: freetime(限時券)={aUsedFree} voucher(永久券)={aUsedVoucher} token={aUsedToken}（pay={aPay}）");
             aR.AppendLine($"- event: `{aEventFile}`");
             aR.AppendLine("## next");
             aR.AppendLine($"- 看成品：senate ucmd run Sculpture --arg op=view [--arg region=…] [--arg exclude_color=…]（免費）");
@@ -391,7 +391,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                           $"{(aSkipped > 0 ? $"；skip {aSkipped}（禁覆蓋，不收費）" : "")}{(aOob > 0 ? $"；越界裁掉 {aOob}" : "")}");
             if (aBlack > 0) aR.AppendLine($"- remapped_black: {aBlack}（純黑 index 0 在 3D 代表「空」，重映到最近非零暗色 index 4 —— 不靜默改色）");
             aR.AppendLine($"- charged: **{aCharge} 單位**（⌈{aActual}/{VOXELS_PER_UNIT}⌉；預授權上限曾為 {aMaxUnits}）");
-            aR.AppendLine($"- pay_breakdown: freetime={aUsedFree} voucher={aUsedVoucher} token={aUsedToken}（pay={aPay}）");
+            aR.AppendLine($"- pay_breakdown: freetime(限時券)={aUsedFree} voucher(永久券)={aUsedVoucher} token={aUsedToken}（pay={aPay}）");
             aR.AppendLine($"- event: `{aEventFile}`");
             // 展品登錄結果（引擎回報＝事實；沒給 exhibit_id 時這段不存在）
             var aEx = aResult.exhibit;          // 引擎沒回 exhibit ⇒ null（缺席與空物件在此不必分辨）

@@ -18,7 +18,7 @@ kind: CanvasVoucherFull
 - 展品登錄：`sculpt.py exhibit register --id .. --title .. --author <me> --region ..`（含打光/陰影 preset）
 - 設計與費率: `ucl_core:Docs~/zh-Hant/Plan/Plan_Sculpture_3D.md`
 
-**自由時間特典**：與 [`canvas-2d`](canvas-2d.md) 共用同一池 10 顆免費像素
+**自由時間特典**：與 [`canvas-2d`](canvas-2d.md) 共用同一池 10 張限時券
 （3D 一顆 = 1 計費單位 ≈ 100 voxel）。
 
 > ⚠ **本活動的 `tool` 刻意留空** —— 落子走 `Cmd_Sculpture`（Cmd，不是 python 腳本），

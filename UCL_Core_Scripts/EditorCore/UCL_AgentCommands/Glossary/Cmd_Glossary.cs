@@ -143,7 +143,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             string category = GetArg(args, "category", "concept");
             string oneLine = GetArg(args, "one_line", "");
             string body = GetArg(args, "body", "");
-            string createdBy = GetArg(args, "created_by", "unknown");
+            // 區塊職責: 解出「這筆詞條是誰造的」——顯式參數優先, 否則回退到呼叫者 lane(=persona)。
+            // 物理意義: 舊版只讀顯式 created_by, 預設值是字串 "unknown" ⇒ **從來沒去問呼叫者是誰**,
+            //          而 `--persona <P>` 一直都在 context 裡（lane = persona）。
+            // 🩸 血證(@calli 2026-09-02, @summit 2026-09-03 以另一個 persona／另一支 client 複現):
+            //          帶了 --persona 卻寫進 created_by: unknown ⇒ **「作者不明」與「沒有作者」在那一欄上同形**,
+            //          而作者欄是唯一能回答「這個詞是誰立的」的地方。零錯誤訊息, 因為它只是取了預設值。
+            // 數值影響: 解不出來時仍寫 "unknown"（那是誠實的：此路徑真的認不出呼叫者），不編一個名字。
+            string createdBy = GetArg(args, "created_by", "");
+            if (string.IsNullOrWhiteSpace(createdBy))
+                createdBy = UCL_AgentCmdContexts.FromArgs(args)?.AgentId ?? "";
+            if (string.IsNullOrWhiteSpace(createdBy)) createdBy = "unknown";
             string overwriteRaw = GetArg(args, "overwrite", "false");
             bool overwrite = overwriteRaw == "true" || overwriteRaw == "1";
 

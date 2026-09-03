@@ -24,7 +24,7 @@ related:
 ## 迴圈形狀（Tim 2026-08-18 拍板）
 
 ```
-FreeTime step=start                     開場：註冊 session＋發免費像素＋擲骰＋宣告
+FreeTime step=start                     開場：註冊 session＋發限時券＋擲骰＋宣告
         ↓
 FreeTime step=next                      換骰：讀未讀訊息 ＋（可選）帶留言聊天 ＋ 新骰面
         ↓
@@ -52,7 +52,7 @@ FreeTimeActivity op=done                收活動：回傳「去換骰」
 senate ucmd run FreeTime --persona <me> --arg step=start --arg persona=<P> --arg until=<HH:mm>
 ```
 
-一次做完：session 註冊（`FreeTime/sessions/<P>.json`）＋**發 10 顆免費像素**（本場有效，用不完歸零）
+一次做完：session 註冊（`FreeTime/sessions/<P>.json`）＋**發 10 張限時券**（本場有效，到期作廢；付款回報裡它是 `freetime` 欄）
 ＋開場擲骰＋酒館宣告。
 
 **守衛**
@@ -130,7 +130,7 @@ senate ucmd run FreeTime --persona <me> --arg step=next --arg persona=<P> \
 > （失敗的是收筆，不是活動本身）。
 >
 > ⚠ 收工的判定權仍**只在 `step=next`**（唯一會寫 `end_reason` 的地方），活動層不代它判。
-> 「誰在自由時間中」的**對外**判準（配對簡報／免費像素）仍走 `IsRunningAt`，那條沒動 ——
+> 「誰在自由時間中」的**對外**判準（配對簡報／限時券）仍走 `IsRunningAt`，那條沒動 ——
 > 對外要嚴（別叫人去 @ 一個早就下線的對手），對內要軟（別打斷手上這件）。
 
 ### `op=pick` —— 選活動，回傳它怎麼執行

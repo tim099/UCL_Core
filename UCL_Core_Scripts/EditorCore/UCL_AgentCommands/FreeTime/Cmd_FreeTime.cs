@@ -170,7 +170,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             // 酒館開場宣告（單則：時段＋像素額度＋骰面 —— in-process 走 Cmd_Tavern，計酬/mirror 全沿用）
             var aBody = new StringBuilder();
-            aBody.AppendLine($"🎫 [{iPersona} 大小姐] 進入自由時間 — 至 **{aUntil:HH:mm}**（約 {aMinutes} 分鐘）｜🎟 限時繪圖券 {FREE_PIXELS_PER_SESSION} 張已發放（到 {aUntil.AddMinutes(FREE_PIXEL_GRACE_MINUTES):HH:mm} 作廢）");
+            aBody.AppendLine($"🎫 [{iPersona} 大小姐] 進入自由時間 — 至 **{aUntil:HH:mm}**（約 {aMinutes} 分鐘）｜🎟 限時券 {FREE_PIXELS_PER_SESSION} 張已發放（到 {aUntil.AddMinutes(FREE_PIXEL_GRACE_MINUTES):HH:mm} 作廢）");
             aBody.AppendLine();
             AppendPriorityNote(aBody, aList, aIsLive);
             aBody.AppendLine("開場擲骰 🎲 全清單隨機排序（僅供參考 — 自由意志優先）：");
@@ -186,7 +186,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 ? "- ⚠ 活動統計場次**推進失敗**（不影響本場，但飢餓置頂這一輪不準）—— 見 Console"
                 : $"- 📊 本人自由時間累計 **第 {aSessionsTotal} 場**"
                   + $"（統計欄 `letters/{iPersona}/profile/{UCL_FreeTimeActivityStatsIO.FieldName}.md`）");
-            aR.AppendLine($"- 🎟 限時繪圖券: **{FREE_PIXELS_PER_SESSION} 張**（`--pay auto` 會先花它們；**到期即作廢**，到 {aUntil.AddMinutes(FREE_PIXEL_GRACE_MINUTES):HH:mm}）{(aPrevForfeit > 0 ? $"　⚠ 上場還掛著 {aPrevForfeit} 張未用（過期後由券帳本清掉並記 expire）" : "")}");
+            aR.AppendLine($"- 🎟 限時券: **{FREE_PIXELS_PER_SESSION} 張**（`--pay auto` 會先花它們；付款回報裡它是 **`freetime` 欄**，不是另一個池；**到期即作廢**，到 {aUntil.AddMinutes(FREE_PIXEL_GRACE_MINUTES):HH:mm}）{(aPrevForfeit > 0 ? $"　⚠ 上場還掛著 {aPrevForfeit} 張未用（過期後由券帳本清掉並記 expire）" : "")}");
             aR.AppendLine($"- 酒館開場宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort，不影響 session）")}");
             AppendOnlineSection(aR, iPersona);
             AppendPartnerBriefSection(aR, iPersona);

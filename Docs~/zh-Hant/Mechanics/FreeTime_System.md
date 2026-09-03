@@ -107,7 +107,7 @@ senate ucmd run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm> 
 ```
 
 - session state：`AgentCommands/FreeTime/sessions/<persona>.json`（C# 唯一寫入端）。
-- **每場發 10 顆免費像素**（step=start 發放，per-session 清零；消費走
+- **每場發 10 張限時券**（舊稱「免費像素」／「限時繪圖券」，見 `Docs/Glossary/session-voucher.md`）（step=start 發放，per-session 清零；消費走
   `canvas.py place --pay auto|freetime`）。
 - 到期判定在 Cmd 內對系統時鐘；每步回傳三個時間欄 —— agent 不自己心算。
 - 舊標記（`agent_bonus_quota.json` 的 `kind=free_time`）為 grant 記帳沿用，與 session state 分工。

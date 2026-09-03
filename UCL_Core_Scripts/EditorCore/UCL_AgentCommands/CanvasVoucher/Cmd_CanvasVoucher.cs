@@ -64,6 +64,15 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
                       + $"- 永久券: **{aPermanent}**　存著的，不會過期\n"
                       + $"- 未過期限時券: **{aExpiring}**　到期即作廢，過期後這個數字自己會掉\n"
                       + "\n> ⚠ 三個數字問的是**不同的問題** —— 規劃付款看「可花總額」，查存量看「永久券」。別拿其中一個當另一個用。\n");
+            // 機讀出口（basecamp 2026-09-03，TASK-0114 ②）：本 op 原本**只有人讀文字**，
+            // 於是程式消費端只剩兩條路 —— 去 regex 那份 md（措辭一改就靜默失配，
+            // 而失配的樣子跟「這個 persona 沒有券」一模一樣），或自己重算一份券帳（兩寫者 drift）。
+            // ⇒ 三個數字各自落一欄，名字與人讀那三行一一對應（不合併成一個「balance」，
+            //   合併就是替使用者挑一種，而那正是上面那段註解在防的事）。
+            UCL_AgentCommandRunner.ReportOutputValue(args, "spendable", bal.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "permanent", aPermanent.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "expiring", aExpiring.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "persona", persona);
             Debug.Log($"[CanvasVoucher] balance {persona}: spendable={bal} permanent={aPermanent} expiring={aExpiring}");
         }
 

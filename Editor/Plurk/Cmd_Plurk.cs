@@ -646,13 +646,20 @@ namespace UCL.Core.EditorLib.Plurk
         //          兩天後 Tim 從截圖上看到，我這邊的工具沒有任何一格讓它浮上來。
         // 數值影響：三步都是唯讀 ——
         //          ① /APP/Users/me 拿我的 id 與 nick（@ 的目標是 nick，不是顯示名）
-        //          ② Timeline/getPlurks filter=mentioned（Plurk 端既有語彙；含噗本體或回應裡 @ 我的噗）
+        //          ② 候選噗＝兩條路徑聯集（TASK-0110，summit 2026-09-03 量出來的）：
+        //             `filter=mentioned`（噗本體提到我）∪ `filter=only_responded`（我回過的串）。
+        //             🩸 首版只有前者：海苔 08-27 在她自己的噗底下回 @summit，那則噗不在 mentioned 集合裡
+        //               ⇒ 工具印「真的 0」，summit 隔七天靠 alerts 才發現。第二條路徑蓋住最大宗來源
+        //               —— 別人在我參與過的串裡回我 —— 而它是實測過會列出那則的。
         //          ③ 每則噗拉 Responses/get，挑出內文含 `@<nick>` 的回應；
         //             「我回了沒」＝那則 @ 之後有沒有**我自己 id** 的回應（時間序，不比對內容）。
+        //          ④ 通知層對帳：讀 `Alerts/getHistory`（不是 getActive —— 那支讀了就清）的 «mentioned»，
+        //             拿（誰、何時）跟 ③ 的命中對；對不上的印「通知層有、兩條路徑找不到」。
+        //             alerts 不帶噗 id，所以它只能證明「有」，證不了「在哪」—— 但那正是要印出來的那一格。
         // ⚠ 判準是**位置與 id**，不是「看起來像不像回了」：
         //   我在該噗有回應但都在 @ 之前 ⇒ 仍算未回。噗本體 @ 我而底下沒有我 ⇒ 未回。
-        // ⚠ Plurk 的 mentioned 過濾器射程未知（只驗過「回應裡 @ 我」會被列出來）——
-        //   所以每一則都印「@ 出現在噗本體／第 N 則回應」，讓讀的人看得到它是哪一種。
+        // ⚠ 兩條路徑都回 0 時**不印「真的 0」**：這兩條的射程是「噗本體提到我」＋「我參與過的串」，
+        //   @ 若在我沒參與的別人噗裡，這裡看不到 —— 把射程外講成量過了，讀的人就不會再去別處看。
         // ===========================================================
         async UniTask OpMentions(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
             StringBuilder ioR, CancellationToken token)
@@ -673,48 +680,69 @@ namespace UCL.Core.EditorLib.Plurk
             ioR.AppendLine("## mentions（誰 @ 了我、我回了沒）");
             ioR.AppendLine($"- 我：id `{aMeId}`　nick `{aNick}`（@ 的比對字串是 `{aNeedle}`，不分大小寫）");
 
-            var aParams = new Dictionary<string, string>
+            // 候選集：兩條路徑各拉一次，依 plurk_id 去重（同一則兩邊都有時只拉一次回應）
+            var aCandidates = new List<UCL.Core.JsonLib.JsonData>();
+            var aUsersAll = new UCL.Core.JsonLib.JsonData();
+            var aSeenPid = new HashSet<string>();
+            var aPathCounts = new List<string>();
+            foreach (string aFilter in new[] { "mentioned", "only_responded" })
             {
-                { "limit", aLimit.ToString(CultureInfo.InvariantCulture) },
-                { "filter", "mentioned" },
-            };
-            string aBody = await FetchAsync(iArgs, "timeline_mentioned", "/APP/Timeline/getPlurks",
-                aParams, aCred, iRes, ioR, token);
-            var aRoot = SafeParse(aBody);
-            var aPlurks = (aRoot != null && aRoot.Contains("plurks")) ? aRoot["plurks"] : null;
-            var aUsers = (aRoot != null && aRoot.Contains("plurk_users")) ? aRoot["plurk_users"] : null;
-            if (aPlurks == null || !aPlurks.IsArray)
-            {
-                ioR.AppendLine("- ⚠ 回應裡沒有 `plurks` 陣列 —— 這不是「沒人 @ 我」，是**格式跟我預期的不一樣**。");
-                ioR.AppendLine("- body（前 300 字）: " + Trunc(aBody, 300));
-                return;
+                var aParams = new Dictionary<string, string>
+                {
+                    { "limit", aLimit.ToString(CultureInfo.InvariantCulture) },
+                    { "filter", aFilter },
+                };
+                string aBody = await FetchAsync(iArgs, "timeline_" + aFilter, "/APP/Timeline/getPlurks",
+                    aParams, aCred, iRes, ioR, token);
+                var aRoot = SafeParse(aBody);
+                var aPlurks = (aRoot != null && aRoot.Contains("plurks")) ? aRoot["plurks"] : null;
+                var aPathUsers = (aRoot != null && aRoot.Contains("plurk_users")) ? aRoot["plurk_users"] : null;
+                if (aPlurks == null || !aPlurks.IsArray)
+                {
+                    ioR.AppendLine($"- ⚠ filter={aFilter} 的回應裡沒有 `plurks` 陣列 —— 這不是「沒人 @ 我」，是**格式跟我預期的不一樣**。");
+                    ioR.AppendLine("- body（前 300 字）: " + Trunc(aBody, 300));
+                    continue;
+                }
+                int aNew = 0;
+                for (int i = 0; i < aPlurks.Count; i++)
+                {
+                    if (!aSeenPid.Add(JsonScalar(aPlurks[i], "plurk_id"))) continue;
+                    aCandidates.Add(aPlurks[i]); aNew++;
+                }
+                if (aPathUsers != null) foreach (string k in aPathUsers.Keys) aUsersAll[k] = aPathUsers[k];
+                aPathCounts.Add($"`{aFilter}` {aPlurks.Count} 則（新增 {aNew}）");
             }
-            ioR.AppendLine($"- filter=mentioned 回 **{aPlurks.Count}** 則噗（limit={aLimit}）"
-                + (aPlurks.Count == 0 ? "（真的 0 —— 這是讀回來的，不是讀不到）" : ""));
+            ioR.AppendLine($"- 候選噗 **{aCandidates.Count}** 則（limit={aLimit}／路徑）：{string.Join("、", aPathCounts)}");
+            if (aCandidates.Count == 0)
+                ioR.AppendLine("- ⚠ 兩條路徑都回 0 ⇒ **不是「沒人 @ 我」**：射程是「噗本體提到我」＋「我回過的串」，"
+                    + "@ 若在我沒參與的別人噗裡，這裡看不到。下面的通知層對帳會說有沒有那種。");
 
             int aPending = 0, aAnswered = 0;
             var aEmoCtx = EmoBegin(iRes);
-            for (int i = 0; i < aPlurks.Count; i++)
+            var aHitLog = new List<(string uid, string when)>();      // 給通知層對帳用
+            var aUsers = aUsersAll;
+            for (int i = 0; i < aCandidates.Count; i++)
             {
-                var aP = aPlurks[i];
+                var aP = aCandidates[i];
                 string aPid = JsonScalar(aP, "plurk_id");
                 string aOwner = JsonScalar(aP, "owner_id");
                 string aPRaw = UnescapeJson(JsonScalar(aP, "content_raw"));
-                ioR.AppendLine();
-                ioR.AppendLine($"### [{aPid}] {ShortTime(JsonScalar(aP, "posted"))} **{UserName(aUsers, aOwner)}** «{JsonScalar(aP, "qualifier")}»"
-                    + $" 💬{JsonScalar(aP, "response_count")}");
-                ioR.AppendLine("    " + Trunc(OneLine(aPRaw), aPreview));
-
                 // 噗本體 @ 我 ＝ 第 0 則
-                var aHits = new List<(int idx, string who, string when, string text)>();
+                var aHits = new List<(int idx, string who, string uid, string when, string text)>();
                 if (aPRaw.IndexOf(aNeedle, StringComparison.OrdinalIgnoreCase) >= 0)
-                    aHits.Add((0, UserName(aUsers, aOwner), JsonScalar(aP, "posted"), aPRaw));
+                    aHits.Add((0, UserName(aUsers, aOwner), aOwner, JsonScalar(aP, "posted"), aPRaw));
+                var aHeader = new StringBuilder();
+                aHeader.AppendLine();
+                aHeader.AppendLine($"### [{aPid}] {ShortTime(JsonScalar(aP, "posted"))} **{UserName(aUsers, aOwner)}** «{JsonScalar(aP, "qualifier")}»"
+                    + $" 💬{JsonScalar(aP, "response_count")}");
+                aHeader.AppendLine("    " + Trunc(OneLine(aPRaw), aPreview));
 
                 // 回應：一次拉全（from_response=0）；量到的是 Plurk 回的那一頁，超過的會印出來
                 var (aRSt, aRBody) = await CallAsync("/APP/Responses/get", aCred,
                     new Dictionary<string, string> { { "plurk_id", aPid }, { "from_response", "0" } }, token);
                 if (aRSt != 200)
                 {
+                    ioR.Append(aHeader);
                     ioR.AppendLine($"    ⚠ 拉不到回應（http={aRSt}）⇒ 這則**判不了**回了沒（不是「沒回」）");
                     continue;
                 }
@@ -732,32 +760,80 @@ namespace UCL.Core.EditorLib.Plurk
                     if (aUid == aMeId) { aLastMineIdx = r; continue; }
                     string aRaw = UnescapeJson(JsonScalar(aRp, "content_raw"));
                     if (aRaw.IndexOf(aNeedle, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                    aHits.Add((r + 1, UserName(aFriends, aUid), JsonScalar(aRp, "posted"),
+                    aHits.Add((r + 1, UserName(aFriends, aUid), aUid, JsonScalar(aRp, "posted"),
                         EmoAnnotatePaired(aRaw, UnescapeJson(JsonScalar(aRp, "content")), aEmoCtx, aUid)));
                 }
                 string aDeclared = aRRoot != null && aRRoot.Contains("response_count") ? JsonScalar(aRRoot, "response_count") : "";
-                if (aDeclared.Length > 0 && aDeclared != aSeen.Count.ToString(CultureInfo.InvariantCulture))
-                    ioR.AppendLine($"    ⚠ 只讀到 {aSeen.Count} 則回應而它宣告 response_count={aDeclared} ⇒ 沒讀到的那些裡有沒有 @ 我，這裡**不知道**");
+                bool aPartial = aDeclared.Length > 0 && aDeclared != aSeen.Count.ToString(CultureInfo.InvariantCulture);
 
-                if (aHits.Count == 0)
-                {
-                    ioR.AppendLine($"    ・filter 說這則跟我有關，但噗本體與 {aSeen.Count} 則回應都沒有 `{aNeedle}` ⇒ **判不了**（可能是顯示名 @、或在沒讀到的頁）");
-                    continue;
-                }
+                // only_responded 的候選大多**沒有** @ 我（我回過的串裡別人在講別的）—— 那不是判不了，
+                // 是正常的「這串沒人點名我」；沒命中且回應讀滿的就不印，免得把河道整份重印一次。
+                if (aHits.Count == 0 && !aPartial) continue;
+                ioR.Append(aHeader);
+                if (aPartial)
+                    ioR.AppendLine($"    ⚠ 只讀到 {aSeen.Count} 則回應而它宣告 response_count={aDeclared} ⇒ 沒讀到的那些裡有沒有 @ 我，這裡**不知道**");
                 foreach (var h in aHits)
                 {
                     // 「回了沒」＝ 那則 @ 之後有沒有我的回應（位置比較；第 0 則＝噗本體 ⇒ 我有任何回應即算）
                     bool aReplied = aLastMineIdx >= 0 && (h.idx == 0 || aLastMineIdx > h.idx - 1);
                     if (aReplied) aAnswered++; else aPending++;
+                    aHitLog.Add((h.uid, h.when));
                     ioR.AppendLine($"    - {(aReplied ? "✅ 已回" : "🔔 **未回**")}　@ 在{(h.idx == 0 ? "噗本體" : $"第 {h.idx} 則回應")}"
                         + $"　**{h.who}**　{ShortTime(h.when)}");
                     ioR.AppendLine("        " + Trunc(OneLine(h.text), aPreview));
                 }
             }
 
+            // ④ 通知層對帳 —— getHistory 不清通知（getActive 會）。alerts 沒有噗 id，只能用（誰、何時）配。
+            ioR.AppendLine();
+            ioR.AppendLine("## 通知層對帳（`Alerts/getHistory` 的 «mentioned»，唯讀）");
+            var (aAlSt, aAlBody) = await CallAsync("/APP/Alerts/getHistory", aCred, null, token);
+            if (aAlSt != 200)
+            {
+                ioR.AppendLine($"- ⚠ 讀不到通知歷史（http={aAlSt}）⇒ 這一格**沒有讀數**，上面的清單只代表兩條時間軸路徑");
+            }
+            else
+            {
+                var aAl = SafeParse(aAlBody);
+                int aMentionAlerts = 0, aUnmatched = 0;
+                if (aAl != null && aAl.IsArray)
+                {
+                    for (int i = 0; i < aAl.Count; i++)
+                    {
+                        var aIt = aAl[i];
+                        if (JsonScalar(aIt, "type") != "mentioned") continue;
+                        aMentionAlerts++;
+                        var aFrom = aIt.Contains("from_user") ? aIt["from_user"] : null;
+                        string aFid = aFrom != null ? JsonScalar(aFrom, "id") : "";
+                        string aFname = aFrom != null ? UnescapeJson(JsonScalar(aFrom, "display_name")) : "(查無名稱)";
+                        string aWhen = JsonScalar(aIt, "posted");
+                        bool aMatched = false;
+                        if (DateTime.TryParse(aWhen, CultureInfo.InvariantCulture,
+                                System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out DateTime aT))
+                        {
+                            foreach (var h in aHitLog)
+                            {
+                                if (h.uid != aFid) continue;
+                                if (DateTime.TryParse(h.when, CultureInfo.InvariantCulture,
+                                        System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out DateTime aHt)
+                                    && Math.Abs((aHt - aT).TotalMinutes) <= 3) { aMatched = true; break; }
+                            }
+                        }
+                        if (!aMatched)
+                        {
+                            aUnmatched++;
+                            ioR.AppendLine($"- ⚠ **通知層有、兩條路徑找不到**：{ShortTime(aWhen)}　**{aFname}**（`{aFid}`）"
+                                + " ⇒ 多半在我沒參與的噗裡；alerts 不帶噗 id，去 `op=profile --arg user_id=" + aFid + "` 看他近期的噗再拉回應");
+                        }
+                    }
+                }
+                ioR.AppendLine($"- 通知歷史裡 «mentioned» **{aMentionAlerts}** 筆，其中對不上路徑命中的 **{aUnmatched}** 筆"
+                    + "（配法：同一個人 ＋ 時間差 ≤3 分；歷史只有最近 30 筆通知，更舊的這裡也看不到）");
+            }
+
             ioR.AppendLine();
             ioR.AppendLine($"## 讀數：🔔 未回 **{aPending}**　✅ 已回 **{aAnswered}**"
-                + "　（「已回」＝ @ 之後有我的回應，只看位置與 id，不看內容有沒有答到）");
+                + "　（「已回」＝ @ 之後有我的回應，只看位置與 id，不看內容有沒有答到；射程＝噗本體提到我＋我回過的串＋通知層對帳）");
             ioR.AppendLine("### ▶ 回（走既有發文路，@ 的先回）");
             ioR.AppendLine("```bash");
             ioR.AppendLine("--arg op=get       --arg plurk_id=<id>                    # 先讀全文與脈絡");

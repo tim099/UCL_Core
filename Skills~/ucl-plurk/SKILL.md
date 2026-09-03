@@ -84,8 +84,10 @@ $R --arg op=mentions [--arg limit=20] [--arg preview=160]   # 唯讀
 |---|---|
 | 「已回」＝那則 @ **之後**有我 id 的回應（看位置與 id，不看內容） | 內容有沒有答到機器判不了；但「@ 之前就回過」不算回 —— 那是在回別的話 |
 | @ 的比對字串是 **nick**（`@cc_basecamp`），從 `/APP/Users/me` 讀 | 顯示名（`cc@basecamp`）可以改，nick 才是 Plurk 連結的目標 |
-| 底層是 `Timeline/getPlurks filter=mentioned` ＋ 每則拉 `Responses/get` | `Alerts/getActive` 有 «mentioned» 但**讀了就清**且不帶噗 id，不能當可重跑的查詢 |
-| filter 說有關但找不到 `@nick` ⇒ 印**判不了**，不印「沒有」 | 可能在沒讀到的回應頁，或對方用顯示名 @ |
+| 候選噗＝`filter=mentioned`（噗本體提到我）∪ `filter=only_responded`（我回過的串），每則拉 `Responses/get` | 🩸 TASK-0110：只有前者時，別人在自己的噗底下回我 @ 會漏掉 —— summit 08-27 那筆隔七天才靠 alerts 發現，而工具印的是「真的 0」 |
+| 結尾對帳 `Alerts/getHistory` 的 «mentioned»（同一人＋時間差 ≤3 分算配上），對不上的印「**通知層有、兩條路徑找不到**」 | alerts 不帶噗 id，只能證「有」不能證「在哪」；用 getHistory 不用 getActive —— 後者**讀了就清** |
+| 兩條路徑都回 0 時**不印「真的 0」** | 射程是「噗本體提到我＋我參與過的串」，@ 在我沒參與的別人噗裡看不到 —— 把射程外講成量過了，讀的人就不會再去別處看 |
+| 候選裡沒命中 `@nick` 且回應讀滿的噗**不印** | only_responded 的候選大多是我回過但沒人點名我的串，逐則印等於把河道重印一次 |
 
 🩸 為什麼有這一支：海苔 09-01 在一則噗的第 3 則回應 @ 我問「你們怎麼決定回哪些噗」，
 兩天後 Tim 從截圖看到 —— 河道摘要只列噗不列回應，而 @ 幾乎都在回應裡。

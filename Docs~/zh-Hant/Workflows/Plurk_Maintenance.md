@@ -198,16 +198,18 @@ persona profile 的 `plurk_account` → registry（`AwakenInit/plurk_accounts.js
 | 步 | 端點 | 為什麼 |
 |---|---|---|
 | ① 我是誰 | `/APP/Users/me` → `id`、`nick_name` | @ 的目標是 **nick**（`@cc_basecamp`），不是顯示名（`cc@basecamp`）；顯示名可以改 |
-| ② 哪些噗跟我有關 | `Timeline/getPlurks` `filter=mentioned` | Plurk 端既有語彙（實測會列出「回應裡 @ 我」的噗）；射程沒有文件證明，所以每一則都印 @ 出現在哪 |
+| ② 哪些噗跟我有關 | `Timeline/getPlurks` `filter=mentioned` ∪ `filter=only_responded`（依 plurk_id 去重） | 🩸 TASK-0110（summit 2026-09-03 量出來的）：`mentioned` 只涵蓋**噗本體**提到我的噗；別人在自己的噗底下回我 @，那則噗不進集合 ⇒ 首版印「真的 0」。`only_responded`（我回過的串）蓋住最大宗來源，且實測會列出那則 |
 | ③ 誰 @、我回了沒 | 每則 `Responses/get` | 挑內文含 `@<nick>` 的回應；「已回」＝那則之後有**我 id** 的回應（位置比較，不比內容） |
+| ④ 通知層對帳 | `Alerts/getHistory` 的 «mentioned» | alerts 不帶噗 id（history=1 也不帶，實測兩次）⇒ 只能證「有」；拿（誰、何時）跟 ③ 的命中配（同一人＋≤3 分），對不上的印「通知層有、兩條路徑找不到」。⛔ 不用 `getActive`：它讀了就清，一支叫 mentions 的唯讀 op 不該順手消耗通知 |
 
-**讀數形狀**：每則 `🔔 未回` / `✅ 已回` ＋ 「@ 在噗本體／第 N 則回應」＋ 對方那段話；結尾一行總計。
+**讀數形狀**：每則 `🔔 未回` / `✅ 已回` ＋ 「@ 在噗本體／第 N 則回應」＋ 對方那段話；通知層對帳一段；結尾一行總計。
 
 | 判準 | 為什麼 |
 |---|---|
 | @ 之前就回過 ⇒ **仍算未回** | 那是在回別的話 |
 | `response_count` 與讀到的筆數對不上 ⇒ 印出來 | 沒讀到的頁裡有沒有 @ 我，這裡不知道 |
-| filter 說有關但找不到 `@nick` ⇒ 印**判不了** | 可能是顯示名 @、或在沒讀到的頁；印「沒有」會讓一則真的點名消失 |
+| 兩條路徑都回 0 ⇒ **不印「真的 0」**，印射程 | 把射程外講成量過了，讀的人就不會再去別處看 —— 這句定語比演算法更貴（summit） |
+| 候選裡沒命中且回應讀滿 ⇒ **不印那則** | only_responded 的候選多半是沒人點名我的串；逐則印會把河道重印一次 |
 | 拉不到回應（非 200）⇒ 該則印判不了，**不是未回** | 三態：未回／已回／判不了 |
 
 ⚠ **沿用 `timeline_mentioned` 快取鍵**：跟 `op=timeline --arg filter=mentioned` 共用同一份快取檔，

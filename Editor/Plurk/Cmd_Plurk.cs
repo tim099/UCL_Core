@@ -190,6 +190,26 @@ namespace UCL.Core.EditorLib.Plurk
                 string v = PickJsonValue(aBody, aKey);
                 if (v != null) ioR.AppendLine($"- {aKey}: {v}");
             }
+
+            // 區塊職責：把這個帳號的 nick 寫回 registry —— 發文端 `@persona` 轉換的唯一對照來源。
+            // 物理意義：**nick 只有帳號自己問得到**（`/APP/Users/me` 走的是這份憑證）。
+            //          ⇒ 每個帳號的持有者跑一次 whoami，表就自己長出來；沒人手打，就不會漂。
+            // 數值影響：只在 http 200 且真的讀到 nick 時寫。⚠ 寫入要出聲 ——
+            //          「唯讀 op 偷偷寫了本地檔」是我們自己抓過的那一族。
+            if (aStatus == 200)
+            {
+                string aNick = (PickJsonValue(aBody, "nick_name") ?? "").Trim().Trim('"');
+                if (!string.IsNullOrEmpty(aNick) && !string.IsNullOrEmpty(iRes.SecretId))
+                {
+                    string aOld = UCL_PlurkAccounts.NickOf(iRes.SecretId);
+                    UCL_PlurkAccounts.SetNick(iRes.SecretId, aNick);
+                    ioR.AppendLine(aOld == aNick
+                        ? $"- 📝 nick 登記表：`{iRes.SecretId}` = `{aNick}`（已是這個值，重新蓋時間戳）"
+                        : $"- 📝 **已寫入 nick 登記表**：`{iRes.SecretId}` = `{aNick}`"
+                          + (string.IsNullOrEmpty(aOld) ? "（原本沒登記）" : $"（原本是 `{aOld}`）")
+                          + " —— 發文端 `@persona` 轉換讀的就是這張表");
+                }
+            }
             if (aStatus != 200)
             {
                 ioR.AppendLine($"- ✗ body（前 300 字）: {Trunc(aBody, 300)}");
@@ -215,9 +235,19 @@ namespace UCL.Core.EditorLib.Plurk
         {
             var (aTotal, aEmoLen, aEmoCount) = UCL_PlurkLint.Budget(iSlip.Body);
             var (aErr, aWarn) = UCL_PlurkLint.Check(iSlip, iRes.RequiresSignature);
+            // 🩸 轉換不掉的**不在這裡補** —— `Check` 的 ⑦ 已經對同一段文案問過一次
+            //   （轉換不掉的 `@gura` 還留在 body 裡，所以它一定會被 ⑦ 命中）。
+            //   首版兩邊都加 ⇒ 同一條錯誤印兩次。實跑抓到的，不是讀 code 想到的。
             oErrors = aErr;
             ioR.AppendLine();
             ioR.AppendLine("## lint（形式檢查）");
+            if (iSlip.MentionNotes != null && iSlip.MentionNotes.Count > 0)
+            {
+                ioR.AppendLine($"- ✍ **`@persona` 已自動轉換 {iSlip.MentionNotes.Count} 處**"
+                    + "（Plurk 的 @ 只認 nick；persona 名會連到同名的第三方帳號）：");
+                foreach (var n in iSlip.MentionNotes) ioR.AppendLine($"    · {n}");
+                ioR.AppendLine("  ⚠ 下面的字元預算算的是**轉換後**的文案 —— 轉換會變長。");
+            }
             ioR.AppendLine($"- 預算: **{aTotal}** 字元　上限 {UCL_PlurkLint.Allowed(iSlip)}"
                 + $"（{UCL_PlurkLint.Limit}{(iSlip.HasImage ? " − 附圖保留 " + UCL_PlurkLint.ImageReserve : "")}）"
                 + $"；[emoN] {aEmoLen} 字元 × {aEmoCount} 個");
@@ -675,10 +705,27 @@ namespace UCL.Core.EditorLib.Plurk
             if (aMeId.Length == 0 || aNick.Length == 0)
                 throw new Exception("[Plurk] /APP/Users/me 缺 id 或 nick_name ⇒ 判不了 @，不猜");
             string aNeedle = "@" + aNick;
+            string aMyPersona = GetArg(iArgs, "persona", "").Trim();
+            var aOtherTagged = new List<string>();
+            var aRoommates = UCL_PlurkAccounts.PersonasOn(iRes.SecretId);
+            bool aMulti = aRoommates.Count > 1 || iRes.IsShared;
 
             ioR.AppendLine();
             ioR.AppendLine("## mentions（誰 @ 了我、我回了沒）");
             ioR.AppendLine($"- 我：id `{aMeId}`　nick `{aNick}`（@ 的比對字串是 `{aNeedle}`，不分大小寫）");
+            // 區塊職責：共用帳號的 persona 路由 —— 通知是帳號層的，而帳號有多個人。
+            if (aMulti)
+            {
+                ioR.AppendLine($"- 👥 **這是多人帳號**（`{iRes.SecretId}`：{string.Join(" / ", aRoommates)}）"
+                    + $"　我＝`{(aMyPersona.Length > 0 ? aMyPersona : "(未指定 persona)")}`");
+                ioR.AppendLine($"- 🧭 路由判準（Tim 2026-09-03）：`@{aNick}{UCL_PlurkAccounts.PersonaTagSep}<我>` ⇒ 指名我；"
+                    + $"`@{aNick}{UCL_PlurkAccounts.PersonaTagSep}<別人>` ⇒ 指名別人（列在文末，不算我未回）；"
+                    + $"**`@{aNick}` 沒帶標記 ⇒ 視為 @ 這個帳號內所有人，算我**"
+                    + "　—— 誰收到是機械的，誰回才是人的決定。");
+                if (aMyPersona.Length == 0)
+                    ioR.AppendLine("- ⚠ **沒帶 `--persona`** ⇒ 帶標記的那些一律算「指名別人」，"
+                        + "而那可能包含指名你的。要正確路由請顯式帶 persona。");
+            }
 
             // 候選集：兩條路徑各拉一次，依 plurk_id 去重（同一則兩邊都有時只拉一次回應）
             var aCandidates = new List<UCL.Core.JsonLib.JsonData>();
@@ -729,8 +776,11 @@ namespace UCL.Core.EditorLib.Plurk
                 string aPRaw = UnescapeJson(JsonScalar(aP, "content_raw"));
                 // 噗本體 @ 我 ＝ 第 0 則
                 var aHits = new List<(int idx, string who, string uid, string when, string text)>();
-                if (aPRaw.IndexOf(aNeedle, StringComparison.OrdinalIgnoreCase) >= 0)
+                var aBodyHit = UCL_PlurkAccounts.ClassifyMention(aPRaw, aNick, aMyPersona);
+                if (aBodyHit.HitsMe)
                     aHits.Add((0, UserName(aUsers, aOwner), aOwner, JsonScalar(aP, "posted"), aPRaw));
+                else if (aBodyHit.Found)
+                    aOtherTagged.Add($"[{aPid}] 噗本體 @ 了帳號但指名 {string.Join(" / ", aBodyHit.Tags)}");
                 var aHeader = new StringBuilder();
                 aHeader.AppendLine();
                 aHeader.AppendLine($"### [{aPid}] {ShortTime(JsonScalar(aP, "posted"))} **{UserName(aUsers, aOwner)}** «{JsonScalar(aP, "qualifier")}»"
@@ -759,7 +809,14 @@ namespace UCL.Core.EditorLib.Plurk
                     string aUid = JsonScalar(aRp, "user_id");
                     if (aUid == aMeId) { aLastMineIdx = r; continue; }
                     string aRaw = UnescapeJson(JsonScalar(aRp, "content_raw"));
-                    if (aRaw.IndexOf(aNeedle, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    var aRHit = UCL_PlurkAccounts.ClassifyMention(aRaw, aNick, aMyPersona);
+                    if (!aRHit.HitsMe)
+                    {
+                        // 有 @ 帳號但指名別人 ⇒ 不算我未回，但**要看得見**（否則它會從所有人的視野消失）
+                        if (aRHit.Found)
+                            aOtherTagged.Add($"[{aPid}] 第 {r + 1} 則 @ 了帳號但指名 {string.Join(" / ", aRHit.Tags)}");
+                        continue;
+                    }
                     aHits.Add((r + 1, UserName(aFriends, aUid), aUid, JsonScalar(aRp, "posted"),
                         EmoAnnotatePaired(aRaw, UnescapeJson(JsonScalar(aRp, "content")), aEmoCtx, aUid)));
                 }
@@ -834,6 +891,14 @@ namespace UCL.Core.EditorLib.Plurk
             ioR.AppendLine();
             ioR.AppendLine($"## 讀數：🔔 未回 **{aPending}**　✅ 已回 **{aAnswered}**"
                 + "　（「已回」＝ @ 之後有我的回應，只看位置與 id，不看內容有沒有答到；射程＝噗本體提到我＋我回過的串＋通知層對帳）");
+            // 指名別人的那些：**不算我未回，但一定要印** —— 不印的話它會從所有人的視野消失，
+            // 而「被過濾掉」跟「不存在」在回傳檔上長得一模一樣。
+            if (aOtherTagged.Count > 0)
+            {
+                ioR.AppendLine($"- 👥 另有 **{aOtherTagged.Count}** 筆 @ 了這個帳號但**指名別人**（不算我未回，列出來讓它不消失）：");
+                foreach (var s in aOtherTagged) ioR.AppendLine($"    · {s}");
+                ioR.AppendLine("  ⇒ 那幾位跑自己的 `op=mentions` 時會看到它們是自己的 🔔。");
+            }
             ioR.AppendLine("### ▶ 回（走既有發文路，@ 的先回）");
             ioR.AppendLine("```bash");
             ioR.AppendLine("--arg op=get       --arg plurk_id=<id>                    # 先讀全文與脈絡");
@@ -2405,7 +2470,19 @@ namespace UCL.Core.EditorLib.Plurk
                 throw new Exception("[Plurk] 需要 --arg slip_file=<交付單檔案>"
                     + "（四欄格式見 Plurk_Posting_Workflow §二；長文一律走檔案不走參數）");
             if (!File.Exists(aFile)) throw new Exception($"[Plurk] 找不到交付單：{aFile}");
-            return UCL_PlurkLint.Parse(File.ReadAllText(aFile, Encoding.UTF8));
+            var aSlip = UCL_PlurkLint.Parse(File.ReadAllText(aFile, Encoding.UTF8));
+
+            // 區塊職責：`@persona` → `@nick[→persona]` 自動轉換（Tim 2026-09-03 拍板）。
+            // 物理意義：**放這裡而不是放各 op** —— lint／preview／post 走同一個 LoadSlip，
+            //          分三處寫就會漂，而漂掉的那一處剛好是真的送出去的那一條路。
+            // 數值影響：改寫**在 Budget/Check 之前** —— 它會改變長度
+            //          （`@gura` 5 字 → `@hololive_myth→gura` 20 字），
+            //          先算預算再改寫的話那個數字是假的。
+            aSlip.Body = UCL_PlurkLint.RewriteMentions(aSlip.Body,
+                out var aNotes, out var aProblems);
+            aSlip.MentionNotes = aNotes;
+            aSlip.MentionProblems = aProblems;
+            return aSlip;
         }
 
         // ===========================================================

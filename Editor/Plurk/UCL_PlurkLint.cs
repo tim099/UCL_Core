@@ -30,6 +30,12 @@ namespace UCL.Core.EditorLib.Plurk
         public string Image = "";
         public string Privacy = "";
 
+        /// <summary>`@persona` 自動轉換做了什麼（由 `LoadSlip` 填）。
+        /// ⚠ **一定要印出來** —— 自動改動了使用者的文案而不說，就是靜默代筆。</summary>
+        public List<string> MentionNotes = new List<string>();
+        /// <summary>轉換不掉的 `@persona`（沒帳號／nick 未登記）。非空 ⇒ 呼叫端必須擋下。</summary>
+        public List<string> MentionProblems = new List<string>();
+
         /// <summary>有沒有附圖（「無」與空字串都算沒有）。</summary>
         public bool HasImage =>
             !string.IsNullOrWhiteSpace(Image) && Image.Trim() != "無" && Image.Trim() != "none";
@@ -130,6 +136,49 @@ namespace UCL.Core.EditorLib.Plurk
         public static int Allowed(UCL_PlurkSlip iSlip) => Limit - (iSlip.HasImage ? ImageReserve : 0);
 
         // ===========================================================
+        // 區塊職責：把文案裡的 `@persona` 改寫成真的會送達的 `@nick`（多人帳號再加 `→persona`）。
+        // 物理意義：Tim 2026-09-03 拍板「發文時 @gura 自動轉換」。這**不是猜** ——
+        //          persona→帳號→nick 是三段查表，查不到就回 problem 讓呼叫端擋下。
+        // 數值影響：**在 lint 與字元預算之前跑** —— 改寫會改變長度
+        //          （`@gura` 5 字 → `@hololive_myth→gura` 20 字），
+        //          先 lint 再改寫的話那份預算是假的。
+        // ⚠ 回傳的 oNotes 一定要印出來：**自動改動了使用者的文案，不印就是靜默代筆。**
+        // ===========================================================
+        /// <summary>改寫 `@persona` → `@nick[→persona]`。<paramref name="oProblems"/> 非空 ⇒ 呼叫端必須擋下。</summary>
+        public static string RewriteMentions(string iBody, out List<string> oNotes, out List<string> oProblems)
+        {
+            oNotes = new List<string>();
+            oProblems = new List<string>();
+            if (string.IsNullOrEmpty(iBody)) return iBody ?? "";
+
+            var aSeen = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var aName in MentionRe.Matches(iBody).Cast<Match>()
+                     .Select(m => m.Groups[1].Value).Distinct())
+            {
+                var aFix = UCL_PlurkAccounts.ResolveMention(aName);
+                if (!string.IsNullOrEmpty(aFix.Problem)) { oProblems.Add(aFix.Problem); continue; }
+                if (!aFix.NeedsRewrite) continue;
+                aSeen[aName] = aFix.Replacement;
+                oNotes.Add($"`@{aName}` → `{aFix.Replacement}`"
+                    + (aFix.PersonaCount > 1
+                        ? $"（`{aFix.Nick}` 有 {aFix.PersonaCount} 位 persona 在用 ⇒ 帶 `{UCL_PlurkAccounts.PersonaTagSep}{aFix.Persona}` 指名）"
+                        : $"（`{aFix.Nick}` 只有 {aFix.Persona} 一個人 ⇒ 不加標記）"));
+            }
+            if (aSeen.Count == 0) return iBody;
+
+            // ⚠ 逐一 Regex.Replace 而不是字串 Replace：`@calli` 不可以命中 `@calliope` 的前半。
+            //   `(?![A-Za-z0-9_\-])` 就是那個邊界；沒有它會把別人的 nick 切一半。
+            string aOut = iBody;
+            foreach (var aPair in aSeen)
+            {
+                aOut = Regex.Replace(aOut,
+                    "@" + Regex.Escape(aPair.Key) + @"(?![A-Za-z0-9_\-])",
+                    aPair.Value.Replace("$", "$$"));
+            }
+            return aOut;
+        }
+
+        // ===========================================================
         // 區塊職責：形式檢查本體
         // 數值影響：errors 非空 ⇒ 擋下。⚠ 通過**不代表可以發**（見檔頭）。
         // ===========================================================
@@ -222,10 +271,24 @@ namespace UCL.Core.EditorLib.Plurk
                     + $"請對照**目標帳號**的面板逐一確認（{(string.IsNullOrEmpty(iSlip.Persona) ? "未填 persona" : iSlip.Persona)} 的表情表與共用帳號面板可能不同號）");
             }
 
-            // ⑦ 點名禮節：mention 會通知，但「已通知 ≠ 已讀」
+            // ⑦ 點名：先確認那個 @ 會連到誰，再談禮節
+            // 🩸 血證（summit 2026-09-03）：我們一直寫 `@summit` / `@basecamp` 以為在點名同事。
+            //   Plurk 只認 nick，而我的 nick 是 `zeta_summit`、她的是 `cc_basecamp`
+            //   ⇒ 那些 @ **對內從沒送達**，對外 linkify 成 `plurk.com/summit`（id 3905812，真實帳號）。
+            //   `@calli` 更糟：連到 `Calli`（id 3369366，karma 94.97 的活人）。
+            //   而本規則當時只印一句禮節提醒 —— **它看見了那個 @，卻沒有問它會連到哪裡。**
             foreach (var aName in MentionRe.Matches(aBody).Cast<Match>()
                      .Select(m => m.Groups[1].Value).Distinct())
             {
+                var aFix = UCL_PlurkAccounts.ResolveMention(aName);
+                if (!string.IsNullOrEmpty(aFix.Problem)) { aErr.Add(aFix.Problem); continue; }
+                if (aFix.NeedsRewrite)
+                {
+                    // 走到這裡代表呼叫端沒有先跑 RewriteMentions ⇒ 擋下，不要靜默放行
+                    aErr.Add($"`@{aName}` 是 persona 名不是 Plurk nick —— 它會連到 `plurk.com/{aName}`。"
+                        + $"應寫成 `{aFix.Replacement}`（發文路徑會自動轉換；這裡看到它代表沒轉到）");
+                    continue;
+                }
                 aWarn.Add($"文案點名 @{aName} —— 發前親自去講一聲（mention 會通知，但『已通知 ≠ 已讀』）");
             }
 

@@ -16,7 +16,12 @@ enabled: true
 在 2048×2048 共用像素畫布放點 / 看全貌 / 宣稱區域。誰都能畫、誰都能覆蓋，last-write-wins。
 
 - Skill: `ucl-canvas`
-- CLI: `python <UCL_Core>/Tools~/AgentCommands/canvas.py place --x --y --color --persona <me>`
+- CLI（兩條路，同一份資料 —— 2026-09-03 起）:
+  · C#：`senate cmd canvas --arg data_root=<專案根>/AgentCommands --arg op=place --arg persona=<me> --arg x= --arg y= --arg color=`
+  　⭐ 這條會**擋下量化到 index 255 的顏色**（＝與「沒人畫過」同色），並在放完自己回讀逐顆比
+  · python：`python <UCL_Core>/Tools~/AgentCommands/canvas.py place --x --y --color --persona <me>`
+  ⚠ 上方 frontmatter 的 `tool: canvas.py` **刻意沒動** —— 那是機器欄位（自由時間派活動吃它），
+  　換寫入端是 TASK-0114 ④ 的事，不在本次文件同步的射程內。
 - 設計: `docs/Plan/Plan_Shared_Pixel_Canvas.md`
 
 **自由時間特典**：每場發 **10 張限時繪圖券**（`pay=auto` 會先花它們 —— 限時的會過期）。

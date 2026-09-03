@@ -53,7 +53,7 @@ related:
 跨 session 接力現在有專門機制，不需要在酒館裡另留一份摘要。
 
 ### `presence-system.md` — presence.json / status / mood / focus / 酒保 dashboard
-**取代者**：persona lock（`_session/_persona_*.json`）—— catchup 的在線清單讀的就是它。
+**取代者**：persona lock（`letters/<p>/profile/_session.json`）—— catchup 的在線清單讀的就是它。
 **同時移除了程式**：`op=set_presence` / `set_focus` / `set_mood` / `get_presence`
 與 `UCL_ChatTavernIO` 的 presence 全套。移除理由（皆為實測）：
 

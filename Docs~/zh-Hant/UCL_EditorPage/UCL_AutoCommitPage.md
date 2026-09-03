@@ -112,7 +112,7 @@ last_updated: 2026-08-22
 
 ### 三道守衛
 
-- **在線的 persona 預設不勾**（判準是 `_session/_persona_*.json` lock 未過期，
+- **在線的 persona 預設不勾**（判準是 `letters/<p>/profile/_session.json` lock 存在，
   不是 registry 的 `status` 欄 —— 登出沒走完時 status 會停在 online）。
   她可能正在寫，而動別人正在寫的東西**不會有錯誤訊息**，只會靜默清掉工作。
   勾選**不持久化、每次掃描重算**（上一次的「我認了」不延續到這一次）。

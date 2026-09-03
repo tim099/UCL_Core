@@ -831,8 +831,13 @@ def compute_claim_origin() -> str:
 # 數值影響: lock 從 1 file per session_key 變 1 file per persona; session_key 仍寫
 #          進 lock body 作 audit trail 但不參與 path 路由.
 def lock_path(persona: str) -> Path:
-    """Lock file path keyed by persona name (Tim 2026-05-13 拍板)."""
-    return _SESSION_DIR / f"_persona_{persona}.json"
+    """persona 的 session lock：`letters/<persona>/profile/_session.json`。
+
+    TASK-0105（2026-09-03）從 `<資料根>/_session/_persona_<p>.json` 搬進 persona 自己的 profile/ ——
+    位置由 persona 目錄唯一決定，不再有「lock 目錄在哪」這個第二輸入。
+    對側契約：C# `UCL_LettersPath.SessionLock` / `SCP_LettersPaths.SessionLockPath`，同一個檔名。
+    """
+    return _LETTERS_DIR_TPL / persona / "profile" / "_session.json"
 
 
 def write_lock(persona: str, agent: str, model: str, bank_account: str,
@@ -842,7 +847,7 @@ def write_lock(persona: str, agent: str, model: str, bank_account: str,
     """Write lock for persona. session_key 可選, 寫入 body 作 audit (不參與路由).
     T07 (2026-05-15 apex-two): session_token 帶入 lock body 當權威來源, agent 失憶可直接讀回.
     """
-    _SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path(persona).parent.mkdir(parents=True, exist_ok=True)
     now = utcnow_iso()
     # 過期機制已移除（Tim 2026-08-19 拍板）：R9 讓過期不再豁免任何事之後，
     # expires_at 只剩顯示在讀 —— lock 的生命週期由 goodnight/logout 顯式刪檔決定。
@@ -912,19 +917,26 @@ def find_lock_by_session_key(session_key: str) -> dict | None:
 
 def list_locks() -> list:
     out = []
-    if not _SESSION_DIR.exists():
+    if not _LETTERS_DIR_TPL.exists():
         return out
-    for lp in sorted(_SESSION_DIR.glob("_persona_*.json")):
+    # lock 住 letters/<persona>/profile/_session.json（TASK-0105）—— 位置決定歸屬：
+    # 檔住在誰的 profile/ 底下就是誰的 lock，body 的 persona 欄對不上時以目錄名為準並出聲。
+    for lp in sorted(_LETTERS_DIR_TPL.glob("*/profile/_session.json")):
         try:
             with open(lp, "r", encoding="utf-8") as f:
                 d = json.load(f)
         except Exception as e:
             # 壞檔略過但要出聲（對齊 C# 端 LogWarning）—— 靜默跳過會讓「lock 壞了」
             # 跟「沒這個人」長得一模一樣
-            print(f"⚠ [presence] 略過壞掉的 lock 檔 {lp.name}: {e}", file=sys.stderr)
+            print(f"⚠ [presence] 略過壞掉的 lock 檔 {lp}: {e}", file=sys.stderr)
             continue
-        if not isinstance(d, dict) or not d.get("persona"):
+        if not isinstance(d, dict):
             continue
+        dir_persona = lp.parent.parent.name
+        if d.get("persona") and d.get("persona") != dir_persona:
+            print(f"⚠ [presence] {lp} 內 persona='{d.get('persona')}' 與目錄名 '{dir_persona}' 不同 —— 以目錄名為準",
+                  file=sys.stderr)
+        d["persona"] = dir_persona
         d["_path"] = str(lp)
         out.append(d)
     out.sort(key=lambda x: x.get("persona", ""))
@@ -2412,21 +2424,21 @@ def cmd_rename_persona(args: argparse.Namespace) -> int:
     save_registry(reg)
     print(f"✓ renamed '{old}' → '{new}' in registry")
 
-    # Update any active session lock referring to old name
+    # lock 跟著 letters 目錄一起搬了（它住 profile/ 底下）—— 只剩 body 裡的 persona 欄要改名。
     locks_updated = 0
-    if _SESSION_DIR.exists():
-        for lock_file in _SESSION_DIR.glob("_identity_*.json"):
-            try:
-                with open(lock_file, "r", encoding="utf-8") as f:
-                    lock = json.load(f)
-                if lock.get("persona") == old:
-                    lock["persona"] = new
-                    with open(lock_file, "w", encoding="utf-8") as f:
-                        json.dump(lock, f, indent=2, ensure_ascii=False)
-                    locks_updated += 1
-                    print(f"✓ updated active lock {lock_file.name}: persona {old} → {new}")
-            except Exception as e:
-                print(f"⚠ failed to update {lock_file.name}: {e}", file=sys.stderr)
+    lock_file = lock_path(new)
+    if lock_file.exists():
+        try:
+            with open(lock_file, "r", encoding="utf-8") as f:
+                lock = json.load(f)
+            if lock.get("persona") == old:
+                lock["persona"] = new
+                with open(lock_file, "w", encoding="utf-8") as f:
+                    json.dump(lock, f, indent=2, ensure_ascii=False)
+                locks_updated += 1
+                print(f"✓ updated active lock {lock_file}: persona {old} → {new}")
+        except Exception as e:
+            print(f"⚠ failed to update {lock_file}: {e}", file=sys.stderr)
 
     if locks_updated == 0:
         print(f"  (no active lock referenced '{old}')")

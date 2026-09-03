@@ -743,7 +743,7 @@ namespace UCL.Core.EditorLib.Page
                 Debug.LogWarning("[LoginStatus] 請先選擇實際 Agent 再套用");
                 return;
             }
-            string lockPath = Path.Combine(m_SessionDir, $"_persona_{persona}.json");
+            string lockPath = AgentCommands.Awakening.UCL_AwakeningService.LockPath(persona);   // 唯一路徑實作（TASK-0105：letters/<p>/profile/_session.json）
             if (!File.Exists(lockPath))
             {
                 Debug.LogWarning($"[LoginStatus] 套用實際 Agent 失敗：lock 不存在（{persona} 沒在線）");
@@ -860,7 +860,7 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：persona registry 的 status 可能仍 online (因為沒走 goodnight), Tim 之後得手動修正
         void DoForceRemove(string persona)
         {
-            string lockPath = Path.Combine(m_SessionDir, $"_persona_{persona}.json");
+            string lockPath = AgentCommands.Awakening.UCL_AwakeningService.LockPath(persona);   // 唯一路徑實作（TASK-0105：letters/<p>/profile/_session.json）
             if (!File.Exists(lockPath))
             {
                 Debug.LogWarning($"[LoginStatus] lock 不存在: {lockPath}");

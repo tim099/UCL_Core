@@ -55,6 +55,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         //    （判準＝profile/ 目錄存在），欄位走 `UCL_PersonaProfile.GetRaw()`。
         //    ⚠ 留一支能組出「那個檔的路徑」的函式，就是留一個邀請下一個人去直讀的入口 ——
         //      而它會 `File.Exists` 失敗後 fail-soft，症狀是「查無此人」，不是「路徑過期」。
+        /// <summary>session **token 表**（`_tokens.json` / `_token_enforce.json`）住的目錄。
+        /// ⚠ persona lock **不在這裡**（TASK-0105 起走 <see cref="LockPath"/> → letters/&lt;p&gt;/profile/）。</summary>
         public static string SessionDir => ResolveDataSub("_session");
         public static string LettersDir => ResolveDataSub(Path.Combine("ChatTavern", "baton", "letters"));
 
@@ -231,8 +233,57 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
 
         // ===========================================================
         // 區塊：在線守衛 — lock 檔存在與否是唯一判準（registry status 只是快取，不得拿快取否決事實）
+        // 物理意義：lock 住 letters/<p>/profile/_session.json（TASK-0105），版面唯一實作 UCL_LettersPath.SessionLock。
         // ===========================================================
-        public static string LockPath(string iPersona) => Path.Combine(SessionDir, $"_persona_{iPersona}.json");
+        public static string LockPath(string iPersona) => UCL_LettersPath.SessionLock(iPersona);
+
+        // ===========================================================
+        // 區塊職責：把還留在舊位置（<資料根>/_session/_persona_<p>.json）的 lock 搬進 profile/。
+        // 物理意義：TASK-0105 搬家的**唯一**一處還認得舊路徑的 code。冪等：每次早安登入前跑一次，
+        //          沒東西可搬就印 NothingToDo。四態不同形、一律印出來：
+        //          NothingToDo（舊目錄沒有 lock）／Moved（搬了）／Conflict（新位置已經有一顆 ⇒ 兩顆都留、不覆寫）
+        //          ／Failed（查無此 persona、或 IO 例外 ⇒ 舊檔原地不動）。
+        // 🩸 為什麼 Conflict 不拿 locked_at 比新舊自動挑：兩顆 lock 代表兩個寫入端各自成功過，
+        //   挑掉任何一顆都是替某個 session 靜默登出 —— 那正是本單要消滅的「合理但錯」的讀數。
+        // 數值影響：只動舊目錄裡 `_persona_*.json`；token 表（`_tokens.json` 等）不碰。
+        // ===========================================================
+        public static List<string> MigrateLegacyLocks()
+        {
+            var aOut = new List<string>();
+            string aOldDir = SessionDir;
+            string[] aFiles;
+            try { aFiles = Directory.Exists(aOldDir) ? Directory.GetFiles(aOldDir, "_persona_*.json") : new string[0]; }
+            catch (Exception e) { aOut.Add($"Failed — 列不出舊 lock 目錄 `{aOldDir}`：{e.Message}"); return aOut; }
+            if (aFiles.Length == 0) { aOut.Add($"NothingToDo — 舊位置 `{aOldDir}` 沒有 `_persona_*.json`"); return aOut; }
+            Array.Sort(aFiles, StringComparer.Ordinal);
+            foreach (string aOld in aFiles)
+            {
+                string aName = Path.GetFileNameWithoutExtension(aOld);
+                string aPersona = aName.Length > "_persona_".Length ? aName.Substring("_persona_".Length) : "";
+                if (aPersona.Length == 0 || !UCL_PersonaProfile.Exists(aPersona))
+                {
+                    aOut.Add($"Failed — `{Path.GetFileName(aOld)}`：查無 persona '{aPersona}'（letters 底下沒有它的 profile/），原地不動");
+                    continue;
+                }
+                string aNew = LockPath(aPersona);
+                if (File.Exists(aNew))
+                {
+                    aOut.Add($"Conflict — {aPersona}：新位置 `{aNew}` 已有 lock，舊檔 `{aOld}` 原地保留、不覆寫（要人看兩顆哪個是活的）");
+                    continue;
+                }
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(aNew));
+                    File.Move(aOld, aNew);
+                    aOut.Add($"Moved — {aPersona}：`{aOld}` → `{aNew}`（exists={File.Exists(aNew)}）");
+                }
+                catch (Exception e)
+                {
+                    aOut.Add($"Failed — {aPersona}：搬移例外 {e.GetType().Name}: {e.Message}，舊檔原地不動");
+                }
+            }
+            return aOut;
+        }
 
         public static UCL_SessionLockData ReadLock(string iPersona)
         {
@@ -821,6 +872,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             string aSessionKey = $"{aActual}-{iPersona}";
             aR.AppendLine($"- Persona={iPersona} / Agent={aAgent}（顯示歸屬）/ ActualAgent={aActual} / 帳號={(string.IsNullOrEmpty(aBank) ? "(解析不到)" : aBank)}〔{aBankSource}〕");
 
+            // ②.5 先把舊位置的 lock 搬進 profile/（TASK-0105）—— 搬在讀 lock **之前**，
+            //     否則舊位置那顆在線的 lock 會被當成「沒人在線」而放行第二次登入。四態逐行印。
+            aR.AppendLine("## lock migrate（舊 `_session/_persona_*.json` → `profile/_session.json`，冪等）");
+            foreach (string aLine in MigrateLegacyLocks()) aR.AppendLine("- " + aLine);
+
             // ③ 唯一的中斷條件：該 persona 目前是否在線（lock 為真相源；有 lock ＝ 在線 ——
             //    過期機制已於 2026-08-19 移除，R9「過期不豁免」自此不再需要例外說明）
             var aLock = ReadLock(iPersona);
@@ -927,6 +983,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aLockJson["claim_origin"] = aClaimOrigin;
             aLockJson["pid"] = System.Diagnostics.Process.GetCurrentProcess().Id;
             aLockJson["session_token"] = aToken;
+            Directory.CreateDirectory(Path.GetDirectoryName(LockPath(iPersona)));   // profile/ 通常已在；沒有也不該讓登入炸
             AtomicWrite(LockPath(iPersona), aLockJson.ToJsonBeautify());
 
             string aMemoPath = Path.Combine(MemosDir, aAgent, iPersona, "_session_token.md");

@@ -126,7 +126,7 @@ related:
 | `wake_count` | `wakes/` 收尾信數 +1 | C# 登入本來就採磁碟值並印「快取落後…採磁碟值」 |
 | `last_consolidated_wake` | `longterm/wake_<a>-<b>.md` 檔名 | **BUG-4**：快取停在 12 而磁碟已到 23 → 假 OVERDUE。兩端 2026-08-18 已加對帳 |
 | `last_consolidated_at` | 同上檔的 `consolidated_at` frontmatter | 同上 |
-| `status` | `_session/_persona_<p>.json`（lock） | 登入路徑自己寫著「registry status=online 但查無 lock ⇒ 以 lock 為準」 |
+| `status` | `letters/<p>/profile/_session.json`（lock） | 登入路徑自己寫著「registry status=online 但查無 lock ⇒ 以 lock 為準」 |
 | `last_active` | lock `locked_at` ／最近訊息 | 目前純顯示用（3 個頁面讀） |
 
 ⇒ **搬快取＝多一個會被 checkout 回滾的地方。** BUG-4 今天證明的就是這件事：

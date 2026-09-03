@@ -78,6 +78,24 @@ namespace UCL.Core.EditorLib
             => Path.Combine(ProfileDir(iPersona), iField + ".md");
 
         // ===========================================================
+        // 區塊職責：persona 的 **session lock**（`letters/<persona>/profile/_session.json`）。
+        // 物理意義：「這個人現在在線」的真相源 —— 登入寫、登出刪，檔在＝在線。
+        //          TASK-0105（2026-09-03）從資料根的 `_session/_persona_<p>.json` 搬進 profile/：
+        //          🩸 舊位置的代價是**找 lock 的算法有五種**（本 core 兩支、SCP 兩支、登入頁一支），
+        //            其中 SCP 那支是「從信件夾往上找第一個 `_session`」—— 信件夾根一漂，lock 就跟著
+        //            指到另一棵樹，而每一頁都印得出一份合理的在線名單。
+        //          搬進 profile/ 之後 lock 的位置由 persona 目錄**唯一決定**，沒有第二個輸入。
+        // ⚠ runtime 狀態不入版控：letters 基線 `.gitignore`（`letters/Template/.gitignore`）擋
+        //   `/profile/_session.json`。lock 含 session_token，而 letters remote 可能是公開的。
+        // ⚠ 對側契約：SCP 端 `SCP_LettersPaths.SessionLockPath`、python `awakening.lock_path()` 同一個檔名。
+        //   token 表（`_tokens.json` / `_token_enforce.json`）**沒搬**，仍在資料根 `_session/`。
+        // ===========================================================
+        public const string SessionLockFileName = "_session.json";
+
+        /// <summary>某 persona 的 session lock（`letters/&lt;persona&gt;/profile/_session.json`）—— 檔在＝在線。</summary>
+        public static string SessionLock(string iPersona) => Path.Combine(ProfileDir(iPersona), SessionLockFileName);
+
+        // ===========================================================
         // 區塊職責：persona 的**銀行綁定**目錄（`letters/<persona>/bank/`）—— 一個區域一個檔。
         // 物理意義：Tim 2026-08-20 拍板 —— 銀行（酒館系統）每個專案有自己的區域 ID（貨幣名，
         //          `UCL_CentralBankSettings.CurrencyId`），而 persona 在該區域使用的**帳號**

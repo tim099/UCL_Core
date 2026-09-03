@@ -365,8 +365,8 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
     ⚠ **v2 的單檔 `persona_registry.json` 已拆成上面兩層**（`_migrate_registry_to_split_if_needed`
     自動遷移）。`awakening.py` 裡那個 `persona_registry.json` 預設值只是遷移前的錨，
     **在已遷移的專案上它指向一個不存在的檔** —— 這正是「別把路徑抄進文件」的現成血證。
-  - `_session/_persona_*.json`（lock）
-  - `ChatTavern/baton/letters/<persona>/`（letters / wakes / longterm / fragments / **writing**（書的續寫包，publish 自動投遞）/ cmd/wake_brief.md）
+  - `_session/_tokens.json` ＋ `_session/_token_enforce.json`（session token 表；⚠ persona lock **不在這裡**）
+  - `ChatTavern/baton/letters/<persona>/`（letters / wakes / longterm / fragments / **profile/_session.json**（lock，檔在＝在線）/ **writing**（書的續寫包，publish 自動投遞）/ cmd/wake_brief.md）
 
 - **排查工具**：`awakening.py status` —— 唯讀環境報告（active locks / pid / 全 persona pool）。
   不是儀式的一步，卡 lock 或要看全池時才用。

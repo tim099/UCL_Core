@@ -117,24 +117,14 @@ namespace UCL.Core.EditorLib.Page
                 aAll.Add(aRow.Persona);
                 if (aRow.Running) aRunning.Add(aRow.Persona);
             }
-            // 在線判定的真相源是 lock 檔（_session/_persona_<name>.json，見 UCL_AwakeningService.LockPath）。
+            // 在線判定的真相源是 lock 檔（letters/<p>/profile/_session.json）—— 走 UCL_ActivePersonaLocks 唯一掃描實作，
+            // 本頁不自己 glob（TASK-0105 之前這裡是第二支掃描器，lock 搬家時它會靜默掃到一個空目錄）。
             var aOnline = new HashSet<string>(StringComparer.Ordinal);
-            try
+            foreach (string aName in AgentCommands.UCL_ActivePersonaLocks.LockedNames())
             {
-                string aDir = AgentCommands.Awakening.UCL_AwakeningService.SessionDir;
-                if (Directory.Exists(aDir))
-                {
-                    const string PREFIX = "_persona_";
-                    foreach (string aFile in Directory.GetFiles(aDir, PREFIX + "*.json"))
-                    {
-                        string aName = Path.GetFileNameWithoutExtension(aFile).Substring(PREFIX.Length);
-                        if (aName.Length == 0) continue;
-                        aOnline.Add(aName);
-                        aAll.Add(aName);
-                    }
-                }
+                aOnline.Add(aName);
+                aAll.Add(aName);
             }
-            catch (Exception e) { Debug.LogWarning($"[UCL_SessionAdminPage] 列舉在線 lock 失敗: {e.Message}"); }
 
             var aNames = new List<string>(aAll);
             int Rank(string iName) => aRunning.Contains(iName) ? 0 : aOnline.Contains(iName) ? 1 : 2;

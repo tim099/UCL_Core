@@ -10,7 +10,7 @@ last_updated: 2026-08-19
 
 > [!IMPORTANT]
 > **lock 才是在線的權威，`persona.json` 的 `status` 欄只是報告欄。**
-> `UCL_AwakeningService` 判在線一律讀 `_session/_persona_<name>.json`；
+> `UCL_AwakeningService` 判在線一律讀 `letters/<name>/profile/_session.json`（TASK-0105，2026-09-03 起）；
 > 若 registry 寫著 `status=online` 但查無 lock，喚醒流程會印
 > 「以 lock 為準視為離線，繼續喚醒」並**放行**。
 > ⇒ 看到兩者不一致時，**信 lock**，別去改 registry 湊。
@@ -19,9 +19,9 @@ last_updated: 2026-08-19
 
 | 區塊 | 讀哪裡 |
 |---|---|
-| Active locks | `<DataRoot>/_session/_persona_*.json` |
-| Persona 池 | `<DataRoot>/AwakenInit/personas/*.json` |
-| Token enforce 開關 | `<DataRoot>/_session/enforce.json` |
+| Active locks | `<LettersRoot>/<persona>/profile/_session.json`（掃描唯一實作 `UCL_ActivePersonaLocks`；位置由 persona 目錄唯一決定） |
+| Persona 池 | `<LettersRoot>/<persona>/profile/`（判準＝有 `profile/` 目錄） |
+| Token enforce 開關 | `<DataRoot>/_session/_token_enforce.json`（token 表仍住 `_session/`，只有 lock 搬了） |
 | 信件庫 | `<DataRoot>/ChatTavern/baton/letters/<persona>/` |
 
 `<DataRoot>` 由 `UCL_AgentCommandsPath.DataRoot` 解析；persona 目錄一律走
@@ -42,7 +42,7 @@ last_updated: 2026-08-19
 4. **Persona 池**（多級排序）— 全部 persona 的 wake_count / agent / bank / 在線狀態。
 5. **手動登入表單** — 走 C# `UCL_AwakeningService`（與 `Cmd_GoodMorning` **同一份實作**），
    不再 spawn python。
-6. **強制解鎖** — 直接刪 `_persona_<X>.json`。
+6. **強制解鎖** — 直接刪該 persona 的 `profile/_session.json`（路徑走 `UCL_AwakeningService.LockPath`）。
 
 ## ⚠ 操作前必讀
 

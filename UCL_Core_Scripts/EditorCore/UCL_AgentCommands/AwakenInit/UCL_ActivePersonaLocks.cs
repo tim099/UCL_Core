@@ -1,4 +1,6 @@
-// 區塊職責：讀 <DataRoot>/_session/_persona_*.json —— 「誰有 lock／誰在線」的**唯一**掃描實作。
+// 區塊職責：讀 letters/<persona>/profile/_session.json —— 「誰有 lock／誰在線」的**唯一**掃描實作。
+//          （TASK-0105，2026-09-03：lock 從資料根 `_session/_persona_*.json` 搬進各 persona 的 profile/；
+//           路徑唯一決定點 UCL_LettersPath.SessionLock。本類**不再有自己的 SessionDir**。）
 // 物理意義：**有 lock ＝ 在線**，直到 goodnight/logout 顯式刪檔 —— 過期機制已於 2026-08-19 移除
 //          （Tim 拍板：R9「過期不自動豁免」讓 expires_at 不再閘任何行為之後，它只剩顯示在讀，
 //          整套 TTL／續期／過期標記是在餵一個沒有消費端的欄位）。
@@ -86,30 +88,32 @@ namespace UCL.Core.EditorLib.AgentCommands
 
     public static class UCL_ActivePersonaLocks
     {
-        // ⚠ 資料根走 UCL_AgentCommandsPath.DataRoot（可 override 的**資料**根，與 UCL_AwakeningService
-        //   同源），不是 UCL_RepoPath.AgentCommandsDir（canonical code 位置）——
-        //   2026-08-19 收斂前本類走後者，資料根被 override 時會與其他消費端各看各的目錄。
-        public static string SessionDir => Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session").Replace('\\', '/');
-
         /// <summary>
         /// 列出全部 persona lock（＝在線名單），依 persona 名稱排序。
+        /// 掃的是 letters 根底下每個目錄的 <c>profile/_session.json</c>（UCL_LettersPath.SessionLock）——
         /// 讀不到目錄或壞檔一律略過該筆並警告，不讓一個壞掉的 lock 檔擋住整份清單。
+        /// <para>⚠ lock 裡的 <c>persona</c> 欄與目錄名對不上時**以目錄名為準**並警告：
+        /// 檔住在誰的 profile/ 底下，就是誰的 lock —— 那是位置決定的，不是內容宣稱的。</para>
         /// </summary>
         public static List<UCL_PersonaLockInfo> ListLocks()
         {
             var list = new List<UCL_PersonaLockInfo>();
             try
             {
-                string dir = SessionDir;
-                if (!Directory.Exists(dir)) return list;
-                foreach (string file in Directory.GetFiles(dir, "_persona_*.json"))
+                string root = UCL_LettersPath.Root;
+                if (!Directory.Exists(root)) return list;
+                foreach (string personaDir in Directory.GetDirectories(root))
                 {
+                    string file = UCL_LettersPath.SessionLock(Path.GetFileName(personaDir));
+                    if (!File.Exists(file)) continue;
                     try
                     {
                         var data = JsonData.ParseJson(File.ReadAllText(file));
                         if (data == null) continue;
-                        string persona = data.GetString("persona", "");
-                        if (string.IsNullOrEmpty(persona)) continue;
+                        string persona = Path.GetFileName(personaDir);
+                        string declared = data.GetString("persona", "");
+                        if (!string.IsNullOrEmpty(declared) && !string.Equals(declared, persona, StringComparison.Ordinal))
+                            Debug.LogWarning($"[ActivePersonaLocks] {file} 內 persona='{declared}' 與目錄名 '{persona}' 不同 —— 以目錄名為準");
                         string actualRaw = data.GetString("actual_agent", "");
                         list.Add(new UCL_PersonaLockInfo
                         {

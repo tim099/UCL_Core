@@ -326,7 +326,7 @@ Python 端改成載入該 JSON；檔案不存在 → 跳過 client 預檢（fail
 | 功能 | 為什麼留 Python |
 |---|---|
 | `_detect_caller_env_marker` | **這正是 2026-05-11 Treasury bug 的修法**：Editor 是 long-running process，in-process 偵測永遠抓不到 caller 的 env var，所以才改成 caller-side 偵測後傳進 args。遷回 C# = 把已修的 bug 重新裝回去 |
-| `_autofill_persona_from_lock` | session lock（`_session/_persona_*.json`）是 `awakening.py` 的產物，claim_origin/env_hash 是 Python 端概念。C# 不認識也不該認識 —— 遷過去會讓 Editor 反向依賴 Python 的 session 模型 |
+| `_autofill_persona_from_lock` | session lock（`letters/<p>/profile/_session.json`）是 `awakening.py` 的產物，claim_origin/env_hash 是 Python 端概念。C# 不認識也不該認識 —— 遷過去會讓 Editor 反向依賴 Python 的 session 模型 |
 | `ensure_idle` / trigger 寫入 / queue append | **這是 RPC 的 client 半邊**。server 不可能替 client 決定「要不要送」 |
 | `--arg-file` / `--arg-stdin` 展開 | shell 引用邊界問題（反引號吞字那條 lesson 的解法）。本質上只存在於 caller 的 shell，C# 看不到 |
 | wait-reply 同步握手 | 已在 `tavern_handshake.py`，設計上就是 client-side 輪詢檔案系統，不進 Editor queue（不然會佔住 Runner） |

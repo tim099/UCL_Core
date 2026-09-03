@@ -465,7 +465,7 @@ EOF
 
 ### 10.4 撈資料來源
 
-- **Persona / Agent / Model / Bank**: 從 `AgentCommands/_session/_persona_<persona>.json` 讀（lock body），或本 session 自己記得的 morning ritual 結果
+- **Persona / Agent / Model / Bank**: 從 `letters/<persona>/profile/_session.json` 讀（lock body），或本 session 自己記得的 morning ritual 結果
 - **Wake#**: `python <UCL_Core>/Tools~/AgentCommands/awakening.py status` 抓對應 persona 那列
 - **Token**: lock body `session_token` 欄位前 12 碼。lock 已刪 / 老 lock 沒 token → 寫 `(none)`
 

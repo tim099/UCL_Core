@@ -409,14 +409,9 @@ def autofill_persona_from_lock(arg_pairs: dict) -> str:
         # 重用 awakening 的 env-hash / lock helper，避免反查邏輯雙份漂移
         import importlib
         awk = importlib.import_module("awakening")
-        # session dir 優先用注入的 QUEUE_DIR（走 CLAUDE_PROJECT_DIR + git-walk，
-        # 比 awakening._SESSION_DIR 的 cwd 敏感解析穩）；缺則 fallback awk 解析。
-        session_dir = QUEUE_DIR / "_session"
-        if not session_dir.exists():
-            session_dir = awk._SESSION_DIR
-        if not session_dir.exists():
-            return ""
         # 一次載入所有 lock（後續三段 fallback 共用）——
+        # lock 住 letters/<p>/profile/_session.json（TASK-0105），路徑只有 awakening.lock_path 一個實作；
+        # 本檔原本先自己拼 QUEUE_DIR/_session 再退回 awk —— 那是第二種算法，搬家時會靜默掃到空目錄。
         # 走 awakening.list_locks() 唯一掃描實作；過期機制已移除（2026-08-19），有 lock ＝ 在線
         live_locks = awk.list_locks()
         if not live_locks:

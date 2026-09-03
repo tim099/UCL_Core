@@ -2,7 +2,7 @@
 //          （Plan_Awakening_Flow_Simplification §8.8 R15；GoodMorning Cmd 遷移的資料層）。
 // 物理意義：與 awakening.py 共讀同一批 JSON —
 //          AwakenInit/personas/<name>.json（persona 檔）、AwakenInit/_registry_meta.json（agent→bank）、
-//          _session/_persona_<name>.json（lock）。schema 由 Python 端先行定義，改欄位務必兩端同看。
+//          letters/<name>/profile/_session.json（lock，TASK-0105 起）。schema 由 Python 端先行定義，改欄位務必兩端同看。
 // 數值影響：讀取走 typed class（UnityJsonSerializable）；⚠ 寫回一律 patch-write —— 載原 JsonData、
 //          只改自己擁有的欄、存回。SerializeToJson 只吐 class 有宣告的欄位，整包 roundtrip 會把
 //          identity_vector(64 維) / vector_history / persona_spec 等未建模欄位**靜默抹掉**（R15 硬規則）。
@@ -55,7 +55,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
     }
 
     /// <summary>
-    /// session lock（_session/_persona_&lt;name&gt;.json）的 typed model。
+    /// session lock（letters/&lt;name&gt;/profile/_session.json）的 typed model。
     /// 11 欄逐欄對齊 awakening.py write_lock 實寫 schema（P0 基線 Template repo _baseline/ 有實測清單）。
     /// </summary>
     public class UCL_SessionLockData : UnityJsonSerializable

@@ -54,7 +54,6 @@ namespace UCL.Core.EditorLib.Page
         static string DataRoot => UCL_AgentCommandsPath.DataRoot;
         static string RegistryMetaPath => Path.Combine(DataRoot, "AwakenInit", "_registry_meta.json");
         // ⛔ 本頁不再需要 persona 目錄：身分欄住 letters/<p>/profile/、帳號住 bank/<區域>.md（2026-08-21）。
-        static string SessionLockDir => Path.Combine(DataRoot, "_session");
 
         // ==== awakening.py 的常數（改動前先確認兩端一致）====
         const int VECTOR_DIM = 64;              // _constants.vector_dim

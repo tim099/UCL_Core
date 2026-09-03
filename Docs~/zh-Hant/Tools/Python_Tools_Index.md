@@ -35,7 +35,6 @@ Tools~/
     ├── hook_validate_modified.py       # Claude Code PostToolUse / Stop hook
     ├── run_cmd.py                      # ⭐ queue.json 提交器 — 觸發 C# Cmd
     ├── migrate_persona_binding.py      # (one-shot) baton 從 actor-keyed 遷 persona-keyed
-    ├── migrate_session_to_persona_locks.py  # (one-shot) session lock 遷 persona-keyed
     ├── migrate_time_rules_add_tz.py    # (one-shot) bartender time_rules 補 tz 欄位
     ├── _lib/
     │   └── json_io.py                  # JSON 讀寫公用 helper
@@ -174,7 +173,6 @@ Host project 同步 `<UCL_Core>/Skills~/*` 到 `<project-root>/.claude/skills/`�
 | 腳本 | 用途 | 狀態 |
 |---|---|---|
 | `migrate_persona_binding.py` | baton 從 actor-keyed 遷 persona-keyed | shipped 2026-05-? |
-| `migrate_session_to_persona_locks.py` | session lock 從 cwd-hash 遷 persona-keyed | shipped |
 | `migrate_time_rules_add_tz.py` | bartender time_rules 補 tz 欄位 | shipped |
 
 跑過後保留作為 audit, 不該再 invoke。

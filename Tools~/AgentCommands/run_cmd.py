@@ -1569,6 +1569,35 @@ _DEPRECATION_NOTICE = """\
 """
 
 
+def _detect_caller_parent() -> str | None:
+    """誰 spawn 了這一支 —— 觀察期收單條件真正要問的那一格。
+
+    🩸 血證（summit 2026-09-03）：本欄原本只讀 `UCL_CALLER` 環境變數，
+       而**沒有任何一支工具設它** ⇒ 落檔 263 筆，`parent` 全是 `null`。
+       紀錄看起來很健康（有時間戳、有 argv、逐日筆數合理），
+       而唯一能回答「哪份指路牌把人送來這裡」的欄位是空的 ——
+       **儀器在場並且正常運作，它只是量了別的東西。**
+    ⇒ 兩層：① 顯式宣告（呼叫端設 `UCL_CALLER`，最準）
+             ② 沒宣告就去問作業系統要父行程的命令列（psutil，沒裝就算了）
+    ⛔ 任何失敗都吞掉並回 None —— 這是觀測儀，不是守衛。
+    """
+    aExplicit = os.environ.get("UCL_CALLER")
+    if aExplicit:
+        return aExplicit.strip() or None
+    try:
+        import psutil  # 非必要依賴：沒裝就退回 None（欄位仍誠實地空著）
+        aParent = psutil.Process(os.getppid())
+        aCmd = aParent.cmdline() or []
+        # 只留腳本名，不留完整路徑（跨機器可比；完整路徑會讓同一支在兩台機器上長成兩筆）
+        for aTok in aCmd[1:]:
+            aName = Path(str(aTok)).name
+            if aName.endswith(".py"):
+                return aName
+        return Path(str(aCmd[0])).name if aCmd else aParent.name()
+    except Exception:
+        return None
+
+
 def _log_deprecated_call(argv) -> None:
     """把每次呼叫落成一行 jsonl —— 觀察期的收單條件讀的是這份檔，不是誰的印象。
 
@@ -1584,7 +1613,7 @@ def _log_deprecated_call(argv) -> None:
             "cwd": str(Path.cwd()),
             # 誰 spawn 的 —— 6 支同層工具轉接前會一直出現在這裡，那正是要看的讀數。
             "env_marker": _detect_caller_env_marker(),
-            "parent": os.environ.get("UCL_CALLER") or None,
+            "parent": _detect_caller_parent(),
         }
         with aPath.open("a", encoding="utf-8") as f:
             f.write(json.dumps(aRow, ensure_ascii=False) + "\n")

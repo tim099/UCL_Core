@@ -95,15 +95,31 @@ persona profile 的 `plurk_account` → registry（`AwakenInit/plurk_accounts.js
 
 > **Tim 2026-08-21 拍板**：「**預設有個人帳號走個人，沒有的話走共用**。」
 > ⇒ 那正是上面這個順序，所以**沒有額外開關** —— 個人帳號的存在本身就是那個選擇。
-> ⚠ 附帶後果兩個：①`persona-override` **不強制末行署名**（時間軸上帳號本身就是身分）；
+> ⚠ 附帶後果兩個：①`persona-override` 的帳號**若只有他一個人用**才不強制末行署名
+> （時間軸上帳號本身就是身分）—— ⚠ **不是「只要是 override 就不必署名」**，見下方 2026-09-03 的更正；
 > ②裝了個人帳號之後，同一道指令的解析結果就變了 ——
 > **要知道現在走哪個帳號，跑 `op=resolve`，不要讀任何文件裡記著的值。**
 > ⛔ 目前**沒有**「這一則強制走共用帳號」的參數。真的需要時再加 `account=`，
 > 而加之前要想清楚：那等於讓人可以繞過 profile 的宣告。
 
-- **個人／共用不存欄位，由 `Source` 推導** —— 多一個欄位就多一個會跟事實漂掉的地方，
+- **個人／共用不存欄位，是推導的** —— 多一個欄位就多一個會跟事實漂掉的地方，
   而「欄位說個人、解析出共用」這種漂移兩邊都不報錯。
-- `Source` 不是除錯資訊，是**規則的輸入**：`shared-default` ⇒ `RequiresSignature`（末行署名必填）。
+- ⚠ **但推導的量在 2026-09-03 被換掉了：不是看 `Source`，是數人頭。**
+  🩸 `calli` / `gura` / `kiara` 各自 override 到同一個 `plurk_myth` ⇒ 三人 `Source` 都是
+  `persona-override` ⇒ 舊判定印「**個人帳號（plurk_myth）／署名必填: 否**」，而那帳號三個人在用。
+  ⇒ 現行：`IsMultiPersona` ＝ `shared-default` **或** `PersonasOn(secretId).Count > 1`。
+  📌 **共用與否不是「我怎麼解析到它」，是「有幾個人落在同一個帳號上」。**
+- **署名必填 ＝ `IsMultiPersona`**（不是 `Source`）。而它 2026-09-03 起有第二個用途：
+  **署名是收件端 persona 路由的第一手資料** —— 外人在我們某則貼文下回應時，
+  靠那則的署名判斷要找的是誰。⇒ 這一格錯著時，最需要署名的帳號剛好不必署名。
+
+#### `@persona` 自動轉換（TASK-0111）
+
+Plurk 的 `@` 只認 **nick** ⇒ 文案裡的 persona 名由 `LoadSlip` 自動轉換：
+1:1 帳號 → `@<nick>`（不加標記）；多人帳號 → `@<nick>→<persona>`；
+外面的真 nick 不動；**查不到 nick 就擋下不猜**（猜一個就是公開標注陌生人）。
+nick 由 `op=whoami` 從 `/APP/Users/me` 寫回 registry 的 `Nicks`，**不手打**。
+⚠ 轉換排在字元預算之前 —— 它會變長（`@gura` 5 字 → `@hololive_myth→gura` 20 字）。
 - 寫入個人 override 走 `Cmd PersonaProfile op=set`（actor／reason 必填、有審計）。
   ⛔ **不可寫 `AwakenInit/personas/<name>.json`** —— 那個舊源 2026-08-19 起只出不進，寫了不會生效。
 

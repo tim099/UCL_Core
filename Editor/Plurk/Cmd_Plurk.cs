@@ -37,12 +37,12 @@ namespace UCL.Core.EditorLib.Plurk
 
         public override string ShortDescription =>
             "Plurk 共用帳號流程：resolve 查帳號 / lint 驗交付單 / preview 組 payload 不送 / post 發文（需 confirm=1）"
-            + " / timeline·responses·friends 看別人在說什麼（唯讀）/ like·unlike 互動（需 confirm=1）"
+            + " / timeline·responses·friends 看別人在說什麼（唯讀）/ mentions 誰 @ 了我＋我回了沒（唯讀，優先處理）/ like·unlike 互動（需 confirm=1）"
             + " / 擴圈：profile·expand·search·alerts 唯讀，befriend·unfriend·follow·unfollow·accept·deny 需 confirm=1"
             + " / 表情：emoticons 讀表並維護本地描述表（唯讀＋寫本地），emoadd 試新增自訂表情（需 confirm=1）。";
 
         public override string ArgsSchema =>
-            "op=resolve|lint|preview|upload|post|get|whoami|timeline|responses|friends|like|unlike"
+            "op=resolve|lint|preview|upload|post|get|whoami|timeline|responses|mentions|friends|like|unlike"
             + "|emoticons|emoadd"
             + "|profile|expand|search|alerts|befriend|unfriend|follow|unfollow|accept|deny（預設 resolve） | "
             + "emo_desc=<編號=描述,編號=描述…>（emoticons 選填：把描述寫進本地表，merge 不覆寫） | "
@@ -51,7 +51,7 @@ namespace UCL.Core.EditorLib.Plurk
             + "query=<關鍵字>（search 必填） | kind=plurk|user（search 選填，預設 plurk） | "
             + "top=<列前幾名>（expand 選填，預設 15） | hops=<向外問幾位好友>（expand 選填，預設 8） | "
             + "history=1（alerts 選填：看歷史而不是待處理） | "
-            + "limit=<筆數>（timeline 預設 20／friends·expand 預設 30/100；夾在 1-100） | "
+            + "limit=<筆數>（timeline·mentions 預設 20／friends·expand 預設 30/100；夾在 1-100） | "
             + "preview=<摘要字數>（timeline 預設 90，夾在 20-400） | "
             + "filter=only_user|only_responded|only_private|only_favorite（timeline 選填） | "
             + "user_id=<誰的好友>（friends 選填；不給就問 /APP/Users/me） | "
@@ -116,6 +116,7 @@ namespace UCL.Core.EditorLib.Plurk
                     // ── 社交面（讀）──
                     case "timeline": await OpTimeline(args, aRes, aR, token); break;
                     case "responses": await OpResponses(args, aRes, aR, token); break;
+                    case "mentions": await OpMentions(args, aRes, aR, token); break;
                     case "friends": await OpFriends(args, aRes, aR, token); break;
                     // ── 社交面（寫，對別人動手 ⇒ 要 confirm=1）──
                     case "like": await OpFavorite(args, aRes, aR, token, true); break;
@@ -635,6 +636,135 @@ namespace UCL.Core.EditorLib.Plurk
                 ioR.AppendLine("    " + Trunc(OneLine(aRpRaw), 200));
             }
             EmoEnd(aRpEmoCtx, ioR);
+        }
+
+        // ===========================================================
+        // 區塊職責：**誰 @ 了我、在哪一則、我回了沒** —— 被點名的訊息要優先回（Tim 2026-09-03）。
+        // 物理意義：在這之前「被 @」這件事沒有入口：河道摘要只列噗不列回應，而 @ 幾乎都發生在
+        //          回應裡；alerts 有 «mentioned» 型別但 getActive 讀了就清（不可重跑）、且不帶噗 id。
+        //          🩸 現場：海苔 09-01 13:18 在一則噗底下 @ 我問「怎麼決定回哪些噗」，
+        //          兩天後 Tim 從截圖上看到，我這邊的工具沒有任何一格讓它浮上來。
+        // 數值影響：三步都是唯讀 ——
+        //          ① /APP/Users/me 拿我的 id 與 nick（@ 的目標是 nick，不是顯示名）
+        //          ② Timeline/getPlurks filter=mentioned（Plurk 端既有語彙；含噗本體或回應裡 @ 我的噗）
+        //          ③ 每則噗拉 Responses/get，挑出內文含 `@<nick>` 的回應；
+        //             「我回了沒」＝那則 @ 之後有沒有**我自己 id** 的回應（時間序，不比對內容）。
+        // ⚠ 判準是**位置與 id**，不是「看起來像不像回了」：
+        //   我在該噗有回應但都在 @ 之前 ⇒ 仍算未回。噗本體 @ 我而底下沒有我 ⇒ 未回。
+        // ⚠ Plurk 的 mentioned 過濾器射程未知（只驗過「回應裡 @ 我」會被列出來）——
+        //   所以每一則都印「@ 出現在噗本體／第 N 則回應」，讓讀的人看得到它是哪一種。
+        // ===========================================================
+        async UniTask OpMentions(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,
+            StringBuilder ioR, CancellationToken token)
+        {
+            var aCred = RequireCredentials(iRes);
+            int aLimit = ParseIntArg(iArgs, "limit", 20, 1, 100);
+            int aPreview = ParseIntArg(iArgs, "preview", 160, 20, 400);
+
+            var (aMeSt, aMeBody) = await CallAsync("/APP/Users/me", aCred, null, token);
+            if (aMeSt != 200) throw new Exception($"[Plurk] mentions 問不到自己是誰（/APP/Users/me http={aMeSt}）—— 沒有 nick 就判不了誰 @ 我");
+            string aMeId = PickJsonValue(aMeBody, "id") ?? "";
+            string aNick = PickJsonValue(aMeBody, "nick_name") ?? "";
+            if (aMeId.Length == 0 || aNick.Length == 0)
+                throw new Exception("[Plurk] /APP/Users/me 缺 id 或 nick_name ⇒ 判不了 @，不猜");
+            string aNeedle = "@" + aNick;
+
+            ioR.AppendLine();
+            ioR.AppendLine("## mentions（誰 @ 了我、我回了沒）");
+            ioR.AppendLine($"- 我：id `{aMeId}`　nick `{aNick}`（@ 的比對字串是 `{aNeedle}`，不分大小寫）");
+
+            var aParams = new Dictionary<string, string>
+            {
+                { "limit", aLimit.ToString(CultureInfo.InvariantCulture) },
+                { "filter", "mentioned" },
+            };
+            string aBody = await FetchAsync(iArgs, "timeline_mentioned", "/APP/Timeline/getPlurks",
+                aParams, aCred, iRes, ioR, token);
+            var aRoot = SafeParse(aBody);
+            var aPlurks = (aRoot != null && aRoot.Contains("plurks")) ? aRoot["plurks"] : null;
+            var aUsers = (aRoot != null && aRoot.Contains("plurk_users")) ? aRoot["plurk_users"] : null;
+            if (aPlurks == null || !aPlurks.IsArray)
+            {
+                ioR.AppendLine("- ⚠ 回應裡沒有 `plurks` 陣列 —— 這不是「沒人 @ 我」，是**格式跟我預期的不一樣**。");
+                ioR.AppendLine("- body（前 300 字）: " + Trunc(aBody, 300));
+                return;
+            }
+            ioR.AppendLine($"- filter=mentioned 回 **{aPlurks.Count}** 則噗（limit={aLimit}）"
+                + (aPlurks.Count == 0 ? "（真的 0 —— 這是讀回來的，不是讀不到）" : ""));
+
+            int aPending = 0, aAnswered = 0;
+            var aEmoCtx = EmoBegin(iRes);
+            for (int i = 0; i < aPlurks.Count; i++)
+            {
+                var aP = aPlurks[i];
+                string aPid = JsonScalar(aP, "plurk_id");
+                string aOwner = JsonScalar(aP, "owner_id");
+                string aPRaw = UnescapeJson(JsonScalar(aP, "content_raw"));
+                ioR.AppendLine();
+                ioR.AppendLine($"### [{aPid}] {ShortTime(JsonScalar(aP, "posted"))} **{UserName(aUsers, aOwner)}** «{JsonScalar(aP, "qualifier")}»"
+                    + $" 💬{JsonScalar(aP, "response_count")}");
+                ioR.AppendLine("    " + Trunc(OneLine(aPRaw), aPreview));
+
+                // 噗本體 @ 我 ＝ 第 0 則
+                var aHits = new List<(int idx, string who, string when, string text)>();
+                if (aPRaw.IndexOf(aNeedle, StringComparison.OrdinalIgnoreCase) >= 0)
+                    aHits.Add((0, UserName(aUsers, aOwner), JsonScalar(aP, "posted"), aPRaw));
+
+                // 回應：一次拉全（from_response=0）；量到的是 Plurk 回的那一頁，超過的會印出來
+                var (aRSt, aRBody) = await CallAsync("/APP/Responses/get", aCred,
+                    new Dictionary<string, string> { { "plurk_id", aPid }, { "from_response", "0" } }, token);
+                if (aRSt != 200)
+                {
+                    ioR.AppendLine($"    ⚠ 拉不到回應（http={aRSt}）⇒ 這則**判不了**回了沒（不是「沒回」）");
+                    continue;
+                }
+                var aRRoot = SafeParse(aRBody);
+                var aList = (aRRoot != null && aRRoot.Contains("responses")) ? aRRoot["responses"] : null;
+                var aFriends = (aRRoot != null && aRRoot.Contains("friends")) ? aRRoot["friends"] : null;
+                int aLastMineIdx = -1;      // 我最後一則回應在陣列裡的位置（陣列＝時間序）
+                int aCount = aList != null && aList.IsArray ? aList.Count : 0;
+                var aSeen = new HashSet<string>();
+                for (int r = 0; r < aCount; r++)
+                {
+                    var aRp = aList[r];
+                    if (!aSeen.Add(JsonScalar(aRp, "id"))) continue;    // Plurk 會重複回同一則
+                    string aUid = JsonScalar(aRp, "user_id");
+                    if (aUid == aMeId) { aLastMineIdx = r; continue; }
+                    string aRaw = UnescapeJson(JsonScalar(aRp, "content_raw"));
+                    if (aRaw.IndexOf(aNeedle, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    aHits.Add((r + 1, UserName(aFriends, aUid), JsonScalar(aRp, "posted"),
+                        EmoAnnotatePaired(aRaw, UnescapeJson(JsonScalar(aRp, "content")), aEmoCtx, aUid)));
+                }
+                string aDeclared = aRRoot != null && aRRoot.Contains("response_count") ? JsonScalar(aRRoot, "response_count") : "";
+                if (aDeclared.Length > 0 && aDeclared != aSeen.Count.ToString(CultureInfo.InvariantCulture))
+                    ioR.AppendLine($"    ⚠ 只讀到 {aSeen.Count} 則回應而它宣告 response_count={aDeclared} ⇒ 沒讀到的那些裡有沒有 @ 我，這裡**不知道**");
+
+                if (aHits.Count == 0)
+                {
+                    ioR.AppendLine($"    ・filter 說這則跟我有關，但噗本體與 {aSeen.Count} 則回應都沒有 `{aNeedle}` ⇒ **判不了**（可能是顯示名 @、或在沒讀到的頁）");
+                    continue;
+                }
+                foreach (var h in aHits)
+                {
+                    // 「回了沒」＝ 那則 @ 之後有沒有我的回應（位置比較；第 0 則＝噗本體 ⇒ 我有任何回應即算）
+                    bool aReplied = aLastMineIdx >= 0 && (h.idx == 0 || aLastMineIdx > h.idx - 1);
+                    if (aReplied) aAnswered++; else aPending++;
+                    ioR.AppendLine($"    - {(aReplied ? "✅ 已回" : "🔔 **未回**")}　@ 在{(h.idx == 0 ? "噗本體" : $"第 {h.idx} 則回應")}"
+                        + $"　**{h.who}**　{ShortTime(h.when)}");
+                    ioR.AppendLine("        " + Trunc(OneLine(h.text), aPreview));
+                }
+            }
+
+            ioR.AppendLine();
+            ioR.AppendLine($"## 讀數：🔔 未回 **{aPending}**　✅ 已回 **{aAnswered}**"
+                + "　（「已回」＝ @ 之後有我的回應，只看位置與 id，不看內容有沒有答到）");
+            ioR.AppendLine("### ▶ 回（走既有發文路，@ 的先回）");
+            ioR.AppendLine("```bash");
+            ioR.AppendLine("--arg op=get       --arg plurk_id=<id>                    # 先讀全文與脈絡");
+            ioR.AppendLine("--arg op=responses --arg plurk_id=<id>                    # 讀完整串再回，別對著摘要講話");
+            ioR.AppendLine("--arg op=post --arg slip_file=<交付單> --arg reply_to=<id> --arg confirm=1");
+            ioR.AppendLine("```");
+            EmoEnd(aEmoCtx, ioR);
         }
 
         async UniTask OpFriends(Dictionary<string, string> iArgs, UCL_PlurkAccountResolution iRes,

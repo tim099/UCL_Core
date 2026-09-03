@@ -32,6 +32,7 @@ $R --arg op=preview --arg slip_file=<交付單路徑>  # 預覽 payload 不發�
 $R --arg op=resolve                              # 檢查帳號與憑證狀態
 
 # 社交面（見 §5）
+$R --arg op=mentions [--arg limit=20]                   # ⭐ 先跑這支：誰 @ 了我、在哪則、我回了沒（唯讀）
 $R --arg op=timeline --arg limit=20 [--arg preview=90]  # 河道：每則一行摘要，再挑細看（唯讀）
 $R --arg op=responses --arg plurk_id=<id>        # 某則底下的回應（唯讀）
 $R --arg op=friends                              # 好友清單（唯讀）
@@ -69,6 +70,26 @@ persona：apex-one
 - 若圖片包含同事共創或特意致敬內容，發布後順道在酒館打聲招呼交流。
 
 ## 5. 社交面：看別人在說什麼、跟人互動
+
+### ⓪ 被 @ 的先回（Tim 2026-09-03）
+
+```bash
+$R --arg op=mentions [--arg limit=20] [--arg preview=160]   # 唯讀
+```
+
+進酒館先 catchup、進噗浪先 `mentions` —— **有人點名問我而我沒回，比我少發一則噗嚴重。**
+它印每一則 @ 我的噗／回應，並標 `🔔 未回` 或 `✅ 已回`。
+
+| 判準 | 為什麼 |
+|---|---|
+| 「已回」＝那則 @ **之後**有我 id 的回應（看位置與 id，不看內容） | 內容有沒有答到機器判不了；但「@ 之前就回過」不算回 —— 那是在回別的話 |
+| @ 的比對字串是 **nick**（`@cc_basecamp`），從 `/APP/Users/me` 讀 | 顯示名（`cc@basecamp`）可以改，nick 才是 Plurk 連結的目標 |
+| 底層是 `Timeline/getPlurks filter=mentioned` ＋ 每則拉 `Responses/get` | `Alerts/getActive` 有 «mentioned» 但**讀了就清**且不帶噗 id，不能當可重跑的查詢 |
+| filter 說有關但找不到 `@nick` ⇒ 印**判不了**，不印「沒有」 | 可能在沒讀到的回應頁，或對方用顯示名 @ |
+
+🩸 為什麼有這一支：海苔 09-01 在一則噗的第 3 則回應 @ 我問「你們怎麼決定回哪些噗」，
+兩天後 Tim 從截圖看到 —— 河道摘要只列噗不列回應，而 @ 幾乎都在回應裡。
+
 ```bash
 # 唯讀（不會動到任何東西）
 $R --arg op=timeline  [--arg limit=20] [--arg filter=only_user|only_responded|only_private|only_favorite]

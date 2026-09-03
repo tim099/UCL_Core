@@ -170,7 +170,7 @@ def build_announcement(message: str, sha: str, repo: str, personas: list, intro:
     return "\n".join(out)
 
 
-# 公告前等佇列空出來的上限（秒）。run_cmd 預設 60s —— 多人同時用時不夠。
+# 公告前等佇列空出來的上限（秒）。senate 預設 120s —— 多人同時用時不夠。
 # 逾時的語意是「沒送出」（ensure_idle 在寫 trigger 前就 SystemExit），所以拉長是純等待、不是重試。
 ANNOUNCE_ACK_TIMEOUT_SEC = 240
 
@@ -196,12 +196,19 @@ def advance_tasks(message: str, sha: str, persona: str) -> None:
                 seen[n] = mode
     if not seen:
         return
-    run_cmd = Path(__file__).with_name("run_cmd.py")
+    # 2026-09-03（Tim 拍板「run_cmd.py 不留」）：派遣改走 Senate CLI。
+    # ⚠ `--timeout 180` 是**顯式保留舊行為**，不是新設定 —— run_cmd 的 DEFAULT_ACK_TIMEOUT
+    #   是 180，而 senate 預設 120。不帶就是把等待砍短 ⇒ 多人搶 lane 時更容易誤判「沒送出」。
+    #   （半套修法的症狀不是紅燈，是降級。）
+    # ⛔ `--wait-reply 0` 沒有對應旗標也不需要：那是 run_cmd 發文後 client 端輪詢回覆的秒數，
+    #   帶 0 ＝ 關掉，而 senate 沒有那個功能 ⇒ 砍掉是等價，不是少一格。
+    # `senate` 走 PATH（Tim 2026-09-03：保證在 PATH）；不在時 subprocess 丟 FileNotFoundError
+    #   ⇒ 大聲死，不會靜默走別的路。
     for n, mode in seen.items():
-        cmd = [sys.executable, str(run_cmd), "--persona", persona, "run", "Task",
+        cmd = ["senate", "ucmd", "run", "Task", "--persona", persona,
                "--arg", "op=commit", "--arg", f"index={n}",
                "--arg", f"sha={sha}", "--arg", f"mode={mode}",
-               "--wait-reply", "0"]
+               "--timeout", "180"]
         # ===========================================================
         # 區塊職責：把「訊號有沒有送出去」與「怎麼把它講出來」**分成兩段**（TASK-0043）。
         #
@@ -221,7 +228,7 @@ def advance_tasks(message: str, sha: str, persona: str) -> None:
             r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=180)
             sent = (r.returncode == 0 and "Success" in (r.stdout or ""))
             if not sent:
-                why = f"run_cmd 回 {r.returncode}"
+                why = f"senate 回 {r.returncode}"
         except Exception as e:
             why = f"{type(e).__name__}: {e}"     # 這一格的失敗才是真的**沒送出去**
 
@@ -244,17 +251,18 @@ def advance_tasks(message: str, sha: str, persona: str) -> None:
 
 
 def post_announcement(body: str, sha: str, persona: str) -> tuple:
-    """發酒館公告；回 (成功, 說明)。走 run_cmd.py Tavern，body 經檔案避免引號地獄。"""
+    """發酒館公告；回 (成功, 說明)。走 `senate ucmd run Tavern`，body 經檔案避免引號地獄。"""
     here = Path(__file__).resolve().parent
-    run_cmd = here / "run_cmd.py"
-    if not run_cmd.exists():
-        return False, f"找不到 run_cmd.py：{run_cmd}"
+    # ⛔ 這裡原本有一道 `if not run_cmd.exists(): return False, "找不到 run_cmd.py"` ——
+    #   2026-09-03 移除。留著它是一顆地雷：run_cmd.py 一刪，這支就**永遠回 False 且理由是假的**
+    #   （說「找不到 run_cmd.py」而實際上根本不需要它）⇒ 公告靜默停掉、commit 照樣成功，
+    #   而「不會叫的壞掉最難抓」。現在 `senate` 找不到就是 FileNotFoundError，由呼叫端接住並印真因。
     tmp = here / f"_announce_{sha}.md"
     try:
         tmp.write_text(body, encoding="utf-8")
         meta = json.dumps({"tag": "commit", "sha": sha, "category": "meta"}, ensure_ascii=False)
         # 區塊職責：等佇列空出來的時間要夠長 —— 這是多人共用同一條 lane 時最常見的失敗。
-        # 物理意義：run_cmd 的 ensure_idle 預設只等 60s，逾時會 SystemExit **而且是在寫 trigger 之前**
+        # 物理意義：派遣端在寫 trigger **之前**先等佇列空（senate 的 --timeout 同語意）
         #          ⇒ 那種失敗代表「根本沒送出」，不是「可能送出了」。
         # 🩸 2026-08-16：BookNotes 那筆 commit 落地了但公告失敗（「previous batch is 'running'」），
         #    薪沒領、要人工補一則。當時同事正在跑一連串 Cmd，60 秒等不到。
@@ -270,13 +278,19 @@ def post_announcement(body: str, sha: str, persona: str) -> tuple:
         #          （領薪要用那個，不是用 lane）。
         # 數值影響：路由 queues/anonymous/ → queues/system/；也順帶不再跟 agent 自己的
         #          指令搶同一條 lane（上方 ensure_idle 逾時那隻的同族成因）。
-        cmd = [sys.executable, str(run_cmd), "--system", "run", "Tavern",
+        # 2026-09-03：改走 Senate CLI。`--system` 沒有對應旗標，等價是 `--persona system`
+        #   ——lane ＝ `queues/<persona>`，而 `system` 是保留字（實測 `→ Bar:system`，
+        #   `AgentCommands/queues/system/` 確實存在）。身分仍由下面的 `--arg persona=` 承載，
+        #   跟舊行為一樣：lane 與身分是兩件事，領薪讀的是 arg 不是 lane。
+        cmd = ["senate", "ucmd", "run", "Tavern", "--persona", "system",
                "--arg", "op=post", "--arg", "room=tavern",
                # ⚠ 刻意**不帶 sender_id** —— 顯示身分由 Cmd_Tavern 從 persona 推導
                # （見上方 resolve_sender 移除的理由）。多傳一個就是多一個會漂的來源。
                "--arg", f"persona={persona}",
-               "--arg", f"meta={meta}", "--wait-reply", "0",
-               "--ack-timeout", str(ANNOUNCE_ACK_TIMEOUT_SEC),
+               "--arg", f"meta={meta}",
+               # `--ack-timeout 240` → senate 的 `--timeout`。240 是刻意比預設長的（多人搶 lane
+               # 時 60/120 不夠），逾時語意是「沒送出」⇒ 拉長是純等待、不是重試。不帶就是降級。
+               "--timeout", str(ANNOUNCE_ACK_TIMEOUT_SEC),
                "--arg-file", f"body={tmp}"]
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
         ok = r.returncode == 0 and "Success" in (r.stdout or "")

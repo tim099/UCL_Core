@@ -595,6 +595,31 @@ namespace UCL.Core.EditorLib.Plurk
             EmoEnd(aEmoCtx, ioR);
         }
 
+        // ===========================================================
+        // 區塊職責：一則回應的**署名**是不是某位 persona —— 共用帳號下判「這則是誰回的」的唯一依據。
+        // 物理意義：Plurk 只知道帳號；帳號裡是誰，只有末行 `—— <persona> <emoji>` 說得出來
+        //          （UCL_PlurkLint ⑤：共用帳號末行署名是硬規則）。
+        // 數值影響：只看**最後一個非空行**、比對 `—— <persona>`（破折號三種寫法，不分大小寫）。
+        //          內文中段提到 persona 名不算 —— 那是在講她，不是她在講。
+        // ===========================================================
+        static string LastNonEmptyLine(string iText)
+        {
+            var aLines = (iText ?? "").Replace("\r", "").Split('\n');
+            for (int i = aLines.Length - 1; i >= 0; i--)
+                if (aLines[i].Trim().Length > 0) return aLines[i].Trim();
+            return "";
+        }
+
+        static bool SignedByAnyone(string iText)
+            => System.Text.RegularExpressions.Regex.IsMatch(LastNonEmptyLine(iText), @"^(——|—|--)\s*\S");
+
+        static bool SignedBy(string iText, string iPersona)
+        {
+            string aLast = LastNonEmptyLine(iText);
+            var m = System.Text.RegularExpressions.Regex.Match(aLast, @"^(——|—|--)\s*([A-Za-z0-9_\-]+)");
+            return m.Success && string.Equals(m.Groups[2].Value, iPersona, StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>
         /// `Sun, 23 Aug 2026 09:03:42 GMT` → `08-23 17:03`（本地）。
         /// 解析不了就**原樣回**（不吞掉，也不假裝知道時間）。
@@ -800,6 +825,7 @@ namespace UCL.Core.EditorLib.Plurk
                 var aList = (aRRoot != null && aRRoot.Contains("responses")) ? aRRoot["responses"] : null;
                 var aFriends = (aRRoot != null && aRRoot.Contains("friends")) ? aRRoot["friends"] : null;
                 int aLastMineIdx = -1;      // 我最後一則回應在陣列裡的位置（陣列＝時間序）
+                int aUnsignedMine = 0;      // 本帳號回的、但末行沒署名 ⇒ 判不了是誰回的
                 int aCount = aList != null && aList.IsArray ? aList.Count : 0;
                 var aSeen = new HashSet<string>();
                 for (int r = 0; r < aCount; r++)
@@ -807,8 +833,20 @@ namespace UCL.Core.EditorLib.Plurk
                     var aRp = aList[r];
                     if (!aSeen.Add(JsonScalar(aRp, "id"))) continue;    // Plurk 會重複回同一則
                     string aUid = JsonScalar(aRp, "user_id");
-                    if (aUid == aMeId) { aLastMineIdx = r; continue; }
                     string aRaw = UnescapeJson(JsonScalar(aRp, "content_raw"));
+                    if (aUid == aMeId)
+                    {
+                        // 🩸 kiara 2026-09-03：路由是 person-level（`→kiara` 才算她的），而「已回」原本是 account-level
+                        //   （本帳號 id 回過就算）⇒ 共用帳號三個人，gura 一回 kiara 的 🔔 就消失，印的是 ✅。
+                        //   ⇒ 多人帳號下「我回了」＝這則回應的**署名**是我（共用帳號末行署名是 lint 硬規則）。
+                        //   沒署名的回應**不算我回**（判不了是誰，寧可讓 🔔 多亮一次，不讓它被別人的回應熄掉）。
+                        if (!aMulti) { aLastMineIdx = r; continue; }
+                        if (aMyPersona.Length == 0) continue;            // 沒帶 persona ⇒ 沒有「我」可比，全不算
+                        if (SignedBy(aRaw, aMyPersona)) aLastMineIdx = r;
+                        else if (!UCL_PlurkAccounts.ClassifyMention(aRaw, aNick, aMyPersona).Found
+                                 && SignedByAnyone(aRaw) == false) aUnsignedMine++;
+                        continue;
+                    }
                     var aRHit = UCL_PlurkAccounts.ClassifyMention(aRaw, aNick, aMyPersona);
                     if (!aRHit.HitsMe)
                     {
@@ -829,9 +867,12 @@ namespace UCL.Core.EditorLib.Plurk
                 ioR.Append(aHeader);
                 if (aPartial)
                     ioR.AppendLine($"    ⚠ 只讀到 {aSeen.Count} 則回應而它宣告 response_count={aDeclared} ⇒ 沒讀到的那些裡有沒有 @ 我，這裡**不知道**");
+                if (aMulti && aUnsignedMine > 0)
+                    ioR.AppendLine($"    ⚠ 本帳號有 {aUnsignedMine} 則回應**沒署名** ⇒ 判不了是誰回的，一律**不算我回**（共用帳號末行署名是硬規則）");
                 foreach (var h in aHits)
                 {
                     // 「回了沒」＝ 那則 @ 之後有沒有我的回應（位置比較；第 0 則＝噗本體 ⇒ 我有任何回應即算）
+                    // 多人帳號下「我的回應」＝本帳號回的**且署名是我**（見上面 kiara 那格）。
                     bool aReplied = aLastMineIdx >= 0 && (h.idx == 0 || aLastMineIdx > h.idx - 1);
                     if (aReplied) aAnswered++; else aPending++;
                     aHitLog.Add((h.uid, h.when));

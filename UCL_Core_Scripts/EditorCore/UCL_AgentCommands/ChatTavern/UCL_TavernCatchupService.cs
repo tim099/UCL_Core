@@ -86,7 +86,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 + (hiddenSelf > 0 ? $"（已排除自己 {hiddenSelf} 筆）" : "")
                 + (hiddenSystem > 0 ? $"（已隱藏酒保系統廣播 {hiddenSystem} 筆 —— 打款／獎金可能在裡面，`quiet_system=0` 看得到）" : ""));
             if (truncated)
-                sb.AppendLine("⚠ **未讀掃到上限** —— 更舊的未讀沒有列出來，這份清單不完整。");
+                sb.AppendLine("⚠ **未讀一次交付不完** —— 這批是**最舊的**那段；更新的還留在未讀裡，"
+                    + "再跑一次 catchup 會接著給（不會遺失）。");
             sb.AppendLine();
             int clipNormal = UCL_ChatTavernSettings.MessageBodyClip;
             int clipMention = UCL_ChatTavernSettings.MessageBodyClipMentioned;
@@ -113,7 +114,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             else if (string.IsNullOrEmpty(newestTs))
             {
                 // 🩸 2026-08-16：0 筆未讀仍前進 ⇒ 跳過了同事後來發言的區間，而回傳檔看起來正常。
-                sb.AppendLine("- 游標：**未推進**（本次 0 筆未讀）—— 沒有讀數就不該移動水位。");
+                // 🩸 2026-09-03：積壓超過回捲上限時 ReadUnread 也回 null —— 那不是「沒訊息」，
+                //    是「最舊的那則還沒到手」。兩者都不推，但**必須長得不一樣**。
+                sb.AppendLine(truncated
+                    ? "- 游標：**未推進**（積壓超過回捲上限 —— 最舊的未讀還沒進到窗口）"
+                      + " ⇒ 推了就會永久跳過它們。請先消化積壓或調高 `BACKLOG_SCAN_CAP`。"
+                    : "- 游標：**未推進**（本次 0 筆未讀）—— 沒有讀數就不該移動水位。");
             }
             else
             {
@@ -169,7 +175,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 + (oHiddenSystem > 0 ? $"（隱藏酒保廣播 {oHiddenSystem}　`quiet_system=0` 可見）" : "")
                 + (iAdvance ? "　—— **本段印出後即推進已讀游標**" : "　—— 本次**不推進**游標"));
             if (truncated)
-                ioR.AppendLine("- ⚠ **掃到上限，更舊的未讀沒列出** —— 這份清單不完整。");
+                ioR.AppendLine("- ⚠ **一次交付不完** —— 這批是最舊的那段，更新的還留在未讀裡（不會遺失）。");
             if (oShown.Count == 0) ioR.AppendLine("- （沒有未讀）");
             foreach (var m in oShown)
             {

@@ -38,15 +38,23 @@ description: |
 ```bash
 senate ucmd run NoteLesson --persona <me> \
   --arg body="<短句精華 < 30 字>" \
-  --arg actor="<agent_id>" \
-  --arg category="<bug|design|workflow|debug|test>"
+  --arg category="<bug|design|workflow|debug|test>" \
+  [--arg actor="<agent_id>"] [--arg title="<一行標題>"] [--arg tags="<逗號分隔>"]
 ```
 
 行為：
-1. append `AgentCommands/Lessons/lessons.jsonl` 一行 JSONL entry (ts/actor/category/body)
+1. append `AgentCommands/Lessons/lessons.jsonl` 一行 JSONL entry (ts/actor/category/body[/title][/tags])
 2. 寫 `AgentCommands/Lessons/_last_lesson.md` 給 caller confirm
 3. 同 body 重複 → skip 防重 (dedupe check)
 4. category 自由欄位（agent 自律分類，譬如 "bug" / "design" / "workflow"）
+5. **`actor` 不給就用 `--persona`**，兩者都沒有才落 `unknown`
+6. `title` / `tags` 是選填；**沒給就不寫那個鍵**（不寫 `""` / `[]` —— 「沒給」與「給了空的」是兩件事）
+7. ⛔ **不認得的參數會被擋下並失敗**（`--arg severity=…`、拼錯的 `--arg autor=…`），
+   **在 append 之前**擋 —— 一旦寫進去，「欄位掉了」就沒有任何一層會喊（TASK-0078／BUG-42）
+
+> 🩸 為什麼有第 5–7 條：舊版 `actor` 直接落 `unknown`（`--persona` 明明拿得到），
+> 而 `title` / `tags` 傳了會被**靜默丟棄** —— 回 Success、jsonl 也真的多一行，
+> **成功與掉欄位長得一模一樣**。
 
 ## Promote curated SKILL.md 流程
 

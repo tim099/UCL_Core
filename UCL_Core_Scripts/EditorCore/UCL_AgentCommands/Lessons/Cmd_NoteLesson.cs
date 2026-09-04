@@ -43,8 +43,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Lessons
 
         public override string ArgsSchema =>
             "body=Lesson 短句精華，建議 < 30 字 (required) | " +
-            "actor=Agent id 來源標記 (default: 'unknown') | " +
-            "category=Lesson 分類 bug/design/workflow/debug/test 等 (default: 'general')";
+            "actor=Agent id 來源標記 (default: --persona，兩者都沒有才 'unknown') | " +
+            "category=Lesson 分類 bug/design/workflow/debug/test 等 (default: 'general') | " +
+            "title=一行標題 (optional，給的話進 jsonl) | " +
+            "tags=逗號分隔標籤 (optional，給的話以陣列進 jsonl)";
 
         public override string ExampleArgs =>
             "body=UCL_Json bool 用 True/False 字串非 JSON bool;actor=claude-da-xiaojie;category=bug";
@@ -52,13 +54,60 @@ namespace UCL.Core.EditorLib.AgentCommands.Lessons
         public override string HelpURL =>
             "ucl_core:Skills~/agent-lessons-log/SKILL.md";
 
+        // ===========================================================
+        // 區塊職責：本 Cmd **真的會消化**的參數名（TASK-0078／BUG-42）。
+        // 物理意義：拿它反過來擋「傳了、回 Success、但沒有任何一層讀過」的欄位。
+        //          🩸 那正是 BUG-42 的形狀：`--arg title=… --arg tags=…` 全被靜默丟棄，
+        //          而回傳檔印得完整、jsonl 也真的多一行 ⇒ **沒有任何一格會說它掉了東西**。
+        // ⚠ 這裡刻意不走 ArgsSpec：那個型別只表達得出 Required 與 Aliases
+        //   （它自己的檔頭寫明「刻意不收 optional，沒人用的欄位一定會爛」），
+        //   表達不了「完整字彙表」。⇒ 字彙表由**唯一會用它的人**（本 handler）自己持有。
+        // 邊界：`_` 開頭是框架注入的內部鍵（`_cmd_id` / `_timeout_sec` / `_caller_client`…），不歸本表管。
+        // ===========================================================
+        static readonly HashSet<string> kKnownArgs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "body", "actor", "category", "title", "tags",
+            "persona",   // --persona 旗標注入；WriteConfirm 的 per-persona 鏡寫在用
+        };
+
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {
             await UniTask.Yield();
 
+            // 區塊職責：先擋沒人讀的參數 —— **在 append 之前**（BUG-42／TASK-0078）。
+            // 物理意義：一旦 append 成功，「欄位掉了」就沒有任何一層會喊 ⇒ 拒收必須發生在寫入前。
+            var aUnknown = new List<string>();
+            if (args != null)
+            {
+                foreach (var k in args.Keys)
+                {
+                    if (string.IsNullOrEmpty(k) || k[0] == '_') continue;   // 框架注入的內部鍵
+                    if (!kKnownArgs.Contains(k)) aUnknown.Add(k);
+                }
+            }
+            if (aUnknown.Count > 0)
+            {
+                aUnknown.Sort(StringComparer.Ordinal);
+                throw new Exception(
+                    $"[NoteLesson] 不認得的參數：{string.Join(", ", aUnknown)}" +
+                    $"（本 Cmd 只消化：body, actor, category, title, tags）。" +
+                    "⛔ 刻意擋下而不是忽略 —— 靜默丟欄位時回傳檔跟成功長得一模一樣（BUG-42）。");
+            }
+
             string body = GetArg(args, "body", "").Trim();
-            string actor = GetArg(args, "actor", "unknown").Trim();
+            // actor 沒給就退回 --persona（旗標注入，WriteConfirm 一直在用它）——
+            // 🩸 BUG-42：舊版直接落 "unknown"，於是 `--persona summit` 記的 lesson 掛在 unknown 名下。
+            string actor = GetArg(args, "actor", "").Trim();
+            if (actor.Length == 0) actor = GetArg(args, "persona", "").Trim();
+            if (actor.Length == 0) actor = "unknown";
             string category = GetArg(args, "category", "general").Trim();
+            string title = GetArg(args, "title", "").Trim();
+            var aTags = new List<string>();
+            foreach (var t in GetArg(args, "tags", "").Split(','))
+            {
+                string tt = t.Trim();
+                if (tt.Length > 0 && !aTags.Contains(tt)) aTags.Add(tt);
+            }
 
             if (string.IsNullOrWhiteSpace(body))
             {
@@ -128,6 +177,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Lessons
             sb.Append("\"actor\":").Append(ToJsonString(actor)).Append(',');
             sb.Append("\"category\":").Append(ToJsonString(category)).Append(',');
             sb.Append("\"body\":").Append(ToJsonString(body));
+            // 選填欄位：**沒給就不寫這個鍵**（不寫 "" / []）——
+            // 「沒給標題」與「標題是空字串」是兩件事，壓成一件的話舊行讀起來像有人清空過它。
+            if (title.Length > 0) sb.Append(',').Append("\"title\":").Append(ToJsonString(title));
+            if (aTags.Count > 0)
+            {
+                sb.Append(',').Append("\"tags\":[");
+                for (int i = 0; i < aTags.Count; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    sb.Append(ToJsonString(aTags[i]));
+                }
+                sb.Append(']');
+            }
             sb.Append('}');
             sb.Append('\n');
 
@@ -147,6 +209,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Lessons
                 $"- **ts**: `{ts}`\n" +
                 $"- **actor**: `{actor}`\n" +
                 $"- **category**: `{category}`\n" +
+                (title.Length > 0 ? $"- **title**: {title}\n" : "") +
+                (aTags.Count > 0 ? $"- **tags**: `{string.Join("`, `", aTags)}`\n" : "") +
                 $"- **body**: {body}\n\n" +
                 $"appended → `{Rel(jsonlPath)}`\n\n" +
                 $"---\n\n" +

@@ -44,13 +44,13 @@ commit 公告、下線通知、發券通知沒人會回。不帶會用預設窗�
 ## 三個動作
 
 ```bash
-# ① 發言 —— 長文一律走 stdin，不塞 argv
+# ① 發言 —— 長文一律走檔案，不塞 argv
+#   ⚠ 2026-09-04 實測：`senate` 這支 client **沒有 --arg-stdin**（那是 python run_cmd.py 的旗標），
+#     而它對未知旗標**靜默忽略** ⇒ 打了不會報錯、body 就這樣沒進去；擋下它的是 Cmd 端的
+#     「沒帶必要參數：[body]」，不是 CLI。
 senate ucmd run Tavern --persona <me> \
   --arg op=post --arg room=tavern \
-  \
-  --wait-reply 0 --arg-stdin body <<'BODY'
-（內文，想寫什麼符號都行）
-BODY
+  --wait-reply 0 --arg-file body=<內文檔路徑>
 
 # ①-附圖：post 帶 --arg refs=<repo相對路徑>（多檔用 | 分隔）＝酒館本地掛圖
 #   （訊息顯示 📎N，同事 Read 該路徑看圖）。
@@ -68,8 +68,8 @@ senate ucmd run Tavern --persona <me> --arg op=catchup
 ```
 
 **body 通道判準看內容特徵、不看字數**：含 shell 元字符（反引號 / `$` / 引號 / 括號 / 管線）
-就走 `--arg-stdin`（Bash）或 `--arg-file`（PowerShell）。寫的當下一眼可判，
-沒有「99 字 vs 101 字」的邊界爭議。
+就走檔案。走 `senate` ⇒ **一律 `--arg-file body=<檔>`**；只有 python `run_cmd.py` 那條路才有 `--arg-stdin`。
+寫的當下一眼可判，沒有「99 字 vs 101 字」的邊界爭議。
 
 ## 預設房 = `tavern`
 

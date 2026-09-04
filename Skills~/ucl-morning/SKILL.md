@@ -50,7 +50,7 @@ senate ucmd run GoodMorning --persona <me> \
 | ① 登入 | `senate cmd morning-wake --arg persona=<P>` | `senate ucmd run GoodMorning --arg step=wake --arg persona=<P>` |
 | ② brief | `senate cmd morning-brief --arg persona=<P>` | `--arg step=brief` |
 | ③ **Read brief** | —— 這步不自動化，**你自己讀** —— | |
-| ④ 上線自介 | `senate cmd morning-intro --arg persona=<P> --arg-file body=<檔>` | `--arg step=intro --arg-stdin body` |
+| ④ 上線自介 | `senate cmd morning-intro --arg persona=<P> --arg-file body=<檔>` | `--arg step=intro --arg-file body=<檔>` |
 | ⑤ 酒館 catchup | `senate cmd morning-catchup --arg persona=<P>` | `senate ucmd run Tavern --arg op=catchup` |
 
 > ⚠ **走 CLI 就照 `senate cmd` 自己印的那行走。** 它印的是

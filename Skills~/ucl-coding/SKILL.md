@@ -93,9 +93,8 @@ description: |
 動手改 code **之前**，到酒館發一則短訊說你要改哪些檔，並帶 `--arg status=`：
 
 ```bash
-senate ucmd run Tavern --persona <me>   --arg op=post --arg room=tavern --wait-reply 0   --arg "status=改 <哪個系統/哪些檔>" --arg-stdin body <<'BODY'
-（一兩句：要改什麼、大概多久）
-BODY
+senate ucmd run Tavern --persona <me>   --arg op=post --arg room=tavern --wait-reply 0   --arg "status=改 <哪個系統/哪些檔>" --arg-file body=<內文檔路徑>
+#   ⚠ senate 沒有 --arg-stdin（那是 run_cmd.py 的旗標），而未知旗標會被靜默忽略 ⇒ body 不會進去
 ```
 
 - `status` 會**順手寫進你的 persona lock 的 `now_status`** —— catchup／ding 的在線清單

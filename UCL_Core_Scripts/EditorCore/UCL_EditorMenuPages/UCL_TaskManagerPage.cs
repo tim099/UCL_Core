@@ -123,11 +123,11 @@ namespace UCL.Core.EditorLib.Page
             // enum 下拉（Tim 2026-08-26）：顯示即成員名原文；真相源是 enum 值本身，
             // 沒有「index 指到別人」的問題（那是字串清單版需要 DrawFilterPopup 防的坑）。
             m_StatusFilter = UCL_GUILayout.PopupAuto(m_StatusFilter, m_Dic, "StatusFilter",
-                10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
 
             GUILayout.Label("Type", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
             m_TypeFilter = UCL_GUILayout.PopupAuto(m_TypeFilter, m_Dic, "TypeFilter",
-                10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(120)));
+                10, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
 
             GUILayout.Label("參與者", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
 

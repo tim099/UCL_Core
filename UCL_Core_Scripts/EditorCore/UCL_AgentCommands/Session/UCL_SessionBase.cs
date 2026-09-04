@@ -5,6 +5,7 @@
 // 所有「一場有起訖時間的 session」的共同資料模型（FreeTime / StreamWatch / …）。
 #if UNITY_EDITOR
 using System;
+using UCL.Core.ATTR;
 using UCL.Core.JsonLib;
 
 namespace UCL.Core.EditorLib.AgentCommands
@@ -63,6 +64,22 @@ namespace UCL.Core.EditorLib.AgentCommands
         public string end_reason = "";
         /// <summary>實際收工 UTC ISO（未收工時為空字串）。</summary>
         public string ended_at = "";
+
+        // ===========================================================
+        // 區塊職責：**保留這個 model 不認識的鍵** —— 各 kind 的專屬欄位。
+        // 物理意義：一人一檔位之後，同一份檔會被不同型別讀到（管理頁與關場路徑讀的是本基底類別）。
+        //          只寫自己認識的那幾格 ⇒ 別人的欄位安靜消失，症狀是「下一個讀它的人拿到預設值」。
+        // 🩸 活體 2026-09-04（TASK-0127 ④ 首跑）：一份帶 `rounds`／`activity` 的 FreeTime 殘留
+        //          走 Load<UCL_SessionBase> → Close → Save 之後那兩個欄位不見了，而工具回報 closed=1。
+        // 數值影響：純記憶體欄位，由 UCL_SessionService 在 Load 時填、Save 時當底。
+        // ⚠ **一定要 [UCL_HideInJson]**：它不是磁碟上的鍵，跑進輸出會長出一個沒有人認得的欄位。
+        //   🩸 我第一版寫 [NonSerialized] —— 那個 attribute **這套序列化器不看**
+        //   （`SaveFieldsToJson` 只跳過 `[UCL_HideInJson]` 與 multicast delegate）⇒
+        //   實跑後 session 檔裡真的長出一整包巢狀的 `"RawJson": {...}`。
+        //   ⇒ 判準：要排除欄位，用**這套**的 attribute，不要套別的框架的直覺。
+        // ===========================================================
+        /// <summary>載入時的原始 JSON（含本 model 不認識的欄位）—— 由 <c>UCL_SessionService</c> 填。</summary>
+        [UCL_HideInJson] public JsonData RawJson;
 
         // ===========================================================
         // 區塊職責：bool 欄位強制寫成**原生 JSON bool**，不是 "True"/"False" 字串。

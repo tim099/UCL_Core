@@ -3519,6 +3519,40 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             => UCL_SessionService.Load<UCL_StreamWatchSession>(UCL_SessionKind.StreamWatch, iPersona);
 
         // ===========================================================
+        // 區塊職責：**殘留補結算的對外入口**（TASK-0127 ④）—— 給 Cmd_SessionClose／Senate 那側的關場路徑用。
+        // 物理意義：補結算這條路本來只有兩個進入點（step=start 撞到殘留、step=join 撞到自己的殘留），
+        //          而管理頁的「補收工」走的是另一條 —— `UCL_SessionService.Close` 三欄一翻就走人，
+        //          **跳過結算**（TASK-0055 的 known-issue：酬勞蒸發＋seq 區間永久消失，而印出來的字一樣）。
+        //          ⇒ 這裡不新寫結算，只把既有那條路開一個門，讓所有關場路徑走同一個。
+        // 數值影響：委派給 SettleAsync（計費上限仍是 ends_at，兩者取小；熱路徑判重仍在它裡面）。
+        // ⚠ **只處理殘留**（active 且已過 end_ts）。進行中的場不在射程 —— 那要走 step=end，
+        //   因為正常收工還有收工公告與同場者判定，那些不是本入口的責任。
+        // ===========================================================
+        /// <summary>
+        /// 對某人**已過期而沒收工**的觀影場補結算（台帳 append ＋ 發薪，走與 step=start 撞殘留時同一條路）。
+        /// </summary>
+        /// <returns>true ＝ 有一場殘留、且已跑完結算；false ＝ 沒有可補的場（原因寫進 <paramref name="ioR"/>）。</returns>
+        internal static async UniTask<bool> SettleResidueAsync(IDictionary<string, string> iArgs, string iPersona,
+                                                               StringBuilder ioR, CancellationToken iToken,
+                                                               string iReason = "residue-settled")
+        {
+            var aS = LoadSession(iPersona);
+            if (aS == null) { ioR.AppendLine("- 結算: 這個人沒有觀影場（kind 不符或檔不存在）⇒ 未動作"); return false; }
+            if (!aS.active) { ioR.AppendLine($"- 結算: 這場已經收過工（ended_at={aS.ended_at}）⇒ 未重複結算"); return false; }
+            DateTime aNow = DateTime.Now;
+            DateTime? aEnd = ParseIsoLocal(aS.end_ts);
+            if (aEnd.HasValue && aNow <= aEnd.Value)
+            {
+                // ⚠ 進行中的場**不從這裡關** —— 擋而指路，出口是那一 kind 自己的收工步驟。
+                ioR.AppendLine($"- 結算: 這場**還在進行中**（至 {aEnd.Value:HH:mm} 本地）⇒ 未動作");
+                ioR.AppendLine("    出口：`senate ucmd run StreamWatch --persona <他> --arg step=end`（正常收工才有公告與同場者判定）");
+                return false;
+            }
+            await SettleAsync(iArgs, iPersona, aS, false, aNow, aEnd, ioR, iToken, iReason);
+            return true;
+        }
+
+        // ===========================================================
         // 區塊職責：全場掃描（找別人的場）—— 唯一入口。
         // 物理意義：扁平化之前這裡是「列 StreamWatch/sessions/ 目錄」，而目錄本身就是 kind 過濾器；
         //          扁平化之後**目錄裡混著所有 kind 的檔**，於是「列目錄」這個動作不再等於「列觀影場」。

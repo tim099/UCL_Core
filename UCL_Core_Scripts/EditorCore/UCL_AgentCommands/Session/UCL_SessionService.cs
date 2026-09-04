@@ -96,6 +96,8 @@ namespace UCL.Core.EditorLib.AgentCommands
                 if (aJson == null) return null;
                 var aSession = new T();
                 aSession.DeserializeFromJson(aJson);
+                // 這個 model 不認識的鍵（各 kind 的專屬欄位）留在這 —— 寫回時以它為底（見 MergeOntoRaw）。
+                aSession.RawJson = aJson;
                 if (!string.IsNullOrEmpty(iKind)
                     && !string.Equals(aSession.kind, iKind, StringComparison.Ordinal)) return null;
                 return aSession;
@@ -117,7 +119,31 @@ namespace UCL.Core.EditorLib.AgentCommands
             if (!string.IsNullOrEmpty(iKind)) iSession.kind = iKind;
             string aPath = SessionPath(iPersona);
             Directory.CreateDirectory(Path.GetDirectoryName(aPath));
-            AtomicWrite(aPath, iSession.SerializeToJson().ToJsonBeautify());
+            AtomicWrite(aPath, MergeOntoRaw(iSession).ToJsonBeautify());
+        }
+
+        // ===========================================================
+        // 區塊職責：以**載入時的原始 JSON** 為底、只覆寫這個 model 認識的鍵。
+        // 物理意義：一人一檔位之後同一份檔會被不同型別讀到 —— 管理頁與關場路徑讀的是
+        //          `UCL_SessionBase`（只有共通欄位），而磁碟上那份還帶著各 kind 的專屬欄位。
+        //          直接 `SerializeToJson()` 寫回 ⇒ **那些欄位安靜消失**。
+        // 🩸 活體（2026-09-04，TASK-0127 ④ 首跑）：一份帶 `rounds`／`activity` 的 FreeTime 殘留
+        //          走「Load<UCL_SessionBase> → Close → Save」之後兩個欄位都不見了，
+        //          而工具回報 `closed=1`、沒有任何一層喊。**管理頁的「補收工」走的是同一條路。**
+        // 數值影響：Save 多一次 key 合併；沒有 RawJson（新建的 session）時行為與原本逐字相同。
+        // ⚠ 只補「原始有、序列化結果沒有」的鍵 —— **不做刪除**：這一層不知道某個鍵消失是不是故意的。
+        // ===========================================================
+        static JsonData MergeOntoRaw(UCL_SessionBase iSession)
+        {
+            JsonData aOut = iSession.SerializeToJson();
+            JsonData aRaw = iSession.RawJson;
+            if (aRaw == null || !aRaw.IsObject) return aOut;
+            foreach (string aKey in aRaw.Keys)
+            {
+                if (aOut.Contains(aKey)) continue;
+                aOut[aKey] = aRaw[aKey];
+            }
+            return aOut;
         }
 
         // ===========================================================

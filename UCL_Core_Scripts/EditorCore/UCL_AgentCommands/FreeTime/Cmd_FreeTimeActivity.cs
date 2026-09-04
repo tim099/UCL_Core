@@ -186,7 +186,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             // 開場宣告（跟骰／未跟骰要可觀測 —— 原本靠人自己在 post 裡註明）
             var aPost = new StringBuilder();
-            aPost.AppendLine($"▶️ [{iPersona} 大小姐] 自由時間開做：**{aHit.name}**"
+            aPost.AppendLine($"▶️ 自由時間開做：**{aHit.name}**"
                              + (iFollowedDice ? "" : "（**本輪未跟骰** —— 自由意志優先）"));
             if (!string.IsNullOrEmpty(iBody))
             {

@@ -302,7 +302,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             // ── roll=0：只讀訊息、不換骰（Tim 2026-08-21）──
             // 物理意義：「我還在做同一件活動，但想看看有沒有人講話」是高頻需求，
             //   而換骰會 ①輪次+1 ②重擲清單 ③發一則「換骰」公告 —— 三件都在說謊：
-            //   我沒有換活動，公告卻宣布我換了，而「換骰比開工多」的提醒也會跟著誤報。
+            //   我沒有換活動，公告卻宣布我換了。
             // 數值影響：不動 rounds、不重擲、不發換骰公告（帶 body 才發，且 tag 是 chat 不是 dice-roll）。
             bool aKeepDice = (iArgs != null && iArgs.TryGetValue("roll", out var aRollRaw) ? aRollRaw : "1").Trim() == "0";
             if (aKeepDice)
@@ -353,10 +353,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             int aDiceSeq = await TavernPost(iArgs, iPersona, aDiceBody.ToString(), "dice-roll", iToken);
 
             AppendTimeFields(aR, aNow, aUntil);
-            aR.AppendLine($"- 輪次: **{aRound}**　活動實作: **{aSession.activities_done}** 件"
-                          + (aRound - aSession.activities_done >= 2
-                             ? $"　⚠ 換骰比開工多 {aRound - aSession.activities_done} 次 —— 挑一個開做，別再骰了"
-                             : ""));
+            // ⚠ 這兩個數字是**紀錄，不是尺** —— 不要拿 `rounds - activities_done` 掛警告
+            //   （Tim 2026-09-04 拍板：**自由時間不是強制活動**）。
+            //   要判「哪些活動很久沒做」走 `UCL_FreeTimeActivityStatsIO`（飢餓度，另一套）。
+            aR.AppendLine($"- 輪次: **{aRound}**　活動實作: **{aSession.activities_done}** 件");
             aR.AppendLine($"- 🎟 限時券: 已用 {aUsedNow}/{aGranted}（剩 {aRemainNow} 張，到期即作廢）");
             aR.AppendLine($"- 換骰宣告: {(aDiceSeq > 0 ? $"seq **{aDiceSeq}**" : "未發（best-effort）")}");
             aR.AppendLine(string.IsNullOrEmpty(aChatBody)

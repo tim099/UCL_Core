@@ -26,9 +26,12 @@ namespace UCL.Core.EditorLib.AgentCommands
         public int rounds = 0;
 
         // 區塊職責：本場「真的開始做了幾件活動」與最後一件是什麼。
-        // 物理意義：原本只有 rounds（換骰次數），於是**「一直重骰卻什麼都沒做」在資料上不存在** ——
-        //          沒有人能指出它，只能靠事後回想。有了 activities_done，那件事變成
-        //          `rounds` 與 `activities_done` 的差，是一個可以被印出來、被比較的數字。
+        // 物理意義：原本只有 rounds（換骰次數），於是「本場做了幾件」在資料上不存在，只能靠事後回想。
+        //          ⚠ 這個欄位一度被拿來當**指控的來源**（`rounds - activities_done >= 2`
+        //          就印「別再骰了」）—— Tim 2026-09-04 拍板移除那條警告：
+        //          **自由時間不是強制活動**，而那個差在真實資料上響 3 次、被券帳打臉 3 次。
+        //          ⇒ 本欄位現在**只是紀錄**，不是尺。要判「哪些活動很久沒做」請走
+        //          `UCL_FreeTimeActivityStatsIO`（飢餓度，另一套，不經過這裡）。
         // 數值影響：由 Cmd_FreeTimeActivity 遞增（活動入口唯一寫入端）；舊 session 沒有此欄位 → 0。
         /// <summary>本場實際開始過幾件活動（走 Cmd_FreeTimeActivity 才算）。</summary>
         public int activities_done = 0;

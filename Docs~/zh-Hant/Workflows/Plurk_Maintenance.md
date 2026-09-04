@@ -1,7 +1,7 @@
 ---
 title: Plurk 串接維護指南
 description: Plurk 發文機制的維護面 —— 四個檔的分工、怎麼加一條 lint 規則、怎麼加心情詞、帳號與憑證安裝、OAuth 實作的三個坑、端點驗證狀態、audit 對帳。
-last_updated: 2026-09-01
+last_updated: 2026-09-04
 target_audience: [AI_Agent, Tools_Maintainer]
 status: v1.0（2026-08-21 從 Plurk_Posting_Workflow 拆出 —— Tim：「維護部分單獨一份文件」）
 ---
@@ -118,8 +118,25 @@ persona profile 的 `plurk_account` → registry（`AwakenInit/plurk_accounts.js
 Plurk 的 `@` 只認 **nick** ⇒ 文案裡的 persona 名由 `LoadSlip` 自動轉換：
 1:1 帳號 → `@<nick>`（不加標記）；多人帳號 → `@<nick>→<persona>`；
 外面的真 nick 不動；**查不到 nick 就擋下不猜**（猜一個就是公開標注陌生人）。
-nick 由 `op=whoami` 從 `/APP/Users/me` 寫回 registry 的 `Nicks`，**不手打**。
 ⚠ 轉換排在字元預算之前 —— 它會變長（`@gura` 5 字 → `@hololive_myth→gura` 20 字）。
+
+**nick 的來源：`Cmd_Plurk.EnsureNicksAsync`，在 `lint`／`preview`／`post` 的 switch 之前跑。**
+它枚舉 `ListSecretIds()`、挑出 `NickOf()` 為空的帳號、對**每份憑證**打一次 `/APP/Users/me`、
+`SetNick` 寫回 registry 的 `Nicks`（回傳檔印一節「nick 自動補齊」，來源標 `secret-scan`）。
+
+| 判準 | 理由 |
+|---|---|
+| **查的單位是帳號不是 persona** | 21 位 persona 只落在 4 個帳號上 ⇒ 枚舉 `ListSecretIds()`，不是 persona pool |
+| **不需要那個人在場** | nick 是帳號的屬性，問它要的是**那份憑證**，而憑證是檔案（`Secret/` 底下） |
+| **全滿零往返；有缺一次補齊全部** | 既然要開一次往返，就不要留下一格明天再開一次 |
+| ⛔ **只准打 `/APP/Users/me`** | 這條路用的是別人的憑證。白名單一鬆，它就從「解析 nick」長成「工具可以拿任何人的憑證做任何事」，而那一天不會有任何一層喊 |
+| **補不到仍然擋**，訊息講當下為真的那句（憑證不在這台／已失效） | 放行的唯一方式是猜一個 nick |
+| **掛在 switch 之前，不塞進 `ResolveMention`** | 後者是純同步零 IO 的判定函式；而三條路共用一個補齊點，分三處寫就會漂 |
+
+⚠ **registry 是 per-tree 的**（`<DataRoot>/AwakenInit/plurk_accounts.json`）⇒ 每棵樹各自補齊自己那一份。
+兩棵樹的表**各自新鮮、各自正確，而且不會發現對方存在** —— 要單一份得靠單一持有者（見 TASK-0122）。
+
+`op=whoami` 是單一帳號的身分診斷（印 id／nick／karma），順便寫回登記表。
 - 寫入個人 override 走 `Cmd PersonaProfile op=set`（actor／reason 必填、有審計）。
   ⛔ **不可寫 `AwakenInit/personas/<name>.json`** —— 那個舊源 2026-08-19 起只出不進，寫了不會生效。
 

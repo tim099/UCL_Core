@@ -359,10 +359,15 @@ namespace UCL.Core.EditorLib.Plurk
                 // 🩸 首版這行寫「先跑 op=resolve」——**而真正會寫 nick 的是 `op=whoami`**
                 //   （它才呼叫 `/APP/Users/me`）。我自己剛蓋好的指路牌就指錯路，今天第三次同族。
                 //   ⇒ 指路要指到**真的會做那件事的那一支**，而不是名字聽起來像的那一支。
-                aOut.Problem = $"`@{aOut.Raw}` → 帳號 `{aRes.SecretId}`，但**該帳號的 nick 還沒登記** "
-                    + $"⇒ 請**該帳號的持有者**（{string.Join(" / ", PersonasOn(aRes.SecretId))}）"
-                    + "跑一次 `senate ucmd run Plurk --persona <他> --arg op=whoami` —— "
-                    + "只有那支憑證問得到自己的 nick（`/APP/Users/me`），問完會自動寫回登記表。"
+                // 🩸 第二層（2026-09-04，Tim 指示後改）：舊訊息說「只有那支憑證問得到自己的 nick」
+                //   而把它實作成「請那個人上線跑一次」—— **憑證是檔案不是人**，工具自己問得到。
+                //   發文三路（lint／preview／post）在轉換前已經跑過 `EnsureNicksAsync` 補齊，
+                //   ⇒ **走到這裡代表補不到**（憑證不在這台／已失效／回應沒有 nick），
+                //   所以訊息要講那句當下為真的話，而不是退回去叫人跑一支補不進這棵樹的指令。
+                aOut.Problem = $"`@{aOut.Raw}` → 帳號 `{aRes.SecretId}`，"
+                    + "而**自動補齊已經試過、拿不到它的 nick**（回傳檔的「nick 自動補齊」那節有逐筆理由）"
+                    + $"⇒ 多半是這台機器上沒有 `{aRes.SecretId}` 的可用憑證，或那份憑證已失效。"
+                    + $"（該帳號目前掛著：{string.Join(" / ", PersonasOn(aRes.SecretId))}）"
                     + "⛔ 這裡刻意不猜一個 nick —— 猜錯就是公開標注陌生人";
                 return aOut;
             }

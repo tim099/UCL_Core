@@ -104,6 +104,26 @@ namespace UCL.Core.EditorLib.Plurk
                 string.IsNullOrEmpty(aPersona) ? "basecamp" : aPersona, "plurk", aOp);
             try
             {
+                // ===========================================================
+                // 區塊職責：發文三路（lint／preview／post）走 `@persona` 轉換**之前**，
+                //          先把缺的 nick 補齊 —— 「還沒查過」不該長成「擋下來要人跑指令」。
+                // 物理意義：nick 是**帳號**的屬性，而問它要的是**那份憑證**（`/APP/Users/me`）——
+                //          而憑證是檔案，就在 `Secret/` 底下。⇒ 這件事**不需要那個人在場**。
+                //          🩸 血證（summit 2026-09-03 / calli 2026-09-04 復現）：舊實作把
+                //          「不能猜」實作成了「必須人工」，於是一個系統缺口被轉成三位同事的待辦；
+                //          而真正的成因是**登記表每棵樹一份**（Bar 樹那份連 `Nicks` 欄位都沒有），
+                //          在那棵樹上跑 whoami 也只補那一棵。
+                // 數值影響：全滿時**零往返**（只讀 registry 比對）；有缺才打 API，而且一次補齊全部
+                //          （既然要開一次往返，就不要留下一格明天再開一次）。
+                //          ⛔ 補不到仍然擋 —— 放行的唯一方式是猜一個 nick，而猜錯＝公開標注陌生人
+                //          （TASK-0111 血證：`Calli` 是 karma 94.97 的活人）。
+                // ⚠ 掛在 switch 之前而不是塞進 `ResolveMention`：後者是純同步零 IO 的判定函式，
+                //   讓它變成要 await 會把「解析」與「取得」混成一件事；而三條路共用一個補齊點，
+                //   分三處寫就會漂，漂掉的那一處剛好是真的送出去的那一條。
+                // ===========================================================
+                if (aOp == "lint" || aOp == "preview" || aOp == "post")
+                    await EnsureNicksAsync(aR, token);
+
                 switch (aOp)
                 {
                     case "resolve": OpResolve(aRes, aR); break;
@@ -215,6 +235,64 @@ namespace UCL.Core.EditorLib.Plurk
                 ioR.AppendLine($"- ✗ body（前 300 字）: {Trunc(aBody, 300)}");
                 throw new Exception($"[Plurk] whoami 失敗 http={aStatus} —— "
                     + "判準：先確認端點存在，再懷疑簽章，最後才是 WAF。三者的失敗都是 4xx。");
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：把「這台機器上有憑證、但登記表沒 nick」的帳號一次補齊。
+        // 物理意義：查的單位是**帳號**不是 persona（21 位 persona 只落在 4 個帳號上）——
+        //          所以枚舉的是 `ListSecretIds()`，不是 persona pool。
+        //          每份憑證問的是它自己的 `/APP/Users/me`，⇒ 誰都不必上線。
+        // 數值影響：全滿 ⇒ 一次 HTTP 都不發（迴圈只讀 registry）。有缺 ⇒ 缺幾個打幾次，
+        //          **不是只補撞到的那一個** —— 既然要開往返，就不要留下一格明天再開一次。
+        // ⛔ 只准打 `/APP/Users/me` 這一個唯讀端點。這條路用的是**別人的憑證**，
+        //   它跟「代跑 `op=whoami --persona <他>`」的差別是：後者以那個 persona 的身分執行
+        //   （進他的 lane、算他的帳），本函式不掛任何 persona 的帳、也不改任何 Plurk 狀態。
+        //   ⚠ 這道白名單一旦鬆掉，它就從「解析 nick」長成「工具可以拿任何人的憑證做任何事」，
+        //   而那一天不會有任何一層喊。
+        // ⚠ 補不到的**不在這裡擋** —— 擋的判定留在 `ResolveMention`（它才知道文案 @ 了誰）。
+        //   這裡只負責「能補的都補了」，補不到就照實印，讓後面那道守衛拿著真的理由去擋。
+        // ===========================================================
+        async UniTask EnsureNicksAsync(StringBuilder ioR, CancellationToken token)
+        {
+            var aMissing = new List<string>();
+            foreach (string aId in UCL_PlurkAccounts.ListSecretIds())
+                if (string.IsNullOrEmpty(UCL_PlurkAccounts.NickOf(aId))) aMissing.Add(aId);
+            if (aMissing.Count == 0) return;
+
+            ioR.AppendLine();
+            ioR.AppendLine($"## nick 自動補齊（{aMissing.Count} 個帳號沒登記 ⇒ 現在查）");
+            ioR.AppendLine("- 判準：nick 是帳號的屬性，問它要的是那份憑證而不是那個人 ——"
+                + " 憑證在 `Secret/` 底下，所以不需要誰上線跑指令。");
+            foreach (string aId in aMissing)
+            {
+                var aCred = LoadCredentials(aId, out string aWhy);
+                if (aCred == null)
+                {
+                    // 「這台機器上沒有可用憑證」是**當下為真**的那句話 —— 不要退回去講「請那個人跑 whoami」，
+                    // 因為他跑了也補不進這棵樹（那正是 2026-09-03 那三則公開回應的成因）。
+                    ioR.AppendLine($"- ⚠ `{aId}`：憑證不可用（{aWhy}）⇒ 這一筆補不了");
+                    continue;
+                }
+                var (aSt, aBody) = await CallAsync("/APP/Users/me", aCred, null, token);
+                if (aSt != 200)
+                {
+                    ioR.AppendLine($"- ⚠ `{aId}`：`/APP/Users/me` http={aSt} ⇒ 這一筆補不了"
+                        + "（憑證可能已失效或被撤銷）");
+                    continue;
+                }
+                string aNick = (PickJsonValue(aBody, "nick_name") ?? "").Trim().Trim('"');
+                string aUid = PickJsonValue(aBody, "id") ?? "";
+                if (string.IsNullOrEmpty(aNick))
+                {
+                    // 空 nick 不寫入 —— 「還沒讀過」跟「讀到空的」不得同形（SetNick 也擋，這裡先出聲）。
+                    ioR.AppendLine($"- ⚠ `{aId}`：http 200 但沒讀到 `nick_name` ⇒ 不寫入（不拿空值蓋掉未知）");
+                    continue;
+                }
+                UCL_PlurkAccounts.SetNick(aId, aNick);
+                ioR.AppendLine($"- ✅ `{aId}` = `{aNick}`"
+                    + (string.IsNullOrEmpty(aUid) ? "" : $"（user_id `{aUid}`）")
+                    + "　source: `secret-scan`");
             }
         }
 

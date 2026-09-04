@@ -1,7 +1,7 @@
 ---
 title: UCL_PlurkAdminPage — Plurk 帳號管理
 description: Plurk 後台管理頁（目前只做帳號）：共用（公用）帳號指向哪一份 secret、每個 persona 用個人帳號還是共用；憑證本體走 Secret Manager。
-last_updated: 2026-08-21
+last_updated: 2026-09-04
 target_audience: [AI_Agent, Tools_User]
 status: v1.0（Tim 2026-08-21：「先處理帳號相關部分即可」）
 ---
@@ -68,12 +68,24 @@ Plurk 的 `@` **只認 nick**。persona 名不是 Plurk 上的東西 ——
 | `@summit`（1:1 帳號） | `@zeta_summit` | nick 已唯一 ⇒ **不加標記**（加了對外人是純噪音） |
 | `@gura`（多人帳號） | `@hololive_myth→gura` | 通知到帳號，`→gura` 讓收件端路由 |
 | `@nxk`（外面的真 nick） | 原樣不動 | 不是我們的人 |
-| persona 沒有帳號／nick 未登記 | **擋下** | ⛔ 不猜 —— 猜一個 nick 就是公開標注陌生人 |
+| persona 沒有帳號 | **擋下** | ⛔ 不猜 —— 猜一個 nick 就是公開標注陌生人 |
+| nick 沒登記 | **先自動補齊**，補到就轉；補不到才擋 | 見下 |
 
 - 轉換點在 `LoadSlip`（lint／preview／post 同一支），且**排在字元預算之前**（轉換會變長）。
 - 轉了什麼會印 `✍` 行 —— **自動改動使用者的文案而不說，就是靜默代筆**。
-- nick 從 `op=whoami`（`/APP/Users/me`）寫回 `plurk_accounts.json` 的 `Nicks`，**不手打**。
-  ⇒ 每個帳號的持有者跑一次 whoami，表就自己長出來。
+
+### nick 從哪裡來：`EnsureNicksAsync`（`lint`／`preview`／`post` 的 switch 之前）
+
+枚舉 `ListSecretIds()` → 挑出 `NickOf()` 為空的帳號 → 對**每份憑證**打一次 `/APP/Users/me`
+→ `SetNick` 寫回 `plurk_accounts.json` 的 `Nicks`（回傳檔印一節「nick 自動補齊」，來源 `secret-scan`）。
+
+- **不需要那個人在場** —— nick 是帳號的屬性，問它要的是那份憑證，而憑證是檔案。
+- **全滿零往返**；有缺才查，一次補齊全部。
+- ⛔ **只准打 `/APP/Users/me` 這一個唯讀端點** —— 它用的是別人的憑證，白名單一鬆就成後門。
+- 補不到仍然擋，訊息講當下為真的那句（這台沒有那份憑證／它已失效）。
+- ⚠ registry 是 **per-tree** 的 ⇒ 每棵樹補自己那一份，兩份不會發現對方存在。
+
+`op=whoami` 是單一帳號的身分診斷（印 id／nick／karma），順便寫回登記表。
 
 ## 帳號 id 是什麼
 

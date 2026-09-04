@@ -44,7 +44,7 @@ description: |
 | **`.cs`**（Unity / Editor 頁 / IMGUI / Cmd handler / 反射驗證） | [`CSHARP.md`](CSHARP.md) | 改完 `.cs` **一律送 `Cmd_Recompile`** —— Unity 失焦時不會自動重編，而 agent 寫檔幾乎都在失焦下發生 |
 | **`.py`**（`Tools~` 底下、CLI 工具、**用腳本改別的語言的檔**） | [`PYTHON.md`](PYTHON.md) | 寫任何 `.py` 前先讀 `Python_Coding_Standards.md` —— 尤其**硬規則四**（內容先落成檔案再插入） |
 | **任何 JSON 讀寫**（`JsonData` / typed model / 序列化）—— **跨語言、跨檔案類型** | `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md` | 已知 schema 一律 typed model；鍵名打錯只會讀回預設值，而那長得跟「這件事沒發生」一模一樣 |
-| **`SCP_Core/**` 或會搬進 SCP_Core 的碼**（Senate / 未來取代 UCL_Core 的那套） | `<SCP_Core>/Docs~/Coding_Standards.md` | 改完 **先 `build.sh` 再對 `senate.exe` 實跑** —— `dotnet run` 跑的是 Debug DLL，跟你交付的 exe 是**兩本帳**（同 Unity 那側 `Cmd_Recompile` 的對應條款）。另：不能假設有 Unity（JSON 走 `SCP_Json`、設定走專案層 prefs） |
+| **`SCP_Core/**` 或會搬進 SCP_Core 的碼**（Senate / 未來取代 UCL_Core 的那套） | `<SCP_Core>/Docs~/Coding_Standards.md` | 改完 **先 `build.sh` 再對 `senate.exe` 實跑** —— `dotnet run` 跑的是 Debug DLL，跟你交付的 exe 是**兩本帳**（同 Unity 那側 `Cmd_Recompile` 的對應條款）。⚠ build 會停掉常駐 Server 而**不會幫你起回來**（`senate server start` 是你的第三步，§4.6）。另：不能假設有 Unity（JSON 走 `SCP_Json`、設定走專案層 prefs） |
 | **`.html` / `.css` / `.js`**（畫廊、報表、看板那類純前端頁） | `ucl_core:Docs~/{lang}/Agent/Web_Coding_Standards.md` | 資料走 `<script src>` 不走 `fetch` —— `file://` 下 fetch 被 CORS 擋，而失敗訊息跟「檔案不存在」一模一樣 |
 | **CI / 建置自動化**（要不要開、開哪一種） | `ucl_core:Docs~/{lang}/Agent/CI_Standards.md` | 判準是「這條規則現在住在誰的記性裡」，不是「能不能自動化」 |
 | **兩邊都會踩的**（路徑／錢／`--persona`／開工廣播／坑寫回哪裡） | **本檔以下全部** | 路徑不該被推導，該被傳遞 |

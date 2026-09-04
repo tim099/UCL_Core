@@ -1,4 +1,4 @@
-﻿// 區塊職責: Proposal #25 NeologismGlossary — 自造新詞 + 對應解釋文件 + auto-attach 機制
+// 區塊職責: Proposal #25 NeologismGlossary — 自造新詞 + 對應解釋文件 + auto-attach 機制
 // 物理意義: 跟 vector offset 機制相反 — 不發明連續向量, 直接造離散詞 + 對應 .md 解釋,
 //          用詞時 detect/attach 自動補 refs。對齊「自然語言已是 embedding 高效採樣」哲學。
 // 數值影響: 純檔案操作 (docs/Glossary/ 寫入); detect/attach 走 substring match (longest-wins);
@@ -184,11 +184,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
                 fullPath = Path.Combine(GlossaryDir, slug + ".md");
             }
 
-            // 區塊職責: frontmatter 組裝
-            // 數值影響: aliases CSV → YAML list; 空值 omit
+            // 區塊職責: frontmatter 組裝 (不可變 created_at + 覆寫時推進 updated_at)
+            // 物理意義: created_at 記錄立詞時刻 (不可變); overwrite=true 時沿用既有 created_at 並寫入 updated_at;
+            //          新建時 created_at = 此刻。
+            // 數值影響: 既有詞條 created_at 不再漂移至覆寫時間; 新增 updated_at 追蹤最後修改時刻。
             var aliases = string.IsNullOrEmpty(aliasesCsv)
                 ? new List<string>()
                 : aliasesCsv.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+
+            string nowIso = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            bool isOverwrite = (existingHit != null);
+            string createdAt = (isOverwrite && !string.IsNullOrWhiteSpace(existingHit.createdAt))
+                ? existingHit.createdAt
+                : nowIso;
 
             var sb = new StringBuilder();
             sb.AppendLine("---");
@@ -200,7 +208,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
                 foreach (var a in aliases) sb.AppendLine($"  - {EscapeYamlInline(a)}");
             }
             sb.AppendLine($"category: {category}");
-            sb.AppendLine($"created_at: {DateTime.UtcNow:yyyy-MM-ddTHH:mm:ssZ}");
+            sb.AppendLine($"created_at: {createdAt}");
+            if (isOverwrite)
+            {
+                sb.AppendLine($"updated_at: {nowIso}");
+            }
             sb.AppendLine($"created_by: {createdBy}");
             sb.AppendLine($"one_line: {EscapeYamlInline(oneLine)}");
             sb.AppendLine("---");
@@ -209,6 +221,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             sb.AppendLine();
             if (!string.IsNullOrEmpty(body))
             {
+                if (!body.TrimStart().StartsWith(">") && !string.IsNullOrEmpty(oneLine))
+                {
+                    sb.AppendLine($"> {oneLine}");
+                    sb.AppendLine();
+                }
                 sb.AppendLine(body);
             }
             else
@@ -398,6 +415,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             //          顯示時拼 "docs/Glossary/" + relativeSubPath 給出完整 markdown link
             // 數值影響: forward-slash 統一 (跨平台 link friendly)
             public string relativeSubPath;
+            public string createdAt;
+            public string createdBy;
         }
 
         private class DetectHit
@@ -484,6 +503,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
                         case "slug": entry.slug = val; break;
                         case "category": entry.category = val; break;
                         case "one_line": entry.oneLine = UnescapeYamlInline(val); break;
+                        case "created_at": entry.createdAt = val; break;
+                        case "created_by": entry.createdBy = val; break;
                     }
                 }
                 if (string.IsNullOrEmpty(entry.term) || string.IsNullOrEmpty(entry.slug)) return null;

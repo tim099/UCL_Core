@@ -65,6 +65,18 @@ namespace UCL.Core.EditorLib
         /// <summary>清快取 — 控制台 Apply 改設定後呼叫,下次取 DataRoot 會重算。</summary>
         public static void ResetCache() => s_CachedDataRoot = null;
 
+        // ===========================================================
+        // 區塊職責：把資料根包成 SCP 那側的 typed root（<see cref="SCP.Core.Paths.SCP_DataRoot"/>）。
+        // 物理意義：SCP_Core 的 IO 一律吃 typed root（傳錯根編不過）。搬家過程中會有很多呼叫端
+        //          需要它，而每個呼叫端各自 `new SCP_DataRoot(DataRoot)` 就是同一條組法散成 N 份 ——
+        //          那正是 session 路徑當年散在三個檔的形狀（改一處、另兩處指舊位置，兩邊都不報錯）。
+        // 數值影響：每次呼叫 new 一個 struct/wrapper，零 IO；值來自同一個 <see cref="DataRoot"/> 快取。
+        // ⚠ 這裡**不是** session 的專屬入口 —— 它是資料根的型別轉接，任何 SCP 的 IO 都走它。
+        // ===========================================================
+        /// <summary>資料根的 SCP typed 版本（SCP_Core 的 IO 都吃這個型別）。</summary>
+        public static SCP.Core.Paths.SCP_DataRoot ScpDataRoot
+            => new SCP.Core.Paths.SCP_DataRoot(DataRoot);
+
         /// <summary>預設資料根 = RepoRoot/AgentCommands (現行行為)。</summary>
         public static string DefaultDataRoot
             => Path.Combine(UCL_RepoPath.RepoRoot, "AgentCommands").Replace('\\', '/');

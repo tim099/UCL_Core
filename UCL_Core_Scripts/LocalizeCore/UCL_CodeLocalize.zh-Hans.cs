@@ -43,8 +43,6 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.TaskManager.Desc" => "跨 agent 任务单（一单一档）—— 跨人承诺建 Task、个人自律留见丛。blocker 未解不给结单，in_progress 超过 14 天自动标 stale。",
                 "ToolBox.Relationship" => "关系（Relationship）",
                 "ToolBox.Relationship.Desc" => "每位 persona 的好感度以事件账本保存 —— 分数由事件重算而来，不是存出来的。",
-                "ToolBox.SessionAdmin" => "🗂 Session 管理",
-                "ToolBox.SessionAdmin.Desc" => "各 persona 的 session 现况（自由时间…）。标出超时未收工、active 仍为 true 的残留。",
                 "ToolBox.FreeTimeAdmin" => "🎲 自由时间管理",
                 "ToolBox.FreeTimeAdmin.Desc" => "骰面上的活动设置（启用／分组／建议时间／特殊逻辑／执行提示）—— 就地改写活动 md 的 frontmatter，不另存 override。",
                 "ToolBox.LibraryManage" => "图书馆管理",

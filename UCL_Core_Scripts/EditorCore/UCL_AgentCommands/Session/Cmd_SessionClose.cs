@@ -1,6 +1,6 @@
 // 區塊職責：**關場／補收工的唯一 Cmd 入口**（TASK-0127 ④，＝ TASK-0055「所有關場路徑走同一個門」的 Editor 半邊）。
 // 物理意義：在此之前「補收工」只有一個入口 —— `UCL_SessionAdminPage` 的那顆鈕，而它**直接呼叫**
-//          `UCL_SessionService.Close`（三欄一翻就走），於是觀影場的**結算被跳過**：
+//          `SCP_ActivitySessionStore.Close`（三欄一翻就走），於是觀影場的**結算被跳過**：
 //          酬勞蒸發、seq 區間永久消失（那場觀察再也匯不進書），而印出來的字跟正常收工一模一樣。
 //          ⇒ 這支 Cmd 把那條路變成：① 權威狀態 ② 結算（per-kind）③ 回報，三段分開講。
 // 數值影響：會**寫別人的 session 檔**、可能觸發發薪（觀影場走 SettleAsync）⇒ `confirm=1` 是必填。
@@ -80,12 +80,12 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             // ⚠ 讀取端**不過濾 kind**：要問的是「這個人有沒有一場需要收的」，不是「有沒有我這種」。
             //   🩸 過濾 kind 的那個問法正是 TASK-0056 那個洞 —— 它會讓別 kind 的場在你眼裡等於不存在。
-            var aSession = UCL_SessionService.Load<UCL_SessionBase>(null, aTarget);
+            var aSession = SCP.Core.Session.SCP_ActivitySessionStore.Load(UCL_AgentCommandsPath.ScpDataRoot, aTarget);
             if (aSession == null)
             {
                 aR.AppendLine("## 未動作");
                 aR.AppendLine($"- `{aTarget}` 沒有 session 檔（或檔壞了）—— 掃描範圍："
-                              + string.Join(" / ", UCL_SessionService.ScannedKinds()));
+                              + string.Join(" / ", SCP.Core.Session.SCP_ActivitySessionKind.Kinds));
                 aR.AppendLine("- ⚠ 「沒查到」不等於「他不在任何 session」：未登記的種類本層看不到。");
                 Finish(args, aActor, aR, "none", false, false);
                 return;
@@ -138,8 +138,8 @@ namespace UCL.Core.EditorLib.AgentCommands
             aR.AppendLine("## 收工（三段分開報 —— 任何一段炸掉都不冒充其他段）");
 
             // ① 權威狀態先落地。⚠ 次序不可換：先結算再翻狀態的話，結算成功而狀態沒寫 ⇒ 下次再結算一次。
-            UCL_SessionService.Close(aSession.kind, aTarget, aSession, aReason);
-            var aReadBack = UCL_SessionService.Load<UCL_SessionBase>(null, aTarget);
+            SCP.Core.Session.SCP_ActivitySessionStore.Close(UCL_AgentCommandsPath.ScpDataRoot, aTarget, aSession, aReason);
+            var aReadBack = SCP.Core.Session.SCP_ActivitySessionStore.Load(UCL_AgentCommandsPath.ScpDataRoot, aTarget);
             bool aClosed = aReadBack != null && !aReadBack.active;
             aR.AppendLine($"- ① 權威狀態：active=false／end_reason=`{aReason}`／ended_at=`{aReadBack?.ended_at}`"
                           + $"　**回讀確認={aClosed}**");
@@ -184,13 +184,13 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// <summary>那一 kind 的正常收工指令叫什麼（擋下時要把指令原文附上，不能只講「去收工」）。</summary>
         static string KindCmdName(string iKind)
         {
-            if (string.Equals(iKind, UCL_SessionKind.StreamWatch, StringComparison.Ordinal)) return "StreamWatch";
-            if (string.Equals(iKind, UCL_SessionKind.FreeTime, StringComparison.Ordinal)) return "FreeTime";
+            if (string.Equals(iKind, SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch, StringComparison.Ordinal)) return "StreamWatch";
+            if (string.Equals(iKind, SCP.Core.Session.SCP_ActivitySessionKind.FreeTime, StringComparison.Ordinal)) return "FreeTime";
             return iKind;   // 未登記的 kind：照實回，不編一個看起來像指令的字
         }
 
         static bool IsStreamWatch(string iKind)
-            => string.Equals(iKind, UCL_SessionKind.StreamWatch, StringComparison.Ordinal);
+            => string.Equals(iKind, SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch, StringComparison.Ordinal);
 
         /// <summary>回傳檔落 per-persona ＋ 機讀值（三個布林分開報，呼叫端不必解析內文）。</summary>
         static void Finish(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR,

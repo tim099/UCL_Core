@@ -97,7 +97,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             //   收工的判定權留在 step=next（它是唯一會寫 end_reason 的地方），本檔不代它判。
             var aSession = Cmd_FreeTime.LoadSession(aPersona);
             DateTime aNow = DateTime.Now;
-            DateTime? aEnd = aSession != null ? UCL_SessionBase.ParseIsoToLocal(aSession.end_ts) : null;
+            DateTime? aEnd = aSession != null ? SCP.Core.Session.SCP_ActivitySession.ParseIsoToLocal(aSession.end_ts) : null;
             if (aSession == null || !aSession.active)
             {
                 aR.AppendLine("## blocked");

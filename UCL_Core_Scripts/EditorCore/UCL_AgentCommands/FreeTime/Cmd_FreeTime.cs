@@ -924,10 +924,11 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // ⚠ 免費像素的額度檔（`Canvas/freetime/<P>.json`）2026-08-18 已廢除 —— 改成限時繪圖券，
         //   發放走 ledger、歸零是到期的自然結果。那條「第二套錢」不再存在。
         // ===========================================================
-        // 路徑委派 UCL_SessionService —— 這條組法曾在三個檔各寫一份
+        // 路徑委派 SCP_ActivitySessionStore —— 這條組法曾在三個檔各寫一份
         // （本檔、UCL_FreeTimeGating、Cmd_Sculpture），改一處另兩處指舊位置且不報錯。
+        // ⚠ PathOf 對穿越型 persona 回 null ⇒ 攤成空字串（只用於回傳檔印路徑，見 Cmd_StreamWatch 同段）。
         static string SessionPath(string iPersona)
-            => UCL_SessionService.SessionPath(iPersona);   // 扁平化後路徑不吃 kind（TASK-0054 拍板⑤）
+            => SCP.Core.Session.SCP_ActivitySessionStore.PathOf(UCL_AgentCommandsPath.ScpDataRoot, iPersona) ?? "";   // 扁平化後路徑不吃 kind（TASK-0054 拍板⑤）
 
         // 區塊職責：session 檔的讀 / 寫 / 收工 —— 三處都走 typed model，不再逐鍵手搭。
         // 物理意義：鍵名從「字串」變成「欄位」⇒ 打錯是編譯期錯誤，不是讀回預設值。
@@ -935,16 +936,18 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // 數值影響：JSON 逐鍵與舊格式相同（欄位名＝鍵名，見 UCL_FreeTimeSession 的命名警告），
         //          既有檔不需遷移，python 端讀 active / end_ts 不受影響。
         internal static UCL_FreeTimeSession LoadSession(string iPersona)
-            => UCL_SessionService.Load<UCL_FreeTimeSession>(UCL_SessionKind.FreeTime, iPersona);
+            => SCP.Core.Session.SCP_ActivitySessionStore.Load<UCL_FreeTimeSession>(
+                UCL_AgentCommandsPath.ScpDataRoot, iPersona, SCP.Core.Session.SCP_ActivitySessionKind.FreeTime);
 
         internal static void SaveSession(string iPersona, UCL_FreeTimeSession iSession)
-            => UCL_SessionService.Save(UCL_SessionKind.FreeTime, iPersona, iSession);
+            => SCP.Core.Session.SCP_ActivitySessionStore.Save(
+                UCL_AgentCommandsPath.ScpDataRoot, iPersona, iSession, SCP.Core.Session.SCP_ActivitySessionKind.FreeTime);
 
-        /// <summary>收工。rounds 是自由時間專屬的，所以由本檔取出回報；翻旗標與記時刻走 service。</summary>
+        /// <summary>收工。rounds 是自由時間專屬的，所以由本檔取出回報；翻旗標與記時刻走 store。</summary>
         static void CloseSession(string iPersona, UCL_FreeTimeSession ioSession, string iReason, out int oRounds)
         {
             oRounds = ioSession.rounds;
-            UCL_SessionService.Close(UCL_SessionKind.FreeTime, iPersona, ioSession, iReason);
+            SCP.Core.Session.SCP_ActivitySessionStore.Close(UCL_AgentCommandsPath.ScpDataRoot, iPersona, ioSession, iReason);
         }
 
         // ===========================================================

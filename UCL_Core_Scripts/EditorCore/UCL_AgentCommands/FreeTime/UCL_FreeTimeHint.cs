@@ -63,11 +63,11 @@ namespace UCL.Core.EditorLib.AgentCommands
             {
                 // 判準走 session base 的唯一那條（active 且未過 end_ts）——
                 // 只看 active 會把超時沒回來收工的人算成在線，然後對他印一段已經無效的指路。
-                var aRunning = UCL_SessionService.FindRunning(iPersona);
-                foreach (var aKv in aRunning)
+                // ⚠ 一人一檔位 ⇒ FindRunning 回 0 或 1 筆（不是清單）；kind 不符就不是自由時間。
+                var aS = SCP.Core.Session.SCP_ActivitySessionStore.FindRunning(
+                    UCL_AgentCommandsPath.ScpDataRoot, iPersona, DateTime.Now);
+                if (aS != null && aS.kind == SCP.Core.Session.SCP_ActivitySessionKind.FreeTime)
                 {
-                    if (aKv.Key != UCL_SessionKind.FreeTime) continue;
-                    var aS = aKv.Value;
                     ioReport.AppendLine();
                     // ⛔ 不印剩餘分鐘（Tim 2026-09-04）：活動持續做到時間到，倒數不是下一步的依據。
                     ioReport.AppendLine($"## ▶ 你在自由時間中（到 {aS.until_local} —— 時間還沒到，挑下一項活動）");

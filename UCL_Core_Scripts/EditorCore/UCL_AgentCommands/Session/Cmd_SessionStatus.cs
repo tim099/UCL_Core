@@ -4,7 +4,7 @@
 // Create time : 08/18 2026
 // 區塊職責：查「某個 persona 此刻在哪種 session」的 read-only Cmd（鏡像 UCL_SessionAdminPage 的資料）。
 // 物理意義：session 狀態原本只能自己去 cat <kind>/sessions/<persona>.json，而「在不在」不是
-//          單看 active 就能答（超時沒收工的人會停在 active=true）。判準收在 UCL_SessionService，
+//          單看 active 就能答（超時沒收工的人會停在 active=true）。判準收在 SCP_ActivitySessionStore，
 //          本 Cmd 只是把它曝光給 CLI/agent。
 // 數值影響：純讀檔，不寫任何 session。輸出一份回傳檔給呼叫端讀。
 #if UNITY_EDITOR
@@ -69,12 +69,17 @@ namespace UCL.Core.EditorLib.AgentCommands
             aR.AppendLine();
             // ⚠ 這一行是回報的一部分，不是裝飾：空結果的語意是「在**這些** kind 裡沒查到」，
             //   不是「這個人不在任何 session」。沒印掃描範圍的「沒查到」會被讀成後者。
-            aR.AppendLine($"- 掃描範圍（已登記 kind）：{string.Join(" / ", UCL_SessionService.ScannedKinds())}");
+            aR.AppendLine($"- 掃描範圍（已登記 kind）：{string.Join(" / ", SCP.Core.Session.SCP_ActivitySessionKind.Kinds)}");
             aR.AppendLine();
 
             if (aScope == "persona")
             {
-                var aRunning = UCL_SessionService.FindRunning(aPersona);
+                // ⚠ 一人一檔位 ⇒ 回 0 或 1 筆。清單形狀留在報告層（「進行中 N 筆」）——
+                //   資料形狀給的保證是 N≤1，而**把保證寫死在報告裡會讓下一個 kind 加進來時靜默漏印**。
+                var aRunningOne = SCP.Core.Session.SCP_ActivitySessionStore.FindRunning(
+                    UCL_AgentCommandsPath.ScpDataRoot, aPersona, DateTime.Now);
+                var aRunning = new List<SCP.Core.Session.SCP_ActivitySession>();
+                if (aRunningOne != null) aRunning.Add(aRunningOne);
                 // ===========================================================
                 // 機讀出口（TASK-0052）：python 消費端（canvas.py 免費像素資格等）退出直讀 session 檔後，
                 // 「在不在自由時間」的答案從這裡拿 —— run_cmd 會把 values 隨 verdict 印出（🔢 key = value），
@@ -82,25 +87,26 @@ namespace UCL.Core.EditorLib.AgentCommands
                 // ⚠ 在算出結果的當下 push（ReportOutputValue 的 remarks：不要事後 pull static）。
                 // ===========================================================
                 var aKindNames = new List<string>();
-                foreach (var aKv in aRunning) aKindNames.Add(aKv.Key);
+                foreach (var aS in aRunning) aKindNames.Add(aS.kind);
                 UCL_AgentCommandRunner.ReportOutputValue(args, "running_kinds",
                     aKindNames.Count == 0 ? "-" : string.Join(",", aKindNames));
                 UCL_AgentCommandRunner.ReportOutputValue(args, "in_free_time",
-                    aKindNames.Contains(UCL_SessionKind.FreeTime) ? "1" : "0");
+                    aKindNames.Contains(SCP.Core.Session.SCP_ActivitySessionKind.FreeTime) ? "1" : "0");
                 if (aRunning.Count == 0)
                 {
                     aR.AppendLine($"## 結果：{aPersona} 目前**不在**任何已登記的 session 中");
                     // 檔案存在但不算進行中時要講清楚是哪一種 —— 「沒有檔」與「有檔但過期」
                     // 對使用者的下一步不同（後者可能要補收工）。
-                    foreach (string aKind in UCL_SessionService.ScannedKinds())
+                    foreach (string aKind in SCP.Core.Session.SCP_ActivitySessionKind.Kinds)
                     {
-                        var aPeek = UCL_SessionService.Peek(aKind, aPersona);
+                        var aPeek = SCP.Core.Session.SCP_ActivitySessionStore.Load(
+                            UCL_AgentCommandsPath.ScpDataRoot, aPersona, aKind);
                         if (aPeek == null)
                         {
                             aR.AppendLine($"- {aKind}: 無 session 檔");
                             continue;
                         }
-                        var aEnd = UCL_SessionBase.ParseIsoToLocal(aPeek.end_ts);
+                        var aEnd = SCP.Core.Session.SCP_ActivitySession.ParseIsoToLocal(aPeek.end_ts);
                         string aWhy = aPeek.active
                             ? $"⚠ active=true 但已過 end_ts（{aEnd:yyyy-MM-dd HH:mm}）—— 超時未收工的殘留"
                             : $"已收工（{(string.IsNullOrEmpty(aPeek.end_reason) ? "未記原因" : aPeek.end_reason)}）";
@@ -110,23 +116,23 @@ namespace UCL.Core.EditorLib.AgentCommands
                 else
                 {
                     aR.AppendLine($"## 結果：{aPersona} 進行中的 session {aRunning.Count} 筆");
-                    foreach (var aKv in aRunning)
+                    foreach (var aS in aRunning)
                     {
-                        var aS = aKv.Value;
                         aS.IsRunningAt(DateTime.Now, out DateTime? aEnd);
                         string aRemain = aEnd.HasValue
                             ? $"{(int)Math.Max(0, (aEnd.Value - DateTime.Now).TotalMinutes)} 分"
                             : "（無 end_ts —— 只能信 active）";
-                        aR.AppendLine($"- **{aKv.Key}**　session_id={aS.session_id}");
+                        aR.AppendLine($"- **{aS.kind}**　session_id={aS.session_id}");
                         aR.AppendLine($"    開場 {aS.start_ts}　預定收工 {aS.until_local}　剩 {aRemain}");
                     }
                 }
             }
             else
             {
-                foreach (string aKind in UCL_SessionService.ScannedKinds())
+                foreach (string aKind in SCP.Core.Session.SCP_ActivitySessionKind.Kinds)
                 {
-                    var aPersonas = UCL_SessionService.ListPersonas(aKind);
+                    var aPersonas = SCP.Core.Session.SCP_ActivitySessionStore.ListPersonas(
+                        UCL_AgentCommandsPath.ScpDataRoot, aKind);
                     aR.AppendLine($"## {aKind}（{aPersonas.Count} 份 session 檔）");
                     if (aPersonas.Count == 0)
                     {
@@ -135,7 +141,8 @@ namespace UCL.Core.EditorLib.AgentCommands
                     }
                     foreach (string aWho in aPersonas)
                     {
-                        var aS = UCL_SessionService.Peek(aKind, aWho);
+                        var aS = SCP.Core.Session.SCP_ActivitySessionStore.Load(
+                            UCL_AgentCommandsPath.ScpDataRoot, aWho, aKind);
                         if (aS == null) { aR.AppendLine($"- {aWho}: ⚠ 讀取失敗"); continue; }
                         bool aRun = aS.IsRunningAt(DateTime.Now, out DateTime? aEnd);
                         string aState = aRun ? "🟢 進行中"
@@ -148,8 +155,11 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
 
             aR.AppendLine("## next");
-            aR.AppendLine("- 後台頁：Tools/UCL/ToolBox → 🗂 Session 管理（同一份資料的視覺化）");
-            aR.AppendLine("- ⚠ 未登記的 session 種類不在掃描範圍內（見 UCL_SessionKind.Kinds 的註解）");
+            // ⚠ Unity 那側的 Session 管理頁 2026-09-04（TASK-0127 ⑦）已退場 —— 指路換到新家。
+            //   ⛔ 不留「原本在 ToolBox」那種墓碑：指到一個不存在的地方比不指路更貴。
+            aR.AppendLine("- 管理頁：`senate ui --page sessions`（同一份資料的視覺化，Senate 那側）");
+            aR.AppendLine("- 純 CLI：`senate cmd sessions`（list／show／close）");
+            aR.AppendLine("- ⚠ 未登記的 session 種類不在掃描範圍內（見 SCP_ActivitySessionKind.Kinds 的註解）");
 
             // ===========================================================
             // 區塊職責：回傳檔落 per-persona（TASK-0059，第四宿主 —— 0052 QA 實跑撞到：

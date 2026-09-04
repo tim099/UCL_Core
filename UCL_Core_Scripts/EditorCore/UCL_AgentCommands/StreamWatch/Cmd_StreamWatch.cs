@@ -5,7 +5,7 @@
 //          都由 cycle 對系統時鐘與 _screenstream/_config.json 的 enabled 判定。
 //          「自動」指的是**判斷自動**（Cmd 算好告訴你），不是觸發自動 —— 不新增任何常駐偵測。
 // 數值影響：session state 落 <DataRoot>/sessions/<persona>.json、`kind="StreamWatch"`（TASK-0054 拍板⑤ 扁平化）——
-//          寫入端是 UCL_SessionService（本檔不自己組路徑、不自己落檔）；
+//          寫入端是 SCP_ActivitySessionStore（本檔不自己組路徑、不自己落檔）；
 //          回傳檔 letters/<persona>/cmd/streamwatch_<step>.md（路徑經 ReportOutputFile 進 result outputs）。
 // ⚠ 阻塞紀律（Tim 2026-08-15 指示 + WorkMemory/unitask-editor-async）：
 //   縮圖牆是外部 process，**一律 await Task.Run 包起來**，不得在主執行緒輪詢 WaitForExit。
@@ -2184,7 +2184,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // ⚠ 收工三欄（active / end_reason / ended_at）**一起翻**，而且只有 service 那一個寫入點 ——
             //   散在各處各寫一次時，漏掉時刻欄位不會有任何症狀（沒人讀它），
             //   直到有人要對帳「這場實際跑多久」才發現沒紀錄。Close 內含 Save。
-            UCL_SessionService.Close(UCL_SessionKind.StreamWatch, iPersona, ioS,
+            SCP.Core.Session.SCP_ActivitySessionStore.Close(UCL_AgentCommandsPath.ScpDataRoot, iPersona, ioS,
                 !string.IsNullOrEmpty(iReasonOverride) ? iReasonOverride
                 : (iByInterrupt ? "recording-stopped" : "expired"));
             AppendSessionLog(ioS, iPersona, aSeq, aPaidMin, aTotal);
@@ -2475,7 +2475,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             string aMedia = aS.media_id;
-            // ⚠ 收工時刻的欄位名是 **`ended_at`**（TASK-0054 收斂；SettleAsync 經 UCL_SessionService.Close 寫的）。
+            // ⚠ 收工時刻的欄位名是 **`ended_at`**（TASK-0054 收斂；SettleAsync 經 SCP_ActivitySessionStore.Close 寫的）。
             //   這裡原本寫的是「欄位名是 `settled_at` 不是 `ended_at`」—— **反過來了**，本單一併翻正。
             //   台帳層（sessions_log.jsonl）的鍵名仍叫 `settled_at`，那是**另一個東西**：結算紀錄，不是 session 狀態。
             //   🩸 而這一格為什麼要註解：舊的手搭寫法 `ReadStr(aS,"ended_at")` 打錯欄位名會**靜默回空**，
@@ -3274,11 +3274,15 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ===========================================================
         // 區塊：路徑 / IO helpers（與 Cmd_FreeTime 同慣例）
         // ===========================================================
-        // ⚠ TASK-0054 之後本檔**不再自己組 session 路徑** —— 唯一組法在 UCL_SessionService.SessionPath，
+        // ⚠ TASK-0054 之後本檔**不再自己組 session 路徑** —— 唯一組法在 SCP_ActivitySessionStore.PathOf，
         //   路徑扁平化為 `<DataRoot>/sessions/<persona>.json`（kind 改存 json 欄位）。
         //   舊路徑 `<DataRoot>/StreamWatch/sessions/` **自本單起停用**（不做 migration：殘檔不搬不轉、
         //   已從版控移出並加 ignore 規則）。留這個 wrapper 只為了回傳檔印路徑時仍有一處可問。
-        static string SessionPath(string iPersona) => UCL_SessionService.SessionPath(iPersona);
+        // ⚠ SCP 那側的 PathOf 對穿越型 persona（含 `/`、`..`）回 **null** ——
+        //   這裡把它攤成空字串：本 wrapper 只用在回傳檔印路徑，而印一個空字串看得出不對，
+        //   印一個組錯的路徑看不出來。⛔ 不要拿它去開檔（開檔一律走 store 自己的 API）。
+        static string SessionPath(string iPersona)
+            => SCP.Core.Session.SCP_ActivitySessionStore.PathOf(UCL_AgentCommandsPath.ScpDataRoot, iPersona) ?? "";
 
         // ===========================================================
         // 區塊職責：收工時把本場的 seq 區間 append 進一份**永不覆寫**的台帳。
@@ -3519,12 +3523,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         /// 🩸 若不比對就回傳：一份自由時間的檔有 active/end_ts ⇒ 守衛判定會**成功，只是量錯了東西**。
         /// </remarks>
         static UCL_StreamWatchSession LoadSession(string iPersona)
-            => UCL_SessionService.Load<UCL_StreamWatchSession>(UCL_SessionKind.StreamWatch, iPersona);
+            => SCP.Core.Session.SCP_ActivitySessionStore.Load<UCL_StreamWatchSession>(
+                UCL_AgentCommandsPath.ScpDataRoot, iPersona, SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch);
 
         // ===========================================================
         // 區塊職責：**殘留補結算的對外入口**（TASK-0127 ④）—— 給 Cmd_SessionClose／Senate 那側的關場路徑用。
         // 物理意義：補結算這條路本來只有兩個進入點（step=start 撞到殘留、step=join 撞到自己的殘留），
-        //          而管理頁的「補收工」走的是另一條 —— `UCL_SessionService.Close` 三欄一翻就走人，
+        //          而管理頁的「補收工」走的是另一條 —— `SCP_ActivitySessionStore.Close` 三欄一翻就走人，
         //          **跳過結算**（TASK-0055 的 known-issue：酬勞蒸發＋seq 區間永久消失，而印出來的字一樣）。
         //          ⇒ 這裡不新寫結算，只把既有那條路開一個門，讓所有關場路徑走同一個。
         // 數值影響：委派給 SettleAsync（計費上限仍是 ends_at，兩者取小；熱路徑判重仍在它裡面）。
@@ -3569,7 +3574,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aOut = new List<KeyValuePair<string, UCL_StreamWatchSession>>();
             try
             {
-                foreach (string aWho in UCL_SessionService.ListPersonas(UCL_SessionKind.StreamWatch))
+                foreach (string aWho in SCP.Core.Session.SCP_ActivitySessionStore.ListPersonas(
+                    UCL_AgentCommandsPath.ScpDataRoot, SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch))
                 {
                     var aS = LoadSession(aWho);
                     if (aS == null) continue;   // 壞檔／kind 不符：跳過（一個人的檔壞掉不該讓全場判定失準）
@@ -3583,11 +3589,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             return aOut;
         }
 
-        /// <summary>寫回 session（**唯一寫入點** —— 落檔格式與路徑各只有一份實作，都在 UCL_SessionService）。</summary>
+        /// <summary>寫回 session（**唯一寫入點** —— 落檔格式與路徑各只有一份實作，都在 SCP_ActivitySessionStore）。</summary>
         /// <remarks>⚠ 由 service 蓋寫 `kind` 欄位：kind 與檔案位置本來由同一個動作決定，
         /// 拆成兩個責任就會長出「檔在、kind 空」的檔，而那種檔讀取端一律當成不符 ⇒ 靜默消失。</remarks>
         static void SaveSession(string iPersona, UCL_StreamWatchSession iS)
-            => UCL_SessionService.Save(UCL_SessionKind.StreamWatch, iPersona, iS);
+            => SCP.Core.Session.SCP_ActivitySessionStore.Save(
+                UCL_AgentCommandsPath.ScpDataRoot, iPersona, iS, SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch);
 
         // ===========================================================
         // 區塊：接力前緣（Tim 2026-08-25 拍板「除熱點外，觀看區段要接力」）
@@ -3826,7 +3833,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
     /// <summary>一場觀影 session（`&lt;DataRoot&gt;/sessions/&lt;persona&gt;.json`，`kind="StreamWatch"`；開下一場就覆寫）。</summary>
     /// <remarks>
-    /// **繼承 <c>UCL_SessionBase</c>**（TASK-0054 拍板）：收工時刻收斂成單欄 `ended_at`，
+    /// **繼承 <c>SCP_ActivitySession</c>**（TASK-0054 拍板收斂欄位、TASK-0127 ⑦ 換基底到 SCP 那側）：
+    /// 收工時刻收斂成單欄 `ended_at`，
     /// 本檔原本的 `settled_at` 已從 session 狀態**移除** —— 它是**結算紀錄**，
     /// 家在 `sessions_log.jsonl` 台帳層，那一層的 `settled_at` 鍵名**不動**
     /// （見 <see cref="UCL_StreamWatchSessionLogRecord"/>）。
@@ -3837,7 +3845,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
     /// `active` / `end_reason` / `ended_at`）**不要在這裡重新宣告** —— 重宣告會 shadow 掉 base，
     /// 而 shadow 的症狀是「寫進子類、讀出 base 的預設值」：不編譯錯，也不執行錯。
     /// </remarks>
-    public class UCL_StreamWatchSession : UCL_SessionBase
+    public class UCL_StreamWatchSession : SCP.Core.Session.SCP_ActivitySession
     {
         /// <summary>`primary`（主觀影者，帶主劇情）／`companion`（陪看者，挑段細看）。</summary>
         public string role = "";
@@ -3861,7 +3869,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public string parent_session_id = "";
         public string parent_persona = "";
 
-        // ⚠ start_ts / end_ts / until_local 已在 UCL_SessionBase —— 這裡不再宣告（見類別 remarks 的 shadow 說明）。
+        // ⚠ start_ts / end_ts / until_local 已在 SCP_ActivitySession —— 這裡不再宣告（見類別 remarks 的 shadow 說明）。
 
         /// <summary>取材游標（epoch 秒）。0＝尚未取材，首輪窗口由 montage 決定。</summary>
         public double cursor_epoch = 0;
@@ -3913,7 +3921,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         /// <summary>接續點是收工之後才補寫的（不冒充當場記的）。</summary>
         public bool note_late = false;
 
-        // ⚠ active / ended_at / end_reason 已在 UCL_SessionBase。
+        // ⚠ active / ended_at / end_reason 已在 SCP_ActivitySession。
         //   收工時刻的欄位名是 **`ended_at`**（TASK-0054 收斂）——
         //   本檔原本叫 `settled_at`，那個名字現在**只存在於台帳層**（sessions_log.jsonl）。
         //   end_reason 的值域仍是 `expired`（到期）／`recording-stopped`（Tim 停錄影）
@@ -3921,18 +3929,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public int paid_minutes = 0;
         public int paid_total = 0;
 
-        /// <summary>bool 寫回原生 —— 沿用這份檔既有的形狀（`new JsonData(true)` 寫出來的原生 bool）。
-        /// 不 override 的話會變成 `"True"` 字串：C# 載入端雙接看不出來，但**檔案的形狀被改了**，
-        /// 而日後若有 python 讀取端（台帳與準備檔已經有）就會踩到 truthy 字串那顆雷。
-        /// ⚠ `active` 不在這裡處理 —— <see cref="UCL_SessionBase.SerializeToJson"/> 已經寫成原生 bool，
-        /// 這裡再寫一次就是同一件事有兩個寫入點（本次重構要消滅的正是那個形狀）。</summary>
-        public override JsonData SerializeToJson()
-        {
-            var aData = base.SerializeToJson();
-            aData["note_written"] = new JsonData(note_written);
-            aData["note_late"] = new JsonData(note_late);
-            return aData;
-        }
+        // ⚠ **這裡曾有一個 `SerializeToJson` override**（強制 `note_written`／`note_late` 寫成原生 bool，
+        //   因為 UCL_Json 的舊慣例把 bool 寫成 `"True"` 字串，而 python 端讀到那個字串是 truthy）。
+        //   TASK-0127 ⑦ 換基底到 `SCP_ActivitySession` 之後**不需要了**：`SCP_JsonMapper` 一律
+        //   `NewBool(...)` 寫原生 bool（`SCP_ValueKind.Bool` 那格），所以那條需求由函式庫本身滿足。
+        //   📌 留這段註解不是留墓碑，是留**判準**：那個 override 存在的理由是「這份檔有非 C# 讀取端」，
+        //   而那個理由現在由誰滿足要說得出來 —— 否則下一個人會以為 bool 的形狀從來沒有人在意過。
     }
 
     /// <summary>準備階段的產物（`StreamWatch/prepared/&lt;media_id&gt;.json`）—— join / catchup / 收工匯出都讀它。</summary>
@@ -3963,7 +3965,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public bool auto_export = true;
 
         /// <summary>⚠ `auto_export` 必須是**原生 bool**：python 端讀到字串 `"False"` 在 Python 裡是 truthy
-        /// ⇒ 「刻意關掉自動匯出」會被讀成「開著」。同族血證見 UCL_SessionBase。</summary>
+        /// ⇒ 「刻意關掉自動匯出」會被讀成「開著」。同族血證見 SCP_ActivitySession。</summary>
         public override JsonData SerializeToJson()
         {
             var aData = base.SerializeToJson();

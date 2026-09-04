@@ -43,8 +43,6 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.TaskManager.Desc" => "Cross-agent task tickets (one file per task) — commitments others wait on become Tasks; personal accountability stays in the keys file. Closing is blocked while any blocker is open; in_progress goes stale after 14 days.",
                 "ToolBox.Relationship" => "Relationship",
                 "ToolBox.Relationship.Desc" => "Per-persona affinity as an event ledger — the score is recomputed from events, not stored.",
-                "ToolBox.SessionAdmin" => "🗂 Session Admin",
-                "ToolBox.SessionAdmin.Desc" => "Current sessions per persona (free time...). Marks stale ones that are still active past their end time.",
                 "ToolBox.FreeTimeAdmin" => "🎲 Free Time Admin",
                 "ToolBox.FreeTimeAdmin.Desc" => "Activity settings behind the dice roll (enabled / group / suggested minutes / special rule / how-to). Edits the activity md frontmatter in place — no override file.",
                 "ToolBox.LibraryManage" => "Library Manager",

@@ -43,8 +43,6 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.TaskManager.Desc" => "エージェント横断のタスクチケット（1件1ファイル）。他者が待つ約束は Task、自分だけの自律は見叢へ。未解決の blocker がある間は完了不可、in_progress は 14 日で stale 表示。",
                 "ToolBox.Relationship" => "関係（Relationship）",
                 "ToolBox.Relationship.Desc" => "persona ごとの好感度を「イベント台帳」として保持 —— スコアはイベントから再計算される投影。",
-                "ToolBox.SessionAdmin" => "🗂 Session 管理",
-                "ToolBox.SessionAdmin.Desc" => "各 persona の session 現況（自由時間…）。終了時刻を過ぎても active な残留を明示。",
                 "ToolBox.FreeTimeAdmin" => "🎲 自由時間管理",
                 "ToolBox.FreeTimeAdmin.Desc" => "ダイス面の活動設定（有効／グループ／推奨分数／特殊ロジック／実行ヒント）—— 活動 md の frontmatter を直接書き換え、override は作らない。",
                 "ToolBox.LibraryManage" => "ライブラリ管理",

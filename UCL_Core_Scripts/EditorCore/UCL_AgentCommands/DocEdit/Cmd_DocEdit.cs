@@ -269,16 +269,18 @@ namespace UCL.Core.EditorLib.AgentCommands.DocEdit
                              + "要驗「本場改過沒」請帶 `--arg persona=<名字>`。");
                 return;
             }
-            var aRunning = UCL_SessionService.FindRunning(iPersona);
-            UCL_SessionBase aFreeTime = null;
-            foreach (var aKv in aRunning) if (aKv.Key == UCL_SessionKind.FreeTime) { aFreeTime = aKv.Value; break; }
+            // ⚠ 一人一檔位 ⇒ FindRunning 回 0 或 1 筆；kind 不符＝他在別種 session，對本問題等於「沒有基準」。
+            var aRunning = SCP.Core.Session.SCP_ActivitySessionStore.FindRunning(
+                UCL_AgentCommandsPath.ScpDataRoot, iPersona, DateTime.Now);
+            SCP.Core.Session.SCP_ActivitySession aFreeTime =
+                aRunning != null && aRunning.kind == SCP.Core.Session.SCP_ActivitySessionKind.FreeTime ? aRunning : null;
             if (aFreeTime == null)
             {
                 ioR.AppendLine($"- ⚪ **{iPersona} 不在自由時間中，沒有基準可比** —— 只有 mtime 是事實。"
-                             + $"（掃描範圍：{string.Join(" / ", UCL_SessionService.ScannedKinds())}）");
+                             + $"（掃描範圍：{string.Join(" / ", SCP.Core.Session.SCP_ActivitySessionKind.Kinds)}）");
                 return;
             }
-            DateTime? aStart = UCL_SessionBase.ParseIsoToLocal(aFreeTime.start_ts);
+            DateTime? aStart = SCP.Core.Session.SCP_ActivitySession.ParseIsoToLocal(aFreeTime.start_ts);
             if (!aStart.HasValue)
             {
                 ioR.AppendLine($"- ⚪ session 的 start_ts 解析不出來（`{aFreeTime.start_ts}`）—— 不下判斷。");

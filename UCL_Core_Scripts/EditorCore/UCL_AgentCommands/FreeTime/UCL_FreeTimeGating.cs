@@ -211,14 +211,15 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         {
             try
             {
-                // 判準委派 UCL_SessionBase.IsRunningAt —— 與本函式原本逐條相同
+                // 判準委派 SCP_ActivitySession.IsRunningAt —— 與本函式原本逐條相同
                 // （active、比 end_ts、缺 end_ts 時只能信 active）。收成一處的理由不是 DRY：
                 // 這條判準散在 C# 兩處 + python 一處時，改一處另兩處照舊運作、都不報錯。
                 // ⚠ 原實作用 `(bool)aS["active"]` 硬轉 —— 那要求 JSON 是**原生 bool**。
                 //   UCL_Json 的欄位序列化會把 bool 寫成 "True"/"False" 字串，硬轉會丟例外
                 //   （被下方 catch 吞成 false ⇒ 靜默判成「不在自由時間」）。
                 //   typed model 讀取端雙接，這一格因此順帶變穩。
-                var aSession = UCL_SessionService.Load<UCL_SessionBase>(UCL_SessionKind.FreeTime, iPersona);
+                var aSession = SCP.Core.Session.SCP_ActivitySessionStore.Load(
+                    UCL_AgentCommandsPath.ScpDataRoot, iPersona, SCP.Core.Session.SCP_ActivitySessionKind.FreeTime);
                 if (aSession == null) return false;
                 return aSession.IsRunningAt(DateTime.Now, out _);
             }

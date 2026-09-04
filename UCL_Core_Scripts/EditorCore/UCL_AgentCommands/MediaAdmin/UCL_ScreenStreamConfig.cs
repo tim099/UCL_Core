@@ -207,7 +207,7 @@ namespace UCL.Core.EditorLib.AgentCommands.MediaAdmin
             //   UCL_Json 的舊慣例把 bool 存成字串，C# 載入端雙接所以看不出來 ——
             //   但 python `json.loads` 拿到字串 `"False"`，而它在 Python 裡是 **truthy** ⇒
             //   daemon 的 `if cfg.get("enabled")` 會永遠成立（＝停不掉的錄影）。
-            //   同族血證見 UCL_SessionBase（2026-08-18 自由時間那次）。
+            //   同族血證見 SCP_ActivitySession（2026-08-18 自由時間那次）。
             aData["enabled"] = new JsonData(enabled);
             aData["recording_enabled"] = new JsonData(recording_enabled);
             aData["audio_viz_enabled"] = new JsonData(audio_viz_enabled);

@@ -330,10 +330,43 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             if (aRun.injected) ioR.AppendLine($"- ℹ 自動補上身分：`{aHit.PersonaFlagForStep(aStep)} {iPersona}`（宣告在 md 的 `steps_need_persona`）");
             if (!aRun.ok) ioR.AppendLine($"- 錯誤: {aRun.err}");
             ioR.AppendLine();
-            ioR.AppendLine("### 工具輸出（原樣，未經改寫）");
+            ioR.AppendLine("### 工具輸出 stdout（原樣，未經改寫）");
             ioR.AppendLine("```");
             ioR.AppendLine(string.IsNullOrWhiteSpace(aRun.stdout) ? "(無輸出)" : aRun.stdout.TrimEnd());
             ioR.AppendLine("```");
+            // ⚠ stderr 要有**自己的區塊**：argparse 的 usage error 只走 stderr，
+            //   而只印 stdout 的話畫面是「(無輸出)」—— 那跟「工具跑了但什麼都沒說」同形，
+            //   然而真相是它大聲喊了、喊在另一條管子裡（TASK-0073／BUG-49 的活體就是這個）。
+            if (!string.IsNullOrWhiteSpace(aRun.stderr))
+            {
+                ioR.AppendLine();
+                ioR.AppendLine("### 工具輸出 stderr（原樣，未經改寫）");
+                ioR.AppendLine("```");
+                ioR.AppendLine(aRun.stderr.TrimEnd());
+                ioR.AppendLine("```");
+            }
+
+            // ── 🩸 TASK-0073：工具失敗 ⇒ **這一筆 Cmd 就是失敗**，不准回 Success ──────────
+            // 物理意義：本檔 7 個守衛（缺 persona／op 不合法／不在自由時間／活動無效／未支援代跑／
+            //          step 不在白名單）**全部 throw**，唯獨「工具真的跑了而失敗」那條原本只印一行
+            //          `- 錯誤:` 就往下走 ⇒ 呼叫端拿到 `✓ Cmd completed → Success`。
+            //          ⇒ 於是**最該被看見的那一種失敗，是唯一不會讓 exit code 變色的**。
+            //          而 `RunToolStep` 有五條失敗回傳（找不到工具／Process.Start 回 null／逾時／
+            //          exit≠0／spawn 例外）—— 五條全都走這裡，**射程不只是 argparse 那一格**。
+            // 判準：回傳檔照樣寫完（診斷都在裡面，throw 不該把它一起吃掉），寫完才丟。
+            //      這跟上面每一個守衛的手勢一字不差：先 WritePayload，再 throw。
+            if (!aRun.ok)
+            {
+                ioR.AppendLine();
+                ioR.AppendLine("## ▶ 下一步（這一步**沒有成功**）");
+                ioR.AppendLine("- 先看上面的 stderr／錯誤行 —— 那是工具自己說的話，本層原樣轉交");
+                ioR.AppendLine($"- 參數要調 → 再跑一次 op=step（換 `--arg step_args=`）");
+                ioR.AppendLine($"- 這件活動要收 → `run FreeTimeActivity --arg op=done --arg persona={iPersona} [--arg-file body=<一句心得>]`");
+                Cmd_FreeTime.WritePayload(iArgs, iPath, ioR.ToString());
+                Debug.Log($"[FreeTimeActivity] op=step {iPersona} {aHit.id}/{aStep} FAILED → {iPath}");
+                throw new Exception($"[FreeTimeActivity] op=step 失敗：{aHit.id}/{aStep} —— {aRun.err}（詳見 {iPath}）");
+            }
+
             ioR.AppendLine();
             ioR.AppendLine($"## ▶ 下一步（自由時間**進行中**，剩 {iRemain} 分）");
             ioR.AppendLine("- 這件活動還要再走一步 → 再跑一次 op=step（換 `--arg step=` / `--arg step_args=`）");
@@ -346,7 +379,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // 區塊職責：跑一步外部工具（照 Cmd_StreamWatch 的 spawn 慣例，含它踩過的坑）。
         // 數值影響：等待丟 thread pool（主執行緒不凍）；60s 超時；非 0 exit 回失敗但仍把 stdout 交回去
         //          —— 失敗時的輸出往往就是原因，吞掉它等於把診斷資訊丟了。
-        static async UniTask<(bool ok, string stdout, string err, bool injected)> RunToolStep(
+        static async UniTask<(bool ok, string stdout, string stderr, string err, bool injected)> RunToolStep(
             UCL_FreeTimeActivity iActivity, string iStep, string iStepArgs, string iPersona, CancellationToken iToken)
         {
             bool aInjected = false;
@@ -354,7 +387,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             {
                 string aTool = System.IO.Path.Combine(
                     UCL_EditorPath.CorePath, "Tools~", "AgentCommands", iActivity.tool);
-                if (!System.IO.File.Exists(aTool)) return (false, "", $"找不到工具：{aTool}", false);
+                if (!System.IO.File.Exists(aTool)) return (false, "", "", $"找不到工具：{aTool}", false);
 
                 // 區塊職責：參數走 **ArgumentList（argv 陣列）**，不自己組單一字串。
                 //
@@ -391,7 +424,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 foreach (var aTok in aFinal) aPsi.ArgumentList.Add(aTok);
 
                 var aProc = System.Diagnostics.Process.Start(aPsi);
-                if (aProc == null) return (false, "", "Process.Start 回 null", aInjected);
+                if (aProc == null) return (false, "", "", "Process.Start 回 null", aInjected);
 
                 // tag 串 persona —— 同一人的新一步收掉自己上一顆，別人的完全不碰（見上方血證）
                 using var aScope = UCL_ProcessRegistryService.RegisterScope(
@@ -406,13 +439,13 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     return aProc.WaitForExit(60000);
                 }, iToken);
 
-                if (!aExited) { try { aProc.Kill(); } catch { } return (false, aOut, "timeout(>60s) —— 一步不該跑這麼久", aInjected); }
-                if (aProc.ExitCode != 0) return (false, aOut, $"exit={aProc.ExitCode}; {(aErr ?? "").Trim()}", aInjected);
-                return (true, aOut, "", aInjected);
+                if (!aExited) { try { aProc.Kill(); } catch { } return (false, aOut, aErr, "timeout(>60s) —— 一步不該跑這麼久", aInjected); }
+                if (aProc.ExitCode != 0) return (false, aOut, aErr, $"exit={aProc.ExitCode}", aInjected);
+                return (true, aOut, aErr, "", aInjected);
             }
             catch (Exception e)
             {
-                return (false, "", $"spawn exception: {e.Message}", false);
+                return (false, "", "", $"spawn exception: {e.Message}", false);
             }
         }
 

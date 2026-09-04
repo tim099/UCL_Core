@@ -216,8 +216,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             entry[Key_DonorAgent] = donorAgent ?? "";
             entry[Key_Tokens] = 0;
             entry["base_price"] = 0;
-            // source 照舊寫出 —— python 端（library.py）仍在讀它；拿掉等於靜默改 wire format。
-            entry[Key_Source] = "authored";
+            // legacy `source` 不再寫出（2026-09-04）—— python 端已改讀 origin（_derive_origin，
+            // 與 DeriveOrigin 同規則、對舊檔仍認 source）。entry 是全新的 JsonData ⇒ 不寫即不存在；
+            // 舊檔留著的 source 照讀不動（DeriveOrigin 仍認它），只是不再新增。
             // 分類三軸：沿用既有登記（classify 設過就不覆蓋），沒有才由 slug 前綴推導。
             UCL_BooksClassification.Stamp(
                 entry, book, UCL_BookOrigin.Authored,
@@ -426,8 +427,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             }
             else
             {
-                var authored = ds.FindAll(d => d.GetString(Key_Source, "") == "authored");
-                var donated = ds.FindAll(d => d.GetString(Key_Source, "") != "authored");
+                // 走 DeriveOrigin 而不是原始 source：新檔只有 origin，舊檔只有 source，
+                // 讀原始欄位會讓新發表的書全部掉進「捐贈調入」那一組。
+                var authored = ds.FindAll(d => UCL_BooksClassification.DeriveOrigin(d, d.GetString(Key_Book, "")) == UCL_BookOrigin.Authored);
+                var donated = ds.FindAll(d => UCL_BooksClassification.DeriveOrigin(d, d.GetString(Key_Book, "")) != UCL_BookOrigin.Authored);
                 // 壞檔數要出現在**數字旁邊**，不是只在文末 WARNING（Sirius 協測 2026-08-07）：
                 // 「共 21 本」沒有標記時，只讀標頭的人會以為圖書館真的只有 21 本 ——
                 // 計數靜默吸收被丟掉的列，跟「讀空目錄不報錯」同族。

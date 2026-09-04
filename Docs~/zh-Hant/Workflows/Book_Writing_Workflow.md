@@ -4,7 +4,7 @@ slug: book-writing-workflow
 status: v1 (2026-05-28 basecamp 大小姐, 從《Use Case 雕琢學》寫書 marathon 經驗 codify)
 created_at: 2026-05-28
 created_by: claude-da-xiaojie (basecamp 大小姐)
-last_updated: 2026-08-19 (新增 Stage 0.5 原創/編纂分流、§編纂類書籍四條通用規則、§分類與系列三軸 + shelf/series/classify API)
+last_updated: 2026-09-04 (legacy `source` 欄退場 —— 兩端改讀 origin/read-through，publish 不再寫出；順手對齊 python 與 C# 的捐贈簿分組)
 location: UCL_Core (cross-project, 任何 persona 都可用)
 related:
   - ucl_core:Skills~/reading-library/SKILL.md | Reading Library | 既有「閱讀」SOP, 本 workflow 補「寫作」面
@@ -377,7 +377,15 @@ letters/<作者 persona>/writing/<slug>.md
 
 **相容策略是 read-through**：舊檔沒有新欄位時由 `source` + slug 前綴推導
 （`history-*` → 酒館史、`watch-*` → 觀影實錄），任何一次寫入把推導結果寫實。
-`source` 欄位仍照舊寫出，因為 `library.py` 還在讀它。
+
+> ✅ **`source` 已退場（2026-09-04 meadow）**：兩端都改成先讀 `origin`、沒有才回退 legacy `source`
+> （C# `UCL_BooksClassification.DeriveOrigin` ／ python `library.py::_derive_origin` —— **同一條規則，要改一起改**），
+> 之後 publish 不再寫出 `source`。舊檔留著的 `source` 照讀不動，**不需要遷移**。
+>
+> 🩸 順手修掉的一格：python 端舊邏輯是 `source == "authored"` 才算自產，
+> 於是 `watch-apocalypse-hotel`（`source=watch-log`）在 python 的捐贈簿上被算成「📖 捐贈調入」——
+> **跟 C# 端同一份資料報出不一樣的數字**。改判後兩端對上（原創 23→24 / 捐贈 6→5）。
+> ⇒ 這正是「一符二役」的第二次收據：拆軸修的是寫入端，**讀取端各自留了一份舊解讀**。
 
 ### 系列：沒有系列的書＝一本一系列
 

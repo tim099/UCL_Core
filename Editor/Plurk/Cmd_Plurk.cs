@@ -219,15 +219,22 @@ namespace UCL.Core.EditorLib.Plurk
             if (aStatus == 200)
             {
                 string aNick = (PickJsonValue(aBody, "nick_name") ?? "").Trim().Trim('"');
+                string aUid = (PickJsonValue(aBody, "id") ?? "").Trim().Trim('"');
                 if (!string.IsNullOrEmpty(aNick) && !string.IsNullOrEmpty(iRes.SecretId))
                 {
                     string aOld = UCL_PlurkAccounts.NickOf(iRes.SecretId);
-                    UCL_PlurkAccounts.SetNick(iRes.SecretId, aNick);
+                    string aOldUid = UCL_PlurkAccounts.UserIdOf(iRes.SecretId);
+                    // 換綁與改名要分開講 —— user id 是穩定鍵，nick 不是。
+                    if (aOldUid.Length > 0 && aUid.Length > 0 && aOldUid != aUid)
+                        ioR.AppendLine($"- 🩸 **換綁**：user_id `{aOldUid}` → `{aUid}`"
+                            + " —— 這份憑證現在指向另一個 Plurk 帳號，不是同一個人改了名字");
+                    UCL_PlurkAccounts.SetNick(iRes.SecretId, aNick, aUid, "whoami");
                     ioR.AppendLine(aOld == aNick
                         ? $"- 📝 nick 登記表：`{iRes.SecretId}` = `{aNick}`（已是這個值，重新蓋時間戳）"
                         : $"- 📝 **已寫入 nick 登記表**：`{iRes.SecretId}` = `{aNick}`"
                           + (string.IsNullOrEmpty(aOld) ? "（原本沒登記）" : $"（原本是 `{aOld}`）")
                           + " —— 發文端 `@persona` 轉換讀的就是這張表");
+                    ioR.AppendLine($"- 　user_id: `{(aUid.Length > 0 ? aUid : "(這次沒讀到)")}`　source: `whoami`");
                 }
             }
             if (aStatus != 200)
@@ -255,13 +262,17 @@ namespace UCL.Core.EditorLib.Plurk
         // ===========================================================
         async UniTask EnsureNicksAsync(StringBuilder ioR, CancellationToken token)
         {
+            // ⚠ 條件是「nick 缺 **或** user_id 缺」不只是 nick：
+            //   `PlurkUserId` 是後加的欄，既有各筆讀回來是空字串 ⇒ 只看 nick 的話那些筆**永遠補不上 id**，
+            //   而空的 id 會讓「這是同一個帳號嗎」永遠答不出來。⇒ 一次性遷移，補完之後照樣零往返。
             var aMissing = new List<string>();
             foreach (string aId in UCL_PlurkAccounts.ListSecretIds())
-                if (string.IsNullOrEmpty(UCL_PlurkAccounts.NickOf(aId))) aMissing.Add(aId);
+                if (string.IsNullOrEmpty(UCL_PlurkAccounts.NickOf(aId))
+                    || string.IsNullOrEmpty(UCL_PlurkAccounts.UserIdOf(aId))) aMissing.Add(aId);
             if (aMissing.Count == 0) return;
 
             ioR.AppendLine();
-            ioR.AppendLine($"## nick 自動補齊（{aMissing.Count} 個帳號沒登記 ⇒ 現在查）");
+            ioR.AppendLine($"## nick 自動補齊（{aMissing.Count} 個帳號缺 nick 或 user_id ⇒ 現在查）");
             ioR.AppendLine("- 判準：nick 是帳號的屬性，問它要的是那份憑證而不是那個人 ——"
                 + " 憑證在 `Secret/` 底下，所以不需要誰上線跑指令。");
             foreach (string aId in aMissing)
@@ -289,9 +300,22 @@ namespace UCL.Core.EditorLib.Plurk
                     ioR.AppendLine($"- ⚠ `{aId}`：http 200 但沒讀到 `nick_name` ⇒ 不寫入（不拿空值蓋掉未知）");
                     continue;
                 }
-                UCL_PlurkAccounts.SetNick(aId, aNick);
+                // ⛔ 換綁偵測：**user id 才是「這是同一個帳號」的穩定鍵**（nick 會被改名）。
+                //   舊值非空且對不上 ⇒ 這份憑證現在指向**別的 Plurk 帳號**，而那不是改名。
+                //   ⚠ 這裡刻意只出聲不擋 —— 換綁本身是合法操作（換 token 就是換綁），
+                //   但它必須被看見：舊 nick 留在表上不會有任何一層喊，而它會 @ 到前一個帳號。
+                string aPrevUid = UCL_PlurkAccounts.UserIdOf(aId);
+                string aPrevNick = UCL_PlurkAccounts.NickOf(aId);
+                if (aPrevUid.Length > 0 && aUid.Length > 0 && aPrevUid != aUid)
+                    ioR.AppendLine($"- 🩸 `{aId}` **換綁了**：user_id `{aPrevUid}` → `{aUid}`"
+                        + $"（nick `{aPrevNick}` → `{aNick}`）—— 這不是改名，是這份憑證換到別的帳號");
+                else if (aPrevUid.Length > 0 && aPrevNick.Length > 0 && aPrevNick != aNick)
+                    ioR.AppendLine($"- ⚠ `{aId}` **改名了**：`{aPrevNick}` → `{aNick}`"
+                        + $"（user_id `{aUid}` 沒變 ⇒ 同一個帳號）");
+
+                UCL_PlurkAccounts.SetNick(aId, aNick, aUid, "secret-scan");
                 ioR.AppendLine($"- ✅ `{aId}` = `{aNick}`"
-                    + (string.IsNullOrEmpty(aUid) ? "" : $"（user_id `{aUid}`）")
+                    + (string.IsNullOrEmpty(aUid) ? "（⚠ 這次沒讀到 user_id）" : $"（user_id `{aUid}`）")
                     + "　source: `secret-scan`");
             }
         }

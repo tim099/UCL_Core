@@ -95,6 +95,17 @@ namespace UCL.Core.EditorLib.Plurk
         public string m_SecretId = "";
         /// <summary>該帳號在 Plurk 上的 nick（`/APP/Users/me` 的 `nick_name`，不是顯示名）。</summary>
         public string m_Nick = "";
+        /// <summary>該帳號在 Plurk 上的 **user id**（`/APP/Users/me` 的 `id`）。
+        /// <para>nick 會被改名、user id 不會 ⇒ **它才是「這是同一個帳號」的穩定鍵**。
+        /// 有了它，`user_id` 同而 `nick` 變 ＝ 對方改名；`user_id` 變 ＝ 這份憑證換綁到**別的帳號**了。
+        /// 沒有它的時候那兩件事在表上同形。</para>
+        /// <para>⚠ 空字串 ＝ 這一筆是加這欄之前寫的，**不是**「查不到」。</para></summary>
+        public string m_PlurkUserId = "";
+        /// <summary>這一筆是誰寫的：`secret-scan`（發文路徑自動補齊）／`whoami`（單帳號診斷）／`manual`。
+        /// <para>🩸 存在的理由（2026-09-04）：`plurk_meadow` 那筆的時戳晚於當天所有 lint ⇒ 不是自動補的，
+        /// 而表上沒有任何欄位答得出它是誰寫的。回傳檔印過來源，但回傳檔會被下一次覆寫。</para>
+        /// <para>⚠ 空字串 ＝ 加這欄之前寫的 ⇒ 顯示成 `unknown`，**不回頭猜**。</para></summary>
+        public string m_Source = "";
         /// <summary>這一筆是什麼時候讀回來的（UTC ISO）—— 讓「舊資料」看得出自己舊。</summary>
         public string m_FetchedAtUtc = "";
     }
@@ -260,24 +271,49 @@ namespace UCL.Core.EditorLib.Plurk
             return "";
         }
 
-        /// <summary>把某份憑證的 nick 寫回 registry（`op=resolve` 用）。空 nick 不寫入 —— 空值會讓
-        /// 「還沒讀過」跟「讀到空的」同形。</summary>
-        public static void SetNick(string iSecretId, string iNick)
+        /// <summary>某份憑證上一次讀回的 Plurk user id。**查不到回空字串**
+        /// —— 而「這一筆是加這欄之前寫的」跟「這個帳號沒有 id」都是空，呼叫端不可拿它當否定證據。</summary>
+        public static string UserIdOf(string iSecretId)
+        {
+            if (string.IsNullOrWhiteSpace(iSecretId)) return "";
+            try
+            {
+                foreach (var aRow in Load().m_Nicks ?? new List<UCL_PlurkNickEntry>())
+                    if (aRow != null && aRow.m_SecretId == iSecretId) return (aRow.m_PlurkUserId ?? "").Trim();
+            }
+            catch (Exception) { }
+            return "";
+        }
+
+        /// <summary>把某份憑證的身分寫回 registry。空 nick 不寫入 —— 空值會讓
+        /// 「還沒讀過」跟「讀到空的」同形。
+        /// <para><paramref name="iSource"/> ＝ 這一筆是誰寫的（`secret-scan` / `whoami` / `manual`）；
+        /// <paramref name="iUserId"/> 空字串時**保留既有值不清掉** —— 呼叫端拿不到 id 不代表它不存在。</para></summary>
+        public static void SetNick(string iSecretId, string iNick, string iUserId = "", string iSource = "")
         {
             if (string.IsNullOrWhiteSpace(iSecretId) || string.IsNullOrWhiteSpace(iNick)) return;
             var aConfig = Load();
             if (aConfig.m_Nicks == null) aConfig.m_Nicks = new List<UCL_PlurkNickEntry>();
             string aNow = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            string aUid = (iUserId ?? "").Trim();
+            string aSrc = (iSource ?? "").Trim();
             foreach (var aRow in aConfig.m_Nicks)
             {
                 if (aRow == null || aRow.m_SecretId != iSecretId) continue;
                 aRow.m_Nick = iNick.Trim();
+                // ⚠ 拿不到 id 就**不動既有值** —— 用空字串覆蓋等於把「我們知道它是誰」擦成「不知道」，
+                //   而擦掉之後跟「從來沒讀過」長得一模一樣。
+                if (aUid.Length > 0) aRow.m_PlurkUserId = aUid;
+                if (aSrc.Length > 0) aRow.m_Source = aSrc;
                 aRow.m_FetchedAtUtc = aNow;
                 Save(aConfig);
                 return;
             }
             aConfig.m_Nicks.Add(new UCL_PlurkNickEntry
-            { m_SecretId = iSecretId, m_Nick = iNick.Trim(), m_FetchedAtUtc = aNow });
+            {
+                m_SecretId = iSecretId, m_Nick = iNick.Trim(),
+                m_PlurkUserId = aUid, m_Source = aSrc, m_FetchedAtUtc = aNow,
+            });
             Save(aConfig);
         }
 

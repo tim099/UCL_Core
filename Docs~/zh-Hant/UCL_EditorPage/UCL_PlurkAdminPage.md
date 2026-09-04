@@ -79,6 +79,11 @@ Plurk 的 `@` **只認 nick**。persona 名不是 Plurk 上的東西 ——
 枚舉 `ListSecretIds()` → 挑出 `NickOf()` 為空的帳號 → 對**每份憑證**打一次 `/APP/Users/me`
 → `SetNick` 寫回 `plurk_accounts.json` 的 `Nicks`（回傳檔印一節「nick 自動補齊」，來源 `secret-scan`）。
 
+一列長這樣：`SecretId` / `Nick` / `PlurkUserId` / `Source` / `FetchedAtUtc`。
+
+- **`PlurkUserId` 是穩定鍵**（nick 會被改名）—— `id` 同而 `Nick` 變 ＝ 改名；`id` 變 ＝ 這份憑證**換綁到別的帳號**。兩者都只出聲不擋，但必須被看見。
+- **`Source` 是「最後一次是誰寫的」**（`secret-scan` / `whoami` / `manual`），不是「最初是誰立的」。空 ＝ 加這欄之前寫的 ⇒ `unknown`，不回頭猜。
+- 補齊條件是 **`Nick` 缺或 `PlurkUserId` 缺**；拿不到 id 時**不覆蓋既有值**。
 - **不需要那個人在場** —— nick 是帳號的屬性，問它要的是那份憑證，而憑證是檔案。
 - **全滿零往返**；有缺才查，一次補齊全部。
 - ⛔ **只准打 `/APP/Users/me` 這一個唯讀端點** —— 它用的是別人的憑證，白名單一鬆就成後門。

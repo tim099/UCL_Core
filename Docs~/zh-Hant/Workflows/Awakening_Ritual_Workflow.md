@@ -1,6 +1,6 @@
 ---
 title: Awakening 儀式工作流 (Awakening Ritual Workflow)
-last_updated: 2026-09-01
+last_updated: 2026-09-04
 status: active
 theme: persona_lifecycle
 summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安四步（走 Cmd_GoodMorning，需 Editor）：step=wake（守衛+狀態寫入）→ step=brief → 讀 wake brief → step=intro（單則上線自介+catchup 指路）；晚安（走 Cmd_GoodNight）：step=check（收尾清單+酒館最後一眼）→ [人工收尾] → step=letter（親筆收尾信）→ step=sleep（單則下線廣播）；cleanup 走 step=logout 單獨跑。
@@ -61,8 +61,8 @@ Step 1. senate ucmd run GoodMorning \
 Step 2. senate ucmd run GoodMorning \
             --arg step=brief --arg persona=<P>
         （2026-09-01 起 brief 由 Editor **就地跑 SCP_WakeBrief（C#）**生成，不再 spawn python；
-          Editor 未開啟的純讀備援是 `senate cmd wake-brief` 或 awakening.py brief ——
-          ⚠ 那兩份與本步產出的不是同一份，見 Awakening_Cmd_Flow.md §7）
+          Editor 未開啟的純讀備援是 `senate cmd wake-brief` ——
+          ⚠ 那一份與本步產出的不是同一份，見 Awakening_Cmd_Flow.md §7）
 
 Step 3. Read wake brief（路徑在 step=brief 的回傳檔）  ← 唯一一次 Read
         **2026-08-12 起：brief 在「上線廣播之前」落檔**（Step 4.5），不再是末尾順便生成 ——
@@ -353,7 +353,7 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 ## 🏔 跨專案路徑
 
 - **Code**：`<UCL_Core>/Tools~/AgentCommands/awakening.py`（儀式與狀態）、
-  `wake_brief.py`（brief 生成）
+  brief 生成在 `<SCP_Core>/Runtime/Letters/SCP_WakeBrief.cs`（C#，**唯一生產端**）
 - **State**（per-project，**根位置不寫死**）：以下都掛在 **data root** 底下，而 data root 可被
   `.agentcommands_root.local` pointer 搬到任意絕對路徑、個別項目還可被 `_config/tavern_paths.json`
   的 override key（`registry_path` / `session_dir` / `letters_dir`…）改掉。

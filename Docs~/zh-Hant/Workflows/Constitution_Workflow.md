@@ -1,7 +1,7 @@
 ---
 title: 立憲流程（Constitution Workflow）— persona 憲法怎麼立、怎麼修、信條怎麼定
 description: 人格憲法的完整生命週期 — 資格門檻、素材來源、invariant 三道測試、State 走私清單、修憲與信條。憲法是 persona 層的東西（agent 層＝bank）。
-last_updated: 2026-08-25
+last_updated: 2026-09-04
 status: active
 theme: agent_identity
 audience: Tim / 所有 agent 的所有 persona
@@ -120,7 +120,7 @@ grep -nE '累積中|目前(累積|進度|餘額)|餘額[[:space:]]*[0-9]|[0-9]+[
 
 # 確認 brief 接管（憲法欄位應從「初始風格」變成憲法全文）
 # ⚠ 不是重跑登入 —— `awakening.py morning` 已是指路 stub（exit 2）。憲法欄位由 brief 渲染，重生成 brief 即可：
-python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <p>
+senate cmd wake-brief --arg letters_root=<letters 根> --arg persona=<p> --arg out_dir=<letters>/<p>/cmd
 #   ↳ 讀回 letters/<p>/cmd/wake_brief.md 開頭：應出現「📜 <p> 憲法 — 事實源 letters/<p>/_constitution.md」
 #     若仍印「⚠ 該立憲了」＝ 檔名／位置不對（必須是 letters/<p>/_constitution.md），不是快取
 

@@ -1,7 +1,7 @@
 ---
 title: Awakening Cmd 完整流程（早安四步＋晚安四步＋自由時間三步 — 參考文件）
 description: Cmd_GoodMorning／Cmd_GoodNight／Cmd_FreeTime 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
-last_updated: 2026-09-01
+last_updated: 2026-09-04
 target_audience: [AI_Agent, Developer]
 aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]
 related:
@@ -109,16 +109,17 @@ cursor 由 catchup 在實際閱讀時推進 —— brief 不再含 §7/§8，int
 
 ## 7. Editor 離線時
 
-登入**不可用**（R18）。可用的備援只有純讀記憶（兩條，都不需要 Editor）：
+登入**不可用**（R18）。可用的備援只有純讀記憶（一條，不需要 Editor）：
 ```bash
 senate cmd wake-brief --arg letters_root=<letters 根> --arg persona=<P> --arg out_dir=<落檔目錄>
-python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <P>
 ```
-⚠ **這兩份與 Cmd 產出的不是同一份**，不要互相當驗收：
+⚠ 它與 Cmd 產出的**不是同一份**，不要互相當驗收：
 - `senate cmd wake-brief` 與 Cmd 是**同一支邏輯**，差在沒帶資料根（⇒ §6 缺陷單張數印「未量」）
   與 wake 編號要自己給（Cmd 那邊由 Editor 推導＝wakes/ 信數 + 1）。
-- `awakening.py brief` 是**另一套實作**：§5.5／§6.6 的抽籤演算法不同源（抽到的不是同一封），
-  且見樹排序那隻 bug 還活著（TASK-0098）。
+- ⛔ `awakening.py brief` 已於 **2026-09-04 退場**（TASK-0098；Tim 拍板「目前環境一定會有 Senate CLI」
+  ⇒「沒有 senate.exe 且 Editor 沒開」那格現場不存在）。它是**第二份實作**，而見樹排序那隻 bug
+  只活在它身上 —— 退場而不是修它，理由是 **讓那格失敗不可能 ＞ 讓它當場喊 ＞ 記得注意**：
+  兩份實作只會生出兩套會漂的說明，而漂掉的樣子是「日期很正常、只是順序反了」。
 `awakening.py morning / intro` 已是指路 stub（exit 2）——舊實作已刪除，不留第二份活實作。
 
 ## 8. 已知行為邊界（實測 2026-08-13）

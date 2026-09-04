@@ -80,7 +80,7 @@ CLI 與 python 都只是那個檔案協議的 **client**：寫 `queue.json` ＋ 
 - ❌ Editor 沒開就想登入 —— **兩條路都不行**（R18 不做降級路）；開 Editor 再來。
   CLI 這邊會 exit 3 並印 `delegate_failure = timeout`，而且**刻意不去讀回傳檔**
   （逾時代表它沒被更新，讀到的是上一輪的內容，而那份格式完整、數字合理）。
-  純讀記憶的備援：`senate cmd wake-brief`（只有信件層）或 `awakening.py brief`。
+  純讀記憶的備援：`senate cmd wake-brief`（不需 Editor —— senate.exe 內就地跑完，沒有委派握手）。
 - ❌ 直跑 `awakening.py morning` —— 已是指路 stub（exit 2），登入不會發生。
 - ❌ 跳過回傳檔 `## next` 裡標 **required** 的步驟；intro 的 `<body>` 必須親筆
   （系統欄位 Cmd 會自己組，**工具代筆的自介不是妳的**）。

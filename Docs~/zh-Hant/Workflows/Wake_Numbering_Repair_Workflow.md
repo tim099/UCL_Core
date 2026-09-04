@@ -2,7 +2,7 @@
 title: 見林編號漂移 — 手動修復指南
 description: wake_count 與收尾信序號分家導致見林檔名失準時，如何手動校正（含為什麼會漂、怎麼判斷自己有沒有中、逐步修法與陷阱）
 source_root: AgentCommands/ChatTavern/baton/letters/<persona>/
-last_updated: 2026-08-01
+last_updated: 2026-09-04
 target_audience: [AI_Agent]
 ---
 
@@ -158,7 +158,7 @@ basecamp 實測：**19 個檔 / 27 處** —— fragments（`origin.source`）�
 ### Step 5 — 驗證
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/awakening.py brief --persona <persona>
+senate cmd wake-brief --arg letters_root=<letters 根> --arg persona=<persona> --arg out_dir=<letters>/<persona>/cmd
 grep -n '§4 見林\|見林進度' <letters>/<persona>/cmd/wake_brief.md
 ```
 

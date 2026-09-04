@@ -52,7 +52,7 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
               見林寫入後自動: 歸檔當期見叢 + 提示抽 fragment + 檢查見森門檻.
     root-index --persona X        見根: 掃 fragments/ 機械重建 _root_index.md (手改會被覆寫)
     keys --persona X [--add "…"]  見叢: append (隨時可加, 不限儀式) / 列出當期清單
-    brief --persona X             重生成 cmd/wake_brief.md (身分+五層記憶+營運層單一文本; morning 自動跑)
+    brief --persona X             ⛔ 已退場 (2026-09-04, TASK-0098) — 改跑 `senate cmd wake-brief`
 
 範例:
   python awakening.py morning --persona basecamp --model claude-opus-5
@@ -133,8 +133,11 @@ _SEAM_DIR = Path(__file__).resolve().parent
 def _persona_profile():
     global _PP_MOD
     if _PP_MOD is None:
-        # ⚠ 用 _SEAM_DIR 而不是 _HERE：`_HERE` 在本檔第 ~1759 行被**重新綁成 str**
-        #   （為了 sys.path.insert）。本函式在**呼叫時**才讀它 ⇒ 拿到 str ⇒ `str / str` 直接爆。
+        # ⚠ 用 _SEAM_DIR 而不是 _HERE：本函式在**呼叫時**才讀目錄，
+        #   而檔尾曾經有一行 `_HERE = str(...)` 把它**重新綁成 str** ⇒ `str / str` 直接爆。
+        #   那三行已隨 python wake brief 一起退場（2026-09-04, TASK-0098），
+        #   但 _SEAM_DIR 這個寫法保留 —— 「定義時釘成 Path」本身就是對的，
+        #   不因為陷阱拔了就把防守也拔掉。
         #   🩸 實測踩過：brief 回「persona 'Template' 不存在於 registry」，
         #   而真正的錯是 `unsupported operand type(s) for /: 'str' and 'str'` ——
         #   接縫 fail-soft 回空 dict，於是「讀取失敗」長得跟「沒有這個人」一模一樣。
@@ -1558,85 +1561,19 @@ def write_longterm_digest(persona: str, body: str,
 
 
 
-def write_wake_brief_files(persona: str, reg: dict, p: dict,
-                           threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD):
-    """刷新見根索引 + 生成 wake brief，回傳 (brief_path | None, err | None)。
-
-    區塊職責：把「記憶落檔」從結尾那支列印函式裡拆出來，讓 cmd_morning 能在**廣播之前**先跑。
-    物理意義：本函式成功之前，這次醒來的記憶在磁碟上並不存在 —— 它是 ritual 裡
-             「這個 persona 有沒有腦袋」的那一步，純本機、不碰 Editor（實測 ~1.8s）。
-    失敗處置：不丟例外（維持 ritual 原本的 fail-soft），把 err 帶回去由呼叫端印。
-    """
-    try:
-        write_root_index(persona)                      # 先刷新見根索引（brief 會 inline 它）
-        return write_wake_brief(persona, reg, p, threshold), None
-    except Exception as e:
-        return None, e
+# ── 已退場（2026-09-04, TASK-0098）────────────────────────────────
+# write_wake_brief_files / _print_longterm_memory_block 隨 python 端 wake brief 一起拔除：
+# 它們的唯一消費端是 morning，而 morning 2026-08-13 起已是指路 stub。
+# ⚠ 拔除而不是「留著也不會怎樣」：它們呼叫的 write_wake_brief 已不存在，
+#   留下來就是一顆只有被呼叫時才會 NameError 的地雷。
 
 
-def _print_longterm_memory_block(reg: dict, persona: str, p: dict,
-                                 threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD,
-                                 brief_result: tuple | None = None) -> None:
-    """morning 結尾印長期記憶讀取指引 + overdue 提醒(skill 引導 agent 動作)。
-
-    2026-07-28：記憶升為五層後，主動作改成「讀一份 wake brief」——本函式仍印各層原檔路徑
-    當 fallback（brief 生成失敗 / 想直接看原檔時用），但 agent 的預設動作只需 Read brief。
-
-    brief_result：cmd_morning 已在廣播前先落檔，這裡只負責印，不重生成
-                 （None = 沒人先生成過，維持原本「印的時候順便生」的行為給其他呼叫端）。
-    """
-    st = consolidation_status(persona, reg, threshold)
-    # §0 身分 + 見根/見叢/見森/見林/見樹 + §7-9 營運層，彙整成單一可直讀文本（機械生成，手改會被覆寫）
-    if brief_result is None:
-        brief_result = write_wake_brief_files(persona, reg, p, threshold)
-    brief, brief_err = brief_result
-    try:
-        if brief_err is not None:
-            raise brief_err
-        print(f"\n## 📖 記憶接續 — 讀這一份就好")
-        print(f"   → `{brief.relative_to(_REPO_ROOT)}`  "
-              f"(§0 身分 → §1-6 記憶 → §7-9 營運; 每次 morning 重生成)")
-        part2 = brief.parent / "wake_brief_part2.md"   # 與 brief 同層（cmd/）
-        if part2.exists():
-            print(f"   ↳ 續讀檔(超出主檔上限已分檔, 視情況再讀): `{part2.relative_to(_REPO_ROOT)}`")
-    except Exception as e:
-        print(f"\n## 📖 記憶接續 — ⚠ wake brief 生成失敗({e}); 改讀下列原檔")
-    print(f"\n## 🧠 長期記憶原檔 (fallback)")
-    # 見林: 最新 digest
-    latest_dg = latest_longterm_digest(persona)
-    if latest_dg is not None:
-        print(f"   見林 → 讀最新長期記憶: `{latest_dg.relative_to(_REPO_ROOT)}`")
-        print(f"          (完整列表見 `{(longterm_dir(persona) / '_index.md').relative_to(_REPO_ROOT)}`)")
-    else:
-        print(f"   見林 → (尚無長期記憶 digest;wake 累積到門檻會提示整理)")
-    # 見樹: 昨夜 letter
-    latest_letter = _LETTERS_DIR_TPL / persona / "_latest.md"
-    if latest_letter.exists():
-        print(f"   見樹 → 讀昨夜 letter: `{latest_letter.relative_to(_REPO_ROOT)}`")
-    # fork 初醒讀母 persona 最新 digest 一次(Tim 拍板)
-    parent = p.get("forked_from")
-    if parent and p.get("wake_count", 0) == 1:
-        parent_dg = latest_longterm_digest(parent)
-        if parent_dg is not None:
-            print(f"   🧬 fork 初醒 → 額外讀母 persona '{parent}' 最新長期記憶接血統: "
-                  f"`{parent_dg.relative_to(_REPO_ROOT)}`")
-    # overdue 提醒
-    if st["overdue"]:
-        print(f"   ⚠ 長期記憶整理 OVERDUE: gap={st['gap']} (門檻 {threshold}); "
-              f"上次整理到 wake {st['last_consolidated_wake']}, 現在 wake {st['wake_count']}")
-        print(f"     → 整理本段 wake {st['span_start']}-{st['span_end']} ({len(st['pending_letters'])} 封 episodic):")
-        print(f"       awakening.py consolidate --persona {persona}   # 先看清單+讀信")
-        print(f"       awakening.py consolidate --persona {persona} --digest-body \"<反思濃縮>\"  # 寫入")
-    else:
-        print(f"   ✓ 長期記憶整理進度: gap={st['gap']}/{threshold} (上次到 wake {st['last_consolidated_wake']})")
-
-
-# ─────────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────────
 # 見根 / 見叢 / 見森 — 記憶五層 T3~T5 (Tim 2026-07-28 拍板, 討論串 tavern #13786-13801)
 #
 # 區塊職責：把「記憶」拆成 5 個各有明確職責的層，並讓 morning 只需讀一份彙整文本。
 #   見樹 T1  letters/<persona>/_latest.md           昨夜 1 封（日記，抒發用）
-#            不足 200 行時 brief §5 往前合併到夠讀（見 wake_brief.MERGE_STOP_LINES）
+#            不足 200 行時 brief §5 往前合併到夠讀（見 SCP_WakeBrief.MergeStopLines）
 #   見叢 T1.5 letters/<persona>/_keys_open.md        當期交棒清單（checkbox，執行用）
 #   見林 T2  letters/<persona>/longterm/wake_N-M.md  10 夜濃縮（既有）
 #   見森 T3  letters/<persona>/longterm/forest/      見林 ≥ 3 份起，之後每份新林折一代（rolling fold）
@@ -1664,8 +1601,9 @@ FRAG_TYPE_ORDER = _mem.FRAG_TYPE_ORDER
 #   而且來得早，未被整理的窗口從「最多 4 份」縮到「最多 2 份」。
 #   數值影響：只影響**何時開始**折疊與 brief 的 §3 提示；已折的世代不受影響
 #   （append-only，舊世代全保留）。降門檻不會回溯重折，只會讓下一次判定提早成立。
-# （BRIEF_LINE_CAP / BRIEF_CATCHUP_COUNT 已隨 wake brief 生成搬到 wake_brief.py；
-#   本檔下方保留 BRIEF_LINE_CAP 別名供 cmd_brief 顯示用，避免兩處各定義一份會漂的數字）
+# （BRIEF_LINE_CAP / BRIEF_CATCHUP_COUNT 隨 wake brief 生成一起退場（2026-09-04, TASK-0098）：
+#   那兩個數字現在只有一份，在 SCP_WakeBrief.cs（BriefLineCap / MergeStopLines）。
+#   退場的理由不是「没人用」，是「兩份實作一份說明，而說明會漂」。
 
 
 fragments_dir = _mem.fragments_dir
@@ -1689,30 +1627,14 @@ write_forest = _mem.write_forest
 
 
 
-# ─── Wake brief — morning 的單一可直讀文本 ──────────────────────────────
-# ─── wake brief（已抽離到 wake_brief.py）────────────────────────────────
-# 區塊職責：本檔只保留「呼叫入口」——組裝與排版全在 wake_brief.py（Tim 2026-07-31：這支太肥）。
-# 設計取捨：把本模組自己當參數傳過去（sys.modules[__name__]），避免 wake_brief 反過來
-#          import awakening 造成循環匯入 / 第二份模組實例（狀態讀寫仍是本檔的地盤）。
-# 自我定位再 import：以 script 執行時 sys.path[0] 剛好是本目錄，但**被別的工具 import 時不是**
-# （tavern_cmd.py 就會 import_module("awakening")）。不補這兩行 = 換個 cwd 就 ModuleNotFoundError。
-_HERE = str(Path(__file__).resolve().parent)
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-import wake_brief as _wb                       # noqa: E402 — 必須在 sys.path 補完之後
-
-BRIEF_LINE_CAP = _wb.BRIEF_LINE_CAP            # 對外沿用舊名（cmd_brief 顯示用）
-
-
-def build_wake_brief(persona: str, reg: dict, p: dict,
-                     threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD) -> tuple:
-    return _wb.build_wake_brief(sys.modules[__name__], persona, reg, p, threshold)
-
-
-def write_wake_brief(persona: str, reg: dict, p: dict,
-                     threshold: int = DEFAULT_CONSOLIDATION_THRESHOLD) -> Path:
-    return _wb.write_wake_brief(sys.modules[__name__], persona, reg, p, threshold)
-
+# ── wake brief 的 python 生產端已退場（2026-09-04, TASK-0098）────────────
+# 生產端 2026-09-01 搬進 SCP_Core（TASK-0097），本檔這邊只剩一層呼叫包裝；
+# Tim 2026-09-04 拍板：「目前環境一定會有 Senate CLI」⇒ 備援那一格不存在，整支拔除。
+#   現在的單一入口：`senate cmd wake-brief`（不需 Editor，senate.exe 就地跑完）。
+# ⭐ 順手拆掉的一個陷阱：原本這裡有 `_HERE = str(...)`，把檔首那個 `_HERE`（Path）
+#   **重新綁成 str** —— 而它跟 1284 行的 `_HERE_DIR` 完全重複。
+#   那個重綁的血証在 `_persona_profile()` 的註解裡（str / str 直接爆，
+#   而 fail-soft 讓「讀取失敗」長得跟「沒有這個人」一模一樣）。
 
 
 # ─── Subcommands ────────────────────────────────────────────────────────
@@ -1731,7 +1653,7 @@ def _deprecated_login_cmd(name: str, extra: str = "") -> int:
     print("   ③ Read brief（路徑在 step=brief 的回傳檔 letters/<P>/cmd/goodmorning_brief.md）", file=sys.stderr)
     print("   ④ run_cmd.py run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body（body 親筆）", file=sys.stderr)
     print("   晚安側：run_cmd.py run GoodNight --arg step=check|letter|sleep|logout --arg persona=<P>", file=sys.stderr)
-    print("   Editor 未開啟：登入/登出不可用（R18）；純讀記憶備援 → awakening.py brief --persona <P>", file=sys.stderr)
+    print("   Editor 未開啟：登入/登出不可用（R18）；純讀記憶備援 → senate cmd wake-brief（信件層，senate.exe 就地跑）", file=sys.stderr)
     if extra:
         print(f"   {extra}", file=sys.stderr)
     print("   完整流程參考：ucl_core:Docs~/zh-Hant/Workflows/Awakening_Cmd_Flow.md", file=sys.stderr)
@@ -2292,19 +2214,13 @@ def cmd_keys(args: argparse.Namespace) -> int:
 
 
 def cmd_brief(args: argparse.Namespace) -> int:
-    """手動重生成 wake brief（morning 會自動生成；改完 fragment 想立刻重讀時用）。"""
-    reg = load_registry()
-    if args.persona not in reg.get("personas", {}):
-        print(f"❌ persona '{args.persona}' 不存在於 registry", file=sys.stderr)
-        return 2
-    write_root_index(args.persona)
-    path = write_wake_brief(args.persona, reg, reg["personas"][args.persona])
-    lines = len(path.read_text(encoding="utf-8").split("\n"))
-    print(f"✅ wake brief 生成: {path.relative_to(_REPO_ROOT)} ({lines} 行 / 上限 {BRIEF_LINE_CAP})")
-    part2 = path.parent / "wake_brief_part2.md"     # 與 brief 同層（cmd/）
-    if part2.exists():
-        print(f"   ↳ 續讀檔: {part2.relative_to(_REPO_ROOT)}")
-    return 0
+    """⛔ 指路 stub——wake brief 的生產端 2026-09-04 起只有一份（C#）。"""
+    print("⛔ awakening.py brief 已退場（2026-09-04，TASK-0098）——本檔不再生成 wake brief。", file=sys.stderr)
+    print("   單一入口（不需 Editor，senate.exe 就地跑完）：", file=sys.stderr)
+    print("   senate cmd wake-brief --arg letters_root=<letters 根> --arg persona=<P> [--arg out_dir=<落檔目錄>]", file=sys.stderr)
+    print("   早安流程裡那一步由 Cmd 自己跑：senate cmd morning-brief --arg persona=<P>", file=sys.stderr)
+    print("   ⚠ 不留備援的理由：兩份實作就是兩套說明，而漂掉的樣子是「日期很正常、只是順序反了」（本單原症狀）。", file=sys.stderr)
+    return 2
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -2751,7 +2667,7 @@ def main():
     pkeys.set_defaults(func=cmd_keys)
 
     # wake brief: 手動重生成 (morning 會自動生成; 這支給「改完 fragment 想立刻重讀」用)
-    pbrief = sub.add_parser("brief", help="重生成 wake brief (身分+記憶+營運單一文本)")
+    pbrief = sub.add_parser("brief", help="⛔ 已退場 (2026-09-04) — 改跑 senate cmd wake-brief")
     pbrief.add_argument("--persona", required=True)
     pbrief.set_defaults(func=cmd_brief)
     pcons.add_argument("--threshold", type=int, default=DEFAULT_CONSOLIDATION_THRESHOLD,

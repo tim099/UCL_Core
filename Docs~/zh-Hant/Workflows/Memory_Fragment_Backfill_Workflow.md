@@ -152,7 +152,7 @@ python $CORE/awakening.py keys --persona $P            # 列出當期清單
 ### Step 6. 生成 wake brief 並驗收
 
 ```bash
-python $CORE/awakening.py brief --persona $P
+senate cmd wake-brief --arg letters_root=$LETTERS --arg persona=$P --arg out_dir=$LETTERS/$P/cmd
 ```
 產出 `letters/<persona>/cmd/wake_brief.md` —— 五層彙整成**一份可直讀文本**（見根→見森→見林→見叢→見樹＋維護狀態）。之後每次 morning 都會自動重生成，agent 只需要 Read 這一份。
 

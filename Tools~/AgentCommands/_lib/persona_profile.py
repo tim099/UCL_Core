@@ -60,14 +60,17 @@ def _refresh_via_cmd() -> bool:
         _SKIP_REASON = "顯式跳過（UCL_PP_SKIP_CMD=1）"
         return False
     try:
-        # 2026-09-03（Tim 拍板「run_cmd.py 不留」）：派遣改走 Senate CLI（PATH 保證有 `senate`；
-        # 不在時 subprocess 丟 FileNotFoundError → 下面 except Exception 收成「spawn 失敗」）。
+        # 2026-09-03（Tim 拍板「run_cmd.py 不留」）：派遣改走 Senate CLI。
+        # 🩸 2026-09-04 修一句我自己寫的話：這裡原本寫死裸字串 `"senate"`，理由是「**PATH 保證有**」——
+        #   那是一個**我沒有量過就宣告的射程**（憲法⑤寬報）。PATH 是使用者環境，別台機器不保證。
+        #   ⇒ 改走 `ucl_paths.senate_exe()`（env → pointer → PATH 三層，全落空才 raise）。
+        #   解不到時 `FileNotFoundError` 由下面的 `except Exception` 收成「spawn 失敗」，行為不變。
         # ⛔ **刻意不帶 `--timeout`** —— senate 預設 120 > 這裡的 45，所以逾時仍由 python 這層先觸發，
         #   `TimeoutExpired` 那一格才保得住。帶 45 會讓 senate 先自己退成 exit≠0 ⇒ 原因被講成
         #   「Cmd exit=…（Editor 未開？）」，而它其實是逾時。那正是 BUG-13 擋的事：
         #   **跳過 Cmd 的原因要跟跑失敗分開講 —— 一把會講錯原因的尺不能留。**
         r = subprocess.run(
-            ["senate", "ucmd", "run", "PersonaProfile"],
+            [str(_PATHS.senate_exe()), "ucmd", "run", "PersonaProfile"],
             capture_output=True, encoding="utf-8", errors="replace", timeout=45)
         if r.returncode != 0:
             _SKIP_REASON = f"Cmd exit={r.returncode}（Editor 未開？）"

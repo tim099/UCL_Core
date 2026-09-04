@@ -34,13 +34,17 @@ from pathlib import Path
 
 # ─────────────────────────────────────────────────────────────────────────
 # 區塊職責：本檔自身位置錨 + UCL_Core 自我定位。
-# 物理意義：canonical 檔在 <UCL_Core>/Tools~/AgentCommands/_lib/ucl_paths.py。
-#          但本檔會被「位元組原樣」同步鏡像到 host 專案的 <repo>/AgentCommands/_lib/ucl_paths.py
-#          (T02, install_skills.py 模式)。在鏡像位置 UCL_Core 不是本檔的 ancestor（它在
-#          CardGame/Assets/UCL/… 這條 sibling 子樹、且掛載深度跨專案不定），故不能用固定
-#          parents[N] 反推 —— 那在鏡像位置會指到 repo 上一層，回垃圾（外觀 OK ≠ 真的 OK）。
+# 物理意義：canonical 檔在 <UCL_Core>/Tools~/AgentCommands/_lib/ucl_paths.py，**而它是唯一的實作**。
+#          ⚠ 本區塊原本寫「本檔會被位元組原樣同步鏡像到 <repo>/AgentCommands/_lib/ucl_paths.py」——
+#            **那個鏡像制 2026-08-18 就被 Tim 拍板廢除了**（鏡像停在 447 行而 canonical 468 行，
+#            少的正好是新加的函式；漂移的失敗是靜默的）。那個位置現在是一支 77 行的**轉發 shim**。
+#            ⇒ 這句話掛了 17 天，而它會讓人去找一份不存在的鏡像（2026-09-04 summit 就找了一次）。
+#            📌 同族：TASK-0071（註解描述了一個沒發生的動作）。
+#          ⛔ 但**深度不定這件事仍然成立**（UCL_Core 掛在各專案不同深度：
+#            `Assets/Plugins/UCL_Core` / `Assets/UCL/UCL_Core` / `CardGame/Assets/UCL/UCL_Core`…），
+#            所以不能用固定 parents[N] 反推 —— 那會指到 repo 上一層，回垃圾（外觀 OK ≠ 真的 OK）。
 # 數值影響：改採「往上找名為 UCL_Core 的 ancestor」自我定位 —— depth-tolerant（不綁死層數），
-#          canonical 位置一定找得到；鏡像位置找不到 → 回 None，由 ucl_core_dir() 誠實 raise。
+#          canonical 位置一定找得到；找不到 → 回 None，由 ucl_core_dir() 誠實 raise。
 #          repo_root() / data_root() 走 .git walk，兩個位置都正確，不受本區塊影響。
 # ─────────────────────────────────────────────────────────────────────────
 _THIS_FILE = Path(__file__).resolve()          # 本檔絕對路徑（已解 symlink）
@@ -549,6 +553,67 @@ def ucl_tool(name: str) -> Path:
     return _UCL_CORE_DIR / "Tools~" / "AgentCommands" / name
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# API 5 — senate_exe()
+# 區塊職責：解析 Senate CLI（`senate.exe`）的絕對路徑 —— python 端要派 Cmd 時的執行檔。
+# 物理意義：TASK-0107 走向（Tim 2026-09-04 拍板）是**全面移植到 Senate CLI，python 端過渡、
+#          只保留工具類**。而現況那些工具拿 `run_cmd.py` 的成本是零（同資料夾兄弟檔），
+#          換成 senate 之後**它不在這個 repo 裡** ⇒ 定位變成一個真的問題。
+#          ⇒ 照本檔既有那條原則解：**路徑不該被推導，該被傳遞**。
+# 數值影響：三層解析，任一層命中即回；**全部落空就 raise，不回 None、不猜一個看起來對的**。
+#          （回 None 會讓呼叫端「找不到 senate」與「senate 說這件事失敗」同形。）
+#
+#   ① 環境變數 `UCL_SENATE_EXE` —— 顯式注入，最高優先（測試隔離／跨機器覆寫）
+#   ② pointer 檔的 `senate_exe=` —— ⏳ **寫入端目前不存在，這一層現在恆空**
+#      理由寫在這裡而不是留白：pointer 由 **Editor** 寫（`UCL_AgentCommandsPath`），
+#      而 Editor 不知道 senate.exe 在哪 —— 那是另一個 repo。
+#      正解是**senate 自己寫**（它知道自己在哪，而 pointer 的原則正是
+#      「pointer 是唯一被實際量到的值」）。⇒ 那格要在 Senate 側做，本函式先把讀取端擺好。
+#      ⚠ 留著這一層而不是刪掉，是為了讓「**沒有人寫**」跟「**讀不到**」在診斷時分得開。
+#   ③ `shutil.which("senate")` —— 靠 PATH。實測 2026-09-04 這台：
+#      `D:\Unity\Senate\publish\senate.EXE`。⚠ 這一層**依賴使用者環境**，
+#      在別人機器上可能不成立 —— 而那正是 ①② 存在的理由。
+#
+# 🩸 為什麼不做第四層「猜 repo 旁邊的 Senate/publish/」：
+#    那是**推導**，而本檔開頭那段血證講的就是推導的下場 ——
+#    最壞的失敗不是找不到檔，是**找到了另一個宇宙的檔**（例如另一份 clone 的舊 exe），
+#    而舊 exe 會正常跑、正常回答，只是答的是別的版本的問題。
+# ─────────────────────────────────────────────────────────────────────────
+def senate_exe() -> Path:
+    tried: list[str] = []
+
+    env = (os.environ.get("UCL_SENATE_EXE") or "").strip()
+    if env:
+        p = Path(env)
+        if p.is_file():
+            return p.resolve()
+        tried.append(f"UCL_SENATE_EXE={env}（不是一個檔）")
+    else:
+        tried.append("UCL_SENATE_EXE 未設")
+
+    ptr = read_pointer().get("senate_exe")
+    if ptr:
+        p = Path(ptr)
+        if p.is_file():
+            return p.resolve()
+        tried.append(f"pointer senate_exe={ptr}（不是一個檔）")
+    else:
+        tried.append("pointer 沒有 senate_exe（⏳ 寫入端尚未存在，見本函式註解）")
+
+    import shutil
+    found = shutil.which("senate")
+    if found:
+        return Path(found).resolve()
+    tried.append("PATH 上沒有 senate")
+
+    raise FileNotFoundError(
+        "找不到 Senate CLI（senate.exe）—— 三層都落空：\n  · "
+        + "\n  · ".join(tried)
+        + "\n⇒ 解法（擇一）：設 UCL_SENATE_EXE=<絕對路徑>，或把 senate 的 publish 目錄加進 PATH。"
+        + "\n⛔ 本函式刻意不猜一個路徑：猜中一份舊 clone 的 exe 會正常跑、正常回答，"
+          "只是答的是別的版本的問題。"
+    )
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # 區塊職責：CLI 自測入口 —— `python ucl_paths.py` 直接印四支 API 解析結果。
@@ -567,3 +632,9 @@ if __name__ == "__main__":
     print(f"ucl_core_dir() = {ucl_core_dir()}")
     print(f"data_root()    = {data_root()}")
     print(f"ucl_tool('run_cmd.py') = {ucl_tool('run_cmd.py')}")
+    # senate_exe() 會 raise（那是刻意的）⇒ 自測入口要把失敗印成一段可讀的診斷，
+    # 而不是讓整支自測腳本當掉 —— 「它解不到」本身就是一個有效的讀數。
+    try:
+        print(f"senate_exe()   = {senate_exe()}")
+    except FileNotFoundError as e:
+        print(f"senate_exe()   = ⛔ 解不到\n{e}")

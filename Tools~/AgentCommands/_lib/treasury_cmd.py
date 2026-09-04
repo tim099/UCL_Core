@@ -24,11 +24,28 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent          # .../Tools~/AgentCommands/_lib
-_RUN_CMD = _HERE.parent / "run_cmd.py"           # .../Tools~/AgentCommands/run_cmd.py
+# ⛔ 原本這裡有 `_RUN_CMD = _HERE.parent / "run_cmd.py"` —— 2026-09-04 移除（TASK-0107）。
+#   留一個指向即將被刪的檔的常數，等於留一顆會在刪檔那天才爆的雷，而且它是**同資料夾兄弟檔**
+#   這種永遠成立的定位方式 ⇒ 沒有任何一層會先警告。（同 `_lib/persona_profile.py` 2026-09-03 的先例。）
+
+
+def _ucl_paths():
+    """載入同目錄的 `ucl_paths.py` —— 照 `_lib/persona_profile.py` 既有慣例。
+
+    ⚠ `_lib/` **沒有 `__init__.py`**（不是 package），而本模組被 `from _lib.treasury_cmd import …`
+    這種形式引用時，相對 import 不成立 ⇒ 走 `spec_from_file_location`，不猜 import 路徑。
+    """
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location("_ucl_paths_treasury_cmd", _HERE / "ucl_paths.py")
+    _m = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m
+
+
+_PATHS = _ucl_paths()
 
 
 def _run(cmd_type: str, args: dict, *, timeout: float = 180.0) -> tuple[bool, str]:
@@ -41,19 +58,55 @@ def _run(cmd_type: str, args: dict, *, timeout: float = 180.0) -> tuple[bool, st
     # ⚠ `--system` 只改**走哪條 lane**，不宣告身分：帳戶隔離鐵律看的是 `caller` / `account`
     #   （UCL_TreasuryLedger），跟 lane 無關 ⇒ 記帳語意逐位元不變。
     #   （互斥守衛只認顯式 `--persona` 旗標，`--arg persona=` 照樣能帶身分 —— 2026-08-18 實測。）
-    # 數值影響：路由 queues/anonymous/ → queues/system/。balance / debit / credit /
-    #          canvas_voucher_consume 四支共用本函式，因此一併生效。
-    argv = [sys.executable, str(_RUN_CMD), "--system", "run", cmd_type, "--wait-reply", "0"]
+    # 數值影響：路由 queues/anonymous/ → queues/system/。
+    #          ⚠ **本檔每一支對外函式都經過這裡**，所以改這一支＝全部一起改。
+    #          🩸 這行原本寫「balance / debit / credit / canvas_voucher_consume **四支**」——
+    #            而 `canvas_voucher_grant` 是後來加的，那個數字在被我讀到之前就已經過期
+    #            （2026-09-04 機器數過：**五支**）。⇒ 改成不寫數字：
+    #            **會過期的數字不會自己喊，而下一個人會照字面相信它。**（憲法⑤）
+    #
+    # ── 2026-09-04（TASK-0107，Tim 拍板「全面移植到 Senate CLI」）：派遣由
+    #    `python run_cmd.py` 換成 `senate ucmd run`。三處旗標對應是**量出來的**，不是推的：
+    #      · `--system`        → `--persona system`（實測路由同樣落 `queues/system/`）
+    #      · `--wait-reply 0`  → **直接砍**（senate 沒有這個功能，帶 0 本來就是關掉 ⇒ 等價）
+    #      · `timeout=180`     → **顯式帶 `--timeout`**。⛔ 不帶就是降級：senate 預設 120 < 這裡的 180，
+    #        而降級的症狀不是紅燈，是「本來會等到的那 60 秒不等了」⇒ 逾時被誤讀成 Editor 沒開。
+    #    ⚠ 記帳語意**逐位元不變**：帳戶隔離鐵律看的是 args 裡的 `caller` / `account`
+    #      （`UCL_TreasuryLedger`），跟 lane、跟 client 是誰都無關。
+    #
+    # 🩸 `senate` 的路徑走 `ucl_paths.senate_exe()`（三層：env → pointer → PATH），**不寫裸字串**。
+    #    2026-09-03 我在 `persona_profile.py` 寫的是裸 `"senate"` 並註解「PATH 保證有」——
+    #    那是一個**我沒有量過就宣告的射程**（憲法⑤寬報）。這裡不重犯。
+    # ⛔ 解不到時**大聲失敗、不退回舊路徑**：靜默 fallback 會讓這次轉接等於沒發生，
+    #    而呼叫紀錄（本單的收單條件）會照樣長出新的一筆，沒有人會知道。
+    try:
+        aSenate = _PATHS.senate_exe()
+    except Exception as e:
+        return False, f"找不到 Senate CLI ⇒ 金流 Cmd 沒有送出（**不退回 run_cmd.py**）：\n{e}"
+
+    argv = [str(aSenate), "ucmd", "run", cmd_type, "--persona", "system",
+            "--timeout", str(int(timeout))]
     for k, v in args.items():
         argv += ["--arg", f"{k}={v}"]
     try:
+        # ⚠ python 這層刻意比 senate 那層**多 15 秒**，讓 senate 先逾時 ——
+        #   兩層設同一個值時誰先觸發不確定，而**它們的錯誤訊息資訊量差很多**：
+        #   senate 會說「這是 CLI 端的等待上限、不代表對面失敗」並指路去看 result 檔的 mtime；
+        #   python 這層只會丟一個 `TimeoutExpired`。
+        #   📌 而 `_lib/persona_profile.py` 那處是**相反**的（刻意讓 python 先），
+        #      因為那裡要保住「跳過 Cmd」與「跑失敗」分開講的那一格（BUG-13）。
+        #      ⇒ 兩處方向不同不是矛盾：判準都是**「哪一層的訊息說得出正確的原因」**。
         r = subprocess.run(argv, capture_output=True, encoding="utf-8",
-                           errors="replace", timeout=timeout)
+                           errors="replace", timeout=timeout + 15)
     except Exception as e:
         return False, f"Cmd 執行失敗：{e}"
     out = (r.stdout or "") + (r.stderr or "")
-    ok = r.returncode == 0 and "Success" in out
-    return ok, out[-500:]
+    # 🩸 判定只看 exit code，**不再 substring 找 "Success"**：
+    #    senate 的成功行是 `✓ Cmd completed → Success（result 檔判定，非推論）`，
+    #    而 substring 分不出「這是結論」與「這個字剛好出現在別的句子裡」
+    #    （同族血證：2026-09-03 我用 substring 找一句話來確認自己撤回了它，
+    #     而我的更正文字**引用**了那句 ⇒ 命中）。exit code 是 senate 自己的判定，不是我對它的解讀。
+    return r.returncode == 0, out[-500:]
 
 
 def treasury_balance(account: str, currency: str = "tavern_token", *,

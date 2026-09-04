@@ -2206,8 +2206,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // ⭐ **最後收工的人觸發匯出**（Tim 2026-08-26 拍板；取代原本的「只有 primary 觸發」）
             // 🩸 為什麼要換：primary 的 ends_at 通常先到 ⇒ 她收工時陪看者還 active ⇒
             //    那些場次**還不在台帳上**（AppendSessionLog 只在結算時跑）⇒
-            //    `--from-session` 撈不到它們 ⇒ 它們的 `exported_chapter` 永遠不會被回填，
+            //    `--from-session` 撈不到它們 ⇒ **不會有人替它們 append `record_type=export` 那一筆**，
             //    於是「已匯出」與「還沒匯出」在台帳上同形（BUG-9 那一族）。
+            //    ⚠ 這裡講的是**那筆 export 紀錄缺席**，不是「欄位沒被填」——
+            //      場次列的 `exported_chapter` 任何情況下都不會被填（見該欄位的 remarks）。
             //    實撞（今晚 charlie 第一場）：書收錄 4 人 38 筆，而 `場次` 只列 2 場。
             // ⇒ 改成「同組沒有人還在線 ⇒ 由我觸發」：等到那一刻，台帳上一定有全部場次。
             // ⚠ 併發：兩人幾乎同時收工可能都判定自己是最後一個 ⇒ 兩次匯出。
@@ -3480,7 +3482,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     observations = iS.observations,
                     paid_minutes = iPaidMin,
                     paid_total = iPaidTotal,
-                    exported_chapter = "",   // 匯出後由人/工具回填，空＝這一場還沒進任何一章
+                    exported_chapter = "",   // ⛔ 永遠是空的：台帳 append-only，匯出時 append 另一筆
+                                             //    record_type=export，**不回頭改這一行**。查章號要掃 export 紀錄。
                 };
                 // ⚠ 一行一場（jsonl）⇒ 用 ToJson 不是 ToJsonBeautify；換行由這裡補。
                 File.AppendAllText(aPath, aRec.SerializeToJson().ToJson() + "\n", new UTF8Encoding(false));
@@ -4048,7 +4051,16 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public int observations = 0;
         public int paid_minutes = 0;
         public int paid_total = 0;
-        /// <summary>匯出後由人/工具回填；空＝這一場還沒進任何一章。</summary>
+        /// <summary>⛔ **這個欄位不會被就地填回去 —— 它從建立到永遠都是 `""`。**</summary>
+        /// <remarks>
+        /// 匯出時 append 的是**另一筆**紀錄（`record_type=export`，帶 `session_id` / `exported_chapter` / `book`）——
+        /// 台帳是 append-only，不改既有行。
+        /// 🩸 所以**不可以拿它判斷「這一場進了哪一章」**：讀場次列會對每一個**已經**匯出的場次
+        /// 得到「還沒進章」這個反的結論，而兩者在這個欄位上同形。
+        /// 讀數（2026-09-04，`D:/Unity/Bar/AgentCommands`）：場次列 **89** 筆、非空 **0** 筆；
+        /// 而 export 列 **97** 筆、覆蓋 **77** 個不同 `session_id`。
+        /// ⇒ 要查章號**必須掃 `record_type=export` 的紀錄**，不是讀這一格。
+        /// </remarks>
         public string exported_chapter = "";
     }
 

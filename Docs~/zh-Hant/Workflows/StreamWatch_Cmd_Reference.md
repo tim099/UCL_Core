@@ -50,8 +50,9 @@ primary 的職責＝準備階段設定＋開收場結算；**取材上全員平�
 `SettleAsync` 掃 `sessions/*.json`，同組（自己的 `session_id` 或 `parent_session_id` 相同）
 還有人 `active` ⇒ **不匯出**，回傳檔印出還在線的是誰；一個都沒有 ⇒ 由我觸發。
 🩸 為什麼換：primary 的 `ends_at` 通常先到 ⇒ 她收工時陪看者還在線 ⇒ 那些場次**還不在台帳上**
-（`AppendSessionLog` 只在結算時跑）⇒ `--from-session` 撈不到 ⇒ 它們的 `exported_chapter` 永遠不回填，
+（`AppendSessionLog` 只在結算時跑）⇒ `--from-session` 撈不到 ⇒ **沒有人替它們 append `record_type=export` 那一筆**，
 於是「已匯出」與「還沒匯出」在台帳上同形（BUG-9 那族）。
+　⚠ 這裡講的是**那筆 export 紀錄缺席**，不是「欄位沒被填」—— 見下方 §1.4.1。
 實撞（2026-08-26 charlie 第一場）：書收錄 4 人 38 筆，而表頭的 `場次` 只列 2 場。
 - 併發：兩人幾乎同時收工可能都自認最後 ⇒ 兩次匯出，後者 `--force` 覆寫同章、內容相同 ⇒ **良性重覆**，不加鎖。
 - 有人整場沒回來收工 ⇒ 匯出不觸發；由「殘留補結算」接手（下次 start/join 會結算它，屆時最後一個人就出現）。
@@ -68,6 +69,34 @@ primary 的職責＝準備階段設定＋開收場結算；**取材上全員平�
 🩸 為什麼：`SettleAsync` 是 `AppendSessionLog` 的**唯一**呼叫點 ⇒ 沒跑到「cycle 判定收工」的場次
 ① 酬勞蒸發 ② **seq 區間永久消失 ⇒ 那場觀察再也匯不進書**（正是台帳存在的理由）
 ③ 印出來的字跟正常收工同形。計費上限仍是 `ends_at`（兩者取小），「回得越晚領越多」沒有被打開。
+
+## 1.4.1 ⛔ 「這一場進了哪一章」只能問 export 紀錄，不能讀 `exported_chapter`（TASK-0071）
+
+`sessions_log.jsonl` 是 **append-only**，任何一行寫下去之後都不會再被改。
+⇒ 場次列的 `exported_chapter` 欄 **從建立到永遠都是 `""`**，
+匯出時 append 的是**另一筆**紀錄：
+
+```json
+{"record_type": "export", "session_id": "sw-…", "exported_chapter": "001",
+ "book": "watch-…", "exported_at": "2026-09-04T01:03:5…Z"}
+```
+
+🩸 **所以拿場次列那個欄位判斷有沒有匯出，會對每一個已匯出的場次得到「還沒進章」** ——
+而「已匯出」與「從沒匯出」在那一格上**完全同形**（兩邊都是空字串）。
+
+讀數（2026-09-04，`D:/Unity/Bar/AgentCommands`；2026-08-27 首次量到時的數字放在括號裡）：
+
+| | 值 |
+|---|---|
+| 場次列 | **89** 筆（50） |
+| 　其中 `exported_chapter` 非空 | **0** 筆（0） |
+| 　有這個鍵的 | **89**（全部，全空） |
+| `record_type=export` 列 | **97** 筆（52） |
+| 　覆蓋不同 `session_id` | **77** 個（42） |
+
+⇒ **正確查法**：掃 `record_type == "export"` 的行，用 `session_id` 對回去。
+⛔ **不要**「順手把欄位填回去」—— 那會把 append-only 改成可覆寫，是另一件事、要另外拍板
+（TASK-0071 的 PM 射程明文排除）。
 
 ## 1.5 段台帳與自動標頭（2026-08-26，TASK-0060）
 

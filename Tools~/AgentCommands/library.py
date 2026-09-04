@@ -1100,7 +1100,7 @@ def cmd_resume(args):
     if _don.exists():
         _dd = _read_json(_don)
         _who = _dd.get('donor_persona') or _dd.get('donor')
-        if _dd.get("source") == "authored":
+        if _derive_origin(_dd) == "authored":
             print(f"   ✍ 本書由 {_who} 原創著作 ({_dd.get('chapters', '?')} 章, 免費入庫)")
         else:
             print(f"   📖 本書由 {_who} 捐贈入館 ({_dd.get('tokens')} token)")
@@ -1463,6 +1463,18 @@ def _donations_index() -> Path:
     return _books_root() / "_donations.json"
 
 
+def _derive_origin(entry: dict) -> str:
+    # 區塊職責: 取這本書的 origin — 有 `origin` 欄就用它, 沒有才由 legacy `source` 推導。
+    # 物理意義: 跟 C# UCL_BooksClassification.DeriveOrigin 同一條規則, 兩端必須同時改。
+    #          舊檔的 `source` 只有 donate 從來不寫 ⇒ 空 = 捐贈; 非空(authored / watch-log /
+    #          tavern-history…) 都是館內自產 —— 舊邏輯把 watch-log 算成捐贈, 這裡一併修正。
+    # 回傳: "authored" | "donated"
+    o = (entry.get("origin") or "").strip()
+    if o:
+        return "donated" if o == "donated" else "authored"
+    return "authored" if (entry.get("source") or "").strip() else "donated"
+
+
 def _load_donations() -> dict:
     """glob 各書 <slug>/_donation.json 聚合成 {"donations": [...]}（取代舊根聚合檔讀取）。
     保持舊回傳形狀，callers 不動；排序用 book slug 穩定顯示；bad file silent skip。"""
@@ -1635,16 +1647,22 @@ def cmd_publish(args):
     data["status"] = "reading"   # 已發布 = 可讀狀態
     _write_json(bj, data)
 
-    # 寫 _donation.json (source=authored, tokens=0, 不走 Treasury)
-    entry = {
+    # 寫 _donation.json (origin=authored, tokens=0, 不走 Treasury)
+    # ⚠ 連載會重複 publish ⇒ **疊寫不是覆寫**：kind / series / volume 是 classify 設的分類三軸,
+    #   整檔換掉等於每次連載更新都把讀者手動歸的類默默清空(而檔案看起來一樣完整)。
+    dpath = bdir / "_donation.json"
+    entry = _read_json(dpath) if dpath.exists() else {}
+    entry.update({
         "book": book, "title": data.get("title", book), "donor": donor_bank,
         "donor_persona": author, "donor_agent": args.donor_agent or "",
-        "tokens": 0, "base_price": 0, "source": "authored",
+        "tokens": 0, "base_price": 0, "origin": "authored",
         "chapters": chapter_cnt,
-        "donated_at": _today(), "published_at": _today(),
+        "published_at": _today(),
         "note": args.note or f"{author} 原創著作 (寫書自由時間活動)",
-    }
-    _write_json(bdir / "_donation.json", entry)   # T-BOOKS-STORAGE Phase B: per-book 即 source of truth（不再編根聚合檔）
+    })
+    entry.setdefault("donated_at", _today())   # 首度發表才記; 連載更新不改原始入庫日
+    entry.pop("source", None)                  # legacy 欄, 已由 origin 取代(讀取端仍認舊檔)
+    _write_json(dpath, entry)   # T-BOOKS-STORAGE Phase B: per-book 即 source of truth（不再編根聚合檔）
 
     verb = "更新連載" if was_published else "首度發表"
     print(f"✅ {verb}原創書:《{data.get('title')}》 by 📖 {author} ({chapter_cnt} 章, 免費入庫, 全員可讀)")
@@ -1665,8 +1683,8 @@ def cmd_donations(args):
         print("（圖書館尚無捐贈書）")
         return 0
     # 區塊：分組顯示 — 原創 (authored) vs 捐贈調入 (imported/donated), 讓讀者一眼分清誰寫書 vs 誰付錢
-    authored = [d for d in ds if d.get("source") == "authored"]
-    donated = [d for d in ds if d.get("source") != "authored"]
+    authored = [d for d in ds if _derive_origin(d) == "authored"]
+    donated = [d for d in ds if _derive_origin(d) != "authored"]
     print(f"📚 共享圖書館（共 {len(ds)} 本 — ✍ 原創 {len(authored)} / 📖 捐贈調入 {len(donated)}）\n")
     if authored:
         print("✍ 原創著作（作者署名, 免費入庫）:")
@@ -1789,7 +1807,7 @@ def _resolve_beneficiary(book: str):
     idx = _load_donations()   # T-BOOKS-STORAGE Phase B: glob 各書 _donation.json derive（取代根聚合檔）
     for d in idx.get("donations", []):
         if d.get("book") == book:
-            kind = "作者" if d.get("source") == "authored" else "捐贈者"
+            kind = "作者" if _derive_origin(d) == "authored" else "捐贈者"
             return (d.get("donor", ""), d.get("donor_persona", ""), d.get("title", book), kind)
     return None
 
@@ -2754,7 +2772,10 @@ def cmd_export_watch(args):
     if len(excluded):
         print("   ⚠ 未收錄清單已寫進章內 <details>，不靜默截斷")
 
-    # BUG-9：回填台帳的 exported_chapter —— append 修訂事件（台帳 append-only，不就地改行）。
+    # BUG-9：在台帳 append 一筆 `record_type=export` 紀錄（台帳 append-only，**不就地改行**）。
+    #   ⛔ 場次列自己的 `exported_chapter` 欄從來不會被填 —— 它從建立到永遠都是 ""，
+    #      所以「這一場進了哪一章」只能靠這些 export 紀錄回答，讀那個欄位一定得到「還沒進章」。
+    #      （2026-09-04 讀數，Bar 樹：場次列 89 筆非空 0 筆／export 列 97 筆覆蓋 77 個 session。）
     #   對象＝--sessions 明列者 ∪ 區間被本章完全涵蓋的場次（陪同場常常沒被列進 --sessions）。
     want_sids = [x.strip() for x in (args.sessions or "").split(",") if x.strip()]
     try:
@@ -2766,11 +2787,13 @@ def cmd_export_watch(args):
                 want_sids.append(sid)
         done = _append_export_events(want_sids, chapter, book)
         if done:
-            print(f"   ↳ 台帳回填 exported_chapter={chapter}：{len(done)} 場（{', '.join(done)}）")
+            print(f"   ↳ 台帳 append {len(done)} 筆 export 紀錄（chapter={chapter}）：{', '.join(done)}")
+            print("     ⚠ 場次列的 exported_chapter 欄**不會被填**（append-only）—— 查章號請掃 export 紀錄")
         else:
-            print("   ⚠ 台帳未回填（沒有對得上的場次）—— 「已匯出」在台帳上仍與「未匯出」同形")
+            print("   ⚠ 台帳沒有 append 任何 export 紀錄（沒有對得上的場次）"
+                  "—— 「已匯出」在台帳上仍與「未匯出」同形")
     except Exception as e:
-        print(f"   ⚠ 台帳回填失敗（章已落地，不回頭）：{e}", file=sys.stderr)
+        print(f"   ⚠ 台帳 append export 紀錄失敗（章已落地，不回頭）：{e}", file=sys.stderr)
     return 0
 
 

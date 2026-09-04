@@ -1050,9 +1050,9 @@ def _next_actions_lines(aw, persona: str, st: dict, fst: dict, threshold: int) -
     # 物理意義：這區是 agent 每天早上**一定會經過**的指路牌 ——
     #          印錯了不是一個人走錯，是每個人都會照走一次。
     # 數值影響：⚙ 2026-08-31 由 `awakening.py consolidate` 換成 `senate cmd consolidate`。
-    #          舊入口**會順手寫 registry**，Editor 忙的時候撞 save_registry 守衛
-    #          ⇒ 「檔寫成功卻 exit=1」，calli wake#35 實測。CLI 那支不寫任何
-    #          registry/profile 欄位（書籤是掃磁碟算出來的），且不需要 Editor。
+    #          換的理由是舊入口會順手寫 registry ⇒ 「檔寫成功卻 exit=1」（calli wake#35 實測）。
+    #          ⚙ 2026-09-02 起 python 端也不再寫 registry（那條死路已拆），
+    #          但 CLI 仍是主入口：它不需要 Editor，書籤一樣是掃磁碟算出來的。
     aroot = str(aw._LETTERS_DIR_TPL).replace("\\", "/")
     out = []
     if st["overdue"]:
@@ -1073,8 +1073,8 @@ def _next_actions_lines(aw, persona: str, st: dict, fst: dict, threshold: int) -
             "",
             "⛔ OVERDUE 卻跳過 = 沒走完 protocol。關鍵記憶沒進見根 = 下次醒來讀不到。",
             "",
-            f"（沒有 `senate.exe` 的環境才退回 `awakening.py consolidate --persona {persona}` ——"
-            f" ⚠ 它會順手寫 registry，Editor 忙時會**檔寫成功卻 exit=1**。）",
+            f"（沒有 `senate.exe` 的環境才退回 `awakening.py consolidate --persona {persona}`"
+            f" —— 2026-09-02 起它也不再寫 registry，原本「檔寫成功卻 exit=1」那條已拆掉。）",
             "",
         ]
     if fst["overdue"]:

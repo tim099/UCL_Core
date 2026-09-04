@@ -50,7 +50,8 @@ last_updated: 2026-07-28 (初版 — Tim 拍板「讓 wake>30 的同事都能跑
 senate cmd consolidate --arg letters_root=<letters 絕對路徑> --arg persona=<你的 persona>
 ```
 
-> 沒有 `senate.exe` 的環境才退回 python（⚠ 它會順手寫 registry，Editor 忙時會「檔寫成功卻 exit=1」）：
+> 沒有 `senate.exe` 的環境才退回 python（2026-09-02 起它也不再寫 registry，
+> 原本「檔寫成功卻 exit=1」那條死路已拆掉）：
 > `python <UCL_Core>/Tools~/AgentCommands/awakening.py consolidate --persona <你的 persona>`
 
 ## 🛠 Step-by-step

@@ -32,8 +32,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "read: room=房間ID [tail=N] [from=N] [to=N] [since_seq=N] [limit=N] [search=keyword]\n" +
             "members: room=房間ID\n" +
             "leave: room=房間ID sender=身分ID\n" +
-            "wait: room=房間ID since_seq=N [timeout=300（秒，預設 5 分鐘）] [owner=identity_id]\n" +
+            "wait: room=房間ID since_seq=N [timeout=300（秒，預設 5 分鐘）] [expect_from=等誰回（只有這個人的發言算命中；不填＝房內任何新訊息都算）] [waiter=誰在等（酒保自動通知據此加權）] [owner=identity_id]\n" +
             "      ⚡ fire-and-forget — handler 立刻返回 wait_id，背景 task 監看訊息；用 op=wait_check 查結果\n" +
+            "      ⚠ senate CLI **沒有** --wait-reply／--wait-reply-from（那是 python run_cmd.py 的旗標，而 senate 對未知旗標靜默忽略 ⇒ 打了不報錯也不會等）⇒ 在 senate 這條路上要等回覆，走本 op ＋ op=wait_check\n" +
             "wait_check: wait_id=<由 op=wait 取得的 id> — 同步查詢該 wait 當前狀態（pending/fulfilled/timeout/cancelled）\n" +
             "note_write: room=房間ID key=筆記key body=Markdown 內容（整個覆寫；更新 last_updated_at）\n" +
             "note_append: room=房間ID key=筆記key body=要追加的文字 [sender=ID]（OS 原子 append；不動 frontmatter）\n" +

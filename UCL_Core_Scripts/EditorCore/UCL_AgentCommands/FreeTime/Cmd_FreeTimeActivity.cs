@@ -114,9 +114,11 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             int aRemain = aEnd.HasValue ? (int)Math.Max(0, (aEnd.Value - aNow).TotalMinutes) : 0;
             int aOverBy = aOvertime ? (int)Math.Max(0, (aNow - aEnd.Value).TotalMinutes) : 0;
             aR.AppendLine("## time（時間感由 Cmd 供給 —— 別自己心算）");
+            // ⛔ 不印剩餘分鐘（Tim 2026-09-04）：活動持續做到時間到，倒數不是下一步的依據。
+            //    逾時那半保留 —— 那是「時間到了」這個**狀態**，不是倒數。
             aR.AppendLine(aOvertime
-                ? $"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　自由時間到: **{aSession.until_local}**　⏰ **已逾時 {aOverBy} 分**（軟截止 —— 手上這件做完就跑 step=next 收工，別再開新的）"
-                : $"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　自由時間到: **{aSession.until_local}**　剩餘: **{aRemain} 分**");
+                ? $"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　自由時間到: **{aSession.until_local}**　⏰ **時間到了**（軟截止 —— 手上這件做完就跑 step=next 收工，別再開新的）"
+                : $"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　自由時間到: **{aSession.until_local}**　**時間還沒到** —— 挑下一項活動");
             aR.AppendLine($"- 本場換骰 {aSession.rounds} 輪｜活動實作 {aSession.activities_done} 件");
             aR.AppendLine();
 
@@ -129,11 +131,11 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             }
             else if (aOp == "step")
             {
-                await OpStep(args, aPersona, aSession, aRemain, aR, aPath, token);
+                await OpStep(args, aPersona, aSession, aR, aPath, token);
             }
             else
             {
-                await OpDone(args, aPersona, aSession, aBody, aRemain, aR, aPath, token);
+                await OpDone(args, aPersona, aSession, aBody, aR, aPath, token);
             }
         }
 
@@ -204,7 +206,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             if (aHit.minMinutes > 0 && iRemain < aHit.minMinutes)
             {
                 // 不擋 —— 截止是軟的；但要說清楚，別讓人以為系統認可這個選擇沒有代價。
-                ioR.AppendLine($"- ⏳ **本場時間可能不夠**（建議 ≥{aHit.minMinutes} 分，剩 {iRemain} 分）—— 沒擋你，但別怪骰子");
+                ioR.AppendLine($"- ⏳ **本場時間可能不夠**（建議 ≥{aHit.minMinutes} 分）—— 沒擋你，但別怪骰子");
             }
             ioR.AppendLine();
             ioR.AppendLine("## 怎麼執行（取自活動 md 的 frontmatter，不是本 Cmd 另編的）");
@@ -277,7 +279,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // 數值影響：spawn 一顆 python、寫一份回傳檔；**不動 activities_done**（那在 pick 記）。
         // ===========================================================
         static async UniTask OpStep(Dictionary<string, string> iArgs, string iPersona,
-            UCL_FreeTimeSession iSession, int iRemain,
+            UCL_FreeTimeSession iSession,
             StringBuilder ioR, string iPath, CancellationToken iToken)
         {
             string aWant = GetArg(iArgs, "activity", "").Trim().ToLowerInvariant();
@@ -368,7 +370,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             }
 
             ioR.AppendLine();
-            ioR.AppendLine($"## ▶ 下一步（自由時間**進行中**，剩 {iRemain} 分）");
+            ioR.AppendLine("## ▶ 下一步（自由時間**進行中** —— 時間還沒到，挑下一項活動）");
             ioR.AppendLine("- 這件活動還要再走一步 → 再跑一次 op=step（換 `--arg step=` / `--arg step_args=`）");
             ioR.AppendLine($"- 這件活動告一段落 → `run FreeTimeActivity --arg op=done --arg persona={iPersona} [--arg-file body=<一句心得>]`");
             ioR.AppendLine("- ⚠ 別直接跳去 step=next —— 走 op=done 才留下「做完了」的紀錄（跟「放棄了」不同形）。");
@@ -554,12 +556,12 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         //          在這裡再加一次會讓同一件活動被算兩遍）。
         // ===========================================================
         static async UniTask OpDone(Dictionary<string, string> iArgs, string iPersona,
-            UCL_FreeTimeSession iSession, string iBody, int iRemain,
+            UCL_FreeTimeSession iSession, string iBody,
             StringBuilder ioR, string iPath, CancellationToken iToken)
         {
             string aWhat = string.IsNullOrEmpty(iSession.activity) ? "（本場沒有經 op=pick 記錄的活動）" : iSession.activity;
             var aPost = new StringBuilder();
-            aPost.AppendLine($"⏹ [{iPersona} 大小姐] 活動收筆：**{aWhat}**（剩 {iRemain} 分）");
+            aPost.AppendLine($"⏹ [{iPersona} 大小姐] 活動收筆：**{aWhat}**");
             if (!string.IsNullOrEmpty(iBody))
             {
                 aPost.AppendLine();

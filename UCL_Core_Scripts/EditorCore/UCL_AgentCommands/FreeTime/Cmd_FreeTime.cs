@@ -197,7 +197,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine($"3. **活動事件自然結束時**（棋局終局／繪圖收筆／聊天告一段落）→ senate ucmd run FreeTime --arg step=next --arg persona={iPersona}");
             aR.AppendLine("   收工由這裡自動判定 —— **截止是軟的**：時間到不打斷進行中的活動，最後一件做完跑 next 才通知收工。");
             aR.AppendLine($"4. step=end（提前收工）**除非 Tim 明確指示，不要用** —— 正常結束一律交給 step=next 對時鐘判定。");
-            AppendContinueBlock(aR, iPersona, (int)Math.Max(0, (aUntil - aNow).TotalMinutes));
+            AppendContinueBlock(aR, iPersona);
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[FreeTime] step=start 完成 session={aSessionId} → {aPath}");
         }
@@ -277,7 +277,6 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             int aGranted = FREE_PIXELS_PER_SESSION;
             int aRemainNow = UCL_CanvasVoucherLedger.GetExpiringByRef(iPersona, aSession.session_id);
             int aUsedNow = Math.Max(0, aGranted - aRemainNow);
-            string aRemainText = aRemainSec < 60 ? $"{(int)aRemainSec} 秒" : $"{aRemain} 分";
 
             // ⚠ 這裡曾經有一段「末段提示」（剩 N 分改印『不建議起新活動』而不是新骰面）。
             // **2026-08-14 Tim 拍板拔掉**，理由不是它壞了，是它防的不是真問題：
@@ -322,7 +321,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 aR.AppendLine("## next");
                 aR.AppendLine("1. **繼續當前活動**（`op=step` / 做完 `op=done`）—— 本次沒有新骰面。");
                 aR.AppendLine("2. 想換活動再跑一次 `step=next`（不帶 `roll=0`）。");
-                AppendContinueBlock(aR, iPersona, (int)Math.Max(0, (aUntil - aNow).TotalMinutes));
+                AppendContinueBlock(aR, iPersona);
                 WritePayload(iArgs, aPath, aR.ToString());
                 Debug.Log($"[FreeTime] step=next roll=0（只讀訊息）→ {aPath}");
                 return;
@@ -344,8 +343,8 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             //            是讓骰面那一行自己承認上面有東西。
             // 數值影響：純顯示；沒帶 body 時逐字與改動前相同。
             aDiceBody.AppendLine(string.IsNullOrEmpty(aChatBody)
-                ? $"🎲 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}，剩約 {aRemainText}）："
-                : $"🎲💬 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}，剩約 {aRemainText}）"
+                ? $"🎲 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}）："
+                : $"🎲💬 [{iPersona} 大小姐] 自由時間第 {aRound} 輪換骰（至 {aUntil:HH:mm}）"
                   + "　※ **本則上半是留言，往上讀** ↑");
             AppendPriorityNote(aDiceBody, aList, aIsLive);
             for (int i = 0; i < Math.Min(3, aList.Count); i++) aDiceBody.AppendLine($"{i + 1}. {(aList[i].priority ? "⭐ " : "")}{aList[i].TavernLine()}");
@@ -369,7 +368,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine("## next");
             aR.AppendLine("1. 從骰面挑下一件活動（跟骰規則同 start）；引擎（--wait-reply）持續掛著。");
             aR.AppendLine("2. step=end（提前收工）除非 Tim 明確指示，不要用。");
-            AppendContinueBlock(aR, iPersona, (int)Math.Max(0, (aUntil - aNow).TotalMinutes));
+            AppendContinueBlock(aR, iPersona);
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[FreeTime] step=next 第 {aRound} 輪 → {aPath}");
         }
@@ -806,7 +805,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 {
                     id = a.id,
                     name = a.name + (aGate.nameSuffix ?? "")
-                           + (aTooLong ? $" ⏳（建議 ≥{a.minMinutes} 分，剩 {iRemainMinutes} 分 —— 本場時間不夠）" : ""),
+                           + (aTooLong ? $" ⏳（建議 ≥{a.minMinutes} 分 —— 本場可能做不完）" : ""),
                     how = a.how,
                     path = a.path,
                     minMinutes = a.minMinutes,
@@ -986,12 +985,13 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // 物理意義：原本這行指令埋在 next 清單的第 3 條，跟其他三條長得一樣 ——
         //          而**看起來一樣的東西不會被當成動作**。獨立成一個位置固定、只有一條指令的區塊，
         //          讓「還沒結束」在視覺上就跟「已收工」不同（收工時同一位置變成 ⏹，且不給指令）。
-        // 數值影響：純輸出；不影響任何判定。剩餘分鐘由呼叫端傳入（時間感一律由 Cmd 供給）。
+        // 數值影響：純輸出；不影響任何判定。⛔ 不印剩餘分鐘（Tim 2026-09-04）——
+        //          活動持續做到時間到，倒數不是下一步的依據；要的只有「還沒到 ⇒ 挑下一項」。
         // ===========================================================
-        static void AppendContinueBlock(StringBuilder ioR, string iPersona, int iRemainMinutes)
+        static void AppendContinueBlock(StringBuilder ioR, string iPersona)
         {
             ioR.AppendLine();
-            ioR.AppendLine($"## ▶ 下一步（自由時間**進行中**，剩 {iRemainMinutes} 分）");
+            ioR.AppendLine("## ▶ 下一步（自由時間**進行中** —— 時間還沒到，挑下一項活動）");
             // 區塊職責：把「社交對話」寫成**同時進行**而不是一個選項（Tim 2026-08-18）。
             // 物理意義：social-chat 已 enabled:false 併進本流程 —— 換骰這一步本身就在讀訊息、發訊息。
             //          不寫明的話它會變成「消失的活動」：骰面上看不到，也沒人知道它去哪了。
@@ -1078,7 +1078,11 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             ioR.AppendLine("## time（時間感由本 Cmd 供給 —— 別自己心算）");
             ioR.AppendLine($"- 當前時間: **{iNow:yyyy-MM-dd HH:mm}**（本地）");
             ioR.AppendLine($"- 自由時間到: **{iUntil:HH:mm}**（軟截止 —— 時間到不打斷進行中活動，最後一件做完跑 next 才收工）");
-            ioR.AppendLine($"- 剩餘: **{(int)Math.Max(0, (iUntil - iNow).TotalMinutes)} 分鐘**");
+            // ⛔ 不印剩餘分鐘（Tim 2026-09-04）：活動是**持續做到時間到**，倒數不是任何人的下一步依據。
+            //    要的只有二元狀態 —— 還沒到就挑下一項，到了就收工。
+            ioR.AppendLine(iNow < iUntil
+                ? "- 狀態: **時間還沒到** —— 挑下一項活動"
+                : "- 狀態: **時間到了** —— 手上這件做完跑 step=next 收工");
         }
 
         // 區塊職責：優先層的一行說明（開場宣告／換骰宣告共用一份 —— 兩處各寫一次，

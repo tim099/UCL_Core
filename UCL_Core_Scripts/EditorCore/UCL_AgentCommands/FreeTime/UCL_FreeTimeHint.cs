@@ -68,12 +68,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                 {
                     if (aKv.Key != UCL_SessionKind.FreeTime) continue;
                     var aS = aKv.Value;
-                    aS.IsRunningAt(DateTime.Now, out DateTime? aEnd);
-                    int aRemain = aEnd.HasValue
-                        ? (int)Math.Max(0, (aEnd.Value - DateTime.Now).TotalMinutes) : 0;
-
                     ioReport.AppendLine();
-                    ioReport.AppendLine($"## ▶ 你在自由時間中（到 {aS.until_local}，剩 {aRemain} 分）");
+                    // ⛔ 不印剩餘分鐘（Tim 2026-09-04）：活動持續做到時間到，倒數不是下一步的依據。
+                    ioReport.AppendLine($"## ▶ 你在自由時間中（到 {aS.until_local} —— 時間還沒到，挑下一項活動）");
                     ioReport.AppendLine("- 這件活動還要再走一步 → 再跑一次同一支 Cmd（活動是一步一步的，不必一次做完）。");
                     ioReport.AppendLine($"- 這件活動告一段落 → `run FreeTimeActivity --arg op=done --arg persona={iPersona} [--arg-file body=<一句心得>]`");
                     ioReport.AppendLine($"- 之後換骰（**順便讀未讀訊息、順便跟同事講話**）→ `run FreeTime --arg step=next --arg persona={iPersona} [--arg-file body=<想說的話>]`");

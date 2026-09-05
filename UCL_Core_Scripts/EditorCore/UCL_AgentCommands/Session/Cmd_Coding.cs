@@ -172,6 +172,54 @@ namespace UCL.Core.EditorLib.AgentCommands
             int aHours = ParseHours(args);
             DateTime aUntil = DateTime.Now.AddHours(aHours);
 
+            // ===========================================================
+            // 同 kind 守衛 —— ⚠ 這一格**不在** `TryStart` 裡，而那是刻意的：
+            //   共用層明寫「同 kind 疊開仍由各 kind 自己的守衛管（本層不重造）」，
+            //   於是**每個 kind 少寫這一段就等於沒有守衛**，而它不會報錯。
+            // 🩸 活體（@basecamp 2026-09-05 21:45，跨宿主取到的）：
+            //   Senate 側進場（`end_ts` 有值）→ 接著跑 Unity 側 `step=start`
+            //   ⇒ **回 ✅ 進場**，而回讀那個檔：`session_id` 換了、`status` 被換掉、
+            //   **`end_ts` 與 `until_local` 變成空字串**。
+            //   ⭐ 最貴的不是覆蓋，是**租期被抹掉** —— 那場回到「永遠不會到期」的狀態
+            //   ⇒ **(A) 的保護會被一個看起來無害的重複進場拆掉**，而重複進場成功時什麼都不會說。
+            // ⇒ 兩態分開報，因為處置相反：未到期 ⇒ 改狀態就好；已到期 ⇒ 要人決定續期還是收掉。
+            // ===========================================================
+            var aMine = SCP.Core.Session.SCP_ActivitySessionStore.Load<SCP.Core.Session.SCP_CodingSession>(
+                UCL_AgentCommandsPath.ScpDataRoot, iPersona,
+                SCP.Core.Session.SCP_ActivitySessionKind.Coding);
+            if (aMine != null && aMine.active)
+            {
+                bool aRunning = aMine.IsRunningAt(DateTime.Now, out DateTime? aMineEnd);
+                ioR.AppendLine("## ⛔ 進場被擋 —— 沒有開場（你已經有一場 Coding）");
+                ioR.AppendLine();
+                ioR.AppendLine($"- 你的場：`{aMine.session_id}`　在改：**{aMine.status}**");
+                ioR.AppendLine($"- 租期至：{(aMine.until_local.Length > 0 ? aMine.until_local : "（沒寫截止時刻）")}"
+                               + $"　⇒ {(aRunning ? "**未到期**" : "**已到期**（落回殘留）")}");
+                ioR.AppendLine();
+                if (aRunning)
+                {
+                    ioR.AppendLine("**改狀態就好，不必重開**（順手續期 " + aHours + " 小時）：");
+                    ioR.AppendLine("```bash");
+                    ioR.AppendLine($"senate ucmd run Coding --persona {iPersona} --arg step=status --arg status=<一句話>");
+                    ioR.AppendLine("```");
+                    ioR.AppendLine("⛔ 重開一場**不是**改狀態 —— 它會換掉 session_id 並**抹掉租期**，");
+                    ioR.AppendLine("　 而那場會回到「永遠不會到期」的狀態（沒有人能靠補收工回收它）。");
+                }
+                else
+                {
+                    ioR.AppendLine("那一場**已經到期**（落回殘留）。二選一，都要顯式：");
+                    ioR.AppendLine("```bash");
+                    ioR.AppendLine($"# ① 還在改 ⇒ 續期（順手更新 status）");
+                    ioR.AppendLine($"senate ucmd run Coding --persona {iPersona} --arg step=status --arg status=<一句話>");
+                    ioR.AppendLine($"# ② 不改了 ⇒ 先收掉再開新的");
+                    ioR.AppendLine($"senate ucmd run Coding --persona {iPersona} --arg step=end");
+                    ioR.AppendLine("```");
+                    ioR.AppendLine("⛔ 本 Cmd **不替你自動續期也不自動收** —— 那兩件事的差別只有你知道。");
+                }
+                UCL_AgentCommandRunner.ReportOutputValue(args, "started", "0");
+                throw new Exception("[Coding] 進場被擋 —— 你已經有一場 Coding，詳見回傳檔：" + iPayload);
+            }
+
             var aSession = new SCP.Core.Session.SCP_CodingSession
             {
                 persona = iPersona,
@@ -239,13 +287,14 @@ namespace UCL.Core.EditorLib.AgentCommands
                 throw new Exception("[Coding] step=status 需要 --arg status=<一句話在改什麼>");
             }
 
-            SCP.Core.Session.SCP_CodingSession aSession = LoadRunning(iPersona);
+            SCP.Core.Session.SCP_CodingSession aSession = LoadMine(iPersona);
             if (aSession == null)
             {
                 throw new Exception($"[Coding] {iPersona} 現在沒有進行中的 Coding 場 —— "
                                     + $"先進場：senate ucmd run Coding --persona {iPersona} --arg step=start --arg status=<一句話>");
             }
 
+            bool aWasRunning = aSession.IsRunningAt(DateTime.Now, out _);
             // ⭐ 續期掛在**本來就要跑的那一步**上（PM 拍 (A) 時附的判準）——
             //   不是掛在「記得去續」。一場還在動的施工不該因為忘了續期而落回殘留。
             DateTime aUntil = DateTime.Now.AddHours(ParseHours(args));
@@ -260,6 +309,14 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             ioR.AppendLine("## ✅ 狀態已更新");
             ioR.AppendLine($"- 在改什麼: **{aStatus}**");
+            if (!aWasRunning)
+            {
+                // ⚠ 說出「剛才發生了什麼」——續一個**還在跑**的場與救回一個**已到期**的場
+                //   在輸出上長得一樣，而後者代表「這段時間別人本來可以顯式收走它」。
+                ioR.AppendLine("- ⚠ 那一場**原本已經到期**（落回殘留）—— 本次順手把它**續回來**了。");
+                ioR.AppendLine("　 📌 到期期間別人隨時可以顯式 `sessions --arg op=close --arg confirm=1` 收走它；");
+                ioR.AppendLine("　 沒被收走是運氣，不是保護。要長時間施工就把 `--arg hours` 開大一點。");
+            }
             ioR.AppendLine($"- ⏳ 租期已續至 **{aSession.until_local}**");
             ioR.AppendLine($"- session_id: `{aSession.session_id}`");
             ioR.AppendLine();
@@ -280,7 +337,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
         static void DoExit(Dictionary<string, string> args, string iPersona, StringBuilder ioR, string iPayload)
         {
-            SCP.Core.Session.SCP_CodingSession aSession = LoadRunning(iPersona);
+            SCP.Core.Session.SCP_CodingSession aSession = LoadMine(iPersona);
             if (aSession == null)
             {
                 throw new Exception($"[Coding] {iPersona} 現在沒有進行中的 Coding 場（沒有東西可以退出）");
@@ -435,14 +492,27 @@ namespace UCL.Core.EditorLib.AgentCommands
             return aH;
         }
 
-        /// <summary>讀本人**進行中**的 Coding 場；沒有回 null（已收工的不算）。</summary>
-        static SCP.Core.Session.SCP_CodingSession LoadRunning(string iPersona)
+        // ===========================================================
+        // 區塊職責：讀本人**還沒收工**的 Coding 場（`active=true` 即可，**到期的也算**）。
+        // 🩸 為什麼判準是 `active` 而不是 `IsRunningAt`（2026-09-05 實測的死鎖）：
+        //   本檔今晚加了租期之後，一個場會進入「`active=true` 但已過 `end_ts`」這個**新狀態**——
+        //   而當時三個 step 對它**全部失效**：
+        //     `start`  ⇒ 被同 kind 守衛擋（你已經有一場）
+        //     `status` ⇒ 「沒有進行中的場」（`IsRunningAt` 回 false）
+        //     `end`    ⇒ 「沒有東西可以退出」（同上）
+        //   ⇒ **那場誰也處理不了，而它還占著全域獨佔。** 租期在租期之前不存在，
+        //      所以這個死鎖是**(A) 落地順手造出來的**，不是原本就有的。
+        // ⇒ 「到期」的語意是**落回殘留**（PM 拍板：到期不等於自動釋放），
+        //   而殘留仍然是我的場 —— 我當然要能續它、也要能收它。
+        // ⚠ 已收工（`active=false`）才是真的沒有 —— 那時回 null。
+        // ===========================================================
+        static SCP.Core.Session.SCP_CodingSession LoadMine(string iPersona)
         {
             var aSession = SCP.Core.Session.SCP_ActivitySessionStore.Load<SCP.Core.Session.SCP_CodingSession>(
                 UCL_AgentCommandsPath.ScpDataRoot, iPersona,
                 SCP.Core.Session.SCP_ActivitySessionKind.Coding);
-            if (aSession == null) return null;
-            return aSession.IsRunningAt(DateTime.Now, out _) ? aSession : null;
+            if (aSession == null || !aSession.active) return null;
+            return aSession;
         }
 
     }

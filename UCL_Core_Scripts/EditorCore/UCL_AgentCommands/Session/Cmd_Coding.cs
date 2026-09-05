@@ -147,8 +147,9 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         // ===========================================================
         // 區塊職責：進場 —— 兩條互斥軸都過才寫檔。
-        // 物理意義：軸1（每人一場）與軸2（全域至多一人）都收在 SCP_ActivitySessionStore.TryStart，
-        //          本函式**不自己判存在**（自己判＝第三份判準，而它會跟前兩份不一致且不報錯）。
+        // 物理意義：判斷收在 `SCP_ActivitySessionStore.TryStart`（軸1 每人一場／軸2 全域至多一人），
+        //          而**被擋下要說什麼**收在 `UCL_SessionStartGuard`。本函式兩者都不自己做 ——
+        //          自己判＝第三份判準，自己組措辭＝第二份措辭，而兩者都不會在漂掉時報錯。
         // 數值影響：成功寫一筆 sessions/<persona>.json；被擋則一個位元組都不寫。
         // ⚠ end_ts 刻意留空 —— 施工場沒有預定時長，退場靠顯式 step=end。
         // ===========================================================
@@ -169,20 +170,25 @@ namespace UCL.Core.EditorLib.AgentCommands
                 session_id = "coding-" + DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'") + "-" + iPersona,
                 start_ts = SCP.Core.Session.SCP_ActivitySession.NowIso(),
                 end_ts = "",                    // 無預定時長 —— IsRunningAt 於是只信 active
-                until_local = "（無預定時長，顯式 step=end 才收工）",
+                until_local = "",               // ⚠ 一律留空 —— 說明不塞資料欄，見 UCL_CodingSession 的 remarks
                 active = true,
                 status = aStatus,
                 status_updated = DateTime.Now.ToString("yyyy-MM-dd HH:mm:sszzz"),
             };
 
-            bool aOk = SCP.Core.Session.SCP_ActivitySessionStore.TryStart(
-                UCL_AgentCommandsPath.ScpDataRoot, iPersona, aSession,
-                SCP.Core.Session.SCP_ActivitySessionKind.Coding, DateTime.Now,
-                out SCP.Core.Session.SCP_ActivitySession aBlockedBy);
-
-            if (!aOk)
+            // ⚠ 走 `UCL_SessionStartGuard` 而**不是**直接呼叫 `Store.TryStart`（2026-09-05 改，@basecamp 提案）。
+            //   🩸 直呼的代價不是重複幾行 code，是**措辭有兩份**：guard 那份處理了軸1／軸2 的主詞分流
+            //   （`eafe501e`），而只要 Coding 直呼，**軸2 唯一的消費端就不在 guard 上**
+            //   ⇒ 她那段是對的但走不到，我這段會跑但是第二份。兩份都活、一樣對、沒人知道自己站在哪一個。
+            //   ⇒ 收斂成一份，而且是**會被跑到的那一份**。本檔只負責鋪陳，不再自己組原因與出口。
+            if (!UCL_SessionStartGuard.TryStart(iPersona, aSession,
+                    SCP.Core.Session.SCP_ActivitySessionKind.Coding,
+                    out string aBlockReason, out string aBlockExit))
             {
-                AppendBlocked(iPersona, aBlockedBy, ioR);
+                ioR.AppendLine("## ⛔ 進場被擋 —— 沒有開場");
+                ioR.AppendLine();
+                ioR.AppendLine($"- 原因：{aBlockReason}");
+                ioR.AppendLine($"- 處理方式：{aBlockExit}");
                 UCL_AgentCommandRunner.ReportOutputValue(args, "started", "0");
                 // ⛔ 非零退出 —— 驗收第三格明寫 blocked 要非零，否則腳本會把「被擋」讀成「開好了」。
                 throw new Exception("[Coding] 進場被擋 —— 原因與出口見回傳檔：" + iPayload);
@@ -382,7 +388,15 @@ namespace UCL.Core.EditorLib.AgentCommands
                 return false;
             }
 
-            oWhy = $"0 errors，讀數量於 {aStamp:yyyy-MM-dd HH:mm:ss}（晚於開場）";
+            // ⚠ 射程要寫在讀數裡，不是只寫在註解裡：本閘比的是「tracker ≥ **開場時刻**」，
+            //   而 `check_compile.py` 比的是「tracker ≥ **最後一次改檔的 mtime**」——**它比本閘嚴**。
+            //   🩸 差別會咬人的情況：開場 → 改檔 → **不 recompile** → 退場。
+            //      那時 tracker 仍晚於開場（因為開場前剛編過）⇒ **本閘放行，而那份綠燈不涵蓋你剛改的東西。**
+            //   ⛔ 不在這裡重做一份「掃工作區 mtime」—— 那是第二把尺（同 ErrorLog 那欄的理由）。
+            //   ⇒ 把差異印出來，讓它會出聲。
+            oWhy = $"0 errors，讀數量於 {aStamp:yyyy-MM-dd HH:mm:ss}（**晚於開場**；"
+                   + "⚠ 本閘只比到開場時刻，開場後改了檔又沒 recompile 的話它看不到 —— "
+                   + "要比到「最後一次改檔」請跑 check_compile.py，它會印 STALE）";
             return true;
         }
 
@@ -396,81 +410,6 @@ namespace UCL.Core.EditorLib.AgentCommands
             return aSession.IsRunningAt(DateTime.Now, out _) ? aSession : null;
         }
 
-        // ===========================================================
-        // 區塊職責：被擋下時的回報 —— D-1 措辭原則：祈使句、指令直接附上、不解釋代價。
-        // 物理意義：⚠ 擋下的原因有**兩種**且處理方式相反：
-        //          (a) 我自己在別的場 ⇒ 去關自己那一場；
-        //          (b) 別人正在 Coding ⇒ 等他，或去敲他。
-        //          把兩者印成同一段話會讓人對著自己的場等別人。
-        // 數值影響：純輸出。
-        // ===========================================================
-        static void AppendBlocked(string iPersona, SCP.Core.Session.SCP_ActivitySession iBlockedBy, StringBuilder ioR)
-        {
-            ioR.AppendLine("## ⛔ 進場被擋 —— 沒有開場");
-            ioR.AppendLine();
-            if (iBlockedBy == null)
-            {
-                // 走到這裡代表 TryStart 回 false 但沒說是誰擋的 ⇒ 寫檔失敗（磁碟／穿越型 persona）。
-                ioR.AppendLine("- 原因：**寫入失敗**（不是被別人擋）—— 檢查 persona 名與 sessions 目錄權限。");
-                return;
-            }
-
-            bool aSelf = string.Equals(iBlockedBy.persona, iPersona, StringComparison.Ordinal);
-            if (aSelf)
-            {
-                ioR.AppendLine($"- 原因：**你自己**正在另一種場：`{iBlockedBy.kind}`（session_id `{iBlockedBy.session_id}`）");
-                ioR.AppendLine();
-                ioR.AppendLine("先把那一場收掉：");
-                ioR.AppendLine("```bash");
-                ioR.AppendLine($"senate cmd sessions --arg data_root=<資料根> --arg op=close --arg persona={iPersona}");
-                ioR.AppendLine("```");
-                return;
-            }
-
-            string aWhat = "";
-            if (iBlockedBy.Raw != null) aWhat = iBlockedBy.Raw.GetString("status", "");
-            if (string.IsNullOrEmpty(aWhat)) aWhat = "（那一場沒有寫 status）";
-
-            ioR.AppendLine($"- 原因：**@{iBlockedBy.persona} 正在 Coding**（全域同時至多一人）");
-            ioR.AppendLine($"- 他在改：**{aWhat}**");
-            ioR.AppendLine($"- 從：{iBlockedBy.start_ts}　session_id `{iBlockedBy.session_id}`");
-            ioR.AppendLine();
-            ioR.AppendLine("### 三個出口");
-            ioR.AppendLine();
-            ioR.AppendLine("**① 等他退出**，然後重跑進場。查他還在不在：");
-            ioR.AppendLine("```bash");
-            ioR.AppendLine($"senate ucmd run SessionStatus --persona {iPersona} --arg persona={iBlockedBy.persona}");
-            ioR.AppendLine("```");
-            // ⚠ `senate cmd sessions --arg op=list` 也看得到這一場 —— 它走 LoadAll（不過濾 kind），
-            //   2026-09-05 實測印：「summit Coding（未登記 —— 本層不當它是現行 session）🟢 進行中」，
-            //   `running` 也算進去了。⇒ 那條路可以用來「看有沒有人在」。
-            //   🩸 我第一版在這裡寫「它掃不到 Coding 場」——**那是錯的**，成因是我拿一份
-            //      跑在開場前 20 秒的 list 當證據，把「當時那場還不存在」讀成「它掃不到那種場」。
-            //   ⇒ A2 之前真正缺的不是**看得見**，是 `IsRegistered` 為 false：
-            //      凡是以「已登記 kind」為條件的判斷（如 FindRunning）都不會把它算進去
-            //      ⇒ 從 Senate 那側開場，不會被這一場擋下。
-            ioR.AppendLine("　 （`senate cmd sessions --arg op=list` 也看得到這一場，會標「未登記」——");
-            ioR.AppendLine("　 那是 A2 未做的正常標記，不是這一場有問題。）");
-            ioR.AppendLine();
-            ioR.AppendLine($"**② 去酒館敲 @{iBlockedBy.persona}**：");
-            ioR.AppendLine("```bash");
-            ioR.AppendLine($"senate ucmd run Tavern --persona {iPersona} --arg op=post --arg room=tavern \\");
-            ioR.AppendLine($"    --arg body=\"@{iBlockedBy.persona} Coding 場借過一下，我要改 <什麼>\"");
-            ioR.AppendLine("```");
-            ioR.AppendLine();
-            ioR.AppendLine($"**③ 持有者自己的退出指令**（⚠ 由 @{iBlockedBy.persona} 跑，不是你跑）：");
-            ioR.AppendLine("```bash");
-            ioR.AppendLine($"senate ucmd run Coding --persona {iBlockedBy.persona} --arg step=end");
-            ioR.AppendLine("```");
-            ioR.AppendLine();
-            ioR.AppendLine($"⚠ 若 @{iBlockedBy.persona} 已經不在（場殘留）：");
-            ioR.AppendLine("```bash");
-            ioR.AppendLine($"senate cmd sessions --arg data_root=<資料根> --arg op=close --arg persona={iBlockedBy.persona}");
-            ioR.AppendLine("```");
-            ioR.AppendLine("　 ⚠ 這條走 Senate 那份，而 A2 未做 ⇒ 它把本 kind 標成「未登記」。");
-            ioR.AppendLine("　 關完之後用上面的 `SessionStatus` 覆驗一次（**兩條路各問一次**，別只信關場那句成功）。");
-            ioR.AppendLine("⛔ 不要為了繞過而改用別的 persona 名進場 —— 那是製造分身，不是解法。");
-        }
     }
 }
 #endif

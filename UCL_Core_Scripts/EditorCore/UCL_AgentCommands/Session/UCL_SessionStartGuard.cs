@@ -78,7 +78,26 @@ namespace UCL.Core.EditorLib.AgentCommands
         {
             string aWho = string.IsNullOrEmpty(iBlocker.persona) ? "持有者" : "@" + iBlocker.persona;
             string aUntil = string.IsNullOrEmpty(iBlocker.until_local) ? "他收工" : iBlocker.until_local;
-            return $"等 {aUntil}，或去酒館 {aWho} 問他還要多久；查現況：senate cmd sessions --arg op=list";
+            string aOut = $"等 {aUntil}，或去酒館 {aWho} 問他還要多久；查現況：senate cmd sessions --arg op=list";
+
+            // 🩸 2026-09-05（@summit）：原本到上一行為止。而讀到它的人下一句一定會問
+            //    「那他要怎麼收？」—— 沒有那格的話，他會去猜一個指令，或去跑 `sessions --arg op=close`
+            //    （那支只收**殘留**，進行中的場它會擋，於是他得到第二個看不懂的錯誤）。
+            //    ⇒ 附上指令原文，但**主詞標死是持有者**：⛔ 這條不是給你跑的。
+            //    指令名走登記表（`CmdNameOf` 沒登記就照實回 kind 本身，不編字）。
+            UCL_SessionKindEntry aEntry = UCL_SessionKindHost.For(iBlocker.kind);
+            if (aEntry != null && aEntry.HasStepEnd && !string.IsNullOrEmpty(iBlocker.persona))
+            {
+                aOut += $"；⚠ 他自己的退出指令（**由 {aWho} 跑，不是你跑**）："
+                      + $"senate ucmd run {aEntry.CmdName} --persona {iBlocker.persona} --arg step=end";
+            }
+            // ⛔ 而這一句對**全域互斥**的 kind 特別要緊：被擋的人手上沒有別的路，
+            //    最順手的「解法」就是換一個 persona 名再開一場 —— 那是製造分身，不是解法。
+            if (SCP_ActivitySessionKind.IsGlobalExclusive(iBlocker.kind))
+            {
+                aOut += "；⛔ 不要為了繞過而改用別的 persona 名進場";
+            }
+            return aOut;
         }
 
         /// <summary>「誰的哪一場、到幾點」—— 讀的人要能一眼判斷要等多久。</summary>
@@ -100,19 +119,36 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// </remarks>
         static string ExitMine(string iPersona, SCP_ActivitySession iBlocker)
         {
-            if (iBlocker.kind == SCP_ActivitySessionKind.FreeTime)
+            // 🩸 2026-09-05（@summit，TASK-0058 接 guard 時）：這裡原本是**硬編碼 if 鏈**
+            //    （FreeTime 一條、StreamWatch 一條、其餘 fallback）—— 而那正是同日 `092dd940`
+            //    在 `Cmd_SessionClose` 剛消滅的形狀：**這條路上還有第二份。**
+            //    ⇒ 症狀：`Coding` 已經登記進 `UCL_SessionKindHost`（有 CmdName／HasStepEnd），
+            //      而這裡照樣回「本守衛沒有它的收工指令」—— **那句話是假的，而它不會叫。**
+            //    ⇒ dispatch 改走登記表：**新增一種 kind 不必回頭改這裡。**
+            UCL_SessionKindEntry aEntry = UCL_SessionKindHost.For(iBlocker.kind);
+            if (aEntry == null)
             {
-                return $"先收掉那場：senate ucmd run FreeTime --persona {iPersona} --arg step=end --arg reason=<一句>";
+                // 未登記：**說出它是誰，並附已登記清單** —— 不要退回一句「請自行處理」，
+                // 也不要編一個看起來像指令的字（那會讓人去跑一個不存在的東西）。
+                string aKnown = string.Join("／", UCL_SessionKindHost.RegisteredKinds());
+                return $"先收掉那場（kind=`{iBlocker.kind}`，**沒有人登記過它**"
+                     + (aKnown.Length == 0 ? "" : $"；已登記：{aKnown}") + "）；"
+                     + $"查現況：senate cmd sessions --arg op=show --arg target_persona={iPersona}";
             }
-            if (iBlocker.kind == SCP_ActivitySessionKind.StreamWatch)
+            if (!aEntry.HasStepEnd)
             {
                 string aUntil = string.IsNullOrEmpty(iBlocker.until_local) ? "它到期" : iBlocker.until_local;
-                return $"等 {aUntil}（觀影沒有 step=end —— 到期或 Tim 停錄影時 Cmd 會自己收工並結算）；"
-                     + $"要提前收就請 Tim 停錄影";
+                string aWait = $"等 {aUntil}（{KindLabel(iBlocker.kind)} 沒有 step=end —— 到期或由 Cmd 自己收工並結算）";
+                // ⚠ 這一條 `if` **刻意留著**，而且它不是 dispatch 的殘留：
+                //   「要提前收就請 Tim 停錄影」是 **kind 專屬的處置知識**，而登記表目前**沒有欄位承載它**
+                //   （`UCL_SessionKindEntry` 只有 Kind / CmdName / HasStepEnd / SettleResidueAsync）。
+                //   ⛔ 直接改走登記表會**靜默丟掉這句**，而那是降級不是收斂 —— 讀的人會只知道「等」，
+                //      不知道還有一條真的能提前收的路。
+                //   ⇒ 建議登記表加一格（例如 `NoStepEndHint`），加了之後這條 if 就能拿掉。@basecamp 決定。
+                if (iBlocker.kind == SCP_ActivitySessionKind.StreamWatch) aWait += "；要提前收就請 Tim 停錄影";
+                return aWait;
             }
-            // 未登記的 kind：**說出它是誰**，不要退回一句「請自行處理」。
-            return $"先收掉那場（kind=`{iBlocker.kind}`，本守衛沒有它的收工指令）；"
-                 + $"查現況：senate cmd sessions --arg op=show --arg target_persona={iPersona}";
+            return $"先收掉那場：senate ucmd run {aEntry.CmdName} --persona {iPersona} --arg step=end --arg reason=<一句>";
         }
 
         /// <summary>kind 的人看得懂的名字。⚠ 認不得就**原樣印**，不要印「未知」（那會把 kind 名吃掉）。</summary>

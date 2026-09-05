@@ -20,6 +20,15 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// Coding session（`sessions/&lt;persona&gt;.json`，`kind` 欄位為 <c>Coding</c>）。
     /// </summary>
     /// <remarks>
+    /// ⚠ <c>until_local</c>（基底欄位）對本 kind **一律留空字串**，不要塞說明文字。
+    /// 🩸 2026-09-05 實測：第一版填了「（無預定時長，顯式 step=end 才收工）」，
+    /// 而顯示端的模板是 <c>"至 " + until_local</c> ／ <c>"等 " + until_local</c>
+    /// ⇒ 擋下別人時印出「至 （無預定時長，顯式 step=end 才收工）」。
+    /// ⇒ 錯的不是那些模板，是**我把一句說明塞進了一個時刻欄位**。
+    /// 空字串才是誠實的答案，而每個顯示端都已經有它自己的 fallback
+    /// （「未寫截止時刻」／「他收工」／list 印「—」）。
+    /// </remarks>
+    /// <remarks>
     /// ⚠ `status` 是**這一場在改什麼**的一句話，進場必填。
     /// 它同時被寫進 persona lock 的 `now_status`（走 <c>UCL_AwakeningService.UpdateNowStatus</c>
     /// —— 那是唯一寫入通道）⇒ 顯示端（UCL_LoginStatusPage／catchup 在線清單）**不必認識本 kind**。

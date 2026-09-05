@@ -1698,114 +1698,25 @@ def cmd_intro(args: argparse.Namespace) -> int:
 
 
 def cmd_rest(args: argparse.Namespace) -> int:
-    """小歇片刻 ritual (compact-rest): 寫 memory letter 保命，但**不下線**。
+    """⛔ 已退場（TASK-0134，2026-09-05）—— 指路 stub，**不寫任何檔**。
 
-    跟 goodnight 的差別（Tim 2026-05-24 拍板「類似晚安但不登出」）:
-      - ✅ 寫 letter（trigger=cmd_rest），保留 compact 前想記住的重要記憶
-      - ❌ 不 perturb identity_vector（同 session 繼續，identity 原封不動）
-      - ❌ 不設 offline（status / availability 保持原樣，仍在線）
-      - ❌ 不 unlock / 不 wake_count++（同 session 過一次 /compact 而已）
-      - 只更新 last_active；可選發一則「小歇」tavern 通知（非下線通知）
-    用途: /compact 前跑一次，把 in-flight 記憶落磁碟；compact 後讀回 _latest.md 接續。
+    小歇搬到 `senate cmd rest`：核心（寫信）原生跑、廣播那半委派 Editor。
+    ⚠ 這裡刻意**不留「Editor 沒開時的 python 備援」**：新入口的寫信那半本來就在本地跑，
+      留一條平行路只會讓兩個寫信器再度出現 —— 而它們漂掉的症狀是讀信那天才發現。
     """
-    reg = load_registry()
-    # persona / actor 解析 — 與 goodnight 同雙路徑
-    if args.persona:
-        if args.persona not in reg["personas"]:
-            print(f"❌ --persona '{args.persona}' 不在 registry", file=sys.stderr)
-            return 2
-        p_data = reg["personas"][args.persona]
-        persona = args.persona
-        agent = normalize_agent(reg, args.agent or p_data.get("agent", ""))
-        model = p_data.get("model", "")
-        actor = resolve_bank_account(reg, agent, model)
-        lock = read_lock(persona)
-    else:
-        # 反查本 env 持有的 lock (claim_origin match)
-        my_origin = compute_claim_origin()
-        my_locks = find_locks_by_claim_origin(my_origin)
-        if not my_locks:
-            print(f"❌ 本 environment (claim_origin={my_origin}) 沒持有任何 lock", file=sys.stderr)
-            print(f"   → 帶 --persona <name> 顯式指定要小歇的 persona.", file=sys.stderr)
-            return 2
-        lock = max(my_locks, key=lambda d: d.get("locked_at", ""))
-        persona = lock["persona"]
-        agent = lock["agent"]
-        model = lock.get("model", "")
-        # #4 read-through (Bank 整合 2026-07-21, calli 接手 kiara #3): 凍結的 bank_account 欄降為純顯示,
-        # actor 一律從 lock 的 agent 欄「重算」bank — agent 身分穩、會漂的是 agent→bank 映射, 避免 stale 誤路由。
-        # shadow-compare: 重算值 != 凍結值 → log 一行 (漂移偵測、反靜默; 實測目前全 persona 一致, 故直接採重算值)。
-        _frozen_bank = lock.get("bank_account")
-        actor = resolve_bank_account(reg, normalize_agent(reg, agent), model)
-        if _frozen_bank and _frozen_bank != actor:
-            print(f"⚠ [bank read-through] lock bank_account={_frozen_bank!r} != 重算 {actor!r} "
-                  f"(persona={persona} agent={agent}) — 採重算值(SOT), 凍結欄已 stale。", file=sys.stderr)
+    print("⛔ awakening.py rest 已遷移至 `senate cmd rest`（TASK-0134，2026-09-05）"
+          "——本子指令不再寫任何檔。", file=sys.stderr)
+    print("   新入口（**Editor 沒開也寫得成信**，那是搬家的重點）：", file=sys.stderr)
+    print("   senate cmd rest --arg persona=<P> \\", file=sys.stderr)
+    print("       --arg-file letter_body=<私密記憶檔> --arg-file summary=<公開心得檔>", file=sys.stderr)
+    print("   · exit 0 ＝信＋廣播都成；**exit 6 ＝信寫了、廣播沒發**（去酒館補發，記憶那半不受影響）",
+          file=sys.stderr)
+    print("   · 只寫信不廣播：--arg no_notify=1（⚠ 不帶 data_root **不會**關掉廣播，CLI 會自己補）",
+          file=sys.stderr)
+    print("   · 醒來接回讀兩份：letters/<P>/_latest.md ＋ letters/<P>/cmd/wake_brief.md", file=sys.stderr)
+    print("   完整 SOP：skill `ucl-compact-rest`", file=sys.stderr)
+    return 2
 
-    print(f"🫖 小歇片刻 (compact-rest) — 不下線，只落記憶")
-    print(f"   actor={actor} / persona={persona}")
-
-    # Step 1: 寫 memory letter（trigger=cmd_rest）
-    args.letter_body = resolve_text_arg(args.letter_body, getattr(args, "letter_body_file", None), "letter-body")
-    args.summary = resolve_text_arg(args.summary, getattr(args, "summary_file", None), "summary")
-    if not args.letter_body.strip():
-        print("❌ rest 須帶 --letter-body <記憶> 或 --letter-body-file <路徑>", file=sys.stderr)
-        sys.exit(2)
-    letter_path = write_letter(actor, persona, args.letter_body, trigger="cmd_rest")
-    print(f"💌 memory letter written: {letter_path.name}")
-
-    # Step 2: **保持在線**（不 perturb / 不 offline / 不 unlock）
-    # ⛔ 這裡原本寫 `last_active` 再 `save_registry` —— 而中央 personas/ 2026-08-21 退場之後
-    #   那個欄位**沒有落點**：save_registry 的 persona 那半邊只會把它列進「未寫入」清單。
-    #   ⇒ 拿掉，不留一個會成功、但什麼都沒發生的寫入動作。真相源是 lock 與 wakes/。
-    print(f"🟢 status 保持在線（未 perturb / 未 offline / 未 unlock）")
-
-    # Step 3: 可選 tavern 通知（小歇，非下線）
-    # ⚠ 這一步的成敗**要跟 Step 1 分開結算**：信落磁碟是核心（記憶保命），廣播是附帶。
-    #   🩸 2026-09-05：Step 2 在這之前炸掉（守衛誤擊），信寫成了、廣播沒發，
-    #   而最後一行印的是那個例外 ⇒ 讀的人以為整件事失敗，實際上核心那步已經成了。
-    #   ⇒ 附帶動作**不可以吃掉核心動作的讀數**：包起來，並在結尾逐項說。
-    notify_state = "skipped"
-    if not getattr(args, "no_notify", False):
-        # 公開小歇心得總結 (Tim 2026-05-24): summary 廣播給同事/Tim, 私密內容留在 letter
-        summary = (getattr(args, "summary", "") or "").strip()
-        summary_block = (f"💭 **小歇心得**\n{summary}\n\n" if summary else "")
-        body = (f"🫖 **{persona}** 小歇片刻（/compact 前）\n\n"
-                f"{summary_block}"
-                f"準備壓縮對話史——公開心得如上，私密細節落在 memory letter，醒來接續，**不下線**。\n"
-                f"- memory letter: `{letter_path.relative_to(_REPO_ROOT)}` (私密心得在信裡)")
-        if args.note:
-            body += f"\n- Note: {args.note}"
-        if args.session_token is None:
-            broadcast_token = (lock or {}).get("session_token", "") or None
-        else:
-            broadcast_token = args.session_token or None
-        try:
-            ok = tavern_post(
-                sender_id=actor, persona=persona, body=body,
-                meta={"tag": "compact-rest", "category": "meta", "letter": letter_path.name},
-                session_token=broadcast_token,
-                timeout=BROADCAST_TIMEOUT_SEC,   # 2026-08-12: 見常數註解
-            )
-            notify_state = "ok" if ok else "fail"
-        except Exception as e:
-            # 例外與「回 False」處置相同（都要補發），但**理由不同** ⇒ 印出來，不要抹平。
-            notify_state = "fail"
-            print(f"❌ 小歇 tavern 廣播丟出例外：{type(e).__name__}: {e}", file=sys.stderr)
-        print(f"📢 小歇 tavern 通知: {'OK' if notify_state == 'ok' else 'fail'}")
-
-    # ── 結尾：兩本帳分開講（信 / 廣播）——⛔ 不可以只印一句「完成」 ──────────
-    print(f"💌 記憶信：**已落磁碟** → {letter_path}")
-    if notify_state == "fail":
-        # exit 6 ＝「核心成了、附帶沒成」，與 git_commit.py 同號同義（那邊是 commit 成功／公告失敗）。
-        print(f"⚠ **信寫了、廣播沒發** —— 同事與 Tim 不知道你小歇了。\n"
-              f"   → 補發：senate ucmd run Tavern --persona {persona} --arg op=post "
-              f"--arg-file body=<把上面那段貼進檔> --arg category=meta\n"
-              f"   → 補發之後再跑 /compact；記憶那半邊不受影響（信已經在磁碟上）。", file=sys.stderr)
-        print(f"✅ 小歇的記憶那半邊完成。/compact 後讀 baton/letters/{persona}/_latest.md 接續。")
-        return 6
-    print(f"✅ 小歇完成（信＋廣播{'（本次未廣播）' if notify_state == 'skipped' else ''}）。"
-          f"/compact 後讀 baton/letters/{persona}/_latest.md 接續記憶。")
-    return 0
 
 
 def cmd_goodnight(args: argparse.Namespace) -> int:

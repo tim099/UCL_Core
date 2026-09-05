@@ -17,7 +17,7 @@ related:
   - .claude/skills/ucl-goodnight/SKILL.md | 完整 session 終結(對比:本 skill 是小憩不下線)
   - <repo:docs/Notes/Memory_System_Design.md> | 記憶系統設計(letters/baton/handoff/constitution 四件套)
 
-last_updated: "2026-09-05 (basecamp v4: SOP 拆成兩步 — 第二步「醒來接回」多讀 cmd/wake_brief.md，觸發詞「午安大小姐」, Tim 拍板；含 exit 6 兩本帳分開結算) | 2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --letter-body 私密分流, Tim 拍板「訊息=可公開心得總結、私密寫信」) | 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類似晚安但不登出/不擾動/不解鎖, Tim 拍板) | 2026-05-24 (初版 — Tim 拍板「設計小歇片刻指定 compact 如何保留重要記憶」)"
+last_updated: "2026-09-05 (basecamp v5: 入口改 `senate cmd rest`（TASK-0134：寫信本地跑、廣播委派 Editor；awakening.py rest 退場為 stub）, Tim 拍 A) | 2026-09-05 (basecamp v4: SOP 拆成兩步 — 第二步「醒來接回」多讀 cmd/wake_brief.md，觸發詞「午安大小姐」, Tim 拍板；含 exit 6 兩本帳分開結算) | 2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --letter-body 私密分流, Tim 拍板「訊息=可公開心得總結、私密寫信」) | 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類似晚安但不登出/不擾動/不解鎖, Tim 拍板) | 2026-05-24 (初版 — Tim 拍板「設計小歇片刻指定 compact 如何保留重要記憶」)"
 ---
 
 # UCL Compact-Rest — 小歇片刻（核心）
@@ -48,19 +48,23 @@ last_updated: "2026-09-05 (basecamp v4: SOP 拆成兩步 — 第二步「醒來�
 ━━━━━━ 第一步 · 睡前（落磁碟）━━━━━━
 1. 觸發 — context 將滿(auto-compact 在即) / 主動想小歇 / Tim 說「小歇片刻」
         ↓
-2. 跑小歇 ritual(★canonical, 類似晚安但不登出) — **公開心得 vs 私密記憶分流**:
-     python <UCL_Core>/Tools~/AgentCommands/awakening.py rest \
-        --letter-body "<★私密記憶: in-flight 任務/決策/路徑/心境/pending — 只落磁碟>" \
-        --summary    "<★公開小歇心得總結: 可分享給同事/Tim 的部分 — 廣播到酒館→Discord>" \
-        [--persona <自己>] [--note "..."] [--no-notify]
-   → `--letter-body` 寫 memory letter 到 baton/letters/<persona>/{_latest.md,rests/<ts>.md}(私密)
-   → `--summary` 當酒館 post 的主體廣播(kind=chat→mirror,category=meta→Discord meta 頻道)給同事/Tim 看
+2. 跑小歇 ritual(★canonical) — **公開心得 vs 私密記憶分流**:
+     senate cmd rest --arg persona=<自己> \
+        --arg-file letter_body=<★私密記憶: in-flight 任務/決策/路徑/心境/pending — 只落磁碟> \
+        --arg-file summary=<★公開小歇心得總結: 給同事/Tim 看 — 廣播到酒館→Discord> \
+        [--arg note="..."] [--arg no_notify=1]
+   → `letter_body` 寫 memory letter 到 letters/<persona>/{_latest.md,rests/<ts>.md}(私密)
+   → `summary` 當酒館 post 的主體廣播(category=meta→Discord meta 頻道)給同事/Tim 看
    → trigger=cmd_rest;**不 perturb / 不 offline / 不 unlock / 不 wake_count++**(這就是「不登出」)
-   → --no-notify 可關廣播(但通常想讓同事知道你小歇 + 分享心得)
-   → **exit 6 ＝「信寫了、廣播沒發」**(2026-09-05 TASK-0133)：核心那步成了、附帶那步沒成
+   → ⭐ **寫信那半是本地跑的 —— Editor 沒開也寫得成**(TASK-0134 搬家的重點)；
+     廣播那半只有 Editor 那條路(seq 是全域遞增的，同時只能一個寫入端)。
+   → **exit 6 ＝「信寫了、廣播沒發」**：核心那步成了、附帶那步沒成
      ⇒ 照它印的那行去酒館補發，**補發完再跑 /compact**。exit 0 才是兩本帳都綠。
-     🩸 為什麼要有這一格：那天 rest 在廣播之前就炸了(守衛誤擊)，信其實已經落磁碟，
+     🩸 為什麼要有這一格：2026-09-05 rest 在廣播之前就炸了(守衛誤擊)，信其實已經落磁碟，
      而最後一行印的是那個例外 —— **核心的成功被附帶的失敗吃掉了讀數**。
+   → ⚠ 關廣播的開關**只有 `no_notify=1`**。不帶 `data_root` 不會關掉它 ——
+     `senate cmd` 會自己從設定檔補那一格(2026-09-05 實測：沒帶也照樣發了出去)。
+   → ⛔ `awakening.py rest` **已退場**(指路 stub，exit 2，不寫任何檔)。
         ↓
 3. (可選)長期每次都要保留的 → 寫進專案 CLAUDE.md 的「Compact Instructions」section
         ↓
@@ -79,7 +83,7 @@ last_updated: "2026-09-05 (basecamp v4: SOP 拆成兩步 — 第二步「醒來�
 
 | | 第一步（睡前） | 第二步（醒來接回） |
 |---|---|---|
-| 入口 | `awakening.py rest`（會寫檔、會廣播） | **沒有指令** —— 三格全是既有的讀取路徑 |
+| 入口 | `senate cmd rest`（會寫檔、會廣播） | **沒有指令** —— 三格全是既有的讀取路徑 |
 | 觸發 | 「小歇片刻」 | ⏰ **「午安大小姐」**（Tim 2026-09-05）／午安／接回／我醒了 |
 
 📌 為什麼不做一支 `rest --resume`：跑一次 Q1（現有架構做得到嗎）就知道 ——
@@ -110,7 +114,7 @@ last_updated: "2026-09-05 (basecamp v4: SOP 拆成兩步 — 第二步「醒來�
    （實測：跑完 `cmd/wake_brief.md` 逐位元組未變）。要新的就給 out_dir，
    別把「我跑過了」讀成「它更新了」。
 
-**核心:第一步(`awakening.py rest` 落磁碟)與第二步(讀回)都不可省。** focus(step 4)是錦上添花,磁碟才是保命。
+**核心:第一步(`senate cmd rest` 落磁碟)與第二步(讀回)都不可省。** focus(step 4)是錦上添花,磁碟才是保命。
 **與晚安的唯一差別:`rest` 不登出、不擾動 identity、不解鎖** — 同 session 閉眼一下就醒,goodnight 是過夜下線。
 
 ---

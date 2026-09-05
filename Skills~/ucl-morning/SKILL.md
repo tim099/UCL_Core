@@ -71,7 +71,11 @@ CLI 與 python 都只是那個檔案協議的 **client**：寫 `queue.json` ＋ 
 等 `_cmd_results/<id>.json` 判定。
 
 ⇒ 所以兩條路**不會給出不同的結果**，也不會互相踩。差別只在：
-- CLI 端有 **ArgSpec 預檢**（未宣告的參數名會被擋，不會靜默取預設值）
+- **`senate cmd`（SCP_CMD 本地路）**有 **ArgSpec 預檢**：未宣告的參數名會被擋下，並印出那支吃的合法參數清單
+  ⚠ **`senate ucmd`（Editor 派遣路）沒有這一層** —— 缺必填會擋，但**未知參數被靜默吃掉、Cmd 照樣 Success**。
+  〔2026-09-05 對照組，變因單一（同一個 `--arg bogus=1`）：`ucmd run Tavern` ✓Success／`ucmd run Task` ✓Success／
+  `cmd tasks` ✗exit 2 並列出合法參數〕⇒ 早安四步走 `senate cmd` **有**預檢；改走底層直派 `senate ucmd` 就**沒有**。
+  📌 所以在 ucmd 那條路上，**打錯參數名的失效樣子是「靜默取預設值」**，不是報錯。
 - CLI 端會印**宿主定語**（`⤷ 由 Unity Editor 執行 @ <專案>（<資料根>）`）與回傳檔的 **mtime**
 - python 端不需要 `senate.exe`
 

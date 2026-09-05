@@ -119,34 +119,24 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// </remarks>
         static string ExitMine(string iPersona, SCP_ActivitySession iBlocker)
         {
-            // 🩸 2026-09-05（@summit，TASK-0058 接 guard 時）：這裡原本是**硬編碼 if 鏈**
-            //    （FreeTime 一條、StreamWatch 一條、其餘 fallback）—— 而那正是同日 `092dd940`
-            //    在 `Cmd_SessionClose` 剛消滅的形狀：**這條路上還有第二份。**
-            //    ⇒ 症狀：`Coding` 已經登記進 `UCL_SessionKindHost`（有 CmdName／HasStepEnd），
-            //      而這裡照樣回「本守衛沒有它的收工指令」—— **那句話是假的，而它不會叫。**
-            //    ⇒ dispatch 改走登記表：**新增一種 kind 不必回頭改這裡。**
+            // 🩸 2026-09-05（@summit 在 0058 QA 撿到）：這裡本來是 `FreeTime` / `StreamWatch` 各一條 `if` ——
+            //   **那正是我同一天在 `Cmd_SessionClose` 剛消滅的形狀，而這條路上還有第二份。**
+            //   ⇒ 新增一種 kind 要回頭改**這裡**，而漏改不報錯：它會退到 fallback 說
+            //   「本守衛沒有它的收工指令」，而那句話跟「這個 kind 真的沒有收工指令」同形。
+            // ⇒ 改走登記表（`UCL_SessionKindHost`）—— 它已經有這裡要的兩格。
             UCL_SessionKindEntry aEntry = UCL_SessionKindHost.For(iBlocker.kind);
             if (aEntry == null)
             {
-                // 未登記：**說出它是誰，並附已登記清單** —— 不要退回一句「請自行處理」，
-                // 也不要編一個看起來像指令的字（那會讓人去跑一個不存在的東西）。
-                string aKnown = string.Join("／", UCL_SessionKindHost.RegisteredKinds());
-                return $"先收掉那場（kind=`{iBlocker.kind}`，**沒有人登記過它**"
-                     + (aKnown.Length == 0 ? "" : $"；已登記：{aKnown}") + "）；"
+                // 沒登記：**說出它是誰**，不要退回一句「請自行處理」。
+                return $"先收掉那場（kind=`{iBlocker.kind}`，**沒有人登記過這個 kind**）；"
                      + $"查現況：senate cmd sessions --arg op=show --arg target_persona={iPersona}";
             }
             if (!aEntry.HasStepEnd)
             {
+                // ⚠ 沒有 `step=end` 的 kind（觀影）：誠實出口是「等它到期」，
+                //   ⛔ 不編一個不存在的指令 —— 那是 @summit 今天改名 `op=exit`→`step=end` 治的同一隻。
                 string aUntil = string.IsNullOrEmpty(iBlocker.until_local) ? "它到期" : iBlocker.until_local;
-                string aWait = $"等 {aUntil}（{KindLabel(iBlocker.kind)} 沒有 step=end —— 到期或由 Cmd 自己收工並結算）";
-                // ⚠ 這一條 `if` **刻意留著**，而且它不是 dispatch 的殘留：
-                //   「要提前收就請 Tim 停錄影」是 **kind 專屬的處置知識**，而登記表目前**沒有欄位承載它**
-                //   （`UCL_SessionKindEntry` 只有 Kind / CmdName / HasStepEnd / SettleResidueAsync）。
-                //   ⛔ 直接改走登記表會**靜默丟掉這句**，而那是降級不是收斂 —— 讀的人會只知道「等」，
-                //      不知道還有一條真的能提前收的路。
-                //   ⇒ 建議登記表加一格（例如 `NoStepEndHint`），加了之後這條 if 就能拿掉。@basecamp 決定。
-                if (iBlocker.kind == SCP_ActivitySessionKind.StreamWatch) aWait += "；要提前收就請 Tim 停錄影";
-                return aWait;
+                return $"等 {aUntil}（`{aEntry.CmdName}` 沒有 step=end —— 到期或宿主停止時 Cmd 會自己收工並結算）";
             }
             return $"先收掉那場：senate ucmd run {aEntry.CmdName} --persona {iPersona} --arg step=end --arg reason=<一句>";
         }

@@ -42,7 +42,29 @@ description: |
 | commit 訊息內容 | **你** |
 | Co-Authored-By（身分／型號／信箱） | 工具 |
 | 酒館公告 + 領薪 | 工具 |
-| push | **沒有人** —— Tim 手動 |
+| push | **預設沒有人** —— Tim 手動。⚠ **`SCP_Core` 是例外：agent 自己 push & pull**（見下方例外欄） |
+
+> [!IMPORTANT]
+> ## ⚠ 例外：`SCP_Core` 的 push 由 agent 自己做（Tim 2026-09-04 拍板，2026-09-05 再確認）
+>
+> `SCP_Core` **同時掛在好幾個消費端底下**（`Senate/SCP_Core`、`Bar/Assets/Plugins/SCP_Core`…）——
+> 那不是複本，是**同一個 repo 的多份工作副本**。在其中一份改完，**其他份不會自己知道**。
+>
+> ```bash
+> git -C <改動那份> push origin master
+> git -C <另一份>   pull --ff-only origin master
+> ```
+>
+> - ⚠ **`--ff-only` 不是潔癖**：兩份各自 commit 過就會分叉，而 `pull` 預設會**幫你 merge**
+>   ⇒ 一個「只是要同步」的動作長出一顆合併 commit，而不會有人發現。分叉時要**當場喊**。
+> - ⛔ **父層的 submodule pointer bump 仍然不在這一步**（那是消費端自己的 commit，本專案由 Tim 收尾）。
+>
+> 🩸 為什麼這一格值得寫成例外而不是靠人記得（2026-09-05 現場）：
+> **@basecamp 照 §4.7 push 了，@summit 照本 skill 這一欄「不 push」** ——
+> 同一個小時、同一個 repo、兩個 agent 各讀了一份文件，而**兩份都是對的文件**。
+> 那次沒有分叉（她的 commit 剛好長在我的上面），⇒ **它是靠運氣過的，不是靠規則過的。**
+>
+> 規則本體與踩過的坑 → `<SCP_Core>/Docs~/Coding_Standards.md` §4.7。
 
 ## 檔案分類（先看清再 stage）
 
@@ -287,7 +309,7 @@ console 會印出推進或結單訊息。
    **單層**：只做改動所在那一層，做完就停。
    **commit all**：由內往外逐層 stage + bump。
 4.5 **這筆有修到 Task 單嗎** → 訊息裡加 `Fixes TASK-<n>`（提交時自動關單或推進狀態）。
-5. 報告 SHA 給 Tim。**不 push。**
+5. 報告 SHA 給 Tim。**不 push** —— ⚠ **除非那個 repo 是 `SCP_Core`**（見下方例外欄）。
    ⛔ **不要跑 `commit_payout_check.py`**（Tim 2026-09-01 拍板：有沒有領到他手動確認）——
    要自己確認的話看那筆的**酒館公告訊息**就夠了（`meta.sha` ＝ 這筆的 SHA，公告在＝領薪 hook 跑過）。
    單層時**一併報「父層仍指著舊 hash，同事 pull 拿到的還是舊版」**——

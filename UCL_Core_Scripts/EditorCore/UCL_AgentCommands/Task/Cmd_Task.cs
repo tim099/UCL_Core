@@ -42,6 +42,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "index=<單號：show/claim/assign/update/comment/link/resolve 必填> | " +
             "role=dev|design|qa|pm|reviewer|sound|art（claim/assign 用，預設 dev） | " +
             "target_persona=<assign 的對象> | assignee=<list 篩選：只看某人參與的單> | " +
+            "replace=1（assign 用：**換角色** —— 先拿掉這個人既有的角色再指派；不帶＝加一個角色） | " +
             "body=<comment 內容> | " +
             "op_link=blocked_by|blocks|subtask_of|has_subtask|related_to（link 用） | target=<link 的對方單號> | " +
             "note=<resolve 的結單說明> | qa_note=<代 QA 結單時的驗收紀錄> | " +
@@ -596,14 +597,50 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             string aTarget = GetArg(iArgs, "target_persona", "").Trim();
             if (aTarget.Length == 0) throw new Exception("[Task] op=assign 需要 --arg target_persona=<誰>");
             var aRole = ParseEnumArg(iArgs, "role", UCL_TaskRole.dev);
+            bool aReplace = GetArg(iArgs, "replace", "").Trim() == "1";
             string aNow = UCL_TaskIO.NowUtc();
+
+            // 🩸 TASK-0131（2026-09-05）：本 Op 是 **append**，而**加一個角色**與**換角色**
+            //   在指令上長得一模一樣（`op=assign` 帶不同的 role）。⇒ 想換角色的人得到的是
+            //   「同一個人同時掛兩個角色」，三步全回 Success，而**「誰是這張單的 dev」從此沒有答案**。
+            // ⚠ 一人多角色**是合法的、而且是常態**（掃過既有單子：12 張是 `pm`＋`qa` 這種刻意的組合）
+            //   ⇒ 修法**不是**把它改成一人一角，那會靜靜拆掉那 12 張的參與者。
+            //   ⇒ 修法是：① 給「換角色」一條**顯式**的路（`--arg replace=1`）
+            //             ② 沒帶 replace 而那個人已經有別的角色時，**在回傳檔說出來**——
+            //                讓「我加了一個角色」與「我以為我換了角色」不再同形。
+            var aExisting = e.participants
+                .Where(p => string.Equals(p.persona, aTarget, StringComparison.OrdinalIgnoreCase))
+                .Select(p => p.role).ToList();
+            var aOtherRoles = aExisting.Where(r => r != aRole).ToList();
+            string aRemoved = "";
+            if (aReplace && aOtherRoles.Count > 0)
+            {
+                e.participants.RemoveAll(p => string.Equals(p.persona, aTarget, StringComparison.OrdinalIgnoreCase)
+                                              && p.role != aRole);
+                aRemoved = string.Join("／", aOtherRoles);
+            }
             bool aNew = AddParticipant(e, aTarget, aRole, aNow);
             UCL_TaskIO.Touch(e, aNow);
             // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　`assign`　{iActor} 指派 {aTarget} 為 {aRole}");
+            UCL_TaskIO.Save(e, "", "", $"{aNow}　`assign`　{iActor} 指派 {aTarget} 為 {aRole}"
+                + (aRemoved.Length > 0 ? $"（**換角色**：拿掉 {aRemoved}）" : ""));
 
             ioR.AppendLine($"## ✅ {e.Id} 參與者已更新");
             ioR.AppendLine($"- {(aNew ? "新增" : "已存在，未重複加")}：{aTarget}（{aRole}）");
+            if (aRemoved.Length > 0)
+            {
+                ioR.AppendLine($"- 🔁 **換角色**（`replace=1`）：{aTarget} 原本的 `{aRemoved}` 已拿掉");
+            }
+            else if (aOtherRoles.Count > 0)
+            {
+                // ⚠ 這一段是本次修正的本體：**不擋，但要說**。
+                //   擋的話會拆掉「一人多角」這個合法用法；不說的話「加角色」與「換角色」同形。
+                ioR.AppendLine($"- ⚠ **{aTarget} 本來就有角色 `{string.Join("／", aOtherRoles)}`** ——"
+                               + $" 本次是**加上** `{aRole}`，現在他同時是 `{string.Join("／", aExisting.Append(aRole).Distinct())}`。");
+                ioR.AppendLine($"  · 想**換角色**（拿掉舊的）請帶 `--arg replace=1`："
+                               + $"`op=assign --arg index={e.index} --arg target_persona={aTarget} --arg role={aRole} --arg replace=1`");
+                ioR.AppendLine("  · ⚠ 一人多角是合法的（`pm`＋`qa` 很常見）—— 這一行不是錯誤，是**要你確認你按的是哪一個**。");
+            }
             ioR.AppendLine($"- 參與：{Participants(e)}");
             bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Assigned, iActor,
                 $"{aTarget} ← `{aRole}`", iCallerArgs: iArgs);

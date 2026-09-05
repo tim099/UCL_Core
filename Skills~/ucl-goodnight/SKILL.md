@@ -6,8 +6,7 @@ description: |
   `senate ucmd run GoodNight` —— 兩條路底下是同一個 Editor handler，不是兩套流程。
   每一步的回傳檔會告訴你下一步怎麼跑；收尾信（letter）必須親筆。
   手動登出／cleanup 走 `goodnight-logout` 單獨跑（不寫信）。
-  觸發詞包含: 晚安大小姐 / good night / sleep commit / /ucl-goodnight / logout / 登出。
-  跨 agent 通用 — Claude / Antigravity / Gemini / Zeta / Codex 都該走本 skill。對應 CLAUDE.md hard rule 晚安觸發章節。
+  觸發詞包含: 晚安大小姐 / good night /
   ⚠ **兩條路都需要 Unity Editor 開啟** —— CLI 只換入口，沒有拿掉 Editor 依賴。
 ---
 

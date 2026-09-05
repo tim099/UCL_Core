@@ -127,7 +127,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 aR.AppendLine("## blocked —— 缺 confirm");
                 aR.AppendLine($"- `{aTarget}` 有一場**過期殘留**的 {aKind}（{aSession.session_id}），可以收。");
                 aR.AppendLine("- 這一步會寫別人的 session 檔"
-                              + (IsStreamWatch(aSession.kind) ? "，而且**會發薪**（觀影場補結算）" : "")
+                              + (UCL_SessionKindHost.For(aSession.kind)?.SettleResidueAsync != null ? "，而且**會發薪**（這個 kind 登記了補結算）" : "")
                               + " ⇒ 要顯式確認：");
                 aR.AppendLine($"    `senate ucmd run SessionClose --persona {aActor} --arg target_persona={aTarget} --arg confirm=1`");
                 Finish(args, aActor, aR, aKind, false, false);
@@ -150,13 +150,29 @@ namespace UCL.Core.EditorLib.AgentCommands
                 throw new Exception($"[SessionClose] `{aTarget}` 的 session 檔寫不進去（詳見回傳檔）");
             }
 
-            // ② 結算：per-kind。沒有結算的 kind **明說沒有**，不要讓「沒跑」與「跑了」同形。
+            // ② 結算：per-kind，**走登記表不是 if 鏈**（TASK-0055，2026-09-05）。
+            // 🩸 舊版是 `if (IsStreamWatch(kind))` ⇒ 新增一種 kind 要回頭改**這一支**，
+            //   而漏改不報錯：它照常關場，然後印「沒有登記結算 handler」——
+            //   那句話在「真的不用結算」與「有人忘了登記」兩種情況下一模一樣，而後者是酬勞蒸發。
+            // ⇒ 現在那兩種**不同形**：查不到 kind ⇒ 明說「沒有人登記過它」並附已登記清單。
             bool aSettled = false;
-            if (IsStreamWatch(aSession.kind))
+            UCL_SessionKindEntry aEntry = UCL_SessionKindHost.For(aSession.kind);
+            if (aEntry == null)
+            {
+                aR.AppendLine($"- ② 結算：⚠ **這個 kind（{aKind}）沒有人登記過** ⇒ 只翻三欄。"
+                              + $"已登記的：{string.Join(" / ", UCL_SessionKindHost.RegisteredKinds())}");
+                aR.AppendLine("    ⚠ 這**不是**「這個 kind 不用結算」——「不用結算」是登記表裡的一個顯式答案。"
+                              + "新增 kind 時漏了登記，症狀就長這樣。");
+            }
+            else if (aEntry.SettleResidueAsync == null)
+            {
+                aR.AppendLine($"- ② 結算：這個 kind（{aKind}）**登記為不需要結算** ⇒ 只翻三欄（顯式，不是漏接）");
+            }
+            else
             {
                 try
                 {
-                    aSettled = await Cmd_StreamWatch.SettleResidueAsync(args, aTarget, aR, token, "closed-by-cmd");
+                    aSettled = await aEntry.SettleResidueAsync(args, aTarget, aR, token, "closed-by-cmd");
                 }
                 catch (Exception e)
                 {
@@ -165,10 +181,6 @@ namespace UCL.Core.EditorLib.AgentCommands
                     aR.AppendLine("    ⚠ 而場**已經關了**（① 回讀確認過）—— 這兩件事分開看。");
                 }
                 if (aSettled) aR.AppendLine("- ② 結算：**已跑**（台帳 append ＋ 發薪，走與 step=start 撞殘留同一條路）");
-            }
-            else
-            {
-                aR.AppendLine($"- ② 結算：這個 kind（{aKind}）**沒有登記結算 handler** ⇒ 只翻三欄（明確降級，不是靜默）");
             }
 
             // ③ 廣播：本 Cmd 不發 —— 補收工是行政動作，不是收工儀式（正常收工的公告在 step=end）。
@@ -181,16 +193,11 @@ namespace UCL.Core.EditorLib.AgentCommands
             Finish(args, aActor, aR, aKind, true, aSettled);
         }
 
-        /// <summary>那一 kind 的正常收工指令叫什麼（擋下時要把指令原文附上，不能只講「去收工」）。</summary>
-        static string KindCmdName(string iKind)
-        {
-            if (string.Equals(iKind, SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch, StringComparison.Ordinal)) return "StreamWatch";
-            if (string.Equals(iKind, SCP.Core.Session.SCP_ActivitySessionKind.FreeTime, StringComparison.Ordinal)) return "FreeTime";
-            return iKind;   // 未登記的 kind：照實回，不編一個看起來像指令的字
-        }
-
-        static bool IsStreamWatch(string iKind)
-            => string.Equals(iKind, SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch, StringComparison.Ordinal);
+        /// <summary>
+        /// 那一 kind 的正常收工指令叫什麼（擋下時要把指令原文附上，不能只講「去收工」）。
+        /// <para>⚠ 走登記表 —— 未登記的 kind 照實回 kind 本身，**不編一個看起來像指令的字**。</para>
+        /// </summary>
+        static string KindCmdName(string iKind) => UCL_SessionKindHost.CmdNameOf(iKind);
 
         /// <summary>回傳檔落 per-persona ＋ 機讀值（三個布林分開報，呼叫端不必解析內文）。</summary>
         static void Finish(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR,

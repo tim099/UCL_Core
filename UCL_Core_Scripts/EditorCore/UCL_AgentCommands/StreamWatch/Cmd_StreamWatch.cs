@@ -287,6 +287,21 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             return aHit.Distinct().ToList();
         }
 
+        // 區塊職責：把「觀影這個 kind 在 Editor 這側怎麼收工」登記給 UCL_SessionKindHost（TASK-0055）。
+        // ⚠ 觀影**沒有 step=end** —— 到期或 Tim 停錄影時本 Cmd 自己宣布收工並結算。
+        //   `HasStepEnd=false` 是要讓別處印出口時**不要編一個不存在的指令**。
+        // 數值影響：`SettleResidueAsync` 指向本檔既有的 `SettleResidueAsync`（台帳 append ＋ 發薪）——
+        //   ⛔ 這裡只是把它「登記給誰去呼叫」，一行結算邏輯都沒有搬。
+        [UnityEditor.InitializeOnLoadMethod]
+        static void RegisterSessionKind()
+            => UCL_SessionKindHost.Register(new UCL_SessionKindEntry
+            {
+                Kind = SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch,
+                CmdName = "StreamWatch",
+                HasStepEnd = false,
+                SettleResidueAsync = SettleResidueAsync,
+            });
+
         async UniTask StepPrepare(Dictionary<string, string> iArgs, string iPersona, CancellationToken iToken)
         {
             string aPath = PayloadPath(iPersona, "prepare");

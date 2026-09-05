@@ -85,6 +85,23 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         }
 
         // ===========================================================
+        // 區塊職責：把「自由時間這個 kind 在 Editor 這側怎麼收工」登記給 UCL_SessionKindHost。
+        // 物理意義：登記寫在**這個 kind 自己的檔**裡 —— 新增／改一種 kind 不必回頭改 Cmd_SessionClose。
+        //          🩸 TASK-0055：在此之前那支用 `if (IsStreamWatch(kind))` 決定要不要補結算，
+        //          而漏改不會報錯，只會印「這個 kind 沒有登記結算 handler」——
+        //          那句話在「真的不用結算」與「有人忘了登記」兩種情況下一模一樣。
+        // 數值影響：零 IO。`SettleResidueAsync = null` 是**顯式宣告「自由時間沒有金流結算」**，
+        //          不是「還沒接」——兩者在本表是不同的答案。
+        [UnityEditor.InitializeOnLoadMethod]
+        static void RegisterSessionKind()
+            => UCL_SessionKindHost.Register(new UCL_SessionKindEntry
+            {
+                Kind = SCP.Core.Session.SCP_ActivitySessionKind.FreeTime,
+                CmdName = "FreeTime",
+                HasStepEnd = true,
+                SettleResidueAsync = null,
+            });
+
         // 區塊：step=start — 守衛 → session 註冊 → 免費像素發放 → 開場擲骰 → 酒館宣告
         // 物理意義：自由時間是「登入後的狀態」（拍板④）—— lock 不存在即 blocked；
         //          既有 active session 未到期即 blocked（不疊開）；已到期的殘留 session

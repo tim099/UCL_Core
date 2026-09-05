@@ -149,7 +149,21 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 active = true,
                 end_reason = "",
             };
-            SaveSession(iPersona, aSession);
+            // 守衛④（TASK-0056）：**跨 kind** —— 走 store 的 TryStart（先查再寫）。
+            // 🩸 守衛③ 走的是 LoadSession ＝ `Load(…, FreeTime)`，它 filter kind
+            //   ⇒ 一場進行中的觀影在它眼裡是 null ⇒ 放行 ⇒ 這一行的 Save 會**靜默覆蓋**掉那場。
+            //   2026-09-05 的活體：觀影場消失、本 Cmd 回 Success、還替它發了開場宣告。
+            // ⚠ 被擋時**一個位元組都不寫**（TryStart 先查再寫）⇒ 這裡直接退出，
+            //   後面的免費像素／擲骰／宣告一格都不會發生。
+            if (!UCL_SessionStartGuard.TryStart(iPersona, aSession, SCP.Core.Session.SCP_ActivitySessionKind.FreeTime,
+                                                out string aBlockReason, out string aBlockExit))
+            {
+                aR.AppendLine("## blocked");
+                aR.AppendLine($"- reason: {aBlockReason}");
+                aR.AppendLine($"- exit: {aBlockExit}");
+                WritePayload(iArgs, aPath, aR.ToString());
+                throw new Exception($"[FreeTime] step=start blocked：已在別種 session（詳見 {aPath}）");
+            }
 
             // 飢餓度的時鐘：場次 +1。**不推它的話「幾場沒被選」永遠是 0，置頂規則會安靜地永不觸發。**
             // ⚠ 推在擲骰**之前** —— 本場算第 N 場，而本場的骰面就該用第 N 場的飢餓度。

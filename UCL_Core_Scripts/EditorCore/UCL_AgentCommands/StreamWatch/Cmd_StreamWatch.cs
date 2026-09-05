@@ -1046,7 +1046,16 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aSession.video_title = iSrc.VideoTitle;
             aSession.video_desc = iSrc.VideoDesc;
             aSession.source_url = iSrc.Url;
-            SaveSession(iPersona, aSession);
+            // 跨 kind 守衛（TASK-0056）：走 store 的 TryStart（先查再寫）——
+            // 🩸 本檔上面那道守衛讀的是 LoadSession ＝ `Load(…, StreamWatch)`（filter kind），
+            //   看不見一場進行中的自由時間 ⇒ 這一行的 Save 會靜默覆蓋掉它。
+            //   ⚠ 被擋時一個位元組都不寫 ⇒ 底下的 relay／hotspot 重置與開播公告一格都不會發生。
+            if (!UCL_SessionStartGuard.TryStart(iPersona, aSession, SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch,
+                                                out string aBlockReason, out string aBlockExit))
+            {
+                Blocked(iArgs, aR, aPath, aBlockReason, aBlockExit);
+                throw new Exception($"[StreamWatch] step=start blocked：已在別種 session（詳見 {aPath}）");
+            }
             // 接力前緣重置：新場＝新的一條前緣（frontier=0，第一個回來的 cycle 播種）。
             // 綁 session_id ⇒ 上一場的殘留前緣在本場永遠對不上鍵，不會被誤用。
             SaveRelay(iPersona, new UCL_StreamWatchRelay
@@ -2011,7 +2020,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 cursor_epoch = aPrimary.cursor_epoch,
                 active = true,
             };
-            SaveSession(iPersona, aS);
+            // 跨 kind 守衛（TASK-0056）：join 也是一條開場路徑 —— 它同樣寫那個檔位。
+            // ⚠ 這一格容易被漏掉：本檔上面已經擋過「你自己那場觀影」，而那道守衛看不見別的 kind。
+            if (!UCL_SessionStartGuard.TryStart(iPersona, aS, SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch,
+                                                out string aJoinBlockReason, out string aJoinBlockExit))
+            {
+                Blocked(iArgs, aR, aPath, aJoinBlockReason, aJoinBlockExit);
+                throw new Exception($"[StreamWatch] step=join blocked：已在別種 session（詳見 {aPath}）");
+            }
 
             var aBody = new StringBuilder();
             aBody.AppendLine($"🍿 [{iPersona} 大小姐] 加入觀影 — 陪同 @{aPrimaryPersona} 的場｜媒材 `{aMedia}`");

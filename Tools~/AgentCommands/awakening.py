@@ -67,6 +67,7 @@ T-AWAKE-01 awakening.py — Awakening Init Protocol CLI (MVP Python-only)
 from __future__ import annotations
 
 import argparse
+import copy as _copy
 import datetime
 import difflib
 import hashlib
@@ -466,6 +467,13 @@ def load_registry() -> dict:
         _persona_profile().load_personas_into(reg)
     except Exception as e:
         print(f"⚠ [awakening] persona 接縫讀取失敗：{e}", file=sys.stderr)
+    # 蓋章：identity 欄「進來時是什麼」（判準見 `_SEAM_DERIVED_KEYS` 那段）。
+    # ⚠ deepcopy —— `vector_history` 是 list，淺拷貝的話呼叫端 append 一筆基準會跟著變，
+    #   於是差異永遠是 0（守衛靜默失效，而它看起來還在守）。
+    for _pd in reg["personas"].values():
+        if isinstance(_pd, dict):
+            _pd["_identity_baseline"] = _copy.deepcopy(
+                {f: _pd[f] for f in _PHASE1_IDENTITY_FIELDS if f in _pd})
     return reg
 
 
@@ -485,7 +493,15 @@ def load_registry() -> dict:
 # 數值影響：回**新的 dict**（不 mutate 呼叫端的 reg，避免把 in-memory 狀態改掉造成連鎖）；
 #          多一次 legacy 檔解析，只發生在寫入路徑。
 # ═══════════════════════════════════════════════════════════════════
-_SEAM_DERIVED_KEYS = ("_source", "_snapshot_at", "_field_sources")
+_SEAM_DERIVED_KEYS = ("_source", "_snapshot_at", "_field_sources", "_identity_baseline")
+
+# `_identity_baseline` ＝ 接縫讀進來那一刻的 identity 欄原值（`load_registry` 蓋的章）。
+# 它讓 `save_registry` 分得出「**你改了身分欄**」與「你只是把讀到的值原樣帶著」。
+# 🩸 2026-09-05 血證：接縫改走 profile/ 之後，`load_registry` 回的**每一個** persona 都帶著
+#   identity 欄（22/22 實測）⇒ 那道守衛對每一次 round-trip 都開火，而它印的是一句
+#   看起來完全正確的指路 ⇒ 5 支指令（rest／relogin／migrate-letters／rename-persona／
+#   set-availability）全部走不完，症狀卻長得像「你用錯通道了」。
+#   ⇒ 守衛的判準必須是**差異**，不是**存在**。
 
 
 # ⛔ `_freeze_legacy_identity` 已退場（2026-08-21）：它的工作是「寫 legacy 之前把 identity 欄
@@ -514,9 +530,21 @@ def save_registry(reg: dict) -> None:
         if not isinstance(pdata, dict):
             continue
         ident = [f for f in _PHASE1_IDENTITY_FIELDS if f in pdata]
-        if ident:
+        baseline = pdata.get("_identity_baseline")
+        if baseline is None:
+            # 沒有基準 ⇒ 這份 payload 不是 `load_registry` 給的（手工組的）。
+            # 「帶著」與「要改」此時分不出來 ⇒ 照舊全擋（保守的那一邊）。
+            changed = [(f, "（無基準）", pdata[f]) for f in ident]
+            headline = "收到 identity 欄，而這份 payload **沒有基準** ⇒ 分不出「帶著」還是「要改」"
+        else:
+            changed = [(f, baseline.get(f), pdata[f]) for f in ident
+                       if pdata[f] != baseline.get(f)]
+            headline = "收到**被改過的** identity 欄"
+        if changed:
+            aLines = "\n".join(f"     · {f}: {o!r} → {n!r}" for f, o, n in changed)
             raise SystemExit(
-                f"❌ [awakening] save_registry 收到 identity 欄（{name}: {ident}）—— 停手。\n"
+                f"❌ [awakening] save_registry {headline}（{name}）—— 停手。\n"
+                f"{aLines}\n"
                 f"   persona 資料已整合到 letters/<persona>/profile/，中央 personas/ 退場（2026-08-21）。\n"
                 f"   身分欄要走：run_cmd.py run PersonaProfile --arg op=set --arg persona={name} "
                 f"--arg field=<欄> --arg value=<值> --arg actor=<誰> --arg reason=<憑什麼>")
@@ -1725,13 +1753,18 @@ def cmd_rest(args: argparse.Namespace) -> int:
     letter_path = write_letter(actor, persona, args.letter_body, trigger="cmd_rest")
     print(f"💌 memory letter written: {letter_path.name}")
 
-    # Step 2: 更新 last_active，**保持在線**（不 perturb / 不 offline / 不 unlock）
-    if persona in reg["personas"]:
-        reg["personas"][persona]["last_active"] = utcnow_iso()
-        save_registry(reg)
+    # Step 2: **保持在線**（不 perturb / 不 offline / 不 unlock）
+    # ⛔ 這裡原本寫 `last_active` 再 `save_registry` —— 而中央 personas/ 2026-08-21 退場之後
+    #   那個欄位**沒有落點**：save_registry 的 persona 那半邊只會把它列進「未寫入」清單。
+    #   ⇒ 拿掉，不留一個會成功、但什麼都沒發生的寫入動作。真相源是 lock 與 wakes/。
     print(f"🟢 status 保持在線（未 perturb / 未 offline / 未 unlock）")
 
     # Step 3: 可選 tavern 通知（小歇，非下線）
+    # ⚠ 這一步的成敗**要跟 Step 1 分開結算**：信落磁碟是核心（記憶保命），廣播是附帶。
+    #   🩸 2026-09-05：Step 2 在這之前炸掉（守衛誤擊），信寫成了、廣播沒發，
+    #   而最後一行印的是那個例外 ⇒ 讀的人以為整件事失敗，實際上核心那步已經成了。
+    #   ⇒ 附帶動作**不可以吃掉核心動作的讀數**：包起來，並在結尾逐項說。
+    notify_state = "skipped"
     if not getattr(args, "no_notify", False):
         # 公開小歇心得總結 (Tim 2026-05-24): summary 廣播給同事/Tim, 私密內容留在 letter
         summary = (getattr(args, "summary", "") or "").strip()
@@ -1746,15 +1779,32 @@ def cmd_rest(args: argparse.Namespace) -> int:
             broadcast_token = (lock or {}).get("session_token", "") or None
         else:
             broadcast_token = args.session_token or None
-        ok = tavern_post(
-            sender_id=actor, persona=persona, body=body,
-            meta={"tag": "compact-rest", "category": "meta", "letter": letter_path.name},
-            session_token=broadcast_token,
-            timeout=BROADCAST_TIMEOUT_SEC,   # 2026-08-12: 見常數註解
-        )
-        print(f"📢 小歇 tavern 通知: {'OK' if ok else 'fail (非致命)'}")
+        try:
+            ok = tavern_post(
+                sender_id=actor, persona=persona, body=body,
+                meta={"tag": "compact-rest", "category": "meta", "letter": letter_path.name},
+                session_token=broadcast_token,
+                timeout=BROADCAST_TIMEOUT_SEC,   # 2026-08-12: 見常數註解
+            )
+            notify_state = "ok" if ok else "fail"
+        except Exception as e:
+            # 例外與「回 False」處置相同（都要補發），但**理由不同** ⇒ 印出來，不要抹平。
+            notify_state = "fail"
+            print(f"❌ 小歇 tavern 廣播丟出例外：{type(e).__name__}: {e}", file=sys.stderr)
+        print(f"📢 小歇 tavern 通知: {'OK' if notify_state == 'ok' else 'fail'}")
 
-    print(f"✅ 小歇完成。/compact 後讀 baton/letters/{persona}/_latest.md 接續記憶。")
+    # ── 結尾：兩本帳分開講（信 / 廣播）——⛔ 不可以只印一句「完成」 ──────────
+    print(f"💌 記憶信：**已落磁碟** → {letter_path}")
+    if notify_state == "fail":
+        # exit 6 ＝「核心成了、附帶沒成」，與 git_commit.py 同號同義（那邊是 commit 成功／公告失敗）。
+        print(f"⚠ **信寫了、廣播沒發** —— 同事與 Tim 不知道你小歇了。\n"
+              f"   → 補發：senate ucmd run Tavern --persona {persona} --arg op=post "
+              f"--arg-file body=<把上面那段貼進檔> --arg category=meta\n"
+              f"   → 補發之後再跑 /compact；記憶那半邊不受影響（信已經在磁碟上）。", file=sys.stderr)
+        print(f"✅ 小歇的記憶那半邊完成。/compact 後讀 baton/letters/{persona}/_latest.md 接續。")
+        return 6
+    print(f"✅ 小歇完成（信＋廣播{'（本次未廣播）' if notify_state == 'skipped' else ''}）。"
+          f"/compact 後讀 baton/letters/{persona}/_latest.md 接續記憶。")
     return 0
 
 

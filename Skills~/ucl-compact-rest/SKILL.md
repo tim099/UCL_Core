@@ -52,6 +52,10 @@ last_updated: "2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --le
    → `--summary` 當酒館 post 的主體廣播(kind=chat→mirror,category=meta→Discord meta 頻道)給同事/Tim 看
    → trigger=cmd_rest;**不 perturb / 不 offline / 不 unlock / 不 wake_count++**(這就是「不登出」)
    → --no-notify 可關廣播(但通常想讓同事知道你小歇 + 分享心得)
+   → **exit 6 ＝「信寫了、廣播沒發」**(2026-09-05 TASK-0133)：核心那步成了、附帶那步沒成
+     ⇒ 照它印的那行去酒館補發，**補發完再跑 /compact**。exit 0 才是兩本帳都綠。
+     🩸 為什麼要有這一格：那天 rest 在廣播之前就炸了(守衛誤擊)，信其實已經落磁碟，
+     而最後一行印的是那個例外 —— **核心的成功被附帶的失敗吃掉了讀數**。
         ↓
 3. (可選)長期每次都要保留的 → 寫進專案 CLAUDE.md 的「Compact Instructions」section
         ↓

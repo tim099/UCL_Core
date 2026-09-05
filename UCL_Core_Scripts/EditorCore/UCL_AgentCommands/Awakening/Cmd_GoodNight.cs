@@ -88,6 +88,33 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 case "logout":
                 {
                     bool aNoLetter = aStep == "logout";
+
+                    // ── E（TASK-0057）：先關這個人**進行中的活動 session**，再解 lock ──────
+                    // 物理意義：殘留不得跨夜 —— 沒關的場明天醒來還 active=true，
+                    //   而「他還在自由時間」與「他昨晚忘了收工」在讀取端**同形**。
+                    // ⚠ 次序不可換：**先關場再解 lock**。反過來的話關場那一步已經不在線，
+                    //   而各 kind 的結算是綁「這個人這一場」的，掉了不會有人喊。
+                    // ⚠ 只關**本人**的場（`aPersona`）—— 這一步不掃別人。
+                    // ⚠ 關場失敗**不擋下線**：下線是本 Cmd 的主動作，關場是附帶動作，
+                    //   讓附帶動作擋主動作就是「回報層炸掉冒充主動作失敗」那一族。
+                    var aSessionR = new StringBuilder();
+                    string aSessionLine;
+                    var aOwnSession = SCP.Core.Session.SCP_ActivitySessionStore.Load(
+                        UCL_AgentCommandsPath.ScpDataRoot, aPersona);
+                    if (aOwnSession == null || !aOwnSession.active)
+                    {
+                        // ⚠ 零場要**印出來**，不是沉默 —— 沉默時「沒有場」與「這段沒跑」同形。
+                        aSessionLine = "- 🎬 活動 session：**無進行中 session**（不是沒查 —— 查了，沒有）";
+                    }
+                    else
+                    {
+                        string aReasonTag = aNoLetter ? "goodnight-logout" : "goodnight-sleep";
+                        var aClose = await UCL_SessionCloseFlow.CloseAndSettleAsync(
+                            args, aPersona, aOwnSession, aReasonTag, aSessionR, token);
+                        aSessionLine = $"- 🎬 活動 session：關掉 **{aClose.Kind}**（`{aOwnSession.session_id}`）"
+                                     + $"　關場={aClose.Closed}　結算={aClose.Settled}　reason=`{aReasonTag}`";
+                    }
+
                     var aResult = UCL_AwakeningService.PrepareSleep(
                         aPersona, aNoLetter,
                         out string aBroadcastBody, out string aToken, out var aP,
@@ -146,6 +173,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     aSb.AppendLine($"- lock: exists={File.Exists(UCL_AwakeningService.LockPath(aPersona))}（應為 False）");
                     aSb.AppendLine($"- broadcast: {(aPostOk ? $"seq **{aPostCtx?.LastPostSeq ?? 0}**" : "未發（核心已落地，補發非必要 —— 同事看 lock 判在線）")}");
                     aSb.AppendLine($"- session_token expired: {aExpired} 筆");
+                    aSb.AppendLine(aSessionLine);
+                    if (aSessionR.Length > 0)
+                    {
+                        // 逐段細節照原樣附上（① 權威狀態／② 結算）—— 摘要那一行只給讀數，細節給查的人。
+                        aSb.AppendLine(aSessionR.ToString().TrimEnd());
+                    }
                     aSb.AppendLine("## next");
                     aSb.AppendLine("- 收工。明天醒來：senate ucmd run GoodMorning --arg step=wake --arg persona=" + aPersona);
                     if (!aNoLetter)

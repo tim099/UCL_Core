@@ -137,50 +137,14 @@ namespace UCL.Core.EditorLib.AgentCommands
             aR.AppendLine();
             aR.AppendLine("## 收工（三段分開報 —— 任何一段炸掉都不冒充其他段）");
 
-            // ① 權威狀態先落地。⚠ 次序不可換：先結算再翻狀態的話，結算成功而狀態沒寫 ⇒ 下次再結算一次。
-            SCP.Core.Session.SCP_ActivitySessionStore.Close(UCL_AgentCommandsPath.ScpDataRoot, aTarget, aSession, aReason);
-            var aReadBack = SCP.Core.Session.SCP_ActivitySessionStore.Load(UCL_AgentCommandsPath.ScpDataRoot, aTarget);
-            bool aClosed = aReadBack != null && !aReadBack.active;
-            aR.AppendLine($"- ① 權威狀態：active=false／end_reason=`{aReason}`／ended_at=`{aReadBack?.ended_at}`"
-                          + $"　**回讀確認={aClosed}**");
-            if (!aClosed)
+            // ①② 走**共用的關場流程**（`UCL_SessionCloseFlow`）—— TASK-0057 之後這裡不是唯一呼叫端了，
+            //     「所有關場路徑走同一個門」從此靠**同一個函式**成立，不是靠「同一支 Cmd」。
+            var aOutcome = await UCL_SessionCloseFlow.CloseAndSettleAsync(args, aTarget, aSession, aReason, aR, token);
+            bool aSettled = aOutcome.Settled;
+            if (!aOutcome.Closed)
             {
-                aR.AppendLine("- ⛔ 狀態沒落地 ⇒ **不跑結算**（避免結算完狀態沒寫、下次再結一次）");
                 Finish(args, aActor, aR, aKind, false, false);
                 throw new Exception($"[SessionClose] `{aTarget}` 的 session 檔寫不進去（詳見回傳檔）");
-            }
-
-            // ② 結算：per-kind，**走登記表不是 if 鏈**（TASK-0055，2026-09-05）。
-            // 🩸 舊版是 `if (IsStreamWatch(kind))` ⇒ 新增一種 kind 要回頭改**這一支**，
-            //   而漏改不報錯：它照常關場，然後印「沒有登記結算 handler」——
-            //   那句話在「真的不用結算」與「有人忘了登記」兩種情況下一模一樣，而後者是酬勞蒸發。
-            // ⇒ 現在那兩種**不同形**：查不到 kind ⇒ 明說「沒有人登記過它」並附已登記清單。
-            bool aSettled = false;
-            UCL_SessionKindEntry aEntry = UCL_SessionKindHost.For(aSession.kind);
-            if (aEntry == null)
-            {
-                aR.AppendLine($"- ② 結算：⚠ **這個 kind（{aKind}）沒有人登記過** ⇒ 只翻三欄。"
-                              + $"已登記的：{string.Join(" / ", UCL_SessionKindHost.RegisteredKinds())}");
-                aR.AppendLine("    ⚠ 這**不是**「這個 kind 不用結算」——「不用結算」是登記表裡的一個顯式答案。"
-                              + "新增 kind 時漏了登記，症狀就長這樣。");
-            }
-            else if (aEntry.SettleResidueAsync == null)
-            {
-                aR.AppendLine($"- ② 結算：這個 kind（{aKind}）**登記為不需要結算** ⇒ 只翻三欄（顯式，不是漏接）");
-            }
-            else
-            {
-                try
-                {
-                    aSettled = await aEntry.SettleResidueAsync(args, aTarget, aR, token, "closed-by-cmd");
-                }
-                catch (Exception e)
-                {
-                    // 🩸 結算炸掉**不得冒充關場失敗**（0043/0044 那族：回報層炸掉冒充主動作失敗）。
-                    aR.AppendLine($"- ② 結算：**失敗** —— {e.GetType().Name}: {e.Message}");
-                    aR.AppendLine("    ⚠ 而場**已經關了**（① 回讀確認過）—— 這兩件事分開看。");
-                }
-                if (aSettled) aR.AppendLine("- ② 結算：**已跑**（台帳 append ＋ 發薪，走與 step=start 撞殘留同一條路）");
             }
 
             // ③ 廣播：本 Cmd 不發 —— 補收工是行政動作，不是收工儀式（正常收工的公告在 step=end）。

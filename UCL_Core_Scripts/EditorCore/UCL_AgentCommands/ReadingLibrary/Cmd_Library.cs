@@ -68,6 +68,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             "body=章節心得正文（note_chapter required；長文走 --arg-stdin body） | " +
             "time_range=手動切段的時間區間，例 00:00-30:00（note_chapter 建議必給 —— 這是切段動作留下的事實） | " +
             "display_number=人話段落名，例 Part 1（note_chapter 選填；缺則由 chapter_id 派生，別填成 id 複寫） | " +
+            "append=1 表示這是**同一話的下一場**（note_chapter 選填）：追加在既有 round 尾端、不開新 round —— " +
+            "一話一 round，`r{N}` 是第 N 次**讀這一話**，不是第 N 次寫入 | " +
+            "round=要續寫哪一輪（只在 append=1 時有意義；預設最新那一輪） | " +
             "impression=更新後的當前看法（選填） | bookmark_note=書籤（選填） | " +
             "note=書籤內文（bookmark op） | status=reading|finished|dropped（bookmark op 選填） | " +
             "full=recall 是否印出每個 round 全文（default true）";
@@ -230,6 +233,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         /// 區塊職責：落一筆章節心得（本 Cmd 的主用途）。
         /// 物理意義：round md 是事實源 → chapter.json 索引 → reader.json 當前狀態 → bookshelf 投影。
         /// 數值影響：既有 round 絕不覆寫（同章再寫開下一個 r{N}）；沒有自己的紀錄則停下不自作主張建檔。
+        ///           `append=1` 是續寫（TASK-0121）：**追加**在既有 round 檔尾端、`segments` +1，
+        ///           不開新 round —— 同一話分兩場看完時走它，`r{N}` 的語意才守得住
+        ///           「第 N 次讀這一話」。要續寫指定的某一輪就再帶 `round=<N>`（預設是最新那一輪）。
         /// </summary>
         void Op_NoteChapter(Dictionary<string, string> args)
         {
@@ -244,6 +250,17 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             if (string.IsNullOrWhiteSpace(body))
                 throw new ArgumentException($"[{CommandType}] body 必填（本章心得正文；長文走 --arg-stdin body）");
 
+            // 續寫（TASK-0121）：同一話的第二場接在同一個 round 尾端，不開 r2。
+            // ⚠ `round=` 只在 append 時有意義 —— 不 append 卻帶它，是在要求一個工具做不到的事
+            //   （指定「這一筆要當第 N 輪」），靜默吃掉會讓人以為它生效了。
+            bool append = GetArg(args, "append", "0").Trim() == "1";
+            int appendRound = 0;
+            int.TryParse(GetArg(args, "round", "0").Trim(), out appendRound);
+            if (appendRound > 0 && !append)
+                throw new ArgumentException(
+                    $"[{CommandType}] `round={appendRound}` 只在續寫時有意義 —— 要續寫請一起帶 `append=1`；" +
+                    "不帶 append 就是開新的一輪，輪號由索引決定（不接受指定）。");
+
             string log = UCL_ReadingLibraryIO.NoteChapter(
                 mediaId, persona, chapterId,
                 GetArg(args, "display_number", "").Trim(),
@@ -252,6 +269,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 body,
                 GetArg(args, "impression", "").Trim(),
                 GetArg(args, "bookmark_note", "").Trim(),
+                append, appendRound,
                 out string roundPath, out int roundNumber, out string error);
 
             if (log == null)

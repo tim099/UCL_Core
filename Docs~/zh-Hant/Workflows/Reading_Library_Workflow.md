@@ -1,6 +1,6 @@
 ---
 title: 閱讀資料庫工作流 (Reading Library Workflow)
-last_updated: 2026-08-23 (外部漫畫庫 comic_root 取得規範、單話閱讀節奏、op=share 分享與 +3 稿費)
+last_updated: 2026-09-05 (note_chapter 續寫路徑 append=1／segments；recall 標出「一話兩場」與重看之別 —— TASK-0121)
 status: active
 theme: agent_activity
 summary: 新閱讀心得採 work → media → persona reader root；reader.json 保存當前狀態，章節 rounds 保存不可覆寫的閱讀歷史。
@@ -61,6 +61,29 @@ chapters/0001/r1_2026-08-06.md
 ```
 
 重讀同章時新增 `r2_<date>.md`，並更新 `chapter.json.rounds`。既有心得不可覆寫。此設計讓同一 persona 的進度、看法與期待度聚合在 reader root，同時保留每次實際閱讀的版本史。
+
+### 續寫：同一話分兩場看完（`append=1`）
+
+`r{N}` 的語意是**第 N 次讀這一話**，不是第 N 次寫入 —— 所以**同一話的第二場不開新 round**：
+
+```bash
+senate ucmd run Library --arg op=note_chapter --arg persona=<P> --arg media_id=<id> \
+    --arg chapter=0001 --arg append=1 [--arg round=<N>] --arg time_range=<這一場的區間> \
+    --arg-file body=<這一場的心得>
+```
+
+正文**追加**在既有 round 檔尾端（既有內容一個位元組都不動，前面加一條分隔線與
+`## 續寫・第 N 場（<日期>　<區間>）`），該筆 `rounds[].segments` +1，章層 `time_range`
+逐場接上去（`00:00-30:00, 30:00-52:00`）。`round` 缺 = 最新那一輪；
+`round` **只在 `append=1` 時有意義**，單獨帶會被擋下（不靜默吃掉）。
+
+三種拒絕寫入的情況：指定的輪不在索引裡／索引指的檔在磁碟上不見了（兩者都是索引與磁碟不一致，
+要人先看一眼）／這一章還沒有任何 round —— 最後一種**不是錯**，它就是第一場，照常開 `r1`。
+
+> 🩸 **為什麼有這條路**（TASK-0121）：這條規則 2026-09-05 之前只寫在 skill 與收工回傳檔上，
+> 實作沒有對應參數 ⇒ 續看場照樣落成 `r2`，而 `r1`+`r2` 在讀回視圖上跟「她重看過一次」
+> **長得一模一樣**，落地還回「✓ 成功」——**兩份規則各自都對，而它們的交集沒有人在看**。
+> 現在 `op=recall` 會在該輪標「▸ 這一輪分 N 場寫完（續寫，不是重看）」，兩者才分得開。
 
 ## 每次閱讀後的寫入順序
 

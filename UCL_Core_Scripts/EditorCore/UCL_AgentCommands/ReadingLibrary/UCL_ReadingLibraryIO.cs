@@ -52,6 +52,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         public const string Key_File = "file";
         public const string Key_SharedSeq = "shared_seq";
         public const string Key_Gap = "gap";
+
+        /// <summary>
+        /// 這一個 round 是由幾**場**寫成的（沒有這個欄位 ＝ 1 場，舊資料不必遷移）。
+        /// <para>🩸 TASK-0121：一話分兩場看完，第二場照舊會開 `r2` ⇒ 讀的人（含未來的自己）
+        /// 看到 r1+r2 會讀成「她重看過一次」，而那個誤讀**不會有任何一層報錯**。
+        /// ⇒ 續寫改成追加進同一個 round，場數記在這裡；`r{N}` 的語意維持
+        /// 「第 N 次**讀這一話**」，而不是「第 N 次寫入」。</para>
+        /// </summary>
+        public const string Key_Segments = "segments";
         public const string Key_ReadingStartedAt = "reading_started_at";
         public const string Key_Aliases = "aliases";
         public const string Key_GenreTags = "genre_tags";
@@ -709,10 +718,19 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // 落一筆章節心得（op=note_chapter）
         // 物理意義：round md 是事實源，chapter.json 是 round 索引，reader.json 是當前狀態。
         // 數值影響：既有 round **絕不覆寫** —— 同章再寫一次就開下一個 r{N}。
+        //           `append=true` 是**唯一**的例外，而它是**追加不是覆寫**：正文接在既有 round 檔尾端，
+        //           原本的字一個都不動，`segments` +1。
+        // 🩸 TASK-0121 為什麼要有這條路（拍板：走 code 補續寫，不改 skill 的字）：
+        //   「一話一 round，場次中斷續寫同一個 round；r2 只留給真正的重看」是 skill 早就寫著的規則，
+        //   而 code 這邊沒有任何參數表達得出「續寫」⇒ 同一話的第二場照樣開 r2。
+        //   兩份規則各自都對，落地結果相反，而失效是**靜默**的：r2 落地回「✓ 成功」，
+        //   chapter.json 也長得完全正常。⇒ 收斂成一份，收斂點放在 code
+        //   （改 skill 的字要把「r2＝重看」這個既有語意永久放棄掉，那筆帳更貴）。
         // ===========================================================
         public static string NoteChapter(string mediaId, string persona, string chapterId,
                                          string displayNumber, string chapterTitle, string timeRange,
                                          string body, string impression, string bookmarkNote,
+                                         bool append, int appendRound,
                                          out string roundFilePath, out int roundNumber, out string error)
         {
             roundFilePath = null;
@@ -754,7 +772,20 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             {
                 if (!string.IsNullOrEmpty(displayNumber)) chapter[Key_DisplayNumber] = displayNumber;
                 if (!string.IsNullOrEmpty(chapterTitle)) chapter[Key_Title] = chapterTitle;
-                if (!string.IsNullOrEmpty(timeRange)) chapter[Key_TimeRange] = timeRange;
+                // ⚠ 續寫時章層的 time_range 是**接上去**不是蓋掉，也不是留著第一段就算了：
+                //   那一格是「這一話」的時間段，而續寫帶進來的是「這一場」的。
+                //   蓋掉 ⇒ 第一場的區間消失，而消失的樣子跟「本來就只有這一段」一模一樣；
+                //   留著不動 ⇒ 一話跑到 52:00 而章層寫著 00:00-30:00，那是一個**看起來完整**的錯讀數。
+                //   🩸 這一格是我自己 2026-09-05 讀探針落盤的檔才看到的 —— 工具的回讀沒有講它。
+                //   ⇒ 逐場列出來，兩段都在：`00:00-30:00, 30:00-52:00`。
+                if (!string.IsNullOrEmpty(timeRange))
+                {
+                    string existingRange = chapter.GetString(Key_TimeRange, "");
+                    chapter[Key_TimeRange] =
+                        append && existingRange.Length > 0 && !existingRange.Contains(timeRange)
+                            ? $"{existingRange}, {timeRange}"
+                            : timeRange;
+                }
             }
 
             JsonData rounds = chapter.Contains(Key_Rounds) ? chapter[Key_Rounds] : null;
@@ -773,24 +804,71 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             }
             roundNumber = maxRound + 1;
 
-            string fileName = $"r{roundNumber}_{Today()}.md";
-            roundFilePath = Path.Combine(chapterDir, fileName);
-            if (File.Exists(roundFilePath))
+            // ── 續寫（TASK-0121）：追加進既有 round，不開下一個 r{N} ──────────────
+            // ⚠ 這一段是**唯一**會動到既有 round 檔的路，所以三件事都要說出來而不是靜默處理：
+            //   ① 指定的 round 不在索引裡　② 索引指的檔在磁碟上不見了　③ 這一章根本還沒有第一場。
+            //   前兩者拒絕寫入（磁碟與索引不一致要人先看一眼）；③ 不是錯，它就是第一場 ⇒ 照常開 r1。
+            bool appended = false;
+            int segmentCount = 1;
+            string fileName;
+            if (append && maxRound > 0)
             {
-                error = $"round 檔已存在但不在 chapter.json 索引內：{fileName} —— " +
-                        "拒絕覆寫（索引與磁碟不一致要人先看一眼，不該由工具猜）";
-                return null;
+                int target = appendRound > 0 ? appendRound : maxRound;
+                JsonData targetEntry = null;
+                for (int i = 0; i < rounds.Count; i++)
+                    if (!rounds[i].IsString && rounds[i].GetInt(Key_Round, 0) == target) targetEntry = rounds[i];
+
+                if (targetEntry == null)
+                {
+                    error = $"要續寫的 r{target} 不在 chapter.json 索引裡（現有最大 r{maxRound}）—— " +
+                            "拒絕寫入，索引說沒有的東西不該由工具生出來";
+                    return null;
+                }
+
+                string targetFile = targetEntry.GetString(Key_File, "");
+                string targetPath = Path.Combine(chapterDir, targetFile);
+                if (string.IsNullOrEmpty(targetFile) || !File.Exists(targetPath))
+                {
+                    error = $"r{target} 的索引指向 `{targetFile}`，而磁碟上沒有這個檔 —— " +
+                            "拒絕續寫（索引與磁碟不一致要人先看一眼，不該由工具猜）";
+                    return null;
+                }
+
+                segmentCount = targetEntry.GetInt(Key_Segments, 1) + 1;
+                string head = $"## 續寫・第 {segmentCount} 場（{Today()}"
+                              + (string.IsNullOrEmpty(timeRange) ? "" : $"　{timeRange}") + "）";
+                // 追加**不覆寫**：先讀既有內容再整份寫回（SaveText 是全檔寫入）。
+                string existing = File.ReadAllText(targetPath, Encoding.UTF8).TrimEnd();
+                SaveText(targetPath, $"{existing}\n\n---\n\n{head}\n\n{body.TrimEnd()}\n");
+
+                targetEntry[Key_Segments] = segmentCount;
+                roundNumber = target;
+                fileName = targetFile;
+                roundFilePath = targetPath;
+                appended = true;
+                SaveJson(chapterJsonPath, chapter);
             }
+            else
+            {
+                fileName = $"r{roundNumber}_{Today()}.md";
+                roundFilePath = Path.Combine(chapterDir, fileName);
+                if (File.Exists(roundFilePath))
+                {
+                    error = $"round 檔已存在但不在 chapter.json 索引內：{fileName} —— " +
+                            "拒絕覆寫（索引與磁碟不一致要人先看一眼，不該由工具猜）";
+                    return null;
+                }
 
-            SaveText(roundFilePath, body.TrimEnd() + "\n");
+                SaveText(roundFilePath, body.TrimEnd() + "\n");
 
-            var entry = new JsonData();
-            entry[Key_Round] = roundNumber;
-            entry[Key_ReadingDate] = Today();
-            entry[Key_File] = fileName;
-            if (relation == ChapterRelation.Gap) entry[Key_Gap] = true;   // 跳章不擋，但留痕
-            rounds.Add(entry);
-            SaveJson(chapterJsonPath, chapter);
+                var entry = new JsonData();
+                entry[Key_Round] = roundNumber;
+                entry[Key_ReadingDate] = Today();
+                entry[Key_File] = fileName;
+                if (relation == ChapterRelation.Gap) entry[Key_Gap] = true;   // 跳章不擋，但留痕
+                rounds.Add(entry);
+                SaveJson(chapterJsonPath, chapter);
+            }
 
             // reader.json 當前狀態
             JsonData progress = reader.Contains(Key_Progress) ? reader[Key_Progress] : null;
@@ -814,8 +892,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             log.AppendLine($"- 章節：`{chapterId}`" +
                            (string.IsNullOrEmpty(chapterTitle) ? "" : $"　{chapterTitle}") +
                            (string.IsNullOrEmpty(timeRange) ? "" : $"　（{timeRange}）"));
-            log.AppendLine($"- round：**r{roundNumber}**（{RelationLabel(relation)}）");
-            log.AppendLine($"- 心得檔：`{fileName}`");
+            // ⚠ 續寫時**不印** RelationLabel：那句話回答的是「這一章跟上次讀到哪的關係」，
+            //   而續寫的答案永遠是「同一章」—— 印出來會變成一句永遠成立、因此不帶資訊的話。
+            log.AppendLine(appended
+                ? $"- round：**r{roundNumber}**（續寫・第 {segmentCount} 場 —— **沒有開新的 round**；" +
+                  "`r{N}` 是第 N 次讀這一話，不是第 N 次寫入）"
+                : $"- round：**r{roundNumber}**（{RelationLabel(relation)}）");
+            log.AppendLine($"- 心得檔：`{fileName}`" + (appended ? "（追加在尾端，既有內容未動）" : ""));
             return log.ToString();
         }
 
@@ -1209,8 +1292,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                         continue;
                     }
                     string file = entry.GetString(Key_File, "");
+                    // ⚠ 場數一定要露出來（TASK-0121 ③）：讀的人要分得出「一話兩場」與「看了兩遍」——
+                    //   不印的話，這兩件事在讀回視圖上長得一模一樣，而誤讀不會有任何一層報錯。
+                    int segs = entry.GetInt(Key_Segments, 1);
                     sb.AppendLine($"- **r{entry.GetInt(Key_Round, 0)}**（{entry.GetString(Key_ReadingDate, "")}）" +
                                   $"`{file}`" +
+                                  (segs > 1 ? $"　▸ 這一輪分 **{segs} 場**寫完（續寫，不是重看）" : "") +
                                   (entry.GetBool(Key_Gap, false) ? "　⚠ gap" : "") +
                                   (entry.Contains(Key_SharedSeq) ? $"　酒館 seq={entry.GetInt(Key_SharedSeq, 0)}" : ""));
                     if (!fullRounds) continue;

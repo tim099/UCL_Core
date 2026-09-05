@@ -1573,6 +1573,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     aR.AppendLine("   3. 人物：`op=add_character` / `op=revise_view`（改觀要寫 `change_reason`）");
                     aR.AppendLine("   ⚠ **一話一 round，場次中斷續寫同一個 round**；`r2` 只留給真正的重看。");
                     aR.AppendLine("      （場次是我的切法，話數是作品的切法 —— round 認後者。）");
+                    // 🩸 TASK-0121：上面那句規則從 2026-09-03 起有實作，之前沒有 ——
+                    //   那半年它教的是一個工具做不到的動作，而失效是靜默的（照樣落 r2、照樣回「✓ 成功」）。
+                    //   ⇒ 規則旁邊一定要放**做得到它的那道指令**，否則規則只是一句願望。
+                    aR.AppendLine("      ⇒ **同一話的第二場**：上面第 1 條加 `--arg append=1`"
+                        + "（追加在同一個 round 尾端、`segments` +1，不開新 round）。");
                     aR.AppendLine("   ⇒ 下次續看：`senate ucmd run Library --arg op=recall --arg persona="
                         + iPersona + " --arg media_id=<同上>`");
                     aR.AppendLine();

@@ -62,7 +62,13 @@ Library/media/<media-id>/readers/<persona>/
 
 - 寫入前確認 `work_id`、`media_id`、`reader_persona`；沒有 persona 不得建立新紀錄。`unknown` 僅用於來源讀者無法判定的 legacy 遷移。
 - `reader.json` 是 status、anticipation、bookmark、current impression 與日期的唯一真相源；`bookshelf.md` 必須由工具同步，是可讀投影，不可成為第二真相源。
-- 同一章重讀時新增 `r2_...md` 並加入 `chapter.json.rounds`；不可覆寫既有 round。
+- 同一章**重讀**時新增 `r2_...md` 並加入 `chapter.json.rounds`；不可覆寫既有 round。
+- ⚠ **同一話分兩場看完不是重讀** —— 第二場帶 `--arg append=1`（要指定哪一輪再加 `--arg round=<N>`，
+  預設最新那一輪）：正文**追加**在同一個 round 檔尾端、該筆 `segments` +1，**不開新 round**。
+  `r{N}` 是第 N 次**讀這一話**，不是第 N 次寫入。
+  🩸 這條 2026-09-05 之前只寫在 skill 上、實作沒有那條路 ⇒ 續看場照樣落成 `r2`，
+  而 r1+r2 在讀回視圖上跟「她重看過一次」**長得一模一樣**，誤讀不會有任何一層報錯（TASK-0121）。
+  現在 `op=recall` 會在該輪標「▸ 這一輪分 N 場寫完（續寫，不是重看）」—— 兩者才分得開。
 - 人物已確認的客觀資料寫 `profile.json`；讀者感受與推測寫版本化 `vN_<date>.md`。
 - 媒材必須獨立：`comic-`、`anim-`、`film-`、`series-`、`stream-` 等 media 不共用進度。
 - 新工具寫入時驗證 `reader.json.reader_persona` 與路徑 `<persona>` 相同，避免資料放錯讀者根目錄。

@@ -56,8 +56,14 @@ namespace UCL.Core.EditorLib.AgentCommands
         public string EarlyEndHint = "";
 
         /// <summary>
-        /// 殘留補結算（`null` ＝ **這個 kind 真的不需要結算**，不是「還沒接」）。
-        /// <para>簽章對齊 `Cmd_StreamWatch.SettleResidueAsync`：args／target／回傳檔 sb／token／reason。</para>
+        /// 關場時的結算（`null` ＝ **這個 kind 真的不需要結算**，不是「還沒接」）。
+        /// <para>簽章：args／target／回傳檔 sb／token／reason。</para>
+        /// <para>⛔ **契約：呼叫端已經決定關場了，實作不得自己重判 `active` 或到期。**
+        /// 🩸 TASK-0132（@kiara 2026-09-05）：這一格原本指向 `SettleResidueAsync`，
+        /// 而那支的第一道守衛是 `if (!aS.active) return false` —— 而呼叫端
+        /// （<c>UCL_SessionCloseFlow</c>）**先關場再結算** ⇒ 它親手製造了那個拒絕條件，
+        /// **結算永遠不會發生，而畫面印的是「結算=False」**（跟「這個 kind 不需要結算」同形）。
+        /// ⇒ 判斷放在呼叫端一處，不在每個實作各判一次。</para>
         /// </summary>
         public Func<IDictionary<string, string>, string, StringBuilder, CancellationToken, string, UniTask<bool>>
             SettleResidueAsync;

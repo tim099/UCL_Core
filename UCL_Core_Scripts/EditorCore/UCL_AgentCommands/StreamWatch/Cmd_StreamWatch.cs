@@ -302,7 +302,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 // ⚠ 沒有 step=end **不等於沒有出口** —— 這句是 kind 專屬的處置知識，
                 //   靜默丟掉它的話讀的人只知道「等」（@summit 2026-09-05 撿到的那一格）。
                 EarlyEndHint = "要提前收就請 Tim 停錄影",
-                SettleResidueAsync = SettleResidueAsync,
+                // ⚠ 指向 **SettleForCloseAsync** 不是 SettleResidueAsync（TASK-0132）：
+                //   登記表這一格的呼叫端（`UCL_SessionCloseFlow`）**已經把場關掉了**，
+                //   而 `SettleResidueAsync` 的第一道守衛正是 `if (!aS.active) return false`
+                //   ⇒ 指向它等於永遠不結算，**而畫面上印的是「結算=False」**（跟「不需要結算」同形）。
+                SettleResidueAsync = SettleForCloseAsync,
             });
 
         async UniTask StepPrepare(Dictionary<string, string> iArgs, string iPersona, CancellationToken iToken)
@@ -3596,6 +3600,30 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 return false;
             }
             await SettleAsync(iArgs, iPersona, aS, false, aNow, aEnd, ioR, iToken, iReason);
+            return true;
+        }
+
+        // 區塊職責：**呼叫端已經決定關場**時的結算入口（TASK-0132，@kiara 2026-09-05 抓到）。
+        // 物理意義：`SettleResidueAsync` 的契約是「補**殘留**」，它的第一道守衛是 `if (!aS.active) return false`。
+        //          而 `UCL_SessionCloseFlow` 的次序是 ① `Close`（寫 active=false）→ ② 結算
+        //          ⇒ **第①段親手製造了第②段的拒絕條件**，結算永遠不會發生，而兩邊都印 `結算=False`。
+        //          🩸 次序反過來也不行：第二道守衛會把「進行中的場」擋掉，而晚安要關的正是進行中的場。
+        //          ⇒ **這是契約不合，不是次序問題** —— 所以這裡給第二個入口，而不是去挪次序。
+        // 數值影響：真的會 append 台帳並發薪。**沒有 active／到期守衛** —— 那兩個判斷屬於呼叫端。
+        // ⚠ 呼叫端的義務：確定這一場**該被結算而且只結算一次**（`Cmd_SessionClose` 對已收工的場提早返回；
+        //   `Cmd_GoodNight` 只在 `active` 時才走關場那段）。本函式不重判 —— 重判就是把判斷放在兩個地方。
+        /// <summary>
+        /// 結算一場**呼叫端已決定關掉**的觀影場（台帳 append ＋ 發薪）。
+        /// <para>⛔ 不判 `active`、不判到期 —— 那是呼叫端的責任。要「只補殘留」請走
+        /// <see cref="SettleResidueAsync"/>。</para>
+        /// </summary>
+        internal static async UniTask<bool> SettleForCloseAsync(IDictionary<string, string> iArgs, string iPersona,
+                                                                StringBuilder ioR, CancellationToken iToken,
+                                                                string iReason = "closed-by-cmd")
+        {
+            var aS = LoadSession(iPersona);
+            if (aS == null) { ioR.AppendLine("- 結算: 這個人沒有觀影場（kind 不符或檔不存在）⇒ 未動作"); return false; }
+            await SettleAsync(iArgs, iPersona, aS, false, DateTime.Now, ParseIsoLocal(aS.end_ts), ioR, iToken, iReason);
             return true;
         }
 

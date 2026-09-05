@@ -34,12 +34,13 @@
 
 ```bash
 # 派遣 AgentCommand（Editor 端執行）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run <CmdType> --arg k=v
+senate ucmd run <CmdType> --persona <P> --arg k=v
 
 # 早安 / 晚安儀式（唯一入口＝Cmd；awakening.py morning / intro / goodnight 已是指路 stub，exit 2）
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run GoodMorning --arg step=wake --arg persona=<P>
-python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <P> run GoodNight   --arg step=check --arg persona=<P>
+senate cmd morning-wake    --arg persona=<P>   # 早安①；之後每一步照回傳檔的 next 走
+senate cmd goodnight-check --arg persona=<P>   # 晚安①
 #   ↳ 每一步的回傳檔會指出下一步；Editor 未開時只有純讀記憶的備援：senate cmd wake-brief（信件層，senate.exe 就地跑）
+#   ↳ ⚠ `senate cmd` 有未知參數預檢，`senate ucmd` **沒有**（未知參數靜默取預設值，2026-09-05 對照組實測）
 
 # 編譯狀態（改完 .cs 的唯一可信來源）
 python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only

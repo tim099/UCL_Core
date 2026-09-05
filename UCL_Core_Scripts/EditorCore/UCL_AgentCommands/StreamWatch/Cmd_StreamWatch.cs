@@ -2114,11 +2114,17 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                                          DateTime iNow, DateTime? iEnd, StringBuilder ioR, CancellationToken iToken,
                                          string iReasonOverride = null)
         {
-            // 熱路徑判重
-            string aSettledAt = ioS.ended_at;
-            if (!string.IsNullOrEmpty(aSettledAt))
+            // 熱路徑判重 —— **問台帳層，不問 session 狀態**（TASK-0132，@kiara 2026-09-05 抓到）。
+            // 🩸 這裡本來問的是 `ioS.ended_at`，而 `UCL_SessionCloseFlow` 的第①段 `Close`
+            //    **就是寫 `ended_at` 的那一步** ⇒ 關場路徑一進來就被自己幾十毫秒前寫的值擋掉，
+            //    **結算永遠不會發生**。而回傳檔引用的時刻與 `Close` 寫的那個**一字不差**。
+            // 📌 根因是**主詞錯了**：「這場結算過了嗎」的真相源在**台帳層**（`sessions_log.jsonl`），
+            //    `ended_at` 是 **session 狀態層**。兩個讀數都是真的，但後者回答的不是那個問題。
+            //    ⚠ 而本檔 `:2523` / `:3905` 的註解早就寫著「`settled_at` 是結算紀錄不是 session 狀態」——
+            //    **答案一直在檔案裡，只是 code 沒有照著問。**
+            if (HasSettleRecord(ioS.session_id))
             {
-                ioR.AppendLine($"- 結算: **已於 {aSettledAt} 結算過**（熱路徑判重，未重複發薪）");
+                ioR.AppendLine($"- 結算: **台帳上已有這一場的結算紀錄**（`{ioS.session_id}`）⇒ 未重複發薪");
                 ioR.AppendLine();
                 ioR.AppendLine("## next");
                 ioR.AppendLine("1. 本場已收工。要再看請跑 step=start 開新場。");
@@ -3624,7 +3630,56 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aS = LoadSession(iPersona);
             if (aS == null) { ioR.AppendLine("- 結算: 這個人沒有觀影場（kind 不符或檔不存在）⇒ 未動作"); return false; }
             await SettleAsync(iArgs, iPersona, aS, false, DateTime.Now, ParseIsoLocal(aS.end_ts), ioR, iToken, iReason);
-            return true;
+            // ⚠ 回的是**回讀**不是「我呼叫過了」（TASK-0132 第二格，@kiara 判不通過的主因）：
+            //   上一版寫死 `return true` ⇒ 結算被內部守衛擋掉時，回傳檔照樣印 `結算=True`
+            //   ⇒ **修前旗標是誠實的，修後旗標在說謊**，而讀它的人會以為錢付過了。
+            //   ⇒ 判定由**台帳上有沒有這一筆**給，不由「我有沒有走到那一行」給。
+            return HasSettleRecord(aS.session_id);
+        }
+
+        // 區塊職責：**台帳層**的判重讀數 —— 這一場在 `sessions_log.jsonl` 上有沒有結算紀錄。
+        // 物理意義：「結算過了嗎」的真相源是台帳（append-only），不是 session 狀態的任何一欄。
+        //          ⚠ 讀不到檔／解析不出來時回 **false**（＝「沒查到紀錄」）——
+        //          那會讓呼叫端傾向「再結算一次」而不是「靜默跳過」。⛔ 反過來的預設會吃掉別人的錢。
+        // 數值影響：逐行掃一個 jsonl（場次量級）。零寫入。
+        // ⚠ 比對的是**本行自己的 `session_id`**，不是「這行有沒有出現這個字串」——
+        //   陪看場的 `parent_session_id` 會帶著 primary 的 id，用 Contains 會把它誤判成 primary 已結算。
+        static bool HasSettleRecord(string iSessionId)
+        {
+            if (string.IsNullOrEmpty(iSessionId)) return false;
+            try
+            {
+                string aPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", SESSION_LOG_NAME);
+                if (!File.Exists(aPath)) return false;
+                foreach (string aLine in File.ReadAllLines(aPath))
+                {
+                    if (aLine.Length == 0) continue;
+                    // 匯出紀錄（record_type=export）不是結算紀錄 —— 它們共用同一個 session_id。
+                    if (aLine.Contains("\"record_type\"") && aLine.Contains("export")) continue;
+                    if (string.Equals(ReadJsonStringField(aLine, "session_id"), iSessionId, StringComparison.Ordinal))
+                        return true;
+                }
+                return false;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[StreamWatch] 台帳判重讀取失敗（視為沒查到紀錄）: {e.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>從一行 json 取某個字串欄位的值（找不到回 null）。⚠ 只給本檔的 jsonl 判重用。</summary>
+        static string ReadJsonStringField(string iLine, string iField)
+        {
+            string aKey = "\"" + iField + "\"";
+            int aAt = iLine.IndexOf(aKey, StringComparison.Ordinal);
+            if (aAt < 0) return null;
+            int aColon = iLine.IndexOf(':', aAt + aKey.Length);
+            if (aColon < 0) return null;
+            int aOpen = iLine.IndexOf('"', aColon + 1);
+            if (aOpen < 0) return null;
+            int aClose = iLine.IndexOf('"', aOpen + 1);
+            return aClose < 0 ? null : iLine.Substring(aOpen + 1, aClose - aOpen - 1);
         }
 
         // ===========================================================

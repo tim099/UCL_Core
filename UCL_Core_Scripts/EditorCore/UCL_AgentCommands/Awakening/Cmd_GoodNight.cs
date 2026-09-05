@@ -89,14 +89,29 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 {
                     bool aNoLetter = aStep == "logout";
 
-                    // ── E（TASK-0057）：先關這個人**進行中的活動 session**，再解 lock ──────
-                    // 物理意義：殘留不得跨夜 —— 沒關的場明天醒來還 active=true，
-                    //   而「他還在自由時間」與「他昨晚忘了收工」在讀取端**同形**。
-                    // ⚠ 次序不可換：**先關場再解 lock**。反過來的話關場那一步已經不在線，
-                    //   而各 kind 的結算是綁「這個人這一場」的，掉了不會有人喊。
-                    // ⚠ 只關**本人**的場（`aPersona`）—— 這一步不掃別人。
-                    // ⚠ 關場失敗**不擋下線**：下線是本 Cmd 的主動作，關場是附帶動作，
-                    //   讓附帶動作擋主動作就是「回報層炸掉冒充主動作失敗」那一族。
+                    var aResult = UCL_AwakeningService.PrepareSleep(
+                        aPersona, aNoLetter,
+                        out string aBroadcastBody, out string aToken, out var aP,
+                        GetArg(args, "skip_reason", ""));
+                    if (!aResult.ok)
+                    {
+                        WriteAndVerdict(args, aPersona, aStep, aResult);
+                        return;   // WriteAndVerdict 已 throw
+                    }
+
+                    // ── E（TASK-0057）：關掉這個人**進行中的活動 session** ────────────────
+                    // ⚠ 位置在 `PrepareSleep` **之後**（2026-09-05 @kiara QA 退回返工後改的）。
+                    // 🩸 原本在它之前，而 `PrepareSleep` 有好幾條 blocked 出口（沒寫收尾信／lock 不對）⇒
+                    //   **下線失敗、而場已經被關掉了，且不可回復**。她的活體：
+                    //   `exit_code=1`、`_session.json` 還在（人沒下線），而 `sessions/Template.json`
+                    //   已經 `active=false`、`end_reason=goodnight-sleep` —— **一個沒有發生過的事件**。
+                    //   而使用者拿到的訊息是「去寫收尾信，然後再來睡」，那句話明確暗示「什麼都還沒發生」。
+                    // 📌 我原本把它放前面的理由是「反過來的話關場那一步已經不在線」——
+                    //   **那是推論不是讀數**。今天量了：`Cmd_StreamWatch.SettleResidueAsync` 全函式
+                    //   對 `IsOnline` / `LockPath` **零命中** ⇒ 結算不依賴在線。
+                    //   ⇒ 已證實的傷害贏過推測的傷害（憲法②）。
+                    // ⚠ 只關**本人**的場；關場失敗**不擋**下線（附帶動作不得擋主動作）——
+                    //   這個方向本來就守著，而反方向今天才補上。
                     var aSessionR = new StringBuilder();
                     string aSessionLine;
                     var aOwnSession = SCP.Core.Session.SCP_ActivitySessionStore.Load(
@@ -113,16 +128,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                             args, aPersona, aOwnSession, aReasonTag, aSessionR, token);
                         aSessionLine = $"- 🎬 活動 session：關掉 **{aClose.Kind}**（`{aOwnSession.session_id}`）"
                                      + $"　關場={aClose.Closed}　結算={aClose.Settled}　reason=`{aReasonTag}`";
-                    }
-
-                    var aResult = UCL_AwakeningService.PrepareSleep(
-                        aPersona, aNoLetter,
-                        out string aBroadcastBody, out string aToken, out var aP,
-                        GetArg(args, "skip_reason", ""));
-                    if (!aResult.ok)
-                    {
-                        WriteAndVerdict(args, aPersona, aStep, aResult);
-                        return;   // WriteAndVerdict 已 throw
                     }
 
                     // 單則下線廣播（summary 親筆段併入系統欄位；in-process 走 Cmd_Tavern，policy 全沿用）

@@ -48,6 +48,8 @@ namespace UCL.Core.EditorLib.AgentCommands
         public override string ArgsSchema =>
             "step=start|status|end（必填） | persona=<名字>（必填，不猜身分） | " +
             "status=<一句話在改什麼>（step=start/status 必填） | " +
+            "hours=<租期小時數>（step=start 選填，預設 "
+            + SCP.Core.Cmd.SCP_Cmd_Coding.DefaultLeaseHours + "；step=status 會用它續期） | " +
             "force=1（step=end 專用：跳過編譯閘，需同時給 reason） | reason=<為什麼要 force>";
 
         public override string ExampleArgs => "step=start persona=summit status=TASK-0058 加 Coding kind";
@@ -151,7 +153,11 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          而**被擋下要說什麼**收在 `UCL_SessionStartGuard`。本函式兩者都不自己做 ——
         //          自己判＝第三份判準，自己組措辭＝第二份措辭，而兩者都不會在漂掉時報錯。
         // 數值影響：成功寫一筆 sessions/<persona>.json；被擋則一個位元組都不寫。
-        // ⚠ end_ts 刻意留空 —— 施工場沒有預定時長，退場靠顯式 step=end。
+        // ⚠ 一律帶**租期**（PM 2026-09-05 拍 (A)）：`end_ts` 留空的場**永遠不會變成殘留**
+        //   ⇒ 補收工那條路碰不到它，而持有者掉線就永遠擋住所有人（全域獨佔 ＋ 無時限的組合，本 kind 是第一個）。
+        //   ⛔ 到期**不等於**自動釋放：到期只是落回「殘留」，別人要搶場仍得顯式跑
+        //      `SessionClose --confirm=1`（寫別人的檔、留痕跡）⇒ 不會變成靜默奪場。
+        //   ⚠ 續期掛在 `step=status`（**本來就要跑的那一步**），不掛在「記得去續」。
         // ===========================================================
         static void DoStart(Dictionary<string, string> args, string iPersona, StringBuilder ioR, string iPayload)
         {
@@ -163,14 +169,19 @@ namespace UCL.Core.EditorLib.AgentCommands
                 throw new Exception("[Coding] step=start 需要 --arg status=<一句話在改什麼>（進場必填）");
             }
 
-            var aSession = new UCL_CodingSession
+            int aHours = ParseHours(args);
+            DateTime aUntil = DateTime.Now.AddHours(aHours);
+
+            var aSession = new SCP.Core.Session.SCP_CodingSession
             {
                 persona = iPersona,
                 kind = SCP.Core.Session.SCP_ActivitySessionKind.Coding,
                 session_id = "coding-" + DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'") + "-" + iPersona,
                 start_ts = SCP.Core.Session.SCP_ActivitySession.NowIso(),
-                end_ts = "",                    // 無預定時長 —— IsRunningAt 於是只信 active
-                until_local = "",               // ⚠ 一律留空 —— 說明不塞資料欄，見 UCL_CodingSession 的 remarks
+                // ⚠ 兩個欄位的格式與 `SCP_Cmd_Coding`（Senate 側入口）**逐字一致** ——
+                //   同一個檔會被兩個宿主讀寫，格式不一致的那天沒有任何一層會出聲。
+                end_ts = aUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                until_local = aUntil.ToString("yyyy-MM-dd HH:mm"),
                 active = true,
                 status = aStatus,
                 status_updated = DateTime.Now.ToString("yyyy-MM-dd HH:mm:sszzz"),
@@ -201,7 +212,10 @@ namespace UCL.Core.EditorLib.AgentCommands
             ioR.AppendLine("## ✅ 進場");
             ioR.AppendLine($"- session_id: `{aSession.session_id}`");
             ioR.AppendLine($"- 在改什麼: **{aStatus}**");
-            ioR.AppendLine($"- 開場: {aSession.start_ts}（無預定時長）");
+            ioR.AppendLine($"- 開場: {aSession.start_ts}　**租期至 {aSession.until_local}**（{aHours} 小時）");
+            ioR.AppendLine("- ⚠ 到期**不會自動釋放** —— 只是落回「殘留」，別人要搶場仍得顯式跑 "
+                           + $"`senate cmd sessions --arg op=close --arg persona={iPersona} --arg confirm=1`（寫別人的檔、留痕跡）。");
+            ioR.AppendLine($"- ⭐ 續期走 `step=status`（那一步本來就要跑）：每次更新 status 就順手續 {aHours} 小時。");
             ioR.AppendLine($"- lock now_status 已同步（顯示端：`senate cmd sessions` / catchup 在線清單）");
             ioR.AppendLine();
             ioR.AppendLine(kScopeCaveat);
@@ -225,15 +239,20 @@ namespace UCL.Core.EditorLib.AgentCommands
                 throw new Exception("[Coding] step=status 需要 --arg status=<一句話在改什麼>");
             }
 
-            UCL_CodingSession aSession = LoadRunning(iPersona);
+            SCP.Core.Session.SCP_CodingSession aSession = LoadRunning(iPersona);
             if (aSession == null)
             {
                 throw new Exception($"[Coding] {iPersona} 現在沒有進行中的 Coding 場 —— "
                                     + $"先進場：senate ucmd run Coding --persona {iPersona} --arg step=start --arg status=<一句話>");
             }
 
+            // ⭐ 續期掛在**本來就要跑的那一步**上（PM 拍 (A) 時附的判準）——
+            //   不是掛在「記得去續」。一場還在動的施工不該因為忘了續期而落回殘留。
+            DateTime aUntil = DateTime.Now.AddHours(ParseHours(args));
             aSession.status = aStatus;
             aSession.status_updated = DateTime.Now.ToString("yyyy-MM-dd HH:mm:sszzz");
+            aSession.end_ts = aUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            aSession.until_local = aUntil.ToString("yyyy-MM-dd HH:mm");
             SCP.Core.Session.SCP_ActivitySessionStore.Save(
                 UCL_AgentCommandsPath.ScpDataRoot, iPersona, aSession,
                 SCP.Core.Session.SCP_ActivitySessionKind.Coding);
@@ -241,6 +260,7 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             ioR.AppendLine("## ✅ 狀態已更新");
             ioR.AppendLine($"- 在改什麼: **{aStatus}**");
+            ioR.AppendLine($"- ⏳ 租期已續至 **{aSession.until_local}**");
             ioR.AppendLine($"- session_id: `{aSession.session_id}`");
             ioR.AppendLine();
             ioR.AppendLine(kScopeCaveat);
@@ -260,7 +280,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
         static void DoExit(Dictionary<string, string> args, string iPersona, StringBuilder ioR, string iPayload)
         {
-            UCL_CodingSession aSession = LoadRunning(iPersona);
+            SCP.Core.Session.SCP_CodingSession aSession = LoadRunning(iPersona);
             if (aSession == null)
             {
                 throw new Exception($"[Coding] {iPersona} 現在沒有進行中的 Coding 場（沒有東西可以退出）");
@@ -344,7 +364,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          而那份綠燈完全真實、格式正確、數字合理。
         // 數值影響：純讀檔判斷。
         // ===========================================================
-        static bool CheckTrackerGate(UCL_CodingSession iSession, out string oWhy)
+        static bool CheckTrackerGate(SCP.Core.Session.SCP_CodingSession iSession, out string oWhy)
         {
             string aPath = UCL_CompileErrorTracker.GetOutputPath();
             if (!File.Exists(aPath))
@@ -400,10 +420,25 @@ namespace UCL.Core.EditorLib.AgentCommands
             return true;
         }
 
-        /// <summary>讀本人**進行中**的 Coding 場；沒有回 null（已收工的不算）。</summary>
-        static UCL_CodingSession LoadRunning(string iPersona)
+        // ⚠ 預設值走 `SCP_Cmd_Coding.DefaultLeaseHours`（**不複製第二份數字**）——
+        //   兩個宿主的入口若各寫一個預設，改一邊另一邊不會叫。
+        //   📌 而那個常數目前住在 Senate 側那支 Cmd 上，位置是怪的（租期是 kind 的性質，
+        //      不是某一支 Cmd 的性質）⇒ 已在酒館提議搬到 `SCP_CodingSession` 或 kind 那一層。
+        static int ParseHours(Dictionary<string, string> args)
         {
-            var aSession = SCP.Core.Session.SCP_ActivitySessionStore.Load<UCL_CodingSession>(
+            string aRaw = GetArg(args, "hours", "").Trim();
+            if (aRaw.Length == 0) return SCP.Core.Cmd.SCP_Cmd_Coding.DefaultLeaseHours;
+            if (!int.TryParse(aRaw, out int aH) || aH <= 0)
+            {
+                throw new Exception($"[Coding] --arg hours 要是正整數（小時），收到 '{aRaw}'");
+            }
+            return aH;
+        }
+
+        /// <summary>讀本人**進行中**的 Coding 場；沒有回 null（已收工的不算）。</summary>
+        static SCP.Core.Session.SCP_CodingSession LoadRunning(string iPersona)
+        {
+            var aSession = SCP.Core.Session.SCP_ActivitySessionStore.Load<SCP.Core.Session.SCP_CodingSession>(
                 UCL_AgentCommandsPath.ScpDataRoot, iPersona,
                 SCP.Core.Session.SCP_ActivitySessionKind.Coding);
             if (aSession == null) return null;

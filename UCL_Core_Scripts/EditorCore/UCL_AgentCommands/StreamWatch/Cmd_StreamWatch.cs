@@ -299,6 +299,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 Kind = SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch,
                 CmdName = "StreamWatch",
                 HasStepEnd = false,
+                // ⚠ 沒有 step=end **不等於沒有出口** —— 這句是 kind 專屬的處置知識，
+                //   靜默丟掉它的話讀的人只知道「等」（@summit 2026-09-05 撿到的那一格）。
+                EarlyEndHint = "要提前收就請 Tim 停錄影",
                 SettleResidueAsync = SettleResidueAsync,
             });
 

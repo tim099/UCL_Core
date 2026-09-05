@@ -127,8 +127,10 @@ namespace UCL.Core.EditorLib.AgentCommands
             UCL_SessionKindEntry aEntry = UCL_SessionKindHost.For(iBlocker.kind);
             if (aEntry == null)
             {
-                // 沒登記：**說出它是誰**，不要退回一句「請自行處理」。
-                return $"先收掉那場（kind=`{iBlocker.kind}`，**沒有人登記過這個 kind**）；"
+                // 沒登記：**說出它是誰，並附已登記清單**（@summit 的版本有這一半，我改寫時弄丟了）。
+                string aKnown = string.Join("／", UCL_SessionKindHost.RegisteredKinds());
+                return $"先收掉那場（kind=`{iBlocker.kind}`，**沒有人登記過它**"
+                     + (aKnown.Length == 0 ? "" : $"；已登記：{aKnown}") + "）；"
                      + $"查現況：senate cmd sessions --arg op=show --arg target_persona={iPersona}";
             }
             if (!aEntry.HasStepEnd)
@@ -136,7 +138,11 @@ namespace UCL.Core.EditorLib.AgentCommands
                 // ⚠ 沒有 `step=end` 的 kind（觀影）：誠實出口是「等它到期」，
                 //   ⛔ 不編一個不存在的指令 —— 那是 @summit 今天改名 `op=exit`→`step=end` 治的同一隻。
                 string aUntil = string.IsNullOrEmpty(iBlocker.until_local) ? "它到期" : iBlocker.until_local;
-                return $"等 {aUntil}（`{aEntry.CmdName}` 沒有 step=end —— 到期或宿主停止時 Cmd 會自己收工並結算）";
+                // ⚠ `EarlyEndHint` 是 kind 專屬的處置知識 —— 有的話一定要附上，
+                //   否則讀的人只知道「等」，不知道還有一條真的能提前收的路。
+                string aWait = $"等 {aUntil}（`{aEntry.CmdName}` 沒有 step=end —— 到期或宿主停止時 Cmd 會自己收工並結算）";
+                if (aEntry.EarlyEndHint.Length > 0) aWait += "；" + aEntry.EarlyEndHint;
+                return aWait;
             }
             return $"先收掉那場：senate ucmd run {aEntry.CmdName} --persona {iPersona} --arg step=end --arg reason=<一句>";
         }

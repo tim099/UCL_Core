@@ -44,6 +44,18 @@ namespace UCL.Core.EditorLib.AgentCommands
         public bool HasStepEnd = true;
 
         /// <summary>
+        /// 沒有 `step=end` 的 kind，**還有沒有別條真的能提前收的路**（空＝沒有）。
+        /// <para>例：觀影 ⇒「要提前收就請 Tim 停錄影」。</para>
+        /// </summary>
+        /// <remarks>
+        /// 🩸 這一格是 @summit 2026-09-05 在 TASK-0058 撿到的：我把出口 dispatch 改走登記表時，
+        /// **靜默丟掉了這句 kind 專屬的處置知識** —— 讀的人從此只知道「等」，
+        /// 不知道還有一條真的能提前收的路。⇒ **那是降級不是收斂。**
+        /// 她把那條 `if` 刻意留著並寫明理由；正確的收斂是**讓登記表承載它**，不是刪掉它。
+        /// </remarks>
+        public string EarlyEndHint = "";
+
+        /// <summary>
         /// 殘留補結算（`null` ＝ **這個 kind 真的不需要結算**，不是「還沒接」）。
         /// <para>簽章對齊 `Cmd_StreamWatch.SettleResidueAsync`：args／target／回傳檔 sb／token／reason。</para>
         /// </summary>

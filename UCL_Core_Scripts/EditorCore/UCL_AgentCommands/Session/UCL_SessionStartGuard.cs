@@ -54,13 +54,35 @@ namespace UCL.Core.EditorLib.AgentCommands
                 oExit = "跑 senate cmd sessions --arg op=list 看目錄狀態，並確認資料根可寫";
                 return false;
             }
-            oReason = Reason(aBlocker);
-            oExit = Exit(iPersona, aBlocker);
+            // ⚠ 兩條軸擋下來的東西**不同形**，而 TryStart 只回一個 `oBlockedBy`：
+            //   軸1（每人一場）⇒ 那場是**我自己的**；軸2（全域互斥，TASK-0058）⇒ 那場是**別人的**。
+            //   ⛔ 用同一句話講會給出相反的處理方式（關自己的場 vs 等別人）。
+            //   ⇒ 判準用 `persona` 欄，不猜 —— 它就寫在那份 session 檔裡。
+            bool aMine = string.Equals(aBlocker.persona, iPersona, StringComparison.Ordinal);
+            oReason = aMine ? ReasonMine(aBlocker) : ReasonOther(aBlocker);
+            oExit = aMine ? ExitMine(iPersona, aBlocker) : ExitOther(aBlocker);
             return false;
         }
 
+        /// <summary>擋你的是**別人**持有的場（全域互斥那條軸）—— 主詞要換人，出口也要換。</summary>
+        static string ReasonOther(SCP_ActivitySession iBlocker)
+        {
+            string aWho = string.IsNullOrEmpty(iBlocker.persona) ? "(session 檔沒寫 persona)" : "@" + iBlocker.persona;
+            string aUntil = string.IsNullOrEmpty(iBlocker.until_local) ? "未寫截止時刻" : "至 " + iBlocker.until_local;
+            return $"**{aWho}** 正在 **{KindLabel(iBlocker.kind)}**（`{iBlocker.session_id}`，{aUntil}）"
+                 + $" —— 這種場全域同時只能一個人";
+        }
+
+        /// <summary>別人持有時的出口：**等或去問他**，⛔ 不要叫人去收別人的場。</summary>
+        static string ExitOther(SCP_ActivitySession iBlocker)
+        {
+            string aWho = string.IsNullOrEmpty(iBlocker.persona) ? "持有者" : "@" + iBlocker.persona;
+            string aUntil = string.IsNullOrEmpty(iBlocker.until_local) ? "他收工" : iBlocker.until_local;
+            return $"等 {aUntil}，或去酒館 {aWho} 問他還要多久；查現況：senate cmd sessions --arg op=list";
+        }
+
         /// <summary>「誰的哪一場、到幾點」—— 讀的人要能一眼判斷要等多久。</summary>
-        static string Reason(SCP_ActivitySession iBlocker)
+        static string ReasonMine(SCP_ActivitySession iBlocker)
         {
             string aUntil = string.IsNullOrEmpty(iBlocker.until_local) ? "未寫截止時刻" : "至 " + iBlocker.until_local;
             return $"你已經在另一種 session 裡：**{KindLabel(iBlocker.kind)}**"
@@ -76,7 +98,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// ⚠ StreamWatch **沒有 `step=end`**：它到期或 Tim 停錄影時由 Cmd 自己宣布收工。
         /// ⇒ 那一格的誠實出口是「等它到期」，不是編一個不存在的指令出來。
         /// </remarks>
-        static string Exit(string iPersona, SCP_ActivitySession iBlocker)
+        static string ExitMine(string iPersona, SCP_ActivitySession iBlocker)
         {
             if (iBlocker.kind == SCP_ActivitySessionKind.FreeTime)
             {

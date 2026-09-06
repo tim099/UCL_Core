@@ -284,8 +284,9 @@ def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: 
             lines.append(f"{i}. `[{e['time']}]` {e['text']}")
         lines.append("")
         lines.append("**以 ErrorLog 為準：這不是 clean compile。** 修完再重跑編譯："
-                     "`senate ucmd run Recompile --persona <你>`（或 python `run_cmd.py recompile`，"
-                     "後者會等到編譯結束並印 errors/warnings）。")
+                     "`senate ucmd run Recompile --persona <你>`，"
+                     "再跑一次本工具 `--watch`（它會等到編譯結束才印 —— "
+                     "senate 那條只回 Cmd Success，不等編譯）。")
         return "\n".join(lines)
 
     if not msgs:
@@ -294,8 +295,8 @@ def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: 
             # 它把「上一次編譯是乾淨的」講成「你的改動是乾淨的」。
             lines.append("⚠ **無法判定** — 這份狀態不涵蓋你的改動（見上方 STALE）。"
                          "重跑編譯後再查：`senate ucmd run Recompile --persona <你>`，"
-                         "或 python `run_cmd.py recompile`（**它會等到編譯結束並印 errors/warnings**，"
-                         "senate 那條只回 Cmd Success ⇒ 要再跑一次本工具），或 `--watch`。")
+                         "**再跑一次本工具 `--watch`**（senate 那條只回 Cmd Success、不等編譯；"
+                         "`--watch` 會等到 in_progress=false 才印）。")
         elif data.get("total_errors", 0) == 0 and data.get("total_warnings", 0) == 0:
             # ⚠ 沒有第二來源時不可講得像對帳過了 —— 「對帳沒跑」不准長得像「對帳過了」
             if xcheck and xcheck.get("available"):

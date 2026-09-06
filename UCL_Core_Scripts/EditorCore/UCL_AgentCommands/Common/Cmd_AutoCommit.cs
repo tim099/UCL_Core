@@ -177,6 +177,8 @@ namespace UCL.Core.EditorLib.AgentCommands
             //   當日讀數：候選 25 ＝ `__other` 7（Lessons/Plurk/PromptQueue）
             //   ＋ `__subptr` 10（ArtGallery／Chess／Tasks ＋ 7 個 persona 信件庫）＋ 可收的 8。
             int failedGroups = 0, otherFiles = 0, subPtrFiles = 0;
+            // TASK-0080：失敗的**明細**（repo／群／stderr 一筆一行）—— 給呼叫端，不只給 log。
+            var failures = new List<string>();
             foreach (var t in targets)
             {
                 if (t.Groups.TryGetValue(UCL_AutoCommitRules.KEY_OTHER, out var aOther)) otherFiles += aOther.Count;
@@ -229,7 +231,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                         foreach (var f in files) sb.AppendLine($"      {f}");
                         continue;
                     }
-                    string sha = CommitGroup(t, files, label, sb);
+                    string sha = CommitGroup(t, files, label, sb, g, failures);
                     if (!string.IsNullOrEmpty(sha)) { committed++; shas.Add($"{t.Name}:{sha}"); }
                     // 失敗要被**數**出來 —— CommitGroup 已經把原因寫進 oLog，但 log 不是呼叫端的通道。
                     else failedGroups++;
@@ -256,6 +258,23 @@ namespace UCL.Core.EditorLib.AgentCommands
             // 這三個跟 prestaged_repos 同理：**0 也印**。它們合起來就是「commits 為什麼是這個數」的答案，
             // 而只在非零時才出現的欄位，讀者分不出「乾淨」與「沒量」。
             UCL_AgentCommandRunner.ReportOutputValue(args, "failed_groups", failedGroups.ToString());
+            // ===========================================================
+            // TASK-0080（BUG-47）：`commits=0` 的三種成因裡，**「git 操作失敗」過去只在 Editor log**。
+            // 呼叫端拿到的是 `failed_groups=1` —— 它答得出「有事發生」，答不出**哪個 repo、為什麼**，
+            // 而撞 `index.lock`（別人正在跑 git）與「這個 repo 真的壞了」的處置**相反**：
+            //   前者等一下重跑就好，後者要人去看。分不出來就只能兩個都當成後者。
+            // ⇒ 補兩格機讀值，**0 也印**（只在非零時出現的欄位，讀者分不出「乾淨」與「沒量」）：
+            //   `locked_repos` ＝ 失敗訊息裡認得出 `index.lock` 的那幾筆（可重試）
+            //   `failed_repos` ＝ 逐筆明細 `repo[群] git add：<stderr 首行>`
+            // ⚠ `locked_repos` 是**字串比對** stderr 認出來的 —— git 換了訊息就會漏認，
+            //   那時它會退化成 0 而 `failed_repos` 仍在（漏認的失敗形狀是「少一格分類」，不是「靜默通過」）。
+            // ===========================================================
+            int lockedRepos = 0;
+            foreach (string f in failures)
+                if (f.IndexOf("index.lock", StringComparison.OrdinalIgnoreCase) >= 0) lockedRepos++;
+            UCL_AgentCommandRunner.ReportOutputValue(args, "locked_repos", lockedRepos.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "failed_repos",
+                failures.Count == 0 ? "" : string.Join(" ／ ", failures.ToArray()));
             UCL_AgentCommandRunner.ReportOutputValue(args, "empty_groups", emptyGroups.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "other_files", otherFiles.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "subptr_files", subPtrFiles.ToString());
@@ -268,7 +287,14 @@ namespace UCL.Core.EditorLib.AgentCommands
             if (failedGroups > 0)
             {
                 string aMsg = $"[AutoCommit] {failedGroups} 個群的 git 操作失敗（commit {committed} 群成功）"
-                    + " —— 原因逐群印在上面那段 Editor log（`✗ … git add/commit 失敗 —— <stderr>`）。"
+                    // TASK-0080：理由直接寫在例外訊息裡，不再只說「去看 Editor log」——
+                    // 呼叫端看得到的是這一行，而它過去只指路不給答案。
+                    + $"：{string.Join(" ／ ", failures.ToArray())}。"
+                    + (lockedRepos > 0
+                        ? $"　⏳ 其中 {lockedRepos} 筆是 `index.lock`（別人正握著那個 repo 的 index）"
+                          + "—— **這種等一下重跑就好**，不是那個 repo 壞了。"
+                        : "")
+                    + " 完整逐群輸出在 Editor log（`✗ … git add/commit 失敗 —— <stderr>`）。"
                     + " 常見一種是 `index.lock: File exists`：另一個 git process 正握著這個 repo 的 index"
                     + "（本 Cmd 刻意**不重試、不刪 lock** —— 刪別人的 lock 會讓那個 process 寫壞 index）。";
                 Debug.LogError(aMsg);
@@ -469,7 +495,11 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          這條是「就算擋漏了也帶不走」。⚠ 路徑清單走檔案而非命令列：一群可能上千檔，
         //          而 32k 命令列上限砍下來的形狀是「這筆少了幾個檔」，不是報錯。
         //          （`--pathspec-from-file` 需 git ≥ 2.25 —— 2020 年的版本；本機 2.39.2。）
-        string CommitGroup(RepoTarget iRepo, List<string> iFiles, string iMessage, StringBuilder oLog)
+        // ⚠ `oFailures` 是 TASK-0080 補的**呼叫端通道**：失敗的理由本來只寫進 `oLog`（Editor log），
+        //   而 log 不是呼叫端的通道（本檔 :236 自己就是這樣寫的）⇒ 呼叫端拿到 `failed_groups=1`
+        //   卻不知道是哪個 repo、為什麼。這裡把「repo ／ 群 ／ stderr」一筆一行收進來，往上報成機讀值。
+        string CommitGroup(RepoTarget iRepo, List<string> iFiles, string iMessage, StringBuilder oLog,
+            string iGroupKey, List<string> oFailures)
         {
             for (int i = 0; i < iFiles.Count; i += CHUNK)
             {
@@ -480,6 +510,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 if (add.exit != 0)
                 {
                     oLog.AppendLine($"  ✗ {iRepo.Name}：git add 失敗 —— {add.stderr.Trim()}");
+                    oFailures?.Add($"{iRepo.Name}[{iGroupKey}] git add：{OneLineErr(add.stderr)}");
                     // 🩸 2026-08-31（summit）：**擋去路的守衛不擋歸路。**
                     //   分段 add 是逐 CHUNK 送的 ⇒ 前幾段可能已經進 index，而這裡直接 return ""
                     //   把那批**留在 index 裡**。而 index 非空正好命中檔頭硬擋④（`op=commit` 直接跳過
@@ -504,8 +535,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                 var c = Git(iRepo.Root, $"commit -F \"{tmp}\" --pathspec-from-file=\"{spec}\"");
                 if (c.exit != 0)
                 {
-                    oLog.AppendLine($"  ✗ {iRepo.Name}：git commit 失敗 —— "
-                        + $"{(string.IsNullOrEmpty(c.stderr.Trim()) ? c.stdout.Trim() : c.stderr.Trim())}");
+                    string aWhy = string.IsNullOrEmpty(c.stderr.Trim()) ? c.stdout : c.stderr;
+                    oLog.AppendLine($"  ✗ {iRepo.Name}：git commit 失敗 —— {aWhy.Trim()}");
+                    oFailures?.Add($"{iRepo.Name}[{iGroupKey}] git commit：{OneLineErr(aWhy)}");
                     // 同上：commit 失敗時那批檔還在 index 裡，留著會擋住之後每一次 op=commit。
                     RollbackStaged(iRepo, iFiles, oLog);
                     return "";
@@ -522,6 +554,20 @@ namespace UCL.Core.EditorLib.AgentCommands
             oLog.AppendLine($"  ✓ {iRepo.Name} [{sha}] {iMessage}");
             ReconcileCommit(iRepo, iFiles, sha, oLog);
             return sha;
+        }
+
+        // 區塊職責：把 git 的多行 stderr 壓成一行（機讀欄位不能換行 —— 換行會把後面那幾格擠掉）。
+        // ⚠ 取**首行**而不是截斷全文：git 的第一行就是原因（`fatal: Unable to create '…/index.lock': File exists`），
+        //   後面那幾行是給人看的建議。截全文會把原因擠到看不見的地方。
+        static string OneLineErr(string iErr)
+        {
+            string a = (iErr ?? "").Trim();
+            foreach (string line in (iErr ?? "").Split('\n'))
+            {
+                string l = line.Trim();
+                if (l.Length > 0) { a = l; break; }
+            }
+            return a.Length > 200 ? a.Substring(0, 200) + "…" : a;
         }
 
         // 區塊職責：失敗時把 index 還原成呼叫前的樣子（unstage 這一群挑到的路徑）。

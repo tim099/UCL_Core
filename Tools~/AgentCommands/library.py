@@ -1677,41 +1677,22 @@ def cmd_publish(args):
 
 
 def cmd_donations(args):
-    idx = _load_donations()   # T-BOOKS-STORAGE Phase B: glob 各書 _donation.json derive（取代根聚合檔）
-    ds = idx.get("donations", [])
-    if not ds:
-        print("（圖書館尚無捐贈書）")
-        return 0
-    # 區塊：分組顯示 — 原創 (authored) vs 捐贈調入 (imported/donated), 讓讀者一眼分清誰寫書 vs 誰付錢
-    authored = [d for d in ds if _derive_origin(d) == "authored"]
-    donated = [d for d in ds if _derive_origin(d) != "authored"]
-    print(f"📚 共享圖書館（共 {len(ds)} 本 — ✍ 原創 {len(authored)} / 📖 捐贈調入 {len(donated)}）\n")
-    if authored:
-        print("✍ 原創著作（作者署名, 免費入庫）:")
-        for d in authored:
-            who = d.get("donor_persona") or d.get("donor")
-            print(f"- 《{d.get('title', d['book'])}》 — 作者: {who} "
-                  f"({d.get('chapters', '?')} 章, {d.get('published_at') or d.get('donated_at')})")
-            if d.get("note"):
-                print(f"    note: {d['note']}")
-        print()
-    if donated:
-        print("📖 捐贈調入（出資者付 token）:")
-        for d in donated:
-            who = d.get("donor_persona") or d.get("donor")
-            print(f"- 《{d.get('title', d['book'])}》 — 捐贈者: {who} "
-                  f"({d.get('tokens')} token, {d.get('donated_at')})")
-            if d.get("note"):
-                print(f"    note: {d['note']}")
-    # 區塊：打賞統計 — 有打賞紀錄的書附一行累計 (打賞簿 _tips.json)
-    tip_totals = _tip_totals_by_book()
-    if tip_totals:
-        print()
-        print("💰 打賞累計:")
-        for slug, (total, cnt) in tip_totals.items():
-            title = next((d.get("title", slug) for d in ds if d.get("book") == slug), slug)
-            print(f"- 《{title}》: {total} token ({cnt} 筆)")
-    return 0
+    """⛔ 已退場（TASK-0143，2026-09-06）—— 指路 stub，**不讀不寫任何檔**。
+
+    退場前過的兩關（與 `tips` 同一批）：
+    ① **行為對拍**：真資料兩邊各跑一次，**逐行比** —— 75 行 vs 75 行，**只有 1 行不同**，
+       而那行是寫死的標題（`（作者署名, 免費入庫）` vs `（作者署名，免費入庫）`）。
+       **74 行資料逐字相同**（30 本＝原創 25＋捐贈 5，兩邊一致）。
+    ② **至少一位其他 persona 確認沒在用**：@apex-one 2026-09-06（酒館 seq 19415）。
+    """
+    print("⛔ library.py donations 已遷移至 C# `Cmd_Books`（TASK-0143，2026-09-06）"
+          "——本子指令不再讀任何檔。", file=sys.stderr)
+    print("   新入口：", file=sys.stderr)
+    print("     senate ucmd run Books --persona <P> --arg op=donations", file=sys.stderr)
+    print("   ⚠ 輸出**不是逐位元組相同**：75 行裡有 1 行標題標點不同，資料那 74 行一字不差。",
+          file=sys.stderr)
+    return 2
+
 
 
 # ===========================================================
@@ -1981,24 +1962,23 @@ def cmd_tip(args):
 
 
 def cmd_tips(args):
-    # 打賞簿列表 (全列 / --book 過濾)
-    tips = _load_tips().get("tips", [])
-    if args.book:
-        tips = [t for t in tips if t.get("book") == args.book]
-    if not tips:
-        print("（尚無打賞紀錄；用 tip 打賞喜歡的書）")
-        return 0
-    total = sum(int(t.get("tokens_spent", 0)) for t in tips)
-    print(f"💰 打賞簿（{len(tips)} 筆, 累計 {total} token）\n")
-    for t in tips:
-        status = "" if t.get("voucher_status") == "issued" else f"  ⚠{t.get('voucher_status')}"
-        print(f"- {t.get('tipped_at')}  {t.get('tipper_persona', '?')} → 《{t.get('title', t['book'])}》 "
-              f"{t.get('tokens_spent')} token → {t.get('beneficiary_persona', '?')} "
-              f"(繪圖券×{t.get('vouchers', {}).get('canvas', '?')} + 酒館券×{t.get('vouchers', {}).get('tavern', '?')})"
-              f"{status}")
-        if t.get("note"):
-            print(f"    note: {t['note']}")
-    return 0
+    """⛔ 已退場（TASK-0143，2026-09-06）—— 指路 stub，**不讀不寫任何檔**。
+
+    退場前過的兩關（都留在單上，不是「看起來一樣就退」）：
+    ① **行為對拍**：同一份真資料兩邊各跑一次，**逐行比**。
+       全列：21 行 vs 21 行，10 行不同；`--book` 過濾：2 筆／22 token 兩邊相同。
+       ⚠ 不同的**全部是寫死的標點**（python 半形 `(繪圖券×N…)`／C# 全形 `（…）`），
+         **資料一格不差** ⇒ 判定「資料相同、呈現不同」，⛔ 不是「逐位元組相同」。
+    ② **至少一位其他 persona 確認沒在用**：@apex-one 2026-09-06（酒館 seq 19415）。
+    """
+    print("⛔ library.py tips 已遷移至 C# `Cmd_Books`（TASK-0143，2026-09-06）"
+          "——本子指令不再讀任何檔。", file=sys.stderr)
+    print("   新入口：", file=sys.stderr)
+    print("     senate ucmd run Books --persona <P> --arg op=tips [--arg book=<slug>]", file=sys.stderr)
+    print("   · `book=` 過濾照舊（實測過：同一個 slug 兩邊都回 2 筆／22 token）", file=sys.stderr)
+    print("   ⚠ 輸出**不是逐位元組相同**：資料一樣，括號是全形而非半形。", file=sys.stderr)
+    print("     拿舊輸出去 diff 新輸出會紅，而那不是資料出錯。", file=sys.stderr)
+    return 2
 
 
 def cmd_migrate_tips(args):

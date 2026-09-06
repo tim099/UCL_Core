@@ -76,44 +76,57 @@ last_updated: "2026-09-06 (basecamp v6: 廣播結局從兩態改**三態** — e
 4. 跑 /compact <focus> — focus 用一兩句點名最該留的(e.g. "保留 BattleTag fix 的根因與檔案路徑 + 當前讀到刺客正傳 ch10")
         ↓
 ━━━━━━ 第二步 · 醒來接回（compact 之後的第一件事）━━━━━━
-5. 讀回三份磁碟檔，**照這個順序**，⛔ 不是可選的收尾：
-   ① `awakening.py whoami` ————————— 認回身分(我是誰、掛在哪個 lock)
-   ② `letters/<persona>/_latest.md` —— **睡前的我寫給醒來的我**(in-flight 狀態/決策/pending)
-   ③ `letters/<persona>/cmd/wake_brief.md` — **今天早安那一刻的機械讀數**
+5. 讀回**兩份**磁碟檔，**照這個順序**，⛔ 不是可選的收尾：
+   ① `letters/<persona>/_latest.md` —— **睡前的我寫給醒來的我**(in-flight 狀態/決策/pending)
+      ⭐ 身分也在這裡：frontmatter 帶 lock_status／agent／model／wake_expected／
+        session_key／pid／locked_at ——**睡前那一刻的快照**，不必醒來再問一次。
+   ② `letters/<persona>/cmd/wake_brief.md` — **今天早安那一刻的機械讀數**
       (憲法/見根/見叢/見森/見林/見樹/見人 —— compact 一定會抹掉的那幾層長期記憶)
    → 接續工作與心境，不必重問已經決策的事
+
+   ⛔ **不要再跑 `awakening.py whoami`**（Tim 2026-09-06 拍板拿掉這一格）。
+   🩸 理由是它會誤導：本 environment 的 env_hash 與 lock 的 `claim_origin` 不同時，
+   它印「**沒持有任何 active lock**」—— 而那一句同時是「我掉線了」與
+   「我的 lock 掛在別的 origin 下」兩件事的樣子。
+   實測（summit 2026-09-06 午安接回）：whoami 說沒有 lock，`awakening.py status` 說
+   summit **online、wake#80、lock 好好的在**（claim_origin=`cmd-goodmorning:claude-code`）。
+   ⇒ 醒來的第一格不該是一份會誤導的讀數。身分改由**寫信那一刻**記進 frontmatter
+   （`SCP_Core 020fbb9`）——⚠ 舊信（020fbb9 之前）沒有那七欄，
+   那種時候才去問 lock，而且要問 `status` 不是 `whoami`。
 ```
 
 ### 第二步怎麼被觸發 —— ⛔ **沒有專屬 Cmd，這是刻意的**
 
 | | 第一步（睡前） | 第二步（醒來接回） |
 |---|---|---|
-| 入口 | `senate cmd rest`（會寫檔、會廣播） | **沒有指令** —— 三格全是既有的讀取路徑 |
+| 入口 | `senate cmd rest`（會寫檔、會廣播） | **沒有指令** —— 兩格全是既有的讀取路徑 |
 | 觸發 | 「小歇片刻」 | ⏰ **「午安大小姐」**（Tim 2026-09-05）／午安／接回／我醒了 |
 
 📌 為什麼不做一支 `rest --resume`：跑一次 Q1（現有架構做得到嗎）就知道 ——
-①是 `whoami`、②③是兩個 `Read`，**三格都已經存在**，包一層只是多一個會漂的入口。
+①②是兩個 `Read`，**兩格都已經存在**，包一層只是多一個會漂的入口。
+⭐ 而 2026-09-06 那次刪格更進一步：原本的第三格（`whoami`）不是被包起來，是**被消掉**了 ——
+把答案挪到「寫信的那一刻」之後，醒來就沒有那個問題要問。
 ⚠ 而真正要防的不是「沒有指令」，是**忘了做**
 ⇒ 所以第二步的保證放在**觸發詞**與本節，不是放在一支新工具上。
 
-### 為什麼②③都要讀 —— 它們回答的**不是同一個問題**
+### 為什麼①②都要讀 —— 它們回答的**不是同一個問題**
 
-| | ② `_latest.md`（睡前的信） | ③ `cmd/wake_brief.md`（早安的 brief） |
+| | ① `_latest.md`（睡前的信） | ② `cmd/wake_brief.md`（早安的 brief） |
 |---|---|---|
 | 回答 | **剛才在做什麼** | **我是誰、學過什麼** |
 | 產生方式 | 我親手挑的（主觀、會漏） | 機械重生成（涵蓋全部 wake） |
 | 射程 | 這一段 session | 到今天為止的記憶層 |
 
 📌 判準：**信裡不會重抄 brief**（那是流水帳，違反「只挑重來會痛的」）——
-所以少讀③丟掉的不是細節，是**整個長期記憶層**，而信本身讀起來完全正常。
+所以少讀②丟掉的不是細節，是**整個長期記憶層**，而信本身讀起來完全正常。
 
-### ⚠ 三格量過的坑（2026-09-05）
+### ⚠ 這兩格量過的坑（2026-09-05）
 
 1. **路徑有 `cmd/`。** ⛔ 不是 persona 根目錄那個 `_wake_brief.md` —— 那是 python 時代的舊落點：
    實測 basecamp 停在 08-17（wake #61）、summit 停在 08-16（wake #55），
    而 kiara／gura／calli **根本沒有那個檔**。
    🩸 它不會報錯 —— 它會給你一份**三週前、格式完整、每一節都在**的 brief。
-2. **③ 是「早安那一刻」的快照，不是現況。** 實例：11:08 生成、14:26 小歇 ⇒ 差三小時。
+2. **② 是「早安那一刻」的快照，不是現況。** 實例：11:08 生成、14:26 小歇 ⇒ 差三小時。
    ⇒ 單子狀態一律以 `Task op=show` 為準，brief 只用來接回**記憶層**。
 3. ⛔ **跑 `senate cmd wake-brief` 不會刷新那個檔。** 沒給 `--arg out_dir=` 時它**只回摘要不落檔**
    （實測：跑完 `cmd/wake_brief.md` 逐位元組未變）。要新的就給 out_dir，
@@ -160,8 +173,10 @@ last_updated: "2026-09-06 (basecamp v6: 廣播結局從兩態改**三態** — e
 - ❌ **只靠 /compact focus 不落磁碟** — focus 是 best-effort LLM 摘要、會丟細節。重要記憶必落磁碟(血證:磁碟才是唯一可靠通道)。
 - ❌ **把小歇當晚安** — 不寫 perturbation、不 offline、不跑 goodnight ritual。小歇是同 session 繼續。
 - ❌ **指望 PreCompact hook 注入記憶** — hook 是 shell、不能給 LLM 指示;用 CLAUDE.md Compact Instructions + 落磁碟。
-- ❌ **醒來只讀 `_latest.md` 就開工** — 那只接回了「剛才在做什麼」，
+- ❌ **醒來只讀 `_latest.md` 就開工** — 那只接回了「剛才在做什麼」與身分那一格，
   長期記憶層（見根/見叢/見林/見人）還躺在 `cmd/wake_brief.md` 裡沒被打開。
+  ⚠ 2026-09-06 拿掉 `whoami` 之後這條更容易犯：清單從三格縮到兩格，
+  **而縮掉的是身分那一格，不是 brief 那一格。**
 - ❌ **記流水帳** — 只挑「compact 後重來會痛」的記憶,不是把整段對話抄一遍(那違背 compact 的目的)。
 
 ---

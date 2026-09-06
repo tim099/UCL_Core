@@ -609,7 +609,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 //   ⇒ 改了一邊忘了另一邊時，兩邊各說各話而**兩邊都不會喊**。現在只有設定檔一個真相源。
                 aR.AppendLine($"- ⚠ **章名未填 —— 收工仍會自動匯出**，章名用哨兵值 `{UntitledMarker()}`（TASK-0064）。\n"
                     + "  章名不由工具代取；哨兵是「還沒有名字」的記號。事後補名走 `--force` 重出，**不能手改 .txt**（機械產物會被覆寫）。\n"
-                    + "  查哪些章還掛著哨兵：`python <UCL_Core>/Tools~/AgentCommands/library.py list-untitled`\n"
+                    + "  查哪些章還掛著哨兵：`senate cmd watch --arg op=untitled`（TASK-0143 起原生，不再走 python）\n"
                     + $"  ⇒ 現在就定名（建議）：重跑本步並帶 `--arg chapter_title=\"<章名>\"`（prepare 可重入）");
             else
                 aR.AppendLine($"- ✅ **已啟用** —— 主觀影者收工時自動匯出成章 `{(string.IsNullOrEmpty(aExportChapter) ? aChapterId : aExportChapter)}`"
@@ -2392,7 +2392,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (aExported)
             {
                 ioR.AppendLine("3. 實錄已自動匯出成章（見上）。要重出（改章名／併入別人的章）："
-                    + $"`python <UCL_Core>/Tools~/AgentCommands/library.py export-watch --from-session {aSessionId} --force`");
+                    + $"`senate cmd watch --arg op=export --arg from_session={aSessionId} --arg force=1`");
                 ioR.AppendLine("   （併章時的副標保留、跨作品併章仍是人的判斷，工具只覆蓋「一場＝一章」與「同章多場併區間」）");
                 return;
             }
@@ -2404,8 +2404,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 實錄匯出：沒啟用自動時**不自動跑**。章 ≠ 場（重播、殘場、一話跨數場都發生過，001 章末就記了一次併章），
             // 而章名要親筆 ⇒ 這裡只把可直接貼的指令連同已量到的區間交出去，別讓它變成要人自己記得的事。
             ioR.AppendLine($"3. 本場實錄可匯出成章（章 ≠ 場：一話跨數場就把區間一起給）：");
-            ioR.AppendLine($"   `python <UCL_Core>/Tools~/AgentCommands/library.py export-watch --media {aMedia} "
-                + $"--seq-ranges {ioS.start_seq}-{aSeq} --title <章名> --work-title <作品 第N話> --sessions {aSessionId}`");
+            ioR.AppendLine($"   `senate cmd watch --arg op=export --arg media={aMedia} "
+                + $"--arg seq_ranges={ioS.start_seq}-{aSeq} --arg title=<章名> "
+                + $"--arg work_title=<作品 第N話> --arg sessions={aSessionId}`");
             ioR.AppendLine($"   （同一話的其它場次區間查 `StreamWatch/{SESSION_LOG_NAME}`；章名與併章判斷是人的事，工具不代取）");
         }
 
@@ -3464,8 +3465,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // 區塊職責：收工自動匯出的兩支 helper（BUG-10）。
         // ① ReadAutoExportSetting —— 讀準備檔決定「這一場收工要不要自動匯出」。
         //    ⚠ 回傳理由字串：關掉與沒設定是兩件事，而它們在回傳檔上會長得一樣（那正是本系統一直在修的形狀）。
-        // ② RunExportWatch —— 呼叫 library.py export-watch --from-session。
-        //    區間、同場清單、章號、章名全部由 python 端從台帳與準備檔反查（C# 不重算一次，避免兩份產線）。
+        // ② RunExportWatch —— **就地直呼 SCP_Core**（TASK-0143 ⑤，2026-09-06 起不再 spawn python）。
+        //    區間、同場清單、章號、章名全部由 `SCP_WatchResolve` 從台帳與準備檔反查
+        //    （C# 不重算一次，避免兩份產線 —— 這句話沒變，變的只是那一份住在哪裡）。
+        //    ⚠ **不繞檔案協議繞回自己**：本檔就在 Editor 裡，而 SCP_Core 是同一個 assembly 引用得到的
+        //      （`UCL_Core.asmdef` 的 references 有 `SCP_Core`）⇒ 直呼即可。
         // ===========================================================
         static (bool On, string Why) ReadAutoExportSetting(string iLibraryMediaId)
         {
@@ -3492,47 +3496,77 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             catch (Exception e) { return (false, $"準備檔解析失敗：{e.Message}"); }
         }
 
-        static async UniTask<(bool Ok, string Out, string Err)> RunExportWatch(
+        // ⚠ 2026-09-06 起本體是**同步**的（就地直呼，不再 spawn process）——
+        //   簽章保留 `UniTask` 是為了不動呼叫端；`iToken` 也保留：
+        //   ⛔ 拿掉它會讓呼叫端以為這條路從來不會慢，而它讀的是整個區間的訊息檔。
+        static UniTask<(bool Ok, string Out, string Err)> RunExportWatch(
             string iSessionId, System.Threading.CancellationToken iToken)
         {
             try
             {
-                string aCoreRel = UCL_EditorPath.CorePath;
-                if (string.IsNullOrEmpty(aCoreRel)) return (false, "", "解析不到 UCL_Core 路徑");
-                string aScript = Path.GetFullPath(Path.Combine(
-                    UCL_RepoPath.UnityProjectRoot, aCoreRel, "Tools~/AgentCommands/library.py")).Replace('\\', '/');
-                if (!File.Exists(aScript)) return (false, "", $"找不到 library.py（{aScript}）");
+                string aDataRoot = UCL_AgentCommandsPath.DataRoot;
+                var aLines = new List<string>();
 
-                var aPsi = new System.Diagnostics.ProcessStartInfo
+                // 哨兵值由**設定檔**供給（TASK-0064：改設定即改字串，兩端同源）。
+                // ⚠ 讀不動時走地板值並**出聲** —— ⛔ 靜默用地板值會讓「設定沒生效」看起來像設定生效了。
+                string aMarker = "##None##";
+                try
                 {
-                    FileName = "python",
-                    Arguments = $"\"{aScript}\" export-watch --from-session {iSessionId} --force",
-                    WorkingDirectory = UCL_RepoPath.UnityProjectRoot,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8,
-                };
-                using var aProc = System.Diagnostics.Process.Start(aPsi);
-                if (aProc == null) return (false, "", "Process.Start 回 null");
-                // 硬規則：每顆外部 Process 都要登記（Coding_Standards「外部 Process」）
-                using var aScope = UCL_ProcessRegistryService.RegisterScope(
-                    aProc, $"streamwatch_export_{iSessionId}", "實錄匯出成章（收工自動）", nameof(Cmd_StreamWatch));
+                    string aSettings = Path.Combine(aDataRoot, "StreamWatch", "settings.json");
+                    if (File.Exists(aSettings))
+                    {
+                        string aV = SCP.Core.Json.SCP_JsonData
+                            .Parse(File.ReadAllText(aSettings, Encoding.UTF8))
+                            .GetString("untitled_marker", "").Trim();
+                        if (aV.Length > 0) aMarker = aV;
+                    }
+                }
+                catch (Exception e)
+                { aLines.Add($"⚠ StreamWatch/settings.json 讀不動（{e.Message}）⇒ 用地板值，**設定沒有生效**"); }
 
-                string aOut = "", aErr = "";
-                bool aExited = await System.Threading.Tasks.Task.Run(() =>
+                var aR = SCP.Core.Watch.SCP_WatchResolve.FromSession(
+                    aDataRoot, iSessionId, null, aMarker, aLines);
+                if (!string.IsNullOrEmpty(aR.Error))
+                    return UniTask.FromResult((false, string.Join("\n", aLines), aR.Error));
+
+                // 章名的真相源順序（同章號）：**台帳記過的** → 準備檔（意圖）→ 哨兵。
+                // ⚠ 台帳排在準備檔前面，因為準備檔是 per-media 單槽 ⇒ 跨集之後它是**下一話的名字**
+                //   （TASK-0142）。台帳那一筆是「這一章上次匯出時叫什麼」＝ 這一章的事實。
+                string aTitle = aR.LedgerTitle;
+                if (string.IsNullOrEmpty(aTitle)) aTitle = aR.Prepared.GetString("chapter_title", "").Trim();
+                string aWorkTitle = aR.LedgerWorkTitle;
+                if (string.IsNullOrEmpty(aWorkTitle))
                 {
-                    aOut = aProc.StandardOutput.ReadToEnd();
-                    aErr = aProc.StandardError.ReadToEnd();
-                    return aProc.WaitForExit(120000);
-                }, iToken);
-                if (!aExited) { try { aProc.Kill(); } catch { } return (false, aOut, "timeout(>120s)"); }
-                if (aProc.ExitCode != 0) return (false, aOut, $"exit={aProc.ExitCode}; {Truncate(aErr, 400)}");
-                return (true, aOut, "");
+                    aWorkTitle = aR.Prepared.GetString("export_work_title", "").Trim();
+                    if (string.IsNullOrEmpty(aWorkTitle)) aWorkTitle = aR.Prepared.GetString("show_title", "").Trim();
+                }
+                string aNote = "";
+                if (string.IsNullOrEmpty(aTitle))
+                {
+                    // ⛔ 章名一定要親筆 —— 不拿影片標題當預設值。
+                    // ✅ 但「沒有章名」不該讓**整本書不存在**（Tim 2026-08-26 拍板，TASK-0064）。
+                    aTitle = aMarker;
+                    aNote = $"⚠ 章名未定（{aMarker}）—— 匯出時準備檔沒有 chapter_title。"
+                            + "補名**不能手改本檔**（機械產物，下次匯出會覆寫）："
+                            + "改 prepared/<media_id>.json 的 chapter_title 後重出，或直接給 title。";
+                    aLines.Add($"⚠ 準備檔沒有 chapter_title ⇒ 章名用哨兵值 {aMarker} 出書（仍要人親筆補）。");
+                }
+
+                // ⚠ `iForce: true` 是**原本 spawn 那行就帶的** —— 收工自動匯出天生覆寫。
+                //   ⛔ 移植不改行為：這裡不趁機把它關掉（那會讓重出的場次靜默失敗）。
+                var aW = SCP.Core.Watch.SCP_WatchWriter.WriteChapter(
+                    aDataRoot, "tavern", aR.Ranges, aR.Media,
+                    null, string.IsNullOrEmpty(aR.Chapter) ? null : aR.Chapter,
+                    aTitle, null, string.IsNullOrEmpty(aWorkTitle) ? null : aWorkTitle,
+                    string.Join(",", aR.Sessions), string.IsNullOrEmpty(aNote) ? null : aNote,
+                    null, null,
+                    iForce: true, iAllowOverlap: false, iAllowZeroStripped: false, aLines);
+                string aOut = string.Join("\n", aLines);
+                if (!string.IsNullOrEmpty(aW.Error)) return UniTask.FromResult((false, aOut, aW.Error));
+                return UniTask.FromResult((true, aOut, ""));
             }
-            catch (Exception e) { return (false, "", $"spawn exception: {e.Message}"); }
+            catch (Exception e)
+            { return UniTask.FromResult((false, "", $"export exception: {e.Message}")); }
         }
 
         const string SESSION_LOG_NAME = "sessions_log.jsonl";

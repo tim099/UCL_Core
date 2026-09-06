@@ -2356,7 +2356,34 @@ def _iter_tavern_messages(room: str, seq_lo: int, seq_hi: int):
 # 選字要求：**不可能是任何人真的會打的章名**，且不與匯出表頭的 markdown / regex 衝突。
 # 哨兵必須**可查**，否則書有了而名字永遠是它，沒有人會發現 —— 那只是把一種靜默換成另一種。
 # 查法：`library.py list-untitled`。
-UNTITLED_MARKER = "##None##"
+#
+# ⚠ **值來自設定檔，不寫死**（TASK-0064 第 4 格）：`StreamWatch/settings.json` 的 `untitled_marker`。
+#   🩸 為什麼：原本這個字面在三處各寫一次（本檔常數 ＋ `Cmd_StreamWatch.cs` 的提示字串與註解）——
+#   改一處忘了另外兩處時，**兩邊各說各話而兩邊都不會喊**。
+#   ⇒ 現在磁碟上的設定檔是唯一真相源；下面那個常數只是「設定檔不存在時」的地板，
+#     而地板值**只寫這一次**（C# 那側改成讀同一個檔，不再自己抄一份字面）。
+_UNTITLED_MARKER_FALLBACK = "##None##"
+
+
+def _streamwatch_settings() -> dict:
+    """讀 `StreamWatch/settings.json`。讀不到／壞掉 ⇒ 出聲並回空 dict（不靜默）。"""
+    p = _DATA_ROOT / "StreamWatch" / "settings.json"
+    if not p.is_file():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8")) or {}
+    except Exception as e:
+        print(f"⚠ StreamWatch/settings.json 讀不動（{e}）⇒ 本次用內建地板值，"
+              "**設定沒有生效**（這行就是它唯一會出聲的地方）。", file=sys.stderr)
+        return {}
+
+
+def _untitled_marker() -> str:
+    v = str(_streamwatch_settings().get("untitled_marker") or "").strip()
+    return v or _UNTITLED_MARKER_FALLBACK
+
+
+UNTITLED_MARKER = _untitled_marker()
 
 
 def cmd_list_untitled(args):

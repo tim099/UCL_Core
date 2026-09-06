@@ -132,6 +132,29 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // 數值影響：寫 `StreamWatch/prepared/<media_id>.json`（含 catchup_map），不動任何 session；
         //   零 token（準備不是觀影）。
         // ===========================================================
+        /// <summary>
+        /// 章名未定的哨兵值 —— **真相源是 `StreamWatch/settings.json` 的 `untitled_marker`**（TASK-0064）。
+        /// <para>⛔ 本檔不再自己抄一份字面：真正決定行為的是 python 匯出端，
+        /// 而它讀的就是這個檔。這裡只負責**顯示**同一個值。</para>
+        /// <para>⚠ 讀不到時回 `(未設定)` 而**不填一個看起來對的預設值** ——
+        /// 印出一個可能與實際行為不同的字串，比印「我不知道」危險。</para>
+        /// </summary>
+        static string UntitledMarker()
+        {
+            try
+            {
+                string aP = Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "settings.json");
+                if (!File.Exists(aP)) return "(未設定)";
+                var aJd = JsonData.ParseJson(File.ReadAllText(aP, Encoding.UTF8));
+                string aV = aJd == null ? "" : aJd.GetString("untitled_marker", "");
+                return string.IsNullOrWhiteSpace(aV) ? "(未設定)" : aV;
+            }
+            catch (Exception e)
+            {
+                return $"(讀不到：{e.GetType().Name})";
+            }
+        }
+
         static string PreparedPath(string iMediaId)
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", "prepared", $"{iMediaId}.json");
 
@@ -379,6 +402,29 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         $"senate ucmd run StreamWatch --arg step=prepare --arg persona={iPersona} --arg title=末日後酒店 --arg episode=05");
                 throw new Exception($"[StreamWatch] step=prepare blocked：缺 title/media_id（詳見 {aPath}）");
             }
+            // ── 章名不可以自帶「第 N 章 ·」前綴（TASK-0064）────────────────
+            // 物理意義：**匯出端自己會加** `# 第 N 章 · ` 前綴（`library.py` 組表頭那一行），
+            //          所以章名裡再寫一次就會出現「第 2 章 · 第 2 章 · …」。
+            // 🩸 實體讀數（2026-08-27 basecamp `head -1`）：
+            //   `watch-charlie-chocolate-factory/002` 與 `003` 兩章都是雙前綴，
+            //   而傳染路徑是**照抄**：有人在 0002 帶了前綴，下一個人讀了那份 prepared 照抄形狀訂 0003。
+            // ⛔ 擋在寫入端不在輸出端：匯出端偷偷去重會讓「標題到底是什麼」有兩個說法
+            //   （資料裡一個、輸出裡另一個）；擋在這裡只有一個。
+            // ⚠ 只擋「第 N 章」，**不擋「第 N 話」** —— 後者是集數，是章名的合法內容
+            //   （`watch-humanity-has-declined/001` 的〈第 1 話 妖精們的秘密工廠〉是對的）。
+            if (!string.IsNullOrEmpty(aChapterTitle)
+                && System.Text.RegularExpressions.Regex.IsMatch(
+                       aChapterTitle, @"^\s*第\s*[0-9０-９一二三四五六七八九十百]+\s*章"))
+            {
+                Blocked(iArgs, aR, aPath,
+                        $"chapter_title 不可以自帶「第 N 章」前綴（收到 `{aChapterTitle}`）—— "
+                        + "匯出端組表頭時**自己會加** `# 第 N 章 · `，再帶一次就會出現「第 2 章 · 第 2 章 · …」。"
+                        + "⚠ 只寫章名本身；「第 N 話」是集數、屬於章名的一部分，不受此限。",
+                        $"senate ucmd run StreamWatch --arg step=prepare --arg persona={iPersona} "
+                        + "--arg chapter_title=\"<去掉『第 N 章 ·』之後的章名>\"");
+                throw new Exception($"[StreamWatch] step=prepare blocked：chapter_title 自帶章號前綴（詳見 {aPath}）");
+            }
+
             if (string.IsNullOrEmpty(aEpisodeIn))
             {
                 Blocked(iArgs, aR, aPath, "episode（本場看第幾集）必填 —— 補課地圖與章號都靠它算",
@@ -558,7 +604,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!aAutoExport)
                 aR.AppendLine("- ⏸ `auto_export=false` ⇒ 本媒材收工**不自動匯出**（回傳檔仍會印手動指令）");
             else if (string.IsNullOrEmpty(aChapterTitle))
-                aR.AppendLine("- ⚠ **章名未填 —— 收工仍會自動匯出**，章名用哨兵值 `##None##`（TASK-0064）。\n"
+                // ⚠ 哨兵值**讀設定檔，不寫死**（TASK-0064 第 4 格）——
+                //   它原本在這裡抄了一份字面，而真正決定行為的是 python 端。
+                //   ⇒ 改了一邊忘了另一邊時，兩邊各說各話而**兩邊都不會喊**。現在只有設定檔一個真相源。
+                aR.AppendLine($"- ⚠ **章名未填 —— 收工仍會自動匯出**，章名用哨兵值 `{UntitledMarker()}`（TASK-0064）。\n"
                     + "  章名不由工具代取；哨兵是「還沒有名字」的記號。事後補名走 `--force` 重出，**不能手改 .txt**（機械產物會被覆寫）。\n"
                     + "  查哪些章還掛著哨兵：`python <UCL_Core>/Tools~/AgentCommands/library.py list-untitled`\n"
                     + $"  ⇒ 現在就定名（建議）：重跑本步並帶 `--arg chapter_title=\"<章名>\"`（prepare 可重入）");

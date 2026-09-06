@@ -144,6 +144,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 ["note_list"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 ["note_delete"] = new UCL_CmdOpSpec { Required = new[] { "room", "key" } },
 
+                // ─── Catchup ────────────────────────────────────────────────
+                // 🩸 TASK-0069：`catchup` 從一開始就只在 switch 的 case 裡（:250），**沒進這張表** ——
+                //   而漏宣告的 op 在 `commands_schema.json` 產物上與「這個 op 不存在」**同形**。
+                //   宣告與實作是兩張表時，匯出器只看得到宣告那張，重跑匯出修不好它。
+                // `persona` 是必填（`Op_Catchup` 缺它就 `RejectLastOp` ⇒ throw）：要知道是誰的游標與 inbox。
+                ["catchup"] = new UCL_CmdOpSpec { Required = new[] { "persona" } },
+
                 // ─── Quest Workflow ──────────────────────────────────────
                 // task_create 只 reject room / task_id —— title 沒 reject（Python 舊表誤列為必填）
                 ["task_create"] = new UCL_CmdOpSpec {

@@ -59,6 +59,44 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
         public override string HelpURL => "ucl_core:Docs~/{lang}/Workflows/Task_Management_Workflow.md";
 
+        // 區塊職責：**執行前**參數閘的宣告（TASK-0069）——
+        //   `UCL_AgentCommandRunner:349 → UCL_CmdArgsValidator.Validate` 讀它，缺必填就**不執行 handler**。
+        // 物理意義：`Validate` 對 `ArgsSpec == null` 的 handler **直接 return true** ⇒
+        //   本檔在補上這份宣告之前，走 ucmd 這條路是**完全沒有執行前參數閘**的。
+        //   （另一個消費端是 `UCL_CmdSchemaExporter` → `commands_schema.json`，但那份產物只有
+        //    退場中的 python client 在讀 ⇒ 本宣告的價值在上面那條，不在產物。）
+        // 數值影響：⚠ 這裡**只宣告 handler 自己已經會 throw 的必填** —— 多宣告一格就會擋掉
+        //   一個今天合法的呼叫，而那種壞法不會有人喊（呼叫端只看到「被擋」，看不到「是誰多寫的」）。
+        //   ⇒ 逐格對照：`Require(iArgs, out _)` 的十個 op 要 `index`；`create` 只要 `title`
+        //   （`evidence`／`criteria` 是**依 type 而定**的條件必填，留在 handler 判，宣告層表達不了）。
+        // ⛔ **`op` 刻意不宣告 Required** —— 它有預設值 `"list"`，不帶 op ＝ 列清單，那是合法呼叫。
+        //   把有預設值的參數列進 Required，等於把一條既有的路砍掉。
+        public override UCL_CmdArgsSpec ArgsSpec => new UCL_CmdArgsSpec
+        {
+            Ops = new Dictionary<string, UCL_CmdOpSpec>
+            {
+                // 無必填：list / sweep / kanban（handler 內零 reject ⇒ 不宣告，比照 Cmd_Tavern 的 leave）
+                ["list"] = new UCL_CmdOpSpec(),
+                ["sweep"] = new UCL_CmdOpSpec(),
+                ["kanban"] = new UCL_CmdOpSpec(),
+
+                // create：`title` 是無條件必填（:190 那個 throw 的成員之一）。
+                ["create"] = new UCL_CmdOpSpec { Required = new[] { "title" } },
+
+                // 以下十個都走 `Require(iArgs, out int aIndex)`（:1291）⇒ 無 index 必 throw。
+                ["show"] = new UCL_CmdOpSpec { Required = new[] { "index" } },
+                ["claim"] = new UCL_CmdOpSpec { Required = new[] { "index" } },
+                ["update"] = new UCL_CmdOpSpec { Required = new[] { "index" } },
+                ["resolve"] = new UCL_CmdOpSpec { Required = new[] { "index" } },
+                ["assign"] = new UCL_CmdOpSpec { Required = new[] { "index", "target_persona" } },
+                ["unassign"] = new UCL_CmdOpSpec { Required = new[] { "index", "target_persona" } },
+                ["comment"] = new UCL_CmdOpSpec { Required = new[] { "index", "body" } },
+                ["link"] = new UCL_CmdOpSpec { Required = new[] { "index", "target" } },
+                ["commit"] = new UCL_CmdOpSpec { Required = new[] { "index", "sha" } },
+                ["wrapup"] = new UCL_CmdOpSpec { Required = new[] { "index", "progress" } },
+            },
+        };
+
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {
             await UniTask.Yield();

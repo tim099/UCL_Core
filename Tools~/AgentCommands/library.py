@@ -2420,6 +2420,74 @@ def _sessions_log_path() -> Path:
     return _DATA_ROOT / "StreamWatch" / "sessions_log.jsonl"
 
 
+# ===========================================================
+# 段台帳（TASK-0060 的產物）—— 匯出排序的真相源
+# 區塊職責：把 `seq → seg_index` 的對照讀出來，讓匯出端能依**段序**重排實錄。
+# 物理意義：河道的 tavern seq 是「誰先按下送出」，段序是「這段素材在片子裡的先後」。
+#          書是實錄 ⇒ 它要的是後者。⛔ 不解析訊息本文、不以 message meta 為主（Tim 2026-08-26 21:38 拍板）：
+#          meta 是每則各自帶的，漏寫會長出「一則沒有段號的觀察」而看起來完全正常；
+#          台帳的缺漏會顯示成「這段沒有 seq」——**讀不到與沒有，在輸出上可分**。
+# 數值影響：只讀不寫。台帳不存在 ⇒ 回空 dict，呼叫端據此**明印**排序來源是 tavern seq。
+# ⚠ 回空與「讀不到」必須可分：讀檔失敗時出聲，不靜默回空
+#   （靜默回空會讓「沒有台帳」與「台帳壞了」同形，而前者是合法的舊章）。
+# ===========================================================
+def _segments_log_path() -> Path:
+    return _DATA_ROOT / "StreamWatch" / "segments.jsonl"
+
+
+def _load_segment_order():
+    """回 {tavern_seq: seg_index}。台帳不存在 ⇒ 回 {}（合法：舊章沒有台帳）。"""
+    p = _segments_log_path()
+    if not p.is_file():
+        return {}
+    out = {}
+    bad = 0
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except Exception:
+            bad += 1
+            continue
+        if str(rec.get("record_type", "")) != "observe":
+            continue
+        seq = rec.get("seq")
+        idx = rec.get("seg_index")
+        if isinstance(seq, int) and isinstance(idx, int):
+            out[seq] = idx
+    if bad:
+        print(f"⚠ segments.jsonl 有 {bad} 行讀不動（略過該行，不當成沒有段台帳）", file=sys.stderr)
+    return out
+
+
+def _order_by_segment(kept, seg_of_seq):
+    """依段序重排 `kept`（原本是 tavern seq 序），回 (排序後清單, 有段號則數, 無段號則數)。
+
+    區塊職責：段序是實錄主序；tavern seq 是對話錨點 —— **不把兩者假裝成同一條序**
+             （@meadow 投票，TASK-0061）。
+    物理意義：有段號的照段號排；**無段號的（公告漏過濾／舊訊息／同場閒聊）不丟掉**，
+             穩定合併到「它前面最近一則有段號的那一段」之後，保持原本的 tavern seq 相對位置。
+             ⛔ 不把無號的全塞章末 —— 那看起來乾淨，但會把對話拆散，而實錄的價值正是對話。
+    數值影響：排序鍵 `(anchor_seg, 0|1, seq)` 是**全序**（seq 在單一房間內唯一）
+             ⇒ 同一份輸入永遠得到同一份輸出，可 `cmp` 驗證。
+    ⚠ 出現在**第一則有段號的訊息之前**的無號訊息，anchor 取 -1 ⇒ 排在最前，位置一樣穩定。
+    """
+    keyed = []
+    anchor = -1
+    for k in kept:                       # kept 進來時是 tavern seq 昇冪
+        idx = seg_of_seq.get(k["seq"])
+        if idx is None:
+            keyed.append(((anchor, 1, k["seq"]), k))
+        else:
+            anchor = idx
+            keyed.append(((idx, 0, k["seq"]), k))
+    keyed.sort(key=lambda t: t[0])
+    with_seg = sum(1 for k in kept if k["seq"] in seg_of_seq)
+    return [k for _, k in keyed], with_seg, len(kept) - with_seg
+
+
 def _read_sessions_log():
     """回 [(行號, dict)]；壞行不靜默跳過（印 warning 並保留位置感）。"""
     p = _sessions_log_path()
@@ -2448,13 +2516,28 @@ def _sessions_log_state():
             if sid in state:
                 state[sid]["exported_chapter"] = rec.get("exported_chapter", "")
                 state[sid]["exported_book"] = rec.get("book", "")
+                # 章名／作品名也以最後一筆 export 事件為準（TASK-0142 延伸）——
+                # ⚠ 舊事件沒有這兩個鍵 ⇒ 讀回 ""，而 "" 與「這一章真的沒有名字」同形。
+                #   呼叫端據此退回哨兵，那是**看得見的缺**，不是安靜的錯。
+                state[sid]["exported_title"] = rec.get("chapter_title", "")
+                state[sid]["exported_work_title"] = rec.get("work_title", "")
         else:
             state[sid] = dict(rec)
     return state
 
 
-def _append_export_events(session_ids, chapter: str, book: str):
-    """把「這幾場進了哪一章」append 進台帳（BUG-9）。回傳實際寫入的 session id 清單。"""
+def _append_export_events(session_ids, chapter: str, book: str,
+                          chapter_title: str = "", work_title: str = ""):
+    """把「這幾場進了哪一章」append 進台帳（BUG-9）。回傳實際寫入的 session id 清單。
+
+    ⚠ 也記 `chapter_title` / `work_title`（2026-09-06，TASK-0142 延伸）——
+    🩸 因為在此之前**章名沒有任何持久儲存**：它只活在 per-media 單槽的 `prepared/` 裡
+       （下一話就被覆寫）與產物 `.txt` 裡（而那是機械產物，不能當真相源）。
+       ⇒ 重出任何一個舊章都會掉章名。實撞兩次（同一天、同一個修法的兩次驗證）：
+       `watch-sluha-narodu/001` 被寫成第 2 集的章名（**安靜的錯**）；
+       `watch-apocalypse-hotel/010` 退成 `##None##`（**看得見的缺**）。
+       兩者是同一個洞的兩面 —— 修掉洞本身，而不是選一個比較好看的失敗樣子。
+    """
     session_ids = [s for s in dict.fromkeys(session_ids) if s]
     if not session_ids:
         return []
@@ -2471,12 +2554,14 @@ def _append_export_events(session_ids, chapter: str, book: str):
                 "session_id": sid,
                 "exported_chapter": chapter,
                 "book": book,
+                "chapter_title": chapter_title or "",
+                "work_title": work_title or "",
                 "exported_at": ts,
             }, ensure_ascii=False) + "\n")
     return session_ids
 
 
-def _resolve_from_session(session_id: str):
+def _resolve_from_session(session_id: str, explicit_chapter=None):
     """收工自動匯出用：由 session id 反查 media / seq 區間 / 同場清單 / 準備檔。
 
     區塊職責：把「章 ≠ 場」這件事處理掉 —— 一章可能由主場＋陪同場（＋同章的其它場次）組成。
@@ -2533,7 +2618,52 @@ def _resolve_from_session(session_id: str):
                     + " ⇒ ⛔ 不採用這份準備檔（章號與章名請以 --chapter / --title 明示）。",
                     file=sys.stderr)
                 prepared = {}
-    chapter = str(prepared.get("export_chapter") or prepared.get("chapter_id") or "").strip()
+    # ── 章號的真相源順序（TASK-0142）────────────────────────────
+    # 區塊職責：決定「這一場屬於哪一章」。
+    # 物理意義：`prepared/<media_id>.json` 是**開場前的意圖**，而它是 per-media **單槽**
+    #          ⇒ 下一話 prepare 會把它覆寫。⇒ 跨集之後拿它解舊場，解出來的是**別集的章號**。
+    #          `sessions_log` 的 export 事件是**已經發生的事實**（append-only，每場最後一筆為準）。
+    #          ⇒ 已經匯出過的場次，章號只能問後者。
+    # ⚠ prepared 不能拿掉：第一次匯出時台帳上還沒有 exported_chapter，那時它是唯一來源。
+    #   ⇒ 修的是**順序**（台帳優先、prepared 當 fallback），不是刪掉一邊。
+    # ⛔ 兩邊都有而不一致 ⇒ 不挑一邊、不自動修：印出兩個值與各自出處，要人 `--chapter` 明示
+    #   （同 TASK-0076 對幽靈準備檔的既有處置形狀）。給了 --chapter 就不必問這一格。
+    _ledger_ch = str(me.get("exported_chapter") or "").strip()
+    _prep_ch = str(prepared.get("export_chapter") or prepared.get("chapter_id") or "").strip()
+
+    def _norm_ch(c: str) -> str:
+        return f"{int(c):03d}" if c.isdigit() else c
+
+    if explicit_chapter:
+        chapter = str(explicit_chapter).strip()
+    elif _ledger_ch:
+        # ⚠ 台帳贏，但**不安靜地贏**：兩邊不一致是「已經跨集」的正常樣子（準備檔被下一話覆寫），
+        #   而它同時也可能是別的東西壞了 ⇒ 採用台帳，並把兩個值與各自出處一起印出來。
+        # ⛔ 這裡刻意**不擋**，而 0142 驗收 ①-2 的原字面是「不一致就要人 --chapter 明示」——
+        #   兩條驗收互斥：②要求同一個情境（台帳 001／準備檔 002）**不帶 --chapter 就解成 001**。
+        #   擋下來會讓 0064 的補名路徑（它印的指令不帶 --chapter）在跨集後每次都失敗，
+        #   而那正是本單要修的那條路。⇒ 選了能讓消費端活著的那條，差異寫在單上，不靜默。
+        if _prep_ch and _norm_ch(_ledger_ch) != _norm_ch(_prep_ch):
+            print("⚠ 章號兩個來源不一致 —— 採用**台帳**："
+                  f"{_norm_ch(_ledger_ch)}（sessions_log export 事件最後一筆＝已發生的事實）。",
+                  file=sys.stderr)
+            print(f"   準備檔 prepared/{lib_media}.json 說 {_norm_ch(_prep_ch)}"
+                  "（開場前的意圖，per-media 單槽、會被下一話覆寫）⇒ 這通常表示**已經跨集了**。",
+                  file=sys.stderr)
+            # 🩸 而漂掉的不只章號：`chapter_title` / `export_work_title` 住在**同一份單槽準備檔**，
+            #   所以它們也是下一話的。實撞（2026-09-06，本修法的第一次重出）：
+            #   `watch-sluha-narodu/001.txt` 的章名被寫成第 2 集的〈瓦夏的故事〉、
+            #   作品欄從 `[01]` 變成 `[02]` —— 而**章號那一格已經被我修對了**，
+            #   於是產物看起來完全正常：第 1 章、第 1 集的區間、第 2 集的名字。
+            # ⇒ 只修章號會把「整章錯」換成「章名錯」，而後者更難發現。
+            # ⛔ 一致的處置（同 TASK-0076 對幽靈準備檔）：整份不採用，章名退回哨兵／要人 --title 明示。
+            #   「看得見的缺」勝過「安靜的錯」（TASK-0064 的既有拍板）。
+            print("   ⚠ 同一份準備檔的 chapter_title / export_work_title **也是下一話的** "
+                  "⇒ 一併不採用（章名請用 --title 明示，否則出哨兵值）。", file=sys.stderr)
+            prepared = {}
+        chapter = _ledger_ch
+    else:
+        chapter = _prep_ch
     # 同一章的舊場次也要一起收（重播／殘場／一話跨數場）
     if chapter:
         want = f"{int(chapter):03d}" if chapter.isdigit() else chapter
@@ -2561,9 +2691,16 @@ def _resolve_from_session(session_id: str):
         else:
             merged.append((lo, hi))
     ranges = merged
+    # 台帳記下來的章名（TASK-0142 延伸）—— ⚠ 哨兵值視同「沒有名字」，
+    #   否則 0064 的補名路徑（章名本來就是 ##None##）會被自己擋住。
+    _led_title = str(me.get("exported_title") or "").strip()
+    _led_work = str(me.get("exported_work_title") or "").strip()
+    if _led_title == UNTITLED_MARKER:
+        _led_title = ""
     return {
         "media": media, "library_media_id": lib_media, "sessions": sessions,
         "ranges": ranges, "prepared": prepared, "chapter": chapter,
+        "ledger_title": _led_title, "ledger_work_title": _led_work,
     }
 
 
@@ -2571,15 +2708,20 @@ def cmd_export_watch(args):
     # 收工自動匯出：由場次 id 反查 media/區間/章號/章名（缺的才用旗標補）。
     resolved = None
     if getattr(args, "from_session", None):
-        resolved = _resolve_from_session(args.from_session)
+        resolved = _resolve_from_session(args.from_session, explicit_chapter=args.chapter)
         prep = resolved["prepared"]
         args.media = args.media or resolved["media"]
         args.seq_ranges = args.seq_ranges or ",".join(f"{lo}-{hi}" for lo, hi in resolved["ranges"])
         args.sessions = args.sessions or ",".join(resolved["sessions"])
         args.chapter = args.chapter or (resolved["chapter"] or None)
-        args.title = args.title or (prep.get("chapter_title") or "").strip() or None
-        args.work_title = args.work_title or (prep.get("export_work_title")
-                                              or prep.get("show_title") or "").strip() or None
+        # 章名的真相源順序（同章號）：--title 明示 → 台帳記過的 → 準備檔（意圖）→ 哨兵。
+        # ⚠ 台帳排在準備檔前面，因為準備檔是 per-media 單槽 ⇒ 跨集之後它是**下一話的名字**。
+        #   而台帳的那一筆是「這一章上次匯出時叫什麼」＝ 這一章的事實。
+        args.title = (args.title or (resolved.get("ledger_title") or "").strip()
+                      or (prep.get("chapter_title") or "").strip() or None)
+        args.work_title = (args.work_title or (resolved.get("ledger_work_title") or "").strip()
+                           or (prep.get("export_work_title")
+                               or prep.get("show_title") or "").strip() or None)
         if not args.title:
             # ⛔ 章名一定要親筆 —— 不拿影片標題（show_title）當預設值。
             # ✅ 但「沒有章名」不該讓**整本書不存在**（Tim 2026-08-26 拍板，TASK-0064）：
@@ -2707,10 +2849,27 @@ def cmd_export_watch(args):
               "   確認過真的沒有附掛區塊 → 加 --allow-zero-stripped 明說。", file=sys.stderr)
         return 1
 
+    # ── 依段序重排（TASK-0061）─────────────────────────────────
+    # 🩸 為什麼要有這一段：`_iter_tavern_messages` 照 tavern seq 掃 ⇒ 書把**河道的亂序原樣複印**。
+    #   實證 010.txt：章內素材時間 20:51:59 → 20:52:31 → **20:52:19** → 20:53:51 → **20:54:21**。
+    #   ⇒ 河道亂序是當下不好讀；**書亂序是永久錯的實錄**。
+    # ⚠ 排序來源一律明印在表頭（下方「排序」列）—— ⛔ 沒有台帳時**不得靜默 fallback**：
+    #   「照段序排過」與「照 seq 排的舊章」必須在產物上分得出來。
+    seg_of_seq = _load_segment_order()
+    kept, _n_seg, _n_noseg = _order_by_segment(kept, seg_of_seq) if seg_of_seq else (kept, 0, len(kept))
+    if _n_seg:
+        _sort_note = (f"**段序**（`segments.jsonl`）—— 有段號 {_n_seg} 則"
+                      + (f"／無段號 {_n_noseg} 則（保留原 seq 相對位置，併在前一段之後）"
+                         if _n_noseg else "／全部有段號"))
+    else:
+        _sort_note = ("**tavern seq**（本章區間在段台帳裡沒有任何一則有段號 —— "
+                      "舊章或台帳上線前的場次）⇒ 素材時間可能亂序，這不是漏排是沒得排")
+
     by_persona = {}
     for k in kept:
         by_persona[k["persona"]] = by_persona.get(k["persona"], 0) + 1
-    span = f"{kept[0]['seq']} – {kept[-1]['seq']}"
+    _seqs = [k["seq"] for k in kept]
+    span = f"{min(_seqs)} – {max(_seqs)}"
 
     lines = []
     lines.append(f"# 第 {int(chapter)} 章 · {args.title}" if args.title else f"# 第 {int(chapter)} 章")
@@ -2733,6 +2892,7 @@ def cmd_export_watch(args):
     if args.sessions:
         lines.append(f"| 場次 | {' ／ '.join(args.sessions.split(','))} |")
     lines.append(f"| seq 區間 | {' ／ '.join(f'{lo}–{hi}' for lo, hi in ranges)} |")
+    lines.append(f"| 排序 | {_sort_note} |")
     lines.append(f"| 收錄 | **{len(kept)} 筆**（"
                  + "／".join(f"{p} {n}" for p, n in sorted(by_persona.items(), key=lambda kv: -kv[1]))
                  + f"）／未收錄 **{len(excluded)} 筆**／清掉自動附掛 **{stripped}** 處 |")
@@ -2785,7 +2945,9 @@ def cmd_export_watch(args):
                 continue
             if any(lo <= lo0 and hi0 <= hi for lo, hi in ranges) and sid not in want_sids:
                 want_sids.append(sid)
-        done = _append_export_events(want_sids, chapter, book)
+        done = _append_export_events(want_sids, chapter, book,
+                                      chapter_title=(args.title or ""),
+                                      work_title=(args.work_title or ""))
         if done:
             print(f"   ↳ 台帳 append {len(done)} 筆 export 紀錄（chapter={chapter}）：{', '.join(done)}")
             print("     ⚠ 場次列的 exported_chapter 欄**不會被填**（append-only）—— 查章號請掃 export 紀錄")

@@ -2,9 +2,9 @@
 //          Cmd_GoodMorning 與 UCL_PersonaAgentAdminPage 測試區共用同一份實作，兩入口零複製。
 // 物理意義：P1 先落「唯讀半套」：身分解析（persona→agent→bank，port 自 _lib/bank_resolver.py）、
 //          在線守衛判定（lock 檔為真相源）、wake_count 推導（wakes/ 信件數 = 真相源）、
-//          全 persona 對帳、brief 生成觸發鏈（spawn python，R19/R20）。
+//          全 persona 對帳、brief 生成觸發鏈（就地呼叫 SCP_WakeBrief，不 spawn 任何 process）。
 //          P2 才加寫入半套（registry patch-write / lock / token / memo）。
-// 數值影響：本檔全部唯讀（RunBrief 例外 —— 它 spawn awakening.py brief，寫檔者是 Python 端）。
+// 數值影響：本檔全部唯讀（RunBrief 例外 —— 它就地呼叫 SCP_WakeBrief.Write，寫檔者是本 process）。
 // 對帳義務：wake 信計數規則 ^(\d{6})_.*\.md$ 與 letters 路徑解析**逐字對齊 awakening.py**
 //          （list_wake_letters / _resolve_data_path）——兩端規則漂移 = wake 編號分裂，
 //          改任一端務必同步改另一端並跑後台「對帳」按鈕全綠。
@@ -887,7 +887,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aR.AppendLine($"- lock: session_key={aLock.session_key} pid={aLock.pid} locked_at={aLock.locked_at}");
                 aR.AppendLine("- exits:");
                 aR.AppendLine("  - 讓它先下線：後台「登入狀態」頁登出，或該 session 跑 goodnight，再重跑本步");
-                aR.AppendLine("  - brief 沒生出來（morning 中途被砍）→ step=brief 或 awakening.py brief（純本機，不動 lock）");
+                aR.AppendLine("  - brief 沒生出來（morning 中途被砍）→ step=brief；Editor 沒開就 senate cmd wake-brief（純本機，不動 lock）");
                 aR.AppendLine("  - lock 在但 token 丟了 → awakening.py reissue-token --persona " + iPersona);
                 aR.AppendLine("  - 晚安後想續線 → awakening.py relogin --persona " + iPersona);
                 aR.AppendLine("- ⚠ 不要改用別的 persona 名繞過去 —— 那是製造分身，比停下來糟");
@@ -1033,7 +1033,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine("## next");
             int aStepNo = 1;
             aR.AppendLine($"{aStepNo++}. **required** — 生成 brief：senate ucmd run GoodMorning --arg step=brief --arg persona={iPersona}");
-            aR.AppendLine("   （Editor 未開啟時的備援才是直跑 awakening.py brief）");
+            aR.AppendLine("   （Editor 未開啟時的備援＝senate cmd wake-brief —— 信件層 brief，不動 lock）");
             aR.AppendLine($"{aStepNo++}. **required** — Read brief（路徑由 step=brief 回傳；接回身分，這步不自動化）");
             // 條件步驟 B2（Tim 2026-08-13）：無自我介紹文件 → 讀完 brief 後先補件，intro 前置守衛會實擋
             if (FindGlossaryPersonaEntry(iPersona) == null)

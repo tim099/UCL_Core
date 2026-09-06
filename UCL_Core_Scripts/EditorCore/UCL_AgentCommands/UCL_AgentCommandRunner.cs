@@ -108,6 +108,67 @@ namespace UCL.Core.EditorLib.AgentCommands
             UCL_AgentCmdContexts.FromArgs(iArgs, nameof(ReportOutputValue))?.AddValue(iKey, iValue);
         }
 
+        // ===========================================================
+        // 區塊職責：本次 cmd 若**沒有**鏡寫 per-persona last_op，就地留下一份「本支不寫」的 stub。
+        // 物理意義：`letters/<p>/cmd/<slug>_last_op.md` 是 agent 判斷「我剛才那筆做了什麼」的第一手來源。
+        //   不寫 last_op 的 op（如 `AutoCommit op=scan`）**不會覆蓋**上一份 ⇒ 上一份就永久留在原地，
+        //   而它格式完整、數字合理、看起來像剛產生的。**「陳舊」與「剛產生」在檔案上同形。**
+        // 數值影響：只在「拿得到 lane」且「本次 outputs 裡沒有任何 *_last_op.md」時寫；
+        //   內容含本次 cmd_id／型別／時間，並把**被取代的那一份**的 cmd_id 與 mtime 一起印回去
+        //   （不靜默丟掉前一份的身分 —— 那會讓「被 stub 蓋掉」與「本來就沒有」再同形一次）。
+        // ⛔ 刻意**不刪檔**：刪掉之後「這支不寫 last_op」與「這個 persona 沒跑過這支」又會同形。
+        // ===========================================================
+        static void WriteLastOpStubIfAbsent(UCL_AgentCommand iCmd)
+        {
+            if (iCmd == null || string.IsNullOrEmpty(iCmd.Id)) return;
+            var aCtx = UCL_AgentCmdContexts.Get(iCmd.Id);
+            if (aCtx == null || string.IsNullOrEmpty(aCtx.AgentId)) return;   // 非 queue 路徑：不動
+
+            // lane ＝ AgentId 的第一段（per-room 子佇列長 `summit/chess-5`，其餘是房間路由不是身分）
+            string aPersona = aCtx.AgentId;
+            int aSep = aPersona.IndexOfAny(new[] { '/', '\\' });
+            if (aSep >= 0) aPersona = aPersona.Substring(0, aSep);
+            if (aPersona.Length == 0) return;
+
+            foreach (var aOut in aCtx.SnapshotOutputs())
+                if (!string.IsNullOrEmpty(aOut) && aOut.EndsWith("_last_op.md", StringComparison.OrdinalIgnoreCase))
+                    return;   // 本次真的寫過 ⇒ 什麼都不做
+
+            int aCut = iCmd.Id.LastIndexOf('-');
+            string aSlug = aCut >= 0 && aCut < iCmd.Id.Length - 1 ? iCmd.Id.Substring(aCut + 1) : "cmd";
+            string aPath = UCL_LettersPath.CmdPayload(aPersona, aSlug, "last_op");
+
+            // 被取代的那一份：把它的身分抄進 stub，不靜默丟掉
+            string aPrev = "（本次之前沒有這個檔）";
+            if (System.IO.File.Exists(aPath))
+            {
+                string aPrevId = "(無 cmd_id 章)";
+                try
+                {
+                    foreach (var aLine in System.IO.File.ReadAllLines(aPath))
+                        if (aLine.Contains("<!-- cmd_id:")) { aPrevId = aLine.Trim(); break; }
+                }
+                catch { aPrevId = "(讀不到，已覆寫)"; }
+                aPrev = $"cmd_id `{aPrevId}`／mtime {System.IO.File.GetLastWriteTime(aPath):yyyy-MM-dd HH:mm:ss}";
+            }
+
+            var aSb = new System.Text.StringBuilder();
+            aSb.AppendLine("# ⚠ 本次 op 沒有產出 last_op");
+            aSb.AppendLine($"<!-- cmd_id: {iCmd.Id} -->");
+            aSb.AppendLine();
+            aSb.AppendLine($"- cmd   : `{iCmd.Type}`　persona: `{aPersona}`");
+            aSb.AppendLine($"- 時間  : {DateTime.Now:yyyy-MM-dd HH:mm:sszzz}（本地時間）");
+            aSb.AppendLine("- 這一支**沒有呼叫 `WriteLastOp`** ⇒ 它的讀數不在這裡：");
+            aSb.AppendLine("  看 `_cmd_results/<id>.json` 的 `values`（CLI 印成 `🔢 k = v`），或它自己的回傳檔。");
+            aSb.AppendLine($"- 被本行取代的前一份：{aPrev}");
+            aSb.AppendLine();
+            aSb.AppendLine("> 📌 這一行是**刻意寫的**（TASK-0116）。沒有它的話，上一次的內容會留在原地，");
+            aSb.AppendLine("> 而「三天前別人的讀數」與「剛剛我自己的讀數」在這個檔上長得一模一樣。");
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(aPath));
+            System.IO.File.WriteAllText(aPath, aSb.ToString(), new System.Text.UTF8Encoding(false));
+            aCtx.AddOutput(aPath);
+        }
+
         /// <summary>對外查詢：runner 是否正忙著跑 default queue（legacy API）。</summary>
         public static bool IsRunning => IsRunningForAgent(null);
 
@@ -458,6 +519,17 @@ namespace UCL.Core.EditorLib.AgentCommands
                         UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.CurrentCallerEnvMarker = null;
                         // T-LastOp-CmdId：同步清 cmd_id slot — 防下一筆 cmd（或非 queue 路徑的 WriteLastOp）誤 stamp 上一筆的 id
                         CurrentCmdId = null;
+                        // 區塊職責：**沒有產出 last_op 的那幾支，也要留下一行讀數**（TASK-0116 第二半）。
+                        // 🩸 血證（@summit 2026-09-06 量到）：`letters/summit/cmd/autocommit_last_op.md` 讀回來是
+                        //   @basecamp 09-03 的繪圖券報告，**而那個檔的 mtime 就是 09-03** ——
+                        //   汙染只解釋了「內容為什麼是別人的」，沒解釋「它為什麼還在那裡」：
+                        //   `AutoCommit op=scan` 根本不寫 last_op ⇒ **後續沒有任何一次會覆蓋它**。
+                        // ⇒ 「陳舊」與「剛產生」在檔案上同形，而陳舊那半**不需要任何併發**就會發生。
+                        // 數值影響：本次沒鏡寫過 last_op 時，就地覆寫成一份**明說「這一支不寫」**的 stub。
+                        //   ⚠ 不刪檔：刪掉之後「這支不寫」與「這個 persona 沒跑過」又會同形。
+                        //   ⚠ 只在拿得到 lane（AgentId）時做；非 queue 路徑不動，行為與舊版全等。
+                        try { WriteLastOpStubIfAbsent(c); } catch (System.Exception e)
+                        { Debug.LogWarning($"[UCL_AgentCmd] last_op stub 寫入失敗（不影響本次結果）：{e.Message}"); }
                         // per-cmd context 退場 —— **必須在 WriteCmdResult 之後**（result 檔要讀它的 outputs/values）。
                         // ⚠ 這裡若提早釋放，症狀是 result 檔的 outputs 欄空掉，而 cmd 本身 Success ——
                         //   又是一個「成功了但東西不見」的無聲失敗。

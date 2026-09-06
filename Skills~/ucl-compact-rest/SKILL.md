@@ -6,11 +6,8 @@ description: |
   核心血證:**compact 只動 in-memory 對話史,磁碟檔完整存活。所以重要記憶『必落磁碟』,別只靠 /compact focus(會丟細節)。**
 
   觸發詞 (case-insensitive substring):
-  - 小歇片刻 / 小歇 / 小憩 / 歇一下 / 喘口氣
-  - compact / 壓縮 / 壓縮對話 / 壓縮記憶 / 整理記憶 / 保留記憶 / 記憶保命
-  - context 快滿 / context 要爆 / 快到上限 / 該 compact 了
-  - compact 前 / 該怎麼 compact / 指定 compact
-  - ⏰ **第二步（醒來接回）**：午安大小姐 / 午安 / 接回 / 我醒了 / 小歇結束 / compact 完了
+  - 午休一下
+  - ⏰ **第二步（醒來接回）**：午安大小姐
 
 related:
   - .claude/skills/ucl-letters-to-self/SKILL.md | letter 機制(本 skill 的記憶載體之一) + 跨 compact 對話接力

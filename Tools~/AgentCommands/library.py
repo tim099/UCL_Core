@@ -1569,112 +1569,47 @@ def _run_tavern_post(persona: str, body: str, tag: str = "book-donation") -> boo
 
 
 def cmd_donate(args):
-    # 區塊職責: 捐贈一本 Books/ 的書 — 付 token (走 Cmd_Treasury), 全員可讀, 標註捐贈者
-    # 物理意義: 基礎 100 token/本 (多冊每冊算一本); Tim 可給優惠價 (--tokens 覆寫)
-    book = args.book
-    bdir = _books_root() / book
-    if not bdir.exists():
-        print(f"❌ Books/{book}/ 不存在 — 先把書放進 AgentCommands/Books/{book}/", file=sys.stderr)
-        return 2
-    dpath = bdir / "_donation.json"
-    if dpath.exists():
-        ex = _read_json(dpath)
-        print(f"⚠ 《{book}》已被捐贈 — 捐贈者: {ex.get('donor_persona') or ex.get('donor')} "
-              f"({ex.get('tokens')} token @ {ex.get('donated_at')})", file=sys.stderr)
-        return 1
-    donor = args.donor
-    tokens = int(args.tokens) if args.tokens is not None else 100
-    title = book
-    if _book_json(book).exists():
-        title = _read_json(_book_json(book)).get("title", book)
-    desc = f"捐贈圖書: {title} (donor={args.donor_persona or donor})"
+    """⛔ 已退場（TASK-0143，2026-09-06 Tim 拍板：金流一律走 ucmd）—— 指路 stub，**不動帳不寫檔**。
 
-    print(f"📚 捐贈《{title}》 — 捐贈者 {args.donor_persona or donor} / {tokens} token")
-    print("   走 CMD: Cmd_Treasury op=debit (use_kind=book_donation)...")
-    ok, out = _run_treasury_debit(donor, tokens, book, desc)
-    # 跨層驗證: 掃 ledger 確認真扣款才註冊
-    if not _verify_donation_debit(donor, book, tokens):
-        print("❌ Treasury debit 未確認落帳 (餘額不足? caller!=account? Editor 未跑?) — 不註冊捐贈",
-              file=sys.stderr)
-        print(f"   run_cmd 輸出(尾):\n{out[-400:]}", file=sys.stderr)
-        return 2
-    print("✓ debit 已落帳 (ledger 跨層驗證通過)")
-
-    entry = {
-        "book": book, "title": title, "donor": donor,
-        "donor_persona": args.donor_persona or "", "donor_agent": args.donor_agent or "",
-        "tokens": tokens, "base_price": 100, "donated_at": _today(), "note": args.note or "",
-    }
-    _write_json(dpath, entry)   # T-BOOKS-STORAGE Phase B: per-book 檔即 source of truth（不再編根聚合檔, donations 改 glob derive）
-    print(f"✅ 捐贈完成:《{title}》→ 📖 捐贈者 {entry['donor_persona'] or donor} ({tokens} token)。全員可讀。")
-
-    # 自動觸發酒館「新書入庫」通知 (Tim 2026-05-22)；非致命 — 失敗不影響捐贈
-    if not getattr(args, "no_notify", False):
-        who = entry["donor_persona"] or donor
-        notice = (f"📚 新書入庫!\n\n"
-                  f"《{title}》由 **{who}** 捐贈進共享圖書館（{tokens} token），全員都能讀了。\n"
-                  f"想讀的同事:resume --book {book} 接上進度,或直接看 Books/{book}/ 全文。")
-        sent = _run_tavern_post(entry["donor_persona"] or "", notice, tag="book-donation")
-        print(f"📣 酒館新書入庫通知:{'已發送' if sent else '發送失敗(捐贈仍成功)'}")
-    return 0
-
+    ⚠ 退場理由是**政策**（唯一入口收斂到 C#），**不是**「我量過兩邊等價」——
+      這一支我**沒有做過行為對拍**，照實寫在這裡，別讓未來的人把它讀成驗過了。
+    ⭐ 參數涵蓋查過（純讀 code，沒花錢）：py 的 `--donor`／`--donor-persona`／`--donor-agent`
+      分別對到 C# 的 `agent`／`persona`／`actual_agent`，`--tokens`／`--note`／`--no-notify` 同名 ⇒ **全覆蓋**。
+    """
+    print("⛔ library.py donate 已退場（TASK-0143，2026-09-06）——金流一律走 ucmd，本子指令不動帳。",
+          file=sys.stderr)
+    print("   新入口：", file=sys.stderr)
+    print("     senate ucmd run Books --persona <你> --arg op=donate --arg book=<slug> \\",
+          file=sys.stderr)
+    print("         --arg agent=<錢包身分> --arg persona=<捐贈者> [--arg tokens=N] [--arg no_notify=true]",
+          file=sys.stderr)
+    print("   ⚠ `agent`（錢從誰的帳出）與 `persona`（誰捐的）**是兩格，不能猜** ——"
+          " C# 那側兩個都 required。", file=sys.stderr)
+    print("   🩸 而 `--persona` 這個旗標會把值戳進 args ⇒ 想用別人的帳出錢時"
+          "**必須顯式帶 `--arg persona=`**，否則行為人會變成你自己。", file=sys.stderr)
+    return 2
 
 def cmd_publish(args):
-    # 區塊職責: 發布原創書 (寫書 Author-as-Donor, Plan_FreeTime_BookWriting MVP)
-    # 物理意義: 作者寫完(或連載一段)→ publish 把 draft→published, 登記進共享圖書館, 作者署名=捐贈者。
-    #          跟 donate 的差異: source=authored, **不扣 token**(免費, 寫作是勞動產出非消費), tokens=0。
-    #          連載友善: 可重複 publish (更新 published_at / 章節數); 已 published 不擋。
-    book = args.book
-    bj = _main_book_json(book)
-    if not bj.exists():
-        print(f"❌ 找不到書: {book}（請先 add-book --origin authored）", file=sys.stderr)
-        return 1
-    data = _read_json(bj)
-    if data.get("origin") != "authored":
-        print(f"❌ 《{book}》不是原創書 (origin != authored) — publish 只發布原創書; 調入別人的書用 donate", file=sys.stderr)
-        return 2
-    bdir = _books_root() / book
-    if not bdir.exists():
-        print(f"❌ Books/{book}/ 不存在 — 先用 UCL_BookEditPage 寫至少一章全文再 publish", file=sys.stderr)
-        return 2
-    chapter_cnt = len(list(bdir.glob("*.txt")))
-    author = args.donor_persona or data.get("author_persona") or data.get("reader_persona") or "?"
-    donor_bank = args.donor
+    """⛔ 已退場（TASK-0143，2026-09-06 Tim 拍板：金流一律走 ucmd）—— 指路 stub，**不寫任何檔**。
 
-    # 設 publish_status=published (連載: 重複 publish 也更新)
-    was_published = data.get("publish_status") == "published"
-    data["publish_status"] = "published"
-    data["status"] = "reading"   # 已發布 = 可讀狀態
-    _write_json(bj, data)
-
-    # 寫 _donation.json (origin=authored, tokens=0, 不走 Treasury)
-    # ⚠ 連載會重複 publish ⇒ **疊寫不是覆寫**：kind / series / volume 是 classify 設的分類三軸,
-    #   整檔換掉等於每次連載更新都把讀者手動歸的類默默清空(而檔案看起來一樣完整)。
-    dpath = bdir / "_donation.json"
-    entry = _read_json(dpath) if dpath.exists() else {}
-    entry.update({
-        "book": book, "title": data.get("title", book), "donor": donor_bank,
-        "donor_persona": author, "donor_agent": args.donor_agent or "",
-        "tokens": 0, "base_price": 0, "origin": "authored",
-        "chapters": chapter_cnt,
-        "published_at": _today(),
-        "note": args.note or f"{author} 原創著作 (寫書自由時間活動)",
-    })
-    entry.setdefault("donated_at", _today())   # 首度發表才記; 連載更新不改原始入庫日
-    entry.pop("source", None)                  # legacy 欄, 已由 origin 取代(讀取端仍認舊檔)
-    _write_json(dpath, entry)   # T-BOOKS-STORAGE Phase B: per-book 即 source of truth（不再編根聚合檔）
-
-    verb = "更新連載" if was_published else "首度發表"
-    print(f"✅ {verb}原創書:《{data.get('title')}》 by 📖 {author} ({chapter_cnt} 章, 免費入庫, 全員可讀)")
-
-    if not getattr(args, "no_notify", False):
-        notice = (f"✍📖 新書{'連載更新' if was_published else '發表'}!\n\n"
-                  f"《{data.get('title')}》由 **{author}** 原創著作（{chapter_cnt} 章，免費入庫），全員可讀。\n"
-                  f"想讀的同事: resume --book {book} (可 --reader 開自己的分支筆記)，或直接看 Books/{book}/ 全文。")
-        sent = _run_tavern_post(author, notice, tag="book-published")
-        print(f"📣 酒館新書發表通知:{'已發送' if sent else '發送失敗(發布仍成功)'}")
-    return 0
-
+    ⚠ 退場理由是**政策**，**不是**「我量過兩邊等價」——這一支沒有做過行為對拍。
+    🩸 兩格換入口時會咬人的差異（純讀 code 查到的，沒實跑）：
+      ① **C# 首次發表 required `title=`**，而 python 是從 `book.json` 推導的 ⇒ 換入口要**多帶一個參數**。
+      ② python 這一支會**改寫 `book.json`**（`publish_status` → published、`status` → reading）——
+         那正是 TASK-0143 ②-bis 管轄的兩個欄位（@gura《深海對拍錄》／@Sirius《熄燈前的燈》
+         都還是 `writing`/`draft`）。⇒ 誰要發布那兩本，**先看 ②-bis 的拍板**，別只換指令。
+    """
+    print("⛔ library.py publish 已退場（TASK-0143，2026-09-06）——本子指令不再寫任何檔。",
+          file=sys.stderr)
+    print("   新入口：", file=sys.stderr)
+    print("     senate ucmd run Books --persona <你> --arg op=publish --arg book=<slug> \\",
+          file=sys.stderr)
+    print("         --arg agent=<錢包身分> --arg persona=<作者> --arg title=<書名>", file=sys.stderr)
+    print("   ⚠ **`title=` 是 C# 這側新增的必填** —— python 從 book.json 推導，C# 不推導。",
+          file=sys.stderr)
+    print("   ⚠ publish 會把 book.json 的 publish_status 改成 published ——"
+          " @gura／@Sirius 那兩本受 TASK-0143 ②-bis 管轄，發布前先看拍板。", file=sys.stderr)
+    return 2
 
 def cmd_donations(args):
     """⛔ 已退場（TASK-0143，2026-09-06）—— 指路 stub，**不讀不寫任何檔**。
@@ -1878,88 +1813,30 @@ def _issue_tip_vouchers(entry: dict) -> str:
 
 
 def cmd_tip(args):
-    # 區塊職責: 打賞主流程 — guard → debit 燒 token → ledger 跨層驗證 → 發雙券 → 記打賞簿 → 酒館廣播
-    import secrets as _secrets
+    """⛔ 已退場（TASK-0143，2026-09-06 Tim 拍板：金流一律走 ucmd）—— 指路 stub，**不動帳不寫檔**。
 
-    # --retry: 補發打賞簿內 pending 的券, 不動帳
-    if args.retry:
-        idx = _load_tips()
-        pending = [t for t in idx.get("tips", []) if t.get("voucher_status") != "issued"]
-        if not pending:
-            print("（沒有 pending 的打賞券要補發）")
-            return 0
-        for t in pending:
-            t["voucher_status"] = _issue_tip_vouchers(t)
-            print(f"  retry 《{t.get('title', t['book'])}》 tip {t['tip_id']} → {t['voucher_status']}")
-            _write_tip(t)   # T-BOOKS-STORAGE: 更新該筆獨立檔（同 tip_id 覆寫），不重寫整簿
-        return 0 if all(t.get("voucher_status") == "issued" for t in pending) else 2
-
-    # guard: 必填與額度
-    for req in ("book", "tipper", "tipper_persona", "tokens"):
-        if getattr(args, req, None) in (None, ""):
-            print(f"❌ tip 需要 --{req.replace('_', '-')}", file=sys.stderr)
-            return 2
-    tokens = int(args.tokens)
-    if not (1 <= tokens <= TIP_MAX):
-        print(f"❌ --tokens 須為 1~{TIP_MAX}", file=sys.stderr)
-        return 2
-    ben = _resolve_beneficiary(args.book)
-    if ben is None:
-        print(f"❌ 《{args.book}》不在捐贈登記簿 (_donations.json) — 未入庫的書不可打賞 (先 donate/publish)", file=sys.stderr)
-        return 2
-    ben_bank, ben_persona, title, ben_kind = ben
-    if not ben_persona:
-        print(f"❌ 《{title}》登記簿缺 donor_persona — 無法定位受益 persona", file=sys.stderr)
-        return 2
-    # 防呆: 打賞自己的書禁止 (同 bank 不同 persona 合法 — 券綁 persona)
-    if args.tipper_persona == ben_persona:
-        print(f"❌ 自賞禁止 — 《{title}》的{ben_kind}就是 {ben_persona} 本人", file=sys.stderr)
-        return 2
-
-    tip_id = _secrets.token_hex(4)
-    use_ref = f"tip:{args.book}:{tip_id}"   # 唯一 ref — 防重複打賞撞舊 ledger entry 的驗證 false-positive
-    desc = f"打賞圖書: {title} ({args.tipper_persona} → {ben_persona})"
-    print(f"💰 打賞《{title}》 — {args.tipper_persona} 燒 {tokens} token → {ben_kind} {ben_persona} "
-          f"收 繪圖券×{tokens * TIP_CANVAS_RATE} + 酒館券×{tokens * TIP_TAVERN_RATE}")
-    print("   走 CMD: Cmd_Treasury op=debit (use_kind=book_tip)...")
-    ok, out = _run_treasury_debit(args.tipper, tokens, use_ref, desc, use_kind="book_tip")
-    if not _verify_donation_debit(args.tipper, use_ref, tokens, kind="book_tip"):
-        print("❌ Treasury debit 未確認落帳 (餘額不足? caller!=account? Editor 未跑?) — 不發券不記帳",
-              file=sys.stderr)
-        print(f"   run_cmd 輸出(尾):\n{out[-400:]}", file=sys.stderr)
-        return 2
-    print("✓ debit 已落帳 (ledger 跨層驗證通過)")
-
-    entry = {
-        "book": args.book, "title": title,
-        "tipper": args.tipper, "tipper_persona": args.tipper_persona,
-        "tipper_agent": args.tipper_agent or "",
-        "beneficiary": ben_bank, "beneficiary_persona": ben_persona,
-        "tokens_spent": tokens,
-        "vouchers": {"canvas": tokens * TIP_CANVAS_RATE, "tavern": tokens * TIP_TAVERN_RATE},
-        "tip_id": tip_id,
-        "voucher_status": "pending_all",
-        "note": args.note or "",
-        "tipped_at": _today(),
-    }
-    entry["voucher_status"] = _issue_tip_vouchers(entry)
-    _write_tip(entry)   # T-BOOKS-STORAGE Phase A: 寫獨立檔 tips/<stamp>_<persona>_<tip_id>.json（不再編聚合檔）
-    if entry["voucher_status"] == "issued":
-        print(f"✅ 打賞完成: {ben_persona} 已收 繪圖券×{entry['vouchers']['canvas']} + 酒館券×{entry['vouchers']['tavern']}")
-    else:
-        print(f"⚠ 券發放未完成 ({entry['voucher_status']}) — 帳已落不回滾, 跑 `library.py tip --retry` 補發",
-              file=sys.stderr)
-
-    # 酒館打賞廣播 (預設開, 非致命)
-    if not getattr(args, "no_notify", False):
-        note_part = f"「{entry['note']}」" if entry["note"] else ""
-        notice = (f"💰 打賞! **{args.tipper_persona}** 打賞《{title}》 {tokens} token "
-                  f"→ @{ben_persona} ({ben_kind}) 收 繪圖券×{entry['vouchers']['canvas']} + "
-                  f"酒館券×{entry['vouchers']['tavern']} {note_part}")
-        sent = _run_tavern_post(args.tipper_persona, notice, tag="book-tip")
-        print(f"📣 酒館打賞廣播:{'已發送' if sent else '發送失敗(打賞仍成功)'}")
-    return 0 if entry["voucher_status"] == "issued" else 2
-
+    ⭐ 這一支**做過真的行為對拍**（三支金流裡唯一一支）：
+      2026-09-06 Tim 授權用 `Template`（測試帳戶）各打賞 1 token 給《山腳的營地》，兩側各跑一次。
+      · **欄位逐欄相同**（12 個 key、同順序、同值語意）
+      · **行為相同**（debit 真落帳、券 1+1、`voucher_status: issued`、`no_notify` 兩邊都生效）
+      · **金流實證**：Template 餘額 142 → 140（回讀帳戶，不是讀回報字串）
+      · ⚠ **不同的是字面**：python 2 空格＋`": "`／C# tab＋`":"`；
+        檔名時戳位數 12 vs 13 —— **實測字典序 == 真時間序**，排序沒壞。
+    ⇒ 判定「**資料相同、呈現不同**」，⛔ 不是「逐位元組相同」。
+    """
+    print("⛔ library.py tip 已退場（TASK-0143，2026-09-06）——金流一律走 ucmd，本子指令不動帳。",
+          file=sys.stderr)
+    print("   新入口：", file=sys.stderr)
+    print("     senate ucmd run Books --persona <你> --arg op=tip --arg book=<slug> \\",
+          file=sys.stderr)
+    print("         --arg agent=<錢包身分> --arg persona=<打賞者> --arg tokens=1~1000"
+          " [--arg no_notify=true]", file=sys.stderr)
+    print("   · 補發 pending 的券（不動帳）：加 --arg retry=true", file=sys.stderr)
+    print("   ⚠ 產物**不是逐位元組相同**：欄位與行為一致，縮排與檔名時戳位數不同。",
+          file=sys.stderr)
+    print("   ⚠ 守衛仍在：**受益人不可是自己** —— 用別人的帳出錢時"
+          "必須顯式 `--arg persona=`，否則行為人會變成你自己。", file=sys.stderr)
+    return 2
 
 def cmd_tips(args):
     """⛔ 已退場（TASK-0143，2026-09-06）—— 指路 stub，**不讀不寫任何檔**。
@@ -3153,22 +3030,25 @@ def build_parser():
     _add_reader_arg(a)
     a.set_defaults(func=cmd_arcs)
 
-    a = sub.add_parser("donate", help="捐贈一本 Books/ 的書(付 token 走 Cmd_Treasury, 全員可讀, 標註捐贈者)")
-    a.add_argument("--book", required=True, help="Books/<slug> 的 slug")
-    a.add_argument("--donor", required=True, help="捐贈者 agent id (Treasury caller 必須==此帳戶)")
+    # ⛔ 已退場（走 ucmd）—— **參數全降選填**：不論怎麼帶都要走到指路 stub。
+    # 🩸 留著 required=True 的話，argparse 會先擋下並印 usage ⇒ **看不到指路**
+    #   （awakening.py 的 morning stub 早就點名過這個死角，我 2026-09-06 又踩一次才想起來）。
+    a = sub.add_parser("donate", help="[已退場] 走 senate ucmd run Books --arg op=donate（本子指令只印指路）")
+    a.add_argument("--book", default=None, help="Books/<slug> 的 slug")
+    a.add_argument("--donor", default=None, help="捐贈者 agent id (Treasury caller 必須==此帳戶)")
     a.add_argument("--tokens", default=None, help="付多少 token (預設 100/本; Tim 可給優惠價)")
-    a.add_argument("--donor-persona", dest="donor_persona", required=True,
-                   help="捐贈者 persona（**必填**，Tim 2026-08-20 拍板）—— 酒館署名由它推導，"
-                        "署名由 persona 推導，呼叫端不再塞任何帳戶識別頂替（BUG-22 同族）")
+    a.add_argument("--donor-persona", dest="donor_persona", default=None,
+                   help="捐贈者 persona —— 酒館署名由它推導")
     a.add_argument("--donor-agent", dest="donor_agent", default=None)
     a.add_argument("--note", default=None)
     a.add_argument("--no-notify", dest="no_notify", action="store_true",
                    help="不發酒館新書入庫通知(預設會自動廣播)")
     a.set_defaults(func=cmd_donate)
 
-    a = sub.add_parser("publish", help="發布原創書 (寫書 Author-as-Donor; draft→published, 免費入庫, 作者署名)")
-    a.add_argument("--book", required=True, help="原創書 slug (origin=authored)")
-    a.add_argument("--donor", required=True, help="作者 agent id (署名用, 不扣 token)")
+    # ⛔ 已退場（走 ucmd）—— 參數全降選填，理由同上面的 donate。
+    a = sub.add_parser("publish", help="[已退場] 走 senate ucmd run Books --arg op=publish（本子指令只印指路）")
+    a.add_argument("--book", default=None, help="原創書 slug (origin=authored)")
+    a.add_argument("--donor", default=None, help="作者 agent id (署名用, 不扣 token)")
     a.add_argument("--donor-persona", dest="donor_persona", default=None, help="作者 persona (預設讀 book.json author_persona)")
     a.add_argument("--donor-agent", dest="donor_agent", default=None)
     a.add_argument("--note", default=None)

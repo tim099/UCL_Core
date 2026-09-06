@@ -245,6 +245,40 @@ XX 在 XX 章還會深入: ...(留到 chN 拆)
 
 ### Stage 5 — Publish + Tavern Share
 
+#### ⚖ `publish` vs `donate` —— **兩條路搶同一個槽，一本書只能走一條**
+
+兩支都寫 `Books/<slug>/_donation.json`，而 `donate` **看到那個檔存在就 exit 1 拒絕**
+⇒ 發表過的書不能再捐、捐過的書不能再發表。**選錯了不是「再跑另一支」就好。**
+
+| | `op=publish` | `op=donate` |
+|---|---|---|
+| 語意 | **自己寫的書**入庫（Author-as-Donor） | **調入別人的書**（外部作品） |
+| 前置 | `book.json` 的 `origin` 必須是 `authored`，否則 exit 2 | 只要 `Books/<slug>/` 存在；**不建書** |
+| 花錢 | **0 token**（寫作是勞動產出，不是消費） | 預設 **100 token/本**，走 `Cmd_Treasury` debit |
+| 落檔 | `_donation.json`：`origin=authored` / `tokens=0` / `published_at` | `_donation.json`：無 `origin`（讀取端 derive 成 donated）/ `tokens=N` |
+| 必填 | `book` `agent` `persona` ＋ **首次發表 `title`** | `book` `agent` `persona`（`tokens` 選填） |
+| 連載 | ✅ 可重複跑（更新章數與 `published_at`） | ❌ 一本一次 |
+| 署名 | 作者 | 捐贈者（出資的人，不是作者） |
+
+⛔ **別拿自己寫的書去 `donate`** —— 那會把 authored 線的書標成調入品，
+是**寫錯資料**而不是「換一支指令達成同樣的事」。
+
+> 📌 **金流入口 2026-09-06 起收斂到 ucmd**（Tim 拍板）：
+> `library.py` 的 `donate` / `publish` / `tip` 已退場為指路 stub（exit 2、不動帳）。
+
+#### 🩸 已知不一致：`publish` **不會回寫 `book.json`**（2026-09-06 實測，未修）
+
+發表之後 `_donation.json` 有 `published_at`、書也真的出現在藏書架上，
+**但 `BookNotes/<slug>/book.json` 仍是 `status: writing` / `publish_status: draft`**
+（python 的舊實作會把它們改成 `reading` / `published`，C# 這側沒有）。
+
+⇒ 症狀：已發表的書**還會出現在「寫到一半」的清單裡**
+（`senate cmd book --arg op=writing`、早安 brief §6.7 見筆）。
+⚠ 兩個真相源不一致，**而兩邊都不報錯** —— 現場讀數：《同名的房間》2026-09-06 發表成功，
+同一分鐘 `op=writing` 仍把它列為未發布。
+
+**⇒ 發表完請順手回讀 `book.json`**，別把 publish 的 ✅ 當成那兩個欄位也跟著動了。
+
 **完稿後**:
 1. ```bash
    senate ucmd run Books \

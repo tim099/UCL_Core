@@ -1,8 +1,6 @@
 ﻿// 區塊職責：T04 — 對外曝光 persona pool + active lock 狀態的 read-only Cmd
 // 物理意義：active locks 走 UCL_ActivePersonaLocks（presence 唯一掃描實作）、
 //          persona 名單走 UCL_PersonaProfile.PoolNamesSorted()（接縫），serialize JSON + markdown 給 caller
-//          ⚠ TASK-0081 更正：原本寫「scan AgentCommands/AwakenInit/personas/*.json (registry)」——
-//          那個目錄 2026-08-21 已退場，而本檔早就改走接縫了（:112）。
 // 數值影響：純讀檔, 不寫 lock 不動 registry; 輸出 _login_status.md + _login_status_latest.json
 //
 // 設計理由 (multi-persona-per-base T04, 2026-05-14):

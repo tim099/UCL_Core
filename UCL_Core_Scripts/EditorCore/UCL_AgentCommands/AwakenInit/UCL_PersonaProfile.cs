@@ -1,12 +1,8 @@
 // 區塊職責：persona 身分／路由欄位的**唯一讀取入口**（C# 端；對側 = python _lib/persona_profile.py）。
-// 物理意義：退場案（Plan_Persona_Registry_Retirement §4 Phase 0）要把欄位拆家 —— 消費端若各自
-//          讀那個中央目錄，每動一次家 32 支都要改；先把讀取收斂到這裡，
-//          之後每一期（含 Phase 1 read-through lazy migration）都只改本檔 —— 而那一期已經走完。
+// 物理意義：欄位分住 `profile/` 與 `bank/`，消費端若各自解析就會有第二個解析器 ——
+//          而兩個解析器對同一個人給不同答案時，兩邊都不會報錯。讀取收斂在本檔，
+//          所以欄位再拆家也只改這裡。
 // 數值影響：資料源＝`letters/<p>/profile/`（identity 欄）＋ `letters/<p>/bank/<區域>.md`（帳號歸屬）。
-//          中央 `AwakenInit/personas/` **已經不存在**（2026-08-21）；本檔沒有任何一條路會讀它。
-//          ⚠ 這幾行 2026-09-06（TASK-0081）改過：原本寫「現階段資料源仍是 AwakenInit/personas/<p>.json」，
-//          而同一個檔往下 20 行就寫著它已退場 —— **檔頭比實作大**，
-//          而那種漂移的症狀是下一個人照檔頭回頭去讀舊源，且兩邊都不會報錯。
 //          PoolNames 帶 dir-mtime 快取（沿 UCL_ChatTavernIO 舊實作 —— 每筆 post 都會查白名單）。
 //          壞檔略過但 LogWarning（靜默跳過會讓「檔壞了」跟「沒這個人」同形）。
 // ⚠ 活體欄（status / last_active / wake_count…）刻意不在本接縫 —— 真相源是 lock 與 wakes/；

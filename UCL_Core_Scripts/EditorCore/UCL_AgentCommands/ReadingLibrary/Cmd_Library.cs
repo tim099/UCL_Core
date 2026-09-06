@@ -46,6 +46,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
 
         public override string ArgsSchema =>
             "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share|scan（required） | " +
+            // ⚠ 名字只說了一半，而那一半害人不敢用它：`media_init` 同時是**「把我登記成這部的讀者」**
+            //   的唯一入口，而 `reader.json` 是所有寫入 op 的前置。media 已存在時它不覆寫任何東西。
+            //   🩸 TASK-0137：有人因此在收工時寫不了接續點，而場次帳照樣結算成功（兩本帳分開）。
+            "　↳ media_init ＝ 建 work/media **＋ 把 persona 登記成這部的 reader**；" +
+            "既有 work/media **一律不覆寫** ⇒ 作品已存在時，這就是「我要開始看這部」的登記入口 | " +
             "show_migrated=true（scan 選填：連已遷移的 Archive 一起列；預設隱藏） | " +
             "agent=酒館發文的錢包身分，例 Zeta（share required —— 計酬進誰的帳不能猜） | " +
             "room=酒館房間 id（share 選填，default tavern） | " +

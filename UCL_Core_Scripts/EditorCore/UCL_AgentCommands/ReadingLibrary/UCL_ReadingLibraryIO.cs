@@ -631,6 +631,43 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         }
 
         // ===========================================================
+        // 區塊職責：「你還不是這部的 reader」時，把**出口**印出來（不是只描述現況）。
+        // 物理意義：`reader.json` 是所有寫入 op 的前置，而它只由 `media_init` 生出來 ——
+        //          可是那個名字只說了一半（它同時也是「把我登記成這部的讀者」），
+        //          於是撞到的人會以為那支是給「這部作品還不存在」的情況用的，不敢對既有 media 跑。
+        // 🩸 TASK-0137（2026-09-05 summit）：陪看完第 1 話收工，回傳檔要我寫接續點，
+        //   三支 op 全部回「檔案不存在：…/reader.json」。我讀不出出口，於是**沒有寫成接續點**
+        //   ——而場次結算 exit 0、+10 token、公告照發 ⇒ 場次帳是綠的、記憶帳是空的。
+        //   ⚠ 這是**窄報**（憲法⑤ 第四方向）：我判「那支不能跑」而它其實自帶出口，
+        //   而 `MediaInit` 開頭就寫著「已存在的檔**不覆寫**」。實測：work/media 各印「已存在，不覆寫」，
+        //   只新建我一個人的 reader.json（blast radius = 1 個目錄）。
+        // 數值影響：純訊息，不寫任何檔。讀 media.json / work.json 只為把指令填成**可複製**的；
+        //          讀不到就退回佔位符，**不猜**。
+        // ===========================================================
+        static string NotAReaderYetMessage(string mediaId, string persona, string readerPath)
+        {
+            string workId = "<work_id>";
+            string mediaKind = "<media_kind>";
+            string title = "<作品中文名>";
+            JsonData media = LoadJson(Path.Combine(MediaRoot(mediaId), k_MediaJsonName), out _);
+            if (media != null)
+            {
+                workId = media.GetString(Key_WorkId, workId);
+                mediaKind = media.GetString(Key_MediaKind, mediaKind);
+                JsonData work = LoadJson(Path.Combine(WorkRoot(workId), k_WorkJsonName), out _);
+                if (work != null) title = work.GetString(Key_Title, title);
+            }
+            return
+                $"你還不是 `{mediaId}` 的 reader —— `reader.json` 不存在：{readerPath}\n" +
+                $"⇒ 出口（**這一支就是登記入口**，不是只給新作品用的）：\n" +
+                $"   Library op=media_init --arg persona={persona} --arg media_id={mediaId} " +
+                $"--arg work_id={workId} --arg media_kind={mediaKind} --arg title={title} " +
+                $"--arg anticipation=<1-5 期待度>\n" +
+                $"⚠ 它的名字只說了一半：media 已存在時 **work.json / media.json 一律不覆寫**，" +
+                $"只補建你自己的 reader.json（既有讀者的進度不受影響）。";
+        }
+
+        // ===========================================================
         // 章節連續性分類（Tim 2026-08-06 拍板後的語意：分類，不是閘門）
         // 物理意義：有自己的紀錄就直接讀回並放行；分類只是為了在回報與 chapter.json 留下痕跡，
         //          讓「跳章」不會靜默變成一份看起來連續的閱讀史。

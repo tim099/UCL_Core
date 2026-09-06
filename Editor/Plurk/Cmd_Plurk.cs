@@ -726,13 +726,21 @@ namespace UCL.Core.EditorLib.Plurk
         /// `Sun, 23 Aug 2026 09:03:42 GMT` → `08-23 17:03`（本地）。
         /// 解析不了就**原樣回**（不吞掉，也不假裝知道時間）。
         /// </summary>
+        /// <summary>
+        /// 解析 Plurk 的 RFC 時間字串成 UTC。⛔ 這組 <c>DateTimeStyles</c> 本檔原本抄了三處 ——
+        /// 收斂成一支，否則「三處有一處寫錯」的症狀是**時間比較安靜地給出相反答案**。
+        /// </summary>
+        static bool TryPlurkUtc(string iRfc, out DateTime oUtc)
+        {
+            return DateTime.TryParse(iRfc, CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AdjustToUniversal
+                | System.Globalization.DateTimeStyles.AssumeUniversal, out oUtc);
+        }
+
         static string ShortTime(string iRfc)
         {
             if (string.IsNullOrEmpty(iRfc)) return "(無時間)";
-            if (!DateTime.TryParse(iRfc, CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.AdjustToUniversal
-                    | System.Globalization.DateTimeStyles.AssumeUniversal, out DateTime aUtc))
-                return iRfc;
+            if (!TryPlurkUtc(iRfc, out DateTime aUtc)) return iRfc;
             return aUtc.ToLocalTime().ToString("MM-dd HH:mm", CultureInfo.InvariantCulture);
         }
 
@@ -887,6 +895,17 @@ namespace UCL.Core.EditorLib.Plurk
                 aPathCounts.Add($"`{aFilter}` {aPlurks.Count} 則（新增 {aNew}）");
             }
             ioR.AppendLine($"- 候選噗 **{aCandidates.Count}** 則（limit={aLimit}／路徑）：{string.Join("、", aPathCounts)}");
+            // 候選窗的**左端**（最舊那則的時刻）—— 通知層對帳要靠它分辨「找不到」與「沒撈到那麼舊」。
+            // 🩸 2026-09-05 的讀數：海苔 08-27 那筆 @ 在 limit=20 下永遠印「兩條路徑找不到」，
+            //   而真正的原因是它在候選窗之外 ⇒ 讀的人會以為 TASK-0110 的修法沒生效。
+            //   ⚠ 兩者處置相反：真的找不到 ⇒ 去 op=profile 撈那個人；超出窗 ⇒ 加大 limit 重跑。
+            DateTime aOldestCand = DateTime.MaxValue;
+            for (int i = 0; i < aCandidates.Count; i++)
+                if (TryPlurkUtc(JsonScalar(aCandidates[i], "posted"), out DateTime aCt) && aCt < aOldestCand)
+                    aOldestCand = aCt;
+            if (aCandidates.Count > 0 && aOldestCand != DateTime.MaxValue)
+                ioR.AppendLine($"- 候選窗左端（最舊一則）：**{aOldestCand.ToLocalTime():MM-dd HH:mm}**"
+                    + "　—— 比這更早的 @ **不在射程內**，不是不存在");
             if (aCandidates.Count == 0)
                 ioR.AppendLine("- ⚠ 兩條路徑都回 0 ⇒ **不是「沒人 @ 我」**：射程是「噗本體提到我」＋「我回過的串」，"
                     + "@ 若在我沒參與的別人噗裡，這裡看不到。下面的通知層對帳會說有沒有那種。");
@@ -996,6 +1015,7 @@ namespace UCL.Core.EditorLib.Plurk
             {
                 var aAl = SafeParse(aAlBody);
                 int aMentionAlerts = 0, aUnmatched = 0;
+                int aOutRange = 0;      // 對不上的當中，「只是比候選窗更早」的那幾筆（⛔ 不與「找不到」同號）
                 if (aAl != null && aAl.IsArray)
                 {
                     for (int i = 0; i < aAl.Count; i++)
@@ -1008,27 +1028,42 @@ namespace UCL.Core.EditorLib.Plurk
                         string aFname = aFrom != null ? UnescapeJson(JsonScalar(aFrom, "display_name")) : "(查無名稱)";
                         string aWhen = JsonScalar(aIt, "posted");
                         bool aMatched = false;
-                        if (DateTime.TryParse(aWhen, CultureInfo.InvariantCulture,
-                                System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out DateTime aT))
+                        if (TryPlurkUtc(aWhen, out DateTime aT))
                         {
                             foreach (var h in aHitLog)
                             {
                                 if (h.uid != aFid) continue;
-                                if (DateTime.TryParse(h.when, CultureInfo.InvariantCulture,
-                                        System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out DateTime aHt)
+                                if (TryPlurkUtc(h.when, out DateTime aHt)
                                     && Math.Abs((aHt - aT).TotalMinutes) <= 3) { aMatched = true; break; }
                             }
                         }
                         if (!aMatched)
                         {
                             aUnmatched++;
-                            ioR.AppendLine($"- ⚠ **通知層有、兩條路徑找不到**：{ShortTime(aWhen)}　**{aFname}**（`{aFid}`）"
-                                + " ⇒ 多半在我沒參與的噗裡；alerts 不帶噗 id，去 `op=profile --arg user_id=" + aFid + "` 看他近期的噗再拉回應");
+                            // ⛔ 先問「它在不在候選窗裡」再說「找不到」—— 兩者在舊字面上同形而處置相反。
+                            bool aOutOfWindow = aOldestCand != DateTime.MaxValue
+                                && TryPlurkUtc(aWhen, out DateTime aAt) && aAt < aOldestCand;
+                            if (aOutOfWindow)
+                            {
+                                aOutRange++;
+                                ioR.AppendLine($"- ⏳ **超出候選窗，不是找不到**：{ShortTime(aWhen)}　**{aFname}**（`{aFid}`）"
+                                    + $" ⇒ 它比候選最舊那則（{aOldestCand.ToLocalTime():MM-dd HH:mm}）還早，"
+                                    + $"而兩條路徑各只撈 limit={aLimit} 則"
+                                    + $"　→ 加大重跑：`--arg op=mentions --arg limit={aLimit * 5}`");
+                            }
+                            else
+                            {
+                                ioR.AppendLine($"- ⚠ **通知層有、兩條路徑找不到**：{ShortTime(aWhen)}　**{aFname}**（`{aFid}`）"
+                                    + " ⇒ 多半在我沒參與的噗裡；alerts 不帶噗 id，去 `op=profile --arg user_id=" + aFid + "` 看他近期的噗再拉回應");
+                            }
                         }
                     }
                 }
                 ioR.AppendLine($"- 通知歷史裡 «mentioned» **{aMentionAlerts}** 筆，其中對不上路徑命中的 **{aUnmatched}** 筆"
+                    + $"（其中 **{aOutRange}** 筆只是**比候選窗更早**⏳、**{aUnmatched - aOutRange}** 筆是真的找不到⚠）"
                     + "（配法：同一個人 ＋ 時間差 ≤3 分；歷史只有最近 30 筆通知，更舊的這裡也看不到）");
+                if (aOutRange > 0)
+                    ioR.AppendLine($"  ⇒ 那 {aOutRange} 筆**不代表修法沒生效**，是射程：`--arg limit={aLimit * 5}` 再跑一次就進得來。");
             }
 
             ioR.AppendLine();

@@ -50,6 +50,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "tag=<list 篩選：有這個 tag 的單> | epic=<list 篩選：TASK-0008 / 8 皆可> | " +
             "memory_topic=<create/update 設定；list 篩選：工作記憶主題名> | " +
             "memory_archived_commit=<update：記憶歸檔／刪除後的 commit sha> | " +
+            "unset=<update：顯式清空欄位，逗號分隔；可清 memory_topic / memory_archived_commit / milestone" +
+            "　—— 給 `--arg <欄位>=` 空值是「這次不動這欄」，清欄位一律走這裡（TASK-0079）> | " +
             "progress=<收工進度，op=wrapup 必填，走 --arg-file> | why=<為什麼卡住／試過什麼不行，選填 ⇒ 寫進工作記憶> | " +
             "memory_type=pitfall|decision|knowhow（op=wrapup 的 why 用，預設 pitfall） | " +
             "confirm=1（resolve 必帶）";
@@ -687,6 +689,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine("  （早安流程刻意零改動 —— Tim 2026-08-24 拍板）。酒館通知是他知道這件事的那條路。");
         }
 
+        // 可被 `--arg unset=` 清空的欄位白名單（TASK-0079）。
+        // ⚠ 白名單而不是「所有 string 欄位」：`status` / `priority` / `title` 沒有「空」這個合法狀態，
+        //   能清它們等於開一條讓單子變成無效資料的路。
+        static readonly string[] UNSETTABLE = { "memory_topic", "memory_archived_commit", "milestone" };
+
         void OpUpdate(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
         {
             var e = Require(iArgs, out int aIndex);
@@ -745,6 +752,49 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             string aMemSha = GetArg(iArgs, "memory_archived_commit", "").Trim();
             if (aMemSha.Length > 0)
             { aChanges.Add($"memory_archived_commit → {aMemSha}"); e.memory_archived_commit = aMemSha; }
+
+            // ===========================================================
+            // 顯式清除（TASK-0079，與 BUG-16 `PersonaProfile op=unset` 同形）
+            // 物理意義：`--arg <欄位>=` 給空值在這支是**保留原值**（上面每一格都是 `.Length > 0` 才寫），
+            //   所以「打錯字的 memory_topic」沒有任何回頭路 —— 而晚安對帳每天為它亮一次警示。
+            //   ⇒ 補的是**逆操作**，不是把空值改成有意義：空值仍然是「這次不動這欄」，
+            //     要清就得指名道姓 `--arg unset=memory_topic`（BUG-16 選的也是這個形狀：
+            //     另立一個方向明確的入口，而不是讓 set 兼差）。
+            // 數值影響：把指名的欄位寫回 ""，並在 aChanges 留痕（⇒ 時間線那一行會寫清了什麼、原值是什麼）。
+            // ⚠ 冪等：本來就空 ⇒ **不計入變更**（不留一筆看起來發生過的帳），但仍逐格印出「本來就是空的」——
+            //   「清掉了」與「本來就空」不可以同形，否則讀的人分不出自己清的是哪一格。
+            // ===========================================================
+            var aUnsetNotes = new List<string>();
+            string aUnsetArg = GetArg(iArgs, "unset", "").Trim();
+            if (aUnsetArg.Length > 0)
+            {
+                foreach (string aRawField in aUnsetArg.Split(','))
+                {
+                    string aField = aRawField.Trim();
+                    if (aField.Length == 0) continue;
+                    // 認不得的欄位名**不靜默略過** —— 打錯字的失效樣子會跟「清過了」一模一樣，
+                    // 而這張單修的正是「打錯字沒有回頭路」。
+                    if (!UNSETTABLE.Contains(aField))
+                        throw new Exception($"[Task] unset 認不得欄位 `{aField}`"
+                            + $"（可清的只有：{string.Join(" / ", UNSETTABLE)}）"
+                            + "　—— status／priority／title 這種**沒有「空」這個合法狀態**的欄位不在清單上。");
+                    string aOld = aField switch
+                    {
+                        "memory_topic" => e.memory_topic ?? "",
+                        "memory_archived_commit" => e.memory_archived_commit ?? "",
+                        "milestone" => e.milestone ?? "",
+                        _ => "",
+                    };
+                    if (aOld.Trim().Length == 0) { aUnsetNotes.Add($"`{aField}` 本來就是空的 ⇒ 沒有寫入"); continue; }
+                    switch (aField)
+                    {
+                        case "memory_topic": e.memory_topic = ""; break;
+                        case "memory_archived_commit": e.memory_archived_commit = ""; break;
+                        case "milestone": e.milestone = ""; break;
+                    }
+                    aChanges.Add($"{aField} 清空（原 `{aOld}`）");
+                }
+            }
             // criteria / description 是 Save 的參數不是 entry 欄位 —— 但它們一樣是變更（TASK-0033 ③）。
             // 🩸 血證（Tim 2026-08-25 撞到）：只給 --arg criteria= 是**靜默 no-op** ——
             //   它沒進 aChanges ⇒ 走「沒有任何變更」那條路 ⇒ 單子一個字都不變，而回傳檔看起來像判斷。
@@ -757,10 +807,17 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             if (aChanges.Count == 0)
             {
                 ioR.AppendLine($"## {e.Id} 沒有任何變更");
+                // ⚠ 冪等的 unset 走到這裡 —— 要印出「我確實看了那幾格，它們本來就空」，
+                //   否則它跟「我根本沒收到 unset」同形（TASK-0079）。
+                foreach (var n in aUnsetNotes) ioR.AppendLine($"- ✓ {n}");
                 // ⚠ 欄位清單要列全 —— 錯誤訊息自己低報的話，讀的人分不出
                 //   「這不是欄位」與「這是欄位但沒被計入」（TASK-0033 ③ 的第二格）。
+                // ⛔ 但**給了 unset 卻走到這裡**的時候不可以印它 —— 那句話會是假的
+                //   （我確實給了可更新的欄位，只是那幾格本來就空）。上面那行 ✓ 才是這次的答案。
+                if (aUnsetNotes.Count > 0) return;
                 ioR.AppendLine("- 沒給任何可更新的欄位（status / priority / title / milestone /"
-                    + " memory_topic / memory_archived_commit / criteria / description）⇒ **什麼都沒寫**。");
+                    + " memory_topic / memory_archived_commit / criteria / description"
+                    + " / unset=<欄位>）⇒ **什麼都沒寫**。");
                 return;
             }
             UCL_TaskIO.Touch(e, aNow);
@@ -769,6 +826,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 $"{aNow}　`update`　{iActor}：{string.Join("／", aChanges)}");
             ioR.AppendLine($"## ✅ {e.Id} 已更新");
             foreach (var c in aChanges) ioR.AppendLine($"- {c}");
+            foreach (var n in aUnsetNotes) ioR.AppendLine($"- ✓ {n}");
         }
 
         async UniTask OpComment(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)

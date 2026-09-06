@@ -1,7 +1,7 @@
 // 區塊職責：Awakening 狀態檔的 typed models — persona 檔 / registry meta / session lock
 //          （Plan_Awakening_Flow_Simplification §8.8 R15；GoodMorning Cmd 遷移的資料層）。
 // 物理意義：與 awakening.py 共讀同一批 JSON —
-//          AwakenInit/personas/<name>.json（persona 檔）、AwakenInit/_registry_meta.json（agent→bank）、
+//          AwakenInit/_registry_meta.json（agent→bank）、
 //          letters/<name>/profile/_session.json（lock，TASK-0105 起）。schema 由 Python 端先行定義，改欄位務必兩端同看。
 // 數值影響：讀取走 typed class（UnityJsonSerializable）；⚠ 寫回一律 patch-write —— 載原 JsonData、
 //          只改自己擁有的欄、存回。SerializeToJson 只吐 class 有宣告的欄位，整包 roundtrip 會把
@@ -17,7 +17,10 @@ using UCL.Core.JsonLib;
 namespace UCL.Core.EditorLib.AgentCommands.Awakening
 {
     /// <summary>
-    /// persona 檔（AwakenInit/personas/&lt;name&gt;.json）的 typed model。
+    /// persona 的 typed model。⚠ 2026-08-21 起**沒有對應的磁碟檔** ——
+    /// 中央 `AwakenInit/personas/&lt;name&gt;.json` 已退場，欄位真相源是 `letters/&lt;name&gt;/profile/`。
+    /// 本類別現在是**記憶體內的載體**：由接縫（UCL_PersonaProfile）填好再傳給消費端。
+    /// （TASK-0081 更正：原本這行說它是那個 json 的 model，而那個 json 不存在了。）
     /// 欄位集合對齊 awakening.py 全 persona 實掃聯集（2026-08-13，21 檔）；
     /// 罕見欄（persona_spec / last_session_keys / relogin_count）不建模 —— patch-write 保護它們。
     /// </summary>

@@ -39,12 +39,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "priority=urgent|high|normal|low（預設 normal） | " +
             "severity=none|blocking|wrong|annoying（傷害形狀；type=bug 預設 wrong，其餘 none 不落行） | " +
             "status=<create/update 設定值；list 篩選：open（預設）/all/backlog/todo/in_progress/in_review/done/cancelled> | " +
-            "index=<單號：show/claim/assign/update/comment/link/resolve 必填> | " +
+            "index=<單號：show/claim/assign/update/comment/link/resolve 必填；收 TASK-0008 / 8 / 0008> | " +
             "role=dev|design|qa|pm|reviewer|sound|art（claim/assign 用，預設 dev） | " +
             "target_persona=<assign 的對象> | assignee=<list 篩選：只看某人參與的單> | " +
             "replace=1（assign 用：**換角色** —— 先拿掉這個人既有的角色再指派；不帶＝加一個角色） | " +
             "body=<comment 內容> | " +
-            "op_link=blocked_by|blocks|subtask_of|has_subtask|related_to（link 用） | target=<link 的對方單號> | " +
+            "op_link=blocked_by|blocks|subtask_of|has_subtask|related_to（link 用） | target=<link 的對方單號；收 TASK-0008 / 8 / 0008> | " +
             "note=<resolve 的結單說明> | qa_note=<代 QA 結單時的驗收紀錄> | " +
             "milestone= | epic_id= | tags=<逗號分隔> | " +
             "tag=<list 篩選：有這個 tag 的單> | epic=<list 篩選：TASK-0008 / 8 皆可> | " +
@@ -893,8 +893,19 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         {
             Require(iArgs, out int aIndex);
             string aKind = Norm(GetArg(iArgs, "op_link", "blocked_by"));
-            if (!int.TryParse(GetArg(iArgs, "target", "").Trim(), out int aTarget))
-                throw new Exception("[Task] op=link 需要 --arg target=<對方單號>");
+            // ⛔ 走既有的 `ParseTaskRef`（收 `TASK-0008` / `8` / `0008`）—— **不在這裡重造第二套**。
+            // 🩸 血證 2026-09-06（summit 現場）：本行原本是裸 `int.TryParse` ⇒ `--arg target=TASK-0119` 直接失敗，
+            //   而拋出的訊息是「**需要** --arg target」—— 同一份回傳檔的 `## Args` 區裡明明印著 `target = TASK-0119`。
+            //   ⇒ 「**沒帶**」與「**帶了但解析不出**」在那句話上同形，而處置相反（補參數 ／ 換寫法）。
+            //   ⚠ 更難發現的是它與 `epic` 篩選的分岔：同一份 ArgsSchema 寫著「epic：TASK-0008 / 8 皆可」，
+            //   於是人會合理推論 target 也一樣 —— **一個系統裡兩套單號規矩，而只有一套寫在說明上。**
+            string aTargetRaw = GetArg(iArgs, "target", "").Trim();
+            if (aTargetRaw.Length == 0)
+                throw new Exception("[Task] op=link 需要 --arg target=<對方單號>（收 TASK-0008 / 8 / 0008）");
+            int aTarget = UCL_TaskIO.ParseTaskRef(aTargetRaw);
+            if (aTarget <= 0)
+                throw new Exception($"[Task] op=link 認不得的 target 參照 '{aTargetRaw}'"
+                    + "（收 TASK-0008 / 8 / 0008）—— ⛔ 這不是「沒帶」，是**帶了但讀不出來**，不猜。");
 
             // 解除關聯（TASK-0033 ②）：同一個 op、帶 remove=1 —— 建與解共用 kind 語彙，不另造第二套詞
             bool aRemove = GetArg(iArgs, "remove", "").Trim() == "1";
@@ -1386,8 +1397,14 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         // ── 小工具 ────────────────────────────────────────────────
         UCL_TaskEntry Require(Dictionary<string, string> iArgs, out int oIndex)
         {
-            if (!int.TryParse(GetArg(iArgs, "index", "").Trim(), out oIndex) || oIndex <= 0)
-                throw new Exception("[Task] 這個 op 需要 --arg index=<單號>");
+            // 同上：與 `epic` / `target` 共用一支解析器，⛔ 三處不各寫一次。
+            string aIndexRaw = GetArg(iArgs, "index", "").Trim();
+            if (aIndexRaw.Length == 0)
+                throw new Exception("[Task] 這個 op 需要 --arg index=<單號>（收 TASK-0008 / 8 / 0008）");
+            oIndex = UCL_TaskIO.ParseTaskRef(aIndexRaw);
+            if (oIndex <= 0)
+                throw new Exception($"[Task] 認不得的 index 參照 '{aIndexRaw}'"
+                    + "（收 TASK-0008 / 8 / 0008）—— ⛔ 這不是「沒帶」，是**帶了但讀不出來**，不猜。");
             var e = UCL_TaskIO.Find(oIndex);
             if (e == null)
                 throw new Exception($"[Task] TASK-{oIndex} 不存在（單檔：{UCL_TaskIO.TaskPath(oIndex)}）"

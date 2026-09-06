@@ -78,7 +78,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadHierarchy
             if (!string.Equals(aMode, "scene", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(aMode, "prefab", StringComparison.OrdinalIgnoreCase))
             {
-                Cmd_ReadHierarchy_Helpers.RejectLastOp(
+                Cmd_ReadHierarchy_Helpers.RejectLastOp(args, 
                     $"mode='{aMode}' 不認得。合法值: scene | prefab。");
                 return;
             }
@@ -87,7 +87,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadHierarchy
             // 物理意義：避免 caller 用了未實作的 searchType 還以為命中
             if (!string.IsNullOrEmpty(aSearch) && !string.Equals(aSearchType, "name", StringComparison.OrdinalIgnoreCase))
             {
-                Cmd_ReadHierarchy_Helpers.RejectLastOp(
+                Cmd_ReadHierarchy_Helpers.RejectLastOp(args, 
                     $"searchType='{aSearchType}' 尚未實作（目前只支援 name）。RESERVED for future: tag / layer / component。");
                 return;
             }
@@ -95,7 +95,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadHierarchy
             // componentDetail 目前只實作 name，'fields' 預留
             if (aIncludeComponents && !string.Equals(aComponentDetail, "name", StringComparison.OrdinalIgnoreCase))
             {
-                Cmd_ReadHierarchy_Helpers.RejectLastOp(
+                Cmd_ReadHierarchy_Helpers.RejectLastOp(args, 
                     $"componentDetail='{aComponentDetail}' 尚未實作（目前只支援 name）。RESERVED for future: fields（列出 SerializedField 與值）。");
                 return;
             }
@@ -108,7 +108,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadHierarchy
             {
                 if (string.IsNullOrEmpty(aPrefabPath))
                 {
-                    Cmd_ReadHierarchy_Helpers.RejectLastOp(
+                    Cmd_ReadHierarchy_Helpers.RejectLastOp(args, 
                         "mode=prefab 必須提供 prefab=<asset path> (e.g. prefab=Assets/Foo.prefab)。");
                     return;
                 }
@@ -130,7 +130,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadHierarchy
                     iSearch: aSearch);
             }
 
-            Cmd_ReadHierarchy_Helpers.ResolveLastOp(aMarkdown);
+            Cmd_ReadHierarchy_Helpers.ResolveLastOp(args, aMarkdown);
             await UniTask.CompletedTask;
         }
 
@@ -396,11 +396,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadHierarchy
     /// </summary>
     internal static class Cmd_ReadHierarchy_Helpers
     {
-        public static void ResolveLastOp(string iMarkdown) => UCL_ChatTavernRender.WriteLastOp(iMarkdown);
+        public static void ResolveLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string iMarkdown) => UCL_ChatTavernRender.WriteLastOp(iMarkdown, iArgs);
 
-        public static void RejectLastOp(string iMessage)
+        public static void RejectLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string iMessage)
         {
-            UCL_ChatTavernRender.WriteLastOp($"# ⚠ ReadHierarchy Rejected\n\n{iMessage}\n");
+            UCL_ChatTavernRender.WriteLastOp($"# ⚠ ReadHierarchy Rejected\n\n{iMessage}\n", iArgs);
             Debug.LogWarning($"[ReadHierarchy] {iMessage}");
             throw new InvalidOperationException(iMessage);
         }

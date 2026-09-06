@@ -31,7 +31,7 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
             await UniTask.Yield();
 
             string op = GetArg(args, "op", "").ToLowerInvariant();
-            if (string.IsNullOrEmpty(op)) { Reject("缺少 op 參數（balance / grant / consume）"); return; }
+            if (string.IsNullOrEmpty(op)) { Reject(args, "缺少 op 參數（balance / grant / consume）"); return; }
 
             try
             {
@@ -40,26 +40,26 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
                     case "balance": Op_Balance(args); break;
                     case "grant":   Op_Grant(args); break;
                     case "consume": Op_Consume(args); break;
-                    default: Reject($"未知 op: {op}"); break;
+                    default: Reject(args, $"未知 op: {op}"); break;
                 }
             }
             catch (System.Exception ex)
             {
-                Fail($"執行 op={op} 失敗：{ex.Message}");
+                Fail(args, $"執行 op={op} 失敗：{ex.Message}");
             }
         }
 
         void Op_Balance(Dictionary<string, string> args)
         {
             string persona = GetArg(args, "persona", "");
-            if (string.IsNullOrEmpty(persona)) { Reject("balance 缺少 persona"); return; }
+            if (string.IsNullOrEmpty(persona)) { Reject(args, "balance 缺少 persona"); return; }
             // 查詢就把三種都報出來 —— **不替使用者挑一種**。
             // 2026-08-18 券改批次制：「永久」「未過期限時」「可花總額」是三個不同的答案，
             // 只回一個數字的話，讀的人會拿它當成自己心裡想的那一種（而那不會報錯）。
             int aPermanent = UCL_CanvasVoucherLedger.GetPermanent(persona);
             int aExpiring = UCL_CanvasVoucherLedger.GetExpiring(persona);
             int bal = UCL_CanvasVoucherLedger.GetSpendable(persona);
-            WriteLastOp($"# 🎨 繪圖券 balance\n\n- persona: `{persona}`\n"
+            WriteLastOp(args, $"# 🎨 繪圖券 balance\n\n- persona: `{persona}`\n"
                       + $"- **可花總額: {bal}**（未過期限時 {aExpiring} ＋ 永久 {aPermanent}）\n"
                       + $"- 永久券: **{aPermanent}**　存著的，不會過期\n"
                       + $"- 未過期限時券: **{aExpiring}**　到期即作廢，過期後這個數字自己會掉\n"
@@ -82,13 +82,13 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
             string amountStr = GetArg(args, "amount", "0");
             string source = GetArg(args, "source", "manual_grant");
             string refText = GetArg(args, "ref", "");
-            if (string.IsNullOrEmpty(persona)) { Reject("grant 缺少 persona"); return; }
-            if (!int.TryParse(amountStr, out int amount) || amount <= 0) { Reject($"grant amount 無效或非正數: {amountStr}"); return; }
+            if (string.IsNullOrEmpty(persona)) { Reject(args, "grant 缺少 persona"); return; }
+            if (!int.TryParse(amountStr, out int amount) || amount <= 0) { Reject(args, $"grant amount 無效或非正數: {amountStr}"); return; }
 
             // 期間限定券（Tim 2026-08-18）：`expires_at` 空 ＝ 永久券 ⇒ 不帶這個參數時行為與改動前逐值相同。
             string aExpiresAt = GetArg(args, "expires_at", "").Trim();
             var (before, after) = UCL_CanvasVoucherLedger.Grant(persona, amount, source, refText, aExpiresAt);
-            WriteLastOp($"# ✅ 繪圖券 grant\n\n- persona: `{persona}`\n- amount: **+{amount}**\n- source: `{source}`\n- balance: {before} → **{after}**\n");
+            WriteLastOp(args, $"# ✅ 繪圖券 grant\n\n- persona: `{persona}`\n- amount: **+{amount}**\n- source: `{source}`\n- balance: {before} → **{after}**\n");
         }
 
         void Op_Consume(Dictionary<string, string> args)
@@ -97,26 +97,29 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
             string amountStr = GetArg(args, "amount", "0");
             string source = GetArg(args, "source", "canvas_place");
             string refText = GetArg(args, "ref", "");
-            if (string.IsNullOrEmpty(persona)) { Reject("consume 缺少 persona"); return; }
-            if (!int.TryParse(amountStr, out int amount) || amount <= 0) { Reject($"consume amount 無效或非正數: {amountStr}"); return; }
+            if (string.IsNullOrEmpty(persona)) { Reject(args, "consume 缺少 persona"); return; }
+            if (!int.TryParse(amountStr, out int amount) || amount <= 0) { Reject(args, $"consume amount 無效或非正數: {amountStr}"); return; }
 
             var (before, after) = UCL_CanvasVoucherLedger.Consume(persona, amount, source, refText);
-            WriteLastOp($"# ✅ 繪圖券 consume\n\n- persona: `{persona}`\n- amount: **-{amount}**\n- use: `{source}`\n- balance: {before} → **{after}**\n");
+            WriteLastOp(args, $"# ✅ 繪圖券 consume\n\n- persona: `{persona}`\n- amount: **-{amount}**\n- use: `{source}`\n- balance: {before} → **{after}**\n");
         }
 
         // 借用 ChatTavern render 寫 _last_op.md（對齊 Cmd_Treasury 的 helper 做法，避免跨 asmdef 依賴問題）
-        static void WriteLastOp(string md) =>
-            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(md);
+        // ⚠ TASK-0116：**一定要把 args 交出去** —— 回傳檔要鏡寫進哪個 persona 的 lane，來源只有
+        //   `args["_cmd_id"]`。不給就退回全域 static slot，而那個 slot 在併發的 lane 之間 last-write-wins
+        //   ⇒ 本檔的券帳報告會落進**別人的** lane（那正是 0116 的原始症狀）。
+        static void WriteLastOp(Dictionary<string, string> iArgs, string md) =>
+            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(md, iArgs);
 
-        static void Reject(string msg)
+        static void Reject(Dictionary<string, string> iArgs, string msg)
         {
-            WriteLastOp($"# ❌ CanvasVoucher Cmd Rejected\n\n{msg}\n");
+            WriteLastOp(iArgs, $"# ❌ CanvasVoucher Cmd Rejected\n\n{msg}\n");
             throw new System.InvalidOperationException(msg);
         }
 
-        static void Fail(string msg)
+        static void Fail(Dictionary<string, string> iArgs, string msg)
         {
-            WriteLastOp($"# ❌ CanvasVoucher Cmd Failed\n\n{msg}\n");
+            WriteLastOp(iArgs, $"# ❌ CanvasVoucher Cmd Failed\n\n{msg}\n");
             throw new System.Exception(msg);
         }
 

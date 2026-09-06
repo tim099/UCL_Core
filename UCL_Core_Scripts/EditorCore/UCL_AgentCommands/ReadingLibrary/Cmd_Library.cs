@@ -158,7 +158,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 $"| reader.json | `{readerJson}` | {File.Exists(readerJson)} |\n\n" +
                 $"> `reader.json` 不存在代表這位 persona 在此 media 尚無新架構紀錄 —— " +
                 $"依 note_chapter 的前置階梯，該先查 Archive（有舊日記→先遷移）或走 media_init 建檔。\n";
-            Cmd_Library_Helpers.ResolveLastOp(md);
+            Cmd_Library_Helpers.ResolveLastOp(args, md);
 
             Debug.Log($"[{CommandType}] paths → reader_root={readerRoot} (exists={Directory.Exists(readerRoot)})");
         }
@@ -182,7 +182,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             if (path == null)
                 throw new InvalidOperationException($"[{CommandType}] recall 失敗：{error}");
 
-            Cmd_Library_Helpers.ResolveLastOp(
+            Cmd_Library_Helpers.ResolveLastOp(args, 
                 $"# 📖 Library recall\n\n" +
                 $"- **persona**: `{persona}`　**media**: `{mediaId}`　full_rounds: `{full}`\n" +
                 $"- 追回檔已生成：`{path}`\n\n" +
@@ -228,7 +228,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             if (!string.IsNullOrEmpty(error))
                 throw new InvalidOperationException($"[{CommandType}] media_init 失敗：{error}\n{log}");
 
-            Cmd_Library_Helpers.ResolveLastOp(
+            Cmd_Library_Helpers.ResolveLastOp(args, 
                 $"# 📚 Library media_init\n\n{log}\n" +
                 $"→ 接著跑 `op=note_chapter --arg chapter=0001`（0000 保留給序章，非必有）。\n");
             Debug.Log($"[{CommandType}] media_init → {mediaId} / {persona}");
@@ -285,7 +285,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             // 數值影響：純讀附加；recall 失敗不影響已落盤的心得（檔優先於投影）。
             string recall = UCL_ReadingLibraryIO.RenderRecall(mediaId, persona, false, out string recallErr);
 
-            Cmd_Library_Helpers.ResolveLastOp(
+            Cmd_Library_Helpers.ResolveLastOp(args, 
                 $"# 📚 Library note_chapter\n\n{log}\n" +
                 $"- 路徑：`{roundPath}`\n\n---\n\n" +
                 (recall ?? $"> [!WARNING]\n> 心得已落盤，但讀回視圖生成失敗：{recallErr}\n"));
@@ -353,7 +353,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 : $"> [!WARNING]\n> 已發文（seq={seq}）但 receipt 落檔失敗：{recErr}\n" +
                   $"> 請人工把 shared_seq={seq} 補進該 round —— 別重發（會重複計酬）。";
 
-            Cmd_Library_Helpers.ResolveLastOp(
+            Cmd_Library_Helpers.ResolveLastOp(args, 
                 $"# 📚 Library share\n\n- ✅ 已發酒館：seq={seq}（{mediaId} / {chapterId} r{round} by {persona}）\n{receiptNote}");
             Debug.Log($"[{CommandType}] share → {mediaId}/{chapterId} r{round} seq={seq}");
         }
@@ -368,7 +368,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             // 已遷移 Archive 預設隱藏（Tim 2026-08-07）—— 已裁決過的不重複端上檯面
             bool showMigrated = GetArg(args, "show_migrated", "").Trim().ToLowerInvariant() == "true";
             string report = UCL_ReadingLibraryIO.ScanLibrary(out string reportPath, out string error, showMigrated);
-            Cmd_Library_Helpers.ResolveLastOp(
+            Cmd_Library_Helpers.ResolveLastOp(args, 
                 report +
                 (reportPath != null ? $"\n\n📄 報告檔：`{reportPath}`" : "") +
                 (string.IsNullOrEmpty(error) ? "" : $"\n\n> [!WARNING]\n> {error}"));
@@ -400,7 +400,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             if (log == null)
                 throw new InvalidOperationException($"[{CommandType}] add_character 失敗：{error}");
 
-            Cmd_Library_Helpers.ResolveLastOp($"# 🧑 Library add_character\n\n{log}\n");
+            Cmd_Library_Helpers.ResolveLastOp(args, $"# 🧑 Library add_character\n\n{log}\n");
             Debug.Log($"[{CommandType}] add_character → {mediaId} / {persona} / {characterId}");
         }
 
@@ -428,7 +428,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             if (log == null)
                 throw new InvalidOperationException($"[{CommandType}] revise_view 失敗：{error}");
 
-            Cmd_Library_Helpers.ResolveLastOp($"# 🧑 Library revise_view\n\n{log}\n");
+            Cmd_Library_Helpers.ResolveLastOp(args, $"# 🧑 Library revise_view\n\n{log}\n");
             Debug.Log($"[{CommandType}] revise_view → {mediaId} / {persona} / {characterId}");
         }
 
@@ -447,7 +447,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             if (log == null)
                 throw new InvalidOperationException($"[{CommandType}] bookmark 失敗：{error}");
 
-            Cmd_Library_Helpers.ResolveLastOp($"# 📚 Library bookmark\n\n{log}\n");
+            Cmd_Library_Helpers.ResolveLastOp(args, $"# 📚 Library bookmark\n\n{log}\n");
             Debug.Log($"[{CommandType}] bookmark → {mediaId} / {persona}");
         }
 
@@ -480,7 +480,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
     // 數值影響：只寫 _last_op.md（每次覆寫）；RejectLastOp 額外 throw，讓失敗傳回呼叫端而非靜默。
     internal static class Cmd_Library_Helpers
     {
-        public static void ResolveLastOp(string md) => UCL_ChatTavernRender.WriteLastOp(md);
+        public static void ResolveLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string md) => UCL_ChatTavernRender.WriteLastOp(md, iArgs);
     }
 }
 #endif

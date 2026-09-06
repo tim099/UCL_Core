@@ -20,11 +20,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TypeInspect
     // 區塊職責: 區域 helper — 對齊 Cmd_Glossary/Cmd_Tavern 用 _last_op.md 通報 (Reject=⚠ throw / Resolve=✅)
     internal static class Cmd_TypeInspect_Helpers
     {
-        public static void ResolveLastOp(string md) => UCL_ChatTavernRender.WriteLastOp(md);
+        public static void ResolveLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string md) => UCL_ChatTavernRender.WriteLastOp(md, iArgs);
 
-        public static void RejectLastOp(string msg)
+        public static void RejectLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string msg)
         {
-            UCL_ChatTavernRender.WriteLastOp($"# ⚠ TypeInspect Cmd Rejected\n\n{msg}\n");
+            UCL_ChatTavernRender.WriteLastOp($"# ⚠ TypeInspect Cmd Rejected\n\n{msg}\n", iArgs);
             Debug.LogWarning($"[TypeInspect] {msg}");
             throw new InvalidOperationException(msg);
         }
@@ -66,8 +66,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TypeInspect
                 case "find": Op_Find(args); break;
                 case "inspect": Op_Inspect(args); break;
                 case "inspect_many": Op_InspectMany(args); break;
-                case "": Cmd_TypeInspect_Helpers.RejectLastOp("缺少 op 參數 (find|inspect|inspect_many)"); break;
-                default: Cmd_TypeInspect_Helpers.RejectLastOp($"未知 op: {op} (支援 find|inspect|inspect_many)"); break;
+                case "": Cmd_TypeInspect_Helpers.RejectLastOp(args, "缺少 op 參數 (find|inspect|inspect_many)"); break;
+                default: Cmd_TypeInspect_Helpers.RejectLastOp(args, $"未知 op: {op} (支援 find|inspect|inspect_many)"); break;
             }
             await UniTask.CompletedTask;
         }
@@ -79,7 +79,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TypeInspect
         private void Op_Find(Dictionary<string, string> args)
         {
             string q = GetArg(args, "type", "");
-            if (string.IsNullOrEmpty(q)) { Cmd_TypeInspect_Helpers.RejectLastOp("find 缺少 type (短名或部分 full name)"); return; }
+            if (string.IsNullOrEmpty(q)) { Cmd_TypeInspect_Helpers.RejectLastOp(args, "find 缺少 type (短名或部分 full name)"); return; }
             int max = ParseInt(GetArg(args, "max", "60"), 60);
 
             var matches = AssemblyExtensions.GetAllTypes()
@@ -97,7 +97,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TypeInspect
                 sb.AppendLine($"- {t.FullName}  [{t.Assembly.GetName().Name}]");
             if (matches.Count == 0)
                 sb.AppendLine("(無匹配 — 試短名或檢查拼字)");
-            Cmd_TypeInspect_Helpers.ResolveLastOp(sb.ToString());
+            Cmd_TypeInspect_Helpers.ResolveLastOp(args, sb.ToString());
         }
 
         // ===========================================================
@@ -106,11 +106,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TypeInspect
         private void Op_Inspect(Dictionary<string, string> args)
         {
             string name = GetArg(args, "type", "");
-            if (string.IsNullOrEmpty(name)) { Cmd_TypeInspect_Helpers.RejectLastOp("inspect 缺少 type"); return; }
+            if (string.IsNullOrEmpty(name)) { Cmd_TypeInspect_Helpers.RejectLastOp(args, "inspect 缺少 type"); return; }
             var sb = new StringBuilder();
             sb.AppendLine($"=== Cmd_TypeInspect (inspect, {name}) ===\n");
             sb.Append(InspectOne(name, args));
-            Cmd_TypeInspect_Helpers.ResolveLastOp(sb.ToString());
+            Cmd_TypeInspect_Helpers.ResolveLastOp(args, sb.ToString());
         }
 
         // ===========================================================
@@ -119,7 +119,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TypeInspect
         private void Op_InspectMany(Dictionary<string, string> args)
         {
             string csv = GetArg(args, "types", "");
-            if (string.IsNullOrEmpty(csv)) { Cmd_TypeInspect_Helpers.RejectLastOp("inspect_many 缺少 types (csv)"); return; }
+            if (string.IsNullOrEmpty(csv)) { Cmd_TypeInspect_Helpers.RejectLastOp(args, "inspect_many 缺少 types (csv)"); return; }
             var names = csv.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
             var sb = new StringBuilder();
             sb.AppendLine($"=== Cmd_TypeInspect (inspect_many, {names.Count} types) ===\n");
@@ -128,7 +128,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TypeInspect
                 sb.Append(InspectOne(n, args));
                 sb.AppendLine("\n---\n");
             }
-            Cmd_TypeInspect_Helpers.ResolveLastOp(sb.ToString());
+            Cmd_TypeInspect_Helpers.ResolveLastOp(args, sb.ToString());
         }
 
         // ===========================================================

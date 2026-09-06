@@ -211,7 +211,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string op = GetArg(args, "op", "").ToLowerInvariant();
             if (string.IsNullOrEmpty(op))
             {
-                RejectLastOp("缺少 op 參數。請參考 ArgsSchema。");
+                RejectLastOp(args, "缺少 op 參數。請參考 ArgsSchema。");
                 return;
             }
             // R6 — 鏡像抑制：CLI 給 quiet=true → AppendEvent 不寫 system message 進 messages.jsonl
@@ -225,7 +225,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 {
                     case "createroom": Op_CreateRoom(args); break;
                     case "create_trpg_room": Op_CreateTrpgRoom(args); break;
-                    case "listrooms": Op_ListRooms(); break;
+                    case "listrooms": Op_ListRooms(args); break;
                     case "join": Op_Join(args); break;
                     case "post": await Op_Post(args, token); break;
                     case "read": Op_Read(args); break;
@@ -257,13 +257,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "catchup": Op_Catchup(args); break;
                     case "session_enter": Op_SessionEnter(args); break;
                     default:
-                        RejectLastOp($"未知 op：{op}");
+                        RejectLastOp(args, $"未知 op：{op}");
                         break;
                 }
             }
             catch (Exception ex)
             {
-                FailLastOp($"執行 op={op} 失敗：{ex.Message}\n{ex.StackTrace}");
+                FailLastOp(args, $"執行 op={op} 失敗：{ex.Message}\n{ex.StackTrace}");
                 throw;
             }
             finally
@@ -298,7 +298,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     if (!string.IsNullOrEmpty(trimmed)) mirrorKindsList.Add(trimmed);
                 }
             }
-            if (string.IsNullOrEmpty(id)) { RejectLastOp("createroom 缺少 id（房間ID；可用 id= 或 room=）"); return; }
+            if (string.IsNullOrEmpty(id)) { RejectLastOp(args, "createroom 缺少 id（房間ID；可用 id= 或 room=）"); return; }
             var room = UCL_ChatTavernIO.CreateRoom(id, name, desc,
                 string.IsNullOrEmpty(ownerAgent) ? null : ownerAgent,
                 mirrorKindsList);
@@ -322,7 +322,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string mirrorLine = (room.mirror_kinds == null || room.mirror_kinds.Count == 0)
                 ? "" : $"\n- mirror_kinds: [{string.Join(", ", room.mirror_kinds)}]";
             string md = $"# ✅ Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}{ownerLine}{mirrorLine}{mirrorRegLine}\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Tavern] createroom → {room.id}{(string.IsNullOrEmpty(room.owner_agent) ? "" : $" owner={room.owner_agent}")}{(room.mirror_kinds != null && room.mirror_kinds.Count > 0 ? $" mirror_kinds=[{string.Join(",", room.mirror_kinds)}]" : "")}");
         }
 
@@ -337,7 +337,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             // campaign id — 接受 campaign / id / room；未帶 trpg- 前綴自動補（TRPG 房命名慣例）
             string raw = GetArg(args, "campaign", GetArg(args, "id", GetArg(args, "room", "")));
-            if (string.IsNullOrEmpty(raw)) { RejectLastOp("create_trpg_room 缺少 campaign（戰役 ID；可用 campaign= / id= / room=）"); return; }
+            if (string.IsNullOrEmpty(raw)) { RejectLastOp(args, "create_trpg_room 缺少 campaign（戰役 ID；可用 campaign= / id= / room=）"); return; }
             string id = raw.StartsWith("trpg-") ? raw : "trpg-" + raw;
             string name = GetArg(args, "name", id);
             string desc = GetArg(args, "description", "");
@@ -360,7 +360,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             string ownerLine = string.IsNullOrEmpty(room.owner_agent) ? "" : $"\n- gm/owner: `{room.owner_agent}`";
             string md = $"# ✅ TRPG Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}{ownerLine}\n- mirror_kinds: [{string.Join(", ", room.mirror_kinds ?? new List<string>())}]\n- mirror: 註冊 → {reg}\n\n下一步：`op=read room={room.id}` 驗證房建成後即可開場。";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Tavern] create_trpg_room → {room.id}（mirror_kinds=[{string.Join(",", room.mirror_kinds ?? new List<string>())}]，{reg}）");
         }
 
@@ -435,7 +435,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===========================================================
         // 區塊：op=listrooms
         // ===========================================================
-        void Op_ListRooms()
+        void Op_ListRooms(Dictionary<string, string> args)
         {
             var list = UCL_ChatTavernIO.LoadRooms();
             var sb = new System.Text.StringBuilder();
@@ -449,7 +449,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     sb.Append($"- `{r.id}` — {r.name} (seq={seq}) — {r.description}\n");
                 }
             }
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
             Debug.Log($"[Tavern] listrooms → {list.rooms.Count} rooms");
         }
 
@@ -463,10 +463,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string identityId = GetArg(args, "id", GetAgentArg(args));
             string displayName = GetArg(args, "name", identityId);
             string kind = GetArg(args, "kind", "agent");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("join 缺少 room"); return; }
-            if (string.IsNullOrEmpty(identityId)) { RejectLastOp("join 缺少 id（身分ID；可用 id= / sender= / sender_id=）"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "join 缺少 room"); return; }
+            if (string.IsNullOrEmpty(identityId)) { RejectLastOp(args, "join 缺少 id（身分ID；可用 id= / sender= / sender_id=）"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
-            if (room == null) { RejectLastOp($"房間不存在：{roomId}（請先 createroom）"); return; }
+            if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}（請先 createroom）"); return; }
 
             var ident = UCL_ChatTavernIO.GetOrCreateIdentity(identityId, displayName, kind);
             UCL_ChatTavernIO.AddMember(roomId, ident.id);
@@ -484,7 +484,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 注意：_last_view.md 是房間共用快照，可能被任何 agent 讀到；header 用中性措辭避免誤導讀者把上一位當成自己
             string header = $"> 上一筆事件 (seq={seq})：「{ident.display_name}」（id=`{ident.id}`）加入房間「{room.name}」";
             string md = UCL_ChatTavernRender.WriteLastView(roomId, room.name, tail, seq, header);
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Tavern] join {roomId} ← {ident.display_name} (seq={seq})");
         }
 
@@ -570,7 +570,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 物理意義：同 actor 不同 persona (basecamp / ridge-001 etc.) 的時間分層標記，給未來 read 端 per-persona cursor 用
             // 數值影響：null/empty = legacy 行為不變；有值 = 寫進 message json sender_persona 欄位
             string senderPersona = GetArg(args, "persona", GetArg(args, "sender_persona", ""));
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("post 缺少 room"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "post 缺少 room"); return; }
 
             // ===========================================================
             // 區塊職責：身分補值 —— persona 是唯一身分欄位，但**可以省略（省略＝匿名發言）**
@@ -597,9 +597,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 // 匿名與具名兩條都收在同一支推導裡，避免下游各自 fallback 成不同東西。
                 senderId = ResolveDisplaySenderId(senderPersona);
             }
-            if (string.IsNullOrEmpty(body)) { RejectLastOp("post 缺少 body"); return; }
+            if (string.IsNullOrEmpty(body)) { RejectLastOp(args, "post 缺少 body"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
-            if (room == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
+            if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}"); return; }
 
             // ===========================================================
             // T07 (2026-05-15 apex-two) — Session Token Enforcement
@@ -617,7 +617,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 string sessionToken = GetArg(args, "session_token", GetArg(args, "token", ""));
                 if (string.IsNullOrEmpty(sessionToken))
                 {
-                    RejectLastOp("[T07] token enforce ON, 但 post 缺 --arg session_token=<X>。" +
+                    RejectLastOp(args, "[T07] token enforce ON, 但 post 缺 --arg session_token=<X>。" +
                                  "跑 awakening.py whoami 撈當前 token；或從 UCL_LoginStatusPage 關閉 enforce。");
                     return;
                 }
@@ -625,7 +625,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 string hardErr = TokenEnforce_CheckValid(sessionToken, out string realBank, out string realPersona);
                 if (!string.IsNullOrEmpty(hardErr))
                 {
-                    RejectLastOp("[T07] token 校驗失敗: " + hardErr);
+                    RejectLastOp(args, "[T07] token 校驗失敗: " + hardErr);
                     return;
                 }
                 // Phase 2: identity 對齊檢查 (軟警告) — token 存在 active, 但 sender/persona 不符
@@ -673,7 +673,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     {
                         if (!earlyMeta.ContainsKey(req) || string.IsNullOrEmpty(earlyMeta[req]))
                         {
-                            RejectLastOp($"tag=task-assign 缺 meta.{req} (T06.3 schema). Required: task_id / task_body / assigned_by / requires_ack");
+                            RejectLastOp(args, $"tag=task-assign 缺 meta.{req} (T06.3 schema). Required: task_id / task_body / assigned_by / requires_ack");
                             return;
                         }
                     }
@@ -686,7 +686,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     // 數值影響：純 validation，reject 在寫 jsonl 之前，不會留下半 valid 的請款紀錄。
                     if (!earlyMeta.ContainsKey("sha") || string.IsNullOrEmpty(earlyMeta["sha"]))
                     {
-                        RejectLastOp("tag=commit 缺 meta.sha (T06.3 schema)。commit 公告必須帶 SHA 當計酬憑證。"
+                        RejectLastOp(args, "tag=commit 缺 meta.sha (T06.3 schema)。commit 公告必須帶 SHA 當計酬憑證。"
                                      + "一則訊息對一個 SHA；三層 bump 請分三則各自公告（Tim 2026-07-30 拍板）。");
                         return;
                     }
@@ -696,7 +696,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     string shaVal = earlyMeta["sha"].Trim();
                     if (shaVal.Contains(","))
                     {
-                        RejectLastOp("tag=commit 的 meta.sha 只能帶一個 SHA（收到逗號分隔的多個）。"
+                        RejectLastOp(args, "tag=commit 的 meta.sha 只能帶一個 SHA（收到逗號分隔的多個）。"
                                      + "三層 bump 請分三則訊息各自公告，每則帶自己那層的 SHA。");
                         return;
                     }
@@ -714,7 +714,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     }
                     if (!shaLooksValid)
                     {
-                        RejectLastOp($"tag=commit 的 meta.sha 格式不像 git SHA（收到 '{shaVal}'）。"
+                        RejectLastOp(args, $"tag=commit 的 meta.sha 格式不像 git SHA（收到 '{shaVal}'）。"
                                      + "需為 7~40 位十六進位字元，例如 sha:910a2493。");
                         return;
                     }
@@ -724,13 +724,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     // Required: task_id / action (accept|decline|defer)
                     if (!earlyMeta.ContainsKey("task_id") || string.IsNullOrEmpty(earlyMeta["task_id"]))
                     {
-                        RejectLastOp("tag=task-ack 缺 meta.task_id (T06.3 schema)");
+                        RejectLastOp(args, "tag=task-ack 缺 meta.task_id (T06.3 schema)");
                         return;
                     }
                     if (!earlyMeta.TryGetValue("action", out var ackAction)
                         || (ackAction != "accept" && ackAction != "decline" && ackAction != "defer"))
                     {
-                        RejectLastOp("tag=task-ack 缺 meta.action 或 action 非 accept|decline|defer (T06.3 schema)");
+                        RejectLastOp(args, "tag=task-ack 缺 meta.action 或 action 非 accept|decline|defer (T06.3 schema)");
                         return;
                     }
                 }
@@ -1022,7 +1022,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     + "> 若是忘了帶，補上 `--arg persona=<你的 persona>` 重發一次才會計酬"
                     + "（已發出的這則不會補發）。" + System.Environment.NewLine;
             }
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Tavern] post → {roomId} seq={seq} by {senderName}");
 
             // T45 — Op_Post 結尾統一 auto-credit / auto-debit hook（重構自 T43 work_post 單一規則）
@@ -1587,7 +1587,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string persona = GetArg(args, "persona", "").Trim();
             if (string.IsNullOrEmpty(persona))
-            { RejectLastOp("catchup 缺少 persona（要知道是誰的游標與 inbox）"); return; }
+            { RejectLastOp(args, "catchup 缺少 persona（要知道是誰的游標與 inbox）"); return; }
 
             string md = UCL_TavernCatchupService.Build(
                 persona,
@@ -1656,7 +1656,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                             GetArg(args, "full", "0") == "1");
                     break;
                 default:
-                    RejectLastOp($"未知 query kind：{kind}"
+                    RejectLastOp(args, $"未知 query kind：{kind}"
                         + "（rooms / tail / search / by_sender / timeline / stats / seq）");
                     return;
             }
@@ -1665,7 +1665,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 因為「檔案在哪」是下一步要 Read 的東西，猜錯就是讀到別人的或讀到舊的。
             if (string.IsNullOrEmpty(persona))
             {
-                UCL_ChatTavernRender.WriteLastOp(md);
+                UCL_ChatTavernRender.WriteLastOp(md, args);
                 Debug.Log($"[Tavern] query kind={kind} → _last_op.md（未帶 persona；帶了就落 letters/<persona>/cmd/）");
                 return;
             }
@@ -1682,9 +1682,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         void Op_Read(Dictionary<string, string> args)
         {
             string roomId = GetArg(args, "room", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("read 缺少 room"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "read 缺少 room"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
-            if (room == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
+            if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}"); return; }
 
             string search = GetArg(args, "search", "");
             int tail = ParseIntArg(args, "tail", 0);
@@ -1731,7 +1731,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         + (tail <= 0 && limit > 0 ? $"（`limit={limit}` 已當成 tail 用）" : "");
             }
             string md = UCL_ChatTavernRender.RenderMessages(title, messages);
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Tavern] read {roomId} → {messages.Count} messages");
         }
 
@@ -1741,7 +1741,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         void Op_Members(Dictionary<string, string> args)
         {
             string roomId = GetArg(args, "room", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("members 缺少 room"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "members 缺少 room"); return; }
             var members = UCL_ChatTavernIO.LoadMembers(roomId);
             var idents = UCL_ChatTavernIO.LoadIdentities();
             var sb = new System.Text.StringBuilder();
@@ -1752,7 +1752,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 if (ident == null) sb.Append($"- `{mid}` _(no identity record)_\n");
                 else sb.Append($"- `{ident.id}` — **{ident.display_name}** ({ident.kind})\n");
             }
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
             Debug.Log($"[Tavern] members {roomId} → {members.member_ids.Count}");
         }
 
@@ -1763,7 +1763,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string senderId = GetAgentArg(args, GetArg(args, "id", ""));
-            if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(senderId)) { RejectLastOp("leave 需要 room + sender（可用 sender= / sender_id= / id=）"); return; }
+            if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(senderId)) { RejectLastOp(args, "leave 需要 room + sender（可用 sender= / sender_id= / id=）"); return; }
             // 顯示名稱一律走帳戶資料（Tim 2026-08-20：identities.json 廢棄）——
             // Op_Post 早就改了、渲染端今天也改了，這裡沒改 ⇒ 同一件事的第三個算點。
             string name = Treasury.UCL_BankAccountProfileIO.GetDisplayName(senderId);
@@ -1776,7 +1776,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 kind = "leave",
                 body = $"{name} 離開了酒館",
             });
-            UCL_ChatTavernRender.WriteLastOp($"# 👋 {name} left `{roomId}` (seq={seq})\n");
+            UCL_ChatTavernRender.WriteLastOp($"# 👋 {name} left `{roomId}` (seq={seq})\n", args);
             Debug.Log($"[Tavern] leave {roomId} ← {name}");
         }
 
@@ -1802,9 +1802,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 有了它們，Editor 端才知道「誰正被 blocking 等著」—— 酒保自動通知據此加權。
             string expectFrom = GetArg(args, "expect_from", null);
             string waiter = GetArg(args, "waiter", null);
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("wait 缺少 room"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "wait 缺少 room"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
-            if (room == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
+            if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}"); return; }
 
             // 建 pending 條目
             string waitId = UCL_ChatTavernIO.CreatePendingWait(
@@ -1829,7 +1829,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 $"- **timeout**: {timeoutSec}s\n\n" +
                 $"Handler returned immediately, queue runner is free for other cmds.\n" +
                 $"Poll status with `op=wait_check wait_id={waitId}`，或讀 `_wait_{waitId}.md`。\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Tavern] wait fire-and-forget → wait_id={waitId} room={roomId} since={sinceSeq} timeout={timeoutSec}s");
         }
 
@@ -1849,10 +1849,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         void Op_WaitCheck(Dictionary<string, string> args)
         {
             string waitId = GetArg(args, "wait_id", "");
-            if (string.IsNullOrEmpty(waitId)) { RejectLastOp("wait_check 缺少 wait_id"); return; }
+            if (string.IsNullOrEmpty(waitId)) { RejectLastOp(args, "wait_check 缺少 wait_id"); return; }
 
             var w = UCL_ChatTavernIO.FindWait(waitId);
-            if (w == null) { RejectLastOp($"找不到 wait_id：{waitId}（可能已被 stale-purge 或從未存在）"); return; }
+            if (w == null) { RejectLastOp(args, $"找不到 wait_id：{waitId}（可能已被 stale-purge 或從未存在）"); return; }
 
             var sb = new System.Text.StringBuilder();
             sb.Append($"# 🔍 Wait Status — `{waitId}`\n\n");
@@ -1886,7 +1886,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 sb.Append("\n_(仍在等待中，過陣子再 wait_check 一次)_\n");
             }
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
             Debug.Log($"[Tavern] wait_check {waitId} → status={w.status}");
         }
 
@@ -1899,22 +1899,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string roomId = GetArg(args, "room", "");
             string key = GetArg(args, "key", "");
             string body = GetArg(args, "body", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("note_write 缺少 room"); return; }
-            if (string.IsNullOrEmpty(key)) { RejectLastOp("note_write 缺少 key"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "note_write 缺少 room"); return; }
+            if (string.IsNullOrEmpty(key)) { RejectLastOp(args, "note_write 缺少 key"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
-            if (room == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
+            if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}"); return; }
             try
             {
                 UCL_ChatTavernIO.WriteNote(roomId, key, body);
             }
             catch (Exception ex)
             {
-                FailLastOp($"note_write 失敗：{ex.Message}");
+                FailLastOp(args, $"note_write 失敗：{ex.Message}");
                 return;
             }
             string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
             string md = $"# 📝 Note Written\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n- mode: write (整個覆寫)\n- bytes: {(body?.Length ?? 0)}\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Tavern] note_write {roomId}/{key} ({body?.Length ?? 0} bytes)");
         }
 
@@ -1930,23 +1930,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string body = GetArg(args, "body", "");
             // 走統一入口（agent > agent_id > sender > sender_id）；全缺回空字串 → 下游視為未署名
             string sender = GetAgentArg(args);
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("note_append 缺少 room"); return; }
-            if (string.IsNullOrEmpty(key)) { RejectLastOp("note_append 缺少 key"); return; }
-            if (string.IsNullOrEmpty(body)) { RejectLastOp("note_append 缺少 body"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "note_append 缺少 room"); return; }
+            if (string.IsNullOrEmpty(key)) { RejectLastOp(args, "note_append 缺少 key"); return; }
+            if (string.IsNullOrEmpty(body)) { RejectLastOp(args, "note_append 缺少 body"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
-            if (room == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
+            if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}"); return; }
             try
             {
                 UCL_ChatTavernIO.AppendNote(roomId, key, body, sender);
             }
             catch (Exception ex)
             {
-                FailLastOp($"note_append 失敗：{ex.Message}");
+                FailLastOp(args, $"note_append 失敗：{ex.Message}");
                 return;
             }
             string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
             string md = $"# 📝 Note Appended\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n- mode: append (OS 原子；不動 frontmatter)\n- sender: `{sender ?? "(none)"}`\n- bytes: {body.Length}\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Tavern] note_append {roomId}/{key} by {sender ?? "?"} ({body.Length} bytes)");
         }
 
@@ -1957,8 +1957,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string key = GetArg(args, "key", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("note_read 缺少 room"); return; }
-            if (string.IsNullOrEmpty(key)) { RejectLastOp("note_read 缺少 key"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "note_read 缺少 room"); return; }
+            if (string.IsNullOrEmpty(key)) { RejectLastOp(args, "note_read 缺少 key"); return; }
             string content;
             try
             {
@@ -1966,17 +1966,17 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             catch (Exception ex)
             {
-                FailLastOp($"note_read 失敗：{ex.Message}");
+                FailLastOp(args, $"note_read 失敗：{ex.Message}");
                 return;
             }
-            if (content == null) { RejectLastOp($"note 不存在：{roomId}/{key}"); return; }
+            if (content == null) { RejectLastOp(args, $"note 不存在：{roomId}/{key}"); return; }
             string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
             var sb = new System.Text.StringBuilder();
             sb.Append($"# 📖 Note: `{roomId}/{key}`\n\n");
             sb.Append($"- path: `{ToRepoRelative(path)}`\n\n");
             sb.Append("---\n\n");
             sb.Append(content);
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
             Debug.Log($"[Tavern] note_read {roomId}/{key} ({content.Length} bytes)");
         }
 
@@ -1986,9 +1986,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         void Op_NoteList(Dictionary<string, string> args)
         {
             string roomId = GetArg(args, "room", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("note_list 缺少 room"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "note_list 缺少 room"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
-            if (room == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
+            if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}"); return; }
             var keys = UCL_ChatTavernIO.ListNoteKeys(roomId);
             var sb = new System.Text.StringBuilder();
             sb.Append($"# 📚 Notes of `{roomId}` ({keys.Count})\n\n");
@@ -2001,7 +2001,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     sb.Append($"- `{k}` — `{ToRepoRelative(path)}`\n");
                 }
             }
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
             Debug.Log($"[Tavern] note_list {roomId} → {keys.Count} notes");
         }
 
@@ -2012,8 +2012,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string key = GetArg(args, "key", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("note_delete 缺少 room"); return; }
-            if (string.IsNullOrEmpty(key)) { RejectLastOp("note_delete 缺少 key"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "note_delete 缺少 room"); return; }
+            if (string.IsNullOrEmpty(key)) { RejectLastOp(args, "note_delete 缺少 key"); return; }
             bool removed;
             try
             {
@@ -2021,14 +2021,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             catch (Exception ex)
             {
-                FailLastOp($"note_delete 失敗：{ex.Message}");
+                FailLastOp(args, $"note_delete 失敗：{ex.Message}");
                 return;
             }
             string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
             string md = removed
                 ? $"# 🗑 Note Deleted\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n"
                 : $"# ⚠ Note Not Found\n\n- room: `{roomId}`\n- key: `{key}`\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Tavern] note_delete {roomId}/{key} → {(removed ? "removed" : "not found")}");
         }
 
@@ -2254,10 +2254,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 數值影響：寫進 event.data["group_id"]；ApplyEvent reducer 把它放回 UCL_QuestTaskState.group_id
             // 邊界：空字串 = 該 task 不屬任何 group（不影響既有行為）；MVP 限同房 group（跨房留 backlog）
             string groupId = GetArg(args, "group_id", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_create 缺少 room"); return; }
-            if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_create 缺少 task_id"); return; }
-            if (UCL_ChatTavernIO.GetRoom(roomId) == null) { RejectLastOp($"房間不存在：{roomId}"); return; }
-            if (priority != "high" && priority != "normal" && priority != "low") { RejectLastOp($"priority 必須是 high|normal|low，實際: {priority}"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_create 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { RejectLastOp(args, "task_create 缺少 task_id"); return; }
+            if (UCL_ChatTavernIO.GetRoom(roomId) == null) { RejectLastOp(args, $"房間不存在：{roomId}"); return; }
+            if (priority != "high" && priority != "normal" && priority != "low") { RejectLastOp(args, $"priority 必須是 high|normal|low，實際: {priority}"); return; }
 
             var deps = string.IsNullOrEmpty(dependsOn) ? new List<string>() : new List<string>(dependsOn.Split(','));
             for (int i = 0; i < deps.Count; i++) deps[i] = deps[i].Trim();
@@ -2265,7 +2265,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // Cycle detection — 新 task 的 deps transitive 不能含自己
             if (UCL_ChatTavernQuestIO.HasCycle(roomId, taskId, deps))
             {
-                RejectLastOp($"task_create 拒絕：depends_on 會形成循環依賴（task {taskId} → {string.Join(",", deps)} → ... → {taskId}）"); return;
+                RejectLastOp(args, $"task_create 拒絕：depends_on 會形成循環依賴（task {taskId} → {string.Join(",", deps)} → ... → {taskId}）"); return;
             }
 
             // 寫 spec 檔（內容真相）
@@ -2294,7 +2294,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_create idempotent skip\n\n- task_id: `{taskId}`\n- key: `{idempotencyKey}`\n"
                 : $"# ✅ task_create\n\n- task_id: `{taskId}`\n- title: {title}\n- role: {role}\n- priority: {priority}\n- depends_on: {string.Join(", ", deps)}\n- suggested_owner: {suggestedOwner}\n- event_seq: {seq}\n- spec: tasks/{taskId}.md\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Quest] task_create {roomId}/{taskId} priority={priority} (seq={seq})");
         }
 
@@ -2312,12 +2312,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 數值影響：寫入 event.data；mirror BuildMirrorBody 偵測到 plan 就 append 一段「📋 規劃：...」
             string plan = GetArg(args, "plan", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_claim 缺少 room"); return; }
-            if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_claim 缺少 task_id"); return; }
-            if (string.IsNullOrEmpty(claimer)) { RejectLastOp("task_claim 缺少 claimer（可用 claimer / actor / sender）"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_claim 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { RejectLastOp(args, "task_claim 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(claimer)) { RejectLastOp(args, "task_claim 缺少 claimer（可用 claimer / actor / sender）"); return; }
 
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
-            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp($"task 不存在：{taskId}（請先 task_create）"); return; }
+            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp(args, $"task 不存在：{taskId}（請先 task_create）"); return; }
             // 區塊職責：claim 衝突 → 寫 inbox 建議 + 回 Conflict（Robust UX，避免 agent 卡死）
             // 物理意義：兩 agent 同秒搶同 task，第二人 reducer 看到 status=claimed → reject；
             //          但只回 error agent 會傻住，所以同時寫 claimer 的 inbox 一條建議跑 task_next。
@@ -2329,11 +2329,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     string conflictTitle = $"⚠ task_claim 衝突 — `{taskId}` 已被 {st.owner} 認領";
                     string conflictBody = $"當前 owner: **{st.owner}** (lease_until={st.lease_until})\n建議下一步：跑 `task_next agent_id={claimer}` 自動排出妳該接的下個 task。\n_force_reclaim 仍在 Phase B；不要硬搶。_";
                     UCL_ChatTavernQuestIO.AppendInbox(roomId, claimer, 0, conflictTitle, conflictBody);
-                    RejectLastOp($"task {taskId} 已被 {st.owner} 認領（lease_until={st.lease_until}）。已寫 inbox 建議 → 跑 task_next 換目標。");
+                    RejectLastOp(args, $"task {taskId} 已被 {st.owner} 認領（lease_until={st.lease_until}）。已寫 inbox 建議 → 跑 task_next 換目標。");
                     return;
                 }
             }
-            if (st.status == "done") { RejectLastOp($"task {taskId} 已完成，無法 claim"); return; }
+            if (st.status == "done") { RejectLastOp(args, $"task {taskId} 已完成，無法 claim"); return; }
 
             // lease_seconds 優先（測試 / 短任務 override）；否則用 lease_hours（預設 24h）
             DateTime leaseEnd;
@@ -2365,7 +2365,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_claim idempotent skip\n\n- task_id: `{taskId}`\n- key: `{idempotencyKey}`\n"
                 : $"# ✅ task_claim\n\n- task_id: `{taskId}`\n- claimer: {claimer}\n- lease_until: {leaseUntil}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Quest] task_claim {roomId}/{taskId} ← {claimer} (seq={seq})");
         }
 
@@ -2376,14 +2376,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string actor = GetArg(args, "actor", GetAgentArg(args));
             string summary = GetArg(args, "summary", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_progress 缺少 room"); return; }
-            if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_progress 缺少 task_id"); return; }
-            if (string.IsNullOrEmpty(actor)) { RejectLastOp("task_progress 缺少 actor"); return; }
-            if (string.IsNullOrEmpty(summary)) { RejectLastOp("task_progress 缺少 summary"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_progress 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { RejectLastOp(args, "task_progress 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(actor)) { RejectLastOp(args, "task_progress 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(summary)) { RejectLastOp(args, "task_progress 缺少 summary"); return; }
 
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
-            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp($"task 不存在：{taskId}"); return; }
-            if (st.owner != actor) { RejectLastOp($"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
+            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp(args, $"task 不存在：{taskId}"); return; }
+            if (st.owner != actor) { RejectLastOp(args, $"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
 
             string leaseUntil = DateTime.UtcNow.AddHours(24).ToString("yyyy-MM-ddTHH:mm:ssZ");
             string artifacts = GetArg(args, "artifacts", "");  // 例 "commit:abc1234;file:CardGame/Assets/X.cs"
@@ -2403,7 +2403,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_progress idempotent skip\n\n- task_id: `{taskId}`\n"
                 : $"# ✅ task_progress\n\n- task_id: `{taskId}`\n- summary: {summary}\n- artifacts: {artifacts}\n- lease_until (展期): {leaseUntil}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Quest] task_progress {roomId}/{taskId} (seq={seq})");
         }
 
@@ -2427,14 +2427,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             bool doShare = shareRaw == "true" || shareRaw == "1" || shareRaw == "yes";
             string shareRoom = GetArg(args, "share_room", "tavern");
             string shareBody = GetArg(args, "share_body", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_done 缺少 room"); return; }
-            if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_done 缺少 task_id"); return; }
-            if (string.IsNullOrEmpty(actor)) { RejectLastOp("task_done 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_done 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { RejectLastOp(args, "task_done 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(actor)) { RejectLastOp(args, "task_done 缺少 actor"); return; }
 
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
-            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp($"task 不存在：{taskId}"); return; }
-            if (st.owner != actor && st.status != "pending") { RejectLastOp($"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
-            if (st.status == "done") { RejectLastOp($"task {taskId} 已完成"); return; }
+            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp(args, $"task 不存在：{taskId}"); return; }
+            if (st.owner != actor && st.status != "pending") { RejectLastOp(args, $"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
+            if (st.status == "done") { RejectLastOp(args, $"task {taskId} 已完成"); return; }
 
             var doneData = string.IsNullOrEmpty(summary) ? null : new Dictionary<string, string> { { "summary", summary } };
             int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
@@ -2594,7 +2594,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_done idempotent skip\n\n- task_id: `{taskId}`\n" + (shareSeq >= 0 ? $"- share posted: {shareRoom}/seq={shareSeq}\n" : "")
                 : $"# ✅ task_done\n\n- task_id: `{taskId}`\n- event_seq: {seq}\n- 下游 unblock 通知數: {notifications}\n" + (shareSeq >= 0 ? $"- share posted: {shareRoom}/seq={shareSeq}\n" : "");
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Quest] task_done {roomId}/{taskId} (seq={seq}, notify={notifications}{(shareSeq >= 0 ? $", share=" + shareSeq : "")})");
         }
 
@@ -2608,15 +2608,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string actor = GetArg(args, "actor", GetAgentArg(args));
             string reason = GetArg(args, "reason", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_release 缺少 room"); return; }
-            if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_release 缺少 task_id"); return; }
-            if (string.IsNullOrEmpty(actor)) { RejectLastOp("task_release 缺少 actor"); return; }
-            if (string.IsNullOrEmpty(reason)) { RejectLastOp("task_release 缺少 reason（必填，給接手者線索）"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_release 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { RejectLastOp(args, "task_release 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(actor)) { RejectLastOp(args, "task_release 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(reason)) { RejectLastOp(args, "task_release 缺少 reason（必填，給接手者線索）"); return; }
 
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
-            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp($"task 不存在：{taskId}"); return; }
-            if (st.owner != actor) { RejectLastOp($"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
-            if (st.status == "done") { RejectLastOp($"task {taskId} 已完成，無需 release"); return; }
+            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp(args, $"task 不存在：{taskId}"); return; }
+            if (st.owner != actor) { RejectLastOp(args, $"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
+            if (st.status == "done") { RejectLastOp(args, $"task {taskId} 已完成，無需 release"); return; }
 
             int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
             {
@@ -2642,7 +2642,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_release idempotent skip\n\n- task_id: `{taskId}`\n"
                 : $"# ✅ task_release\n\n- task_id: `{taskId}`\n- released_by: {actor}\n- reason: {reason}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Quest] task_release {roomId}/{taskId} by {actor} reason={reason} (seq={seq})");
         }
 
@@ -2672,30 +2672,30 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 數值影響：仍寫 task_force_reclaim event 留 audit trail；reason 必填確保有書面依據
             bool forceOverride = string.Equals(GetArg(args, "force", "false"), "true", StringComparison.OrdinalIgnoreCase);
 
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_force_reclaim 缺少 room"); return; }
-            if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_force_reclaim 缺少 task_id"); return; }
-            if (string.IsNullOrEmpty(claimer)) { RejectLastOp("task_force_reclaim 缺少 claimer（可用 claimer / actor / sender）"); return; }
-            if (string.IsNullOrEmpty(reason)) { RejectLastOp("task_force_reclaim 缺少 reason（必填，audit trail 給原 owner / 後人看）"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_force_reclaim 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { RejectLastOp(args, "task_force_reclaim 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(claimer)) { RejectLastOp(args, "task_force_reclaim 缺少 claimer（可用 claimer / actor / sender）"); return; }
+            if (string.IsNullOrEmpty(reason)) { RejectLastOp(args, "task_force_reclaim 缺少 reason（必填，audit trail 給原 owner / 後人看）"); return; }
 
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
-            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp($"task 不存在：{taskId}"); return; }
+            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp(args, $"task 不存在：{taskId}"); return; }
 
             // 校驗 1：必須有 owner 才需要 force_reclaim
             if (st.status != "claimed" && st.status != "in_progress" && st.status != "review")
             {
-                RejectLastOp($"task {taskId} status={st.status}（沒人認領），直接走 task_claim 即可，不需 force_reclaim");
+                RejectLastOp(args, $"task {taskId} status={st.status}（沒人認領），直接走 task_claim 即可，不需 force_reclaim");
                 return;
             }
             // 校驗 2：必須 stale（lease 已過）— 但 force=true 跳過此校驗（user authority override）
             if (!st.is_stale && !forceOverride)
             {
-                RejectLastOp($"task {taskId} 仍在 lease 內（lease_until={st.lease_until}），尚未 stale — 不允許 force_reclaim。等 lease 過期、請 owner 主動 task_release，或 user 顯式授權加 --arg force=true。");
+                RejectLastOp(args, $"task {taskId} 仍在 lease 內（lease_until={st.lease_until}），尚未 stale — 不允許 force_reclaim。等 lease 過期、請 owner 主動 task_release，或 user 顯式授權加 --arg force=true。");
                 return;
             }
             // 校驗 3：claimer ≠ 原 owner（自己對自己不算）
             if (st.owner == claimer)
             {
-                RejectLastOp($"claimer={claimer} 就是原 owner — 直接跑 task_progress 展期即可，不需 force_reclaim");
+                RejectLastOp(args, $"claimer={claimer} 就是原 owner — 直接跑 task_progress 展期即可，不需 force_reclaim");
                 return;
             }
 
@@ -2733,7 +2733,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_force_reclaim idempotent skip\n\n- task_id: `{taskId}`\n- key: `{idempotencyKey}`\n"
                 : $"# ✅ task_force_reclaim\n\n- task_id: `{taskId}`\n- new_owner: {claimer}\n- previous_owner: {previousOwner ?? "-"}\n- reason: {reason}\n- new_lease_until: {leaseUntil}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Quest] task_force_reclaim {roomId}/{taskId}: {previousOwner} → {claimer} (reason={reason}, seq={seq})");
         }
 
@@ -2747,14 +2747,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string actor = GetArg(args, "actor", GetAgentArg(args));
             string reviewer = GetArg(args, "reviewer", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_review_request 缺少 room"); return; }
-            if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_review_request 缺少 task_id"); return; }
-            if (string.IsNullOrEmpty(actor)) { RejectLastOp("task_review_request 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_review_request 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { RejectLastOp(args, "task_review_request 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(actor)) { RejectLastOp(args, "task_review_request 缺少 actor"); return; }
 
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
-            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp($"task 不存在：{taskId}"); return; }
-            if (st.owner != actor) { RejectLastOp($"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
-            if (st.status != "in_progress" && st.status != "claimed") { RejectLastOp($"task {taskId} 狀態 {st.status} 不能 request review（須在 claimed/in_progress）"); return; }
+            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp(args, $"task 不存在：{taskId}"); return; }
+            if (st.owner != actor) { RejectLastOp(args, $"actor={actor} 不是 task {taskId} 的 owner ({st.owner})"); return; }
+            if (st.status != "in_progress" && st.status != "claimed") { RejectLastOp(args, $"task {taskId} 狀態 {st.status} 不能 request review（須在 claimed/in_progress）"); return; }
 
             var data = new Dictionary<string, string>();
             if (!string.IsNullOrEmpty(reviewer)) data["reviewer"] = reviewer;
@@ -2783,7 +2783,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_review_request idempotent skip\n\n- task_id: `{taskId}`\n"
                 : $"# ✅ task_review_request\n\n- task_id: `{taskId}`\n- by: {actor}\n- reviewer: {reviewer ?? "(未指定)"}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Quest] task_review_request {roomId}/{taskId} → reviewer={reviewer} (seq={seq})");
         }
 
@@ -2797,14 +2797,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string actor = GetArg(args, "actor", GetAgentArg(args));
             string reason = GetArg(args, "reason", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_reject 缺少 room"); return; }
-            if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_reject 缺少 task_id"); return; }
-            if (string.IsNullOrEmpty(actor)) { RejectLastOp("task_reject 缺少 actor"); return; }
-            if (string.IsNullOrEmpty(reason)) { RejectLastOp("task_reject 缺少 reason（必填，給 owner 修正方向）"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_reject 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { RejectLastOp(args, "task_reject 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(actor)) { RejectLastOp(args, "task_reject 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(reason)) { RejectLastOp(args, "task_reject 缺少 reason（必填，給 owner 修正方向）"); return; }
 
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
-            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp($"task 不存在：{taskId}"); return; }
-            if (st.status != "review") { RejectLastOp($"task {taskId} 狀態 {st.status} 不能 reject（須在 review）"); return; }
+            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp(args, $"task 不存在：{taskId}"); return; }
+            if (st.status != "review") { RejectLastOp(args, $"task {taskId} 狀態 {st.status} 不能 reject（須在 review）"); return; }
 
             int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
             {
@@ -2830,7 +2830,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_reject idempotent skip\n\n- task_id: `{taskId}`\n"
                 : $"# ✅ task_reject\n\n- task_id: `{taskId}`\n- by: {actor}\n- reason: {reason}\n- reject_count → {st.reject_count + 1}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Quest] task_reject {roomId}/{taskId} reason={reason} (seq={seq})");
         }
 
@@ -2844,14 +2844,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string actor = GetArg(args, "actor", GetAgentArg(args));
             string reason = GetArg(args, "reason", "");
             string idempotencyKey = GetArg(args, "idempotency_key", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_reopen 缺少 room"); return; }
-            if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_reopen 缺少 task_id"); return; }
-            if (string.IsNullOrEmpty(actor)) { RejectLastOp("task_reopen 缺少 actor"); return; }
-            if (string.IsNullOrEmpty(reason)) { RejectLastOp("task_reopen 缺少 reason（必填，說明為何重開）"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_reopen 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { RejectLastOp(args, "task_reopen 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(actor)) { RejectLastOp(args, "task_reopen 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(reason)) { RejectLastOp(args, "task_reopen 缺少 reason（必填，說明為何重開）"); return; }
 
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
-            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp($"task 不存在：{taskId}"); return; }
-            if (st.status != "done") { RejectLastOp($"task {taskId} 狀態 {st.status} 不是 done，無需 reopen"); return; }
+            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp(args, $"task 不存在：{taskId}"); return; }
+            if (st.status != "done") { RejectLastOp(args, $"task {taskId} 狀態 {st.status} 不是 done，無需 reopen"); return; }
 
             int seq = UCL_ChatTavernQuestIO.AppendEvent(roomId, new UCL_QuestEvent
             {
@@ -2877,7 +2877,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_reopen idempotent skip\n\n- task_id: `{taskId}`\n"
                 : $"# ✅ task_reopen\n\n- task_id: `{taskId}`\n- by: {actor}\n- reason: {reason}\n- owner: {st.owner ?? "-"} (沿用)\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Quest] task_reopen {roomId}/{taskId} reason={reason} (seq={seq})");
         }
 
@@ -2889,8 +2889,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string roomId = GetArg(args, "room", "");
             string agentId = GetAgentArg(args, GetArg(args, "id", ""));
             int top = ParseIntArg(args, "top", 1);
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_next 缺少 room"); return; }
-            if (string.IsNullOrEmpty(agentId)) { RejectLastOp("task_next 缺少 agent_id"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_next 缺少 room"); return; }
+            if (string.IsNullOrEmpty(agentId)) { RejectLastOp(args, "task_next 缺少 agent_id"); return; }
 
             // T19 — Stale lease 自動回收（lazy 偵測 + auto-release，不擋當前 op）
             try { UCL_ChatTavernQuestIO.AutoRecoverStaleLeases(roomId); }
@@ -2945,7 +2945,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 sb2.AppendLine();
                 sb2.AppendLine($"建議下一步：`task_claim task_id={candidates[0].id} claimer={agentId}`");
             }
-            UCL_ChatTavernRender.WriteLastOp(sb2.ToString());
+            UCL_ChatTavernRender.WriteLastOp(sb2.ToString(), args);
             Debug.Log($"[Quest] task_next {roomId}/{agentId} → {candidates.Count} candidate(s)");
         }
 
@@ -2956,15 +2956,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string taskId = GetArg(args, "task_id", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_state 缺少 room"); return; }
-            if (string.IsNullOrEmpty(taskId)) { RejectLastOp("task_state 缺少 task_id"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_state 缺少 room"); return; }
+            if (string.IsNullOrEmpty(taskId)) { RejectLastOp(args, "task_state 缺少 task_id"); return; }
 
             // T19 — Stale lease auto-recover lazy 跑（在 ComputeTaskStates 前）
             try { UCL_ChatTavernQuestIO.AutoRecoverStaleLeases(roomId); }
             catch (Exception ex) { Debug.LogWarning($"[Quest T19] AutoRecoverStaleLeases 失敗（容忍）：{ex.Message}"); }
 
             var states = UCL_ChatTavernQuestIO.ComputeTaskStates(roomId);
-            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp($"task 不存在：{taskId}"); return; }
+            if (!states.TryGetValue(taskId, out var st)) { RejectLastOp(args, $"task 不存在：{taskId}"); return; }
 
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($"# 📜 task_state — `{taskId}`");
@@ -2995,7 +2995,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             sb.AppendLine();
             sb.AppendLine($"_spec: tasks/{taskId}.md_");
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
             Debug.Log($"[Quest] task_state {roomId}/{taskId} → {st.lifecycle.Count} events");
         }
 
@@ -3005,7 +3005,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string ownerFilter = GetArg(args, "owner", "");
             string roleFilter = GetArg(args, "role", "");
             string statusFilterCsv = GetArg(args, "status", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("task_list 缺少 room"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "task_list 缺少 room"); return; }
 
             // T19 — Stale lease auto-recover lazy 跑（task_list 是最常被呼叫的查詢，掛這裡覆蓋面廣）
             try { UCL_ChatTavernQuestIO.AutoRecoverStaleLeases(roomId); }
@@ -3057,7 +3057,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             sb.AppendLine();
             sb.AppendLine($"_filter: owner={ownerFilter}, role={roleFilter}, status={statusFilterCsv}_");
 
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
             Debug.Log($"[Quest] task_list {roomId} → matched={matched}/{states.Count}");
         }
 
@@ -3065,12 +3065,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string roomId = GetArg(args, "room", "");
             string agentId = GetAgentArg(args, GetArg(args, "id", ""));
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("inbox_read 缺少 room"); return; }
-            if (string.IsNullOrEmpty(agentId)) { RejectLastOp("inbox_read 缺少 agent_id（可用 agent_id / id / sender）"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "inbox_read 缺少 room"); return; }
+            if (string.IsNullOrEmpty(agentId)) { RejectLastOp(args, "inbox_read 缺少 agent_id（可用 agent_id / id / sender）"); return; }
 
             string inbox = UCL_ChatTavernQuestIO.ReadInbox(roomId, agentId);
             string md = $"# 📬 Inbox — {agentId}\n\nroom: `{roomId}`\n\n{inbox}";
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, args);
             Debug.Log($"[Quest] inbox_read {roomId}/{agentId}");
         }
 
@@ -3092,7 +3092,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string sinceStr = GetArg(args, "since_seq", "0");
             string filterCsv = GetArg(args, "filter_type", "");
             string limitStr = GetArg(args, "limit", "50");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp("events_since 缺少 room"); return; }
+            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "events_since 缺少 room"); return; }
 
             // 參數解析：since_seq < 0 → clamp 0；limit <= 0 → 預設 50
             if (!int.TryParse(sinceStr, out int sinceSeq) || sinceSeq < 0) sinceSeq = 0;
@@ -3167,7 +3167,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 sb.AppendLine($"_提示：下次 re-enter 用 `since_seq={latestSeq}` 看新增 delta；單 task 完整 timeline 走 `task_state task_id=...`_");
             }
 
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
             Debug.Log($"[Quest] events_since {roomId} since={sinceSeq} → {totalAfter} events" + (truncated ? $" (truncated to {limit})" : ""));
         }
 
@@ -3189,7 +3189,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         void Op_SessionEnter(Dictionary<string, string> args)
         {
             string agentId = GetAgentArg(args, GetArg(args, "id", ""));
-            if (string.IsNullOrEmpty(agentId)) { RejectLastOp("session_enter 缺少 agent_id"); return; }
+            if (string.IsNullOrEmpty(agentId)) { RejectLastOp(args, "session_enter 缺少 agent_id"); return; }
 
             string roomId = GetArg(args, "room", "");
             string inboxRoom = GetArg(args, "inbox_room", string.IsNullOrEmpty(roomId) ? "tavern" : roomId);
@@ -3307,14 +3307,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 sb.AppendLine("_( --arg next=true 但沒帶 --arg room — 不知道從哪個 quest 房挑 task)_");
             }
 
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
             Debug.Log($"[Tavern] session_enter {agentId}" + (string.IsNullOrEmpty(roomId) ? "" : $" room={roomId}") + (wantNext ? " +next" : ""));
         }
 
         // 真錯誤：寫盤失敗 / null ref / unhandled exception → 紅 ❗ + LogError
-        static void FailLastOp(string msg)
+        static void FailLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string msg)
         {
-            UCL_ChatTavernRender.WriteLastOp($"# ❌ Tavern Cmd Failed\n\n{msg}\n");
+            UCL_ChatTavernRender.WriteLastOp($"# ❌ Tavern Cmd Failed\n\n{msg}\n", iArgs);
             Debug.LogError($"[Tavern] {msg}");
             throw new InvalidOperationException(msg);
         }
@@ -3322,9 +3322,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 預期拒絕：缺 arg / 房間不存在 / owner mismatch / lease 衝突 / status 不對 → 黃 ⚠ + LogWarning
         // throw 行為跟 FailLastOp 一致（cmd queue 端仍視為失敗）；只是 console 顏色降級避免污染 signal-to-noise
         // 詳見 docs/Snapshots/ErrorLog_Analysis_2026-05-09.md (T11 報告)
-        static void RejectLastOp(string msg)
+        static void RejectLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string msg)
         {
-            UCL_ChatTavernRender.WriteLastOp($"# ⚠ Tavern Cmd Rejected\n\n{msg}\n");
+            UCL_ChatTavernRender.WriteLastOp($"# ⚠ Tavern Cmd Rejected\n\n{msg}\n", iArgs);
             Debug.LogWarning($"[Tavern] {msg}");
             throw new InvalidOperationException(msg);
         }

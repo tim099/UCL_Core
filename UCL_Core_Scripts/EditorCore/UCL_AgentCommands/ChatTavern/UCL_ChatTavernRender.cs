@@ -83,8 +83,31 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return md;
         }
 
-        /// <summary>把任意 markdown 字串寫到 _last_op.md（給 agent 抓 Cmd 結果）。</summary>
-        public static void WriteLastOp(string md)
+        // 區塊職責：**本次輸出屬於哪一筆 cmd** —— 這是 lane 與 stamp 的唯一來源。
+        // 物理意義：呼叫端手上的 `args["_cmd_id"]` 是 Runner 顯式塞進去的（`UCL_AgentCommandRunner`
+        //   建 context 那段），**它跟著這筆 cmd 走**；而 `CurrentCmdId` 是一個全域 static，
+        //   在**併發的 lane 之間 last-write-wins**（per-agent 佇列同時跑：同 agent 擋、不同 agent 放行）。
+        // 🩸 TASK-0116 血證（summit 2026-09-03 21:09）：`letters/summit/cmd/autocommit_last_op.md`
+        //   的內容是 @basecamp 的繪圖券扣款報告 —— 檔名與 lane 由 summit 那筆 autocommit 的
+        //   全域 slot 決定，而 `md` 是 basecamp 那筆 canvas 的。**兩個來源不同 ⇒ 它們可以不是同一筆交易。**
+        // ⚠ 已排除的修法：`AsyncLocal` —— `UCL_AgentCmdScopeProbe.SelfTestConcurrent()` 實跑
+        //   `A:afterOtherStarted=LEAK,second=LEAK ／ A.seq=0(want 1)`（UniTask 不捕捉 ExecutionContext）。
+        //   ⇒ 沒有 ambient 解，識別碼**必須由呼叫端傳**。
+        /// <summary>把任意 markdown 字串寫到 _last_op.md（給 agent 抓 Cmd 結果）。
+        /// <para>⚠ **有 args 就用另一個多載** —— 這個無參數版只能靠全域 slot 猜本次是誰，
+        /// 併發下會把妳的報告鏡寫進別人的 lane（TASK-0116）。</para></summary>
+        public static void WriteLastOp(string md) => WriteLastOp(md, (string)null);
+
+        /// <summary>同上，但**由呼叫端交出自己的 args**（取其中的 `_cmd_id`）—— 併發安全的那條路。</summary>
+        public static void WriteLastOp(string md, System.Collections.Generic.IDictionary<string, string> iArgs)
+        {
+            string aId = null;
+            if (iArgs != null && iArgs.TryGetValue("_cmd_id", out var aV) && !string.IsNullOrEmpty(aV)) aId = aV;
+            WriteLastOp(md, aId);
+        }
+
+        /// <summary>同上，但直接給 cmd id（呼叫端手上沒有整包 args 時用）。</summary>
+        public static void WriteLastOp(string md, string iCmdId)
         {
             UCL_ChatTavernIO.EnsureTavernDir();
             // 區塊職責：cmd_id stamp 注入（T-LastOp-CmdId 2026-06-12）
@@ -95,7 +118,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 數值影響：stamp 插在第一行之後 — 第一行是 Python 端 fail/success marker 判定行不可動，
             //          且 Python 只讀前 4KB，stamp 必須靠檔頭。Runner 沒設 CurrentCmdId（IMGUI 手動操作
             //          等非 queue 路徑）→ 不 stamp，輸出與舊版完全一致。
-            string cmdId = UCL_AgentCommandRunner.CurrentCmdId;
+            // 顯式優先；沒給才退回全域 slot（IMGUI 手動路徑等非 queue 呼叫端，行為與舊版全等）。
+            string cmdId = string.IsNullOrEmpty(iCmdId) ? UCL_AgentCommandRunner.CurrentCmdId : iCmdId;
             if (!string.IsNullOrEmpty(cmdId))
             {
                 string stamp = "<!-- cmd_id: " + cmdId + " -->";

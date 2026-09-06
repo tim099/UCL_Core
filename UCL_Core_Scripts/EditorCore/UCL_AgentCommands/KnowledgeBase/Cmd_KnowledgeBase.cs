@@ -60,7 +60,7 @@ target 參數（要索引 / 檢索哪個語料庫）— 合法值由 kb_targets.
             string op = GetArg(args, "op", "").ToLowerInvariant();
             if (string.IsNullOrEmpty(op))
             {
-                WriteLastOp("❌ 缺少 op 參數。支援: status / install / prefetch / reindex / search / stale / embed");
+                WriteLastOp(args, "❌ 缺少 op 參數。支援: status / install / prefetch / reindex / search / stale / embed");
                 return;
             }
 
@@ -69,7 +69,7 @@ target 參數（要索引 / 檢索哪個語料庫）— 合法值由 kb_targets.
                 string argLine = BuildArgLine(op, args, out string argErr);
                 if (argLine == null)
                 {
-                    WriteLastOp(argErr);
+                    WriteLastOp(args, argErr);
                     return;
                 }
 
@@ -80,11 +80,11 @@ target 參數（要索引 / 檢索哪個語料庫）— 合法值由 kb_targets.
                 int timeoutMs = (op == "install" || op == "prefetch" || op == "reindex" || op == "search")
                                 ? 1800000 : 120000;
                 var r = await UCL_KnowledgeBaseRunner.RunAsync(argLine, token, timeoutMs);
-                WriteLastOp(r.DisplayText);
+                WriteLastOp(args, r.DisplayText);
             }
             catch (Exception e)
             {
-                WriteLastOp($"❌ Cmd_KnowledgeBase op={op} 例外: {e.Message}");
+                WriteLastOp(args, $"❌ Cmd_KnowledgeBase op={op} 例外: {e.Message}");
                 Debug.LogWarning($"[Cmd_KnowledgeBase] op={op} fail: {e}");
             }
         }
@@ -139,11 +139,11 @@ target 參數（要索引 / 檢索哪個語料庫）— 合法值由 kb_targets.
         // 區塊職責：結果寫 _last_op — 收編進 UCL_ChatTavernRender.WriteLastOp 這個唯一 choke point
         //   （TASK-0059）：舊版自己 File.WriteAllText ⇒ **沒有 cmd_id 章也沒有 per-persona 鏡寫**，
         //   是第 16 個消費端裡唯一繞過章的那支 —— 多 session 並發時它寫的內容會被誤認成別人的結果。
-        static void WriteLastOp(string content)
+        static void WriteLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string content)
         {
             try
             {
-                UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(content);
+                UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(content, iArgs);
             }
             catch { /* fail-safe */ }
             Debug.Log($"[Cmd_KnowledgeBase] {content.Substring(0, Math.Min(200, content.Length))}");

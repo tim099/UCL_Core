@@ -27,9 +27,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
     // 物理意義: Reject = ⚠ 預期失敗 (throw); Resolve = ✅ 成功 (WriteLastOp); FailLastOp = ❌ 例外失敗
     internal static class Cmd_Glossary_Helpers
     {
-        public static void ResolveLastOp(string md)
+        public static void ResolveLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string md)
         {
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, iArgs);
         }
 
         // ===========================================================
@@ -49,14 +49,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
         public static void ResolveLastOpWithPayload(
             System.Collections.Generic.IDictionary<string, string> iArgs, string iOp, string md, string iScope = null)
         {
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, iArgs);
             string aPath = UCL_CmdPayloadStore.Write("Glossary", iOp, md, iScope);
             if (!string.IsNullOrEmpty(aPath)) UCL_AgentCommandRunner.ReportOutputFile(iArgs, aPath);
         }
 
-        public static void RejectLastOp(string msg)
+        public static void RejectLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string msg)
         {
-            UCL_ChatTavernRender.WriteLastOp($"# ⚠ Glossary Cmd Rejected\n\n{msg}\n");
+            UCL_ChatTavernRender.WriteLastOp($"# ⚠ Glossary Cmd Rejected\n\n{msg}\n", iArgs);
             Debug.LogWarning($"[Glossary] {msg}");
             throw new InvalidOperationException(msg);
         }
@@ -95,7 +95,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             string op = GetArg(args, "op", "").ToLowerInvariant();
             if (string.IsNullOrEmpty(op))
             {
-                Cmd_Glossary_Helpers.RejectLastOp("缺少 op 參數 (register|lookup|detect|attach|list)");
+                Cmd_Glossary_Helpers.RejectLastOp(args, "缺少 op 參數 (register|lookup|detect|attach|list)");
                 return;
             }
 
@@ -107,7 +107,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
                 case "attach": Op_Attach(args); break;
                 case "list": Op_List(args); break;
                 default:
-                    Cmd_Glossary_Helpers.RejectLastOp($"未知 op: {op} (支援 register|lookup|detect|attach|list)");
+                    Cmd_Glossary_Helpers.RejectLastOp(args, $"未知 op: {op} (支援 register|lookup|detect|attach|list)");
                     break;
             }
             await UniTask.CompletedTask;
@@ -157,9 +157,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             string overwriteRaw = GetArg(args, "overwrite", "false");
             bool overwrite = overwriteRaw == "true" || overwriteRaw == "1";
 
-            if (string.IsNullOrEmpty(term)) { Cmd_Glossary_Helpers.RejectLastOp("register 缺少 term"); return; }
-            if (string.IsNullOrEmpty(slug)) { Cmd_Glossary_Helpers.RejectLastOp("register 缺少 slug"); return; }
-            if (string.IsNullOrEmpty(oneLine)) { Cmd_Glossary_Helpers.RejectLastOp("register 缺少 one_line (建議 < 80 字 給 ref block 顯示用)"); return; }
+            if (string.IsNullOrEmpty(term)) { Cmd_Glossary_Helpers.RejectLastOp(args, "register 缺少 term"); return; }
+            if (string.IsNullOrEmpty(slug)) { Cmd_Glossary_Helpers.RejectLastOp(args, "register 缺少 slug"); return; }
+            if (string.IsNullOrEmpty(oneLine)) { Cmd_Glossary_Helpers.RejectLastOp(args, "register 缺少 one_line (建議 < 80 字 給 ref block 顯示用)"); return; }
 
             Directory.CreateDirectory(GlossaryDir);
 
@@ -173,7 +173,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             {
                 if (!overwrite)
                 {
-                    Cmd_Glossary_Helpers.RejectLastOp($"glossary 已存在: docs/Glossary/{existingHit.relativeSubPath} (要覆寫加 overwrite=true)");
+                    Cmd_Glossary_Helpers.RejectLastOp(args, $"glossary 已存在: docs/Glossary/{existingHit.relativeSubPath} (要覆寫加 overwrite=true)");
                     return;
                 }
                 fullPath = existingHit.filePath;   // 覆寫原檔, 不論在哪層
@@ -266,13 +266,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
         private void Op_Lookup(Dictionary<string, string> args)
         {
             string term = GetArg(args, "term", "");
-            if (string.IsNullOrEmpty(term)) { Cmd_Glossary_Helpers.RejectLastOp("lookup 缺少 term"); return; }
+            if (string.IsNullOrEmpty(term)) { Cmd_Glossary_Helpers.RejectLastOp(args, "lookup 缺少 term"); return; }
 
             var entries = LoadAllEntries();
             var hit = ResolveCanonical(term, entries);
             if (hit == null)
             {
-                Cmd_Glossary_Helpers.ResolveLastOp($"❌ glossary not found: `{term}` (沒有 term/alias 命中)");
+                Cmd_Glossary_Helpers.ResolveLastOp(args, $"❌ glossary not found: `{term}` (沒有 term/alias 命中)");
                 return;
             }
 
@@ -283,7 +283,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             sb.AppendLine($"- aliases: {(hit.aliases.Count > 0 ? string.Join(", ", hit.aliases) : "(none)")}");
             sb.AppendLine($"- one_line: {hit.oneLine}");
             sb.AppendLine($"- path: docs/Glossary/{hit.relativeSubPath}");
-            Cmd_Glossary_Helpers.ResolveLastOp(sb.ToString());
+            Cmd_Glossary_Helpers.ResolveLastOp(args, sb.ToString());
         }
 
         // ===========================================================
@@ -297,7 +297,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             string text = GetArg(args, "text", "");
             string capStr = GetArg(args, "cap", "10");
             int cap = int.TryParse(capStr, out var c) ? Math.Max(1, c) : 10;
-            if (string.IsNullOrEmpty(text)) { Cmd_Glossary_Helpers.RejectLastOp("detect 缺少 text"); return; }
+            if (string.IsNullOrEmpty(text)) { Cmd_Glossary_Helpers.RejectLastOp(args, "detect 缺少 text"); return; }
 
             var entries = LoadAllEntries();
             var hits = DetectHits(text, entries, cap);
@@ -309,7 +309,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
                 sb.AppendLine($"- **{h.term}** (matched: `{h.matchedAlias}`) → docs/Glossary/{h.relativeSubPath}");
             }
             if (hits.Count == 0) sb.AppendLine("_(無命中)_");
-            Cmd_Glossary_Helpers.ResolveLastOp(sb.ToString());
+            Cmd_Glossary_Helpers.ResolveLastOp(args, sb.ToString());
         }
 
         // ===========================================================
@@ -322,11 +322,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
             string text = GetArg(args, "text", "");
             string capStr = GetArg(args, "cap", "5");
             int cap = int.TryParse(capStr, out var c) ? Math.Max(1, c) : 5;
-            if (string.IsNullOrEmpty(text)) { Cmd_Glossary_Helpers.RejectLastOp("attach 缺少 text"); return; }
+            if (string.IsNullOrEmpty(text)) { Cmd_Glossary_Helpers.RejectLastOp(args, "attach 缺少 text"); return; }
 
             // 共用 static helper — 同邏輯給跨 Cmd 呼叫 (e.g. Cmd_Tavern Op_Post auto-attach)
             string attached = AppendRefsToText(text, cap, forceReattach: true);
-            Cmd_Glossary_Helpers.ResolveLastOp(attached);
+            Cmd_Glossary_Helpers.ResolveLastOp(args, attached);
         }
 
         // ===========================================================
@@ -396,7 +396,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Glossary
                 string aliasesStr = e.aliases.Count > 0 ? string.Join(", ", e.aliases) : "—";
                 sb.AppendLine($"| `{e.slug}` **{e.term}** | {e.category} | {aliasesStr} | {e.oneLine} |");
             }
-            Cmd_Glossary_Helpers.ResolveLastOp(sb.ToString());
+            Cmd_Glossary_Helpers.ResolveLastOp(args, sb.ToString());
         }
 
         // ===========================================================

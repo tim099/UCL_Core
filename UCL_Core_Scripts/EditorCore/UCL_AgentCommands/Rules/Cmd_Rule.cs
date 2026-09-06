@@ -65,7 +65,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
             string op = GetArg(args, "op", "").ToLowerInvariant();
             if (string.IsNullOrEmpty(op))
             {
-                Cmd_Tavern_Helpers.RejectLastOp("缺少 op 參數 (propose|revert|list|get|enforce)");
+                Cmd_Tavern_Helpers.RejectLastOp(args, "缺少 op 參數 (propose|revert|list|get|enforce)");
                 return;
             }
 
@@ -78,16 +78,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
                     case "list": Op_List(args); break;
                     case "get": Op_Get(args); break;
                     case "enforce":
-                        Cmd_Tavern_Helpers.RejectLastOp("enforce v1 未實作 — 預留 future automation hook");
+                        Cmd_Tavern_Helpers.RejectLastOp(args, "enforce v1 未實作 — 預留 future automation hook");
                         break;
                     default:
-                        Cmd_Tavern_Helpers.RejectLastOp($"未知 op: {op} (支援 propose|revert|list|get|enforce)");
+                        Cmd_Tavern_Helpers.RejectLastOp(args, $"未知 op: {op} (支援 propose|revert|list|get|enforce)");
                         break;
                 }
             }
             catch (Exception ex)
             {
-                Cmd_Tavern_Helpers.FailLastOp($"執行 op={op} 失敗: {ex.Message}\n{ex.StackTrace}");
+                Cmd_Tavern_Helpers.FailLastOp(args, $"執行 op={op} 失敗: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -117,16 +117,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
             string body = GetArg(args, "body", "");
             string createdBy = GetArg(args, "created_by", DEFAULT_CREATOR_BANK);
 
-            if (string.IsNullOrEmpty(ruleId)) { Cmd_Tavern_Helpers.RejectLastOp("propose 缺少 rule_id"); return; }
-            if (string.IsNullOrEmpty(title)) { Cmd_Tavern_Helpers.RejectLastOp("propose 缺少 title"); return; }
-            if (string.IsNullOrEmpty(body)) { Cmd_Tavern_Helpers.RejectLastOp("propose 缺少 body (rule 完整內容)"); return; }
+            if (string.IsNullOrEmpty(ruleId)) { Cmd_Tavern_Helpers.RejectLastOp(args, "propose 缺少 rule_id"); return; }
+            if (string.IsNullOrEmpty(title)) { Cmd_Tavern_Helpers.RejectLastOp(args, "propose 缺少 title"); return; }
+            if (string.IsNullOrEmpty(body)) { Cmd_Tavern_Helpers.RejectLastOp(args, "propose 缺少 body (rule 完整內容)"); return; }
 
             // 檢查 rule_id 是否已存在 (即使 reverted 也佔位 — 避免 audit history 被覆寫)
             Directory.CreateDirectory(RulesDir);
             string fullPath = Path.Combine(RulesDir, ruleId + ".md");
             if (File.Exists(fullPath))
             {
-                Cmd_Tavern_Helpers.RejectLastOp($"rule_id 已存在: {ruleId} (即使 reverted 也保留位置避免 audit 被覆寫; 用新 id e.g. R002)");
+                Cmd_Tavern_Helpers.RejectLastOp(args, $"rule_id 已存在: {ruleId} (即使 reverted 也保留位置避免 audit 被覆寫; 用新 id e.g. R002)");
                 return;
             }
 
@@ -134,7 +134,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
             int balance = UCL_TreasuryLedger.GetBalance(createdBy, CURRENCY);
             if (balance < MIN_BALANCE_TO_PROPOSE)
             {
-                Cmd_Tavern_Helpers.RejectLastOp(
+                Cmd_Tavern_Helpers.RejectLastOp(args, 
                     $"propose 需 bank `{createdBy}` balance ≥ {MIN_BALANCE_TO_PROPOSE} {CURRENCY} (當前: {balance})");
                 return;
             }
@@ -182,7 +182,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
             report.AppendLine($"- path: AgentCommands/Rules/{ruleId}.md");
             report.AppendLine($"- status: active");
             report.AppendLine($"- tavern 主頻道公告: 已自動 post");
-            Cmd_Tavern_Helpers.WriteLastOp(report.ToString());
+            Cmd_Tavern_Helpers.WriteLastOp(args, report.ToString());
             Debug.Log($"[Rule] propose {ruleId} by {createdBy} (-{PROPOSE_COST} {CURRENCY})");
 
             // 區塊職責: 主頻道自動公告 (Tim 2026-05-12 拍板)
@@ -204,30 +204,30 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
             string reason = GetArg(args, "reason", "");
             string revertedBy = GetArg(args, "reverted_by", DEFAULT_REVERTER_BANK);
 
-            if (string.IsNullOrEmpty(ruleId)) { Cmd_Tavern_Helpers.RejectLastOp("revert 缺少 rule_id"); return; }
-            if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp("revert 缺少 reason (給 audit + creator 知道為何被撤)"); return; }
+            if (string.IsNullOrEmpty(ruleId)) { Cmd_Tavern_Helpers.RejectLastOp(args, "revert 缺少 rule_id"); return; }
+            if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp(args, "revert 缺少 reason (給 audit + creator 知道為何被撤)"); return; }
 
             string fullPath = Path.Combine(RulesDir, ruleId + ".md");
             if (!File.Exists(fullPath))
             {
-                Cmd_Tavern_Helpers.RejectLastOp($"rule 不存在: {ruleId}");
+                Cmd_Tavern_Helpers.RejectLastOp(args, $"rule 不存在: {ruleId}");
                 return;
             }
 
             var entry = ParseRuleFile(fullPath);
             if (entry == null)
             {
-                Cmd_Tavern_Helpers.RejectLastOp($"rule {ruleId} frontmatter 解析失敗");
+                Cmd_Tavern_Helpers.RejectLastOp(args, $"rule {ruleId} frontmatter 解析失敗");
                 return;
             }
             if (entry.status != "active")
             {
-                Cmd_Tavern_Helpers.RejectLastOp($"rule {ruleId} 當前 status={entry.status} (非 active 無法 revert)");
+                Cmd_Tavern_Helpers.RejectLastOp(args, $"rule {ruleId} 當前 status={entry.status} (非 active 無法 revert)");
                 return;
             }
             if (string.IsNullOrEmpty(entry.createdBy))
             {
-                Cmd_Tavern_Helpers.RejectLastOp($"rule {ruleId} frontmatter 缺 created_by, 無法退款");
+                Cmd_Tavern_Helpers.RejectLastOp(args, $"rule {ruleId} frontmatter 缺 created_by, 無法退款");
                 return;
             }
 
@@ -261,7 +261,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
             report.AppendLine($"- reason: {reason}");
             report.AppendLine($"- status: active → reverted (audit-trail 保留, 檔案不刪)");
             report.AppendLine($"- tavern 主頻道公告: 已自動 post");
-            Cmd_Tavern_Helpers.WriteLastOp(report.ToString());
+            Cmd_Tavern_Helpers.WriteLastOp(args, report.ToString());
             Debug.Log($"[Rule] revert {ruleId} by {revertedBy}, refund {PROPOSE_COST} → {entry.createdBy}");
 
             // 區塊職責: 主頻道自動公告 (Tim 2026-05-12 拍板)
@@ -294,7 +294,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
                 sb.AppendLine($"| `{e.ruleId}` | {e.title} | {e.status} | {e.createdBy} | {e.createdAt} |");
             }
             if (entries.Count == 0) sb.AppendLine("_(無命中)_");
-            Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+            Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
         }
 
         // ===========================================================
@@ -303,12 +303,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
         private void Op_Get(Dictionary<string, string> args)
         {
             string ruleId = GetArg(args, "rule_id", "");
-            if (string.IsNullOrEmpty(ruleId)) { Cmd_Tavern_Helpers.RejectLastOp("get 缺少 rule_id"); return; }
+            if (string.IsNullOrEmpty(ruleId)) { Cmd_Tavern_Helpers.RejectLastOp(args, "get 缺少 rule_id"); return; }
 
             string fullPath = Path.Combine(RulesDir, ruleId + ".md");
             if (!File.Exists(fullPath))
             {
-                Cmd_Tavern_Helpers.RejectLastOp($"rule 不存在: {ruleId}");
+                Cmd_Tavern_Helpers.RejectLastOp(args, $"rule 不存在: {ruleId}");
                 return;
             }
 
@@ -317,7 +317,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Rules
             sb.AppendLine($"📜 rule `{ruleId}`:");
             sb.AppendLine();
             sb.AppendLine(content);
-            Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+            Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
         }
 
         // ===========================================================

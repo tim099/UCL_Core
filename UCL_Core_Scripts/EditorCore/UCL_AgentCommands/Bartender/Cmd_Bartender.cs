@@ -99,13 +99,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     case "assign_remove": Op_AssignRemove(args); break;
                     case "assign_ack":    Op_AssignAck(args); break;
                     default:
-                        WriteLastOp($"❌ 未知 op='{op}', 支援: add / list / remove / time_add / time_list / time_remove / status / tick / notify_scan / balance / assign_add / assign_list / assign_remove / assign_ack");
+                        WriteLastOp(args, $"❌ 未知 op='{op}', 支援: add / list / remove / time_add / time_list / time_remove / status / tick / notify_scan / balance / assign_add / assign_list / assign_remove / assign_ack");
                         break;
                 }
             }
             catch (Exception e)
             {
-                WriteLastOp($"❌ Cmd_Bartender exception: {e.Message}\n{e.StackTrace}");
+                WriteLastOp(args, $"❌ Cmd_Bartender exception: {e.Message}\n{e.StackTrace}");
                 Debug.LogWarning($"[Cmd_Bartender] op={op} fail: {e}");
             }
         }
@@ -118,9 +118,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         void Op_NotifyScan(Dictionary<string, string> args)
         {
 #if UNITY_STANDALONE_WIN
-            WriteLastOp(UCL_RemoteNotifyService.BuildDiagnosticReport());
+            WriteLastOp(args, UCL_RemoteNotifyService.BuildDiagnosticReport());
 #else
-            WriteLastOp("❌ notify_scan 只在 Windows Editor 可用（遠端視窗協作是 Win32 API）");
+            WriteLastOp(args, "❌ notify_scan 只在 Windows Editor 可用（遠端視窗協作是 Win32 API）");
 #endif
         }
 
@@ -137,9 +137,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             string room = GetArg(args, "room", "tavern");
             int tokens = ParseInt(GetArg(args, "tokens", "1"), 1);
 
-            if (string.IsNullOrEmpty(creator)) { WriteLastOp("❌ add 缺 creator"); return; }
-            if (string.IsNullOrEmpty(keyword)) { WriteLastOp("❌ add 缺 key (關鍵字)"); return; }
-            if (string.IsNullOrEmpty(message)) { WriteLastOp("❌ add 缺 msg (留言內容)"); return; }
+            if (string.IsNullOrEmpty(creator)) { WriteLastOp(args, "❌ add 缺 creator"); return; }
+            if (string.IsNullOrEmpty(keyword)) { WriteLastOp(args, "❌ add 缺 key (關鍵字)"); return; }
+            if (string.IsNullOrEmpty(message)) { WriteLastOp(args, "❌ add 缺 msg (留言內容)"); return; }
             if (tokens < 1) tokens = 1;
 
             var targets = new List<string>();
@@ -157,7 +157,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 creator, creatorName, targets, keyword, message, tokens, room);
 
             string targetsDisplay = targets.Count == 0 ? "(任何人)" : string.Join(", ", targets);
-            WriteLastOp(
+            WriteLastOp(args, 
                 $"✅ Bartender trigger 新增成功\n\n" +
                 $"- id: `{id}`\n" +
                 $"- creator: {creator} ({creatorName})\n" +
@@ -177,7 +177,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             var data = UCL_BartenderIO.LoadTriggers();
             if (data.triggers.Count == 0)
             {
-                WriteLastOp("📭 目前沒有任何 Bartender trigger.");
+                WriteLastOp(args, "📭 目前沒有任何 Bartender trigger.");
                 return;
             }
 
@@ -192,7 +192,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 string targetsDisplay = (t.targets == null || t.targets.Count == 0) ? "*" : string.Join(",", t.targets);
                 sb.AppendLine($"| `{t.id}` | {t.creator_id} | {targetsDisplay} | `{t.keyword}` | {t.remaining_triggers}/{t.initial_tokens} | {t.target_room} | {t.created_at} |");
             }
-            WriteLastOp(sb.ToString());
+            WriteLastOp(args, sb.ToString());
         }
 
         // ===========================================================
@@ -201,11 +201,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         void Op_Remove(Dictionary<string, string> args)
         {
             string id = GetArg(args, "id", "");
-            if (string.IsNullOrEmpty(id)) { WriteLastOp("❌ remove 缺 id"); return; }
+            if (string.IsNullOrEmpty(id)) { WriteLastOp(args, "❌ remove 缺 id"); return; }
             var data = UCL_BartenderIO.LoadTriggers();
             int removed = data.triggers.RemoveAll(t => t != null && t.id == id);
             UCL_BartenderIO.SaveTriggers(data);
-            WriteLastOp(removed > 0
+            WriteLastOp(args, removed > 0
                 ? $"✅ 移除 trigger `{id}` ({removed} 筆)"
                 : $"⚠ 沒找到 trigger `{id}` (可能已被 daemon 用完自動移除 / 拼錯)");
         }
@@ -220,14 +220,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             string msg = GetArg(args, "msg", "");
             string room = GetArg(args, "room", "tavern");
 
-            if (string.IsNullOrEmpty(id)) { WriteLastOp("❌ time_add 缺 id"); return; }
-            if (string.IsNullOrEmpty(time)) { WriteLastOp("❌ time_add 缺 time (HH:mm)"); return; }
-            if (string.IsNullOrEmpty(msg)) { WriteLastOp("❌ time_add 缺 msg"); return; }
+            if (string.IsNullOrEmpty(id)) { WriteLastOp(args, "❌ time_add 缺 id"); return; }
+            if (string.IsNullOrEmpty(time)) { WriteLastOp(args, "❌ time_add 缺 time (HH:mm)"); return; }
+            if (string.IsNullOrEmpty(msg)) { WriteLastOp(args, "❌ time_add 缺 msg"); return; }
 
             // 走 shared register helper
             UCL_BartenderIO.RegisterTimeRule(id, time, msg, room);
 
-            WriteLastOp(
+            WriteLastOp(args, 
                 $"✅ Time rule `{id}` 新增/覆寫\n\n" +
                 $"- 時間: {time} (local)\n" +
                 $"- room: {room}\n" +
@@ -237,7 +237,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         void Op_TimeList(Dictionary<string, string> args)
         {
             var data = UCL_BartenderIO.LoadTimeRules();
-            if (data.rules.Count == 0) { WriteLastOp("📭 目前沒有任何時間規則."); return; }
+            if (data.rules.Count == 0) { WriteLastOp(args, "📭 目前沒有任何時間規則."); return; }
             var sb = new StringBuilder();
             sb.AppendLine($"# ⏰ Bartender Time Rules ({data.rules.Count} 筆)\n");
             sb.AppendLine("| id | time | room | enabled |");
@@ -247,17 +247,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 if (r == null) continue;
                 sb.AppendLine($"| `{r.id}` | {r.time_hhmm} | {r.target_room} | {r.enabled} |");
             }
-            WriteLastOp(sb.ToString());
+            WriteLastOp(args, sb.ToString());
         }
 
         void Op_TimeRemove(Dictionary<string, string> args)
         {
             string id = GetArg(args, "id", "");
-            if (string.IsNullOrEmpty(id)) { WriteLastOp("❌ time_remove 缺 id"); return; }
+            if (string.IsNullOrEmpty(id)) { WriteLastOp(args, "❌ time_remove 缺 id"); return; }
             var data = UCL_BartenderIO.LoadTimeRules();
             int removed = data.rules.RemoveAll(r => r != null && r.id == id);
             UCL_BartenderIO.SaveTimeRules(data);
-            WriteLastOp(removed > 0 ? $"✅ 移除 time rule `{id}`" : $"⚠ 沒找到 time rule `{id}`");
+            WriteLastOp(args, removed > 0 ? $"✅ 移除 time rule `{id}`" : $"⚠ 沒找到 time rule `{id}`");
         }
 
         // ===========================================================
@@ -293,13 +293,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             sb.AppendLine();
             sb.AppendLine("Bartender daemon 內 Editor 自動跑 (EditorApplication.update tick, 每 5s 一次).");
             sb.AppendLine("檔案: `AgentCommands/ChatTavern/bartender/{triggers,time_rules,state}.json`");
-            WriteLastOp(sb.ToString());
+            WriteLastOp(args, sb.ToString());
         }
 
         void Op_Tick(Dictionary<string, string> args)
         {
             UCL_BartenderDaemon.ForceTick();
-            WriteLastOp("✅ Bartender daemon forced tick (檢查 trigger + time rule 一輪).");
+            WriteLastOp(args, "✅ Bartender daemon forced tick (檢查 trigger + time rule 一輪).");
         }
 
         // ===========================================================
@@ -317,7 +317,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
             if (string.IsNullOrEmpty(account))
             {
-                WriteLastOp("❌ balance 缺 account (要查的 Treasury 帳戶 id)");
+                WriteLastOp(args, "❌ balance 缺 account (要查的 Treasury 帳戶 id)");
                 return;
             }
             if (limit < 0) limit = 0;
@@ -326,10 +326,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             string result = UCL_BartenderDaemon.RunBalanceQueryPublic(account, limit, out string err);
             if (result == null)
             {
-                WriteLastOp($"❌ balance 查詢失敗 (account=`{account}`): {err}");
+                WriteLastOp(args, $"❌ balance 查詢失敗 (account=`{account}`): {err}");
                 return;
             }
-            WriteLastOp(result);
+            WriteLastOp(args, result);
 
             // 同步 post 到 tavern (酒保身分) — opt-in, 對齊 inline [查詢餘額] 行為
             if (post)
@@ -384,12 +384,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 int.TryParse(rewardStr, out reward);
             string deadline = GetArg(args, "deadline", "").Trim();
 
-            if (string.IsNullOrEmpty(targetPersona)) { WriteLastOp("❌ assign_add 缺 target_persona"); return; }
-            if (string.IsNullOrEmpty(taskBody)) { WriteLastOp("❌ assign_add 缺 task_body"); return; }
-            if (string.IsNullOrEmpty(supervisor)) { WriteLastOp("❌ assign_add 缺 supervisor"); return; }
+            if (string.IsNullOrEmpty(targetPersona)) { WriteLastOp(args, "❌ assign_add 缺 target_persona"); return; }
+            if (string.IsNullOrEmpty(taskBody)) { WriteLastOp(args, "❌ assign_add 缺 task_body"); return; }
+            if (string.IsNullOrEmpty(supervisor)) { WriteLastOp(args, "❌ assign_add 缺 supervisor"); return; }
 
             string id = UCL_BartenderIO.RegisterAssignment(targetPersona, taskBody, supervisor, reward, deadline);
-            WriteLastOp(
+            WriteLastOp(args, 
                 "# ✅ Bartender 派 task 已 register (Pull MVP)\n\n" +
                 $"- assignment_id: `{id}`\n" +
                 $"- target_persona: **{targetPersona}**\n" +
@@ -473,19 +473,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 sb.AppendLine();
             }
             if (shown == 0) sb.AppendLine("_(無 match)_");
-            WriteLastOp(sb.ToString());
+            WriteLastOp(args, sb.ToString());
         }
 
         // op=assign_remove — 移除 pending (supervisor cancel)
         void Op_AssignRemove(Dictionary<string, string> args)
         {
             string id = GetArg(args, "assignment_id", "").Trim();
-            if (string.IsNullOrEmpty(id)) { WriteLastOp("❌ assign_remove 缺 assignment_id"); return; }
+            if (string.IsNullOrEmpty(id)) { WriteLastOp(args, "❌ assign_remove 缺 assignment_id"); return; }
             var data = UCL_BartenderIO.LoadAssignments();
             int removed = data.pending.RemoveAll(e => e.assignment_id == id);
-            if (removed == 0) { WriteLastOp($"❌ 找不到 assignment_id=`{id}`"); return; }
+            if (removed == 0) { WriteLastOp(args, $"❌ 找不到 assignment_id=`{id}`"); return; }
             UCL_BartenderIO.SaveAssignments(data);
-            WriteLastOp($"# ✂ Bartender assignment removed\n\n- assignment_id: `{id}`\n- removed: {removed} entry");
+            WriteLastOp(args, $"# ✂ Bartender assignment removed\n\n- assignment_id: `{id}`\n- removed: {removed} entry");
         }
 
         // op=assign_ack — agent accept/decline/defer assignment
@@ -493,31 +493,35 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         {
             string id = GetArg(args, "assignment_id", "").Trim();
             string action = GetArg(args, "action", "").Trim().ToLowerInvariant();
-            if (string.IsNullOrEmpty(id)) { WriteLastOp("❌ assign_ack 缺 assignment_id"); return; }
+            if (string.IsNullOrEmpty(id)) { WriteLastOp(args, "❌ assign_ack 缺 assignment_id"); return; }
             if (action != "accept" && action != "decline" && action != "defer")
-            { WriteLastOp("❌ assign_ack action 必為 accept|decline|defer"); return; }
+            { WriteLastOp(args, "❌ assign_ack action 必為 accept|decline|defer"); return; }
             var data = UCL_BartenderIO.LoadAssignments();
             var entry = data.pending.Find(e => e.assignment_id == id);
-            if (entry == null) { WriteLastOp($"❌ 找不到 assignment_id=`{id}`"); return; }
+            if (entry == null) { WriteLastOp(args, $"❌ 找不到 assignment_id=`{id}`"); return; }
             entry.ack_action = action;
             entry.ack_at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
             // status transition: accept → acked, decline → declined, defer → deferred (留在 pending list 給後續查)
             entry.status = action == "accept" ? "acked" : (action == "decline" ? "declined" : "deferred");
             UCL_BartenderIO.SaveAssignments(data);
-            WriteLastOp(
+            WriteLastOp(args, 
                 $"# ✓ Assignment {action} acked\n\n" +
                 $"- assignment_id: `{id}`\n- status → `{entry.status}`\n- ack_at: {entry.ack_at}\n" +
                 $"- task: {Truncate(entry.task_body, 150)}"
             );
         }
 
-        void WriteLastOp(string content)
+        // 區塊職責：本 Cmd 的 _last_op 出口。
+        // 🩸 TASK-0116：本檔原本**自己 File.WriteAllText 全域 `_last_op.md`**，繞過了
+        //   `UCL_ChatTavernRender.WriteLastOp` ⇒ 兩件事一起沒發生：
+        //   ① 沒有 `<!-- cmd_id -->` stamp（python 端 check_cmd_result_file 認不了帳）
+        //   ② 沒有 per-persona 鏡寫（誰跑的都不會在自己的 lane 留下讀數）。
+        //   ⇒ 改走共用出口，並把 args 交出去（lane 的唯一來源是 `args["_cmd_id"]`）。
+        void WriteLastOp(Dictionary<string, string> iArgs, string content)
         {
             try
             {
-                string path = Path.Combine(UCL_ChatTavernIO.GetTavernDir(), "_last_op.md");
-                Directory.CreateDirectory(UCL_ChatTavernIO.GetTavernDir());
-                File.WriteAllText(path, content);
+                UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(content, iArgs);
             }
             catch { /* fail-safe */ }
             Debug.Log($"[Cmd_Bartender] {content.Substring(0, Math.Min(200, content.Length))}");

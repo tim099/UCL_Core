@@ -51,7 +51,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             if (string.IsNullOrEmpty(op))
             {
                 // 錯誤訊息列全部 op —— 舊版只列 5 個，漏掉的 7 個對讀錯誤訊息的人等於不存在。
-                Cmd_Tavern_Helpers.RejectLastOp(
+                Cmd_Tavern_Helpers.RejectLastOp(args, 
                     "缺少 op 參數（balance / credit / debit / transfer / audit / verify / "
                     + "request / request_list / request_cancel / transfer_request / "
                     + "closing_generate / closing_list）");
@@ -82,13 +82,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     case "closing_generate": Op_ClosingGenerate(args); break;
                     case "closing_list": Op_ClosingList(args); break;
                     default:
-                        Cmd_Tavern_Helpers.RejectLastOp($"未知 op: {op}");
+                        Cmd_Tavern_Helpers.RejectLastOp(args, $"未知 op: {op}");
                         break;
                 }
             }
             catch (System.Exception ex)
             {
-                Cmd_Tavern_Helpers.FailLastOp($"執行 op={op} 失敗：{ex.Message}\n{ex.StackTrace}");
+                Cmd_Tavern_Helpers.FailLastOp(args, $"執行 op={op} 失敗：{ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -96,7 +96,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         {
             string account = GetArg(args, "account", "");
             string currency = GetArg(args, "currency", "tavern_token");
-            if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp("balance 缺少 account"); return; }
+            if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp(args, "balance 缺少 account"); return; }
 
             int balance = UCL_TreasuryLedger.GetBalance(account, currency);
             // 機器可讀的回報 —— 呼叫端（python `_lib/treasury_cmd.treasury_balance`）拿這個值，
@@ -108,7 +108,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             UCL_AgentCommandRunner.ReportOutputValue(args, "account", account);
             UCL_AgentCommandRunner.ReportOutputValue(args, "currency", currency);
             string md = $"# 💰 Treasury balance\n\n- account: `{account}`\n- currency: {currency}\n- **balance: {balance}**\n";
-            Cmd_Tavern_Helpers.WriteLastOp(md);
+            Cmd_Tavern_Helpers.WriteLastOp(args, md);
             Debug.Log($"[Treasury] balance {account} = {balance} {currency}");
         }
 
@@ -122,16 +122,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string caller = GetArg(args, "caller", "");
             string cmdId = GetArg(args, "cmd_id", "");
 
-            if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp("credit 缺少 account"); return; }
+            if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp(args, "credit 缺少 account"); return; }
             if (!int.TryParse(amountStr, out int amount) || amount <= 0)
-            { Cmd_Tavern_Helpers.RejectLastOp($"credit amount 無效或非正數: {amountStr}"); return; }
-            if (string.IsNullOrEmpty(sourceKind)) { Cmd_Tavern_Helpers.RejectLastOp("credit 缺少 source_kind"); return; }
+            { Cmd_Tavern_Helpers.RejectLastOp(args, $"credit amount 無效或非正數: {amountStr}"); return; }
+            if (string.IsNullOrEmpty(sourceKind)) { Cmd_Tavern_Helpers.RejectLastOp(args, "credit 缺少 source_kind"); return; }
 
             // 冪等鍵（選帶）— 同 Op_Debit；退款 / 撥款重跑不該入帳兩次
             string idemKey = GetArg(args, "idempotency_key", "");
             var entry = UCL_TreasuryLedger.Credit(account, amount, sourceKind, sourceRef, description, caller, cmdId, idemKey);
             string md = BuildEntryMd("credit", entry);
-            Cmd_Tavern_Helpers.WriteLastOp(md);
+            Cmd_Tavern_Helpers.WriteLastOp(args, md);
         }
 
         void Op_Debit(Dictionary<string, string> args)
@@ -146,14 +146,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             // 冪等鍵（選帶）— caller 顯式宣告「這筆要防重」；空 = 照舊不判重
             string idemKey = GetArg(args, "idempotency_key", "");
 
-            if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp("debit 缺少 account"); return; }
+            if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp(args, "debit 缺少 account"); return; }
             if (!int.TryParse(amountStr, out int amount) || amount <= 0)
-            { Cmd_Tavern_Helpers.RejectLastOp($"debit amount 無效或非正數: {amountStr}"); return; }
-            if (string.IsNullOrEmpty(useKind)) { Cmd_Tavern_Helpers.RejectLastOp("debit 缺少 use_kind"); return; }
+            { Cmd_Tavern_Helpers.RejectLastOp(args, $"debit amount 無效或非正數: {amountStr}"); return; }
+            if (string.IsNullOrEmpty(useKind)) { Cmd_Tavern_Helpers.RejectLastOp(args, "debit 缺少 use_kind"); return; }
 
             var entry = UCL_TreasuryLedger.Debit(account, amount, useKind, useRef, description, caller, cmdId, idemKey);
             string md = BuildEntryMd("debit", entry);
-            Cmd_Tavern_Helpers.WriteLastOp(md);
+            Cmd_Tavern_Helpers.WriteLastOp(args, md);
         }
 
         // 區塊職責：T55 closed economy v2 — atomic 跨帳戶 transfer
@@ -174,14 +174,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string txId = GetArg(args, "tx_id", "");                 // 交易 id（自帶或自動生成）
 
             // 驗證 args
-            if (string.IsNullOrEmpty(fromAccount)) { Cmd_Tavern_Helpers.RejectLastOp("transfer 缺少 from_account"); return; }
-            if (string.IsNullOrEmpty(toAccount)) { Cmd_Tavern_Helpers.RejectLastOp("transfer 缺少 to_account"); return; }
-            if (fromAccount == toAccount) { Cmd_Tavern_Helpers.RejectLastOp("transfer from==to 自轉禁止"); return; }
+            if (string.IsNullOrEmpty(fromAccount)) { Cmd_Tavern_Helpers.RejectLastOp(args, "transfer 缺少 from_account"); return; }
+            if (string.IsNullOrEmpty(toAccount)) { Cmd_Tavern_Helpers.RejectLastOp(args, "transfer 缺少 to_account"); return; }
+            if (fromAccount == toAccount) { Cmd_Tavern_Helpers.RejectLastOp(args, "transfer from==to 自轉禁止"); return; }
             if (!int.TryParse(amountStr, out int amount) || amount <= 0)
-            { Cmd_Tavern_Helpers.RejectLastOp($"transfer amount 無效或非正數: {amountStr}"); return; }
-            if (amount > 1000) { Cmd_Tavern_Helpers.RejectLastOp($"transfer amount 超過 max_per_transfer=1000: {amount}"); return; }
-            if (string.IsNullOrEmpty(useKind)) { Cmd_Tavern_Helpers.RejectLastOp("transfer 缺少 use_kind (from 端)"); return; }
-            if (string.IsNullOrEmpty(sourceKind)) { Cmd_Tavern_Helpers.RejectLastOp("transfer 缺少 source_kind (to 端)"); return; }
+            { Cmd_Tavern_Helpers.RejectLastOp(args, $"transfer amount 無效或非正數: {amountStr}"); return; }
+            if (amount > 1000) { Cmd_Tavern_Helpers.RejectLastOp(args, $"transfer amount 超過 max_per_transfer=1000: {amount}"); return; }
+            if (string.IsNullOrEmpty(useKind)) { Cmd_Tavern_Helpers.RejectLastOp(args, "transfer 缺少 use_kind (from 端)"); return; }
+            if (string.IsNullOrEmpty(sourceKind)) { Cmd_Tavern_Helpers.RejectLastOp(args, "transfer 缺少 source_kind (to 端)"); return; }
 
             // 沒帶 tx_id 自動生成 tx_<8 位 hex>
             if (string.IsNullOrEmpty(txId))
@@ -200,7 +200,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             }
             catch (System.Exception ex)
             {
-                Cmd_Tavern_Helpers.FailLastOp($"transfer Debit 失敗: {ex.Message}");
+                Cmd_Tavern_Helpers.FailLastOp(args, $"transfer Debit 失敗: {ex.Message}");
                 return;
             }
 
@@ -220,10 +220,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 }
                 catch (System.Exception rollbackEx)
                 {
-                    Cmd_Tavern_Helpers.FailLastOp($"transfer Credit 失敗 + Rollback 也失敗: orig={ex.Message} / rollback={rollbackEx.Message} / DANGLING DEBIT entry uuid={debitEntry.uuid}");
+                    Cmd_Tavern_Helpers.FailLastOp(args, $"transfer Credit 失敗 + Rollback 也失敗: orig={ex.Message} / rollback={rollbackEx.Message} / DANGLING DEBIT entry uuid={debitEntry.uuid}");
                     return;
                 }
-                Cmd_Tavern_Helpers.FailLastOp($"transfer Credit 失敗已 rollback: {ex.Message}");
+                Cmd_Tavern_Helpers.FailLastOp(args, $"transfer Credit 失敗已 rollback: {ex.Message}");
                 return;
             }
 
@@ -245,7 +245,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             sb.AppendLine("## Credit entry (to)");
             sb.AppendLine($"- balance: {creditEntry.balance_before} → **{creditEntry.balance_after}**");
             sb.AppendLine($"- uuid: `{creditEntry.uuid}`");
-            Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+            Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
             Debug.Log($"[Treasury] transfer {fromAccount} → {toAccount} = {amount} (tx={txId})");
         }
 
@@ -253,7 +253,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         {
             string account = GetArg(args, "account", "");
             string sinceTs = GetArg(args, "since_ts", "");
-            if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp("audit 缺少 account"); return; }
+            if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp(args, "audit 缺少 account"); return; }
 
             var entries = UCL_TreasuryLedger.Audit(account, sinceTs);
             var sb = new StringBuilder();
@@ -265,14 +265,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 string flag = e.signature_mismatch ? " ⚠ sig_mismatch" : "";
                 sb.AppendLine($"- [{e.ts}] `{e.type}` {e.amount} {e.currency} | {e.source_kind}({e.source_ref}) | balance: {e.balance_before}→{e.balance_after}{flag}");
             }
-            Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+            Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
             Debug.Log($"[Treasury] audit {account} → {entries.Count} entries");
         }
 
         void Op_Verify(Dictionary<string, string> args)
         {
             string account = GetArg(args, "account", "");
-            if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp("verify 缺少 account"); return; }
+            if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp(args, "verify 缺少 account"); return; }
 
             var entries = UCL_TreasuryLedger.Audit(account, null);
             int expectedBalance = 0;
@@ -296,7 +296,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             }
             string head = $"# 🔍 Treasury verify — `{account}`\n\n- entries: {entries.Count}\n- final balance (replay): {expectedBalance}\n- drift count: {driftCount}\n";
             string status = driftCount == 0 ? "\n✅ ledger consistent" : "\n❌ DRIFT detected\n\n" + sb.ToString();
-            Cmd_Tavern_Helpers.WriteLastOp(head + status);
+            Cmd_Tavern_Helpers.WriteLastOp(args, head + status);
             Debug.Log($"[Treasury] verify {account}: {entries.Count} entries, drift={driftCount}");
         }
 
@@ -317,10 +317,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string targetBank = GetArg(args, "target_bank", "");
             string reason = GetArg(args, "reason", "");
             string amountRaw = GetArg(args, "amount", "");
-            if (string.IsNullOrEmpty(targetBank)) { Cmd_Tavern_Helpers.RejectLastOp("request 缺少 target_bank（收款 agent id，例 cc / zeta / Myth —— 不是 persona 名）"); return; }
-            if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp("request 缺少 reason —— 審批者要有東西可判，不接受無理由請款"); return; }
+            if (string.IsNullOrEmpty(targetBank)) { Cmd_Tavern_Helpers.RejectLastOp(args, "request 缺少 target_bank（收款 agent id，例 cc / zeta / Myth —— 不是 persona 名）"); return; }
+            if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp(args, "request 缺少 reason —— 審批者要有東西可判，不接受無理由請款"); return; }
             if (!int.TryParse(amountRaw, out int amount) || amount <= 0)
-            { Cmd_Tavern_Helpers.RejectLastOp($"request 的 amount 需為正整數（收到 '{amountRaw}'）"); return; }
+            { Cmd_Tavern_Helpers.RejectLastOp(args, $"request 的 amount 需為正整數（收到 '{amountRaw}'）"); return; }
 
             try
             {
@@ -343,9 +343,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 sb.AppendLine($"- source_kind / ref：{req.source_kind} / {(string.IsNullOrEmpty(req.source_ref) ? "(無)" : req.source_ref)}");
                 sb.AppendLine($"- 請款者：{req.requester_agent}@{req.requester_persona}");
                 sb.AppendLine($"- 狀態：**{req.status}** —— 錢還沒動，等 Tim 從 UCL_BankAdminPage 的「📨 請款審批」批款");
-                Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+                Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
             }
-            catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp($"request 參數不合法：{ex.Message}"); }
+            catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp(args, $"request 參數不合法：{ex.Message}"); }
         }
 
         // 區塊職責：op=transfer_request —— 開一張「從 A 轉到 B」的待審轉帳單。
@@ -361,11 +361,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string toBank = GetArg(args, "to_bank", "");
             string reason = GetArg(args, "reason", "");
             string amountRaw = GetArg(args, "amount", "");
-            if (string.IsNullOrEmpty(fromBank)) { Cmd_Tavern_Helpers.RejectLastOp("transfer_request 缺少 from_bank（出款 agent id，不是 persona 名）"); return; }
-            if (string.IsNullOrEmpty(toBank)) { Cmd_Tavern_Helpers.RejectLastOp("transfer_request 缺少 to_bank（收款 agent id）"); return; }
-            if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp("transfer_request 缺少 reason —— 審批者要有東西可判"); return; }
+            if (string.IsNullOrEmpty(fromBank)) { Cmd_Tavern_Helpers.RejectLastOp(args, "transfer_request 缺少 from_bank（出款 agent id，不是 persona 名）"); return; }
+            if (string.IsNullOrEmpty(toBank)) { Cmd_Tavern_Helpers.RejectLastOp(args, "transfer_request 缺少 to_bank（收款 agent id）"); return; }
+            if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp(args, "transfer_request 缺少 reason —— 審批者要有東西可判"); return; }
             if (!int.TryParse(amountRaw, out int amount) || amount <= 0)
-            { Cmd_Tavern_Helpers.RejectLastOp($"transfer_request 的 amount 需為正整數（收到 '{amountRaw}'）"); return; }
+            { Cmd_Tavern_Helpers.RejectLastOp(args, $"transfer_request 的 amount 需為正整數（收到 '{amountRaw}'）"); return; }
 
             try
             {
@@ -389,9 +389,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 sb.AppendLine($"- 理由：{req.reason}");
                 sb.AppendLine($"- 提案者：{req.requester_agent}@{req.requester_persona}");
                 sb.AppendLine($"- 狀態：**{req.status}** —— 錢還沒動，等 Tim 從 UCL_BankAdminPage 的「💸 轉帳審批」核准");
-                Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+                Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
             }
-            catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp($"transfer_request 參數不合法：{ex.Message}"); }
+            catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp(args, $"transfer_request 參數不合法：{ex.Message}"); }
         }
 
         // 區塊職責：op=closing_generate —— 補齊所有「已完結但尚未結帳」的 UTC 日期。
@@ -409,7 +409,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             sb.AppendLine($"- 落檔位置：`{UCL_TreasuryPaths.GetClosingRoot()}`");
             sb.AppendLine();
             sb.AppendLine("餘額讀取 = 最近一份結帳 + 該日之後的 entry。已關帳期間不重算。");
-            Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+            Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
         }
 
         // 區塊職責：op=closing_list —— 列出已結帳日期與最新一份的內容摘要。
@@ -434,7 +434,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                                   + $"累計 entry {latest.CumulativeEntryCount}）");
                 }
             }
-            Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+            Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
         }
 
         void Op_RequestList(Dictionary<string, string> args)
@@ -454,24 +454,24 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 sb.AppendLine($"    理由：{r.reason}");
                 if (!string.IsNullOrEmpty(r.decision_note)) sb.AppendLine($"    審批備註：{r.decision_note}");
             }
-            Cmd_Tavern_Helpers.WriteLastOp(sb.ToString());
+            Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
             Debug.Log($"[Treasury] request_list: {list.Count} 筆（pendingOnly={pendingOnly}）");
         }
 
         void Op_RequestCancel(Dictionary<string, string> args)
         {
             string id = GetArg(args, "request_id", "");
-            if (string.IsNullOrEmpty(id)) { Cmd_Tavern_Helpers.RejectLastOp("request_cancel 缺少 request_id"); return; }
+            if (string.IsNullOrEmpty(id)) { Cmd_Tavern_Helpers.RejectLastOp(args, "request_cancel 缺少 request_id"); return; }
             try
             {
                 var req = UCL_TreasuryRequestStore.Close(
                     id, UCL_TreasuryRequestStore.StatusCancelled,
                     decidedBy: GetArg(args, "agent", GetArg(args, "caller", "agent")),
                     note: GetArg(args, "note", ""));
-                Cmd_Tavern_Helpers.WriteLastOp($"# 🗑 請款單已撤回 — `{req.request_id}`\n\n"
+                Cmd_Tavern_Helpers.WriteLastOp(args, $"# 🗑 請款單已撤回 — `{req.request_id}`\n\n"
                     + $"- 原請款：{req.amount} {req.currency} → `{req.target_bank}`\n- 狀態：**{req.status}**\n");
             }
-            catch (System.Exception ex) { Cmd_Tavern_Helpers.RejectLastOp($"request_cancel 失敗：{ex.Message}"); }
+            catch (System.Exception ex) { Cmd_Tavern_Helpers.RejectLastOp(args, $"request_cancel 失敗：{ex.Message}"); }
         }
 
         string BuildEntryMd(string action, TreasuryLedgerEntry e)
@@ -500,22 +500,25 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
     /// <summary>Helper static methods 借用 — 避免 dependency loop / asmdef 跨界問題。</summary>
     static class Cmd_Tavern_Helpers
     {
-        public static void WriteLastOp(string md)
+        // ⚠ TASK-0116：args 必須一路帶到這裡 —— 回傳檔鏡寫進哪個 persona 的 lane，
+        //   唯一來源是 `args["_cmd_id"]`；不給就退回全域 static slot，而它在併發 lane 之間
+        //   last-write-wins（本檔寫的是**錢**的報告，落錯 lane 的代價是別人讀到自己的餘額）。
+        public static void WriteLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string md)
         {
-            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(md);
+            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(md, iArgs);
         }
 
-        public static void RejectLastOp(string msg)
+        public static void RejectLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string msg)
         {
             string md = $"# ❌ Treasury Cmd Rejected\n\n{msg}\n";
-            WriteLastOp(md);
+            WriteLastOp(iArgs, md);
             throw new System.InvalidOperationException(msg);
         }
 
-        public static void FailLastOp(string msg)
+        public static void FailLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string msg)
         {
             string md = $"# ❌ Treasury Cmd Failed\n\n{msg}\n";
-            WriteLastOp(md);
+            WriteLastOp(iArgs, md);
             throw new System.Exception(msg);
         }
     }

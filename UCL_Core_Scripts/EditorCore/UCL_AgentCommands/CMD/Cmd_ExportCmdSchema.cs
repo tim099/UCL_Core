@@ -67,7 +67,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 sb.AppendLine();
                 sb.AppendLine("重新啟用：控制台 → Cmd 後台管理頁 → 勾回「啟用 schema 預檢」，或刪除上面那個旗標檔。");
                 sb.AppendLine("停用期間 Python 端會跳過參數預檢（等同產物不存在），Cmd 執行本身不受影響。");
-                UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+                UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
                 Debug.Log("[Cmd:ExportCmdSchema] skipped — schema preflight disabled on this machine.");
                 return;
             }
@@ -84,7 +84,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             sb.AppendLine("Python 端 (`tavern_cmd.py`) 會讀這份產物做參數預檢；hash 不符時自動降級為不預檢。");
             // _last_op.md 是 client 讀 cmd 結果的共用管道（Cmd_AutoMessage / Cmd_Bartender 亦然），
             // 實作住在 ChatTavern 子命名空間 → 此處完整限定，不為了一行加 using。
-            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(sb.ToString());
+            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
 
             Debug.Log($"[Cmd:ExportCmdSchema] {(r.Written ? "updated" : "unchanged")} — "
                     + $"{r.CommandCount} cmd(s) / {r.SpecCount} with spec → {r.Path}");

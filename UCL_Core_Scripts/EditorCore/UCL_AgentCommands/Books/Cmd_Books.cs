@@ -56,20 +56,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             switch (op)
             {
                 case "donations":
-                    ResolveLastOp($"# 📚 Books donations\n\n{UCL_BooksIO.RenderDonations()}");
+                    ResolveLastOp(args, $"# 📚 Books donations\n\n{UCL_BooksIO.RenderDonations()}");
                     break;
                 case "tips":
-                    ResolveLastOp($"# 💰 Books tips\n\n{UCL_BooksIO.RenderTips(GetArg(args, "book", "").Trim())}");
+                    ResolveLastOp(args, $"# 💰 Books tips\n\n{UCL_BooksIO.RenderTips(GetArg(args, "book", "").Trim())}");
                     break;
                 case "donate": await Op_Donate(args, token); break;
                 case "publish": await Op_Publish(args, token); break;
                 case "tip": await Op_Tip(args, token); break;
                 // 以下三個唯讀／只改分類，不動錢 —— 刻意不走 Broadcast
                 case "shelf":
-                    ResolveLastOp(UCL_BooksShelf.RenderShelf(GetArg(args, "kind", "").Trim()));
+                    ResolveLastOp(args, UCL_BooksShelf.RenderShelf(GetArg(args, "kind", "").Trim()));
                     break;
                 case "series":
-                    ResolveLastOp(UCL_BooksShelf.RenderSeries(GetArg(args, "series", "").Trim()));
+                    ResolveLastOp(args, UCL_BooksShelf.RenderSeries(GetArg(args, "series", "").Trim()));
                     break;
                 case "classify": Op_Classify(args); break;
                 default:
@@ -96,7 +96,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
                 GetArg(args, "series_note", "").Trim(),
                 out string error);
             if (log == null) throw new InvalidOperationException($"[{CommandType}] classify 失敗：{error}");
-            ResolveLastOp($"# 🏷 Books classify\n\n{log}");
+            ResolveLastOp(args, $"# 🏷 Books classify\n\n{log}");
         }
 
         async UniTask Op_Donate(Dictionary<string, string> args, CancellationToken token)
@@ -110,7 +110,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
                 tokens, GetArg(args, "note", "").Trim(), out string broadcast, out string error);
             if (log == null) throw new InvalidOperationException($"[{CommandType}] donate 失敗：{error}");
             string notice = await Broadcast(args, bank, persona, broadcast, "book-donation", token);
-            ResolveLastOp($"# 📚 Books donate\n\n{log}\n{notice}");
+            ResolveLastOp(args, $"# 📚 Books donate\n\n{log}\n{notice}");
         }
 
         async UniTask Op_Publish(Dictionary<string, string> args, CancellationToken token)
@@ -124,7 +124,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
                 out string broadcast, out string error);
             if (log == null) throw new InvalidOperationException($"[{CommandType}] publish 失敗：{error}");
             string notice = await Broadcast(args, bank, persona, broadcast, "book-published", token);
-            ResolveLastOp($"# ✍ Books publish\n\n{log}\n{notice}");
+            ResolveLastOp(args, $"# ✍ Books publish\n\n{log}\n{notice}");
         }
 
         async UniTask Op_Tip(Dictionary<string, string> args, CancellationToken token)
@@ -132,7 +132,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             // retry：只補券不動帳（帳不可造假 —— debit 已落就不回滾，見 UCL_BooksIO.Tip 註解）
             if (GetArg(args, "retry", "").Trim().ToLowerInvariant() == "true")
             {
-                ResolveLastOp($"# 💰 Books tip --retry\n\n{UCL_BooksIO.RetryPendingTips()}");
+                ResolveLastOp(args, $"# 💰 Books tip --retry\n\n{UCL_BooksIO.RetryPendingTips()}");
                 return;
             }
             string book = RequireArg(args, "book");
@@ -146,7 +146,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
                 tokens, GetArg(args, "note", "").Trim(), out string broadcast, out string error);
             if (log == null) throw new InvalidOperationException($"[{CommandType}] tip 失敗：{error}");
             string notice = await Broadcast(args, bank, persona, broadcast, "book-tip", token);
-            ResolveLastOp($"# 💰 Books tip\n\n{log}\n{notice}");
+            ResolveLastOp(args, $"# 💰 Books tip\n\n{log}\n{notice}");
         }
 
         // 區塊職責：酒館廣播 —— 以**酒保（tavern-keeper）身分**發系統通知（Tim 2026-08-07 拍板）。
@@ -205,7 +205,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             return v;
         }
 
-        void ResolveLastOp(string md) => ChatTavern.UCL_ChatTavernRender.WriteLastOp(md);
+        void ResolveLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string md) => ChatTavern.UCL_ChatTavernRender.WriteLastOp(md, iArgs);
     }
 }
 #endif

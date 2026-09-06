@@ -22,14 +22,14 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
 {
     internal static class Cmd_AutoMessage_Helpers
     {
-        public static void ResolveLastOp(string md)
+        public static void ResolveLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string md)
         {
-            UCL_ChatTavernRender.WriteLastOp(md);
+            UCL_ChatTavernRender.WriteLastOp(md, iArgs);
         }
 
-        public static void RejectLastOp(string msg)
+        public static void RejectLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string msg)
         {
-            UCL_ChatTavernRender.WriteLastOp($"# ⚠ AutoMessage Cmd Rejected\n\n{msg}\n");
+            UCL_ChatTavernRender.WriteLastOp($"# ⚠ AutoMessage Cmd Rejected\n\n{msg}\n", iArgs);
             Debug.LogWarning($"[AutoMessage] {msg}");
             throw new InvalidOperationException(msg);
         }
@@ -69,7 +69,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
             string op = GetArg(args, "op", "").ToLowerInvariant();
             if (string.IsNullOrEmpty(op))
             {
-                Cmd_AutoMessage_Helpers.RejectLastOp("缺少 op 參數");
+                Cmd_AutoMessage_Helpers.RejectLastOp(args, "缺少 op 參數");
                 return;
             }
 
@@ -82,7 +82,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
                 case "reset": Op_Reset(args); break;
                 case "status": Op_Status(args); break;
                 default:
-                    Cmd_AutoMessage_Helpers.RejectLastOp($"未知 op: {op}");
+                    Cmd_AutoMessage_Helpers.RejectLastOp(args, $"未知 op: {op}");
                     break;
             }
             await UniTask.CompletedTask;
@@ -300,8 +300,8 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
             string scope = GetArg(args, "scope", "session");
             string by = GetArg(args, "registered_by", "unknown");
 
-            if (string.IsNullOrEmpty(key)) { Cmd_AutoMessage_Helpers.RejectLastOp("register 缺少 key"); return; }
-            if (string.IsNullOrEmpty(value)) { Cmd_AutoMessage_Helpers.RejectLastOp("register 缺少 value"); return; }
+            if (string.IsNullOrEmpty(key)) { Cmd_AutoMessage_Helpers.RejectLastOp(args, "register 缺少 key"); return; }
+            if (string.IsNullOrEmpty(value)) { Cmd_AutoMessage_Helpers.RejectLastOp(args, "register 缺少 value"); return; }
 
             var triggers = LoadTriggers();
             triggers[key] = new TriggerEntry
@@ -320,25 +320,25 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
             sb.AppendLine($"- scope: {scope}");
             sb.AppendLine($"- registered_by: {by}");
             sb.AppendLine($"- total triggers: {triggers.Count}");
-            Cmd_AutoMessage_Helpers.ResolveLastOp(sb.ToString());
+            Cmd_AutoMessage_Helpers.ResolveLastOp(args, sb.ToString());
         }
 
         private void Op_Unregister(Dictionary<string, string> args)
         {
             string key = GetArg(args, "key", "");
             string confirm = GetArg(args, "confirm", "");
-            if (string.IsNullOrEmpty(key)) { Cmd_AutoMessage_Helpers.RejectLastOp("unregister 缺少 key"); return; }
-            if (confirm != "true") { Cmd_AutoMessage_Helpers.RejectLastOp("unregister 需 confirm=true (防誤刪)"); return; }
+            if (string.IsNullOrEmpty(key)) { Cmd_AutoMessage_Helpers.RejectLastOp(args, "unregister 缺少 key"); return; }
+            if (confirm != "true") { Cmd_AutoMessage_Helpers.RejectLastOp(args, "unregister 需 confirm=true (防誤刪)"); return; }
 
             var triggers = LoadTriggers();
             if (!triggers.ContainsKey(key))
             {
-                Cmd_AutoMessage_Helpers.ResolveLastOp($"⚠ trigger `{key}` 不存在, no-op");
+                Cmd_AutoMessage_Helpers.ResolveLastOp(args, $"⚠ trigger `{key}` 不存在, no-op");
                 return;
             }
             triggers.Remove(key);
             SaveTriggers(triggers);
-            Cmd_AutoMessage_Helpers.ResolveLastOp($"✅ trigger `{key}` unregistered. remaining: {triggers.Count}");
+            Cmd_AutoMessage_Helpers.ResolveLastOp(args, $"✅ trigger `{key}` unregistered. remaining: {triggers.Count}");
         }
 
         // ===========================================================
@@ -351,8 +351,8 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
             string skipFeeRaw = GetArg(args, "skip_fee", "false");
             bool skipFeeArg = skipFeeRaw == "true";
 
-            if (string.IsNullOrEmpty(actor)) { Cmd_AutoMessage_Helpers.RejectLastOp("fire 缺少 actor"); return; }
-            if (string.IsNullOrEmpty(text)) { Cmd_AutoMessage_Helpers.RejectLastOp("fire 缺少 text"); return; }
+            if (string.IsNullOrEmpty(actor)) { Cmd_AutoMessage_Helpers.RejectLastOp(args, "fire 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(text)) { Cmd_AutoMessage_Helpers.RejectLastOp(args, "fire 缺少 text"); return; }
 
             var triggers = LoadTriggers();
             var fired = LoadFired(actor);
@@ -371,7 +371,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
 
             if (hits.Count == 0)
             {
-                Cmd_AutoMessage_Helpers.ResolveLastOp($"📭 no unfired triggers matched in text (actor={actor}, total triggers={triggers.Count}, fired={fired.Count})");
+                Cmd_AutoMessage_Helpers.ResolveLastOp(args, $"📭 no unfired triggers matched in text (actor={actor}, total triggers={triggers.Count}, fired={fired.Count})");
                 return;
             }
 
@@ -379,7 +379,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
             bool freeUse = FreeUseActors.Contains(actor);
             if (skipFeeArg && !freeUse)
             {
-                Cmd_AutoMessage_Helpers.RejectLastOp($"skip_fee=true 只 Tim 能用 (actor={actor} 不在 FreeUseActors)");
+                Cmd_AutoMessage_Helpers.RejectLastOp(args, $"skip_fee=true 只 Tim 能用 (actor={actor} 不在 FreeUseActors)");
                 return;
             }
             int feePerHit = (freeUse || skipFeeArg) ? 0 : 1;
@@ -391,7 +391,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
                 int balance = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.GetBalance(actor);
                 if (balance < totalFee)
                 {
-                    Cmd_AutoMessage_Helpers.RejectLastOp($"actor={actor} 餘額不足 (balance={balance}, fee={totalFee} for {hits.Count} hits)");
+                    Cmd_AutoMessage_Helpers.RejectLastOp(args, $"actor={actor} 餘額不足 (balance={balance}, fee={totalFee} for {hits.Count} hits)");
                     return;
                 }
             }
@@ -433,7 +433,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
                 sb.AppendLine();
                 sb.AppendLine("---");
             }
-            Cmd_AutoMessage_Helpers.ResolveLastOp(sb.ToString());
+            Cmd_AutoMessage_Helpers.ResolveLastOp(args, sb.ToString());
         }
 
         private void Op_List(Dictionary<string, string> args)
@@ -453,14 +453,14 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
                     : (kv.Value.value ?? "").Replace("\n", " ");
                 sb.AppendLine($"| `{kv.Key}` | {kv.Value.scope ?? "session"} | {kv.Value.registered_by ?? "?"} | {preview} |");
             }
-            Cmd_AutoMessage_Helpers.ResolveLastOp(sb.ToString());
+            Cmd_AutoMessage_Helpers.ResolveLastOp(args, sb.ToString());
         }
 
         private void Op_Reset(Dictionary<string, string> args)
         {
             string actor = GetArg(args, "actor", "");
             string keysCsv = GetArg(args, "keys", "");
-            if (string.IsNullOrEmpty(actor)) { Cmd_AutoMessage_Helpers.RejectLastOp("reset 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(actor)) { Cmd_AutoMessage_Helpers.RejectLastOp(args, "reset 缺少 actor"); return; }
 
             var fired = LoadFired(actor);
             int before = fired.Count;
@@ -482,13 +482,13 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
             sb.AppendLine($"- before: {before} fired keys");
             sb.AppendLine($"- after: {fired.Count} fired keys");
             sb.AppendLine($"- target keys: {(string.IsNullOrEmpty(keysCsv) ? "(all)" : keysCsv)}");
-            Cmd_AutoMessage_Helpers.ResolveLastOp(sb.ToString());
+            Cmd_AutoMessage_Helpers.ResolveLastOp(args, sb.ToString());
         }
 
         private void Op_Status(Dictionary<string, string> args)
         {
             string actor = GetArg(args, "actor", "");
-            if (string.IsNullOrEmpty(actor)) { Cmd_AutoMessage_Helpers.RejectLastOp("status 缺少 actor"); return; }
+            if (string.IsNullOrEmpty(actor)) { Cmd_AutoMessage_Helpers.RejectLastOp(args, "status 缺少 actor"); return; }
 
             var fired = LoadFired(actor);
             var triggers = LoadTriggers();
@@ -504,7 +504,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AutoMessage
                 sb.AppendLine("Fired keys:");
                 foreach (var k in fired) sb.AppendLine($"- `{k}`");
             }
-            Cmd_AutoMessage_Helpers.ResolveLastOp(sb.ToString());
+            Cmd_AutoMessage_Helpers.ResolveLastOp(args, sb.ToString());
         }
     }
 }

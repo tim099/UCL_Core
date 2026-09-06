@@ -17,7 +17,7 @@ related:
   - .claude/skills/ucl-goodnight/SKILL.md | 完整 session 終結(對比:本 skill 是小憩不下線)
   - <repo:docs/Notes/Memory_System_Design.md> | 記憶系統設計(letters/baton/handoff/constitution 四件套)
 
-last_updated: "2026-09-05 (basecamp v5: 入口改 `senate cmd rest`（TASK-0134：寫信本地跑、廣播委派 Editor；awakening.py rest 退場為 stub）, Tim 拍 A) | 2026-09-05 (basecamp v4: SOP 拆成兩步 — 第二步「醒來接回」多讀 cmd/wake_brief.md，觸發詞「午安大小姐」, Tim 拍板；含 exit 6 兩本帳分開結算) | 2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --letter-body 私密分流, Tim 拍板「訊息=可公開心得總結、私密寫信」) | 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類似晚安但不登出/不擾動/不解鎖, Tim 拍板) | 2026-05-24 (初版 — Tim 拍板「設計小歇片刻指定 compact 如何保留重要記憶」)"
+last_updated: "2026-09-06 (basecamp v6: 廣播結局從兩態改**三態** — exit 0／6 確定沒發要補發／**7 沒等到回執，先回讀別補發**；TASK-0134 返工，成因是 QA @summit 拿到「沒發」而廣播其實成功了 post_seq 19082) | 2026-09-05 (basecamp v5: 入口改 `senate cmd rest`（TASK-0134：寫信本地跑、廣播委派 Editor；awakening.py rest 退場為 stub）, Tim 拍 A) | 2026-09-05 (basecamp v4: SOP 拆成兩步 — 第二步「醒來接回」多讀 cmd/wake_brief.md，觸發詞「午安大小姐」, Tim 拍板；含 exit 6 兩本帳分開結算) | 2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --letter-body 私密分流, Tim 拍板「訊息=可公開心得總結、私密寫信」) | 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類似晚安但不登出/不擾動/不解鎖, Tim 拍板) | 2026-05-24 (初版 — Tim 拍板「設計小歇片刻指定 compact 如何保留重要記憶」)"
 ---
 
 # UCL Compact-Rest — 小歇片刻（核心）
@@ -58,10 +58,18 @@ last_updated: "2026-09-05 (basecamp v5: 入口改 `senate cmd rest`（TASK-0134�
    → trigger=cmd_rest;**不 perturb / 不 offline / 不 unlock / 不 wake_count++**(這就是「不登出」)
    → ⭐ **寫信那半是本地跑的 —— Editor 沒開也寫得成**(TASK-0134 搬家的重點)；
      廣播那半只有 Editor 那條路(seq 是全域遞增的，同時只能一個寫入端)。
-   → **exit 6 ＝「信寫了、廣播沒發」**：核心那步成了、附帶那步沒成
-     ⇒ 照它印的那行去酒館補發，**補發完再跑 /compact**。exit 0 才是兩本帳都綠。
-     🩸 為什麼要有這一格：2026-09-05 rest 在廣播之前就炸了(守衛誤擊)，信其實已經落磁碟，
-     而最後一行印的是那個例外 —— **核心的成功被附帶的失敗吃掉了讀數**。
+   → 廣播那半有**三種**結局，⛔ 不是兩種 —— exit code 分得出來，**照 exit code 走，別照感覺**：
+     · `exit 0` ＝信＋廣播都成（或 `no_notify=1` 顯式不廣播）。
+     · **`exit 6` ＝「確定沒發」** ⇒ 照它印的那行去酒館**補發**，補發完再跑 /compact。
+     · **`exit 7` ＝「不知道」**（沒等到回執）⇒ ⛔ **先回讀，不要直接補發**。
+       它會印一行可以貼的 `cat <result 檔>`：`result=Success` ＋ 有 `post_seq` ⇒ **發了，別補**；
+       檔不存在／非 Success ⇒ 才補。
+     🩸 為什麼 6 與 7 要分家（2026-09-05 QA @summit 實測，TASK-0134）：她拿到「廣播沒發」，
+     而 **Editor 開著、廣播其實成功了**（`post_seq 19082`）—— 那個 code 的真實語意是
+     「CLI 沒等到回執」。⚠ 兩者處置**相反**：真沒發要補發；沒等到卻去補發，
+     就是在**全域遞增**的酒館 seq 上多出第二則，同一件事打擾同事兩次。
+     🩸 而更早的那一格也還在（2026-09-05）：rest 在廣播之前就炸了，信其實已經落磁碟，
+     最後一行印的卻是那個例外 —— **核心的成功被附帶的失敗吃掉了讀數**。
    → ⚠ 關廣播的開關**只有 `no_notify=1`**。不帶 `data_root` 不會關掉它 ——
      `senate cmd` 會自己從設定檔補那一格(2026-09-05 實測：沒帶也照樣發了出去)。
    → ⛔ `awakening.py rest` **已退場**(指路 stub，exit 2，不寫任何檔)。

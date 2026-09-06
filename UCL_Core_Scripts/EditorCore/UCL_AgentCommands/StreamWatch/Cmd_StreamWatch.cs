@@ -250,7 +250,32 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 else if (aOwn.Count > 1)
                     oNote = $"`{iKey}` 底下有 {aOwn.Count} 個 media（{string.Join(" / ", aOwn)}）—— **不自動選**，寫心得時要指定哪一個";
                 else
-                    oNote = $"`{iKey}` 在閱讀庫查不到對應 media ⇒ 視為新東西（呼叫端負責吵）";
+                {
+                    // 🩸 2026-09-04 Tim 問「為什麼心得搜不到人民公仆」時量到的：到這裡為止只比過
+                    //   media_id 與 work_id 兩種**精確**鍵，而別名住在 works/<work>/work.json。
+                    //   ⇒ 簡體／原文名／俗名全部落到這一格，而這一格印「視為新東西」——
+                    //   它跟「這部作品真的不存在」一模一樣，照著它走就會生出第二個平行宇宙。
+                    //   ⇒ 補一格別名撒網（只在前兩種精確鍵都落空時才問），命中 N 個一樣不自動選。
+                    var aByAlias = ResolveMediaCandidates(iKey);
+                    if (aByAlias.Count == 1)
+                    {
+                        oLibMediaId = aByAlias[0];
+                        foreach (var m in UCL_ReadingLibraryIO.ListMediaEntries())
+                            if (m.MediaId == oLibMediaId)
+                            {
+                                if (!string.IsNullOrEmpty(m.WorkId)) oWorkId = m.WorkId;
+                                break;
+                            }
+                        oNote = $"`{iKey}` 不是 media_id 也不是 work_id，但**標題／別名**命中既有 media "
+                              + $"`{oLibMediaId}`（work `{oWorkId}`）⇒ 不是新東西，別再建一份";
+                    }
+                    else if (aByAlias.Count > 1)
+                        oNote = $"`{iKey}` 的標題／別名命中 {aByAlias.Count} 個 media"
+                              + $"（{string.Join(" / ", aByAlias)}）—— **不自動選**，請直接給 media_id";
+                    else
+                        oNote = $"`{iKey}` 在閱讀庫查不到對應 media"
+                              + "（media_id／work_id／標題別名三種鍵都查過）⇒ 視為新東西（呼叫端負責吵）";
+                }
             }
             catch (Exception e) { oNote = $"解析失敗（fail-soft，當成新東西）：{e.Message}"; }
         }
@@ -279,6 +304,18 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     { aHit.Add(aId); continue; }
                     if (!string.IsNullOrEmpty(aTitle) && aTitle.ToLowerInvariant().Contains(aQ))
                     { aHit.Add(aId); continue; }
+                    // 🩸 2026-09-04 Tim 問「為什麼心得搜不到人民公仆」時量到的：本迴圈原本只比
+                    //   title / media_id / work_id 三欄，而別名住在 works/<work>/work.json。
+                    //   ⇒ 查繁體「人民公僕」會中、查簡體「人民公仆」回 0 筆，
+                    //   而 0 筆的樣子跟「這部作品不存在」一模一樣（差點照著它去生第二個平行宇宙）。
+                    bool aAliasHit = false;
+                    foreach (var aAlias in m.Aliases)
+                    {
+                        if (string.IsNullOrEmpty(aAlias)) continue;
+                        string aA = aAlias.ToLowerInvariant();
+                        if (aA == aQ || aA.Contains(aQ)) { aAliasHit = true; break; }
+                    }
+                    if (aAliasHit) { aHit.Add(aId); continue; }
                     if (aId.ToLowerInvariant().Contains(aQ) || aWork.ToLowerInvariant().Contains(aQ))
                         aHit.Add(aId);
                 }
@@ -3189,6 +3226,29 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         static string WorksRoot() => Path.Combine(UCL_AgentCommandsPath.DataRoot, "BookNotes", "Library", "works");
         static string MediaRoot() => Path.Combine(UCL_AgentCommandsPath.DataRoot, "BookNotes", "Library", "media");
 
+        // 區塊職責：把「可能其實是 media_id 的那個字串」還原成 work slug。
+        // 物理意義：權威是 `media/<id>/media.json` 的 `work_id`（讀回來的事實）；
+        //          讀不到才退回剝掉已登記的 media_kind 前綴（猜，但只猜登記過的那幾個字）。
+        // 數值影響：兩條都不成立就**原樣回傳** —— 不發明新 slug，讓印出來的東西至少可被人看穿。
+        static string ResolveWorkSlug(string iKey)
+        {
+            if (string.IsNullOrEmpty(iKey)) return iKey;
+            try
+            {
+                string aMediaJson = Path.Combine(MediaRoot(), iKey, "media.json");
+                if (File.Exists(aMediaJson))
+                {
+                    string aWid = ReadStr(JsonData.ParseJson(File.ReadAllText(aMediaJson)), "work_id");
+                    if (!string.IsNullOrEmpty(aWid)) return aWid;
+                }
+            }
+            catch { }
+            foreach (var aKind in UCL_ReadingLibraryIO.MediaKinds)
+                if (iKey.StartsWith(aKind + "-", StringComparison.Ordinal))
+                    return iKey.Substring(aKind.Length + 1);
+            return iKey;
+        }
+
         // 區塊職責：開場前把「這個 persona 對這部作品讀過什麼」攤在桌上 —— **有沒有進度都印**。
         // 物理意義：續看第二話、看電影續集、看過漫畫再看動畫 —— 這幾種都需要先追回，
         //          而「記得要追回」靠人是不成立的（今天實證：我看第二場時完全沒想到要 recall）。
@@ -3242,9 +3302,16 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (aHits.Count == 0)
             {
                 aSb.AppendLine($"- `Library/media/*-{iWork}/readers/{iPersona}/reader.json` **不存在** ⇒ 首次觀看");
+                // 🩸 2026-09-04 實跑：iWork 拿到的是 `series-sluha-narodu`（media_id），
+                //   而本段照樣把它當 work slug 再包一層前綴 ⇒ 印出 `series-series-sluha-narodu`。
+                //   照著打會生出第二個平行宇宙，而 media_init 對既有 work 不覆寫 ⇒ 它不會喊。
+                //   ⇒ 印之前先還原回 work slug（權威是 media.json 的 work_id，不是字串猜）。
+                string aWorkSlug = ResolveWorkSlug(iWork);
+                if (aWorkSlug != iWork)
+                    aSb.AppendLine($"- ℹ️ `{iWork}` 是 **media_id** 不是 work —— 下面用它的 work `{aWorkSlug}` 組指令");
                 aSb.AppendLine("- ⇒ 寫心得前要先建媒材（`media_kind` 前綴須與 `media_id` 同字）：");
                 aSb.AppendLine($"  `senate ucmd run Library --arg op=media_init --arg persona={iPersona} "
-                    + $"--arg work_id={iWork} --arg media_id=<anim|film|series|stream>-{iWork} "
+                    + $"--arg work_id={aWorkSlug} --arg media_id=<anim|film|series|stream>-{aWorkSlug} "
                     + "--arg media_kind=<同上> --arg title=<作品中文名>`");
             }
             else

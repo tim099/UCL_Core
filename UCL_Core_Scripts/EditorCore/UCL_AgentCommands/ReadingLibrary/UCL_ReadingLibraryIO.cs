@@ -142,6 +142,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             public string MediaKind = "";
             public string WorkId = "";
             public string Title = "";
+            /// <summary>作品層的搜尋用名稱（title_original ＋ aliases）——
+            /// ⚠ 這一欄住在 <c>works/&lt;work&gt;/work.json</c>，不在 media.json；
+            /// 查詢端只比 MediaId/WorkId/Title 的話，簡體、原文名、俗名一律 0 筆，
+            /// 而 0 筆的樣子跟「這部作品不存在」一模一樣。</summary>
+            public List<string> Aliases = new List<string>();
             public List<string> Readers = new List<string>();
         }
 
@@ -163,7 +168,20 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 if (!string.IsNullOrEmpty(e.WorkId))
                 {
                     JsonData work = LoadJson(Path.Combine(WorkRoot(e.WorkId), k_WorkJsonName), out _);
-                    if (work != null) e.Title = work.GetString(Key_Title, e.MediaId);
+                    if (work != null)
+                    {
+                        e.Title = work.GetString(Key_Title, e.MediaId);
+                        // 別名兩形狀（字串陣列／物件陣列）由 AliasToString 吸收 —— 見該函式的血證。
+                        string original = work.GetString(Key_TitleOriginal, "");
+                        if (!string.IsNullOrEmpty(original)) e.Aliases.Add(original);
+                        JsonData aliases = work.Contains(Key_Aliases) ? work[Key_Aliases] : null;
+                        if (aliases != null && aliases.IsArray)
+                            for (int i = 0; i < aliases.Count; i++)
+                            {
+                                string a = AliasToString(aliases[i]);
+                                if (!string.IsNullOrEmpty(a) && !e.Aliases.Contains(a)) e.Aliases.Add(a);
+                            }
+                    }
                 }
                 string readersRoot = Path.Combine(dir, k_ReadersDirName);
                 if (Directory.Exists(readersRoot))
@@ -586,7 +604,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // ===========================================================
         public static JsonData LoadReader(string mediaId, string persona, out string error)
         {
-            JsonData reader = LoadJson(ReaderJsonPath(mediaId, persona), out error);
+            // ⚠ 「還不是這部的 reader」與「檔壞了」是兩件事，而 LoadJson 只會說「檔案不存在」——
+            //   那是一句**死路**：它描述現況，不指出出口。所以這一格在進 LoadJson 之前先攔。
+            string readerPath = ReaderJsonPath(mediaId, persona);
+            if (!File.Exists(readerPath))
+            {
+                error = NotAReaderYetMessage(mediaId, persona, readerPath);
+                return null;
+            }
+            JsonData reader = LoadJson(readerPath, out error);
             if (reader == null) return null;
 
             string declaredPersona = reader.GetString(Key_ReaderPersona, "");

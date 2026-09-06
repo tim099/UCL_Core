@@ -4,13 +4,13 @@ slug: tavern-history-workflow
 status: v1 (2026-08-19 meadow, 從第一本《history-2026-08-11》編纂實作 codify)
 created_at: 2026-08-19
 created_by: meadow (claude-code)
-last_updated: 2026-08-19 (v2 紀傳體：敘述在前／原文在後；新增 drop 處置與系統發話端過濾)
+last_updated: 2026-09-06 (對照組那兩處指路改指 `senate cmd watch --arg op=export` —— 觀影匯出已移進 SCP_Core，不再走 library.py；TASK-0143) | 2026-08-19 (v2 紀傳體：敘述在前／原文在後；新增 drop 處置與系統發話端過濾)
 location: UCL_Core (cross-project)
 related:
   - ucl_core:Docs~/{lang}/Workflows/Book_Writing_Workflow.md | Book Writing Workflow | **寫書通用 SOP** — 章節結構、review、publish、以及「編纂類書籍」的通用規則都在那裡，本檔只寫酒館歷史書專屬的部分
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | 訊息檔佈局與欄位語意（`sender_persona` vs `sender_name`）
   - ucl_core:Tools~/AgentCommands/tavern_history.py | tavern_history.py | 本 workflow 的 Phase A 工具
-  - ucl_core:Tools~/AgentCommands/library.py | library.py `export-watch` | 姊妹工具：觀影實錄匯出（**照收不編纂**，本檔的對照組）
+  - ucl_core:Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Flow.md | `senate cmd watch --arg op=export` | 姊妹工具：觀影實錄匯出（**照收不編纂**，本檔的對照組）
 ---
 
 # Tavern History Workflow — 酒館歷史書 SOP
@@ -21,7 +21,8 @@ related:
 ## 🎯 為什麼存在
 
 系統裡本來就有一支「把一段酒館 seq 原文照收寫成書的一章」的工具：
-`library.py export-watch`（`/ucl-stream-watch` 收工自動跑，產物長相見 `Books/watch-apocalypse-hotel/`）。
+觀影實錄匯出（`senate cmd watch --arg op=export`；`/ucl-stream-watch` 收工自動跑，
+產物長相見 `Books/watch-apocalypse-hotel/`）。
 
 那支的職責是**實錄**：一場觀影，照收就是全部的價值。
 

@@ -97,9 +97,12 @@ python <UCL_Core>/Tools~/AgentCommands/bili_meta.py "<原樣貼上 Tim 給的網
 長得跟本章的進度一模一樣）。
 
 > ⭐ **收工自動匯出（Tim 2026-08-19 拍板）**：`prepare` 帶 `--arg chapter_title="<章名>"` ⇒
-> 主觀影者收工結算時**自動**把實錄匯出成章（走 `library.py export-watch --from-session`），
-> 並回填台帳的 `exported_chapter`。**沒填章名就不會自動跑** —— 那不是故障，是「章名不給工具代取」。
-> 回傳檔的 `## 實錄匯出（自動）` 段落原樣印 python 的回讀行（行數／字元數／實錄段數），失敗會明說章沒進書。
+> 主觀影者收工結算時**自動**把實錄匯出成章（Editor 端**就地直呼** `SCP_WatchWriter`，
+> TASK-0143 起不再 spawn python），並回填台帳一筆 `record_type=export` 事件。
+> ⚠ **沒填章名照樣會跑** —— 章名用哨兵值出書（TASK-0064）：
+> 「書不存在」跟「這一話沒人看」在產物上同形，而**哨兵是看得見的缺**。章名仍不由工具代取。
+> 手動重出／查哨兵章走 `senate cmd watch --arg op=export|untitled`。
+> 回傳檔的 `## 實錄匯出（自動）` 段落原樣印回讀行（行數／字元數／實錄段數），失敗會明說章沒進書。
 
 ### 陪同者：一份檔案讀完就接上（形狀抄早安 brief）
 

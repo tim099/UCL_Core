@@ -13,8 +13,12 @@
 //     這裡直呼 Ledger 之後，Python 版「跨層驗證 ledger」的防禦碼整段消失
 //     （in-process 拿到 entry 物件，沒有 stdout 可不可信的問題）。
 //   · Debit 帶 idempotencyKey（donate=book、tip=tip_id）—— 重試不重扣。
-//   · Publish 不再依賴舊 BookNotes/<slug>/book.json（那個 store 已空）：
-//     首次發表需顯式 title + persona；再版沿用 _donation.json 既有登記。
+//   · Publish **不從**舊 BookNotes/<slug>/book.json 推導身分：首次發表需顯式 title + persona；
+//     再版沿用 _donation.json 既有登記。⚠ 但發表**之後會回寫**那份檔的 status/publish_status
+//     （TASK-0148）—— 「不依賴它判斷」與「不必同步它」是兩件事，而它們曾被寫成同一件。
+//     🩸 舊註解寫「那個 store 已空」—— **那句話是錯的**（2026-09-06 實測：157 份 book.json、
+//        活的 6 份、其中 3 本 status=writing、5 天內寫過 2 次）。錯的前提讓「不回寫」
+//        看起來像一個想清楚的決定，於是沒有人回頭問它。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -50,6 +54,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
         public static string BooksRoot => Path.Combine(UCL_RepoPath.AgentCommandsDir, "Books");
         public static string BookDir(string book) => Path.Combine(BooksRoot, book);
         public static string DonationPath(string book) => Path.Combine(BookDir(book), "_donation.json");
+
+        // 舊草稿 store：`BookNotes/<slug>/book.json`（`origin` / `status` / `publish_status` 住在這裡）。
+        // ⚠ 這**不是** `BookNotes/Library/`（那是新 store，另一套 schema、另一個鍵）。
+        public static string BookNotesRoot => Path.Combine(UCL_RepoPath.AgentCommandsDir, "BookNotes");
+        public static string BookNotesJsonPath(string book) => Path.Combine(BookNotesRoot, book, "book.json");
         public static string TipsDir => Path.Combine(BooksRoot, "tips");
 
         // ===========================================================
@@ -154,7 +163,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
 
         // ===========================================================
         // 區塊職責：發表原創書（Author-as-Donor）—— 免費入庫、作者署名、連載可重複發表。
-        // 物理意義：**不再讀舊 BookNotes/<slug>/book.json 判 origin=authored**（該 store 已空）。
+        // 物理意義：**不讀舊 BookNotes/<slug>/book.json 判 origin=authored**（身分由呼叫端顯式宣告）。
+        //          ⚠ 但發表成功後**會回寫**那份檔的 status/publish_status —— 見 SyncAuthoredDraftState。
         //          首次發表 = 顯式宣告（title + 作者 persona 必填）；再版 = 沿用既有登記
         //          （authorPersona 必須與登記相符 —— 不同人不得以 publish 改寫作者署名）。
         //          已存在且 source != authored → 拒絕（那本是捐贈調入，不是你的著作）。
@@ -233,6 +243,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             entry[Key_Note] = string.IsNullOrEmpty(note) ? $"{authorPersona} 原創著作" : note;
             SaveJson(dpath, entry);
 
+            // 🩸 回寫草稿 store 的兩個狀態欄（TASK-0148，2026-09-06）——
+            //    退場前的 python `cmd_publish` 有這一步，搬到 C# 時**跟著 python 一起消失了**，
+            //    而消失的樣子是：書上了藏書架，卻同時還列在「寫到一半」清單裡，兩邊都不報錯。
+            string draftNote = SyncAuthoredDraftState(book);
+
             string verb = wasPublished ? "連載更新" : "發表";
             broadcastBody = $"✍📖 新書{verb}!\n\n《{title}》由 **{authorPersona}** 原創著作（{chapterCnt} 章，免費入庫），全員可讀。\n"
                             + $"全文在 AgentCommands/Books/{book}/。";
@@ -243,7 +258,49 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             string dossierLine = dossier ?? $"⚠ 續寫包投遞失敗（書已入庫，不影響發表）：{dossierErr}";
 
             return $"✅ {(wasPublished ? "更新連載" : "首度發表")}原創書:《{title}》 by {authorPersona}（{chapterCnt} 章，免費入庫）"
-                   + $"\n{dossierLine}";
+                   + $"\n{draftNote}\n{dossierLine}";
+        }
+
+        // ===========================================================
+        // 區塊職責：發表之後，把舊草稿 store `BookNotes/<slug>/book.json` 的
+        //          `publish_status` / `status` 推到已發布狀態。
+        // 物理意義：這兩欄是「寫到一半的書」那條查詢（`senate cmd book --arg op=writing`／
+        //          早安 brief §6.7 見筆）的**唯一真相源**。不推的話，
+        //          「已經在藏書架上」與「還在寫」會同時為真，而**兩邊都不報錯**。
+        // 數值影響：檔不存在 ⇒ 什麼都不做（觀影實錄那類書本來就沒有草稿檔，那不是錯誤）。
+        //          已經是 published ⇒ 不寫（**冪等** —— 連載可以重複 publish）。
+        // ⚠ 這裡刻意**不建檔**：草稿 store 的擁有權在寫書流程那側，
+        //   publish 只同步既有狀態，不替人開一份它沒有的東西。
+        // 🩸 為什麼這一格會不見：`UCL_BooksIO` 的檔頭曾兩處宣稱「舊 BookNotes store 已空」——
+        //   那句話是錯的（2026-09-06 實測：157 份 book.json、活的 6 份、5 天內寫過 2 次），
+        //   而它讓「不必回寫」看起來像一個已經想清楚的決定。
+        // ===========================================================
+        static string SyncAuthoredDraftState(string book)
+        {
+            string path = BookNotesJsonPath(book);
+            if (!File.Exists(path))
+                return $"· 草稿狀態：略過（`BookNotes/{book}/book.json` 不存在 —— 這本沒有草稿檔）";
+
+            JsonData data = LoadJson(path, out string error);
+            if (data == null)
+                return $"⚠ 草稿狀態未同步（書已入庫，不影響發表）：{error}";
+
+            string beforePublish = data.GetString("publish_status", "");
+            string beforeStatus = data.GetString("status", "");
+            if (beforePublish == "published" && beforeStatus == "reading")
+                return "· 草稿狀態：本來就是 `published`/`reading` ⇒ 沒有寫入（冪等）";
+
+            data["publish_status"] = "published";
+            data["status"] = "reading";     // 已發布 ＝ 可讀狀態（對齊退場前的 python 語意）
+            try { SaveJson(path, data); }
+            catch (Exception e)
+            {
+                return $"⚠ 草稿狀態寫入失敗（書已入庫，不影響發表）：{e.Message}";
+            }
+            return $"· 草稿狀態已同步：`publish_status` {Show(beforePublish)} → `published`、"
+                   + $"`status` {Show(beforeStatus)} → `reading`";
+
+            string Show(string v) => string.IsNullOrEmpty(v) ? "(空)" : "`" + v + "`";
         }
 
         // ===========================================================

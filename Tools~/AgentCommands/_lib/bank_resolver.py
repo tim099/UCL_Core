@@ -214,59 +214,30 @@ def resolve_persona_bank(reg: dict, persona: str, model: str = None) -> str:
               resolve_bank_account 既有語意（認得→bank；未知 agent→命名慣例 {agent}-da-xiaojie，
               此為「開新 bank」的刻意 derive、非 mis-route，不違反 fail-loud）。
     """
-    # ① 反向登記優先（§8.1，Tim 2026-08-19 拍板）—— 銀行端宣告誰是自己的人
-    aBank, aWhy = resolve_persona_bank_reverse(reg, persona)
-    if aBank is not None:
-        return aBank
-
-    # ② 反向表沒有這個人 ⇒ 舊的正向鏈（persona→agent→bank）。
-    #    過渡期刻意保留：反向表是新資料，缺一位不該讓那位的錢無處可去。
-    #    ⚠ 但**不准安靜地退** —— 退了要留痕，否則「反向表漏一位」與「反向表已完整」同形，
-    #      收斂就永遠量不出來（同 §8.4 那條 log 歸零判準的道理）。
-    print(f"⚠ [bank_resolver] persona '{persona}' 不在 bank_personas 反向表裡（{aWhy}）"
-          f" —— 退回正向鏈 persona→agent→bank。請把它登記到某個 bank 的 personas[]。",
-          file=_sys.stderr)
+    # 🩸 2026-09-07 Tim 拍板：**`letters/<persona>/bank/<region>.md` 才是權威版本**（用哪個帳戶）。
+    #   ⇒ 反向表 `bank_personas` 退出解析（它沒有寫入端，而沒有寫入端的表只會愈來愈舊）。
+    #
+    #   本函式現在只有一跳：persona → `agent`（＝帳號 id，合一模式），
+    #   而那個欄位的真相源就是綁定檔 —— `reg["personas"]` 由
+    #   `_lib/persona_profile.load_personas_into()` 從接縫填入，接縫讀的正是 `bank/<region>.md`。
+    #   ⇒ 這不是「換一張表」，是**把第二張表拿掉**：解析只剩一個真相源。
+    #
+    # 🩸 而這一格有血證，不是理論：2026-08-20 `Sirius` 的帳戶改名 `Federal Reserve System` → `FRS`，
+    #   綁定檔跟著改了、反向表沒有（沒有寫入端）⇒ **反向表錯了 18 天**，
+    #   而 ledger 顯示 08-20 之後 193 筆全部進 `FRS`、舊帳號零筆
+    #   ——「沒有人踩到」不是「那條路是對的」。
     agent = resolve_persona_to_agent(reg, persona)
+
+    # 合一模式：agent id 本身就是帳戶 id（Tim 2026-08-20）。⇒ 命中就到此為止。
+    # ⚠ 只有當它**不是**一個已知帳戶時才往下走 `agent_banks` 那條 legacy 兩跳鏈 ——
+    #   而走到那裡要出聲，否則「舊資料還有沒有人在讀」永遠量不出來。
+    if agent in all_account_ids(reg):
+        return agent
+    print(f"⚠ [bank_resolver] persona '{persona}' 的綁定 '{agent}' 不在帳號宇宙裡"
+          f"（agent_banks 值 ∪ system_accounts 鍵）—— 退 legacy 兩跳鏈 agent→bank。"
+          f" 這代表那個綁定指向一個沒有登記的帳戶，請查 letters/{persona}/bank/。",
+          file=_sys.stderr)
     return resolve_bank_account(reg, agent, model)
-
-
-# 區塊職責：§8.1 反向登記的解析 —— 「這個 persona 屬於哪家 bank」由**銀行端**回答。
-# 物理意義：舊模型是 persona 記自己的 agent、agent 記自己的 bank（兩跳正向鏈）。
-#          Tim 2026-08-19 拍板反轉：`bank_personas[<bank>] = [personas…]`，
-#          錢的歸屬由銀行宣告 ⇒「說話認 persona、錢認 bank」兩條線各自獨立，
-#          不再經 agent 中轉推導。
-# ⚠ 同一 persona 出現在兩家 bank ⇒ **fail-loud**（raise），不挑一個。
-#   理由是這條錯誤的代價：錢進錯帳戶不會有人喊痛，而挑一個就是替它做決定。
-# ⚠ 對側契約：C# 端等價實作在 UCL_TreasuryAccountResolver（同一張 bank_personas 表）。
-#   兩端要一起改 —— 只改一端的後果是同一個 persona 在兩邊解到不同 bank，而兩邊都不報錯。
-# 數值影響：純查表不寫檔。回 (bank, why)；查無此人回 (None, 理由)。
-#          比對用 casefold（Windows 大小寫不敏感，'Kiara' 與 'kiara' 必須同歸一位）。
-def resolve_persona_bank_reverse(reg: dict, persona: str):
-    aTable = reg.get("bank_personas")
-    if not isinstance(aTable, dict) or not aTable:
-        return None, "反向表不存在或為空"
-
-    aKey = (persona or "").strip().casefold()
-    if not aKey:
-        return None, "persona 名為空"
-
-    aHits = []
-    for aBank, aList in aTable.items():
-        if not isinstance(aList, list):
-            continue
-        for aName in aList:
-            if str(aName).strip().casefold() == aKey:
-                aHits.append(aBank)
-                break
-
-    if len(aHits) > 1:
-        raise PersonaResolutionError(
-            f"persona '{persona}' 同時登記在 {len(aHits)} 家 bank：{sorted(aHits)} —— "
-            f"拒絕解析（§8.1：錢進錯帳戶是最貴的靜默錯，這裡不替你挑一個）。"
-            f"請到 _registry_meta.json 的 bank_personas 把多餘那筆刪掉。")
-    if len(aHits) == 1:
-        return aHits[0], "反向表命中"
-    return None, "反向表沒有這個人"
 
 
 def all_account_ids(reg: dict) -> set:
@@ -280,7 +251,18 @@ def all_account_ids(reg: dict) -> set:
     """
     banks = set((reg.get("agent_banks") or {}).values())
     system = set((reg.get("system_accounts") or {}).keys())
-    return banks | system
+    # 🩸 合一模式（Tim 2026-08-20）：**有 persona 綁定的 agent id 本身就是正式帳戶**。
+    #   不加這一段的症狀 C# 那側 2026-08-20 實測過：遷移後新生的 `FRS` 不在 `agent_banks`
+    #   也不在 `system_accounts` ⇒ 被判定為不存在，而**它裡面有 6253 token 而且天天在收**。
+    #   ⇒ 「一個真的在用的帳戶被系統判定不存在」是這一族最貴的形狀。
+    # ⚠ 只有 reg 帶了 personas 才算得到（`load_personas_into()` 填的）——
+    #   沒帶就只回前兩類，**不假裝自己看過綁定**。
+    bound = {
+        str((p or {}).get("agent")).strip()
+        for p in (reg.get("personas") or {}).values()
+        if (p or {}).get("agent")
+    }
+    return banks | system | bound
 
 
 def load_registry_meta(meta_path) -> dict:

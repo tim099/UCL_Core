@@ -397,7 +397,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 $"- reward: {reward} tavern_token\n" +
                 $"- deadline: {(string.IsNullOrEmpty(deadline) ? "(無)" : deadline)}\n" +
                 $"- task_body: {Truncate(taskBody, 200)}\n\n" +
-                "target_persona 下次跑 awakening.py morning ritual 時會自動看到此筆 (T06.4 morning print pending)."
+                "target_persona 下次跑早安流程（`senate cmd morning-wake`）時會自動看到此筆 (T06.4 morning print pending)."
             );
 
             // T31 (Tim 2026-05-14 拍板): auto-fire tavern @mention post → 自動 Discord mirror

@@ -177,7 +177,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     + "> 這裡曾是**全域單槽**，兩個人同時跑 `run Task` 會互相覆蓋，\n"
                     + "> 而覆蓋是**無聲的**（TASK-0026 ①）。\n\n"
                     + "回傳檔現在落在 **`letters/<persona>/cmd/task_<op>.md`** ——\n"
-                    + "`run_cmd.py` 會直接印出「📄 回傳檔：<路徑>」，照那一行讀，不要背路徑。\n",
+                    + "派遣 client 會直接印出「📄 回傳檔：<路徑>」，照那一行讀，不要背路徑。\n",
                     new UTF8Encoding(false));
             }
         }

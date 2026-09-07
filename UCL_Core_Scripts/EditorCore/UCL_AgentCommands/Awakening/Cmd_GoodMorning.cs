@@ -36,7 +36,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
 
         public override string ShortDescription =>
             "早安流程 Cmd（step=wake/brief/intro/audit，每步回傳 next 導引並落檔）。brief 就地跑 SCP_WakeBrief；"
-            + "Editor 未開時的備援是 `senate cmd wake-brief`（原生）或 awakening.py brief —— 兩者產出的都是**另一份**。";
+            + "Editor 未開時的備援是 `senate cmd wake-brief`（就地跑同一支 SCP_WakeBrief）。";
 
         public override string ArgsSchema =>
             "step=wake|brief|intro|audit (必填) — wake: 守衛+狀態寫入(不廣播); brief: 生成 wake brief; " +

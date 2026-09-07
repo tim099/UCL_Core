@@ -1328,7 +1328,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine("## next（人工收尾清單 —— 標 **required** 的會實擋；其餘提示型）");
             aR.AppendLine("⚠ 本清單**之外**還有一道實擋：**收工閘**（擋在 `step=sleep`）——"
                 + "它現在會擋什麼，上面 Task 對帳 ⑤ 已經列出來了。");
-            aR.AppendLine($"1. 見叢交棒：awakening.py keys --persona {iPersona} --add \"<明天必須知道的一句話>\"");
+            aR.AppendLine($"1. 見叢交棒：senate cmd keys --arg persona={iPersona} --arg add=\"<明天必須知道的一句話>\"");
             // ⛔ commit／submodule bump 不進見叢（Tim 2026-08-21 拍板）—— 晚安之後他自己收尾全部 commit。
             //   這一行印在**必經路上**而不是只寫進文件：舊的見叢裡塞了五六條「某層未 commit／父層未 bump」，
             //   而那些條目隔天讀起來像交棒待辦，實際上是別人已經做完的事 ⇒ 早安時排錯優先序。

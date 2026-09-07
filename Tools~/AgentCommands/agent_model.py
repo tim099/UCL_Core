@@ -75,13 +75,33 @@ def _norm(value: str) -> str:
     return "".join(ch for ch in (value or "").lower() if ch.isalnum())
 
 
+_PP_MOD = None
+
+
 def _persona_profile():
-    import importlib.util as _ilu
-    from pathlib import Path as _P
-    _spec = _ilu.spec_from_file_location(
-        "_ucl_persona_profile_agent_model", _P(__file__).resolve().parent / "_lib" / "persona_profile.py")
-    _m = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_m)
-    return _m
+    """persona 讀取接縫（走 `_lib/seam` 共用 loader，**全行程一份**）。
+
+    # 物理意義：接縫的 per-process 快取（`_STATE`）決定「這個行程發幾次 Cmd」，
+    #          而那個快取住在**模組實例**上 ⇒ 每次呼叫都 `exec_module` 一份新模組，
+    #          等於那個快取不存在。
+    #
+    # 🩸 BUG-17 的另一半（2026-09-07 量到）：`agent_email.py` 那側 2026-08-20 就修好了
+    #    並把理由寫在註解裡，而**同一個目錄裡的本檔沒有跟著改** ——
+    #    「修法只套用在我記得的那半邊」的活體。
+    #    實測（`git_commit.py --dry-run`，Editor 開著）：
+    #      1 位 persona **6.5s** ／ 2 位 **15.7s** ⇒ 每多一位約 **+9.2s**，
+    #      接縫初始化次數 = 1（agent_email 有快取）+ N（本檔每位一次）。
+    #    ⚠ 症狀只是慢，而**慢會被歸因到「Editor 忙」**，所以它不會叫。
+    """
+    global _PP_MOD
+    if _PP_MOD is None:
+        import importlib.util as _ilu
+        from pathlib import Path as _P
+        _spec = _ilu.spec_from_file_location(
+            "_ucl_seam_loader_agent_model", _P(__file__).resolve().parent / "_lib" / "seam.py")
+        _seam = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_seam)
+        _PP_MOD = _seam.persona_profile()
+    return _PP_MOD
 
 
 def registry_path() -> Path:

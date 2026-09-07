@@ -275,10 +275,10 @@ def advance_tasks(message: str, sha: str, persona: str) -> None:
 def post_announcement(body: str, sha: str, persona: str) -> tuple:
     """發酒館公告；回 (成功, 說明)。走 `senate ucmd run Tavern`，body 經檔案避免引號地獄。"""
     here = Path(__file__).resolve().parent
-    # ⛔ 這裡原本有一道 `if not run_cmd.exists(): return False, "找不到 run_cmd.py"` ——
-    #   2026-09-03 移除。留著它是一顆地雷：run_cmd.py 一刪，這支就**永遠回 False 且理由是假的**
-    #   （說「找不到 run_cmd.py」而實際上根本不需要它）⇒ 公告靜默停掉、commit 照樣成功，
-    #   而「不會叫的壞掉最難抓」。現在 `senate` 找不到就是 FileNotFoundError，由呼叫端接住並印真因。
+    # ⛔ 這裡**不做**「先檢查某個檔在不在」式的前置守衛。
+    #   那種守衛的失效樣子是**回 False 且理由是假的**（說某個檔找不到，而那個檔根本不在這條路上）
+    #   ⇒ 公告靜默停掉、commit 照樣成功，而「不會叫的壞掉最難抓」。
+    #   現在 `senate` 找不到就是 FileNotFoundError，由呼叫端接住並印真因。
     tmp = here / f"_announce_{sha}.md"
     try:
         tmp.write_text(body, encoding="utf-8")

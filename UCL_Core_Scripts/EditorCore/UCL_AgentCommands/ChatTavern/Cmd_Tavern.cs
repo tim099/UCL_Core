@@ -228,7 +228,17 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "listrooms": Op_ListRooms(args); break;
                     case "join": Op_Join(args); break;
                     case "post": await Op_Post(args, token); break;
-                    case "read": Op_Read(args); break;
+                    // ⏱ 以下兩格移出主執行緒（TASK-0162 第 2 支）—— **逐 op 判，不是整支 Cmd 判**。
+                    //   ✅ 可以動的理由（逐項查過，不是「看起來沒問題」）：
+                    //     · `read` 純讀，零寫入。
+                    //     · `catchup` 只寫**該 persona 自己的**游標與 inbox，而同一 persona 的兩筆 cmd
+                    //       不可能並行（Runner 的 per-agent IsRunning 擋著）⇒ 那些 RMW 沒有第二個寫者。
+                    //   ⛔ **`post` 刻意不在這裡**：`UCL_ChatTavernIO.IncrementAndGetSeq` 是一段
+                    //     **沒有鎖的 read-modify-write**（讀 counter → 比對 jsonl_max → 寫回），
+                    //     今天安全**只因為全部跑在單一主緒上** —— 跟 `UCL_TaskIO` 是同一族不變式。
+                    //     兩條 lane 同時 post 會撞號，而撞號之後那兩則訊息長得完全正常。
+                    //     ⇒ 要 offload `post` 得先把 seq 配號（與金流那條路）上鎖，那是另一張單。
+                    case "read": await UCL_AgentCmdOffload.EnterBackground(args); Op_Read(args); break;
                     case "members": Op_Members(args); break;
                     case "leave": Op_Leave(args); break;
                     case "wait": Op_Wait(args, token); break;
@@ -254,7 +264,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "inbox_read": Op_InboxRead(args); break;
                     case "events_since": Op_EventsSince(args); break;
                     case "query": Op_Query(args); break;
-                    case "catchup": Op_Catchup(args); break;
+                    case "catchup": await UCL_AgentCmdOffload.EnterBackground(args); Op_Catchup(args); break;
                     case "session_enter": Op_SessionEnter(args); break;
                     default:
                         RejectLastOp(args, $"未知 op：{op}");

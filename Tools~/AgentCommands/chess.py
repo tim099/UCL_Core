@@ -105,7 +105,8 @@ _REPO = _ucl_paths().repo_root()
 _CHESS_DIR = _DATA_ROOT / "Chess"
 _GAMES_DIR = _CHESS_DIR / "games"                                # runtime 對局狀態 (per-project, 留主專案)
 _VOUCHER_DIR = _DATA_ROOT / "Canvas" / "vouchers"                # 跟 canvas 共用券餘額 (per-project)
-_RUN_CMD = _THIS.parent / "run_cmd.py"                            # 同目錄, 廣播用
+# ⛔ 原本這裡有 `_RUN_CMD = _THIS.parent / "run_cmd.py"` —— 2026-09-07 移除（TASK-0107）。
+#   廣播改走 senate ucmd（路徑解析同樣委派 _lib/ucl_paths，見 broadcast()）。
 _RULEBOOK_DIR = _THIS.parent / "rulebooks"                       # 規則書 spec (跨專案共用, 隨 code 放 UCL_Core)
 
 
@@ -662,11 +663,9 @@ def settle_rewards(g):
 
 
 # ═════════════════════════ 廣播酒館 (T05) ═════════════════════════
-# 區塊職責: 每步把 board + 三元組 (prior_FEN→move→result_FEN) 廣播酒館 (best-effort, 走 run_cmd op=post)。
+# 區塊職責: 每步把 board + 三元組 (prior_FEN→move→result_FEN) 廣播酒館 (best-effort, 走 senate ucmd Tavern op=post)。
 #   tag=chess 可篩; mirror 自動回 Discord。Editor 不在/失敗 → 吞掉不擋主流程。
 def broadcast(g, header, sender_persona, say=""):
-    if not _RUN_CMD.exists():
-        return False
     st = parse_fen(g["fen"])
     # 一句話 (自言自語 / 跟對手聊天): 有則插在盤面前, 給觀眾人味
     say_line = f"💬 {sender_persona or '?'}：{say}\n" if say else ""
@@ -698,21 +697,46 @@ def broadcast(g, header, sender_persona, say=""):
     #     `summit@summit`（本檔發的）／`Zeta大小姐@summit`（Cmd 推導的）。
     #   ⇒ 對應架構拍板「框架統一認 persona，其餘身分資訊一律走統一解析入口」：
     #     呼叫端只負責說「我是誰（persona）」，不負責算「顯示成什麼」。
-    cmd = [sys.executable, str(_RUN_CMD)]
+    # ── 2026-09-07（TASK-0107）：派遣由 `python run_cmd.py` 換成 `senate ucmd run`。
+    #    `--lane chess-<index>` 語意**一個字都沒變** —— senate 2026-09-07 補上子分道
+    #    （`queues/<persona>/queue-chess-N.json` ＋ `pending-chess-N.trigger`，與 run_cmd 逐字同形）。
+    #    在那之前 senate 只有 `--persona` 一層，而用 `--persona chess-N` 頂替會長回
+    #    `queues/chess-1/` —— 正是本檔上面那段註解寫著被特意改掉的身分層污染。
+    # ⛔ 解不到 senate 就**大聲失敗**，不退回 run_cmd.py：靜默 fallback 會讓轉接等於沒發生。
+    try:
+        senate = _ucl_paths().senate_exe()
+    except Exception as e:
+        print(f"⚠ 廣播沒送出（找不到 Senate CLI，**不退回 run_cmd.py**）：{e}", file=sys.stderr)
+        return False
+    cmd = [str(senate), "ucmd", "run", "Tavern"]
     if sender_persona:
         cmd += ["--persona", sender_persona]
     cmd += ["--lane", f"chess-{g['index']}",
-           "run", "Tavern", "--arg", "op=post", "--arg", "room=tavern",
+           "--timeout", "80",
+           "--arg", "op=post", "--arg", "room=tavern",
            "--arg", f"persona={sender}",
            "--arg", f"body={body}", "--arg", f"meta={meta}"]
     try:
-        # encoding/errors 必帶: Windows reader thread 預設 cp950 解 run_cmd 的 UTF-8 輸出(♟️/中文)
+        # encoding/errors 必帶: Windows reader thread 預設 cp950 解子行程的 UTF-8 輸出(♟️/中文)
         #   會 UnicodeDecodeError 爆 thread traceback (post 仍落地但輸出髒)。指定 utf-8 + replace 根治。
         env = dict(os.environ, PYTHONIOENCODING="utf-8")
-        subprocess.run(cmd, timeout=90, capture_output=True,
-                       encoding="utf-8", errors="replace", env=env)
+        r = subprocess.run(cmd, timeout=90, capture_output=True,
+                           encoding="utf-8", errors="replace", env=env)
+        # 🩸 2026-09-07 Tim 問「盤面靜默消失有辦法解決嗎」——
+        #   分道解決的是**碰撞**，而這一格解決的是**它不會叫**：舊版無論成敗一律 `return True`，
+        #   於是一則沒發出去的廣播跟一則發出去的在呼叫端**完全同形**。
+        #   ⇒ 廣播仍是 best-effort（不擋主流程、不回滾這一步棋），但**失敗要留下一行**。
+        if r.returncode != 0:
+            _tail = ((r.stdout or "") + (r.stderr or ""))[-500:]
+            print("⚠ 廣播沒落地（棋步已存檔，酒館少一則盤面）— exit", r.returncode, _tail, file=sys.stderr)
+            return False
         return True
-    except Exception:
+    except subprocess.TimeoutExpired:
+        print("⚠ 廣播逾時 90s（棋步已存檔，酒館少一則盤面）—— "
+              "先 ls -l 那條分道的 trigger 看 mtime，再決定要不要重發", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"⚠ 廣播失敗（棋步已存檔，酒館少一則盤面）：{e}", file=sys.stderr)
         return False
 
 

@@ -101,7 +101,18 @@ namespace UCL.Core.EditorLib.AgentCommands
             try
             {
                 string root = UCL_LettersPath.Root;
-                if (!Directory.Exists(root)) return list;
+                if (!Directory.Exists(root))
+                {
+                    // 整個 letters 根不見時**要出聲** —— 對齊下面那格已經替「persona 欄對不上」做的事，
+                    // 以及 SCP 端 `SCP_PersonaLetters.Scan`（那支已經把它記進 Problems）。
+                    // 🩸 TASK-0105 §四①（@summit 2026-09-03 指認 python 那半、@calli 2026-09-07 實測）：
+                    //   靜默回空清單會讓「**沒有人在線**」與「**我讀不到 letters 根**」同形，
+                    //   而在線名單的消費端（catchup／登入頁／收工閘）都是把空清單讀成「沒有人」。
+                    // ⚠ 本單把 lock 收成**唯一**一個位置 ⇒ 那個位置讀不到時更該叫，不是更不必叫。
+                    Debug.LogWarning($"[ActivePersonaLocks] letters 根不存在 ⇒ **讀不到**，不是「沒有人在線」：{root}"
+                                     + "（submodule 沒 init？UCL_LettersPath.Root 設定錯？）");
+                    return list;
+                }
                 foreach (string personaDir in Directory.GetDirectories(root))
                 {
                     string file = UCL_LettersPath.SessionLock(Path.GetFileName(personaDir));

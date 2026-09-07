@@ -948,6 +948,13 @@ def find_lock_by_session_key(session_key: str) -> dict | None:
 def list_locks() -> list:
     out = []
     if not _LETTERS_DIR_TPL.exists():
+        # 整個 letters 根不見時**要出聲** —— 對齊下面那一格已經替壞檔做的事
+        # （TASK-0105 §四①，@summit 2026-09-03 指認、@calli 2026-09-07 隔離實測）。
+        # 🩸 為什麼一行也要寫：靜默回空讓「沒有人在線」與「我讀不到 letters 根」同形，
+        #   而下游（tavern_cmd）把空清單讀成「本層沒有答案 ⇒ 放行」。
+        #   ⚠ 本單把 lock 收成**唯一**一個位置 ⇒ 那個位置讀不到時更該叫，不是更不必叫。
+        print(f"⚠ [presence] letters 根不存在 ⇒ **讀不到**，不是「沒有人在線」：{_LETTERS_DIR_TPL}"
+              f"（submodule 沒 init？根設定錯？）", file=sys.stderr)
         return out
     # lock 住 letters/<persona>/profile/_session.json（TASK-0105）—— 位置決定歸屬：
     # 檔住在誰的 profile/ 底下就是誰的 lock，body 的 persona 欄對不上時以目錄名為準並出聲。

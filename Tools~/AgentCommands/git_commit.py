@@ -123,8 +123,12 @@ def build_trailers(personas: list, allow_unset: bool, strict_email_source: bool 
                 problems.append(msg + "　⇒ `--strict-email-source` 已開，擋下提交")
             else:
                 print(f"⚠ {msg}", file=sys.stderr)
+                # ⚠ 這句 2026-09-07 改過：原本寫「請把 Editor 開起來」——
+                #   TASK-0157 ③ 之後接縫第一段是 `senate cmd persona`（本地 C#），
+                #   開 Editor 對這一格**沒有作用**。指著舊路的指路牌比沒有指路牌貴。
                 print(f"   ⇒ 要它擋下提交請帶 `--strict-email-source`；"
-                      f"要拿現場值請把 Editor 開起來（接縫第一段走 Cmd）", file=sys.stderr)
+                      f"⚠ 走到這裡代表 `senate cmd persona` 沒跑成（原因印在上一行的接縫警語）",
+                      file=sys.stderr)
                 notes.append(msg)
         if email == UNSET_SENTINEL or not looks_like_email(email):
             msg = f"{persona} 的信箱未設定或格式可疑（{email}）—— 到 Editor 的 Persona & Agent 管理頁設定"
@@ -359,7 +363,7 @@ def main() -> int:
     #    這條政策偷偷夾帶進一支 bug 修復裡 —— 那是要有人拍板的事，不是 dev 順手決定的。
     #    ⇒ 預設：提交**之前**大聲印一行（看得見）；要它變成閘門就顯式帶這個旗標。
     ap.add_argument("--strict-email-source", action="store_true",
-                    help="信箱不是 Editor 現場值（snapshot / local-parse / unknown）就拒絕提交")
+                    help="信箱不是現場值（snapshot / local-parse / unknown）就拒絕提交")
     ap.add_argument("--dry-run", action="store_true", help="只印組出來的訊息，不提交")
     ap.add_argument("--expect-files", type=int, default=None,
                     help="宣告這一筆應該收幾個檔；與實際 staged 數不符就擋下不提交"

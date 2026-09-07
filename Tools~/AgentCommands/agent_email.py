@@ -207,8 +207,12 @@ def stale_risk_note(info: dict) -> str:
         return ""
     at = (info or {}).get("snapshot_at") or ""
     when = f"，快照時間 {at}" if at else ""
-    return (f"信箱取自 **{ds}**（非 Editor 現場值{when}）—— "
-            f"profile 若在那之後改過，這個值就是舊的，而它會被寫進改不掉的 git history")
+    # ⚠ 措辭 2026-09-07 改過一次：這裡原本寫「非 **Editor** 現場值」——
+    #   而 TASK-0157 ③ 之後現場值來自 `senate cmd persona`（本地 C#），跟 Editor 開不開沒有關係。
+    #   一句**指著已經不存在的那條路**的警語，會讓人去開 Editor 然後發現沒有用。
+    return (f"信箱取自 **{ds}**（不是現場值{when}）—— "
+            f"profile 若在那之後改過，這個值就是舊的，而它會被寫進改不掉的 git history。"
+            f"現場值走 `senate cmd persona`（本地跑，不需要 Editor）")
 
 
 def looks_like_email(value: str) -> bool:

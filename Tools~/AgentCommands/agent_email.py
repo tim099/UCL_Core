@@ -19,7 +19,11 @@ agent_email.py — agent 預設信箱 + persona override 的唯一解析點（py
 
 import 用法:
   from agent_email import resolve_email
-  info = resolve_email("basecamp")   # {"email":..., "source":..., "actual_agent":...}
+  info = resolve_email("basecamp")
+  # {"email":..., "source":..., "actual_agent":..., "data_source":..., "snapshot_at":...}
+  # ⚠ `source`（解析規則出身）與 `data_source`（接縫段別 live/snapshot/local-parse）是兩把尺：
+  #    source="persona-override" 只說「這人有自己的信箱」，**不說那個值是不是現在的值**。
+  #    要一句現成的警語走 `stale_risk_note(info)`（非現場值才回非空字串）。
 """
 
 from __future__ import annotations
@@ -134,24 +138,77 @@ def load_persona(persona: str) -> dict:
         return {}
 
 
+# ═══════════════════════════════════════════════════════════════════
+# 區塊職責：回答「這個 persona 該用哪個信箱」＋**那個值是從哪一段 fallback 讀出來的**。
+#
+# 物理意義：`source` 與 `data_source` 是**兩把不同的尺**，而它們以前只有一把：
+#   - `source`      ＝ 這個值在**解析規則**上的出身（persona 自己的／agent 預設／全域 fallback／沒設）
+#   - `data_source` ＝ 那份 persona 資料本身是**哪一段接縫**給的（live / snapshot / local-parse）
+#   ⇒ `source="persona-override"` 只說「這人有自己的信箱」，**完全不說那個值是不是現在的值**。
+#
+# 🩸 TASK-0082（BUG-19）的原始診斷是「tier-3 讀 legacy 看不到新值」——
+#   那句話在 2026-08-21 之後**已經不成立**（`_local_parse` 現在直接讀 `letters/<p>/profile/`）。
+#   而 2026-09-07 的活體對拍量到：**沒有消失的是 tier-2** ——
+#     profile/email.md 改成 `divergence-probe-0082@test.invalid` 之後
+#       live        → divergence-probe-0082@test.invalid（現場值）
+#       local-parse → divergence-probe-0082@test.invalid（直接讀 profile/）
+#       **snapshot  → basecamp05122026@gmail.com（舊值，而 `source` 照樣回 persona-override）**
+#   ⇒ 病沒有被治好，它**換了一層**：拿舊快照組出來的 trailer 跟拿現場值組出來的**長得一模一樣**，
+#     而落點是改不掉的 git history。
+#
+# 數值影響：新增兩個鍵（`data_source` / `snapshot_at`），既有三個鍵語意**不變**
+#   ⇒ 既有呼叫端（git_commit / commit-msg hook）不會因此改變行為。
+#   讀不到接縫狀態時回 `"unknown"` —— ⛔ 不預設 "live"：那會讓「不知道」與「現場值」同形，
+#   而這整張單修的就是那個形狀。
+# ═══════════════════════════════════════════════════════════════════
+def data_source_info() -> dict:
+    """本 process 的 persona 資料來源（接縫的三段 fallback 走到哪一段）。"""
+    try:
+        info = _persona_profile().source_info() or {}
+        return {"data_source": str(info.get("source") or "unknown"),
+                "snapshot_at": str(info.get("snapshot_at") or "")}
+    except Exception as e:
+        print(f"⚠ [agent_email] 讀不到接縫來源（{e}）—— 標成 unknown，不猜成 live", file=sys.stderr)
+        return {"data_source": "unknown", "snapshot_at": ""}
+
+
 def resolve_email(persona: str) -> dict:
-    """persona.email → defaults[actual_agent] → fallback → 哨兵。回值一律含 source。"""
+    """persona.email → defaults[actual_agent] → fallback → 哨兵。
+
+    回值一律含 `source`（解析規則出身）與 `data_source`（接縫段別）—— 兩者不可互推。
+    """
     p = load_persona(persona)
+    ds = data_source_info()
     actual_agent = (p.get("actual_agent") or "").strip()
     own = (p.get("email") or "").strip()
     if own:
-        return {"email": own, "source": "persona-override", "actual_agent": actual_agent}
+        return {"email": own, "source": "persona-override", "actual_agent": actual_agent, **ds}
 
     reg = load_registry()
     defaults = reg.get("defaults") or {}
     by_agent = (defaults.get(actual_agent) or "").strip() if actual_agent else ""
     if by_agent:
-        return {"email": by_agent, "source": "agent-default", "actual_agent": actual_agent}
+        return {"email": by_agent, "source": "agent-default", "actual_agent": actual_agent, **ds}
 
     fallback = (reg.get("fallback") or "").strip()
     if fallback:
-        return {"email": fallback, "source": "fallback", "actual_agent": actual_agent}
-    return {"email": UNSET_SENTINEL, "source": "unset", "actual_agent": actual_agent}
+        return {"email": fallback, "source": "fallback", "actual_agent": actual_agent, **ds}
+    return {"email": UNSET_SENTINEL, "source": "unset", "actual_agent": actual_agent, **ds}
+
+
+def stale_risk_note(info: dict) -> str:
+    """非現場值 ⇒ 回一句「這個信箱可能過期」的警語；現場值回空字串。
+
+    ⚠ 判準是**不是 live 就出聲**（含 `unknown`），不是「只有 snapshot 才出聲」——
+      漏報一次的代價寫進 git history 就改不掉，誤報一次的代價是多讀一行字。
+    """
+    ds = (info or {}).get("data_source") or "unknown"
+    if ds == "live":
+        return ""
+    at = (info or {}).get("snapshot_at") or ""
+    when = f"，快照時間 {at}" if at else ""
+    return (f"信箱取自 **{ds}**（非 Editor 現場值{when}）—— "
+            f"profile 若在那之後改過，這個值就是舊的，而它會被寫進改不掉的 git history")
 
 
 def looks_like_email(value: str) -> bool:
@@ -179,9 +236,15 @@ def cmd_resolve(args) -> int:
     if args.json:
         print(json.dumps(info, ensure_ascii=False))
     elif args.verbose:
-        print(f"{info['email']}  (source={info['source']}, actual_agent={info['actual_agent'] or '?'})")
+        print(f"{info['email']}  (source={info['source']}, data_source={info['data_source']}"
+              f"{', snapshot_at=' + info['snapshot_at'] if info.get('snapshot_at') else ''}"
+              f", actual_agent={info['actual_agent'] or '?'})")
     else:
         print(info["email"])
+    # 非現場值一律出聲（連 --json 也印在 stderr —— 那條路的消費端是腳本，它更不會自己去問）
+    risk = stale_risk_note(info)
+    if risk:
+        print(f"WARN: {args.persona} {risk}", file=sys.stderr)
     # 沒設定 / 不像位址 → 非零退出，讓 caller 有機會停下來而不是把哨兵寫進 commit
     if info["source"] in ("unset",) or not looks_like_email(info["email"]):
         print(f"WARN: {args.persona} 的信箱未設定或格式可疑（{info['email']}）—— "
@@ -207,6 +270,12 @@ def cmd_list(args) -> int:
         print(f"  {a:<14} {v}")
     print(f"  {'(fallback)':<14} {reg.get('fallback') or '(未設定)'}")
     print()
+    # 接縫段別是**每個 process 一個值**（`_STATE` 快取）⇒ 印一行標頭，不逐列重複。
+    ds = data_source_info()
+    mark = "✅" if ds["data_source"] == "live" else "⚠"
+    at = f"（快照時間 {ds['snapshot_at']}）" if ds["snapshot_at"] else ""
+    print(f"{mark} persona 資料來源：**{ds['data_source']}**{at}"
+          + ("" if ds["data_source"] == "live" else " —— 下面每一格都可能是舊值"))
     print(f"# persona 解析結果（{len(rows)} 位）")
     for name, agent, email, source in rows:
         mark = "⚠" if source in ("unset",) or not looks_like_email(email) else " "
@@ -217,6 +286,9 @@ def cmd_list(args) -> int:
 def cmd_trailer(args) -> int:
     print(build_trailer(args.persona))
     info = resolve_email(args.persona)
+    risk = stale_risk_note(info)
+    if risk:
+        print(f"WARN: {args.persona} {risk}", file=sys.stderr)
     return 0 if looks_like_email(info["email"]) else 3
 
 

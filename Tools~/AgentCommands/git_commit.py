@@ -51,7 +51,8 @@ try:
 except Exception:
     pass
 
-from agent_email import resolve_email, load_persona, looks_like_email, UNSET_SENTINEL, _data_root  # noqa: E402
+from agent_email import (resolve_email, load_persona, looks_like_email, stale_risk_note,  # noqa: E402
+                         UNSET_SENTINEL, _data_root)
 from agent_model import resolve_model, format_trailer_model  # noqa: E402
 
 EXIT_OK, EXIT_BAD_ARGS, EXIT_UNSET_EMAIL, EXIT_NOTHING_STAGED, EXIT_COMMIT_FAIL = 0, 2, 3, 4, 5
@@ -82,11 +83,17 @@ def git(repo: str, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, encoding="utf-8")
 
 
-def build_trailers(personas: list, allow_unset: bool) -> tuple:
+def build_trailers(personas: list, allow_unset: bool, strict_email_source: bool = False) -> tuple:
     """persona 清單 → (trailer 行清單, 錯誤訊息清單, 注意事項清單)。
 
     注意事項 = 「能跑但值得知道」的狀況（例如信箱吃的是全域 fallback 而不是自己的）——
     它不該擋提交，但也不該完全不出聲：那正是會被默默帶進 history 的那種東西。
+
+    🩸 TASK-0082：而「不完全不出聲」以前是假的 —— `notes` 是在 `git commit` **成功之後**
+    才印的（本檔 main 的收尾段）。⇒ 對「信箱可能是舊的」這種問題，那個位置等於沒有守衛：
+    人讀到警語的時候，錯的 trailer 已經在改不掉的 history 裡了。
+    ⇒ 非現場值的警語**在這裡就印**（stderr，提交之前），notes 只留一份備查。
+    `strict_email_source=True` 則升級成 problem（擋下提交）—— 預設不擋，理由見 `main` 的旗標說明。
     """
     lines, problems, notes, seen = [], [], [], set()
     for persona in personas:
@@ -108,6 +115,17 @@ def build_trailers(personas: list, allow_unset: bool) -> tuple:
         email = info["email"]
         if info["source"] == "fallback":
             notes.append(f"{persona} 的信箱吃全域 fallback（{email}），不是自己的位址")
+        # 非現場值：**提交之前**就出聲（notes 印在提交之後，對這一格來說太晚了）
+        risk = stale_risk_note(info)
+        if risk:
+            msg = f"{persona}（{email}）{risk}"
+            if strict_email_source:
+                problems.append(msg + "　⇒ `--strict-email-source` 已開，擋下提交")
+            else:
+                print(f"⚠ {msg}", file=sys.stderr)
+                print(f"   ⇒ 要它擋下提交請帶 `--strict-email-source`；"
+                      f"要拿現場值請把 Editor 開起來（接縫第一段走 Cmd）", file=sys.stderr)
+                notes.append(msg)
         if email == UNSET_SENTINEL or not looks_like_email(email):
             msg = f"{persona} 的信箱未設定或格式可疑（{email}）—— 到 Editor 的 Persona & Agent 管理頁設定"
             if allow_unset:
@@ -336,6 +354,12 @@ def main() -> int:
     ap.add_argument("--message-file", help="從檔案讀 commit 訊息")
     ap.add_argument("--allow-unset", action="store_true",
                     help="信箱未設定仍提交（預設拒絕 —— 假位址進了 history 就改不掉）")
+    # ⚠ 預設**不擋**是刻意的，而理由不是「風險比較小」：接縫的第二／第三段是**設計上的正常路徑**
+    #    （Editor 沒開時本來就該走得完），把它預設擋掉等於把「Editor 沒開就不能提交」
+    #    這條政策偷偷夾帶進一支 bug 修復裡 —— 那是要有人拍板的事，不是 dev 順手決定的。
+    #    ⇒ 預設：提交**之前**大聲印一行（看得見）；要它變成閘門就顯式帶這個旗標。
+    ap.add_argument("--strict-email-source", action="store_true",
+                    help="信箱不是 Editor 現場值（snapshot / local-parse / unknown）就拒絕提交")
     ap.add_argument("--dry-run", action="store_true", help="只印組出來的訊息，不提交")
     ap.add_argument("--expect-files", type=int, default=None,
                     help="宣告這一筆應該收幾個檔；與實際 staged 數不符就擋下不提交"
@@ -359,7 +383,8 @@ def main() -> int:
         print("ERROR: commit 訊息是空的（用 -m / --message-file / stdin）", file=sys.stderr)
         return EXIT_BAD_ARGS
 
-    trailers, problems, notes = build_trailers(args.persona, args.allow_unset)
+    trailers, problems, notes = build_trailers(args.persona, args.allow_unset,
+                                               args.strict_email_source)
     if problems:
         for msg in problems:
             print(f"ERROR: {msg}", file=sys.stderr)

@@ -1234,13 +1234,13 @@ def cmd_recompile(args: argparse.Namespace) -> int:
     #   seen_start=True  → 開始了但沒跑完（大型編譯／卡在 domain reload）
     if seen_start:
         print(f"  ⚠ compile 已開始但 {args.timeout}s 內沒結束（in_progress 一直是 true）。"
-              f"大型編譯或卡在 domain reload —— 加大 --timeout 或稍後用 check_compile.py 查。",
+              f"大型編譯或卡在 domain reload —— 加大 --timeout 或改走 `senate cmd unity-recompile`（它等的是你那一趟）。",
               file=sys.stderr)
     else:
         print(f"  ⚠ {args.timeout}s 內 compile 連開始都沒有（status 沒推進到 in_progress=true）。"
               f"Unity 常把外部改檔的重編遞延到視窗重獲焦點 —— 把 Unity 切到前景再試。"
               f"想確認「這段時間到底有沒有編譯過」看心跳停跳台帳："
-              f"check_compile.py 的 STALE 區塊會印。",
+              f"`senate cmd unity-compile-status` 會印（它會說明自己不知道那是不是你的改動）。",
               file=sys.stderr)
     return 4
 

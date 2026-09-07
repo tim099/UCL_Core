@@ -11,13 +11,19 @@ check_compile.py — 讀 UCL_CompileErrorTracker 寫入的 .compile_status.json�
   - Fallback：若 .compile_status.json 不存在（Tracker 從沒跑過），可用
     --fallback-log 開關去解析 Unity Editor.log（messy 但永遠都在）。
 
+⚠ **本支不再是主入口（2026-09-07）** —— 主入口是 Senate CLI：
+  senate cmd unity-recompile --arg persona=<me>   # 觸發＋等到**那一趟**結束才印
+  senate cmd unity-compile-status                 # 只讀現況，不觸發、不需要 Editor
+  留著本支是因為 --fallback-log 與 --editor-alive 那兩格 CLI 還沒移。
+  ⛔ --watch 已下架（TASK-0154：回上一次的快照且不印 STALE）。
+
 用法：
   python check_compile.py                       # 印 markdown 報告（預設）
   python check_compile.py --errors-only         # 只看 Error
   python check_compile.py --max 10              # 限制最多 10 筆
   python check_compile.py --format json         # 機器讀
-  python check_compile.py --watch               # 等下次編譯結束才印
-  python check_compile.py --fallback-log        # 讀 Editor.log fallback
+  python check_compile.py --fallback-log        # 讀 Editor.log fallback（CLI 未移）
+  python check_compile.py --editor-alive        # Editor 還在不在 tick（CLI 未移）
 
 Exit codes：
   0 = 編譯成功，0 errors
@@ -326,6 +332,37 @@ def render_markdown(data: dict, msgs: list[dict], errors_only: bool, max_count: 
     return "\n".join(lines)
 
 
+# ───────────────── 主入口已改為 Senate CLI（2026-09-07） ─────────────────
+# 區塊職責：每一條輸出路徑都要說出「這支不再是主入口」。
+# 物理意義：本支**沒有退場**（`--fallback-log` / `--editor-alive` CLI 還沒移），
+#          所以它不能是 stub；但它也不該繼續被當成預設路徑 ——
+#          而「文件改了、工具自己還在教舊的」正是壞掉指路牌那一族（TASK-0130）。
+# ⚠ 指路要印在**它自己的輸出裡**，不是只印在文件裡：
+#   讀這份輸出的人此刻沒有在讀文件，他在讀這個綠燈或紅燈。
+MIGRATION_LINES = [
+    "> ⚠ **本支不再是主入口**（2026-09-07）—— 改用 Senate CLI：",
+    "> ```bash",
+    "> senate cmd unity-recompile --arg persona=<me>   # 觸發＋等到**那一趟**結束才印",
+    "> senate cmd unity-compile-status                 # 只讀現況，不觸發、不需要 Editor",
+    "> ```",
+    "> 本支留著是因為 `--fallback-log`（解 Editor.log）與 `--editor-alive`（心跳）CLI 還沒移。",
+    "> ⛔ **`--watch` 已下架**（TASK-0154：它會回上一次的快照且不印 STALE）。",
+    "> ⛔ 兩支 CLI 都只量 Unity assemblies，**不涵蓋 `senate.exe`**（那條走 `dotnet build` / `build.sh`）。",
+]
+
+MIGRATION_JSON = {
+    "deprecated_as_primary": True,
+    "since": "2026-09-07",
+    "use_instead": [
+        "senate cmd unity-recompile --arg persona=<me>",
+        "senate cmd unity-compile-status",
+    ],
+    "still_only_here": ["--fallback-log", "--editor-alive"],
+    "removed": ["--watch"],
+    "scope_note": "CLI 兩支只量 Unity assemblies，不涵蓋 senate.exe",
+}
+
+
 def render_json(data: dict, msgs: list[dict], stale: dict | None = None) -> str:
     out = {
         "timestamp": data.get("timestamp"),
@@ -338,6 +375,9 @@ def render_json(data: dict, msgs: list[dict], stale: dict | None = None) -> str:
         # 而它們（腳本）比人更不會去看旁邊那行字。
         "stale": bool(stale),
         "staleness": stale,
+        # ⚠ 指路也要進 json：只在 md 印的話，`--format json` 的呼叫端永遠不會知道主入口換了
+        #   （同 stale 欄位當初進來的理由 —— 腳本比人更不會去看旁邊那行字）。
+        "migration": MIGRATION_JSON,
         "messages": msgs,
     }
     return json.dumps(out, indent=2, ensure_ascii=False)
@@ -713,12 +753,14 @@ def main() -> int:
                    help="Max messages to show (default 50, 0 = unlimited)")
     p.add_argument("--format", choices=["md", "json"], default="md",
                    help="Output format (default md)")
+    # ⛔ 旗標留著不刪 —— 刪掉的話舊呼叫端得到的是 argparse 的「unrecognized arguments」，
+    #   而那句話不會告訴任何人主入口搬到哪裡去了。留著它，就有地方講。
     p.add_argument("--watch", action="store_true",
-                   help="Wait until compile finishes (in_progress=false), then print")
+                   help="⛔ 已下架（TASK-0154）—— 會回上一次的快照。改用 senate cmd unity-recompile")
     p.add_argument("--watch-timeout", type=float, default=120,
-                   help="Max seconds to wait in --watch mode (default 120)")
+                   help="（隨 --watch 一起下架，留著只為讓舊呼叫端不炸在 argparse）")
     p.add_argument("--watch-poll", type=float, default=1.0,
-                   help="Poll interval for --watch (default 1.0s)")
+                   help="（隨 --watch 一起下架，留著只為讓舊呼叫端不炸在 argparse）")
     p.add_argument("--fallback-log", action="store_true",
                    help="If .compile_status.json missing, parse Unity Editor.log instead")
     p.add_argument("--editor-alive", action="store_true",
@@ -741,19 +783,36 @@ def main() -> int:
     # --editor-alive 是獨立查詢：純 stat 一個檔，不碰 compile status、不送 Cmd。
     # 刻意做成附加旗標而非改寫既有路徑 —— 既有呼叫端行為一個字都不變。
     if args.editor_alive:
-        return check_editor_alive()
+        rc = check_editor_alive()
+        # 這一格 CLI 還沒移 ⇒ 走這條是對的，但仍要說出「主入口在別處」。
+        print()
+        for line in MIGRATION_LINES:
+            print(line)
+        return rc
 
-    # --watch：等到 in_progress=false
+    # ⛔ --watch 已下架（TASK-0154，2026-09-07）
+    # 區塊職責：擋下，並指路。**不是印一行警告然後照跑** ——
+    # 它的失效樣子是一個綠燈，而綠燈旁邊的提醒攔不住一個正要收工的人。
+    # 🩸 舊實作的洞：結束條件只有 `in_progress=false`，而**觸發還沒開始時那已經是 false**
+    #   ⇒ 直接返回上一次的快照。實測（2026-09-07）：送出 recompile 後立刻 --watch，
+    #   印出的是三天前 `2026-09-04T17:14` 那份、`Errors: 0`，**而且沒印 STALE 橫幅**
+    #   —— 不帶 --watch 時同一支工具有印。
+    # ⇒ 修法不在這裡：`senate cmd unity-recompile` 拿**送出觸發的那一刻**當基準
+    #   （取在 Submit 之前），那個洞在新結構裡不存在。
     if args.watch:
-        deadline = time.time() + args.watch_timeout
-        while time.time() < deadline:
-            data = load_status()
-            if data is not None and not data.get("in_progress", False):
-                break
-            time.sleep(args.watch_poll)
-        else:
-            print(f"[check_compile] watch timeout after {args.watch_timeout}s "
-                  f"— compile still in_progress or no status file.", file=sys.stderr)
+        for line in [
+            "⛔ `--watch` 已下架（TASK-0154）—— 它會回上一次的快照，而且不印 STALE。",
+            "",
+            "改用：",
+            "    senate cmd unity-recompile --arg persona=<me>",
+            "",
+            "它送出觸發、拿**送出的那一刻**當基準，等到晚於基準且編譯結束的那一份才印；",
+            "等不到就 exit 4 明說「沒有量到」，⛔ 不退回印上一次那份。",
+            "",
+            "只想看現況（不觸發、不需要 Editor）：senate cmd unity-compile-status",
+        ]:
+            print(line, file=sys.stderr)
+        return 2
 
     data = load_status()
     if data is None:
@@ -808,6 +867,10 @@ def main() -> int:
         print(render_json(data, msgs, stale))
     else:
         print(render_markdown(data, msgs, args.errors_only, args.max, stale, xcheck))
+        # 指路印在**最後** —— 印在最前面會被當成檔頭跳過，而讀的人是從結論往回讀。
+        print()
+        for line in MIGRATION_LINES:
+            print(line)
 
     if stale and args.strict_fresh:
         return 4

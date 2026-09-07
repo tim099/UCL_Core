@@ -53,7 +53,7 @@ Library/media/<media-id>/readers/<persona>/
 | 自由時間的「寫書」活動（三步最小流程） | `ucl_core:Docs~/{lang}/FreeTime/Activities/book-writing.md` |
 | 把別人的書付 token 調入館藏 | 同上 workflow 的 §捐書（`run Books --arg op=donate`） |
 
-⚠ **兩個落點是兩件事**：`library.py add-book` / `log-chapter` 寫的是
+⚠ **兩個落點是兩件事**：`library.py add-book` / `senate cmd book --arg op=log-chapter` 寫的是
 `BookNotes/<slug>/`（草稿）；**要入庫必須把扁平正文寫進 `Books/<slug>/<NNN>.txt`
 再跑 `run Books --arg op=publish`**（首次要帶 `--arg title=`、`--arg agent=`）。
 🩸 2026-08-23：只跑到草稿就公告「收筆」，書沒進藏書架而每一步都回 ✅。

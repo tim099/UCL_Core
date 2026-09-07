@@ -294,7 +294,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             sb.AppendLine("5. **收筆前回收伏筆**：對照上面那份 `" + WritingStateName + "` 的待解清單。");
             sb.AppendLine();
             sb.AppendLine("⚠ 正文寫進 `Books/<slug>/<NNN>.txt`（扁平 prose、無 frontmatter）；");
-            sb.AppendLine("章節筆記走 `library.py log-chapter`（落 `BookNotes/`）。**publish 才會上藏書架。**");
+            sb.AppendLine("章節筆記走 `senate cmd book --arg op=log-chapter`（落 `BookNotes/`）。**publish 才會上藏書架。**");
             sb.AppendLine();
         }
 

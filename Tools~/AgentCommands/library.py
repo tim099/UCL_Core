@@ -435,43 +435,38 @@ def cmd_prepare(args):
 
 
 def cmd_log_chapter(args):
-    book = args.book
-    bk = _require_book(book)
-    n = int(args.chapter)
-    slug = _slugify(args.slug or args.title or f"ch{n}")
-    fname = f"ch{n:02d}_{slug}.md"
-    fpath = _book_dir(book) / "chapters" / fname
+    """⛔ 已退場（TASK-0143，2026-09-07 Tim 拍 ②-bis (a)）—— 指路 stub，**不寫任何檔**。
 
-    body = [
-        _frontmatter({
-            "book": book, "chapter": n, "title": args.title or "",
-            "reading_date": _today(),
-            "new_characters": _split_list(args.new_characters),
-        }),
-        "",
-        "## 內容摘要",
-        args.summary or "（待補）",
-        "",
-        "## 關鍵事件",
-    ]
-    for e in (_split_list(args.events) or ["（待補）"]):
-        body.append(f"- {e}")
-    body += ["", "## 本章對人物的新認識"]
-    for v in (_split_list(args.views) or ["（待補）"]):
-        body.append(f"- {v}")
-    body += ["", "## 伏筆 / 待解"]
-    for fs in (_split_list(args.foreshadow) or ["（無）"]):
-        body.append(f"- {fs}")
-    body.append("")
-    _atomic_write(fpath, "\n".join(body))
-
-    if n > int(bk["progress"].get("current_chapter", 0)):
-        bk["progress"]["current_chapter"] = n
-    bk["progress"]["last_read"] = _today()
-    _write_json(_book_json(book), bk)
-    print(f"✅ 記錄章節: {book} ch{n}  → {fname}")
-    return 0
-
+    ⚠ 退場理由跟 donate／publish 那幾支**不一樣，照實寫清楚**：
+      那幾支是政策退場、**沒有做過行為對拍**；這一支**做過**，三層讀數都在：
+      ① clean-room 六檔逐位元組全同；
+      ② **真根活體**（測試專用 slug、同章號先 py 後還原再 C#）：
+         main `ch01` **251 bytes 相同**／`book.json` **490 相同**／
+         **已存在分支** `ch02` **267 相同**／分支 `book.json` **409 相同**；
+      ③ 進了 `senate selftest`（`log-chapter／arc clean-room`，七格斷言，且驗過它紅得出來）。
+    ⭐ **落點沒有變**：兩邊寫的是同一個檔（`BookNotes/<slug>/chapters/ch<NN>_<slug>.md`
+      ＋ bump 同目錄 `book.json` 的 `progress`）⇒ 換入口**不搬資料**。
+    ⚠ 但**旗標形狀變了**：`--book x --chapter 1` ⇒ `--arg book=x --arg chapter=1`（k=v，不是 flag value）；
+      `--reader <p>` ⇒ `--arg reader=<p>`。
+    """
+    print("⛔ library.py log-chapter 已退場（TASK-0143，2026-09-07）——本子指令不再寫任何檔。",
+          file=sys.stderr)
+    print("   新入口（本地跑，不需要 Editor）：", file=sys.stderr)
+    print("     senate cmd book --arg op=log-chapter --arg book=<slug> --arg chapter=<N> \\",
+          file=sys.stderr)
+    print("         [--arg title=<章名>] [--arg summary=…] [--arg events=甲;乙] [--arg views=…]",
+          file=sys.stderr)
+    print("         [--arg new_characters=…] [--arg foreshadow=…] [--arg reader=<persona>]",
+          file=sys.stderr)
+    print("   ⚠ 參數是 `--arg k=v`，⛔ 不是 `--flag value`；`--new-characters` ⇒ `new_characters`。",
+          file=sys.stderr)
+    print("   ⭐ 落點與本支相同（同一個 chapters/ 檔與同一份 book.json）⇒ 舊資料不必動。",
+          file=sys.stderr)
+    print("   ℹ 走自由時間代跑的話**不用改打法**：`reading` / `book-writing` 兩個活動 md 的",
+          file=sys.stderr)
+    print("     `cmd_steps` 已把這一步路由過去（`op=step` 的回傳檔會印『路線: in-process cmd』）。",
+          file=sys.stderr)
+    return 2
 
 def cmd_add_character(args):
     book = args.book
@@ -1392,35 +1387,25 @@ def _arc_dir(book: str) -> Path:
 
 
 def cmd_arc(args):
-    # 區塊職責: 記一個跨章「階段大綱」— 比 per-chapter 高一層的見林視角
-    # 物理意義: 每讀 ~6 章(或一個自然 arc 邊界)收束一次, 抓貫穿線索與大局走向
-    # 數值影響: 寫 <book>/arcs/arc_<range>.md + 在 book.json arcs[] 登記索引
-    book = args.book
-    _require_book(book)
-    chapters = args.chapters
-    fslug = re.sub(r"[^0-9]+", "-", chapters).strip("-") or "x"
-    fname = f"arc_{fslug}.md"
-    body = [
-        _frontmatter({"book": book, "chapters": chapters, "title": args.title or "", "date": _today()}),
-        "",
-        "## 階段大綱（見林）",
-        args.summary or "（待補）",
-        "",
-        "## 貫穿線索 / 伏筆狀態",
-    ]
-    for t in (_split_list(args.threads) or ["（待補）"]):
-        body.append(f"- {t}")
-    body.append("")
-    _atomic_write(_arc_dir(book) / fname, "\n".join(body))
+    """⛔ 已退場（TASK-0143，2026-09-07 Tim 拍 ②-bis (a)）—— 指路 stub，**不寫任何檔**。
 
-    bk = _read_json(_book_json(book))
-    arcs = [a for a in bk.get("arcs", []) if a.get("chapters") != chapters]
-    arcs.append({"chapters": chapters, "title": args.title or "", "file": fname, "date": _today()})
-    bk["arcs"] = arcs
-    _write_json(_book_json(book), bk)
-    print(f"✅ 階段大綱: {book} 第 {chapters} 章 — {args.title or ''}")
-    return 0
-
+    ⚠ 同 `log-chapter`：這一支**做過逐位元組對拍**（clean-room `arc_1-6.md` 188 bytes 相同、
+      `book.json` 591 相同、真根活體 `op=arc` 走通、並進了 `senate selftest`）。
+    ⭐ 行為細節照抄過去了，含一個容易漏的順序副作用：**同一個 `chapters` 範圍會取代舊那筆，
+      而取代後那筆會移到 `arcs[]` 的尾端**（selftest 有一格專門盯它）。
+    """
+    print("⛔ library.py arc 已退場（TASK-0143，2026-09-07）——本子指令不再寫任何檔。",
+          file=sys.stderr)
+    print("   新入口（本地跑，不需要 Editor）：", file=sys.stderr)
+    print("     senate cmd book --arg op=arc --arg book=<slug> --arg chapters=<如 1-6> \\",
+          file=sys.stderr)
+    print("         [--arg title=<這段的標題>] [--arg summary=…] [--arg threads=線索甲;線索乙]",
+          file=sys.stderr)
+    print("         [--arg reader=<persona>]", file=sys.stderr)
+    print("   ⚠ 參數是 `--arg k=v`，⛔ 不是 `--flag value`。", file=sys.stderr)
+    print("   ⭐ 落點與本支相同（`<book>/arcs/arc_<範圍>.md` ＋ 同一份 book.json 的 `arcs[]`）。",
+          file=sys.stderr)
+    return 2
 
 def cmd_arcs(args):
     book = args.book

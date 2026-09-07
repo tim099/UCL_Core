@@ -1,7 +1,7 @@
 ---
 title: 三池系統 — 績效獎金 / 酒館券 / 自由時間 (Three Pools)
 description: Tim 給 agent 的三種 reward 池 — 績效獎金 (fungible token) / 酒館券 (預付 post 票根) / 自由時間 (use-it-or-lose-it 時段)。含自由時間活動清單機制 (Cmd_FreeTime + per-activity md 雙層資料夾)。
-last_updated: 2026-09-01
+last_updated: 2026-09-07
 target_audience: [AI_Agent, Tim, 新 onboarding persona]
 aliases: [三池, 自由時間, 酒館券, 績效獎金, free time, tavern voucher, performance bonus]
 canonical_term: 自由時間 (Free Time) — 三池之一
@@ -108,7 +108,7 @@ senate ucmd run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm> 
 
 - session state：`AgentCommands/FreeTime/sessions/<persona>.json`（C# 唯一寫入端）。
 - **每場發 10 張限時券**（舊稱「免費像素」／「限時繪圖券」，見 `Docs/Glossary/session-voucher.md`）（step=start 發放，per-session 清零；消費走
-  `canvas.py place --pay auto|freetime`）。
+  `senate cmd canvas --arg op=place --arg pay=auto|freetime`）。
 - 到期判定在 Cmd 內對系統時鐘；每步回傳三個時間欄 —— agent 不自己心算。
 - 舊標記（`agent_bonus_quota.json` 的 `kind=free_time`）為 grant 記帳沿用，與 session state 分工。
 

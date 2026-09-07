@@ -30,7 +30,7 @@ min_minutes: 20              # 選填 — 建議所需分鐘 (Cmd_FreeTime 擲�
 kind: Default                # 選填 — 特殊邏輯標記，見下節 (缺欄位 = Default)
 tool: library.py             # 選填 — 代跑用腳本 (空 = 本活動不支援 op=step 代跑)
 steps: resume, shelf, list   # 選填 — 允許代跑的子命令白名單 (空 = 即使有 tool 也不放行)
-persona_flag: --persona      # 選填 — 這支工具接身分用的旗標名 (canvas.py 是 --persona，library.py 是 --reader)
+persona_flag: --persona      # 選填 — 這支工具接身分用的旗標名 (chess.py 是 --persona，library.py 是 --reader)
 steps_need_persona: shelf, resume=--reader   # 選填 — 這些 step 由 op=step 自動補身分；`step=--flag` 可覆寫單一 step 的旗標（同一支工具不一定一致）
 ---
 
@@ -48,7 +48,7 @@ steps_need_persona: shelf, resume=--reader   # 選填 — 這些 step 由 op=ste
 
 1. **子分支的選擇沒有落盤** —— `session.activity` 只存得到組別 id，
    帳面上分不出「活動實作 1 件」做的是 2D 畫布還是 3D 雕刻。
-2. **`tool` / `steps` 掛在 md 上** ⇒ 一組裡分支用不同工具時（`canvas.py` vs `Cmd_Sculpture`），
+2. **`tool` / `steps` 掛在 md 上** ⇒ 一組裡分支用不同工具時（`chess.py` vs `Cmd_Sculpture`），
    **只有第一個分支接得到 `op=step` 代跑**，第二個分支的缺席沒有任何地方會喊。
 
 ### 骰面怎麼呈現分組

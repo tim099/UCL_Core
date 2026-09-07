@@ -50,14 +50,13 @@ def get_sculpt_dir():
 def get_cache_file():
     return get_sculpt_dir() / "sculpt_cache.json"
 
-# RGB332 Palette mapping to 256 RGB Colors
+# RGB332 index → RGB。⚠ 本檔原本自己有一份逐行相同的實作（2026-09-07 收掉）——
+# 三份同值不代表不會漂：**漂的那天沒有任何一層會叫**，只會有兩個工具對同一個 index
+# 畫出不同顏色。規則的擁有者是 `_lib/canvas_spec.py`（C# 那份是 `SCP_CanvasSpec`，兩端逐字同值）。
 def get_rgb332_color(idx):
     if idx < 0 or idx > 255:
         idx = 0
-    r = ((idx >> 5) & 0x07) * 255 // 7
-    g = ((idx >> 2) & 0x07) * 255 // 7
-    b = (idx & 0x03) * 255 // 3
-    return (r, g, b)
+    return _load_canvas_module().index_to_rgb(idx)
 
 # ───────────────── 圖片 → 已繪像素（stamp2d / stampimg 共用前端） ─────────────────
 # 區塊職責：把一張 RGBA PNG 解成「要放 voxel 的格子」清單，供投影核心 stamp_pixels 使用。
@@ -96,13 +95,17 @@ def png_to_painted(png_path, alpha_threshold=128, resize=None):
     return out, w, h
 
 
-# 區塊職責：依絕對檔案路徑載入同目錄 canvas.py（2D 端規則的唯一來源）。
-# 邊界：**不重造 replay / 調色盤 / 量化邏輯** —— 造第二份就是 2026-06-04 canvas drift bug 的形狀。
-#      不用 import canvas：本檔可能被以任意 CWD 執行，模組搜尋路徑不可靠。
+# 區塊職責：載入 2D 畫布的**規格與調色盤規則**（`_lib/canvas_spec.py`）。
+# 邊界：**不重造調色盤 / 量化邏輯** —— 造第二份就是 2026-06-04 canvas drift bug 的形狀。
+#      不用 import：本檔可能被以任意 CWD 執行，模組搜尋路徑不可靠 ⇒ 走絕對路徑。
+#
+# ⚠ 2026-09-07 之前這裡載入的是整個 `canvas.py`（TASK-0114 排定刪除它）——
+#   為了一個純函式把一整支 CLI 載進來，等於讓 3D 雕刻綁在一支要退場的工具上，
+#   而刪檔那天的錯誤訊息會指向 sculpt，不指向真因。
 def _load_canvas_module():
     import importlib.util as _ilu
-    _cv_path = Path(__file__).resolve().parent / "canvas.py"
-    _spec = _ilu.spec_from_file_location("_ucl_canvas_for_sculpt", _cv_path)
+    _cv_path = Path(__file__).resolve().parent / "_lib" / "canvas_spec.py"
+    _spec = _ilu.spec_from_file_location("_ucl_canvas_spec_for_sculpt", _cv_path)
     _cv = _ilu.module_from_spec(_spec)
     _spec.loader.exec_module(_cv)
     return _cv
@@ -114,21 +117,60 @@ def _load_canvas_module():
 # 數值影響：回傳 (png 路徑, 非透明像素數, region_w, region_h, sha256)。
 #          區域座標兩角任意順序、clamp 進畫布邊界（與 canvas view --region 同語意）。
 def render_canvas_region_png(src_x1, src_y1, src_x2, src_y2, out_path):
+    # ── 2026-09-07（TASK-0114）：replay 與渲染改走 `senate cmd canvas --arg op=view`。
+    #    以前是把整個 `canvas.py` 載進來自己 replay ⇒ 3D 綁死在一支要退場的工具上。
+    #    C# 那側**已經產出我們要的兩個讀數**：`_last_view_t.png`（透明變體，mask 編碼進 alpha）
+    #    與 `non_transparent_pixels`。⇒ 這裡不重造 replay，只搬檔＋自己數一次。
+    # ⚠ 不解析 stdout 的 `🔢` 行：opaque 我們**自己從 PNG 數**（同一個定義、少一層字串解析）。
+    #   多一層解析就多一種「格式變了而我以為是 0」的壞法。
+    # ⚠ C# 的 view 寫的是**固定路徑** `<canvas 根>/_last_view_t.png` ⇒ 兩個人同時 stamp2d
+    #   會互相蓋。窗口很短（我們馬上複製走），但它真的存在 —— 照實寫在這裡。
+    from PIL import Image
     _cv = _load_canvas_module()
     x1, x2 = min(src_x1, src_x2), max(src_x1, src_x2)
     y1, y2 = min(src_y1, src_y2), max(src_y1, src_y2)
     x1, y1 = max(0, x1), max(0, y1)
     x2, y2 = min(_cv.CANVAS_W - 1, x2), min(_cv.CANVAS_H - 1, y2)
 
-    buf, mask = _cv.build_buffer(_cv.Paths(_cv.DEFAULT_CANVAS_ROOT, _cv.DEFAULT_TREASURY_ROOT),
-                                 with_mask=True)
-    img = _cv.buffer_to_image_rgba(buf, mask).crop((x1, y1, x2 + 1, y2 + 1))
+    import subprocess
+    data_root = get_repo_root() / "AgentCommands"
+    try:
+        senate = _senate_exe()
+    except Exception as e:
+        raise RuntimeError("找不到 Senate CLI ⇒ 取不到畫布區域（**不退回 canvas.py**）：" + str(e))
+    argv = [str(senate), "cmd", "canvas",
+            "--arg", "data_root=" + str(data_root),
+            "--arg", "op=view",
+            "--arg", "region=%d,%d,%d,%d" % (x1, y1, x2 - x1 + 1, y2 - y1 + 1)]
+    r = subprocess.run(argv, capture_output=True, encoding="utf-8", errors="replace", timeout=180)
+    if r.returncode != 0:
+        raise RuntimeError("canvas view 失敗（exit %d）：%s" % (r.returncode,
+                           ((r.stdout or "") + (r.stderr or ""))[-500:]))
+
+    src_png = data_root / "Canvas" / "_last_view_t.png"
+    if not src_png.exists():
+        # 「Cmd 說成功」與「產物在」是兩個讀數 —— 這一格不可以靜默往下走。
+        raise RuntimeError("canvas view 回報成功、但透明變體沒出現：" + str(src_png))
+
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    img.save(str(out_path))
+    out_path.write_bytes(src_png.read_bytes())
+    img = Image.open(str(out_path))
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
     opaque = sum(1 for a in img.tobytes()[3::4] if a != 0)
     sha = hashlib.sha256(out_path.read_bytes()).hexdigest()
-    return out_path, opaque, (x2 - x1 + 1), (y2 - y1 + 1), sha
+    return out_path, opaque, img.width, img.height, sha
+
+
+def _senate_exe():
+    """Senate CLI 路徑（委派 `_lib/ucl_paths`，三層 env → pointer → PATH）。"""
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "_ucl_paths_for_sculpt", Path(__file__).resolve().parent / "_lib" / "ucl_paths.py")
+    _m = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_m)
+    return _m.senate_exe()
 
 
 class SparseVoxelSpace:

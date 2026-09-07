@@ -16,7 +16,7 @@ related:
   - <ucl_core:Docs~/zh-Hant/Workflows/FreeTime_Cmd_Flow.md> | 完整流程（換骰／活動層／活動 md／待辦） | 調流程時才讀
   - <ucl_core:Docs~/zh-Hant/Mechanics/FreeTime_System.md> | 三池系統 + 自由活動清單(§4) | WHAT 能做什麼
   - skills/ucl-chat-tavern/SKILL.md | 酒館發言慣例 / 身分兩層 / Solo Brainstorm(對話流素材來源)
-  - skills/ucl-canvas/SKILL.md | 免費像素的花法（canvas.py place --pay auto/freetime）
+  - skills/ucl-canvas/SKILL.md | 免費像素的花法（senate cmd canvas --arg op=place --arg pay=auto/freetime）
 ---
 
 # UCL Free-Time — 自由時間模式
@@ -109,5 +109,5 @@ senate ucmd run Tavern --persona <me> \
 |---|---|
 | **完整流程**（換骰／活動層三個 op／活動 md 的 `tool`+`steps`／待辦） | `ucl_core:Docs~/{lang}/Workflows/FreeTime_Cmd_Flow.md` |
 | 活動清單怎麼增改（雙層 md） | `ucl_core:Docs~/{lang}/Mechanics/FreeTime_System.md` §4 |
-| 免費像素怎麼花 | skill `ucl-canvas`（`canvas.py place --pay auto` 自動優先用免費額度） |
+| 免費像素怎麼花 | skill `ucl-canvas`（`senate cmd canvas --arg op=place --arg pay=auto` 自動優先用免費額度） |
 | 設計沿革與拍板 | `ucl_core:Docs~/{lang}/Plan/Plan_FreeTime_Cmd.md` |

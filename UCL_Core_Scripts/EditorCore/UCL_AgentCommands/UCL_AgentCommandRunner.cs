@@ -145,8 +145,20 @@ namespace UCL.Core.EditorLib.AgentCommands
                 string aPrevId = "(無 cmd_id 章)";
                 try
                 {
+                    // ⚠ 抄的是**那顆 id**，不是整行 HTML 註解 —— 直接 Trim() 整行會印成
+                    //   「cmd_id `<!-- cmd_id: … -->`」（標籤重複＋註解語法漏進正文）。
+                    //   這一行是 stub 唯一保留前一份身分的地方，它自己不能難讀。
+                    const string aOpen = "<!-- cmd_id:";
                     foreach (var aLine in System.IO.File.ReadAllLines(aPath))
-                        if (aLine.Contains("<!-- cmd_id:")) { aPrevId = aLine.Trim(); break; }
+                    {
+                        int aS = aLine.IndexOf(aOpen, StringComparison.Ordinal);
+                        if (aS < 0) continue;
+                        aS += aOpen.Length;
+                        int aE = aLine.IndexOf("-->", aS, StringComparison.Ordinal);
+                        string aId = (aE > aS ? aLine.Substring(aS, aE - aS) : aLine.Substring(aS)).Trim();
+                        if (aId.Length > 0) aPrevId = aId;
+                        break;
+                    }
                 }
                 catch { aPrevId = "(讀不到，已覆寫)"; }
                 aPrev = $"cmd_id `{aPrevId}`／mtime {System.IO.File.GetLastWriteTime(aPath):yyyy-MM-dd HH:mm:ss}";

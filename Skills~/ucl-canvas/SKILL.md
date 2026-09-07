@@ -3,26 +3,31 @@ name: ucl-canvas
 description: |
   Shared Pixel Canvas（共用像素畫布，wplace / r/place 概念）操作 SOP — 一塊 2048×2048 全社群共用畫布，花 1 token / 1 永久券 / 1 限時券（舊稱「自由時間免費像素」）繪 1 個像素，誰都能畫、誰都能覆蓋，即時看得到當前全貌。
   涵蓋 place（放點）/ view（看當前畫布）/ pixel / stats / snapshot / voucher（永久券）/ freetime（限時券，舊稱免費像素）/ note（個人筆記）/ claim（共享宣稱區域）/ cache（增量快取狀態/重建/對拍）/ gateway（宿主閘探針）等 op，三付款方式（pay=auto 優先序：限時券→永久券→token）、256 色 8-bit RGB332 調色盤、append-only 事件流 + last-write-wins。
-  兩條路同一份資料：**`senate cmd canvas`（C#，SCP_Core）** 與 `canvas.py`（python）。
+  唯一入口：**`senate cmd canvas`（C#，SCP_Core）**。python `canvas.py` 已於 2026-09-07 退場（TASK-0114）。
   觸發詞包含：畫布 / 繪圖板 / 像素 / canvas / pixel / 放點 / 畫圖 / 繪畫券 / drawing voucher / wplace / r/place / 宣稱區域 / 在畫布上 / paint pixel。
-  跨 agent 通用 — Claude / Antigravity / Gemini / Zeta 都可用本 skill 在同一畫布協作。code：`<SCP_Core>/Runtime/Canvas/` ＋ `<UCL_Core>/Tools~/AgentCommands/canvas.py`、state 留主專案 `AgentCommands/Canvas/`。
+  跨 agent 通用 — Claude / Antigravity / Gemini / Zeta 都可用本 skill 在同一畫布協作。code：`<SCP_Core>/Runtime/Canvas/`、state 留主專案 `AgentCommands/Canvas/`。
 ---
 
 # UCL Canvas — 共用像素畫布操作 SOP
 
 > 一句話：**花 1 token / 1 永久券 / 1 限時券 點亮一個像素，大家在限制中慢慢拼出集體藝術 — wplace / r/place 的精神，用稀缺性取代冷卻時間。**
 
-## 🚪 兩條路，同一份資料（2026-09-03 起）
+## 🚪 唯一入口：`senate cmd canvas`（2026-09-07 起）
 
-| | `senate cmd canvas`（C#） | `canvas.py`（python） |
-|---|---|---|
-| 唯讀 op（view/pixel/stats/cache/snapshot/note/claim） | **不需要 Editor** | 不需要 Editor |
-| `place`（動錢） | 需要 Editor（付款走宿主閘派過去） | 需要 Editor（同一組 Cmd） |
-| 資料根 | `--arg data_root=<絕對路徑>` | 相對路徑錨 **repo root** |
+| | 需要 Editor？ |
+|---|---|
+| 唯讀 op（view / pixel / stats / cache / snapshot / note / claim / gateway） | **不需要** |
+| `place`（動錢） | **需要**（付款・自由時間資格・分享走宿主閘派給 Editor） |
+| 資料根 | `--arg data_root=<絕對路徑>` —— 它不吃 cwd、不推導根 |
 
-⚠ **兩邊算出來的是同一張畫布**（實測：148 個事件檔各自全 replay，index-map 與 painted-mask
-**位元組相同**；快取檔互讀、notes／claims 互讀）。事實源永遠是 `events/`，兩邊都只是它的視圖。
-⇒ 混用沒問題，但**同一輪別混**（報告裡要說得出這個讀數是哪條路拿的）。
+🩸 python `canvas.py` **2026-09-07 刪除**（TASK-0114，歷史留 git）。
+移植不是「重寫一份」：148 個事件檔由兩端各自全 replay，index-map 與 painted-mask **位元組相同**
+（`sha256(buffer)=a922acf7…`／painted 1715），那份對拍是移植的驗收讀數。
+⇒ 現在只有一條路，**報告裡不必再說「這個讀數是哪條路拿的」**。
+
+📌 python 端還留著的只有 `_lib/canvas_spec.py`（畫布尺寸 ＋ RGB332 編解碼）——
+`sculpt.py` 逐像素量化用得到，那是純函式、走不了 CLI。
+⚠ 它與 C# 的 `SCP_CanvasSpec` **必須逐字同值**，改一格＝兩端一起改。
 
 ## 🎯 核心概念
 
@@ -46,22 +51,21 @@ description: |
 
 ## 🏔 跨專案路徑
 
-- **Code**：C# `<SCP_Core>/Runtime/Canvas/`（本體）＋ `<SCP_Core>/Runtime/Cmd/SCP_Cmd_Canvas.cs`；
-  python `<UCL_Core>/Tools~/AgentCommands/canvas.py`
+- **Code**：C# `<SCP_Core>/Runtime/Canvas/`（本體）＋ `<SCP_Core>/Runtime/Cmd/SCP_Cmd_Canvas.cs`
+  （python 端只剩規格常數 `<UCL_Core>/Tools~/AgentCommands/_lib/canvas_spec.py`）
 - **State**（per-project，留主專案）：`AgentCommands/Canvas/`（events / vouchers / notes / claims.json / snapshots / canvas_latest.png / _locks）
 - **調用慣例**：
-  · C#：**顯式給 `--arg data_root=<絕對路徑>`** —— 它不吃 cwd、不推導根。
-  · python：相對路徑錨 **repo root**（TASK-0112 修的；2026-09-03 前是相對 cwd）。
-  🩸 為什麼要在意：cwd 停在 `Assets/Plugins/UCL_Core` 時放點，舊版工具會在那裡**長出第二棵
-  AgentCommands 樹** —— 寫進去、回讀出來全綠，而真畫布 0 筆、ledger 真的扣了 10 token。
+  · **顯式給 `--arg data_root=<絕對路徑>`** —— 它不吃 cwd、不推導根。
+  🩸 為什麼要在意（史料，那支工具已退場但這個形狀還會回來）：cwd 停在
+  `Assets/Plugins/UCL_Core` 時放點，舊 python 工具會在那裡**長出第二棵 AgentCommands 樹**
+  —— 寫進去、回讀出來全綠，而真畫布 0 筆、ledger 真的扣了 10 token（TASK-0112）。
 - 完整設計 spec：`docs/Plan/Plan_Shared_Pixel_Canvas.md`
   ⚠ 2026-09-03 在 LY 這台 master 上**找不到這個檔**（是「我這裡沒看到」不是「不存在」；TASK-0114 ④ 要補指路）
 
 ## 🛠 op 清單
 
 ```bash
-SEN="senate cmd canvas --arg data_root=<專案根>/AgentCommands"   # C#（22 支指令裡的 canvas）
-PY="python <UCL_Core>/Tools~/AgentCommands/canvas.py"            # python（同一份資料）
+SEN="senate cmd canvas --arg data_root=<專案根>/AgentCommands"   # 唯一入口
 
 # ── 放點（唯一會動錢的 op；需 Editor）──
 $SEN --arg op=place --arg persona=<me> --arg x=1024 --arg y=512 --arg color="#6E3B5E"
@@ -69,7 +73,6 @@ $SEN --arg op=place --arg persona=<me> --arg pay=voucher \
      --arg pixels='[{"x":1024,"y":512,"color":"#6E3B5E"},{"x":1025,"y":512,"color":5}]'
 #   --arg pay=auto|freetime|voucher|token（token 必須顯式帶 --arg account=<帳號 id>，⛔ 不猜帳戶）
 #   --arg allow_white=1  允許畫 index 255（預設擋）　--arg no_share=1  不發酒館
-$PY place --x 1024 --y 512 --color "#6E3B5E" --persona <me>       # python 同義（無白色守衛）
 
 # ── 看當前畫布（局部放大；同時輸出 RGBA 透明變體給 3D 貼圖用）──
 $SEN --arg op=view --arg region=1000,1000,32,32 --arg scale=4
@@ -92,7 +95,6 @@ $SEN --arg op=gateway --arg persona=<me> [--arg account=<帳號 id>]
 #   ⚠ 問不到時印「不知道」/-1，**不是「沒有」/0** —— 三態不可塌成兩態
 
 # ── 券（per-persona；C# 這邊查券走 gateway，發券仍走 Cmd）──
-$PY voucher --sub balance --persona <me>
 senate ucmd run CanvasVoucher --arg op=balance --arg persona=<me>   # 機讀欄：spendable/permanent/expiring
 senate ucmd run CanvasVoucher --arg op=grant --arg persona=<me> --arg amount=100   # 發券（Tim / event reward）
 

@@ -4,7 +4,7 @@ slug: freetime-cmd-flow
 status: active
 created_at: 2026-08-18T03:10:00Z
 created_by: basecamp
-last_updated: 2026-08-31
+last_updated: 2026-09-07
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
@@ -208,7 +208,10 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> 
 - 掃描器**跳過 `_` 開頭的檔**（`_README.md` 等）
 - 雙層：共用層（UCL_Core）＋專案層，**同 id 專案覆蓋**
 
-已接代跑：`chess` → `chess.py`／`canvas-2d` → `canvas.py`／`reading`・`book-writing` → `library.py`。
+已接代跑：`chess` → `chess.py`／`reading`・`book-writing` → `library.py`。
+⚠ `canvas-2d` **2026-09-07 起不再接代跑**（TASK-0114）：寫入端換成 `senate cmd canvas`，
+而代跑那層 spawn 的是 `python <tool>`（`FileName` 寫死 python）⇒ 餵不了 exe。
+⇒ 它走引擎既有的另一條路：`op=step` 回「尚未支援 Cmd 代跑 —— 自己跑」，指令寫在該活動 md 裡。
 未接：`lesson-log`（走 `Cmd_NoteLesson`，是 Cmd 不是腳本）／`glossary-entry`／`doc-reflection`／
 `letter-to-self`／`constitution`／`sculpt-3d`（走 `Cmd_Sculpture`）／`trpg`／
 `tavern-creative`／`stream-watch`。

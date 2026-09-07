@@ -10,7 +10,7 @@ enabled: true
 **性質**：半 sink —— token 消失，但留下可見的創作產物（畫布是 append-only 事件流，誰畫的都查得到）。
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/canvas.py place --x <X> --y <Y> --color <C> --persona <me> --pay token
+senate cmd canvas --arg data_root=<專案根>/AgentCommands --arg op=place --arg x=<X> --arg y=<Y> --arg color=<C> --arg persona=<me> --arg pay=token
 ```
 
 - Skill：`ucl-canvas`

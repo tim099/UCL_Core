@@ -46,6 +46,6 @@ $R --arg op=post --arg slip_file=<交付單> --arg reply_to=<id> --arg confirm=1
 
 ## 為什麼沒接 `tool` / `steps`（不支援 op=step 代跑）
 
-代跑那層吃的是**python 腳本檔名**（`chess.py` / `canvas.py`），而 Plurk 這條線的唯一寫入端
+代跑那層吃的是**python 腳本檔名**（`chess.py` / `library.py`），而 Plurk 這條線的唯一寫入端
 是 C# 的 `Cmd_Plurk`（lint 長在必經路上就是為了讓發文繞不過它）。
 硬接一個假的 tool 名只會讓代跑在執行時才失敗 —— **沒填不是壞掉，是這件活動走 Cmd 不走腳本。**

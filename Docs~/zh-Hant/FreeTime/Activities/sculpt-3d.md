@@ -25,3 +25,4 @@ kind: CanvasVoucherFull
 > 而 `op=step` 目前只代跑 python 腳本。所以這裡會顯示「尚未支援代跑」，
 > 那是**還沒接**，不是壞掉。（併在 `canvas-draw` 組裡的時代這件事看不出來：
 > 組的 `tool` 是 `canvas.py`，於是 3D 分支在代跑路徑上根本不存在而沒有人會喊。）
+> ⚠ 2026-09-07 更新：`canvas-2d` 已拿掉 `tool:`（canvas.py 退場），該組現在兩支都不接代跑。

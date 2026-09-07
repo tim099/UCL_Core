@@ -1588,7 +1588,7 @@ def cmd_donations(args):
 # 打賞 (Tip) — 讀者燒 token, 受益 persona 收雙券 (繪圖券 + 酒館券)
 # 區塊職責: Plan_Reading_Library_Tip v2 (Tim 2026-06-11 拍板)
 # 物理意義: token 走 Cmd_Treasury debit sink (use_kind=book_tip, 與 donate 同向通縮);
-#          受益人按 1+1 匯率收 persona 綁定券 — 繪圖券 (canvas.py voucher grant) +
+#          受益人按 1+1 匯率收 persona 綁定券 — 繪圖券 (Cmd_CanvasVoucher op=grant，C# canonical owner) +
 #          酒館券 (agent_bonus_quota.json accrual, 複用 work_session 寫入模式)。
 # 數值影響: 打賞 N token → 受益 persona 收 繪圖券 N 張 + 酒館券 N 張 (TIP_*_RATE 常數)。
 # ===========================================================
@@ -1680,90 +1680,6 @@ def _resolve_beneficiary(book: str):
             kind = "作者" if _derive_origin(d) == "authored" else "捐贈者"
             return (d.get("donor", ""), d.get("donor_persona", ""), d.get("title", book), kind)
     return None
-
-
-def _grant_canvas_voucher(persona: str, amount: int, ref: str) -> bool:
-    # 發繪圖券: subprocess canvas.py voucher grant (source=book_tip 可追溯)
-    # 跨層驗證: grant 後讀 voucher json 確認新 history entry 真落盤, 不只信 exit code
-    import subprocess
-    canvas = _HERE / "canvas.py"
-    cmd = [sys.executable, str(canvas), "voucher", "--sub", "grant",
-           "--persona", persona, "--amount", str(amount),
-           "--source", "book_tip", "--ref", ref]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=60)
-        if r.returncode != 0:
-            return False
-    except Exception:
-        return False
-    vpath = _REPO_ROOT / "AgentCommands" / "Canvas" / "vouchers" / f"{persona}.json"
-    if not vpath.exists():
-        return False
-    try:
-        v = _read_json(vpath)
-    except Exception:
-        return False
-    return any(h.get("source") == "book_tip" and h.get("ref") == ref
-               for h in v.get("history", []))
-
-
-def _grant_tavern_voucher(bank: str, persona: str, amount: int, tip_id: str, tipper_label: str, title: str) -> bool:
-    # 發酒館券: 直寫 agent_bonus_quota.json (per FreeTime_System 三池 spec,
-    # 複用 work_session.fire_voucher_accrual 的 schema — id 唯一 / history append / total_remaining 累加)
-    qpath = _REPO_ROOT / "AgentCommands" / "ChatTavern" / "agent_bonus_quota.json"
-    if not qpath.exists():
-        return False
-    try:
-        q = _read_json(qpath)
-        agents = q.setdefault("agents", {})
-        agent_block = agents.setdefault(bank, {"personas": {}, "_legacy_no_persona": {"total_remaining": 0, "history": []}})
-        personas = agent_block.setdefault("personas", {})
-        persona_block = personas.setdefault(persona, {"total_remaining": 0, "history": []})
-        # 冪等 guard: 同 tip_id 已發過 → 視為成功不重複累加 (--retry 場景)
-        gid = f"book-tip-{tip_id}"
-        if any(h.get("id") == gid for h in persona_block.get("history", [])):
-            return True
-        persona_block.setdefault("history", []).append({
-            "id": gid,
-            "granted_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "granted_by": tipper_label,
-            "kind": "tavern_voucher",
-            "amount": amount,
-            "used": 0,
-            "remaining": amount,
-            "expires": None,
-            "usage_summary": f"讀者打賞《{title}》回饋券",
-        })
-        persona_block["total_remaining"] = persona_block.get("total_remaining", 0) + amount
-        _write_json(qpath, q)
-        return True
-    except Exception:
-        return False
-
-
-def _issue_tip_vouchers(entry: dict) -> str:
-    # 區塊職責: 按 entry 的 voucher_status 補齊未發的券, 回傳新 status
-    # 物理意義: debit 落帳後券發放任一路失敗 → 不回滾帳 (帳不可造假), 記 pending 供 --retry 補發
-    persona = entry["beneficiary_persona"]
-    bank = entry["beneficiary"]
-    ref = f"tip:{entry['book']}:{entry['tip_id']}"
-    tipper_label = entry.get("tipper_persona") or entry.get("tipper", "?")
-    status = entry.get("voucher_status", "pending_all")
-    canvas_ok = status in ("pending_tavern", "issued")
-    tavern_ok = status in ("pending_canvas", "issued")
-    if not canvas_ok:
-        canvas_ok = _grant_canvas_voucher(persona, entry["vouchers"]["canvas"], ref)
-    if not tavern_ok:
-        tavern_ok = _grant_tavern_voucher(bank, persona, entry["vouchers"]["tavern"],
-                                          entry["tip_id"], tipper_label, entry.get("title", entry["book"]))
-    if canvas_ok and tavern_ok:
-        return "issued"
-    if canvas_ok:
-        return "pending_tavern"
-    if tavern_ok:
-        return "pending_canvas"
-    return "pending_all"
 
 
 def cmd_tip(args):

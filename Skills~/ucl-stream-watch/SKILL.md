@@ -41,7 +41,7 @@ senate ucmd run StreamWatch --persona <P>     --arg step=prepare --arg title=<�
 | 列出**心得庫現況**（誰已寫過哪幾章） | 這就是防漂移的那一眼；本場章號已有心得 ⇒ 提醒「這是重看？要開 r2」 |
 | 定 **reference_reader**（接續基準） | 給陪同者追進度用；未指定＝取章數最多者，**並列時停下來要人挑** |
 | 產 **補課地圖**（第 1..N-1 話各由誰的心得補） | 預設取基準者自己的；**他缺的那幾集由主觀影者指定用誰的**（`--arg catchup_map=`），沒指定就列出候選並擋下 |
-| **收工自動匯出成章**（填 `chapter_title` 才啟用） | 章名**必須親筆** ⇒ 開場前就定死；沒填＝不自動匯出（回傳檔照舊印手動指令）。旋鈕：`export_chapter` / `export_work_title` / `auto_export=false`。章 ≠ 場由 `--from-session` 併區間處理（主場 ∪ 陪同場 ∪ 同章舊場次），**只有 primary 觸發** |
+| **收工自動匯出成章**（填 `chapter_title` 才啟用） | 章名**必須親筆** ⇒ 開場前就定死；沒填＝不自動匯出（回傳檔照舊印手動指令）。旋鈕：`export_chapter` / `export_work_title` / `auto_export=false`。章 ≠ 場由 `--from-session` 併區間處理（主場 ∪ 陪同場 ∪ 同章舊場次），**觸發者＝最後收工的那個人**（2026-08-26 拍板，取代「只有 primary 觸發」；同組還有人 `active` ⇒ 不匯出，回傳檔會印出還在線的是誰） |
 | **先填節目名，再開錄影** | `stream_title` 是開播公告「📺 本場節目」的唯一來源；反序的話公告已送出、標題追不回（公告不可 amend）。已在錄就不動作 |
 | 落 `StreamWatch/prepared/<media_id>.json` | `join` / `catchup` 都讀這份 ⇒ 陪同者一進場，媒材與章號**已經是定值** |
 

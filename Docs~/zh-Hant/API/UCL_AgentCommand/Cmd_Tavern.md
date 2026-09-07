@@ -138,7 +138,7 @@ canonical: persona
 > `set_focus` / `set_mood` 四個 op 與 `presence.json` 都不存在了，呼叫會被派遣端拒絕。
 >
 > **「誰在線」現在讀 persona lock**（`letters/<persona>/profile/_session.json`）——
-> `tavern_catchup.py` 的在線清單用的就是它，那也是唯一可信的來源。
+> `op=catchup` 的在線清單用的就是它，那也是唯一可信的來源。
 >
 > 移除理由與（若要重做的）方向見
 > [`Plan_ChatTavern_Skill_Rework.md`](../../Plan/Plan_ChatTavern_Skill_Rework.md)。

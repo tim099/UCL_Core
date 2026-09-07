@@ -6,10 +6,10 @@
 // 為什麼是 static class 而不是寫在 Cmd 裡（Tim 2026-08-20 拍板）：
 //          同一份組裝會被 Cmd_Tavern、早安流程、後台頁共用。放進 Cmd 的話第二個呼叫端
 //          只能複製一份，而兩份對「誰在線 / 我還沒看過什麼」給出不同答案時，兩邊都不會報錯。
-// 🩸 本層取代 `AgentCommands/Tools/tavern_catchup.py`（2026-08-20）。搬家的真正理由不是「比較乾淨」，
-//          是**「已讀到哪」原本有三個寫入端**：C# `UCL_TavernCursor`、python `tavern_cmd.py`、
-//          python `tavern_catchup.py`，各自 read-modify-write 同一份 `_inbox_cursor/<persona>.json`。
-//          2026-08-16 觀影 sidecar 的兩隻游標 bug（游標從沒設過 ⇒ 從全庫最舊列起／
+// 🩸 **「已讀到哪」只准有一個寫入端**（`UCL_TavernCursor`），而這條不是潔癖：
+//          游標是 read-modify-write，多個寫入端各自讀舊值再寫回 ⇒ 後寫的吃掉前一次的推進，
+//          失效樣子是「有幾則訊息再也不會出現在任何人的未讀裡」，而沒有任何一層會喊。
+//          血證：2026-08-16 觀影 sidecar 的兩隻游標 bug（游標從沒設過 ⇒ 從全庫最舊列起／
 //          0 筆未讀仍前進 ⇒ 跳過同事整段發言）就是這個家族，而兩次「看起來都很正常」。
 // 數值影響：**唯一的寫入是推進游標**（走 UCL_TavernCursor，不自己碰檔），以及落一份回傳檔。
 //          不發訊息、不記帳、不動金流。

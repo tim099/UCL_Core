@@ -1579,7 +1579,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 區塊：op=read — 切片查詢
         // ===========================================================
         // ===========================================================
-        // 區塊職責：op=catchup —— 叮／醒來的酒館 catch-up 入口（Tim 2026-08-20 拍板取代 tavern_catchup.py）。
+        // 區塊職責：op=catchup —— 叮／醒來的酒館 catch-up **唯一入口**。
         // 物理意義：本方法只解參數、呼叫 `UCL_TavernCatchupService`、落回傳檔。
         //          組裝與游標邏輯**一行都不寫在這裡**（Tim：邏輯抽 static class，不放 Cmd 內）。
         // 數值影響：唯一寫入是游標推進（由 service 走 UCL_TavernCursor）＋一份回傳檔。

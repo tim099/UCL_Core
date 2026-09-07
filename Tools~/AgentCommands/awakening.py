@@ -939,8 +939,7 @@ def find_lock_by_session_key(session_key: str) -> dict | None:
 
 # ─── Presence（在線判定）唯一掃描實作 ────────────────────────────────
 # 區塊職責: 「誰有 lock／誰在線」的**唯一** glob 點（對側 = C# UCL_ActivePersonaLocks）。
-# 物理意義: 收斂前 python 端有 7 處各自掃 _persona_*.json（本檔 4 + tavern_catchup 3），
-#          同一份 lock 資料在不同實作下講出不同的話（2026-08-19 run_cmd 身分推論
+# 物理意義: 同一份 lock 資料在多份實作下會講出不同的話（2026-08-19 run_cmd 身分推論
 #          兩次把 summit 誤判成 basecamp）。新增在線相關欄位（如 now_status）只准改這裡。
 #          ⚠ 過期機制已移除（Tim 2026-08-19）：**有 lock ＝ 在線**，直到 goodnight/logout 刪檔。
 # 數值影響: 壞檔略過不擋整份清單；回傳 dict 附推導欄 `_path`（底線開頭＝非 lock 本體欄位，

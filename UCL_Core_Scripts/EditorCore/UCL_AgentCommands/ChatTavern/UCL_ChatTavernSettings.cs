@@ -33,8 +33,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public const int DefaultSearchLimit = 100;
         public const int DefaultSinceLimit = 200;
         public const int DefaultBriefCatchupCount = 10;   // wake brief §8：撈 10 筆他人訊息
-        // ── 叮 catchup（消費者是 Python 端 tavern_catchup.py）─────────────────────
-        // 這三個原本硬編在 py 裡（--min 10 / context 5 / inbox 前 10 筆），
+        // ── 叮 catchup（消費者：`Cmd_Tavern op=catchup`）─────────────────────
+        // 這三個原本硬編在呼叫端（--min 10 / context 5 / inbox 前 10 筆），
         // 而 ucl-ding 的規則正文寫的是「最近 5 條 + 近 20 條」—— 規則與實作各寫一份數字，
         // 天生會漂。搬進同一份設定檔＝**規則的數字只有一個來源，而且 Tim 可以直接調**。
         public const int DefaultDingWindowCount = 10;      // 檢視 window（撈最近幾筆）
@@ -88,7 +88,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             set => Set("brief_catchup_count", value);
         }
 
-        /// <summary>叮 catchup 檢視 window：撈最近幾筆訊息比對 cursor（消費者 tavern_catchup.py）。</summary>
+        /// <summary>叮 catchup 檢視 window：撈最近幾筆訊息比對 cursor（消費者 `Cmd_Tavern op=catchup`）。</summary>
         public static int DingWindowCount
         {
             get => Get("ding_window_count", DefaultDingWindowCount, null);

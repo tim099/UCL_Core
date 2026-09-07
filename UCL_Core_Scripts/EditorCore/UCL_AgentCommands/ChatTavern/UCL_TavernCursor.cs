@@ -2,7 +2,7 @@
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 08/18 2026
-// per-persona 酒館已讀游標的 C# 端讀寫（與 python tavern_catchup.py 共用同一個檔與同一條規則）。
+// per-persona 酒館已讀游標的讀寫 —— **唯一實作**（游標檔沒有第二個寫入端）。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -18,14 +18,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
     // 物理意義：游標檔 `ChatTavern/_inbox_cursor/<persona>.json` 只有一個判準欄位
     //          `last_seen_ts`（ISO 字串），規則是 **ts > last_seen_ts 即未讀**。
     //
-    // ⚠⚠ **這是第三份實作** —— 另兩份都在 python：`Tools/tavern_catchup.py`（叮 catchup）與
-    //   `Tools~/AgentCommands/tavern_cmd.py`（pending/commit 兩階段：**開口才算真的讀了**）。
-    //   我一開始只 grep 到一份就寫了「第二份」—— 「我沒找到」不等於「不存在」，當場更正。
-    //   原第一份參照：`AgentCommands/Tools/tavern_catchup.py`
-    //   （叮 catchup）。兩邊讀寫**同一個檔、同一條規則**，所以任何一邊改判準都必須改兩邊。
-    //   為什麼還是寫了第二份：自由時間換骰要求「骰面與酒館訊息在**同一份回傳檔**、一定會看到」，
-    //   而回傳檔是 C# 寫的；讓 C# 去 spawn python 只為了讀幾行訊息，代價是 process 生命週期
-    //   （domain reload / timeout / 屍潮）遠大於這段邏輯本身。
+    // ⚠⚠ **本類是這個游標檔唯一的寫入端。** 這一格是硬需求不是潔癖：
+    //   游標是 read-modify-write，多個寫入端各自讀舊值再寫回 ⇒ 後寫的把前一次的推進吃掉，
+    //   而失效樣子是「有幾則訊息再也不會出現在任何人的未讀裡」—— **沒有任何一層會喊**。
+    //   ⇒ 要讀未讀訊息一律經過本類（`Cmd_Tavern op=catchup` / 自由時間配對簡報都走這裡）；
+    //   ⛔ 不要為了「只是讀幾行」在別處再寫一份判準。
+    //
+    // ⚠ 判準只有一條，改它就是改所有消費端：**`ts > last_seen_ts` 即未讀**。
     //   ⇒ 取捨是刻意的，代價寫在這裡：**兩份實作漂移時不會有任何錯誤訊息** ——
     //     症狀會是「叮說有未讀、換骰說沒有」，或反過來。改判準時 grep `last_seen_ts` 兩端一起改。
     //

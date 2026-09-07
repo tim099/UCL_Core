@@ -759,8 +759,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //     是後來通知水位要換成時間戳，才發現**那次拿掉的正好是唯一可當判準的欄位**：
         //     標題列那個是本地時區、秒精度、可再生的**投影**，跨房不可比。
         //     ⇒ 現在兩者職責分開：標題列給人看、`_at` 給機器判。
-        // 條目仍以 "## [seq=" 起首 —— tavern_catchup.read_inbox_entries 與
-        // inbox_ack.count_mentions 都錨定這個 prefix，不可改。
+        // 條目仍以 "## [seq=" 起首 —— `UCL_TavernCatchupService` 與
+        // `inbox_ack.count_mentions` 都錨定這個 prefix，不可改。
         public static void AppendInbox(string roomId, string agentId, int eventSeq, string title, string body)
         {
             EnsureInboxDir(roomId);
@@ -783,7 +783,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             //          （2026-08-15 實測 163 筆看不見的 @，六個 persona 全中）。
             // ⚠ 這一行**曾經存在**，2026-07-29 的版面精簡把它併進標題列時拿掉了；
             //   那次精簡拿掉的正好是唯一能當水位的欄位，代價七個月後才現形。加回來而不是另發明格式，
-            //   是因為 tavern_catchup 的跳過清單早就認得 `_at `，wake_brief / inbox_ack 只讀標題列
+            //   是因為 catchup 的跳過清單早就認得 `_at `，wake_brief / inbox_ack 只讀標題列
             //   ⇒ 三個 parser 一支都不用改。既有條目由 inbox_ts_backfill.py 回填（681 筆）。
             sb.AppendLine($"_at {System.DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ}_");
             if (!string.IsNullOrEmpty(body)) { sb.AppendLine(); sb.AppendLine(body); }

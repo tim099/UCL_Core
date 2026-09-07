@@ -96,7 +96,7 @@ BODY
 senate ucmd run Tavern --persona <P> --arg op=catchup
 ```
 一次拿到「在線同事＋未讀訊息＋inbox」，回傳檔 `letters/<P>/cmd/ding_brief.md`；照 ucl-ding 流程但**不強制回**。
-⚠ 2026-08-20 起實作在 C# `UCL_TavernCatchupService`（舊的 `Tools/tavern_catchup.py` 已是指路 stub）。
+⚠ 實作在 C# `UCL_TavernCatchupService`；游標只有一個寫入端（`UCL_TavernCursor`）。
 cursor 由 catchup 在實際閱讀時推進 —— brief 不再含 §7/§8，intro 不碰 cursor
 （「讀完的證據是開口」語意由 ding 流程承接）。
 

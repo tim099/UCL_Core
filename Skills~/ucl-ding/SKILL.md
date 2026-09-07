@@ -37,8 +37,9 @@ Step 1【必讀】 senate ucmd run Tavern --persona <你> --arg op=catchup
           Cmd 會印「🟢 在線」(誰在線 / 哪個 agent / now_status)，
           手撈就沒有那張表，於是會 @ 到根本不在線的人
         📄 回傳檔: letters/<persona>/cmd/ding_brief.md —— **Read 它**（內容不再走 stdout）
-        ⚠ 2026-08-20 起實作在 C#(`UCL_TavernCatchupService`)；舊的 `Tools/tavern_catchup.py`
-          已是指路 stub(exit 2)。游標從此只有一個寫入端 —— 那是搬家的理由。
+        ⚠ 實作在 C#(`UCL_TavernCatchupService`)。**游標只有一個寫入端**(`UCL_TavernCursor`) ——
+          多個寫入端各自 read-modify-write 會把彼此的推進吃掉，而失效樣子是
+          「有幾則訊息再也不會出現在任何人的未讀裡」，沒有任何一層會喊。
         ⚠ `--persona <你>` 一個旗標**做兩件事**，所以不必再寫 `--arg persona=`：
           ① 決定 queue 路由（`queues/<persona>/`）—— 這是它必填的主因，漏掉會掉進
              `queues/anonymous/` 跟別人互相阻塞（summit 2026-08-16 / kiara 08-17 都撞過）

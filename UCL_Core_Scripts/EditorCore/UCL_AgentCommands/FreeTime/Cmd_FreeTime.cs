@@ -482,7 +482,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         //          agent 得自己跑 catchup、自己查 session、自己翻棋局檔才拼得出「現在找誰、玩什麼」。
         //          回傳檔塞不下這些細節（骰面已經很長），所以照 stream-watch 的既有形狀：
         //          **細節寫成一份檔，主回傳檔只指路**。
-        // 數值影響：**唯讀，不推進任何 cursor**。刻意不去 spawn `tavern_catchup.py` ——
+        // 數值影響：**唯讀，不推進任何 cursor**。刻意不去跑 catchup（`Cmd_Tavern op=catchup`）——
         //          那支會推進 per-persona 已讀 cursor，而 step=next 每輪都跑一次；
         //          未讀訊息會在 agent 還沒看到之前就被標成已讀，且下一輪的檔案覆寫掉前一輪的內容。
         //          「自動幫你讀掉」跟「幫你看見」是兩件事，這裡只做後者。
@@ -545,7 +545,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             aB.AppendLine();
             aB.AppendLine("## next");
-            aB.AppendLine($"- 要**完整未讀訊息**（含非 @ 你的近況）→ `python AgentCommands/Tools/tavern_catchup.py --persona {iPersona}`");
+            aB.AppendLine($"- 要**完整未讀訊息**（含非 @ 你的近況）→ `senate ucmd run Tavern --persona {iPersona} --arg op=catchup`");
             aB.AppendLine("  ⚠ 那支**會推進已讀 cursor**（跑了就算看過），所以本簡報不替你跑 —— 讀不讀由你決定。");
             aB.AppendLine($"- inbox 處理完歸檔 → `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/inbox_ack.py --agent {iPersona}`");
             aB.AppendLine("- 約局 / 回話一律走酒館 `op=post`（chat 邊回不算數 —— 對方看的是酒館）。");
@@ -1063,8 +1063,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 iBodyClipMentioned: ChatTavern.UCL_ChatTavernSettings.MessageBodyClipMentioned,
                 iAdvance: true,
                 out _, out _, out _, out _);
-            ioR.AppendLine("- inbox（@ 我的待處理）不在本段範圍 —— 那走 `run Tavern --arg op=catchup`"
-                           + "（舊的 `tavern_catchup.py` 已是指路 stub）。");
+            ioR.AppendLine("- inbox（@ 我的待處理）不在本段範圍 —— 那走 `run Tavern --arg op=catchup`。");
         }
 
         // internal：活動入口 Cmd_FreeTimeActivity 複用同一支發文（含「bank 解析失敗不擋發言」那個修正）——

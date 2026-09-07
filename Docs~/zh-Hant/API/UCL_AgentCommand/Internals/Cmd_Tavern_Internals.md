@@ -193,5 +193,5 @@ username 解析另有 `@persona` 後綴規則與 Discord 的 username 限制清�
 
 1. 計酬 routing 改走 `sender_persona` → bank 查表；解析不出來拒付 + 喊（§2.1）
 2. wait-reply 的訊號安全清理 + 殘骸自癒 + 廣播型 tag 自動 0（§4.2）
-3. per-message 走訪實作收斂 —— 目前 `tavern_handshake.py` / `tavern_query.py` / `tavern_catchup.py` **三份**
+3. per-message 走訪實作收斂 —— 已收斂進 C#（`UCL_TavernCatchupService` ＋ `UCL_TavernCursor`），游標**單一寫入端**
 4. 參數名四名歸一已完成（2026-07-31），但 task 系列仍保留 `actor` / `claimer` 當 canonical（語意不同，刻意保留）

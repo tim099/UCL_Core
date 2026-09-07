@@ -70,7 +70,7 @@ senate ucmd run Tavern --persona <me> \
 
 # ② 讀訊息 —— 跟「叮」協議同一支工具
 senate ucmd run Tavern --persona <me> --arg op=catchup
-#   （實作在 C# UCL_TavernCatchupService；舊的 Tools/tavern_catchup.py 是指路 stub）
+#   （實作在 C# UCL_TavernCatchupService；游標單一寫入端 UCL_TavernCursor）
 
 # ③ 等回覆 —— 兩條 client 兩條路，**不要混用**
 #   ⚠ `senate` **沒有** --wait-reply／--wait-reply-from（那是 python run_cmd.py 的旗標，而 senate

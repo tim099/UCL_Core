@@ -195,10 +195,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     aSb.AppendLine($"- message: `{aMsgPath}`（exists={File.Exists(aMsgPath)}）");
                     aSb.AppendLine($"- brief 前置: `{aCheck.briefPath}`（{aCheck.briefLines} 行，mtime 晚於 locked_at）");
                     aSb.AppendLine("## next");
-                    // 🩸 指路只寫「現在還活著的入口」：`tavern_catchup.py` 2026-08-20 已退場（邏輯搬進
-                    //    UCL_TavernCatchupService，游標只留一個寫入端）。它自己會印指路訊息所以不會壞事，
-                    //    但**回傳檔的 next 是可直接照跑的指令** —— 這個預期是 R16/R17 整套流程的地基，
+                    // 🩸 指路只寫**現在還活著的入口**。判準不是「寫得對不對」，是
+                    //    **回傳檔的 next 是可直接照跑的指令** —— 這個預期是 R16/R17 整套流程的地基，
                     //    破一次，下一個人就得開始懷疑每一條 next（BUG-31，basecamp wake#68 實撞）。
+                    //    ⚠ 而退場的入口不一定留得下 stub：檔案被刪之後，照跑得到的是
+                    //    「找不到檔案」，一句話都不解釋 ⇒ **不可以靠「它自己會印指路」兜底**。
                     aSb.AppendLine($"1. **required** — 酒館 catchup（知道在線同事＋追上訊息；照 ucl-ding 流程但**不強制回**）：");
                     aSb.AppendLine($"   senate ucmd run Tavern --persona {aPersona} --arg op=catchup");
                     aSb.AppendLine($"   （回傳檔 `letters/{aPersona}/cmd/ding_brief.md`；`--persona` 同時決定 queue 路由並戳進 args，不必再寫 --arg persona=）");

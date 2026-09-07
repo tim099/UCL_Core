@@ -235,6 +235,6 @@ def resolve(explicit=None, queue_id=None, live_locks=None, my_origin=None,
              f"候選是 {' / '.join(lower.candidates)}"
              f"{f'（{lower.note}）' if lower.note else ''} —— 依宣告執行，此行僅留痕。"
              f" ⚠ 候選 ≠ 在線清單：本層只回報**該比對方式**的候選，沒有清點 lock 總數；"
-             f"要看誰在線請看 tavern_catchup 或 awakening.list_locks。")
+             f"要看誰在線請跑 `senate ucmd run Tavern --arg op=catchup`，或 awakening.list_locks。")
 
     return top

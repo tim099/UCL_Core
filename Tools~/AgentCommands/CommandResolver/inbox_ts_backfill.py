@@ -14,7 +14,7 @@ tavern 已經跑到 15000+，側房（trpg-yachiyo 等）最大才 109。於是�
 
 `_at <ISO UTC>_` 這個格式**本來就存在**：2026-07-29 的版面精簡（把時間併進標題列）
 之前的條目全都有它。⇒ 不發明新格式（例如行尾 HTML 註解），因為：
-  - `tavern_catchup._entry_snippet` 的跳過清單**早就有 `_at `**；
+  - catchup 的條目摘要跳過清單**早就有 `_at `**；
   - `wake_brief` 只讀標題行、`inbox_ack` 只數 `## [seq=` prefix。
   ⇒ 沿用 `_at` → **三個 parser 一支都不用改**。行尾註解則會被 `s[3:]` 整行吃進標題，
      變成每天早安 brief 與每次叮都看得到的尾巴垃圾（summit 2026-08-15 讀 parser 實證）。
@@ -55,7 +55,7 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-# 條目標題行 —— 與 inbox_ack.count_mentions / tavern_catchup.read_inbox_entries 同一約定，
+# 條目標題行 —— 與 inbox_ack.count_mentions / C# 的 UCL_TavernCatchupService 同一約定，
 # 三處都錨定 `## [seq=` 這個 prefix，不可改（改了那三支會同時瞎掉）。
 ENTRY_RE = re.compile(r"^##\s*\[seq=(\d+)\]")
 # 既有權威時間戳行（2026-07-29 版面精簡前的格式）

@@ -2208,7 +2208,7 @@ namespace UCL.Core.EditorLib.Page
                     "早安 brief 撈幾筆他人訊息（消費者是 Python 端 wake_brief.py，讀同一份 render_settings.json）");
 
                 GUILayout.Space(4);
-                GUILayout.Label("<b>　叮 catchup（tavern_catchup.py）</b>", WrapLabelStyle);
+                GUILayout.Label("<b>　叮 catchup（Cmd_Tavern op=catchup）</b>", WrapLabelStyle);
                 DrawParamRow("叮 檢視 window 筆數", "DingWindow",
                     UCL_ChatTavernSettings.DingWindowCount, UCL_ChatTavernSettings.DefaultDingWindowCount,
                     v => UCL_ChatTavernSettings.DingWindowCount = v,

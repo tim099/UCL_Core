@@ -2216,6 +2216,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         /// <summary>解析 "path1|path2|path3" 為 ref list（prototype 階段不支援 anchor/label）。</summary>
+        // ===========================================================
+        // 區塊職責：解析 `refs=path1|path2`，並把**絕對路徑正規化成 repo 相對**
+        // 物理意義：refs 的下游（`UCL_DiscordMirrorDaemon.CollectImageRefFiles`）用
+        //   `Path.Combine(UCL_RepoPath.RepoRoot, rel)` 解它 ⇒ **repo 相對才是這個欄位的形**。
+        //   而訊息檔會隨 git 同步到別台機器：存絕對路徑 ⇒ 在那邊指不到任何東西，
+        //   而失效樣子是「refs 有值、附件不見」——比沒有 refs 更難查。
+        //   🩸 為什麼相對化在**這一層**（TASK-0165 實測）：呼叫端不一定知道 repo 根。
+        //   Senate 那側的 `Program.RepoRoot()` 是從 **exe 自己的目錄**往上找 `.git`
+        //   ⇒ 它永遠是 `D:/Unity/Senate`，而它要送的圖住在消費端專案的資料根底下
+        //   ⇒ 在那邊相對化永遠失敗（我第一版就是那樣寫的，實測 refs 全空）。
+        //   ⇒ **知道那個根的是 Editor**（mirror 也在這邊）⇒ 相對化屬於這一層。
+        // 數值影響：本來就是相對路徑的照原樣（既有呼叫端逐位元組不變）；絕對且在 repo 底下 ⇒ 轉相對；
+        //   絕對但**不在** repo 底下 ⇒ 照原樣留著並出聲一次（那種圖 mirror 撈不到，但我不替它決定丟掉
+        //   —— 丟掉會讓「送錯路徑」與「沒送」同形）。
+        // ===========================================================
         static List<UCL_ChatRef> ParseRefs(string raw)
         {
             if (string.IsNullOrEmpty(raw)) return null;
@@ -2223,9 +2238,32 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             foreach (var p in raw.Split('|'))
             {
                 string path = p.Trim();
-                if (!string.IsNullOrEmpty(path)) list.Add(new UCL_ChatRef { path = path });
+                if (string.IsNullOrEmpty(path)) continue;
+                list.Add(new UCL_ChatRef { path = NormalizeRefPath(path) });
             }
             return list.Count > 0 ? list : null;
+        }
+
+        /// <summary>絕對路徑 → repo 相對（posix 斜線）；相對路徑原樣返回。</summary>
+        static string NormalizeRefPath(string iPath)
+        {
+            try
+            {
+                if (!System.IO.Path.IsPathRooted(iPath)) return iPath.Replace('\\', '/');
+                string aFull = System.IO.Path.GetFullPath(iPath).Replace('\\', '/');
+                string aRoot = System.IO.Path.GetFullPath(UCL_RepoPath.RepoRoot)
+                                   .Replace('\\', '/').TrimEnd('/') + "/";
+                if (aFull.StartsWith(aRoot, StringComparison.OrdinalIgnoreCase))
+                    return aFull.Substring(aRoot.Length);
+                Debug.LogWarning($"[Tavern] refs 收到 repo 外的絕對路徑，照原樣存 —— mirror 撈不到它："
+                                 + $"{aFull}（repo_root={aRoot}）");
+                return aFull;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Tavern] refs 路徑正規化失敗，照原樣存：{iPath}（{e.Message}）");
+                return iPath;
+            }
         }
 
         static int ParseIntArg(Dictionary<string, string> args, string key, int def)

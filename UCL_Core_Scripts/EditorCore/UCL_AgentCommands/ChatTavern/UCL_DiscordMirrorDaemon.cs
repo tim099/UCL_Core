@@ -937,6 +937,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         UnityEngine.Networking.UnityWebRequest req;
                         if (attachFiles.Count > 0)
                         {
+                            // ⏱ 走哪一條分支要印出來（TASK-0165）：成功那行 `✓ sent … HTTP 200` 對
+                            //    純文字與 multipart **一模一樣** —— 而預覽圖整整消失一天沒有人看得出來，
+                            //    正是因為兩條路的成功讀數同形。⇒ 分支自己說話，不要靠人去讀 code 推。
+                            Debug.Log($"[DiscordMirror] ⤴ multipart（{room} uuid={msg.uuid}）"
+                                      + $" 附件 {attachFiles.Count} 檔：{string.Join(", ", attachFiles)}");
                             req = UCL_DiscordWebhookClient.StartPostMultipart(url, contents[0], username, avatarUrl, null,
                                 attachFiles, out var attachSkipped);
                             // 有圖卻沒帶上的要出聲 —— 靜默少一張圖的樣子跟「本來就沒圖」一樣

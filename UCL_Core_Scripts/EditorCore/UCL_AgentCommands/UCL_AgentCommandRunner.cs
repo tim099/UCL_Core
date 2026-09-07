@@ -358,6 +358,12 @@ namespace UCL.Core.EditorLib.AgentCommands
                         continue;
                     }
 
+                    // ⏱ Runner 這一圈的秒錶（TASK-0161）—— **起點刻意在 handler 之外**：
+                    //   本圈的 queue reset+Save、ArgsSpec 檢查、result 落檔、last_op stub 都在裡面。
+                    // 🩸 第一版我把它起在 Begin 旁邊，量出 runner_ms 818.3 / handler 819.0 ——
+                    //   兩個數字幾乎相同 ⇒ 那個位置**什麼都沒多包到**，而它看起來完全正常。
+                    //   實測要包的是這一格：handler 869.3ms 而同一區間主執行緒斷拍 2007.1ms。
+                    var cmdIterWatch = System.Diagnostics.Stopwatch.StartNew();
                     Debug.Log($"[UCL_AgentCmd] ▶ Run '{c.Type}' (id={c.Id}, mode={c.Mode}, runCount={c.RunCount})");
                     // 區塊職責：重置執行結果並立即存檔
                     // 物理意義：防範在跨 PlayMode 恢復時，殘留的舊 "Failed" 狀態未被清空，導致 Python 端 wrapper 輪詢時誤判失敗。
@@ -404,6 +410,16 @@ namespace UCL.Core.EditorLib.AgentCommands
                     {
                         timeoutSec = tsOverride;
                     }
+                    // ===========================================================
+                    // 區塊職責：起量具（TASK-0161）—— 這支 cmd 花了多久，落一行可排序的讀數
+                    // 物理意義：**必須夾在 handler 的兩側，而不是整批的兩側。** 整批只能回答
+                    //          「這一輪很久」，而一輪可能有 N 筆；要排序 48 支 handler 就得 per-cmd。
+                    //          ⚠ 起點刻意放在 ArgsSpec 檢查**之前**：被擋下也是一段耗時，
+                    //          而「擋下時零讀數」會讓那條路徑在統計上不存在。
+                    // 數值影響：一個小物件 ＋ 一筆進 ring；未超門檻不落檔（見 UCL_AgentCmdSlowLog）。
+                    //          量具自己壞掉回 null，End() 收得住 ⇒ 不影響本次 cmd 的成敗。
+                    // ===========================================================
+                    UCL_AgentCmdProbe cmdProbe = UCL_AgentCmdSlowLog.Begin(c.Id, c.Type, norm, c.Args);
                     try
                     {
                         // 區塊職責：**執行前**的 ArgsSpec Required 檢查（2026-08-14 新增）。
@@ -546,6 +562,14 @@ namespace UCL.Core.EditorLib.AgentCommands
                         // ⚠ 這裡若提早釋放，症狀是 result 檔的 outputs 欄空掉，而 cmd 本身 Success ——
                         //   又是一個「成功了但東西不見」的無聲失敗。
                         UCL_AgentCmdContexts.Release(c.Id);
+                        // 區塊職責：收量具（TASK-0161）—— 成功、失敗、PlayMode 中斷三條路都要收
+                        // 物理意義：放在 finally 的**最後一行**，讓 last_op stub 與 context Release 也算進
+                        //          runner_ms；放 finally（而不是成功那一支）是因為**失敗的那幾支往往才是慢的**
+                        //          （逾時、卡在同步 IO），只量成功的會系統性地漏掉最貴的樣本。
+                        // 數值影響：verdict 取自 c.LastRunResult（PlayMode 中斷那格是 null ⇒ 記為未成功，
+                        //          error 欄會寫著中斷標記，讀的人分得出來）。
+                        try { UCL_AgentCmdSlowLog.End(cmdProbe, c.LastRunResult == "Success", c.LastRunError, cmdIterWatch.Elapsed.TotalMilliseconds); }
+                        catch { /* 量具不影響 cmd 本業 */ }
                     }
                 }
 

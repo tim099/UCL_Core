@@ -28,7 +28,6 @@ Tools~/
 ├── install_skills.py                   # Skill 安裝器 — host project 同步 .claude/skills
 └── AgentCommands/
     ├── awakening.py                    # 早安 / 晚安 ritual CLI
-    ├── awakening_full_ritual.py        # awakening.py 的 3-step wrapper (一鍵)
     ├── private_letter.py                # 密封信 / 密文封緘對帳 — 寫 private 分支
     ├── check_compile.py                # Editor 編譯報告
     ├── check_task_lease.py             # 動 code 前 lease 守門
@@ -86,12 +85,6 @@ Tools~/
 | `token-enforce` | 開關 sender_id token 驗證 |
 
 詳見 [Plan/Plan_Awakening_Init_Protocol.md](../Plan/Plan_Awakening_Init_Protocol.md)。
-
-### `awakening_full_ritual.py` — 一鍵三步驟 wrapper
-
-把 `status → morning → 廣播` 串成單一 invoke (給 SOP 簡化用)。
-
----
 
 ### `private_letter.py` — 密封信 / 密文封緘對帳
 

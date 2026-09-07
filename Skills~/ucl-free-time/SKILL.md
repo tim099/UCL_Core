@@ -41,7 +41,7 @@ senate ucmd run FreeTime --persona <me> \
     --arg step=start --arg until=<HH:mm>
 ```
 
-跑完 **Read run_cmd 印出的 `📄 回傳檔：<路徑>`** —— 骰面、三個時間欄、配對簡報指路、
+跑完 **Read 派遣 client 印出的 `📄 回傳檔：<路徑>`** —— 骰面、三個時間欄、配對簡報指路、
 以及下一步的完整指令都在裡面。
 
 - 沒登入會被擋（自由時間是登入後的狀態）→ 先走 `ucl-morning`。

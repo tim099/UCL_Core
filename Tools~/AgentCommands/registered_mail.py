@@ -84,7 +84,10 @@ REPO_ROOT = _repo_root()
 from _lib.ucl_paths import letters_root as _letters_root
 LETTERS_DIR = _letters_root()
 BANK_SETTINGS = REPO_ROOT / "AgentCommands" / "Treasury" / "bank_settings.json"
-RUN_CMD = _HERE / "run_cmd.py"
+# ⛔ 原本這裡有 `RUN_CMD = _HERE / "run_cmd.py"` —— 2026-09-07 移除（TASK-0107）。
+#   留一個指向即將被刪的檔的常數，等於留一顆會在刪檔那天才爆的雷，而且它是**同資料夾兄弟檔**
+#   這種永遠成立的定位方式 ⇒ 沒有任何一層會先警告。
+#   （同 `_lib/treasury_cmd.py` 2026-09-04、`_lib/persona_profile.py` 2026-09-03 的先例。）
 
 MAILBOX_DIRNAME = "mailbox"   # 收件者端
 OUTBOX_DIRNAME = "outbox"     # 寄件者端
@@ -129,12 +132,30 @@ def charge(bank: str, amount: int, persona: str, to: str, ref: str) -> bool:
     """扣費 —— 走 Cmd_Treasury op=debit（唯一合法的動錢路徑）。純 debit = 蒸發。"""
     if amount <= 0:
         return True                                        # 費率設 0 = 免費寄信，合法
-    cmd = [sys.executable, str(RUN_CMD), "--persona", persona, "run", "Treasury",
+    # ── 2026-09-07（TASK-0107）：派遣由 `python run_cmd.py` 換成 `senate ucmd run`。
+    #    對應是照 `_lib/treasury_cmd.py` 2026-09-04 那筆量出來的，不是我這次推的：
+    #      · `--persona <p>`  → 原樣保留（senate 的 --persona 同樣決定 queue 路由並戳進 args）
+    #      · `timeout=180`    → **顯式帶 `--timeout`**。⛔ 不帶就是降級：senate 預設 120 < 這裡的 180，
+    #        而降級的症狀不是紅燈，是「本來會等到的那 60 秒不等了」⇒ 逾時被誤讀成 Editor 沒開。
+    #    ⚠ 記帳語意逐位元不變：帳戶隔離看的是 args 裡的 `account`，跟 client 是誰無關。
+    # 🩸 `senate` 的路徑走 `ucl_paths.senate_exe()`（三層：env → pointer → PATH），**不寫裸字串**。
+    # ⛔ 解不到時**大聲失敗、不退回舊路徑**：靜默 fallback 會讓這次轉接等於沒發生，
+    #    而呼叫紀錄（TASK-0107 的收單條件）會照樣長出新的一筆，沒有人會知道。
+    try:
+        senate = _ucl_paths_mod().senate_exe()
+    except Exception as e:
+        print(f"⚠ 找不到 Senate CLI ⇒ 扣費沒有送出（**不退回 run_cmd.py**），郵件未寄出：" + str(e),
+              file=sys.stderr)
+        return False
+    cmd = [str(senate), "ucmd", "run", "Treasury", "--persona", persona,
+           "--timeout", "180",
            "--arg", "op=debit", "--arg", f"account={bank}", "--arg", f"amount={amount}",
            "--arg", "use_kind=registered_mail_fee", "--arg", f"use_ref={ref}",
            "--arg", f"description=掛號信郵資（寄給 @{to}）—— 本費用蒸發，不進央行"]
     try:
-        r = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=180)
+        # ⚠ python 這層比 senate 那層多 15 秒，讓 senate 先逾時 —— 兩層同值時誰先觸發不確定，
+        #   而 senate 的逾時訊息會說「這是 CLI 端的等待上限、不代表對面失敗」並指路去看 result 檔。
+        r = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=195)
         ok = r.returncode == 0 and "Success" in (r.stdout or "")
         if not ok:
             print(f"⚠ 扣費失敗（郵件未寄出）：\n{(r.stdout or '')[-600:]}\n{(r.stderr or '')[-400:]}",

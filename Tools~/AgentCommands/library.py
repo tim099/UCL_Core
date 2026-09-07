@@ -1494,26 +1494,6 @@ def _load_donations() -> dict:
     return {"donations": out}
 
 
-def _run_treasury_debit(donor: str, amount: int, slug: str, desc: str, use_kind: str = "book_donation"):
-    # 走 CMD: run_cmd.py run Treasury op=debit (caller==account)
-    # use_kind 預設 book_donation (捐贈); 打賞流程傳 book_tip — 同一條 debit sink, 不同記帳 kind
-    import subprocess
-    run_cmd = _HERE / "run_cmd.py"
-    # `--system`：捐書扣款不是人派的（呼叫端是 library.py），而 account 是銀行不是 persona
-    # ⇒ 落 system lane 而不是 anonymous。身分仍由 caller / account 承載（Tim 2026-08-18）。
-    cmd = [sys.executable, str(run_cmd), "--system", "run", "Treasury",
-           "--arg", "op=debit", "--arg", f"account={donor}",
-           "--arg", f"amount={amount}", "--arg", f"use_kind={use_kind}",
-           "--arg", f"use_ref={slug}", "--arg", f"description={desc}",
-           "--arg", f"caller={donor}"]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=150)
-        return (r.returncode == 0, (r.stdout or "") + (r.stderr or ""))
-    except Exception as e:
-        return (False, str(e))
-
-
 def _verify_donation_debit(donor: str, slug: str, amount: int, kind: str = "book_donation") -> bool:
     # 跨層驗證 (外觀 OK ≠ 真的 OK): 掃 ledger 確認 debit 真落帳, 不只信 Cmd stdout
     # kind 預設 book_donation (捐贈); 打賞驗證傳 book_tip
@@ -1540,32 +1520,6 @@ def _verify_donation_debit(donor: str, slug: str, amount: int, kind: str = "book
 #   推導（`ResolveDisplaySenderId`）。本檔原本三個呼叫點各自把 **agent id** 塞進 sender_id
 #   （CLI help 逐字：`--donor 捐贈者 agent id`／`--tipper 打賞者 agent id`），
 #   那正是 BUG-22 的原始病症本體：拿錢的 key 當署名。
-# ⚠ persona 是**唯一**的身分來源，所以它無效時廣播必須擋下來（fail-loud）而不是找個東西頂替 ——
-#   頂替出來的結果不會報錯，只會署錯名字，而那正是這一族坑活這麼久的原因。
-#   擋的只是廣播；捐書 / 發表 / 打賞本體此時已經完成，不回滾（原設計即 best-effort）。
-_INVALID_PERSONAS = ("", "?")
-
-
-def _run_tavern_post(persona: str, body: str, tag: str = "book-donation") -> bool:
-    # 走 CMD: run_cmd.py run Tavern op=post — 捐書後自動廣播新書入庫
-    import subprocess
-    import json as _json
-    if not persona or persona.strip() in _INVALID_PERSONAS:
-        print(f"⚠ 廣播已擋下：persona 無效（{persona!r}）—— 署名只能由 persona 推導，"
-              f"不以 bank／帳戶名頂替。本體交易不受影響。", file=sys.stderr)
-        return False
-    run_cmd = _HERE / "run_cmd.py"
-    meta = _json.dumps({"tag": tag, "category": "chat"}, ensure_ascii=False)
-    cmd = [sys.executable, str(run_cmd), "run", "Tavern",
-           "--arg", "op=post", "--arg", "room=tavern",
-           "--arg", f"persona={persona}",
-           "--arg", f"body={body}", "--arg", f"meta={meta}"]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=150)
-        return r.returncode == 0
-    except Exception:
-        return False
 
 
 def cmd_donate(args):

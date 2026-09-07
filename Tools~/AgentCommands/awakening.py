@@ -546,7 +546,7 @@ def save_registry(reg: dict) -> None:
                 f"❌ [awakening] save_registry {headline}（{name}）—— 停手。\n"
                 f"{aLines}\n"
                 f"   persona 資料已整合到 letters/<persona>/profile/，中央 personas/ 退場（2026-08-21）。\n"
-                f"   身分欄要走：run_cmd.py run PersonaProfile --arg op=set --arg persona={name} "
+                f"   身分欄要走：senate ucmd run PersonaProfile --arg op=set --arg persona={name} "
                 f"--arg field=<欄> --arg value=<值> --arg actor=<誰> --arg reason=<憑什麼>")
         keys = [k for k in pdata.keys() if k not in _SEAM_DERIVED_KEYS]
         if keys:
@@ -673,7 +673,7 @@ def assert_legacy_write_effective(edits: dict, what: str) -> None:
     aLines += [
         "",
         "   正確通道（§8.6 actor+reason 必填、附審計）：",
-        "     python <UCL_Core>/Tools~/AgentCommands/run_cmd.py run PersonaProfile \\",
+        "     senate ucmd run PersonaProfile \\",
         "         --arg op=set --arg persona=<p> --arg field=<欄> --arg value=<值> \\",
         "         --arg actor=<誰> --arg reason=<憑什麼>",
         "",
@@ -1676,11 +1676,11 @@ write_forest = _mem.write_forest
 def _deprecated_login_cmd(name: str, extra: str = "") -> int:
     print(f"⛔ awakening.py {name} 已遷移至 C# Cmd_GoodMorning（2026-08-13）——本子指令不再執行登入。", file=sys.stderr)
     print("   新流程（Editor 開啟時的唯一通道）：", file=sys.stderr)
-    print("   ① run_cmd.py run GoodMorning --arg step=wake  --arg persona=<P> [--arg actual_agent=<A>] [--arg model=<M>]", file=sys.stderr)
-    print("   ② run_cmd.py run GoodMorning --arg step=brief --arg persona=<P>", file=sys.stderr)
+    print("   ① senate cmd morning-wake  --arg persona=<P> --arg actual_agent=<A> --arg model=<M>", file=sys.stderr)
+    print("   ② senate cmd morning-brief --arg persona=<P>", file=sys.stderr)
     print("   ③ Read brief（路徑在 step=brief 的回傳檔 letters/<P>/cmd/goodmorning_brief.md）", file=sys.stderr)
-    print("   ④ run_cmd.py run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body（body 親筆）", file=sys.stderr)
-    print("   晚安側：run_cmd.py run GoodNight --arg step=check|letter|sleep|logout --arg persona=<P>", file=sys.stderr)
+    print("   ④ senate cmd morning-intro --arg persona=<P> --arg-file body=<檔>（body 親筆）", file=sys.stderr)
+    print("   晚安側：senate cmd goodnight-check|goodnight-letter|goodnight-sleep|goodnight-logout --arg persona=<P>", file=sys.stderr)
     print("   Editor 未開啟：登入/登出不可用（R18）；純讀記憶備援 → senate cmd wake-brief（信件層，senate.exe 就地跑）", file=sys.stderr)
     if extra:
         print(f"   {extra}", file=sys.stderr)
@@ -2524,7 +2524,7 @@ def main():
 
     # morning 已遷移 C#（Cmd_GoodMorning step=wake，2026-08-13）——只留指路 stub。
     # 參數全降選填：不論怎麼帶都 exit 2 印新流程，不再有「缺參數先被 argparse 擋住看不到指路」的死角。
-    pm = sub.add_parser("morning", help="[已遷移] 走 run_cmd.py run GoodMorning --arg step=wake（本子指令只印指路）")
+    pm = sub.add_parser("morning", help="[已遷移] 走 senate cmd morning-wake（本子指令只印指路）")
     pm.add_argument("--persona", default=None, help="（已無作用）")
     pm.add_argument("--agent", default=None, help="（已無作用）")
     pm.add_argument("--model", default=None, help="（已無作用）")
@@ -2534,7 +2534,7 @@ def main():
 
     # 2026-08-01 Tim 要求：morning 的自介廣播需要能單獨重跑（起因見 cmd_intro 區塊註解）
     # intro 已遷移 C#（Cmd_GoodMorning step=intro，2026-08-13）——只留指路 stub。
-    pi = sub.add_parser("intro", help="[已遷移] 走 run_cmd.py run GoodMorning --arg step=intro（本子指令只印指路）")
+    pi = sub.add_parser("intro", help="[已遷移] 走 senate cmd morning-intro（本子指令只印指路）")
     pi.add_argument("--persona", default=None, help="（已無作用）")
     pi.add_argument("--model", default=None, help="（已無作用）")
     pi.add_argument("--token", default=None, help="（已無作用）")

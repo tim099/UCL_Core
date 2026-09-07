@@ -152,7 +152,7 @@ senate ucmd run StreamWatch --persona <me> \
     --arg step=start --arg until=<HH:mm> --arg media=<work-slug>
 ```
 
-- 跑完 **Read run_cmd 印出的 `📄 回傳檔：<路徑>`** —— 裡面的 `## next` 就是後續每一步
+- 跑完 **Read 派遣 client 印出的 `📄 回傳檔：<路徑>`** —— 裡面的 `## next` 就是後續每一步
   （`cycle` → Read 縮圖牆/字幕 → `observe` → …）。**照它走，不用背。**
 - `media` 不給 ⇒ Cmd 會擋下並列出既有 work 清單（命中就用）。
   bilibili 一律 `bilibili-<up主 slug>` ＋ `--arg up=<up主名>`。

@@ -112,7 +112,7 @@ python <UCL_Core>/Tools~/AgentCommands/check_compile.py --editor-alive
 - 在編譯還有錯時跑 runtime（沒意義）
 - 用 `Recompile` AgentCommand 取代本工具（compile error 時 Cmd 本身可能掛）
 - 只看 `Simulation_*.log` 不看 `.compile_status.json`（前者混雜 Warning 雜訊）
-- **只信 `run_cmd.py recompile` 子命令回報的 `errors=N` 就收工** — 它可能讀到 stale / intermediate `.compile_status.json` 而 **under-report `errors=0`**。改完 .cs **務必**用 `senate cmd unity-recompile` 二次確認（它等的是你那一趟）。
+- **只信任何 client 一次回報的 `errors=N` 就收工**（舊的 `run_cmd.py recompile` 子命令是原始血證） — 它可能讀到 stale / intermediate `.compile_status.json` 而 **under-report `errors=0`**。改完 .cs **務必**用 `senate cmd unity-recompile` 二次確認（它等的是你那一趟）。
   > 🩸 2026-05-22 血證:apex-two 的 `item.Data.name`(CS1061)被 `recompile` 子命令漏報成 `errors=0`,而 `Errors_latest.log`(runtime 層)也乾淨 → basecamp 誤判成「domain reload 沒生效」,繞一大圈才靠 `check_compile.py` 確診。**compile 層 ≠ runtime 層 ≠ recompile-cmd 回報層**,三層別混(對應「跨層次驗證」family)。
 
 ## 🧪 runtime 行為驗證（不跑遊戲）— Cmd_Invoke reflection
@@ -130,7 +130,7 @@ compile 0 error 只證「語法／型別對」，不證「邏輯對」。要驗*
      --arg type=<Namespace.Type.FullName> --arg member=<StaticMethod>
    ```
 
-**驗真實結果——別只信 run_cmd 的「Success」**（跨層陷阱：cmd 在 handler 拋例外後可能 auto-removed、stdout 照印 `✓ Success`）：
+**驗真實結果——別只信 client 印的「Success」**（跨層陷阱：cmd 在 handler 拋例外後可能 auto-removed、stdout 照印 `✓ Success`）：
 - 回傳值 / 例外進 Unity console → 抓 `Editor.log` grep `[AgentCmd:Invoke]`：`OK (Type) = <值>` 才是真通過；`FAILED: <err>` = 真失敗。
 - SelfTest 的斷言 `throw` → Cmd_Invoke 轉 `throw` → Cmd 標 Failed + log 有 `FAILED`。
 - Editor.log 路徑：`%LOCALAPPDATA%/Unity/Editor/Editor.log`（Win）。

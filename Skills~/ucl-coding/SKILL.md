@@ -135,7 +135,7 @@ senate ucmd run Tavern --persona <me>   --arg op=post --arg room=tavern --wait-r
 （直寫會繞過餘額快取與冪等判重，且簽章欄位偽造成本為零）。2026-08-17 券的帳本分裂，
 路徑 bug 是導火線，**能燒起來是因為 grant 那條路徑本來就允許直寫**。
 
-**③ 跑 `run_cmd.py` 一律帶 `--persona <你>`**（Tim 2026-08-17 拍板）。
+**③ 派遣一律帶 `--persona <你>`**（Tim 2026-08-17 拍板；`senate ucmd` 與退場中的 `run_cmd.py` 同律）。
 
 ```bash
 senate ucmd run <CmdType> --persona <me> --arg k=v
@@ -145,7 +145,7 @@ senate ucmd run <CmdType> --persona <me> --arg k=v
 `--persona` 一次做兩件事：**決定 queue 路由**（`queues/<persona>/`）＋
 **宣告這筆是誰派的**（戳進 args，下游 Tavern post / Treasury 記帳不必反查猜）。
 
-⚠ 它跟 `--arg persona=<P>` **是兩個不同的東西**：前者是 run_cmd 的旗標（走哪條 lane），
+⚠ 它跟 `--arg persona=<P>` **是兩個不同的東西**：前者是 client 的旗標（走哪條 lane），
 後者是 Cmd 的參數（這筆代表誰）。實務上大家只帶後者 ⇒ **全員掉進 `queues/anonymous/` 互相阻塞**。
 
 > 🩸 血證兩則，同一個病：

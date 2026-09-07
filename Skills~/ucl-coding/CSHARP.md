@@ -44,11 +44,13 @@
 > **Unity 失焦時不會自動重編，而 agent 寫檔幾乎都在失焦下發生** —— 所以「改完等它自己編」
 > 在 agent 的工作流裡是不存在的事。改完 .cs ⇒ **一律送 `Cmd_Recompile`**，這是確保有編到的唯一手勢。
 >
-> 而要**等到編完並拿到錯誤清單**，用 python 子命令（不是 `run Recompile`）：
+> 而要**等到編完並拿到錯誤清單**（不是 `ucmd run Recompile` —— 那只保證觸發送到了）：
 >
 > ```bash
-> run_cmd.py --persona <me> recompile
+> senate cmd unity-recompile --arg persona=<me>
 > ```
+>
+> 它拿**送出觸發的那一刻**當基準，等到晚於基準且編譯結束的那一份才印。
 >
 > 它會：記下 pre-mtime → 送 Cmd → **等 `.compile_status.json` 推進且 `in_progress=false`** → 印 errors/warnings。
 > 而 `senate ucmd run Recompile` 只是**丟出請求就返回**（Cmd_Recompile 刻意這樣設計 —— domain reload 會殺掉

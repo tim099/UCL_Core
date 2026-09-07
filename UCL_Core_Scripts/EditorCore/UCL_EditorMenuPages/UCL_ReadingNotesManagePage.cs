@@ -468,10 +468,21 @@ namespace UCL.Core.EditorLib.Page
             // Library 先、Archive 後（Tim 2026-08-07）：新版才有追回等可操作功能，該站結果頂端；
             // Archive 是遷移參考，沉底 —— 順序即分層，不用額外的分組標題。
             SearchLibrary(query);
+            // 正本命中數要單獨算 —— ⛔ 不可只報總數（TASK-0169 ②）。
+            // 🩸「1 筆全是 Archive」與「1 筆是正本」以前印**同一句話**，而兩者的下一步相反：
+            //   前者叫人去遷移、後者叫人去讀。總數說不出這個差別，而說不出來的時候
+            //   讀者會照那句「Archive 只供人工確認與遷移」推論成「還沒遷移」。
+            int libraryHits = m_Results.Count;
             int hiddenMigrated = SearchArchive(query);
+            int archiveHits = m_Results.Count - libraryHits;
             m_LastStatus = $"「{query}」找到 {m_Results.Count} 個入口" +
+                           $"（正本 {libraryHits} 筆／Archive {archiveHits} 筆）" +
                            (hiddenMigrated > 0 ? $"（另隱藏 {hiddenMigrated} 筆已遷移 Archive —— 勾上方開關顯示）" : "") +
-                           "。Archive 結果只供人工確認與遷移，不會被新流程讀取。";
+                           "。Archive 結果只供人工確認與遷移，不會被新流程讀取。" +
+                           (libraryHits == 0 && archiveHits > 0
+                               ? "\n⚠ **正本 0 筆** —— 這可能是「真的還沒遷移」，也可能是「查的字面不在正本的 title／aliases 裡」。"
+                                 + "遷移前先用 work_id／media_id 再查一次，別直接當成未遷移。"
+                               : "");
         }
 
         // Archive 是歷史原件：只讀每個 entry 的 book.json 標題來定位資料夾，絕不讀 chapters / characters。
@@ -516,12 +527,40 @@ namespace UCL.Core.EditorLib.Page
             if (!Directory.Exists(worksRoot) || !Directory.Exists(mediaRoot)) return;
 
             var workTitles = new Dictionary<string, string>();
+            // 區塊職責：每個 work 的**可查名稱集合**（title 之外還有 title_original 與 aliases）。
+            // 物理意義：正本的 title 只有一體（本例是繁體「奇葩小國」），而人會打简体、打 up 主名、
+            //   打英文名 —— 那些字面全在 `aliases` 裡，而它以前不在比對集合裡。
+            // 🩸 血證（Tim 2026-09-07，TASK-0169）：查「奇葩小国」（简体）回「找到 1 個入口」而那一筆是
+            //   Archive legacy —— 因為 SearchArchive 多比一欄 `title_original`（那欄剛好是简体），
+            //   **舊層的網比新層寬**。於是「已經遷移完了」與「還沒遷移」在畫面上同形，
+            //   而頁面那句「Archive 只供人工確認與遷移」會把人推去做**重複遷移**。
+            // 數值影響：只擴大比對的字面集合；命中後回傳的 Title 仍是 work.json 的 title（顯示名不變）。
+            var workNames = new Dictionary<string, List<string>>();
             foreach (string workDir in Directory.GetDirectories(worksRoot))
             {
                 JsonData work = ReadObject(Path.Combine(workDir, "work.json"));
                 if (work == null) continue;
                 string workId = work.GetString("work_id", Path.GetFileName(workDir));
                 workTitles[workId] = work.GetString("title", workId);
+
+                var names = new List<string> { workTitles[workId] };
+                string original = work.GetString("title_original", "");
+                if (!string.IsNullOrEmpty(original)) names.Add(original);
+                // 別名兩形狀（字串陣列／物件陣列）—— 判準與 UCL_ReadingLibraryIO.AliasToString 同一套，
+                // ⛔ 不在這裡造第四套解析。
+                JsonData aliases = work.Contains("aliases") ? work["aliases"] : null;
+                if (aliases != null && aliases.IsArray)
+                {
+                    for (int i = 0; i < aliases.Count; i++)
+                    {
+                        JsonData a = aliases[i];
+                        if (a == null) continue;
+                        string s = a.IsObject ? a.GetString("title", "") : a.GetString();
+                        if (a.IsObject && string.IsNullOrEmpty(s)) s = a.GetString("slug", "");
+                        if (!string.IsNullOrEmpty(s) && !names.Contains(s)) names.Add(s);
+                    }
+                }
+                workNames[workId] = names;
             }
 
             foreach (string mediaDir in Directory.GetDirectories(mediaRoot))
@@ -532,7 +571,11 @@ namespace UCL.Core.EditorLib.Page
                 string title = workTitles.TryGetValue(workId, out string knownTitle) ? knownTitle : workId;
                 string mediaId = media.GetString("media_id", Path.GetFileName(mediaDir));
                 string mediaKind = media.GetString("media_kind", "unknown");
-                if (!Matches(query, title, mediaId, workId)) continue;
+                // 比對集合＝該 work 的全部可查名稱（title／title_original／aliases）＋ 兩個 id。
+                var haystack = new List<string> { mediaId, workId };
+                if (workNames.TryGetValue(workId, out List<string> knownNames)) haystack.AddRange(knownNames);
+                else haystack.Add(title);   // work.json 讀不到時退回 media 那側算出的 title，不靜默漏比
+                if (!Matches(query, haystack.ToArray())) continue;
                 // readers 清單給追回檢視按鈕用 —— 只列目錄名，不在搜尋階段讀 reader.json
                 var readers = new List<string>();
                 string readersRoot = Path.Combine(mediaDir, "readers");

@@ -28,6 +28,16 @@
 //   ⇒ `elapsed_ms`（handler）＋ `runner_ms`（Runner 這一圈）兩個都落，門檻**各判一次**。
 //   ⛔ 刻意不把 handler 那欄的口徑改寬 —— 已落的行會換意思而沒有人知道。
 //
+// 📌 `offloaded` / `bg_tid` / `main_tid`：這支有沒有真的離開主緒，以及它落在哪條緒。
+//   由 **offload 入口在背景區段裡面**戳（`NoteOffloaded`）—— 因為外面問不到。
+//   🩸 同一個問題我量錯過兩次，兩次的失效樣子都是「欄位永遠給同一個答案」：
+//   ① 量在 `End()`：Runner 之後統一切回主緒 ⇒ 永遠 main。
+//   ② 量在 Runner 的 `await handlerTask` 之後：UniTask 把續接送回 PlayerLoop ⇒ **還是**永遠 main，
+//      即使 handler 全程在背景緒上跑。實測讀數：offload 已生效的 `AutoCommit op=scan`
+//      仍印 `handler_thread=main`（2026-09-07）。
+//   ⇒ 一般形：**問「這段程式跑在哪條緒」不能站在它外面問** —— 外面永遠是 await 恢復的地方。
+//   ⛔ 而一個永遠給同一個答案的欄位比沒有欄位更貴：它看起來像讀數。
+//
 // ⛔ 本檔零行為變更：不改任何 handler 的執行緒歸屬（offload 是另一張單）。量具壞掉不准影響 cmd 本業，
 //    所以每一個對外入口都自己 try 起來（形狀沿用已驗過的 UCL_BartenderIO.AppendSlowTick）。
 #if UNITY_EDITOR
@@ -54,6 +64,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         internal string Lane;
         internal DateTime StartUtc;
         internal System.Diagnostics.Stopwatch Watch;
+
     }
 
     /// <summary>
@@ -112,6 +123,8 @@ namespace UCL.Core.EditorLib.AgentCommands
             public string Persona;
             public DateTime StartUtc;
             public DateTime? EndUtc;
+            public bool Offloaded;      // 這支有沒有走 UCL_AgentCmdOffload.EnterBackground
+            public int BgThreadId;      // 走了之後落在哪條緒（≠ 主緒才算真的離開）
         }
 
         // ===========================================================
@@ -218,6 +231,37 @@ namespace UCL.Core.EditorLib.AgentCommands
         }
 
         // ===========================================================
+        // 區塊職責：由 offload 入口在**背景緒上**戳一筆「我離開主緒了，落在 tid=N」
+        // 物理意義：🩸 這是同一個問題的**第三個**量測位置，前兩個都量錯了時刻：
+        //   ① 量在 `End()` —— Runner 之後統一切回主緒 ⇒ 永遠回 main。
+        //   ② 量在 Runner 的 `await handlerTask` 之後 —— UniTask 把 await 的續接送回主緒
+        //      （PlayerLoop 是它的預設 context）⇒ **還是**永遠回 main，即使 handler 全程在背景。
+        //   ⇒ 唯一量得到真相的位置是**背景區段裡面**，而只有 offload 入口站在那裡。
+        //   📌 一般形：問「這段程式在哪條緒上跑」不能在它外面問 —— 外面永遠是 await 恢復的地方。
+        // 數值影響：只寫記憶體（ring），落檔在 End 那一刻讀它。找不到對應 cmd（非 queue 路徑）就不寫。
+        // ===========================================================
+        public static void NoteOffloaded(string iCmdId)
+        {
+            if (string.IsNullOrEmpty(iCmdId)) return;
+            int aTid = System.Threading.Thread.CurrentThread.ManagedThreadId;
+            lock (s_RingLock)
+            {
+                for (int i = s_Ring.Count - 1; i >= 0; i--)
+                {
+                    if (s_Ring[i].CmdId == iCmdId && s_Ring[i].EndUtc == null)
+                    {
+                        s_Ring[i].Offloaded = true;
+                        s_Ring[i].BgThreadId = aTid;
+                        return;
+                    }
+                }
+            }
+        }
+
+        /// <summary>主執行緒的 managed thread id —— 讀數解讀用（bg_tid 等於它就表示根本沒離開）。</summary>
+        public static int MainThreadId => s_MainThreadId;
+
+        // ===========================================================
         // 區塊職責：收掉一支 cmd 的量測，超過門檻就落一行
         // 物理意義：`ended_on_main_thread` 是本行最貴的一欄 —— 它回答「這支到底有沒有閃開主執行緒」，
         //          而那正是下一張單（逐支 offload）要照著排的順序。
@@ -234,7 +278,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                 iProbe.Watch.Stop();
                 double aMs = iProbe.Watch.Elapsed.TotalMilliseconds;
                 DateTime aEnd = DateTime.UtcNow;
-                bool aOnMain = System.Threading.Thread.CurrentThread.ManagedThreadId == s_MainThreadId;
+                // 本支有沒有真的離開主緒 —— 由 offload 入口在背景緒上戳的那一筆（見 NoteOffloaded）。
+                bool aOffloaded = false;
+                int aBgTid = -1;
 
                 lock (s_RingLock)
                 {
@@ -243,6 +289,8 @@ namespace UCL.Core.EditorLib.AgentCommands
                         if (s_Ring[i].CmdId == iProbe.CmdId && s_Ring[i].EndUtc == null)
                         {
                             s_Ring[i].EndUtc = aEnd;
+                            aOffloaded = s_Ring[i].Offloaded;
+                            aBgTid = s_Ring[i].BgThreadId;
                             break;
                         }
                     }
@@ -264,7 +312,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                    .Append(",\"op\":\"").Append(Esc(iProbe.Op)).Append('"')
                    .Append(",\"persona\":\"").Append(Esc(iProbe.Persona)).Append('"')
                    .Append(",\"lane\":\"").Append(Esc(iProbe.Lane)).Append('"')
-                   .Append(",\"ended_on_main_thread\":").Append(aOnMain ? "true" : "false")
+                   .Append(",\"offloaded\":").Append(aOffloaded ? "true" : "false")
+                   .Append(",\"bg_tid\":").Append(aBgTid.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                   .Append(",\"main_tid\":").Append(s_MainThreadId.ToString(System.Globalization.CultureInfo.InvariantCulture))
                    .Append(",\"success\":").Append(iSuccess ? "true" : "false");
                 if (!string.IsNullOrEmpty(iError))
                     aSb.Append(",\"error\":\"").Append(Esc(Trunc(iError, 240))).Append('"');

@@ -125,7 +125,13 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {
-            await UniTask.Yield();
+            // ⏱ 移出主執行緒（TASK-0162 第 1 支）—— 本支實測 handler **3830.7ms 且 ended_on_main_thread=true**
+            //   （`AgentCommands/_diagnostics/_cmd_slow.jsonl`，2026-09-07 `op=commit`），
+            //   而它做的事整段是 **git subprocess ＋ 檔案 IO**，沒有一格需要 Editor API。
+            //   ⚠ 這一行必須是第一行：它先在主緒把路徑快取暖好（DataRoot / RepoRoot / LettersPath），
+            //   再切背景 —— 反過來的話 prewarm 會靜默失效（見 UCL_AgentCmdOffload 的區塊註解）。
+            //   ⛔ 取代原本的 `await UniTask.Yield()`：那一行只是讓出一拍，**下一拍還是主緒**。
+            await UCL_AgentCmdOffload.EnterBackground(args);
             string op = GetArg(args, "op", "scan").Trim().ToLowerInvariant();
             if (op != "scan" && op != "commit")
                 throw new Exception($"[AutoCommit] 未知 op '{op}'（scan / commit）");

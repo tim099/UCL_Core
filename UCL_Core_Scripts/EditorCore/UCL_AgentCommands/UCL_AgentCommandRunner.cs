@@ -469,6 +469,19 @@ namespace UCL.Core.EditorLib.AgentCommands
                                 await handlerTask;
                             }
                         }
+                        // ===========================================================
+                        // 區塊職責：handler 結束後把**自己**拉回主執行緒（TASK-0162 的前置）
+                        // 物理意義：handler 現在可以合法地把自己移到 thread pool（走
+                        //          UCL_AgentCmdOffload.EnterBackground）。它這麼做之後，
+                        //          `await handlerTask` 的續接就落在背景緒上 —— 而本迴圈接下來會碰
+                        //          `EditorApplication.isPlayingOrWillChangePlaymode`（catch 裡，主緒 only）。
+                        //          ⇒ 由 Runner 統一拉回來，**offload 的 handler 就不必各自記得回家**。
+                        // 數值影響：已經在主緒時 SwitchToMainThread 幾乎是 no-op（UniTask 直接同步返回）；
+                        //          在背景緒時多等一拍 Editor update。⛔ 不可以省 —— 省掉之後
+                        //          失效樣子是「偶爾在 catch 裡丟一個跟本次錯誤無關的 Unity 例外」，
+                        //          而那會把真正的 handler 錯誤蓋掉（本檔已有 UniTask token 蓋錯誤的血證）。
+                        // ===========================================================
+                        await UniTask.SwitchToMainThread();
                         c.LastRunResult = "Success";
                         c.LastRunError = null;
                         c.LastRunAt = DateTime.UtcNow.ToString("o");
@@ -489,6 +502,10 @@ namespace UCL.Core.EditorLib.AgentCommands
                     }
                     catch (Exception e)
                     {
+                        // ⚠ 先回主緒再讀 Editor 狀態 —— offload 過的 handler 拋錯時，這個 catch
+                        //   本來就跑在背景緒上，而下一行的 `EditorApplication.*` 是主緒 only。
+                        //   （C# 允許在 catch 裡 await；這行在已經是主緒時等同 no-op。）
+                        await UniTask.SwitchToMainThread();
                         if (EditorApplication.isPlayingOrWillChangePlaymode && c.Mode == UCL_AgentCommandMode.OneShot)
                         {
                             // 區塊職責：進入 PlayMode 轉移期間的特殊處理

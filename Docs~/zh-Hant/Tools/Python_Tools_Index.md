@@ -1,7 +1,7 @@
 ---
 title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
 description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。
-last_updated: 2026-09-01
+last_updated: 2026-09-07
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md | Awakening Init Protocol | morning/goodnight 三步驟設計
@@ -117,7 +117,12 @@ python private_letter.py --persona <P> list | show <path> | sync | restore | res
 
 ## 🛠 Editor 整合
 
-### `check_compile.py` — Editor 編譯報告
+### `check_compile.py` — Editor 編譯報告　⚠ **不再是主入口**（2026-09-07）
+
+> 主入口已換成 Senate CLI：`senate cmd unity-recompile`（觸發＋等那一趟）／
+> `senate cmd unity-compile-status`（只讀）。本支**尚未退場**，留著是因為
+> `--fallback-log`（解 Editor.log）與 `--editor-alive`（心跳）CLI 還沒移。
+> ⛔ **`--watch` 已知會回上一次的快照且不印 STALE（TASK-0154）—— 別用它。**
 
 讀 Editor 端 `Library/Bee/build.txt` 等檔, 印 markdown / json 編譯錯誤 + warning 報告。
 
@@ -126,7 +131,8 @@ python check_compile.py                  # markdown 報告
 python check_compile.py --errors-only    # 只看 Error
 python check_compile.py --max 10         # 限制筆數
 python check_compile.py --format json    # 機器讀
-python check_compile.py --watch          # 等下次編譯結束才印
+# ⛔ python check_compile.py --watch    # 已退場用法：會回上一次的快照且不印 STALE（TASK-0154）
+#    ⇒ 改走 senate cmd unity-recompile
 ```
 
 ### `check_task_lease.py` — Pre-commit 守門 (W1 enforce)

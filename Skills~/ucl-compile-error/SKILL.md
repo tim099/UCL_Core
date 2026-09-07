@@ -2,7 +2,9 @@
 name: ucl-compile-error
 description: |
   Unity compile error 排查。當改完 .cs 後懷疑編譯有錯、agent 改了腳本要驗收、或使用者問「編譯有錯嗎」「CS0103 / CS0117 / CS1503 / CS0246」「assembly / asmdef」相關問題時用本 skill。
-  核心工具是 standalone Python 腳本 check_compile.py，完全不依賴 Cmd 系統，能在 Cmd 因 compile error 失效時也印錯誤清單。
+  主入口是 Senate CLI：`senate cmd unity-recompile`（觸發＋等到那一趟編譯結束）／
+  `senate cmd unity-compile-status`（只讀現況，不需要 Editor）。
+  python `check_compile.py` 仍在（尚未退場），保留 `--fallback-log` / `--editor-alive` 那幾格 CLI 還沒移的能力。
 trigger: { on_files: ["*.cs"], on_intent: ["編譯錯", "compile error", "CS0103", "CS0117", "CS1503", "CS0246", "asmdef", "assembly"] }
 ---
 
@@ -14,24 +16,45 @@ trigger: { on_files: ["*.cs"], on_intent: ["編譯錯", "compile error", "CS0103
 
 完整 SOP + 8 大常見錯誤類型對照 → `ucl_core:Docs~/zh-Hant/Workflows/CompileError_Diagnose_Workflow.md`
 
-## 速查指令
+## 速查指令（主入口＝Senate CLI，2026-09-07 起）
 
 ```bash
-# 預設（healthy / broken 都跑這條）
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only
+# ⭐ 改完 .cs 之後就走這條：觸發重編 ＋ 等到**那一趟**結束才印
+senate cmd unity-recompile --arg persona=<me>
 
-# .compile_status.json 不存在 → fallback 解 Editor.log
+# 只想知道「現在磁碟上那份狀態說什麼」—— 不觸發、**不需要 Editor**
+senate cmd unity-compile-status
+```
+
+⚠ **兩支回答的是不同問題，別互相代替**：
+`unity-recompile` 回答「**我這次改動編譯過了嗎**」（基準＝送出觸發的那一刻）；
+`unity-compile-status` 回答「**現在磁碟上那份說什麼**」，而它會自己講明它不知道那是不是你的改動。
+
+⛔ **兩支都只量 Unity assemblies，不涵蓋 `senate.exe`** —— 那條走 `dotnet build` ／ `build.sh`。
+🩸 2026-09-07 血證：同一份 `SCP_Cmd_Keys.cs`，Unity 印 **0 errors**、`dotnet build` **CS8603 紅燈**
+（Unity 那側 LangVersion 9、nullable 沒開；Senate 那側 nullable 開著且警告當錯誤）。
+**兩個宿主的尺不同形，而且不可以合成一把。**
+
+### python 那支還在（**尚未退場**），這幾格 CLI 還沒移
+
+```bash
+# .compile_status.json 不存在 → fallback 解 Editor.log（CLI 沒移）
 python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log
 
-# 改完檔等下一次 compile（agent 動完 .cs 後驗收用）
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --watch --watch-timeout 60
+# Editor 還在不在 tick（純 stat 心跳檔，不送 Cmd）（CLI 沒移）
+python <UCL_Core>/Tools~/AgentCommands/check_compile.py --editor-alive
 
-# 新鮮度基準指定成「我剛改的那個檔」—— 一次 stat，比問 git 更精準也更便宜
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --since-file <你改的.cs>
-
-# CI / 腳本：狀態沒涵蓋改動就 exit 4（別讓過期綠燈通過驗收）
+# CI / 腳本：狀態沒涵蓋改動就 exit 4（CLI 這側改由 unity-recompile 的 exit 4 表達）
 python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --strict-fresh
 ```
+
+> 🩸 **⛔ `check_compile.py --watch` 已知會給假綠燈（TASK-0154）——改走 `unity-recompile`。**
+> 它的結束條件只有 `in_progress=false`，而**觸發還沒開始時它已經是 false**
+> ⇒ 直接返回上一次的快照。2026-09-07 實測：送出 recompile 後立刻 `--watch`，
+> 印出的是 **三天前**（`2026-09-04T17:14`）那份，Errors: 0，**而且沒印 STALE 橫幅**
+> —— 不帶 `--watch` 時同一支工具有印。
+> ⇒ 那條路在最需要它的一刻給綠燈，且沒有任何可疑跡象。
+> `unity-recompile` 的基準是**我送出的那一刻**（取在 `Submit` 之前），所以那個洞在新結構裡不存在。
 
 ## 🚨 新鮮度守衛（2026-08-05 起預設開啟）
 
@@ -89,7 +112,7 @@ python <UCL_Core>/Tools~/AgentCommands/check_compile.py --editor-alive
 - 在編譯還有錯時跑 runtime（沒意義）
 - 用 `Recompile` AgentCommand 取代本工具（compile error 時 Cmd 本身可能掛）
 - 只看 `Simulation_*.log` 不看 `.compile_status.json`（前者混雜 Warning 雜訊）
-- **只信 `run_cmd.py recompile` 子命令回報的 `errors=N` 就收工** — 它可能讀到 stale / intermediate `.compile_status.json` 而 **under-report `errors=0`**。改完 .cs **務必**用 `check_compile.py --errors-only` 二次確認。
+- **只信 `run_cmd.py recompile` 子命令回報的 `errors=N` 就收工** — 它可能讀到 stale / intermediate `.compile_status.json` 而 **under-report `errors=0`**。改完 .cs **務必**用 `senate cmd unity-recompile` 二次確認（它等的是你那一趟）。
   > 🩸 2026-05-22 血證:apex-two 的 `item.Data.name`(CS1061)被 `recompile` 子命令漏報成 `errors=0`,而 `Errors_latest.log`(runtime 層)也乾淨 → basecamp 誤判成「domain reload 沒生效」,繞一大圈才靠 `check_compile.py` 確診。**compile 層 ≠ runtime 層 ≠ recompile-cmd 回報層**,三層別混(對應「跨層次驗證」family)。
 
 ## 🧪 runtime 行為驗證（不跑遊戲）— Cmd_Invoke reflection

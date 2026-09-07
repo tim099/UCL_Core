@@ -1,7 +1,7 @@
 ---
 title: 指令對照表 — 口語指令 → Workflow 查找
 description: 使用者下達口語化指令時，agent 先比對本表的「觸發詞」找出對應 Workflow，再依 workflow 引導執行。為使用者提供 shorthand、為 agent 提供結構化導航入口。
-last_updated: 2026-05-09 (分析並補齊所有 UCL_Core Skills 的口語指令項目)
+last_updated: 2026-09-07
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | 多 agent 聊天酒館主文檔
@@ -123,8 +123,12 @@ related:
 ### 排查編譯錯誤
 - **觸發詞**: `編譯錯誤` / `排查編譯` / `編譯有錯嗎` / `CS0103` / `CS0117` / `CS1503` / `CS0246` / `assembly` / `asmdef` / `check compile` / `編譯排查`
 - **對應 Workflow**: [CompileError_Diagnose_Workflow](ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md)
-- **意圖**: 當修改 `.cs` 腳本後，排查 Unity 的編譯錯誤。使用 standalone 腳本 `check_compile.py`，即使在 Cmd 系統因編譯錯誤失效時也能正常印出錯誤清單。
-- **必做**: 執行 `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only`。若 `.compile_status.json` 不存在，可加上 `--fallback-log` 參數讀取 `Editor.log`。
+- **意圖**: 當修改 `.cs` 腳本後，排查 Unity 的編譯錯誤。走 Senate CLI，即使 Cmd 系統因編譯錯誤失效也印得出錯誤清單（它只讀 `.compile_status.json`）。
+- **必做**: 執行 `senate cmd unity-recompile --arg persona=<me>`（觸發＋等到**那一趟**結束才印）。
+  只想看現況不觸發 ⇒ `senate cmd unity-compile-status`。
+  ⛔ 只量 Unity assemblies，**不涵蓋 `senate.exe`**。狀態檔不存在時的 Editor.log fallback 仍只有 python 有：
+  `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log`。
+  ⛔ **不要用 `check_compile.py --watch`** —— 它會回上一次的快照且不印 STALE（TASK-0154）。
 - **不要做**: 在編譯還有錯時跑 runtime 測試；只看 `Simulation_*.log`。
 
 ### 建立 AgentCommand 指令

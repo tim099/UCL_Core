@@ -1,7 +1,7 @@
 ---
 title: Unity Compile Error 排查工作流程
-description: 用 UCL_CompileErrorTracker 寫的 .compile_status.json + check_compile.py 工具，讓 agent 即使在「Cmd 系統因 compile error 也載不進來」的雞生蛋情境下，也能讀到完整錯誤清單；含 dedupe / log fallback / session 邊界偵測 / 4 步排查 SOP / 8 大常見錯誤類型對照 / 實戰 case study
-last_updated: 2026-05-07
+description: 用 UCL_CompileErrorTracker 寫的 .compile_status.json ＋ Senate CLI（unity-recompile / unity-compile-status，python check_compile.py 尚未退場），讓 agent 即使在「Cmd 系統因 compile error 也載不進來」的雞生蛋情境下，也能讀到完整錯誤清單；含 dedupe / log fallback / session 邊界偵測 / 4 步排查 SOP / 8 大常見錯誤類型對照 / 實戰 case study
+last_updated: 2026-09-07
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [編譯錯誤, compile error, CompileError, CS0103, CS0117, CS1503, CS0246, asmdef, assembly, 排查, debug, troubleshooting]
 tags: [compile, debug, agent_commands, workflow]
@@ -12,22 +12,40 @@ tags: [compile, debug, agent_commands, workflow]
 > [!IMPORTANT]
 > **解決什麼問題**：agent（或人類）改了 .cs 檔之後 Unity 編譯失敗，Cmd 系統會跟著掛掉（assembly 載不進來 → handler 不在 Registry → Cmd 無法觸發），於是「最需要查錯誤的時候」反而沒辦法用任何 Cmd。
 >
-> **本工作流的核心工具是 standalone Python 腳本** [`check_compile.py`](../../../Tools~/AgentCommands/check_compile.py)，**完全不依賴 Cmd 系統**，能在任何狀態下印出 dedup 過的錯誤清單。
+> **主入口是 Senate CLI**（2026-09-07 起）：`senate cmd unity-recompile`（觸發＋等到**那一趟**結束）／
+> `senate cmd unity-compile-status`（只讀現況，**不需要 Editor**）。兩者都只讀 `.compile_status.json`
+> 這個檔，**不依賴 Cmd 系統**（那正是本工作流存在的前提：編譯壞掉時 Cmd 也載不進來）。
+>
+> python [`check_compile.py`](../../../Tools~/AgentCommands/check_compile.py) **尚未退場**，仍保留
+> `--fallback-log`（解 Editor.log）與 `--editor-alive`（心跳）這兩格 CLI 還沒移的能力。
 
 ---
 
 ## 0. TL;DR — Agent 速查卡
 
 ```bash
-# 預設指令（healthy 與 broken 狀態都跑這條）
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only
+# ⭐ 改完 .cs 之後的預設路徑：觸發重編 ＋ 等到**那一趟**結束才印
+senate cmd unity-recompile --arg persona=<me>
 
-# 若印 ".compile_status.json not found" → fallback 解 Editor.log
+# 只讀現況（不觸發、不需要 Editor）—— 它會自己說明「我不知道這是不是你的改動」
+senate cmd unity-compile-status
+
+# 狀態檔不存在 → fallback 解 Editor.log（**CLI 未移，仍走 python**）
 python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log
-
-# 等下次 compile 結束才回報（改完檔之後用）
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --watch --watch-timeout 60
 ```
+
+> [!WARNING]
+> ⛔ **`check_compile.py --watch` 會給假綠燈（TASK-0154）—— 改走 `unity-recompile`。**
+> 它的結束條件只有 `in_progress=false`，而觸發還沒開始時那已經是 false ⇒ 回上一次的快照。
+> 🩸 2026-09-07 實測：送出 recompile 後立刻 `--watch`，印出的是**三天前**（`2026-09-04T17:14`）
+> 那份、`Errors: 0`，**而且沒印 STALE 橫幅** —— 不帶 `--watch` 時同一支工具有印。
+> `unity-recompile` 的基準是**送出觸發的那一刻**（取在 Submit 之前），那個洞在新結構裡不存在。
+
+> [!CAUTION]
+> ⛔ **兩支都只量 Unity assemblies，不涵蓋 `senate.exe`**（那條走 `dotnet build` ／ `build.sh` 出廠驗收）。
+> 🩸 2026-09-07 血證：同一份 `SCP_Cmd_Keys.cs`，Unity 印 **0 errors**、`dotnet build` **CS8603 紅燈**
+> —— Unity 那側 LangVersion 9、nullable 沒開；Senate 那側 nullable 開著且警告當錯誤。
+> **兩個宿主的尺不同形，而且不可以合成一把。**
 
 > `<UCL_Core>` 視專案而定，EOV 為 `CardGame/Assets/UCL/UCL_Core`。
 
@@ -74,7 +92,7 @@ python <UCL_Core>/Tools~/AgentCommands/check_compile.py --watch --watch-timeout 
 
 ## 2. 4 步排查 SOP
 
-### Step 1 — 跑 check_compile.py 看摘要
+### Step 1 — 跑 `senate cmd unity-recompile`（或 `unity-compile-status`）看摘要
 
 **輸出解讀**：
 - `**Errors: N**` — 編譯錯誤數
@@ -251,7 +269,7 @@ sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 **典型循環**：
 1. 改完一批 .cs
 2. 提示使用者 focus Unity 觸發 recompile
-3. 跑 `check_compile.py` → 看 dedupe 後的錯誤
+3. 跑 `senate cmd unity-recompile` → 它自己觸發、自己等、印 dedupe 後的錯誤
 4. **交叉驗證**每筆錯誤是 fresh 或 stale（打開檔案對行）
 5. 修真錯 → 回到步驟 1 直到 `Errors: 0`
 
@@ -261,7 +279,8 @@ sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 - [`UCL_CompileErrorTracker.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/UCL_CompileErrorTracker.cs) — Tracker 本體
 - [`Cmd_GetCompileErrors.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/CMD/Cmd_GetCompileErrors.cs) — Cmd 包裝（healthy 狀態才用）
-- [`check_compile.py`](../../../Tools~/AgentCommands/check_compile.py) — Standalone Python 工具（**主路徑**）
+- `senate cmd unity-recompile` ／ `senate cmd unity-compile-status` — **主路徑**（Senate CLI，2026-09-07 起）
+- [`check_compile.py`](../../../Tools~/AgentCommands/check_compile.py) — python 工具（**尚未退場**；`--fallback-log` / `--editor-alive` 仍只有它有）
 - [Workflows/Create_Cmd_Workflow](Create_Cmd_Workflow.md) — 新增 Cmd SOP
 - [API/UCL_AgentCommand/UCL_AgentCommand_Architecture](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command 系統架構
 

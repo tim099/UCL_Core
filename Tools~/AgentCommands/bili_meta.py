@@ -13,6 +13,14 @@ bili_meta.py — 給一條 bilibili 連結，印出這支影片的公開 metadat
 為什麼這些守衛存在（每一條都有讀數，不是預防性設計）：
   - **UA 必填**：不帶 User-Agent 打 view API 會回 **HTTP 412**（風控），
     而那長得像「端點壞了」。同族血證：Plurk 的 Cloudflare 1010 擋 python-urllib 預設 UA。
+  - **而 412 不只有 UA 這一種成因（2026-09-07 實測，TASK-0170）**：舊端點
+    `/x/web-interface/view` 對本環境**一律 412**，帶完整瀏覽器 header（sec-ch-ua／Origin／
+    Sec-Fetch-*）仍 412、帶官方 `spi` 發的真 `buvid3` cookie 仍 412 ——
+    而**同機同 header** 打 `/x/web-interface/wbi/view` 回 `code=0` 且欄位完整。
+    ⇒ 成因是**那一支端點**，不是本 client 的身分。
+    🩸 而舊版的提示字面寫著「最常見原因是沒帶 UA —— 本工具有帶」：它把人指向一個
+    **已經做對了的方向**，於是 412 讀起來像「無解」。⇒ 現在改成依序試 `VIEW_ENDPOINTS`，
+    並在報告裡印出**這次是哪一支回答的**。
   - **判定看 `code`，不看 HTTP 狀態**：不存在的 BV 會回 **HTTP 200 + `code=-400`** ——
     **失敗長得像成功**。只看 http 200 就會把空字串當標題用。
   - **`-400` 不可分辨**：「這支影片不存在」與「BV 格式錯」回的是**同一個 code 同一句 message**。
@@ -50,8 +58,20 @@ try:
 except Exception:
     pass
 
-VIEW_API = "https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
-VIEW_API_AID = "https://api.bilibili.com/x/web-interface/view?aid={aid}"
+# 區塊職責：view 端點清單（**依序試，第一個成功的就用**）。
+# 物理意義：`/x/web-interface/view` 這一支自 2026-09-07 起對本環境**一律回 412**（風控），
+#   而同一台機器、同一組 header 打 `/x/web-interface/wbi/view` 回 `code=0` 且資料完整
+#   （實測矩陣：view 412／wbi/view 200／player/pagelist 200／spi 200 ⇒ 擋的是那一支，不是這台機器）。
+#   ⚠ `wbi/view` 名字帶 wbi 但**不需要簽名**就給公開欄位（bvid／aid 兩種都實測過）。
+# 數值影響：舊端點留在清單尾當備援 —— 它若哪天解禁，讀數會自己回來；
+#   而**報告會印出這次是哪一支回答的**，不讓「換過端點」這件事變成看不見的內部行為。
+VIEW_ENDPOINTS = [
+    ("wbi/view", "https://api.bilibili.com/x/web-interface/wbi/view?bvid={bvid}",
+                 "https://api.bilibili.com/x/web-interface/wbi/view?aid={aid}"),
+    ("view（舊，2026-09-07 起本環境 412）",
+                 "https://api.bilibili.com/x/web-interface/view?bvid={bvid}",
+                 "https://api.bilibili.com/x/web-interface/view?aid={aid}"),
+]
 
 # 區塊職責：自報身分。
 # 物理意義：不帶 UA → HTTP 412。這不是「B 站擋 agent」，是我們的 client 沒自報身分。
@@ -129,11 +149,32 @@ def extract_id(text: str, timeout: int) -> tuple[str, str, str]:
 # ---------------------------------------------------------------- API
 
 def fetch_view(kind: str, ident: str, timeout: int) -> dict:
-    """打 view API。回 dict：{ok, http, code, message, data, error}
+    """依序試 `VIEW_ENDPOINTS`，回第一支成功的讀數。
 
+    回 dict：{ok, http, code, message, data, error, endpoint, tried}
     ⚠ 網路層失敗（exit 5）與 API 說不行（exit 4）**分開回報** —— 兩者處置不同。
+    ⚠ 只有**網路層**失敗才換下一支（412／連線類）；`code != 0` 是 B 站正面回答了
+      「這支不行」（例：`-400` 影片不存在）⇒ **不換端點重試**，換了也是同一個答案，
+      而重試會把「影片不存在」染成「端點有問題」。
     """
-    url = VIEW_API.format(bvid=ident) if kind == "bvid" else VIEW_API_AID.format(aid=ident)
+    tried = []
+    last = None
+    for name, tpl_bv, tpl_aid in VIEW_ENDPOINTS:
+        url = tpl_bv.format(bvid=ident) if kind == "bvid" else tpl_aid.format(aid=ident)
+        res = _fetch_one(url, timeout)
+        res["endpoint"] = name
+        tried.append(f"{name} → " + ("ok" if res.get("ok")
+                     else f"{res.get('layer')} {res.get('http') or ''} {res.get('code') or ''}".strip()))
+        res["tried"] = tried
+        if res.get("ok") or res.get("layer") == "api":
+            return res
+        last = res
+    return last if last is not None else {"ok": False, "layer": "net", "http": None,
+                                          "error": "VIEW_ENDPOINTS 是空的", "tried": tried}
+
+
+def _fetch_one(url: str, timeout: int) -> dict:
+    """打一支 view 端點。回 dict：{ok, layer, http, code, message, data, error}"""
     try:
         req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -142,7 +183,13 @@ def fetch_view(kind: str, ident: str, timeout: int) -> dict:
     except urllib.error.HTTPError as e:
         hint = ""
         if e.code == 412:
-            hint = "（412 = 風控擋下。最常見原因是沒帶 User-Agent —— 本工具有帶，若仍 412 代表被更上層擋）"
+            # ⚠ 舊版這裡寫「最常見原因是沒帶 User-Agent」—— **2026-09-07 實測推翻**：
+            #   帶完整瀏覽器 header（含 sec-ch-ua／Origin／Sec-Fetch-*）仍 412；
+            #   帶官方 spi 發的真 buvid3 cookie 仍 412；而同機同 header 打 wbi/view 回 code=0。
+            #   ⇒ 412 的成因是**那一支端點**，不是本 client 的身分。把 UA 寫成主因會讓人去改 UA。
+            hint = ("（412 = 風控擋下。⛔ 主因**不是** UA —— 實測帶完整瀏覽器 header ＋ 真 buvid3 "
+                    "仍 412，而 `wbi/view` 同機同 header 回 code=0 ⇒ 是這一支端點被擋。"
+                    "本工具已自動改試 `VIEW_ENDPOINTS` 的下一支）")
         return {"ok": False, "layer": "net", "http": e.code,
                 "error": f"HTTPError {e.code} {e.reason}{hint}"}
     except Exception as e:                                        # noqa: BLE001
@@ -223,7 +270,12 @@ def render_md(bvid: str, how: str, res: dict) -> str:
     L.append(f"# bilibili 取資訊 — `{bvid}`")
     L.append("")
     L.append(f"- BV 號來源：{how}")
-    L.append(f"- 端點：`GET /x/web-interface/view`　http **{res['http']}**　`code={res['code']}`　message=`{res['message']}`")
+    L.append(f"- 端點：**{res.get('endpoint', '?')}**　http **{res['http']}**"
+             f"　`code={res['code']}`　message=`{res['message']}`")
+    tried = res.get("tried") or []
+    if len(tried) > 1:
+        # 前面那幾支失敗過 ⇒ 印出來。「第一支就成功」與「試到第三支才成功」不可同形。
+        L.append(f"- 依序試過：{'　→　'.join(tried)}")
     L.append("")
     L.append("## ① 查到的（唯讀 API 讀數 —— 原樣，未經改寫）")
     L.append("")
@@ -246,7 +298,9 @@ def render_md(bvid: str, how: str, res: dict) -> str:
     L.append("> ⇒ 下面是**草稿不是結果**：`<…>` 的部分沒有人替你決定，貼上去之前自己填。")
     L.append("")
     L.append("```bash")
-    L.append("python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run StreamWatch \\")
+    # ⚠ 這條草稿指的入口換過：`run_cmd.py` 已退場（senate CLI 接手）。
+    #   遞給人一條退役指令與遞一條有效指令**在畫面上同形** —— 它照樣是可貼的一行。
+    L.append("senate ucmd run StreamWatch --persona <me> \\")
     L.append("    --arg step=prepare --arg title=<作品名> --arg episode=<第幾集> \\")
     L.append("    --arg media_id=<媒材 id —— 查既有、不發明>")
     L.append("```")
@@ -277,6 +331,10 @@ def render_fail_md(bvid: str, how: str, res: dict) -> str:
     if res.get("layer") == "net":
         L.append(f"- **失敗在網路層**：{res.get('error')}")
         L.append(f"- http：{res.get('http')}")
+        tried = res.get("tried") or []
+        if tried:
+            # ⚠ 「只有一支可試」與「全部都試過了」不可同形 —— 後者才代表 VIEW_ENDPOINTS 整排都倒。
+            L.append(f"- 依序試過（**全部失敗**）：{'　→　'.join(tried)}")
         L.append("")
         L.append("⇒ 這一格失敗的是**連線／風控**，不是「影片不存在」。兩者處置不同：")
         L.append("　前者重試或查網路，後者要換 BV 號。")

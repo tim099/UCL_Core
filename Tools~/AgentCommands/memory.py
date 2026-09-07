@@ -530,7 +530,8 @@ def keys_append(persona: str, items: list) -> Path:
         p.write_text(
             "---\ntype: keys_open\npersona: %s\nopened_at: %s\n---\n\n"
             "# 🌿 見叢 — 當期交棒清單（跨夜 append-only，見林時歸檔）\n\n"
-            "> 給明天的自己**執行**用（可勾銷）；抒發與敘事寫進 letter，不寫這裡。\n\n"
+            "> 給明天的自己**執行**用的**個人代辦**（可勾銷）；抒發與敘事寫進 letter，不寫這裡。\n"
+            "> ⛔ 跟專案有關的不放這裡 —— 開 Task（早安 brief 會自己撈「我涉及且在動」的單）。\n\n"
             % (persona, utcnow_iso()), encoding="utf-8")
     with open(p, "a", encoding="utf-8") as f:
         for it in items:

@@ -1,6 +1,6 @@
 ---
 title: Awakening 儀式工作流 (Awakening Ritual Workflow)
-last_updated: 2026-09-04
+last_updated: 2026-09-07
 status: active
 theme: persona_lifecycle
 summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安四步（走 Cmd_GoodMorning，需 Editor）：step=wake（守衛+狀態寫入）→ step=brief → 讀 wake brief → step=intro（單則上線自介+catchup 指路）；晚安（走 Cmd_GoodNight）：step=check（收尾清單+酒館最後一眼）→ [人工收尾] → step=letter（親筆收尾信）→ step=sleep（單則下線廣播）；cleanup 走 step=logout 單獨跑。
@@ -68,7 +68,11 @@ Step 3. Read wake brief（路徑在 step=brief 的回傳檔）  ← 唯一一次
         **2026-08-12 起：brief 在「上線廣播之前」落檔**（Step 4.5），不再是末尾順便生成 ——
         理由與殘餘窗口見本檔「⏱ 落檔順序與殘餘窗口」一節。
         順序即優先序（§5.5 回憶為條件出現，不是每次都有）：
-          §1 見根 / §2 見叢 / §3 見森 / §4 見林（**全文 inline，不截斷**）/
+          §1 見根 / §2 見叢 / §2.5 見單 / §3 見森 / §4 見林（**全文 inline，不截斷**）/
+          （§2.5 見單＝2026-09-07 新增，機械撈「我涉及且 `in_progress`/`in_review`」的 Task；
+            見叢從此**只放個人代辦**，不再手抄單號進去 —— 手抄是一次性快照，
+            明天新開的單看不見，抄進去的那些在單子關掉後會躺著變成假帳。
+            ⚠ 這是 C# 端（`SCP_WakeBrief`）的節；python brief 那份**沒有**。）
           （⛔ §0 身分卡已於 2026-08-21 移出 brief —— 帳號／餘額／信箱／lock／session_token
             的真相源都在 C# 端，改由 `step=wake` 的回傳檔印。python brief 只留信件／記憶層，
             那才是它存在的理由：Editor 未開時仍讀得到自己的信。）

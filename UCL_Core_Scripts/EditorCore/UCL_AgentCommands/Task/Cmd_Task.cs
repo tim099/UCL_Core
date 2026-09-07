@@ -1,14 +1,15 @@
 // 區塊職責：任務系統的 Cmd 入口（create / list / show / claim / assign / update / comment / link / resolve / kanban）。
 // 物理意義：跨 agent 的**交付承諾**通道。與見叢（`_keys_open.md`）分工，判準是一句當下答得出來的話：
-//          **「有沒有第二個人在等這件事？」** 有 ⇒ 這裡；只有我自己要記住 ⇒ 見叢。
-//          兩者都是 ⇒ 兩邊都留（Task 記別人在等什麼，見叢記我為什麼又拖了）。
+//          **「這件事跟專案有關嗎？」** 有 ⇒ 這裡（Tim 2026-09-07 拍板）；
+//          純個人代辦（我的自律、我為什麼又拖了）⇒ 見叢。⛔ **不再兩邊都留**。
 // 數值影響：寫 Tasks/ 底下兩種檔（tasks/<index>.md 一單一檔 / 回傳檔）；不動 Treasury、不發酒館訊息。
 // 設計沿革：Plan_Task_Management_System.md（gura 撰寫 / Tim 2026-08-24 拍板）。
 //
-// ⚠ 早安 brief **不新增任何節**（Tim 2026-08-24 拍板，改掉 RFC §2②）：
-//   Task 經由見叢的引用行（`- [ ] [TASK-0042] …`）進入 brief ⇒ 早安流程零改動。
-//   代價：別人指派給我而我沒寫進見叢的單，早安不會提 ——
-//   那個洞補在**晚安對帳**（多印一類「指派給我但見叢沒引用」），不補在早安。
+// ⚠ **2026-09-07 改**：早安 brief 長出 §2.5 見單（`SCP_WakeBrief.ActiveTasksSection`），
+//   每天機械撈「我涉及且 in_progress / in_review」的單 ⇒ **不再靠見叢的引用行**。
+//   🩸 舊設計（Tim 2026-08-24「早安零改動」）的代價是：別人指派給我而我沒手抄進見叢的單，
+//   早安不會提 —— 那個洞當時補在晚安對帳。手抄是一次性快照：
+//   明天新開的單看不見，抄進去的那些在單子關掉後會躺著變成假帳。⇒ 改成每天自己算。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -286,8 +287,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine();
             ioR.AppendLine("## ▶ 下一步");
             ioR.AppendLine($"- 認領 → `run Task --arg op=claim --arg index={e.index} --arg role=dev`");
-            ioR.AppendLine($"- 見叢留一行引用（Task 記別人在等什麼，見叢記我為什麼又拖了）：");
-            ioR.AppendLine($"  `awakening.py keys --persona <me> --add \"[{e.Id}] {e.title}\"`");
+            ioR.AppendLine("- ⛔ **不要抄進見叢**（2026-09-07 起見叢只放個人代辦）——"
+                + " 認領之後它會自己出現在你早安 brief 的 **§2.5 見單**。");
             ioR.AppendLine($"- 做完 commit 訊息帶 `Fixes {e.Id}`（提交時自動推進 —— 有 QA 進 in_review，沒 QA 直接 done）");
             ioR.AppendLine();
             bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Created, iActor,
@@ -685,8 +686,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Assigned, iActor,
                 $"{aTarget} ← `{aRole}`", iCallerArgs: iArgs);
             AppendNotifyLine(ioR, e, iActor, aOk);
-            ioR.AppendLine($"- ⚠ 被指派的人若沒在見叢寫一行 `[{e.Id}]`，他的**早安 brief 不會提這張單**");
-            ioR.AppendLine("  （早安流程刻意零改動 —— Tim 2026-08-24 拍板）。酒館通知是他知道這件事的那條路。");
+            ioR.AppendLine($"- 📌 這張單會出現在 {aTarget} 早安 brief 的 **§2.5 見單** ——"
+                + " 但只有它進到 `in_progress` / `in_review` 才逐張列；");
+            ioR.AppendLine("  還在 `todo` / `backlog` 時只算進張數。⇒ **酒館通知仍是他今天就知道這件事的那條路。**");
         }
 
         // 可被 `--arg unset=` 清空的欄位白名單（TASK-0079）。

@@ -51,8 +51,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         // 區塊職責：組出晚安對帳那一段（markdown）。
         // 物理意義：以下每一段都**只印**（段號別當成段數 —— 這個清單長過，而註解漏過一次：
         //   ④ 是 TASK-0015 加的，而本行當時還寫著「三類」）：
-        //   ① 見叢引用了已關 / 不存在的單 ⇒ 那一行可以劃掉了（或它指錯了）
-        //   ② 跟我有關、還開著、而見叢**完全沒有引用** ⇒ 那就是 Tim 那條拍板開的洞
+        //   ① 見叢裡還留著 `[TASK-n]` 引用 ⇒ **舊規則的殘留**，該勾銷（2026-09-07 起見叢只放個人代辦）
+        //   ② 跟我有關、還開著的單的張數 —— **只報數字**，逐張列在早安 brief 的 §2.5 見單
         //   ③ 我掛在 in_progress 且逾期 ⇒ 認領變成占位（釋放走 op=sweep，顯式）
         //   ④ Task ↔ 工作記憶：(a) 連結壞掉 (b) 久未更新
         //   ⑤ 收工預告：等一下 `step=sleep` 會擋什麼（**只列不擋**，TASK-0019）
@@ -76,43 +76,33 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 sb.AppendLine($"- 讀數：單 **{aAll.Count}** 張／見叢引用 **{aRefs.Count}** 筆"
                     + $"（見叢：`{iKeysPath}`{(File.Exists(iKeysPath) ? "" : " ⚠ **檔不存在**")}）");
 
-                // ① 見叢引用了已關 / 不存在的單
+                // ① 見叢裡的 `[TASK-n]` 引用 —— 新規則下**一筆都不該有**
+                // 🩸 2026-09-07 之前這裡只抓「指向已關單」的引用，而規則改成
+                //   「專案的事一律開 Task、見叢只放個人代辦」之後，**引用本身**就是殘留：
+                //   開著的那些會跟早安 §2.5 重複報一次，關掉的那些會躺在見叢裡變成假帳。
                 var aStaleRefs = new List<string>();
                 foreach (var kv in aRefs.OrderBy(k => k.Key))
                 {
                     var e = aAll.FirstOrDefault(t => t.index == kv.Key);
-                    if (e == null)
-                    {
-                        aStaleRefs.Add($"TASK-{kv.Key:0000} **單子不存在** —— 見叢那行指向一個沒有的東西"
-                            + $"\n      · 見叢原文：{Trunc(kv.Value, 120)}");
-                        continue;
-                    }
-                    if (e.IsClosed())
-                        aStaleRefs.Add($"{e.Id} 已 `{e.status}` —— 見叢那行可以劃掉了"
-                            + $"\n      · 見叢原文：{Trunc(kv.Value, 120)}");
+                    string aState = e == null ? "**單子不存在**"
+                                  : e.IsClosed() ? $"已 `{e.status}`（**假帳**：見叢說還沒做）"
+                                  : "還開著（早安 §2.5 已經會列它，這行是重複的）";
+                    aStaleRefs.Add($"TASK-{kv.Key:0000} {aState}"
+                        + $"\n      · 見叢原文：{Trunc(kv.Value, 120)}");
                 }
                 sb.AppendLine(aStaleRefs.Count == 0
-                    ? "- ✅ ① 見叢引用的單都還開著（沒有指向已關或不存在的單）"
-                    : $"- ⚠ ① 見叢有 **{aStaleRefs.Count}** 筆引用該收了：");
+                    ? "- ✅ ① 見叢裡沒有任何 `[TASK-n]` 引用（合乎新規則：見叢只放個人代辦）"
+                    : $"- ⚠ ① 見叢還有 **{aStaleRefs.Count}** 筆 `[TASK-n]` 引用 —— 舊規則殘留，勾銷掉："
+                        + $"\n    ⇒ `senate cmd keys --arg persona={iPersona} --arg done_index=<未完序號>`");
                 foreach (var s in aStaleRefs) sb.AppendLine("    · " + s);
 
-                // ② 跟我有關、還開著、而見叢沒引用 —— Tim 那條拍板開的洞
-                var aMissing = aAll.Where(e => !e.IsClosed() && Involves(e, iPersona)
-                                               && !aRefs.ContainsKey(e.index)).ToList();
-                sb.AppendLine(aMissing.Count == 0
-                    ? "- ✅ ② 跟我有關的未關單，見叢都有引用（早安 brief 會經由見叢提到它們）"
-                    : $"- 🕳 ② 有 **{aMissing.Count}** 張跟我有關的單，**見叢完全沒有引用** ⇒"
-                        + " 早安 brief 不會提它們（早安流程刻意零改動，所以這個洞補在這裡）：");
-                foreach (var e in aMissing)
-                    sb.AppendLine($"    · {e.Id} `{e.status}` / `{e.priority}`　{Trunc(e.title, 60)}"
-                        + $"　我的角色：{string.Join("/", RolesOrReporter(e, iPersona))}");
-                if (aMissing.Count > 0)
-                {
-                    sb.AppendLine("    ⇒ **自己手寫一行見叢引用**（不自動寫 —— 自動寫出來的那行沒有人會讀）：");
-                    foreach (var e in aMissing.Take(5))
-                        sb.AppendLine($"      `awakening.py keys --persona {iPersona}"
-                            + $" --add \"[{e.Id}] {Trunc(e.title, 40)}\"`");
-                }
+                // ② 跟我有關、還開著的單 —— **只報張數**。
+                // 🩸 這一格以前是「見叢沒引用 ⇒ 早安不會提它們」的洞，補在晚安。
+                //   2026-09-07 早安長出 §2.5 見單（每天機械撈）之後那個洞不存在了 ——
+                //   而一個補完的洞如果繼續報，它會讓人以為還有洞。⇒ 降成一行讀數。
+                var aMine = aAll.Where(e => !e.IsClosed() && Involves(e, iPersona)).ToList();
+                sb.AppendLine($"- 📋 ② 跟我有關的未關單 **{aMine.Count}** 張"
+                    + " —— 逐張列在早安 brief 的 **§2.5 見單**（機械撈取，不需要抄進見叢）");
 
                 // ③ 逾期認領（占位）
                 var aNow = DateTime.UtcNow;
@@ -143,7 +133,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 //   記憶不額外記進度」⇒ 這裡量的與 sweep 量的是**同一件事：這張單多久沒動**。
                 //   📌 同一個量就該一個常數；不同的量才需要各自的常數。
                 // ===========================================================
-                var aMine = aAll.Where(e => !e.IsClosed() && Involves(e, iPersona)).ToList();
+                // ⚠ `aMine` 是 ② 算好的那一份（同一個定義：跟我有關且未關）——
+                //   刻意共用，兩份各算一次遲早會有一邊改了另一邊沒改，而兩邊都不報錯。
                 var aBrokenLink = new List<string>();
                 var aColdMemory = new List<string>();
                 foreach (var e in aMine)

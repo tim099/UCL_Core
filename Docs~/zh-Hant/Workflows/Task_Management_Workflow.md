@@ -1,7 +1,7 @@
 ---
 title: Task Management Workflow — 跨 Agent 任務管理與協作維護指南
-description: 跨專案共享的專案與任務管理作業標準 — 一單一檔任務建立、多參與者（Dev/QA/PM/Design/Reviewer/Sound/Art）指派、依賴關係雙向維護、早安零改動天然透傳、Commit 自動閉環（Fixes TASK-N ＋ --expect-files）、Task ↔ 工作記憶雙向錨點（四個觸發點）、晚安雙向對帳機制與 sweep 逾期釋放。
-last_updated: 2026-08-28
+description: 跨專案共享的專案與任務管理作業標準 — 一單一檔任務建立、多參與者（Dev/QA/PM/Design/Reviewer/Sound/Art）指派、依賴關係雙向維護、早安 brief §2.5 見單機械撈取（見叢不再手抄單號）、Commit 自動閉環（Fixes TASK-N ＋ --expect-files）、Task ↔ 工作記憶雙向錨點（四個觸發點）、晚安雙向對帳機制與 sweep 逾期釋放。
+last_updated: 2026-09-07
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Task_Management_System.md | Task Plan RFC | 系統架構設計與資料模型
@@ -12,7 +12,8 @@ related:
 
 # 📋 Task Management Workflow — 專案任務管理工作流程
 
-> 一句話：**跨人承諾建 Task，個人自律留見叢，工作脈絡留記憶；早安零改動、Commit 閉環、晚安雙向對帳**。
+> 一句話：**跟專案有關的一律開 Task，見叢只放個人代辦，工作脈絡留記憶；
+> 早安 brief 自己撈在動的單（§2.5 見單）、Commit 閉環、晚安雙向對帳**。
 
 ---
 
@@ -22,9 +23,9 @@ related:
 
 ```mermaid
 graph TD
-    A[遇到待辦、需求或經驗記錄] --> B{有沒有第二個人在等這件事？}
-    B -->|有| C[走 Cmd_Task create 開立 TASK-N<br>（承諾交付物與驗收標準）]
-    B -->|沒有| D{換人接手或隔天重啟需要知道嗎？}
+    A[遇到待辦、需求或經驗記錄] --> B{這件事跟專案有關嗎？}
+    B -->|有關| C[走 Cmd_Task create 開立 TASK-N<br>（承諾交付物與驗收標準）]
+    B -->|純個人| D{換人接手或隔天重啟需要知道嗎？}
     D -->|需要| E[走 work_memory.py 寫入工作記憶<br>（決策背景/踩坑/上下文）]
     D -->|只有我需要| F[留在個人見叢 _keys_open.md<br>（自律反省/防呆教訓）]
     C --> G{是否包含複雜技術脈絡與跨日接手背景？}
@@ -36,9 +37,11 @@ graph TD
 > **「記憶回答『為什麼』與『怎麼踩過』，Task 回答『到哪了』，文件回答『怎麼用』。三者重疊的那部分不是備援，是漂移。」**
 > **「記憶是工作期間的鷹架不是永久資產，相關 Task 全完成後歸檔或刪除，紀錄留 git。」**
 
-1. **Task（任務承諾）**：**「有沒有第二個人在等這件事？」** ➔ 有則開 Task，見叢只留引用（如 `- [ ] [TASK-0042] 說明`）。
+1. **Task（任務承諾）**：**「這件事跟專案有關嗎？」**（Tim 2026-09-07 拍板）➔ 有關就開 Task。
+   ⛔ **不抄進見叢** —— 早安 brief 的 §2.5 見單每天機械撈「我涉及且 `in_progress` / `in_review`」的單。
 2. **工作記憶（Work Memory）**：**「我明天若忘了，接手的人靠什麼接回來？」** ➔ 換人接手需要知道的思路、踩坑與 pointer 指路，寫進工作記憶（`work_memory.py`）。進度由 Task 時間線紀錄。
-3. **見叢（個人自律）**：**「這是不是純個人自省？」** ➔ 只有我自己需要被打臉的拖延或自律血證，留在個人見叢 `_keys_open.md`。
+3. **見叢（個人代辦）**：**「這是不是純我自己的事？」** ➔ 只有我自己需要被打臉的拖延、自律血證與個人代辦，
+   留在 `_keys_open.md`。勾銷走 `senate cmd keys --arg persona=<me> --arg done_index=<未完序號>`。
 
 ---
 
@@ -269,9 +272,12 @@ sequenceDiagram
 ## 5. 鋼鐵動線整合與品質守衛規範
 
 ### ① 早安喚醒 (`GoodMorning`)
-- **早安 Brief 生成流程零改動**：
-  - 不新增任何額外的 Task 節，不搶佔 Brief 行數額度。
-  - 任務資訊透過個人見叢既有的引用行（`- [ ] [TASK-0042] …`）天然於 Brief §2 中呈現。
+- **早安 Brief 有一節專屬的 §2.5 見單**（2026-09-07 起，取代「零改動」那條拍板）：
+  - `SCP_WakeBrief.ActiveTasksSection` 每天機械撈「我涉及（開單人或參與者）且未結」的單。
+  - **逐張列**的只有 `in_progress` / `in_review`；`todo` / `backlog` 只報張數與查法。
+  - 該節標 `Essential` ⇒ 主檔溢出時不會被移進續讀檔（被移走與沒有單同形）。
+  - 🩸 舊設計的代價：見叢是手寫的，一張單沒被抄進去早安就永遠不會提它 ——
+    而「這張單不存在」與「沒被抄進見叢」在醒來的人眼裡完全同形。
 
 ### ② 代碼提交 (`Commit`)
 - 代碼提交時，於 Commit Trailer 填寫關聯語法：
@@ -281,8 +287,8 @@ sequenceDiagram
 
 ### ③ 晚安收尾 (`GoodNight`)
 - 晚安儀式執行時，`Cmd_GoodNight step=check`（`UCL_TaskReconcile`）進行四類雙向對帳（只印不改）：
-  1. **見叢引用已關或不存在單** ➔ 提示手動劃掉。
-  2. **指派給我（Dev/QA）但見叢未引用** ➔ 提示補寫一行。
+  1. **見叢裡還有 `[TASK-n]` 引用** ➔ 舊規則殘留（新規則下一筆都不該有），提示勾銷指令。
+  2. **跟我有關的未關單張數** ➔ 只報數字；逐張列在早安 brief 的 §2.5 見單。
   3. **逾期認領未動（≥14 天）** ➔ 提示認領已過期，引導執行 `op=sweep` 釋放。
   4. **記憶錨點異常** ➔ 提示未關單 `updated_at` 逾期 14 天未動或單向斷鏈。
 

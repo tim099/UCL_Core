@@ -217,9 +217,11 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             //   漏的後果不是報錯，是**代跑能力隱形**：讀的人不知道可以讓 Cmd 跑，就自己去跑工具，
             //   然後流程又斷在工具那邊 —— 正是這整層要解的問題本身。
             ioR.AppendLine("## ▶ 下一步");
-            if (!string.IsNullOrEmpty(aHit.tool) && aHit.steps != null && aHit.steps.Count > 0)
+            if ((!string.IsNullOrEmpty(aHit.tool) || (aHit.cmdSteps != null && aHit.cmdSteps.Count > 0))
+                && aHit.steps != null && aHit.steps.Count > 0)
             {
-                ioR.AppendLine($"**本活動支援 Cmd 代跑一步**（工具 `{aHit.tool}`）—— 一步一步來，每一步的回傳都會接上下一步：");
+                ioR.AppendLine($"**本活動支援 Cmd 代跑一步**（工具 `{(string.IsNullOrEmpty(aHit.tool) ? "（無 python 工具，全部走 cmd 路由）" : aHit.tool)}`）"
+                    + " —— 一步一步來，每一步的回傳都會接上下一步：");
                 ioR.AppendLine("```bash");
                 ioR.AppendLine($"senate ucmd run FreeTimeActivity --persona {iPersona} \\");
                 ioR.AppendLine($"    --arg op=step --arg persona={iPersona} --arg activity={aHit.id} \\");
@@ -239,6 +241,16 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                         + $"（宣告在 md 的 `steps_need_persona`）—— 自己帶也可以，帶了就以你帶的為準。");
                 }
                 ioR.AppendLine("```");
+                // 區塊職責：把「哪幾個 step 已經改走 in-process cmd」講出來，因為**那幾個的參數寫法不一樣**。
+                // ⚠ 不講的代價很具體：照上面那行抄 `--book x --chapter 1` 餵給已路由的 step ⇒ 當場被擋
+                //   （「只吃 --arg k=v」），而人會以為是自己打錯，不會想到是這一步換了路。
+                if (aHit.cmdSteps != null && aHit.cmdSteps.Count > 0)
+                {
+                    ioR.AppendLine($"- ⚠ **這幾個 step 已改走 in-process cmd**（宣告在 md 的 `cmd_steps`）："
+                        + $"`{string.Join("` / `", aHit.cmdSteps)}`");
+                    ioR.AppendLine("  它們的 `step_args` 吃的是 **cmd 原生寫法** `--arg k=v`"
+                        + "（⛔ 不是 `--flag value`），身分與資料根會自動補。");
+                }
                 ioR.AppendLine("- 也可以自己直接跑上面那支工具 —— 但走 op=step 的話輸出會併進回傳檔，流程不會斷。");
             }
             else
@@ -299,11 +311,16 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 Cmd_FreeTime.WritePayload(iArgs, iPath, ioR.ToString());
                 throw new Exception($"[FreeTimeActivity] op=step blocked：活動無效（詳見 {iPath}）");
             }
-            if (string.IsNullOrEmpty(aHit.tool) || aHit.steps == null || aHit.steps.Count == 0)
+            // ⚠ 「有沒有能力代跑」＝ **有 python 工具 或 有 cmd 路由**，兩者任一。
+            //   只問 `tool` 的話，一支已經全部路由完、不再需要 `tool:` 的活動會被誤擋，
+            //   而畫面會說「尚未支援代跑」—— 那句話屆時是假的。
+            bool aHasRunner = !string.IsNullOrEmpty(aHit.tool)
+                              || (aHit.cmdSteps != null && aHit.cmdSteps.Count > 0);
+            if (!aHasRunner || aHit.steps == null || aHit.steps.Count == 0)
             {
                 // 還沒接 ≠ 壞掉。指回 op=pick 讓人自己跑，不假裝這裡有能力。
                 ioR.AppendLine("## blocked");
-                ioR.AppendLine($"- reason: 活動 **{aHit.name}** 尚未支援代跑（md frontmatter 沒有 `tool` / `steps`）");
+                ioR.AppendLine($"- reason: 活動 **{aHit.name}** 尚未支援代跑（md frontmatter 沒有 `tool`／`cmd_steps` 或沒有 `steps`）");
                 ioR.AppendLine($"- exit: 走 op=pick 取得指令自己跑 → run FreeTimeActivity --arg op=pick --arg persona={iPersona} --arg activity={aHit.id}");
                 ioR.AppendLine($"- 要接的話：在 `{aHit.path}` 的 frontmatter 加 `tool:` 與 `steps:`");
                 Cmd_FreeTime.WritePayload(iArgs, iPath, ioR.ToString());
@@ -325,11 +342,24 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             var aRun = await RunToolStep(aHit, aStep, aStepArgs, iPersona, iToken);
 
+            // ⚠ **定語要說出這一步實際走的是哪條路** —— 同一份 md 現在可能一半 step 走 python spawn、
+            //   一半走 in-process cmd。印死 `aHit.tool` 的話，畫面會說「工具: library.py」
+            //   而它其實跑的是 C#（有出處的假話最毒）。
+            (bool aRanRouted, string aRanCmd, string aRanOp, _) = aHit.CmdRouteForStep(aStep);
             ioR.AppendLine($"## {aHit.name} — step `{aStep}`　{(aRun.ok ? "✅ 成功" : "❌ 失敗")}");
-            ioR.AppendLine($"- 工具: `{aHit.tool}`　參數: `{aStep} {aStepArgs}`".TrimEnd());
+            ioR.AppendLine(aRanRouted
+                ? $"- 路線: **in-process cmd**（`{aRanCmd}`，`{(aHit.cmdStepArg.Length > 0 ? aHit.cmdStepArg : "op")}={aRanOp}`）"
+                  + $"　參數: `{aStepArgs}`".TrimEnd()
+                  + "　⛔ 不經過 shell，也不 spawn python"
+                : $"- 路線: **spawn python**（工具 `{aHit.tool}`）　參數: `{aStep} {aStepArgs}`".TrimEnd());
             // ⚠ 這裡要印**這一步實際用的**旗標，不是活動層預設 —— 同一支工具的旗標可能逐 step 不同，
             //   印錯的話畫面會說「補了 --reader」而實際補的是 --persona（2026-08-18 實測到過一次）。
-            if (aRun.injected) ioR.AppendLine($"- ℹ 自動補上身分：`{aHit.PersonaFlagForStep(aStep)} {iPersona}`（宣告在 md 的 `steps_need_persona`）");
+            if (aRun.injected)
+            {
+                ioR.AppendLine(aRanRouted
+                    ? $"- ℹ 自動補上身分：`--arg {aHit.PersonaArgForStep(aStep)}={iPersona}`（宣告在 md 的 `steps_need_persona`／`cmd_persona_arg`）"
+                    : $"- ℹ 自動補上身分：`{aHit.PersonaFlagForStep(aStep)} {iPersona}`（宣告在 md 的 `steps_need_persona`）");
+            }
             if (!aRun.ok) ioR.AppendLine($"- 錯誤: {aRun.err}");
             ioR.AppendLine();
             ioR.AppendLine("### 工具輸出 stdout（原樣，未經改寫）");
@@ -384,6 +414,13 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         static async UniTask<(bool ok, string stdout, string stderr, string err, bool injected)> RunToolStep(
             UCL_FreeTimeActivity iActivity, string iStep, string iStepArgs, string iPersona, CancellationToken iToken)
         {
+            // 區塊職責：先問這一步有沒有被路由到 SCP cmd（in-process），沒有才走底下原本的 python spawn。
+            // ⚠ 宣告壞了**不回退舊路** —— 靜默回退的症狀是「我以為它改走 C# 了」，而畫面跟成功時一樣。
+            (bool aRouted, string aRouteCmd, string aRouteOp, string aRouteErr) = iActivity.CmdRouteForStep(iStep);
+            if (!string.IsNullOrEmpty(aRouteErr))
+                return (false, "", "", $"`cmd_steps` 宣告壞了：{aRouteErr}", false);
+            if (aRouted) return RunCmdStep(iActivity, aRouteCmd, aRouteOp, iStep, iStepArgs, iPersona);
+
             bool aInjected = false;
             try
             {
@@ -449,6 +486,84 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             {
                 return (false, "", "", $"spawn exception: {e.Message}", false);
             }
+        }
+
+        // ===========================================================
+        // 區塊職責：把一步交給 SCP_Core 的指令系統 —— **in-process，不 spawn**。
+        // 物理意義：`SCP_CmdRegistry.Dispatch` 原本全樹只有兩個呼叫端（Senate CLI 與 Server），
+        //          Editor 這側一個都沒有 ⇒ 本函式是 Editor 端的第一個入口
+        //          （順帶讓「兩個宿主讀到同一份」這件事第一次量得到 —— TASK-0143 ⑨）。
+        //          in-process 的價值不只是快：**它不經過 shell 那一層**，
+        //          所以引號不必同時扮「綁詞」與「當內容」兩個角色 —— 那正是下面 spawn 那條
+        //          2026-08-18 吃過兩次相反症狀的地方。
+        // 數值影響：直接讀寫磁碟，跟 CLI **同一份實作、同一個資料根**；exit code 原樣回報。
+        // ⚠ 主執行緒跑：`UCL_AgentCommandsPath.DataRoot` 第一次解析要讀 PlayerPrefs（主執行緒 only）。
+        // ⛔ `step_args` 在這條路上是 **cmd 原生寫法**（`--arg k=v`），**不做 `--flag value` 翻譯** ——
+        //   翻譯要猜 kebab→snake 與引號規則，而猜錯的那一次我不會知道；
+        //   認不得的 token 一律當場擋下，⛔ 不靜默丟掉（旗標被靜默吃掉是 2026-09-07 才咬過的一格）。
+        static (bool ok, string stdout, string stderr, string err, bool injected) RunCmdStep(
+            UCL_FreeTimeActivity iActivity, string iCmd, string iOp, string iStep, string iStepArgs, string iPersona)
+        {
+            SCP.Core.Cmd.SCP_Cmd aTarget = SCP.Core.Cmd.SCP_CmdRegistry.Find(iCmd);
+            if (aTarget == null)
+                return (false, "", "", $"認不得的 cmd '{iCmd}'（宣告在 md 的 `cmd_steps`）", false);
+
+            var aArgs = new Dictionary<string, string>(StringComparer.Ordinal);
+            List<string> aToks = SplitStepArgs(iStepArgs);
+            for (int i = 0; i < aToks.Count; i++)
+            {
+                if (aToks[i] != "--arg")
+                    return (false, "", "",
+                            $"這一步走 cmd 路線，`step_args` 只吃 `--arg k=v`（收到 `{aToks[i]}`）", false);
+                if (i + 1 >= aToks.Count)
+                    return (false, "", "", "`--arg` 後面沒有 `k=v`", false);
+                string aPair = aToks[++i];
+                int aEq = aPair.IndexOf('=');
+                if (aEq <= 0)
+                    return (false, "", "", $"`--arg` 要 `k=v`（收到 `{aPair}`）", false);
+                aArgs[aPair.Substring(0, aEq)] = aPair.Substring(aEq + 1);
+            }
+
+            // 選子命令的那個參數（預設 `op`）—— 呼叫端顯式給了就不覆蓋（顯式優先，同身分注入那一格）。
+            string aStepArgName = iActivity.cmdStepArg.Length > 0 ? iActivity.cmdStepArg : "op";
+            if (!aArgs.ContainsKey(aStepArgName)) aArgs[aStepArgName] = iOp;
+
+            // 資料根：**只在那支 cmd 真的宣告了 `data_root` 時才注入**。
+            // ⚠ 這一格照抄 `ServerExecutor.RunOne` 問 `aDeclaresPersona` 的形狀 —— 無條件塞會讓
+            //   沒宣告它的 cmd 在預檢那關被擋（而那個失敗看起來會像「呼叫端打錯參數」）。
+            bool aDeclaresDataRoot = false;
+            foreach (SCP.Core.Cmd.SCP_CmdArgSpec aSpec in aTarget.ArgSpecs)
+                if (aSpec.Name == "data_root") { aDeclaresDataRoot = true; break; }
+            if (aDeclaresDataRoot && !aArgs.ContainsKey("data_root"))
+                aArgs["data_root"] = UCL_AgentCommandsPath.DataRoot;
+
+            bool aInjected = false;
+            string aPersonaArg = iActivity.PersonaArgForStep(iStep);
+            if (aPersonaArg.Length > 0 && !aArgs.ContainsKey(aPersonaArg))
+            {
+                aArgs[aPersonaArg] = iPersona;
+                aInjected = true;
+            }
+
+            SCP.Core.Cmd.SCP_CmdResult aResult;
+            try { aResult = SCP.Core.Cmd.SCP_CmdRegistry.Dispatch(iCmd, aArgs); }
+            catch (Exception e)
+            {
+                // Dispatch 自己會接住 Cmd 丟的例外（回 exit 70）⇒ 走到這裡代表是**派遣層**炸了。
+                return (false, "", "", $"dispatch exception: {e.GetType().Name}: {e.Message}", aInjected);
+            }
+
+            // 輸出照抄 CLI 那側的三段（Lines／Outputs／Values）—— ⛔ 不發明第二種格式，
+            // 也不吞掉 Values：那些 `🔢` 常常就是下一步要接的讀數。
+            var aOut = new StringBuilder();
+            foreach (string aLine in aResult.Lines) aOut.AppendLine(aLine);
+            foreach (string aOutput in aResult.Outputs) aOut.AppendLine($"📄 回傳檔：{aOutput}");
+            foreach (KeyValuePair<string, string> aValue in aResult.Values)
+                aOut.AppendLine($"🔢 {aValue.Key} = {aValue.Value}");
+
+            string aText = aOut.ToString().TrimEnd();
+            if (!aResult.Ok) return (false, aText, "", $"exit={aResult.ExitCode}", aInjected);
+            return (true, aText, "", "", aInjected);
         }
 
         // ===========================================================

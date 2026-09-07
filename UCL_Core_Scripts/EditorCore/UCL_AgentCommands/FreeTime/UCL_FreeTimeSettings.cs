@@ -121,10 +121,58 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         /// </remarks>
         public List<string> stepsNeedPersona = new List<string>();
 
+        // 區塊職責：逐 step 改走 SCP cmd（in-process），其餘 step 照舊 spawn python。
+        // 物理意義：一支活動只有一個 `tool:`，而那 35 支子命令是**一支一支**移植進 C# 的
+        //          ⇒ 整支活動切過去會弄壞還沒移植的那幾個 step（`resume` / `shelf` / `volumes`…），
+        //          而它們的失敗樣子是「那一步 exit 2、活動流程斷在中間」。
+        //          ⇒ **路由的粒度是 step，不是活動。**
+        // ⚠ **additive／fail-closed**：md 沒宣告 `cmd_steps` ⇒ 這一格完全不介入，
+        //   行為與改動前**逐位元相同**（沿用身分注入那一格的形狀）。
+        // 數值影響：純資料。
+        /// <summary>
+        /// 改走 SCP cmd 的 step 路由表（frontmatter <c>cmd_steps</c>，逗號分隔的
+        /// <c>&lt;step&gt;=&lt;cmd&gt;:&lt;op&gt;</c>；省略 <c>:&lt;op&gt;</c> ⇒ op 用 step 名，
+        /// 例 <c>log-chapter=book:log-chapter</c>）。空＝一步都不路由。
+        /// </summary>
+        public List<string> cmdSteps = new List<string>();
+
+        /// <summary>
+        /// 被路由的 step 的身分**參數名**（frontmatter <c>cmd_persona_arg</c>，例 <c>reader</c>）。
+        /// ⚠ 這裡是參數名不是旗標 —— cmd 那側是 <c>--arg reader=&lt;persona&gt;</c>，不是 <c>--reader &lt;persona&gt;</c>。
+        /// </summary>
+        public string cmdPersonaArg = "";
+
+        /// <summary>
+        /// 被路由的 step 用哪個參數選子命令（frontmatter <c>cmd_step_arg</c>；空＝<c>op</c>）。
+        /// 🩸 預設值敢給是因為**猜錯會大聲壞**：`senate cmd` 那側有 ArgSpec 預檢，
+        /// 沒宣告的參數名會被擋下並印出合法清單（⛔ 不是靜默取預設值）。
+        /// </summary>
+        public string cmdStepArg = "";
+
         // 區塊職責：查某個 step 該補哪個旗標。
         // 物理意義：先找 step 專屬覆寫（`shelf=--persona`），沒有才回退活動層 personaFlag。
         // 數值影響：回空字串＝這個 step 不補（呼叫端據此完全不介入 argv）。
         public string PersonaFlagForStep(string iStep)
+        {
+            return LookupNeedPersona(iStep, personaFlag);
+        }
+
+        /// <summary>
+        /// 被路由到 cmd 的 step 該補哪個**參數名**（回空＝不補）。
+        /// ⚠ `steps_need_persona` 的覆寫寫法是旗標式（`shelf=--persona`），
+        /// 而 cmd 那側要的是名字 ⇒ 這裡把前導的 `-` 剝掉。
+        /// 剝掉是為了讓同一份宣告在兩條路上都成立；⛔ 而剝錯也不會靜默 ——
+        /// 名字不對會被 ArgSpec 預檢當場擋下。
+        /// </summary>
+        public string PersonaArgForStep(string iStep)
+        {
+            return LookupNeedPersona(iStep, cmdPersonaArg).TrimStart('-');
+        }
+
+        // 區塊職責：`steps_need_persona` 的共用查表（兩條路各自帶自己的 fallback）。
+        // ⚠ 抽成一支是因為**同一份宣告要餵兩個消費端** —— 抄第二份的話，
+        //   哪天覆寫語法改了只會有一邊跟上，而兩邊都不會報錯。
+        string LookupNeedPersona(string iStep, string iFallback)
         {
             if (stepsNeedPersona == null) return "";
             foreach (var aEntry in stepsNeedPersona)
@@ -133,9 +181,39 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 string aName = aEq < 0 ? aEntry : aEntry.Substring(0, aEq);
                 if (!string.Equals(aName.Trim(), iStep, System.StringComparison.OrdinalIgnoreCase)) continue;
                 string aOverride = aEq < 0 ? "" : aEntry.Substring(aEq + 1).Trim();
-                return aOverride.Length > 0 ? aOverride : personaFlag;
+                return aOverride.Length > 0 ? aOverride : iFallback;
             }
             return "";
+        }
+
+        /// <summary>
+        /// 查某個 step 有沒有被路由到 SCP cmd。
+        /// <para>回 <c>routed=false</c> 且 <c>error</c> 空 ＝ 這個 step 沒宣告路由（走原本的 python spawn）。</para>
+        /// <para>⛔ **宣告了但寫壞不當成「沒路由」** —— 那會靜默走回舊路，
+        /// 而「我以為它改走 C# 了」與「它還在跑 python」在畫面上一模一樣。
+        /// 寫壞就回 <c>error</c>，由呼叫端擋下並把那一行原文印出來。</para>
+        /// </summary>
+        public (bool routed, string cmd, string op, string error) CmdRouteForStep(string iStep)
+        {
+            if (cmdSteps == null) return (false, "", "", "");
+            foreach (var aEntry in cmdSteps)
+            {
+                int aEq = aEntry.IndexOf('=');
+                string aName = (aEq < 0 ? aEntry : aEntry.Substring(0, aEq)).Trim();
+                if (!string.Equals(aName, iStep, System.StringComparison.OrdinalIgnoreCase)) continue;
+
+                string aTarget = aEq < 0 ? "" : aEntry.Substring(aEq + 1).Trim();
+                if (aTarget.Length == 0)
+                    return (false, "", "", $"`cmd_steps` 的 `{aEntry}` 沒寫目標（要 `<step>=<cmd>:<op>`）");
+
+                int aColon = aTarget.IndexOf(':');
+                string aCmd = (aColon < 0 ? aTarget : aTarget.Substring(0, aColon)).Trim();
+                string aOp = aColon < 0 ? "" : aTarget.Substring(aColon + 1).Trim();
+                if (aCmd.Length == 0)
+                    return (false, "", "", $"`cmd_steps` 的 `{aEntry}` 沒寫 cmd 名");
+                return (true, aCmd, aOp.Length > 0 ? aOp : aName, "");
+            }
+            return (false, "", "", "");
         }
 
         /// <summary>特殊邏輯標記（frontmatter `kind`；缺欄位＝Default）。</summary>
@@ -216,6 +294,9 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                         steps = ParseSteps(UCL_AwakeningService.ReadFrontmatterField(aMd, "steps")),
                         personaFlag = (UCL_AwakeningService.ReadFrontmatterField(aMd, "persona_flag") ?? "").Trim(),
                         stepsNeedPersona = ParseSteps(UCL_AwakeningService.ReadFrontmatterField(aMd, "steps_need_persona")),
+                        cmdSteps = ParseSteps(UCL_AwakeningService.ReadFrontmatterField(aMd, "cmd_steps")),
+                        cmdPersonaArg = (UCL_AwakeningService.ReadFrontmatterField(aMd, "cmd_persona_arg") ?? "").Trim(),
+                        cmdStepArg = (UCL_AwakeningService.ReadFrontmatterField(aMd, "cmd_step_arg") ?? "").Trim(),
                     };
                 }
                 catch (Exception e)

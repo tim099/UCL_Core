@@ -114,8 +114,12 @@ Users can be too lazy to type out full commands every single time (e.g., "Please
 ### Troubleshoot Compile Errors
 - **Triggers**: `編譯錯誤` / `排查編譯` / `編譯有錯嗎` / `CS0103` / `CS0117` / `CS1503` / `CS0246` / `assembly` / `asmdef` / `check compile` / `編譯排查`
 - **Corresponding Workflow**: [CompileError_Diagnose_Workflow](ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md)
-- **Intent**: Troubleshoot Unity compile errors after modifying `.cs` scripts. Uses the standalone script `check_compile.py`, which prints the error list normally even when the Cmd system fails due to compile errors.
-- **Must Do**: Run `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only`. If `.compile_status.json` does not exist, add `--fallback-log` to read `Editor.log`.
+- **Intent**: Troubleshoot Unity compile errors after modifying `.cs` scripts. Goes through the Senate CLI, which still prints the error list when the Cmd system itself is down from compile errors (it only reads `.compile_status.json`).
+- **Must Do**: Run `senate cmd unity-recompile --arg persona=<me>` (triggers a recompile **and** waits for *that* pass to finish before printing).
+  To read the current state without triggering ⇒ `senate cmd unity-compile-status`.
+  ⛔ Both measure Unity assemblies only, **not `senate.exe`**. The Editor.log fallback for when the status file is missing is still python-only:
+  `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log`.
+  ⛔ **Do not use `check_compile.py --watch`** — it returns the previous snapshot without printing STALE (TASK-0154).
 - **Do Not**: Run runtime tests when compile errors exist; only look at `Simulation_*.log`.
 
 ### Create AgentCommand

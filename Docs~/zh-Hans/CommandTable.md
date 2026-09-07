@@ -114,8 +114,12 @@ related:
 ### 排查编译错误
 - **触发词**: `编译错误` / `排查编译` / `编译有错吗` / `CS0103` / `CS0117` / `CS1503` / `CS0246` / `assembly` / `asmdef` / `check compile` / `编译排查`
 - **对应 Workflow**: [CompileError_Diagnose_Workflow](ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md)
-- **意图**: 当修改 `.cs` 脚本后，排查 Unity 的编译错误。使用 standalone 脚本 `check_compile.py`，即使在 Cmd 系统因编译错误失效时也能正常印出错误清单。
-- **必做**: 执行 `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only`。若 `.compile_status.json` 不存在，可加上 `--fallback-log` 参数读取 `Editor.log`。
+- **意图**: 当修改 `.cs` 脚本后，排查 Unity 的编译错误。走 Senate CLI，即使 Cmd 系统因编译错误失效也印得出错误清单（它只读 `.compile_status.json`）。
+- **必做**: 执行 `senate cmd unity-recompile --arg persona=<me>`（触发＋等到**那一趟**结束才印）。
+  只想看现况不触发 ⇒ `senate cmd unity-compile-status`。
+  ⛔ 只量 Unity assemblies，**不涵盖 `senate.exe`**。状态档不存在时的 Editor.log fallback 仍只有 python 有：
+  `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log`。
+  ⛔ **不要用 `check_compile.py --watch`** —— 它会回上一次的快照且不印 STALE（TASK-0154）。
 - **不要做**: 在编译还有错时跑 runtime 测试；只看 `Simulation_*.log`。
 
 ### 建立 AgentCommand 指令

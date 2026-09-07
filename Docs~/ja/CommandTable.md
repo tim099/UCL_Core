@@ -114,8 +114,12 @@ related:
 ### コンパイルエラー（Compile Error）の排查
 - **トリガー**: `編譯錯誤` / `排查編譯` / `編譯有錯嗎` / `CS0103` / `CS0117` / `CS1503` / `CS0246` / `assembly` / `asmdef` / `check compile` / `編譯排查`
 - **対応する Workflow**: [CompileError_Diagnose_Workflow](ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md)
-- **意図**: C#スクリプトの変更後、Unityのコンパイルエラーをチェックします。独立型Pythonスクリプト `check_compile.py` を使用することで、C#ビルド破損によりUnity Editor側のCmdシステムが停止している状況でも、エラーリストを正常に検出してターミナルに出力できます。
-- **必須動作**: `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only` を実行すること。`.compile_status.json` が生成されていない場合は、`--fallback-log` 経由で直接 `Editor.log` を解析します。
+- **意図**: C#スクリプトの変更後、Unityのコンパイルエラーをチェックします。Senate CLI を経由するため、C#ビルド破損により Cmd システムが停止している状況でもエラーリストを出力できます（読むのは `.compile_status.json` だけ）。
+- **必須動作**: `senate cmd unity-recompile --arg persona=<me>` を実行すること（リコンパイルを起動し、**その回**が終わるまで待ってから出力）。
+  起動せず現状だけ見る場合 ⇒ `senate cmd unity-compile-status`。
+  ⛔ どちらも計測対象は Unity assemblies のみで、**`senate.exe` は含まない**。ステータスファイルが無い場合の Editor.log フォールバックは今も python だけが持つ：
+  `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log`。
+  ⛔ **`check_compile.py --watch` は使わないこと** —— 前回のスナップショットを返し、しかも STALE を出さない（TASK-0154）。
 - **禁止事項**: コンパイルエラーが残存した状態でランタイムの挙動検証に進むこと。`Simulation_*.log` だけを確認して、ビルド状態全体を見過ごすこと。
 
 ### AgentCommand（エディタ拡張指令）の新規作成

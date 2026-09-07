@@ -286,7 +286,12 @@ namespace UCL.Core.EditorLib.AgentCommands
             bool isPlayModeInterrupted = false;
             try
             {
+                // ⏱ 批次前奏的秒錶（TASK-0162）—— queue load ＋ ModuleService 等待都在主緒上，
+                //   而 2026-09-07 的讀數說 AutoCommit offload 之後仍有 1.3s 斷拍落在 handler **之前**。
+                //   ⇒ 這一格是那個嫌疑犯，先量再改。
+                var batchWatch = System.Diagnostics.Stopwatch.StartNew();
                 var data = UCL_AgentCommandQueue.Load(agentId);
+                double queueLoadMs = batchWatch.Elapsed.TotalMilliseconds;
                 int total = data.Commands?.Count ?? 0;
                 if (total == 0)
                 {
@@ -295,6 +300,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 }
 
                 Debug.Log($"[UCL_AgentCmd:{labelTag}] Loaded {total} command(s). Waiting for UCL_ModuleService...");
+                double beforeModuleWaitMs = batchWatch.Elapsed.TotalMilliseconds;
 
                 // ★ 必做：先等模組系統就緒（WaitUntilInitialized 會自動觸發 Ins → Init → InitAsync）
                 try
@@ -306,6 +312,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                     Debug.LogError($"[UCL_AgentCmd] UCL_ModuleService.WaitUntilInitialized failed: {e}");
                     return;
                 }
+
+                // ⏱ ModuleService 等待的實際耗時（前奏第二格）
+                double moduleWaitMs = batchWatch.Elapsed.TotalMilliseconds - beforeModuleWaitMs;
 
                 int succeeded = 0, failed = 0, removed = 0;
                 var commands = data.Commands ?? new List<UCL_AgentCommand>();
@@ -420,6 +429,13 @@ namespace UCL.Core.EditorLib.AgentCommands
                     //          量具自己壞掉回 null，End() 收得住 ⇒ 不影響本次 cmd 的成敗。
                     // ===========================================================
                     UCL_AgentCmdProbe cmdProbe = UCL_AgentCmdSlowLog.Begin(c.Id, c.Type, norm, c.Args);
+                    // ⏱ 批次前奏兩格掛在本圈上。⚠ 定語：**這是整批的前奏，不是這一支的** ——
+                    //   一批多筆時每一支都會掛到同一組數字。欄名保持 batch_ 前綴讓讀的人分得出來。
+                    UCL_AgentCmdSlowLog.MarkPhase(cmdProbe, "batch_queue_load", queueLoadMs);
+                    UCL_AgentCmdSlowLog.MarkPhase(cmdProbe, "batch_module_wait", moduleWaitMs);
+                    // 本圈到 handler 起跑前的耗時（reset + queue Save + ArgsSpec 之前那幾格）
+                    double preHandlerMs = cmdIterWatch.Elapsed.TotalMilliseconds;
+                    UCL_AgentCmdSlowLog.MarkPhase(cmdProbe, "pre_handler", preHandlerMs);
                     try
                     {
                         // 區塊職責：**執行前**的 ArgsSpec Required 檢查（2026-08-14 新增）。
@@ -482,6 +498,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                         //          而那會把真正的 handler 錯誤蓋掉（本檔已有 UniTask token 蓋錯誤的血證）。
                         // ===========================================================
                         await UniTask.SwitchToMainThread();
+                        double afterHandlerMs = cmdIterWatch.Elapsed.TotalMilliseconds;
                         c.LastRunResult = "Success";
                         c.LastRunError = null;
                         c.LastRunAt = DateTime.UtcNow.ToString("o");
@@ -493,6 +510,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                         // 要有一份 per-cmd 的 verdict 可讀（消失＝結束，verdict 在 result 檔）。
                         WriteCmdResult(c, success: true, error: null);
 
+                        // ⏱ 成功路徑的收尾格（WriteCmdResult ＋ queue 欄位更新）
+                        UCL_AgentCmdSlowLog.MarkPhase(cmdProbe, "post_handler_success",
+                            cmdIterWatch.Elapsed.TotalMilliseconds - afterHandlerMs);
                         // OneShot 成功 → 直接從 queue 中移除（任務已完成）
                         if (c.Mode == UCL_AgentCommandMode.OneShot)
                         {
@@ -573,11 +593,14 @@ namespace UCL.Core.EditorLib.AgentCommands
                         // 數值影響：本次沒鏡寫過 last_op 時，就地覆寫成一份**明說「這一支不寫」**的 stub。
                         //   ⚠ 不刪檔：刪掉之後「這支不寫」與「這個 persona 沒跑過」又會同形。
                         //   ⚠ 只在拿得到 lane（AgentId）時做；非 queue 路徑不動，行為與舊版全等。
+                        double beforeStubMs = cmdIterWatch.Elapsed.TotalMilliseconds;
                         try { WriteLastOpStubIfAbsent(c); } catch (System.Exception e)
                         { Debug.LogWarning($"[UCL_AgentCmd] last_op stub 寫入失敗（不影響本次結果）：{e.Message}"); }
                         // per-cmd context 退場 —— **必須在 WriteCmdResult 之後**（result 檔要讀它的 outputs/values）。
                         // ⚠ 這裡若提早釋放，症狀是 result 檔的 outputs 欄空掉，而 cmd 本身 Success ——
                         //   又是一個「成功了但東西不見」的無聲失敗。
+                        UCL_AgentCmdSlowLog.MarkPhase(cmdProbe, "last_op_stub",
+                            cmdIterWatch.Elapsed.TotalMilliseconds - beforeStubMs);
                         UCL_AgentCmdContexts.Release(c.Id);
                         // 區塊職責：收量具（TASK-0161）—— 成功、失敗、PlayMode 中斷三條路都要收
                         // 物理意義：放在 finally 的**最後一行**，讓 last_op stub 與 context Release 也算進

@@ -93,7 +93,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // 門檻與 STALL_THRESHOLD_SECONDS 刻意對齊 3s：這樣任何一次寫進 stall 台帳的凍結，
         // 只要成因是酒保 tick，就一定在本檔有對應的一行 —— 兩個檔可以直接對時間 join。
         // 不對齊的話會出現「stall 有、相位沒有」的空窗，而那個空窗看起來會像「不是 tick 造成的」。
-        const double TICK_PHASE_LOG_THRESHOLD_MS = 3000.0;
+        const double TICK_PHASE_LOG_THRESHOLD_MS = 1000.0;   // TASK-0162：3000 看不見 1-2 秒那族，而那族才是天天在拖 Editor 的（2026-09-07 讀數：cmd 邊界反覆出現 1.3-1.5s 斷拍，Runner 相位合計只有 13ms ⇒ 兇手在別處）
         const int TICK_PHASE_KEEP = 30;
 
         // ===========================================================

@@ -65,6 +65,9 @@ namespace UCL.Core.EditorLib.AgentCommands
         internal DateTime StartUtc;
         internal System.Diagnostics.Stopwatch Watch;
 
+        /// <summary>Runner 標下的分相位耗時（name → ms，保序）—— 相位是「誰慢」的下一層定語。</summary>
+        internal System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, double>> Phases;
+
     }
 
     /// <summary>
@@ -231,6 +234,22 @@ namespace UCL.Core.EditorLib.AgentCommands
         }
 
         // ===========================================================
+        // 區塊職責：標一個相位的耗時（由 Runner 呼叫）
+        // 物理意義：`elapsed_ms` 只回答「這支慢」，相位回答「**慢在哪一格**」——
+        //   而 2026-09-07 的讀數說那個答案往往不在 handler 裡：AutoCommit offload 之後，
+        //   1.3-1.5s 的斷拍搬到了 handler 的**前後**（Runner 的前奏與收尾）。
+        //   形狀沿用已驗過的 `UCL_BartenderIO.AppendSlowTick`（那份的相位讓「哪一格慢」不必靠人夾區間）。
+        // 數值影響：純記憶體；相位只在該筆 cmd 落行時一起寫出去。
+        // ===========================================================
+        public static void MarkPhase(UCL_AgentCmdProbe iProbe, string iName, double iMs)
+        {
+            if (iProbe == null || string.IsNullOrEmpty(iName)) return;
+            if (iProbe.Phases == null)
+                iProbe.Phases = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, double>>(6);
+            iProbe.Phases.Add(new System.Collections.Generic.KeyValuePair<string, double>(iName, iMs));
+        }
+
+        // ===========================================================
         // 區塊職責：由 offload 入口在**背景緒上**戳一筆「我離開主緒了，落在 tid=N」
         // 物理意義：🩸 這是同一個問題的**第三個**量測位置，前兩個都量錯了時刻：
         //   ① 量在 `End()` —— Runner 之後統一切回主緒 ⇒ 永遠回 main。
@@ -316,6 +335,17 @@ namespace UCL.Core.EditorLib.AgentCommands
                    .Append(",\"bg_tid\":").Append(aBgTid.ToString(System.Globalization.CultureInfo.InvariantCulture))
                    .Append(",\"main_tid\":").Append(s_MainThreadId.ToString(System.Globalization.CultureInfo.InvariantCulture))
                    .Append(",\"success\":").Append(iSuccess ? "true" : "false");
+                if (iProbe.Phases != null && iProbe.Phases.Count > 0)
+                {
+                    aSb.Append(",\"phases\":[");
+                    for (int i = 0; i < iProbe.Phases.Count; i++)
+                    {
+                        if (i > 0) aSb.Append(',');
+                        aSb.Append("{\"name\":\"").Append(Esc(iProbe.Phases[i].Key)).Append('"')
+                           .Append(",\"ms\":").Append(F1(iProbe.Phases[i].Value)).Append('}');
+                    }
+                    aSb.Append(']');
+                }
                 if (!string.IsNullOrEmpty(iError))
                     aSb.Append(",\"error\":\"").Append(Esc(Trunc(iError, 240))).Append('"');
                 aSb.Append('}');

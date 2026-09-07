@@ -14,7 +14,7 @@ Claude Code hook driver — auto-validate UCL_Asset edits.
 設計原則：
   - PostToolUse 不能阻塞對話流程（Editor 沒開時也要靜默退出）
   - Stop 是真正的閘門 — 把 silent data loss 在 turn 結束前抓出來
-  - 整個機制走 UCL_Core 內既有的 ValidateAssetFormat Cmd + run_cmd.py wrapper
+  - 整個機制走 UCL_Core 內既有的 ValidateAssetFormat Cmd + senate ucmd wrapper
 
 匹配 pattern（任一上層專案都通用）：
   - {anything}/UCL_Assets/<TypeName>/<AssetID>.json
@@ -87,8 +87,20 @@ def _resolve_data_root() -> Path:
 
 GIT_ROOT = _resolve_git_root()
 
-# run_cmd.py 一定與本檔同目錄（Tools~/AgentCommands/）
-RUN_CMD = Path(__file__).resolve().parent / "run_cmd.py"
+# ⛔ 原本這裡有 `RUN_CMD = Path(__file__).resolve().parent / "run_cmd.py"` —— 2026-09-07 移除
+#   （TASK-0107）。「一定與本檔同目錄」這種**永遠成立**的定位方式，在那個檔被刪的那天
+#   仍然永遠成立 —— 它會指向一個不存在的路徑，而沒有任何一層會先警告。
+
+
+def _senate() -> Path:
+    """Senate CLI 的路徑（三層：env → pointer → PATH，解不到 raise）。
+
+    ⛔ 解不到就讓它 raise，**不退回 run_cmd.py**：靜默 fallback 會讓這次轉接等於沒發生，
+      而 TASK-0107 的收單條件（呼叫紀錄歸零）會照樣長出新的一筆，沒有人會知道。
+    """
+    return _ucl_paths().senate_exe()
+
+
 STATE_DIR = GIT_ROOT / ".claude" / "state"
 STATE_FILE = STATE_DIR / "pending_validations.txt"
 
@@ -180,19 +192,27 @@ def state_clear() -> None:
 
 
 # ===========================================================
-# run_cmd.py wrapper helpers
+# senate ucmd wrapper helpers（2026-09-07 前是 run_cmd.py，見 TASK-0107）
 # ===========================================================
 def submit_validate(asset_type: str, asset_id: str) -> str | None:
     """非阻塞 submit ValidateAssetFormat；回傳 cmd_id（若可拿到），失敗回 None。"""
     check_refs = default_check_refs(asset_type)
     output_file = REPORT_DIR_REL / f"asset_format_check_{asset_type}_{asset_id}.md"
+    # 2026-09-07（TASK-0107）：`run_cmd.py submit` → `senate ucmd run --no-wait`。
+    # ⚠ 兩者印的第一行**都是** `Submitted: <cmd_id>`（下面的解析不用改）—— 那是刻意對齊的，
+    #   不是巧合；senate 這半的 `--ack-timeout` 是 2026-09-07 為了這條路補上的。
+    try:
+        senate = _senate()
+    except Exception as exc:
+        print(f"⚠ 找不到 Senate CLI ⇒ 這批驗證沒有送出（**不退回 run_cmd.py**）：{exc}", file=sys.stderr)
+        return None
     cmd = [
-        sys.executable, str(RUN_CMD), "submit", "ValidateAssetFormat",
+        str(senate), "ucmd", "run", "ValidateAssetFormat", "--no-wait",
         "--arg", f"assetType={asset_type}",
         "--arg", f"assetId={asset_id}",
         "--arg", f"checkRefs={check_refs}",
         "--arg", f"outputPath={output_file.as_posix()}",
-        # ack-timeout 短一點 — submit 本身不等執行
+        # ack-timeout 短一點 — submit 本身不等執行，排不進去就該早點放棄
         "--ack-timeout", "5",
     ]
     try:
@@ -204,7 +224,7 @@ def submit_validate(asset_type: str, asset_id: str) -> str | None:
         return None
     except Exception:
         return None
-    # run_cmd.py submit 印 "Submitted: <cmd_id>" 在第一行
+    # 兩支 client 的第一行都是 "Submitted: <cmd_id>"（刻意對齊，不是巧合）
     for line in (proc.stdout or "").splitlines():
         if line.startswith("Submitted:"):
             return line.split(":", 1)[1].strip()
@@ -217,9 +237,17 @@ def wait_validate(cmd_id: str | None, asset_type: str, asset_id: str, timeout: i
     回傳 (exit_code, summary_line)。
     """
     output_file = REPORT_DIR_REL / f"asset_format_check_{asset_type}_{asset_id}.md"
+    try:
+        senate = _senate()
+    except Exception as exc:
+        return 3, f"{asset_type}/{asset_id}: 找不到 Senate CLI（{exc}）"
     if cmd_id:
+        # ⚠ `wait` 要跟 submit 那次走**同一條分道**才等得到。本流程兩邊都不帶 `--persona`
+        #   ⇒ 都落 `queues/anonymous/` —— 一致，所以等得到。
+        #   ⛔ 哪天替這支加上 `--persona`，**兩處要一起加**：只加一邊的症狀不是紅燈，
+        #     是在一條空分道上等到逾時（那條分道裡永遠沒有這個 id）。
         cmd = [
-            sys.executable, str(RUN_CMD), "wait", cmd_id,
+            str(senate), "ucmd", "wait", cmd_id,
             "--output-file", str(output_file),
             "--timeout", str(timeout),
             "--poll-interval", "1",
@@ -228,7 +256,7 @@ def wait_validate(cmd_id: str | None, asset_type: str, asset_id: str, timeout: i
         # 沒拿到 cmd_id（可能 submit 失敗或被中斷）→ 重新 run（含 ensure_idle）
         check_refs = default_check_refs(asset_type)
         cmd = [
-            sys.executable, str(RUN_CMD), "run", "ValidateAssetFormat",
+            str(senate), "ucmd", "run", "ValidateAssetFormat",
             "--arg", f"assetType={asset_type}",
             "--arg", f"assetId={asset_id}",
             "--arg", f"checkRefs={check_refs}",

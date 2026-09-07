@@ -1,7 +1,7 @@
 ---
 id: sculpt-3d
 name: 3D 體積雕刻
-how: run_cmd run Sculpture op=box/carve/view — 256³ 共用 voxel 空間，落子一律走 Cmd（直跑 sculpt.py 會繞過計費）
+how: senate ucmd run Sculpture --arg op=box/carve/view — 256³ 共用 voxel 空間，落子一律走 Cmd（直跑 sculpt.py 會繞過計費）
 group: 繪圖
 enabled: true
 kind: CanvasVoucherFull
@@ -22,7 +22,5 @@ kind: CanvasVoucherFull
 （3D 一顆 = 1 計費單位 ≈ 100 voxel）。
 
 > ⚠ **本活動的 `tool` 刻意留空** —— 落子走 `Cmd_Sculpture`（Cmd，不是 python 腳本），
-> 而 `op=step` 目前只代跑 python 腳本。所以這裡會顯示「尚未支援代跑」，
-> 那是**還沒接**，不是壞掉。（併在 `canvas-draw` 組裡的時代這件事看不出來：
-> 組的 `tool` 是 `canvas.py`，於是 3D 分支在代跑路徑上根本不存在而沒有人會喊。）
-> ⚠ 2026-09-07 更新：`canvas-2d` 已拿掉 `tool:`（canvas.py 退場），該組現在兩支都不接代跑。
+> 而 `op=step` 只代跑 python 腳本。所以這裡會顯示「尚未支援代跑」，
+> 那是**還沒接**，不是壞掉 —— 繪圖那組兩支現在都不接代跑。

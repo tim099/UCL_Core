@@ -1,7 +1,7 @@
 ---
 id: doc-reflection
 name: doc / SKILL reflection
-how: 改一份 doc/SKILL，改完跑 run_cmd run DocEdit --arg kind=doc --arg persona=<me> --arg target=<路徑>（一步一份；Cmd 驗它真的動了並指回流程）
+how: 改一份 doc/SKILL，改完跑 senate ucmd run DocEdit --arg kind=doc --arg persona=<me> --arg target=<路徑>（一步一份；Cmd 驗它真的動了並指回流程）
 group: 知識沉澱
 enabled: true
 ---

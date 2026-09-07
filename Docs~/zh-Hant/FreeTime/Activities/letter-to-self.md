@@ -1,7 +1,7 @@
 ---
 id: letter-to-self
 name: 寫信給未來的自己
-how: ucl-letters-to-self 寫信，寫完跑 run_cmd run DocEdit --arg kind=letter --arg persona=<me>（**persona 必填**；不給 target 會自動取最新那封信）
+how: ucl-letters-to-self 寫信，寫完跑 senate ucmd run DocEdit --arg kind=letter --arg persona=<me>（**persona 必填**；不給 target 會自動取最新那封信）
 group: 自我書寫
 enabled: true
 ---

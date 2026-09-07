@@ -87,16 +87,11 @@ def _resolve_data_root() -> Path:
 
 GIT_ROOT = _resolve_git_root()
 
-# ⛔ 原本這裡有 `RUN_CMD = Path(__file__).resolve().parent / "run_cmd.py"` —— 2026-09-07 移除
-#   （TASK-0107）。「一定與本檔同目錄」這種**永遠成立**的定位方式，在那個檔被刪的那天
-#   仍然永遠成立 —— 它會指向一個不存在的路徑，而沒有任何一層會先警告。
-
 
 def _senate() -> Path:
     """Senate CLI 的路徑（三層：env → pointer → PATH，解不到 raise）。
 
-    ⛔ 解不到就讓它 raise，**不退回 run_cmd.py**：靜默 fallback 會讓這次轉接等於沒發生，
-      而 TASK-0107 的收單條件（呼叫紀錄歸零）會照樣長出新的一筆，沒有人會知道。
+    ⛔ 解不到就讓它 raise —— 靜默退回別條路，會讓「派遣沒有發生」看起來像正常執行。
     """
     return _ucl_paths().senate_exe()
 
@@ -192,19 +187,17 @@ def state_clear() -> None:
 
 
 # ===========================================================
-# senate ucmd wrapper helpers（2026-09-07 前是 run_cmd.py，見 TASK-0107）
+# senate ucmd wrapper helpers
 # ===========================================================
 def submit_validate(asset_type: str, asset_id: str) -> str | None:
     """非阻塞 submit ValidateAssetFormat；回傳 cmd_id（若可拿到），失敗回 None。"""
     check_refs = default_check_refs(asset_type)
     output_file = REPORT_DIR_REL / f"asset_format_check_{asset_type}_{asset_id}.md"
-    # 2026-09-07（TASK-0107）：`run_cmd.py submit` → `senate ucmd run --no-wait`。
-    # ⚠ 兩者印的第一行**都是** `Submitted: <cmd_id>`（下面的解析不用改）—— 那是刻意對齊的，
-    #   不是巧合；senate 這半的 `--ack-timeout` 是 2026-09-07 為了這條路補上的。
+    # ⚠ `--no-wait` 送出就返回，第一行印 `Submitted: <cmd_id>` —— 下面靠那行取 id。
     try:
         senate = _senate()
     except Exception as exc:
-        print(f"⚠ 找不到 Senate CLI ⇒ 這批驗證沒有送出（**不退回 run_cmd.py**）：{exc}", file=sys.stderr)
+        print(f"⚠ 找不到 Senate CLI ⇒ 這批驗證沒有送出：{exc}", file=sys.stderr)
         return None
     cmd = [
         str(senate), "ucmd", "run", "ValidateAssetFormat", "--no-wait",
@@ -224,7 +217,7 @@ def submit_validate(asset_type: str, asset_id: str) -> str | None:
         return None
     except Exception:
         return None
-    # 兩支 client 的第一行都是 "Submitted: <cmd_id>"（刻意對齊，不是巧合）
+    # 第一行是 "Submitted: <cmd_id>"
     for line in (proc.stdout or "").splitlines():
         if line.startswith("Submitted:"):
             return line.split(":", 1)[1].strip()

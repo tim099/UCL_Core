@@ -2,7 +2,7 @@
 bank_resolver — agent → Treasury bank account 的「單一 source-of-truth」resolver。
 
 跨專案共用 (UCL_Core 代碼側 _lib)。所有需要把 placer 的 `agent` 字串映射到 Treasury
-bank account 的工具 (awakening.py / canvas.py / 未來其他扣款 CLI) **MUST** 走本模組，
+bank account 的工具 (awakening.py / 各扣款 CLI) **MUST** 走本模組，
 不得各自維護平行對照表 — 平行表是 identity-layer drift 的根源 (2026-06-04 canvas 把
 Zeta 麾下 persona 的 token 誤扣到 claude-da-xiaojie，就是 canvas 自維護一張 case-sensitive
 硬寫表、與 awakening 的 registry-based resolver 漂移所致)。
@@ -286,7 +286,7 @@ def all_account_ids(reg: dict) -> set:
 def load_registry_meta(meta_path) -> dict:
     """
     區塊職責：輕量讀取 _registry_meta.json（只取 agent_banks / agent_aliases 等 metadata）。
-    物理意義：給「不需要 scan personas/*.json」的 caller（如 canvas.py 扣款）一條最省的
+    物理意義：給「不需要 scan personas/*.json」的 caller（扣款類 CLI）一條最省的
               registry 載入路徑 — pure resolver 函式只吃 agent_banks + agent_aliases 兩欄。
     數值影響：純讀；檔不存在或解析失敗時回空 dict（resolver 自動退命名慣例 fallback，不 fatal）。
 

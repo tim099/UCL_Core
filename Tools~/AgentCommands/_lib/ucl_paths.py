@@ -64,7 +64,7 @@ _UCL_CORE_DIR = _find_ucl_core_dir(_THIS_FILE)  # canonical: 找得到；鏡像:
 
 # ─────────────────────────────────────────────────────────────────────────
 # 區塊職責：從某起點往上 walk，找第一個含 .git〖資料夾〗的 ancestor。
-# 物理意義：與 C# UCL_RepoPath.ResolveRepoRoot / Python run_cmd._find_git_root_by_walk 等價。
+# 物理意義：與 C# UCL_RepoPath.ResolveRepoRoot 等價。
 #          只接受 .git 為「資料夾」——submodule 的 .git 是 gitlink 檔（gitdir: redirect），
 #          遇到要跳過繼續往上，才能找到「真實」host repo 根而非 submodule 根。
 # 數值影響：至多 walk 幾層 + 每層一次 is_dir 判斷；找不到回 None（交由呼叫端決定 fallback）。
@@ -631,7 +631,7 @@ if __name__ == "__main__":
     print(f"repo_root()    = {repo_root()}")
     print(f"ucl_core_dir() = {ucl_core_dir()}")
     print(f"data_root()    = {data_root()}")
-    print(f"ucl_tool('run_cmd.py') = {ucl_tool('run_cmd.py')}")
+    print(f"ucl_tool('awakening.py') = {ucl_tool('awakening.py')}")
     # senate_exe() 會 raise（那是刻意的）⇒ 自測入口要把失敗印成一段可讀的診斷，
     # 而不是讓整支自測腳本當掉 —— 「它解不到」本身就是一個有效的讀數。
     try:

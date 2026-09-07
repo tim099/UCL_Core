@@ -3,7 +3,7 @@ name: ucl-canvas
 description: |
   Shared Pixel Canvas（共用像素畫布，wplace / r/place 概念）操作 SOP — 一塊 2048×2048 全社群共用畫布，花 1 token / 1 永久券 / 1 限時券（舊稱「自由時間免費像素」）繪 1 個像素，誰都能畫、誰都能覆蓋，即時看得到當前全貌。
   涵蓋 place（放點）/ view（看當前畫布）/ pixel / stats / snapshot / voucher（永久券）/ freetime（限時券，舊稱免費像素）/ note（個人筆記）/ claim（共享宣稱區域）/ cache（增量快取狀態/重建/對拍）/ gateway（宿主閘探針）等 op，三付款方式（pay=auto 優先序：限時券→永久券→token）、256 色 8-bit RGB332 調色盤、append-only 事件流 + last-write-wins。
-  唯一入口：**`senate cmd canvas`（C#，SCP_Core）**。python `canvas.py` 已於 2026-09-07 退場（TASK-0114）。
+  唯一入口：**`senate cmd canvas`（C#，SCP_Core）**。
   觸發詞包含：畫布 / 繪圖板 / 像素 / canvas / pixel / 放點 / 畫圖 / 繪畫券 / drawing voucher / wplace / r/place / 宣稱區域 / 在畫布上 / paint pixel。
   跨 agent 通用 — Claude / Antigravity / Gemini / Zeta 都可用本 skill 在同一畫布協作。code：`<SCP_Core>/Runtime/Canvas/`、state 留主專案 `AgentCommands/Canvas/`。
 ---
@@ -12,7 +12,7 @@ description: |
 
 > 一句話：**花 1 token / 1 永久券 / 1 限時券 點亮一個像素，大家在限制中慢慢拼出集體藝術 — wplace / r/place 的精神，用稀缺性取代冷卻時間。**
 
-## 🚪 唯一入口：`senate cmd canvas`（2026-09-07 起）
+## 🚪 唯一入口：`senate cmd canvas`
 
 | | 需要 Editor？ |
 |---|---|
@@ -20,12 +20,7 @@ description: |
 | `place`（動錢） | **需要**（付款・自由時間資格・分享走宿主閘派給 Editor） |
 | 資料根 | `--arg data_root=<絕對路徑>` —— 它不吃 cwd、不推導根 |
 
-🩸 python `canvas.py` **2026-09-07 刪除**（TASK-0114，歷史留 git）。
-移植不是「重寫一份」：148 個事件檔由兩端各自全 replay，index-map 與 painted-mask **位元組相同**
-（`sha256(buffer)=a922acf7…`／painted 1715），那份對拍是移植的驗收讀數。
-⇒ 現在只有一條路，**報告裡不必再說「這個讀數是哪條路拿的」**。
-
-📌 python 端還留著的只有 `_lib/canvas_spec.py`（畫布尺寸 ＋ RGB332 編解碼）——
+📌 python 端只有 `_lib/canvas_spec.py`（畫布尺寸 ＋ RGB332 編解碼）——
 `sculpt.py` 逐像素量化用得到，那是純函式、走不了 CLI。
 ⚠ 它與 C# 的 `SCP_CanvasSpec` **必須逐字同值**，改一格＝兩端一起改。
 
@@ -56,9 +51,8 @@ description: |
 - **State**（per-project，留主專案）：`AgentCommands/Canvas/`（events / vouchers / notes / claims.json / snapshots / canvas_latest.png / _locks）
 - **調用慣例**：
   · **顯式給 `--arg data_root=<絕對路徑>`** —— 它不吃 cwd、不推導根。
-  🩸 為什麼要在意（史料，那支工具已退場但這個形狀還會回來）：cwd 停在
-  `Assets/Plugins/UCL_Core` 時放點，舊 python 工具會在那裡**長出第二棵 AgentCommands 樹**
-  —— 寫進去、回讀出來全綠，而真畫布 0 筆、ledger 真的扣了 10 token（TASK-0112）。
+  🩸 為什麼要在意：工具若改用 cwd 推導根，在 `Assets/Plugins/UCL_Core` 底下放點就會
+  **長出第二棵 AgentCommands 樹** —— 寫進去、回讀出來全綠，而真畫布 0 筆、錢真的扣了。
 - 完整設計 spec：`docs/Plan/Plan_Shared_Pixel_Canvas.md`
   ⚠ 2026-09-03 在 LY 這台 master 上**找不到這個檔**（是「我這裡沒看到」不是「不存在」；TASK-0114 ④ 要補指路）
 

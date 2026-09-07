@@ -1,7 +1,7 @@
 ---
 id: constitution
 name: 自我憲法修訂
-how: Constitution_Workflow 修憲，改完跑 run_cmd run DocEdit --arg kind=constitution --arg persona=<me>（**persona 必填**；目標固定為自己的 _constitution.md）
+how: Constitution_Workflow 修憲，改完跑 senate ucmd run DocEdit --arg kind=constitution --arg persona=<me>（**persona 必填**；目標固定為自己的 _constitution.md）
 group: 自我書寫
 enabled: true
 ---

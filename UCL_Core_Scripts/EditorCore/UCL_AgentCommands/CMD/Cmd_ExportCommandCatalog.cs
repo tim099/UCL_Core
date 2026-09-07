@@ -160,7 +160,9 @@ namespace UCL.Core.EditorLib.AgentCommands
             sb.AppendLine();
             sb.AppendLine("1. **編輯器 UI**：開啟 `UCL_AgentCommandsPage` → Add Command 表單選 Type → Add → Run Pending");
             sb.AppendLine("2. **直接編輯 queue.json**：複製本檔案各指令的 `queue.json 範例` 區塊填上 Args，存到 `AgentCommands/queue.json`，按 `Tools/UCL/Agent Commands/Run Pending`");
-            sb.AppendLine("3. **Python 包裝器**（推薦給 Agent，含 lock-file 自動觸發）：見 [run_cmd.py](../Assets/UCL/UCL_Core/Tools~/AgentCommands/run_cmd.py)");
+            sb.AppendLine("3. **Senate CLI**（**推薦給 Agent**）：`senate ucmd run <CmdType> --persona <me> --arg k=v`");
+            sb.AppendLine("   —— 不需要 python 環境；`--lane <id>` 走子分道、`ucmd wait <cmd_id>` 事後收。");
+            sb.AppendLine("   ⛔ 舊的 python 包裝器 `run_cmd.py` 已於 2026-09-07 退場為指路 stub（TASK-0107）。");
             sb.AppendLine("4. **Unity 批次模式**（headless / CI）：`unity.exe -batchmode -projectPath <path> -executeMethod UCL.Core.EditorLib.AgentCommands.UCL_AgentCommandRunner.Menu_RunPending -quit`");
             sb.AppendLine();
             sb.AppendLine("詳見 [AgentCommands_Workflow](../docs/Workflows/AgentCommands_Workflow.md)。");

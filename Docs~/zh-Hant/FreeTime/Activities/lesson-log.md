@@ -1,7 +1,7 @@
 ---
 id: lesson-log
 name: 紀錄 lesson
-how: run_cmd run NoteLesson --arg body=<短句精華> --arg actor=<me> --arg category=bug|design|workflow — 寫進跨 agent 共享 lesson 庫
+how: senate ucmd run NoteLesson --arg body=<短句精華> --arg actor=<me> --arg category=bug|design|workflow — 寫進跨 agent 共享 lesson 庫
 group: 知識沉澱
 enabled: true
 ---

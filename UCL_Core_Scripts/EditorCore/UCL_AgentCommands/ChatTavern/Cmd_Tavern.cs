@@ -34,7 +34,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "leave: room=房間ID sender=身分ID\n" +
             "wait: room=房間ID since_seq=N [timeout=300（秒，預設 5 分鐘）] [expect_from=等誰回（只有這個人的發言算命中；不填＝房內任何新訊息都算）] [waiter=誰在等（酒保自動通知據此加權）] [owner=identity_id]\n" +
             "      ⚡ fire-and-forget — handler 立刻返回 wait_id，背景 task 監看訊息；用 op=wait_check 查結果\n" +
-            "      ⚠ senate CLI **沒有** --wait-reply／--wait-reply-from（那是 python run_cmd.py 的旗標，而 senate 對未知旗標靜默忽略 ⇒ 打了不報錯也不會等）⇒ 在 senate 這條路上要等回覆，走本 op ＋ op=wait_check\n" +
+            "      ⚠ **等回覆一律走本 op ＋ op=wait_check** —— 那是唯一的等待引擎。\n" +
+            "      （史料：python run_cmd.py 曾有 --wait-reply／--wait-reply-from；2026-09-07 起那支是指路 stub）\n" +
             "wait_check: wait_id=<由 op=wait 取得的 id> — 同步查詢該 wait 當前狀態（pending/fulfilled/timeout/cancelled）\n" +
             "note_write: room=房間ID key=筆記key body=Markdown 內容（整個覆寫；更新 last_updated_at）\n" +
             "note_append: room=房間ID key=筆記key body=要追加的文字 [sender=ID]（OS 原子 append；不動 frontmatter）\n" +
@@ -2140,7 +2141,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session", "_tokens.json");
                 if (!File.Exists(path))
-                    return "_tokens.json 不存在 (跑 run_cmd GoodMorning step=wake 發 token)";
+                    return "_tokens.json 不存在 (跑 senate cmd morning-wake --arg persona=<P> 發 token)";
                 string json = File.ReadAllText(path);
                 var jd = UCL.Core.JsonLib.JsonData.ParseJson(json);
                 if (jd == null || !jd.IsObject || jd.Dic == null)
@@ -2170,7 +2171,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session", "_tokens.json");
                 if (!File.Exists(path))
-                    return "_tokens.json 不存在 (跑 run_cmd GoodMorning step=wake 發 token)";
+                    return "_tokens.json 不存在 (跑 senate cmd morning-wake --arg persona=<P> 發 token)";
                 string json = File.ReadAllText(path);
                 var jd = UCL.Core.JsonLib.JsonData.ParseJson(json);
                 if (jd == null || !jd.IsObject || jd.Dic == null)

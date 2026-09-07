@@ -16,7 +16,7 @@ backslash+n 解讀成換行** —— Python 只在原始碼字面值裡做那個
   - antigravity 早期多則：字面 `\\r\\n` 形式，單則最多 39 個
 
 # 為什麼放在共用模組而不是各自複製一份
-判準含具體門檻（>=2 / <=2）。同一條規則寫在 awakening.py 與 tavern_cmd.py 兩份，
+判準含具體門檻（>=2 / <=2）。同一條規則曾經散在多支工具裡，
 就是我們一整天在治的**手抄鏡像**（TAVERN_OP_SCHEMA 手抄 Cmd_Tavern、recurrence 手抄
 origins 都是這個病）—— 兩邊改一邊不改，錯了不會有人叫。故收斂成單一權威。
 刻意用**扁平 sibling** 而非 `_lib/`：UCL_Core 與主專案各有一個 `_lib`，

@@ -50,9 +50,8 @@ def get_sculpt_dir():
 def get_cache_file():
     return get_sculpt_dir() / "sculpt_cache.json"
 
-# RGB332 index → RGB。⚠ 本檔原本自己有一份逐行相同的實作（2026-09-07 收掉）——
-# 三份同值不代表不會漂：**漂的那天沒有任何一層會叫**，只會有兩個工具對同一個 index
-# 畫出不同顏色。規則的擁有者是 `_lib/canvas_spec.py`（C# 那份是 `SCP_CanvasSpec`，兩端逐字同值）。
+# RGB332 index → RGB。⚠ 規則的擁有者是 `_lib/canvas_spec.py`（C# 那份是 `SCP_CanvasSpec`，
+# 兩端逐字同值）—— ⛔ 不要在這裡再寫一份：同值不代表不會漂，而漂的那天沒有任何一層會叫。
 def get_rgb332_color(idx):
     if idx < 0 or idx > 255:
         idx = 0
@@ -62,7 +61,7 @@ def get_rgb332_color(idx):
 # 區塊職責：把一張 RGBA PNG 解成「要放 voxel 的格子」清單，供投影核心 stamp_pixels 使用。
 # 物理意義：**alpha 就是 painted-mask**（Tim 2026-08-14 拍板：2D→3D 一律先出預覽再轉繪）——
 #          透明＝沒畫過＝不放 voxel；不透明＝畫過（含故意畫的白）＝放。
-#          這條之所以成立，是因為 canvas.py 的透明變體把 mask 編碼進 alpha，而
+#          這條之所以成立，是因為畫布的透明變體把 painted-mask 編碼進 alpha，而
 #          RGB332 的 256 個 index 解碼出 256 個相異 RGB（實算驗過）⇒ index→RGB→index 往返無損。
 #          所以「改走 PNG」不是把事實源換成投影，是換成一個**無損且人眼可核准**的中介格式：
 #          人核准的那張圖，跟貼進 3D 的那份 bytes，是同一批。
@@ -99,9 +98,6 @@ def png_to_painted(png_path, alpha_threshold=128, resize=None):
 # 邊界：**不重造調色盤 / 量化邏輯** —— 造第二份就是 2026-06-04 canvas drift bug 的形狀。
 #      不用 import：本檔可能被以任意 CWD 執行，模組搜尋路徑不可靠 ⇒ 走絕對路徑。
 #
-# ⚠ 2026-09-07 之前這裡載入的是整個 `canvas.py`（TASK-0114 排定刪除它）——
-#   為了一個純函式把一整支 CLI 載進來，等於讓 3D 雕刻綁在一支要退場的工具上，
-#   而刪檔那天的錯誤訊息會指向 sculpt，不指向真因。
 def _load_canvas_module():
     import importlib.util as _ilu
     _cv_path = Path(__file__).resolve().parent / "_lib" / "canvas_spec.py"
@@ -117,10 +113,8 @@ def _load_canvas_module():
 # 數值影響：回傳 (png 路徑, 非透明像素數, region_w, region_h, sha256)。
 #          區域座標兩角任意順序、clamp 進畫布邊界（與 canvas view --region 同語意）。
 def render_canvas_region_png(src_x1, src_y1, src_x2, src_y2, out_path):
-    # ── 2026-09-07（TASK-0114）：replay 與渲染改走 `senate cmd canvas --arg op=view`。
-    #    以前是把整個 `canvas.py` 載進來自己 replay ⇒ 3D 綁死在一支要退場的工具上。
-    #    C# 那側**已經產出我們要的兩個讀數**：`_last_view_t.png`（透明變體，mask 編碼進 alpha）
-    #    與 `non_transparent_pixels`。⇒ 這裡不重造 replay，只搬檔＋自己數一次。
+    # ── replay 與渲染走 `senate cmd canvas --arg op=view`：它已經產出我們要的兩個讀數
+    #    （`_last_view_t.png` 透明變體 ＋ `non_transparent_pixels`）⇒ 這裡不重造 replay。
     # ⚠ 不解析 stdout 的 `🔢` 行：opaque 我們**自己從 PNG 數**（同一個定義、少一層字串解析）。
     #   多一層解析就多一種「格式變了而我以為是 0」的壞法。
     # ⚠ C# 的 view 寫的是**固定路徑** `<canvas 根>/_last_view_t.png` ⇒ 兩個人同時 stamp2d
@@ -137,7 +131,7 @@ def render_canvas_region_png(src_x1, src_y1, src_x2, src_y2, out_path):
     try:
         senate = _senate_exe()
     except Exception as e:
-        raise RuntimeError("找不到 Senate CLI ⇒ 取不到畫布區域（**不退回 canvas.py**）：" + str(e))
+        raise RuntimeError("找不到 Senate CLI ⇒ 取不到畫布區域：" + str(e))
     argv = [str(senate), "cmd", "canvas",
             "--arg", "data_root=" + str(data_root),
             "--arg", "op=view",

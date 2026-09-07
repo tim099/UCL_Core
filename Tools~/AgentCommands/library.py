@@ -45,7 +45,7 @@ try:
 except Exception:
     pass
 
-# 區塊職責：portable repo root 推算 (對齊 UCL_Core awakening.py / run_cmd.py convention)
+# 區塊職責：portable repo root 推算 (對齊 UCL_Core awakening.py convention)
 # 物理意義：本工具在 UCL_Core (submodule) 內, 但 per-project 閱讀資料 (Library/) 落各專案 cwd。
 #          三層 fallback 推 REPO_ROOT:
 #   1. CLAUDE_PROJECT_DIR env var (Claude Code hook 設, 最 stable)
@@ -141,7 +141,7 @@ def _normalize_book_name(value: str) -> str:
 
 def _atomic_write(path: Path, text: str) -> None:
     # 區塊職責: atomic write (寫 temp → os.replace) + backoff retry
-    # 物理意義: 沿用 2026-05-21 run_cmd.py 學到的教訓 — Windows 強制檔鎖下, 直接 open("w")
+    # 物理意義: Windows 強制檔鎖下, 直接 open("w")
     #          truncate 期間若被別的 process 持鎖會 OSError [Errno 22]; 用 rename 近 atomic + 重試規避。
     # 數值影響: 寫入更穩, 不破壞既有檔; 失敗 5 次才拋原錯。
     path.parent.mkdir(parents=True, exist_ok=True)

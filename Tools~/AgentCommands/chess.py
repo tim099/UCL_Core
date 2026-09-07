@@ -11,7 +11,7 @@ chess.py — 自由時間「下棋」活動 (西洋棋第一本 RuleBook)。
   - 對局 index 從 0 自增, 每局獨立狀態檔。
   - 獎勵繪圖券綁 persona (跟 ucl-canvas 共用同一份餘額 ledger): 勝+10 / 敗+5 / 和雙方各+5 / solo 一人拿滿。
 
-純 stdlib (無 pip 依賴, 跟 canvas.py / library.py 一致)。
+純 stdlib (無 pip 依賴, 跟 library.py 一致)。
 
 規則書 (RuleBook): 隨 code 放 UCL_Core/Tools~/AgentCommands/rulebooks/<ruleid>.yaml (跨專案共用 spec);
   reward/symbols/board 資料驅動 (有 pyyaml 就讀, 無則內建 fallback)。
@@ -55,7 +55,7 @@ import sys
 import uuid
 from pathlib import Path
 
-# 區塊職責：Windows console UTF-8 fallback（對齊 canvas.py / library.py 等同目錄工具慣例）。
+# 區塊職責：Windows console UTF-8 fallback（對齊 library.py 等同目錄工具慣例）。
 # 物理意義：**stderr 也要 reconfigure** —— 本檔原本只設 stdout，於是 argparse 的錯誤訊息
 #          （唯一寫進 stderr 的東西）在 Windows 走 cp950。
 # 🩸 2026-08-18 實測：`Cmd_FreeTimeActivity op=step` 以 UTF-8 解 stderr，於是錯誤訊息裡的中文
@@ -105,8 +105,6 @@ _REPO = _ucl_paths().repo_root()
 _CHESS_DIR = _DATA_ROOT / "Chess"
 _GAMES_DIR = _CHESS_DIR / "games"                                # runtime 對局狀態 (per-project, 留主專案)
 _VOUCHER_DIR = _DATA_ROOT / "Canvas" / "vouchers"                # 跟 canvas 共用券餘額 (per-project)
-# ⛔ 原本這裡有 `_RUN_CMD = _THIS.parent / "run_cmd.py"` —— 2026-09-07 移除（TASK-0107）。
-#   廣播改走 senate ucmd（路徑解析同樣委派 _lib/ucl_paths，見 broadcast()）。
 _RULEBOOK_DIR = _THIS.parent / "rulebooks"                       # 規則書 spec (跨專案共用, 隨 code 放 UCL_Core)
 
 
@@ -697,16 +695,14 @@ def broadcast(g, header, sender_persona, say=""):
     #     `summit@summit`（本檔發的）／`Zeta大小姐@summit`（Cmd 推導的）。
     #   ⇒ 對應架構拍板「框架統一認 persona，其餘身分資訊一律走統一解析入口」：
     #     呼叫端只負責說「我是誰（persona）」，不負責算「顯示成什麼」。
-    # ── 2026-09-07（TASK-0107）：派遣由 `python run_cmd.py` 換成 `senate ucmd run`。
-    #    `--lane chess-<index>` 語意**一個字都沒變** —— senate 2026-09-07 補上子分道
-    #    （`queues/<persona>/queue-chess-N.json` ＋ `pending-chess-N.trigger`，與 run_cmd 逐字同形）。
-    #    在那之前 senate 只有 `--persona` 一層，而用 `--persona chess-N` 頂替會長回
-    #    `queues/chess-1/` —— 正是本檔上面那段註解寫著被特意改掉的身分層污染。
-    # ⛔ 解不到 senate 就**大聲失敗**，不退回 run_cmd.py：靜默 fallback 會讓轉接等於沒發生。
+    # ⚠ `--lane chess-<index>` ＝ 每局一條子分道（`queues/<persona>/queue-chess-N.json`）：
+    #   同一個人同時有兩局時，兩筆廣播不互相排隊。⛔ 不可以改用 `--persona chess-N` 頂替 ——
+    #   那會長出 `queues/chess-1/`，而**棋局不是人**（見上方身分層污染那段）。
+    # ⛔ 解不到 senate 就大聲失敗，不退回別條路。
     try:
         senate = _ucl_paths().senate_exe()
     except Exception as e:
-        print(f"⚠ 廣播沒送出（找不到 Senate CLI，**不退回 run_cmd.py**）：{e}", file=sys.stderr)
+        print(f"⚠ 廣播沒送出（找不到 Senate CLI）：{e}", file=sys.stderr)
         return False
     cmd = [str(senate), "ucmd", "run", "Tavern"]
     if sender_persona:
@@ -722,10 +718,8 @@ def broadcast(g, header, sender_persona, say=""):
         env = dict(os.environ, PYTHONIOENCODING="utf-8")
         r = subprocess.run(cmd, timeout=90, capture_output=True,
                            encoding="utf-8", errors="replace", env=env)
-        # 🩸 2026-09-07 Tim 問「盤面靜默消失有辦法解決嗎」——
-        #   分道解決的是**碰撞**，而這一格解決的是**它不會叫**：舊版無論成敗一律 `return True`，
-        #   於是一則沒發出去的廣播跟一則發出去的在呼叫端**完全同形**。
-        #   ⇒ 廣播仍是 best-effort（不擋主流程、不回滾這一步棋），但**失敗要留下一行**。
+        # ⚠ 廣播是 best-effort（不擋主流程、不回滾這一步棋），但**失敗要留下一行** ——
+        #   沒發出去的廣播與發出去的，在呼叫端本來完全同形。
         if r.returncode != 0:
             _tail = ((r.stdout or "") + (r.stderr or ""))[-500:]
             print("⚠ 廣播沒落地（棋步已存檔，酒館少一則盤面）— exit", r.returncode, _tail, file=sys.stderr)

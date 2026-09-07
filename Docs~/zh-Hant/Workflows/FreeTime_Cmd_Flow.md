@@ -38,7 +38,7 @@ FreeTimeActivity op=done                收活動：回傳「去換骰」
 ```
 
 **為什麼要有活動層**：在此之前流程提示只活在 `Cmd_FreeTime` 的回傳檔裡，
-而人一旦進到活動工具（`chess.py` / `canvas.py` / …），那些工具的輸出**一個字都沒提自由時間**
+而人一旦進到活動工具（`chess.py` / `library.py` / …），那些工具的輸出**一個字都沒提自由時間**
 —— 流程就斷在那裡。原本的修法是「在五個活動工具的收尾各加一段提示」，
 那是**五個不同的收尾**，其中一個漏掉不會有人發現。包一層之後，提示長在**唯一的入口**上。
 
@@ -171,8 +171,8 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=step --arg persona=<P> 
 
 > 🩸 **引號血證（2026-08-18 首跑）**：`--pixels [{"x":518,...}]` 抵達工具時變成
 > `[{x:518,...}]`（`Arguments` 是單一字串，Windows CreateProcess 把 `"` 當成引號區段的開關吃掉）
-> ⇒ `canvas.py` 誠實回報「JSON 解析失敗」。
-> ⚠ **錯誤訊息指向 canvas.py，真因在 C#** —— 每一層都在說真話，而真話拼起來指向錯的地方。
+> ⇒ 工具端誠實回報「JSON 解析失敗」。
+> ⚠ **錯誤訊息指向工具，真因在 C#** —— 每一層都在說真話，而真話拼起來指向錯的地方。
 > 修法：`step_args` 的 `"` 逐一寫成 `\"`。
 
 ### `op=done` —— 收活動，指回換骰
@@ -209,8 +209,8 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> 
 - 雙層：共用層（UCL_Core）＋專案層，**同 id 專案覆蓋**
 
 已接代跑：`chess` → `chess.py`／`reading`・`book-writing` → `library.py`。
-⚠ `canvas-2d` **2026-09-07 起不再接代跑**（TASK-0114）：寫入端換成 `senate cmd canvas`，
-而代跑那層 spawn 的是 `python <tool>`（`FileName` 寫死 python）⇒ 餵不了 exe。
+⚠ `canvas-2d` **不接代跑**：它的寫入端是 `senate cmd canvas`，而代跑那層 spawn 的是
+`python <tool>`（`FileName` 寫死 python）⇒ 餵不了 exe。
 ⇒ 它走引擎既有的另一條路：`op=step` 回「尚未支援 Cmd 代跑 —— 自己跑」，指令寫在該活動 md 裡。
 未接：`lesson-log`（走 `Cmd_NoteLesson`，是 Cmd 不是腳本）／`glossary-entry`／`doc-reflection`／
 `letter-to-self`／`constitution`／`sculpt-3d`（走 `Cmd_Sculpture`）／`trpg`／
@@ -267,8 +267,8 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> 
 `FreeTime/sessions/<persona>.json` 走 `UCL_FreeTimeSession : UCL_SessionBase`（typed model）。
 
 > ✅ **讀取端只剩 C#**（Tim 2026-08-26 拍板：python 不直讀 session，全走 UCL_SessionService）。
-> 曾經的 python 讀取端已退場：freetime.py 整支刪除、canvas.py 改問
-> `run_cmd run SessionStatus` 的機讀 values（`in_free_time`）。
+> python 端要問「現在是不是自由時間」走 `senate ucmd run SessionStatus` 的機讀 values
+> （`in_free_time`），**不直讀 session 檔**。
 > 欄位名仍是 JSON 鍵名（磁碟上有既有檔），改名走 0054 儲存統一那類的單，不要順手改。
 
 路徑一律走 `UCL_SessionService.SessionPath()` —— 這條組法曾寫死在三個檔

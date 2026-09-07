@@ -25,7 +25,7 @@
     （UCL_Core 與主專案各一個，解析到哪邊取決於 import 順序），而本模組的呼叫端
     **正好會 import awakening**（它會把 <repo>/AgentCommands 插進 sys.path[0]）。
     把「我是誰」壓在一顆會依呼叫順序翻面的骰子上，是這整族 bug 的溫床。
-    詳見 tavern_cmd.py 檔頭的實測記錄。
+
 
 階梯（越上面越是「說出來的」，越下面越是「猜出來的」）：
     tier 1  顯式 --persona / --arg persona=      宣告，最權威

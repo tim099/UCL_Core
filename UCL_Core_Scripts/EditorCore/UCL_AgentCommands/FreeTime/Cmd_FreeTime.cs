@@ -49,7 +49,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             "persona=<name> — 全步驟必填 | until=<HH:mm 本地> — start 必填 | " +
             "reason=<一句> — end 選填(提前收工的形狀要可觀測) | " +
             "id=<活動 id> — show 必填 | count=<N> — shuffle 選填(截前 N 項) | " +
-            "回傳落檔 letters/<persona>/cmd/freetime_<step>.md（路徑隨 run_cmd verdict 印出）";
+            "回傳落檔 letters/<persona>/cmd/freetime_<step>.md（路徑隨派遣 client 的 verdict 印出）";
 
         public override string ExampleArgs => "step=start;persona=Template;until=23:59";
 

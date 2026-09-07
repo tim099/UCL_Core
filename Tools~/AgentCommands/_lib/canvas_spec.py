@@ -6,14 +6,11 @@
          BLANK_INDEX 必須逐字同值」。**改任何一格 = 兩端一起改。**
 數值影響：純函式，零 IO。
 
-⚠ 為什麼從 `canvas.py` 搬出來（2026-09-07，TASK-0114 canvas.py 退場的前置）：
-  `sculpt.py` 的 `png_to_painted` 逐像素叫 `rgb_to_index`，那是**純函式、走不了 CLI**
-  （一張圖幾十萬像素，不可能一顆一次派 Cmd）。
-  而它原本是用絕對路徑把整個 `canvas.py` 載進來拿這一個函式 ——
-  於是「刪掉 canvas.py」會連帶弄壞 3D 雕刻，而錯誤訊息會指向 sculpt。
-  ⇒ 規則搬到這裡：**canvas.py 退場不會帶走它**，而 python 端仍然只有一份。
+⚠ 誰在用：`sculpt.py` 的 `png_to_painted` 逐像素叫 `rgb_to_index` —— 那是純函式、走不了 CLI
+  （一張圖幾十萬像素，不可能一顆一次派 Cmd）。畫布本體的 replay 與渲染走 `senate cmd canvas`。
 
-⛔ 不要在別處重寫一份量化 —— 那正是 2026-06-04 canvas drift bug 的形狀。
+⛔ 不要在別處重寫一份量化：兩份此刻同值不代表不會漂，而漂的那天沒有任何一層會叫 ——
+  只會有兩個工具對同一個 index 畫出不同顏色。
 """
 from __future__ import annotations
 

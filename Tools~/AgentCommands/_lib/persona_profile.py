@@ -32,10 +32,6 @@ import sys
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent          # <UCL_Core>/Tools~/AgentCommands/_lib
-# ⛔ 原本這裡有 `_RUN_CMD = _HERE.parent / "run_cmd.py"` —— 2026-09-03 移除。
-#   留一個指向即將被刪的檔的常數，等於留一顆會在刪檔那天才爆的雷（而且它是**同資料夾兄弟檔**
-#   這種永遠成立的定位方式，所以沒有任何一層會先警告）。派遣改走 `senate`（見 _refresh_via_cmd）。
-
 
 def _ucl_paths():
     import importlib.util as _ilu

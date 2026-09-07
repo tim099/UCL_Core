@@ -19,7 +19,7 @@
 用法：
     from _lib.treasury_cmd import treasury_debit, treasury_credit
     ok, msg = treasury_debit(account="zeta", amount=3, source_kind="canvas_pixel",
-                             source_ref=event_uuid, description="...", caller="canvas.py")
+                             source_ref=event_uuid, description="...", caller="library.py")
 """
 from __future__ import annotations
 
@@ -27,10 +27,6 @@ import subprocess
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent          # .../Tools~/AgentCommands/_lib
-# ⛔ 原本這裡有 `_RUN_CMD = _HERE.parent / "run_cmd.py"` —— 2026-09-04 移除（TASK-0107）。
-#   留一個指向即將被刪的檔的常數，等於留一顆會在刪檔那天才爆的雷，而且它是**同資料夾兄弟檔**
-#   這種永遠成立的定位方式 ⇒ 沒有任何一層會先警告。（同 `_lib/persona_profile.py` 2026-09-03 的先例。）
-
 
 def _ucl_paths():
     """載入同目錄的 `ucl_paths.py` —— 照 `_lib/persona_profile.py` 既有慣例。
@@ -51,7 +47,7 @@ _PATHS = _ucl_paths()
 def _run(cmd_type: str, args: dict, *, timeout: float = 180.0) -> tuple[bool, str]:
     """送一個 Cmd 進 Editor 佇列並等它跑完。回 (ok, 訊息尾段)。"""
     # 區塊職責：走 system lane（Tim 2026-08-18 拍板）。
-    # 物理意義：金流 Cmd **不是人派的** —— 呼叫端是 canvas.py / library.py 這類工具，
+    # 物理意義：金流 Cmd **不是人派的** —— 呼叫端是 library.py 這類工具，
     #          而 args 裡的 `account` 是**銀行**（Myth / cc / zeta）不是 persona，
     #          本來就路由不到任何人的 lane。過去兩個旗標都沒帶 ⇒ 全落 queues/anonymous/，
     #          跟「漏帶 --persona 的人」混在一起，那個資料夾就不再是儀表。
@@ -65,24 +61,16 @@ def _run(cmd_type: str, args: dict, *, timeout: float = 180.0) -> tuple[bool, st
     #            （2026-09-04 機器數過：**五支**）。⇒ 改成不寫數字：
     #            **會過期的數字不會自己喊，而下一個人會照字面相信它。**（憲法⑤）
     #
-    # ── 2026-09-04（TASK-0107，Tim 拍板「全面移植到 Senate CLI」）：派遣由
-    #    `python run_cmd.py` 換成 `senate ucmd run`。三處旗標對應是**量出來的**，不是推的：
-    #      · `--system`        → `--persona system`（實測路由同樣落 `queues/system/`）
-    #      · `--wait-reply 0`  → **直接砍**（senate 沒有這個功能，帶 0 本來就是關掉 ⇒ 等價）
-    #      · `timeout=180`     → **顯式帶 `--timeout`**。⛔ 不帶就是降級：senate 預設 120 < 這裡的 180，
-    #        而降級的症狀不是紅燈，是「本來會等到的那 60 秒不等了」⇒ 逾時被誤讀成 Editor 沒開。
-    #    ⚠ 記帳語意**逐位元不變**：帳戶隔離鐵律看的是 args 裡的 `caller` / `account`
-    #      （`UCL_TreasuryLedger`），跟 lane、跟 client 是誰都無關。
-    #
-    # 🩸 `senate` 的路徑走 `ucl_paths.senate_exe()`（三層：env → pointer → PATH），**不寫裸字串**。
-    #    2026-09-03 我在 `persona_profile.py` 寫的是裸 `"senate"` 並註解「PATH 保證有」——
-    #    那是一個**我沒有量過就宣告的射程**（憲法⑤寬報）。這裡不重犯。
-    # ⛔ 解不到時**大聲失敗、不退回舊路徑**：靜默 fallback 會讓這次轉接等於沒發生，
-    #    而呼叫紀錄（本單的收單條件）會照樣長出新的一筆，沒有人會知道。
+    # ⚠ 三處旗標的對應（量出來的，不是推的）：
+    #   · 走 system lane ⇒ `--persona system`（路由落 `queues/system/`）
+    #   · `timeout=180` ⇒ **顯式帶 `--timeout`**。⛔ 不帶就是降級：senate 預設 120，
+    #     而降級的症狀不是紅燈，是「本來會等到的那 60 秒不等了」⇒ 逾時被誤讀成 Editor 沒開。
+    #   ⚠ 記帳語意看的是 args 裡的 `caller` / `account`（`UCL_TreasuryLedger`），
+    #     跟 lane、跟 client 是誰都無關。
     try:
         aSenate = _PATHS.senate_exe()
     except Exception as e:
-        return False, f"找不到 Senate CLI ⇒ 金流 Cmd 沒有送出（**不退回 run_cmd.py**）：\n{e}"
+        return False, f"找不到 Senate CLI ⇒ 金流 Cmd 沒有送出：\n{e}"
 
     argv = [str(aSenate), "ucmd", "run", cmd_type, "--persona", "system",
             "--timeout", str(int(timeout))]
@@ -125,7 +113,7 @@ def treasury_balance(account: str, currency: str = "tavern_token", *,
                    timeout=timeout)
     if not ok:
         return None
-    # run_cmd 把 handler 回報的值印成 `  🔢 balance = 6208`（見 run_cmd.print_cmd_outputs）
+    # client 把 handler 回報的值印成 `  🔢 balance = 6208`
     for line in reversed(out.splitlines()):
         if "🔢" in line and "balance" in line and "=" in line:
             try:
@@ -146,7 +134,7 @@ def treasury_debit(*, account: str, amount: int, source_kind: str, source_ref: s
         "description": description,
         # ⚠ caller 必須是 **帳戶本人**（或 "system"）—— UCL_TreasuryLedger 有帳戶隔離鐵律：
         #   caller 非 "system" 且 != accountId 就拋例外「不可動用對方帳戶」。
-        #   傳工具名（"canvas.py"）會被自己的防盜用規則擋死，而錯誤訊息長得像帳本壞了。
+        #   傳工具名（例 "library.py"）會被自己的防盜用規則擋死，而錯誤訊息長得像帳本壞了。
         #   語意上這裡就是「該帳戶花自己的錢」，所以 caller = account 是正確的宣告，
         #   不是為了繞過檢查。真正的代操作（後台代所有帳戶）才用 "system"。
         "caller": caller or account,
@@ -180,10 +168,8 @@ def canvas_voucher_grant(*, persona: str, amount: int, source: str = "manual_gra
                          source_ref: str = "", description: str = ""):
     """發繪圖券 —— 走 Cmd_CanvasVoucher（C# 是券的 canonical owner）。
 
-    🩸 2026-08-17 補這支的理由：**券是最後一種還能被 python 直寫的錢。**
-      consume 早就走 Cmd 了，grant 卻留著 `canvas.py voucher grant` 與
-      `chess.py grant_voucher()` 兩處直寫 —— 於是券成了本檔開頭那四條後果
-      （快取靜默失準 / 繞過冪等 / 簽章不可信 / balance 欄自行維護）唯一的缺口。
+    ⚠ **券也是錢** —— 直寫券帳本會撞上本檔開頭那四條後果
+      （快取靜默失準 / 繞過冪等 / 簽章不可信 / balance 欄自行維護）。
       而缺口真的漏了：chess.py 的路徑推導 bug 把券寫到 repo 外，兩份帳本各自累積
       真實交易後分歧（summit 643 vs 231、basecamp 75 vs 254，四個 persona 只存在於錯的那邊）。
       **路徑 bug 是導火線，但能燒起來是因為那裡本來就允許直寫。**

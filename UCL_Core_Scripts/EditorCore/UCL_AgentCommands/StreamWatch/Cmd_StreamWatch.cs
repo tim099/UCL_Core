@@ -2356,21 +2356,55 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // ⇒ 改成「同組沒有人還在線 ⇒ 由我觸發」：等到那一刻，台帳上一定有全部場次。
             // ⚠ 併發：兩人幾乎同時收工可能都判定自己是最後一個 ⇒ 兩次匯出。
             //    後者帶 --force 覆寫同一章、內容相同 ⇒ **良性重覆**，不加鎖（加鎖的失敗模式更難查）。
-            // ⚠ 有人整場沒回來收工 ⇒ 匯出不會觸發；那條路由 TASK-0065（殘留補結算）接手 ——
-            //    下一次 start/join 會把它結算掉，屆時最後一個收工的人就出現了。
+            // 🩸 **2026-09-08 這條線斷過一次，而它斷得很安靜**（TASK-0176 的成因）：
+            //    四人陪看，@meadow 一直沒回來跑收工那一輪（`active=true`／`ended_at` 空）⇒
+            //    另外三人收工時**每個人都印「還不是最後一個」** ⇒ 沒有人成為最後一個 ⇒
+            //    ① 章沒進書 ② 錄影一直開著（人手動關的）。
+            //    ⚠ 而那句「⏸ 還不是最後一個 —— 同場仍在線：@X」在**正常等待**與
+            //    **那個人再也不會回來**這兩種情況下**逐字相同**。⇒「還沒發生」與「不會發生」同形。
+            //
+            // ⇒ Tim 2026-09-08 拍板改成：**收尾統一由主觀影者（primary）觸發**，
+            //    primary 收工後**繼續等 2 分鐘**（等待由本 Cmd 執行，呼叫端不自己等），
+            //    到期仍有人沒收播 ⇒ **強制結算**那些殘留場，然後才收尾。
+            //    📌 一般形：一個「等所有人都完成」的判準，等於把整條收尾路徑掛在**最不可靠的那個參與者**身上，
+            //    而它失敗時不會叫。換成「指定一個負責人 ＋ 一個時限 ＋ 到期強制回收」是把不確定性**有界化**。
             string aGroupSid = (ioS.role == "companion" && !string.IsNullOrEmpty(ioS.parent_session_id))
                                ? ioS.parent_session_id : ioS.session_id;
+            // ⚠ 舊場次的 `role` 是空字串（本欄 2026-08 才加）⇒ 只有明確是 companion 的才不收尾，
+            //   其餘一律當 primary。**不確定時傾向「有人收尾」**，因為漏收尾是靜默的、重複收尾會被判重擋下。
+            bool aIsPrimary = !string.Equals(ioS.role, "companion", StringComparison.OrdinalIgnoreCase);
             var aStillOn = ActiveGroupPeers(aGroupSid, iPersona);
-            bool aIsLastOut = aStillOn.Count == 0;
+            bool aIsLastOut = aIsPrimary;   // ⇐ 收尾者＝primary（不再是「最後一個收工的人」）
+
+            // ⚠ **補結算舊殘留那條路不等寬限**（`residue-settled` / `forced-by-…`）：
+            //   那一刻通常是「某人正要開新場」或「有人在關殘留」，讓他們卡 2 分鐘是把成本轉嫁給無關的人；
+            //   而且那場的同伴早就不在了，等也等不到誰。⇒ 直接進強制結算與收尾。
+            //   ⛔ 也防遞迴：強制結算會再進 SettleAsync，若那條也等寬限就會層層疊加。
+            bool aSkipGrace = !string.IsNullOrEmpty(iReasonOverride)
+                              && (iReasonOverride.StartsWith("residue", StringComparison.OrdinalIgnoreCase)
+                                  || iReasonOverride.StartsWith("forced", StringComparison.OrdinalIgnoreCase));
+            if (aIsPrimary && aStillOn.Count > 0 && !aSkipGrace)
+                aStillOn = await AwaitPeersOrForceSettleAsync(iArgs, iPersona, aGroupSid, aStillOn, ioR, iToken);
+            else if (aIsPrimary && aStillOn.Count > 0 && aSkipGrace)
+            {
+                ioR.AppendLine();
+                ioR.AppendLine("## 收尾寬限（略過）");
+                ioR.AppendLine($"- ⏭ 本次結算理由是 `{iReasonOverride}` ⇒ **不等寬限**"
+                             + $"（同場仍在線：{string.Join(" / ", aStillOn.Select(p => "@" + p))}）");
+                ioR.AppendLine("- ⇒ 收尾照常由本場觸發；⚠ 那幾場若沒結算，它們的段落**不會進書**。");
+            }
             var (aAutoOn, aAutoWhy) = ReadAutoExportSetting(ioS.library_media_id);
             bool aExported = false;
             if (!aIsLastOut)
             {
                 ioR.AppendLine();
                 ioR.AppendLine("## 實錄匯出（自動）");
-                ioR.AppendLine($"- ⏸ **還不是最後一個** —— 同場仍在線：{string.Join(" / ", aStillOn.Select(p => "@" + p))}");
-                ioR.AppendLine("- ⇒ 匯出留給**最後收工的人**觸發（那時台帳上才有全部場次；"
-                             + "現在匯會漏掉還沒結算的那幾場，而漏掉的樣子跟「沒有那幾場」一模一樣）");
+                ioR.AppendLine("- ⏸ **本場是陪同場（companion）⇒ 不由我收尾**（TASK-0176，Tim 2026-09-08 拍板）");
+                ioR.AppendLine($"- ⇒ 匯出與收工關錄影一律由**主觀影者**觸發"
+                             + $"（本場 primary＝`{aGroupSid}`）；她收工後會再等 {SETTLE_GRACE_SEC:F0} 秒，"
+                             + "屆時還沒收播的場會被**強制結算**。");
+                ioR.AppendLine("- 📌 改掉「最後一個收工的人」的理由：那個判準要求**每一個人都回來**，"
+                             + "而缺席時它的失效樣子是沉默（2026-09-08 實撞：章沒進書、錄影一直開著）。");
             }
             if (aIsLastOut && aAutoOn)
             {
@@ -2439,8 +2473,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (aIsLastOut && !aAutoOn)
                 ioR.AppendLine($"   ℹ 自動匯出未啟用：{aAutoWhy}");
             else if (!aIsLastOut)
-                ioR.AppendLine($"   ℹ 本場尚有人在線（{string.Join(" / ", aStillOn.Select(p => "@" + p))}）"
-                             + "—— 匯出由**最後收工的人**觸發；要現在手動出章就用下面的指令。");
+                // ⚠ 2026-09-08：舊字面是「本場尚有人在線（…）—— 匯出由最後收工的人觸發」，
+                //   而收尾者改成 primary 之後那句有兩個錯：① 判準過期 ② 沒人在線時會印**空括號**
+                //   （測試當場撞到）。⇒ 改成陳述本場的角色，不再轉述一個已經不存在的判準。
+                ioR.AppendLine("   ℹ 本場是**陪同場**，收尾（匯出／關錄影）由主觀影者觸發"
+                             + (aStillOn.Count > 0
+                                ? $"；同場仍在線：{string.Join(" / ", aStillOn.Select(p => "@" + p))}"
+                                : "；此刻同場已無其他 active 場次")
+                             + "。要現在手動出章就用下面的指令。");
             // 實錄匯出：沒啟用自動時**不自動跑**。章 ≠ 場（重播、殘場、一話跨數場都發生過，001 章末就記了一次併章），
             // 而章名要親筆 ⇒ 這裡只把可直接貼的指令連同已量到的區間交出去，別讓它變成要人自己記得的事。
             ioR.AppendLine($"3. 本場實錄可匯出成章（章 ≠ 場：一話跨數場就把區間一起給）：");
@@ -3524,9 +3564,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             {
                 var aP = LoadPrepared(iLibraryMediaId);
                 if (aP == null) return (false, "準備檔讀不出 JSON ⇒ 保守不動");
+                // 🩸 2026-09-08 測試當場抓到：這裡本來寫「開場前就已經在錄」——
+                //   而 `false` 有**兩種成因**（① 開場時已在錄 ② 本場 `start_recording=false` 沒開），
+                //   我卻只宣告了其中一種，於是它在第二種情況下**是一句假話**。
+                //   ⇒ 沒量到的成因不寫死；只陳述「不是本場開的」這個真的讀得到的事實。
                 return aP.recording_opened_by_prepare
                     ? (true, "本場 prepare 開的")
-                    : (false, "開場前就已經在錄（不是本場開的）⇒ 那是別人的狀態，不替他關");
+                    : (false, "**不是本場 prepare 開的**（開場時就已在錄／本場 `start_recording=false` 都會落在這裡"
+                            + " —— 準備檔沒有記成因，我不猜）⇒ 那不是本場的狀態，不替它關");
             }
             catch (Exception e) { return (false, $"準備檔解析失敗：{e.Message} ⇒ 保守不動"); }
         }
@@ -3650,6 +3695,86 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         /// <summary>同一場（同 relay 組）**還在線**的其他人 —— 給「最後收工的人觸發匯出」用。
         /// 判定只認 session 檔的顯式 `active` 欄位，不推論。
         /// ⚠ 呼叫端必須**先**把自己存成 active=false 再問，否則永遠問不到 0。</summary>
+        // ===========================================================
+        // 區塊職責：primary 收工後的**寬限等待 ＋ 到期強制結算**（TASK-0176，Tim 2026-09-08 拍板）
+        // 物理意義：收尾（匯出＋關錄影）需要「台帳上有全部場次」，而場次只有結算時才上台帳。
+        //          舊做法要求**每個人都自己回來收工**；缺席一個人就整條靜默失效（見 SettleAsync 的血證）。
+        //          改成：primary 等一段**有界**的時間，逾時就把還開著的場強制結算 —— 把不確定性關進一個上限裡。
+        // 數值影響：最壞多花 SETTLE_GRACE_SEC 秒（有人已收工就提早返回）；強制結算會**真的發薪**
+        //          （走 SettleForCloseAsync：台帳 append ＋ 發薪 ＋ 收播公告），計費上限仍是各自的 ends_at。
+        // 邊界：⛔ **不阻塞主執行緒** —— 走 `UniTask.Delay`（Editor 下掛在 update 上，await 會讓出）。
+        //      🩸 同日 TASK-0162 才剛修完「背景緒抱著鎖做 IO，主緒凍 111 秒」；一個寫成
+        //      `Thread.Sleep` 的兩分鐘等待就是同一隻病的復發，而且**更難查**（它「應該」要慢）。
+        //      ⚠ 這一步會讓 CLI 逾時（`senate ucmd` 預設等 120s）—— **逾時 ≠ 沒執行**，
+        //      處置是先看回傳檔 mtime，⛔ 不要重打（重打會多發一次收播公告）。
+        // ===========================================================
+        const double SETTLE_GRACE_SEC = 120.0;
+        const double SETTLE_POLL_SEC = 5.0;
+
+        static async UniTask<List<string>> AwaitPeersOrForceSettleAsync(
+            IDictionary<string, string> iArgs, string iPersona, string iGroupSid,
+            List<string> iStillOn, StringBuilder ioR, CancellationToken iToken)
+        {
+            ioR.AppendLine();
+            ioR.AppendLine("## 收尾寬限（primary 等同場的人收播）");
+            ioR.AppendLine($"- 起手仍在線：{string.Join(" / ", iStillOn.Select(p => "@" + p))}"
+                         + $"　｜上限 **{SETTLE_GRACE_SEC:F0}s**（每 {SETTLE_POLL_SEC:F0}s 回讀一次 session 檔）");
+
+            var aWatch = System.Diagnostics.Stopwatch.StartNew();
+            var aStill = iStillOn;
+            while (aStill.Count > 0 && aWatch.Elapsed.TotalSeconds < SETTLE_GRACE_SEC)
+            {
+                try
+                {
+                    await UniTask.Delay(TimeSpan.FromSeconds(SETTLE_POLL_SEC), DelayType.Realtime,
+                                        PlayerLoopTiming.Update, iToken);
+                }
+                catch (OperationCanceledException) { break; }
+                // ⚠ 回讀 session 檔，不用記憶中的清單 —— 這一格的整個重點就是「別人在這段時間做了什麼」。
+                aStill = ActiveGroupPeers(iGroupSid, iPersona);
+            }
+
+            double aWaited = aWatch.Elapsed.TotalSeconds;
+            if (aStill.Count == 0)
+            {
+                ioR.AppendLine($"- ✅ 全部收播了（實等 **{aWaited:F1}s**，未動用強制結算）");
+                return aStill;
+            }
+
+            // ── 逾時：強制結算 ────────────────────────────────────────
+            ioR.AppendLine($"- ⏱ 等滿 **{aWaited:F1}s** 仍未收播：{string.Join(" / ", aStill.Select(p => "@" + p))}"
+                         + " ⇒ **強制結算**（Tim 2026-09-08 拍板）");
+            ioR.AppendLine("- ⚠ 強制結算會**真的發薪並發收播公告**；計費上限仍是各自的 `ends_at`"
+                         + "（`SettleAsync` 內兩者取小 ⇒ 回得晚不會多領）。");
+
+            foreach (string aPeer in aStill.ToList())
+            {
+                ioR.AppendLine($"### 強制結算 @{aPeer}");
+                bool aOk;
+                try
+                {
+                    // ⚠ 走既有入口，不另寫一份結算 —— 它回的是**台帳回讀**不是「我呼叫過」（TASK-0132 的血證）。
+                    aOk = await SettleForCloseAsync(iArgs, aPeer, ioR, iToken, "forced-by-primary-grace");
+                }
+                catch (Exception e)
+                {
+                    aOk = false;
+                    ioR.AppendLine($"- ⚠ 強制結算拋例外：{e.Message}");
+                }
+                ioR.AppendLine(aOk
+                    ? $"- ✅ 台帳回讀：@{aPeer} 已有結算紀錄"
+                    : $"- ⚠ **台帳回讀不到 @{aPeer} 的結算紀錄** —— 她那場沒被結算（錢沒發）。"
+                      + "⛔ 別當它成功了；她的段落也不會進書。");
+            }
+
+            var aLeft = ActiveGroupPeers(iGroupSid, iPersona);
+            ioR.AppendLine(aLeft.Count == 0
+                ? "- ✅ 回讀：同場已無 active 場次 ⇒ 台帳上有全部場次，可以收尾"
+                : $"- ⚠ 回讀：仍有 active：{string.Join(" / ", aLeft.Select(p => "@" + p))}"
+                  + " ⇒ **收尾照常進行，但那幾場的段落不在台帳上**（匯出會漏掉它們）");
+            return aLeft;
+        }
+
         static List<string> ActiveGroupPeers(string iGroupSessionId, string iSelfPersona)
         {
             var aOut = new List<string>();

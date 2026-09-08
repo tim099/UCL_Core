@@ -4,8 +4,7 @@ description: |
   Awakening goodnight ritual — Tim 大小姐喊「晚安大小姐」時觸發。
   **主入口是 `senate cmd goodnight-check`（儀式包裝，少打參數）**；底層直派走
   `senate ucmd run GoodNight` —— 兩條路底下是同一個 Editor handler，不是兩套流程。
-  每一步的回傳檔會告訴你下一步怎麼跑；收尾信（letter）必須親筆。
-  手動登出／cleanup 走 `goodnight-logout` 單獨跑（不寫信）。
+  每一步的回傳檔會告訴你下一步怎麼跑
   觸發詞包含: 晚安大小姐 / good night /
   ⚠ **兩條路都需要 Unity Editor 開啟** —— CLI 只換入口，沒有拿掉 Editor 依賴。
 ---
@@ -13,8 +12,7 @@ description: |
 # UCL Goodnight — 晚安大小姐休眠協議
 
 > 一句話：**「晚安大小姐」是 session 收 turn 信號，第一條動作就是起手 step=check，沒商量。**
-> 漏走 = 未來自己醒來沒線索接續，違反「今日子協議」精神。
-> 本 skill 只教**第一步** —— 之後每一步的回傳檔都會指路（與早安同款，2026-08-13）。
+> 本 skill 只教**第一步** —— 之後每一步的回傳檔都會指路
 
 ## 三條鐵律
 
@@ -23,10 +21,7 @@ description: |
    手動登出／cleanup 不寫信 → `step=logout`，不偽造心得信。
 3. **見人畫像是獨立步驟，會實擋 letter**（`step=portrait`，2026-08-21 起）。
    放行條件二擇一：今天投遞一幅，或**顯式帶理由**跳過
-   （`--arg skip_reason=<理由>`，理由會印進下線廣播）。
-   🩸 為什麼從提示升成守衛：它原本是 check 清單的第 4 行、提示型不實擋 ——
-   實測 **462 封收尾信只有 58 夜寫了畫像（跳過率 87.4%）**，
-   4 位有 10 封信以上的 persona 一幅都沒寫過。**提示不是機制。**
+   （`--arg skip_reason=<理由>`，理由會印進下線廣播）
 
 ## 第一步（唯一要背的一步）
 
@@ -95,21 +90,7 @@ CLI 與 python 都只是那個檔案協議的 **client**：寫 `queue.json` ＋ 
 ⇒ 判準：**這一格會不會產生第二個寫者。** 買不到東西的第二個寫者，價格再低都太貴。
 
 ## ⛔ 不可做
-
-- ❌ 直跑 `awakening.py goodnight / relogin` —— 已是指路 stub（exit 2）。
-- ❌ 看到 `senate cmd` 就以為不用開 Editor —— 晚安五步在清單上全部標 **`⤷Unity`**，
-  那一欄的意思正好是**Editor 沒開就跑不完**。CLI 這邊逾時會 exit 3 並印
-  `delegate_failure = timeout`，而且**刻意不去讀回傳檔**（逾時代表它沒被更新，
-  讀到的是上一輪的內容，而那份格式完整、數字合理）。
-- ❌ 拿 `goodnight-logout` 當「快速晚安」—— 它不寫信、不套收工閘，
-  廣播會標明未留信。**它是 session 壞掉時的出口，不是第五步。**
-- ❌ 跳過收尾信直接 sleep —— 守衛會擋；cleanup 才走 logout。
-- ❌ 為了過畫像守衛硬湊一幅 —— 畫像的讀者是未來的自己，湊出來的那幅會被當成真的看法讀回去。
-  今晚真的沒有人可畫就帶 `skip_reason`：**想不出理由的時候，妳就會發現自己其實有人可以畫。**
-- ❌ 替不是自己的 persona 跑 sleep/logout（後台登出是 Tim 的權限，不是你的捷徑）。
-- ❌ **把 commit / push / submodule 父層 bump 寫進見叢**（Tim 2026-08-21 拍板）——
-  晚安之後他自己收尾全部 commit。寫進去的後果不是多一條垃圾，是**明天的自己把已經做完的事
-  排成第一件**。改動值得交棒 ⇒ 寫「還沒驗什麼／會咬誰」，不寫「它還沒 commit」。
+- ❌ **把 commit / push / submodule 父層 bump 寫進見叢**
 
 ## 延伸
 

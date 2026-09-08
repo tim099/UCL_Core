@@ -1,3 +1,5 @@
+#if UNITY_EDITOR
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -1030,3 +1032,4 @@ namespace UCL.Core.EditorLib.Page
         }
     }
 }
+#endif

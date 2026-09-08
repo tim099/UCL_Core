@@ -8,7 +8,6 @@
 //   - 每 process 單檔 (<tag>_<pid>.json) 而非集中一檔 — 避免併發寫互蓋, 且單檔壞不連坐。
 //   - 檔案落主專案 AgentCommands/_process_registry/ (runtime 狀態, per-project, 不入 UCL_Core repo)。
 // 2026-07-27 summit — Tim 規格: 「不能單純只記錄PID 還要有能判斷Process在做什麼 ... 不能誤關」
-#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -105,7 +104,9 @@ namespace UCL.Core.EditorLib
     //          （PidReused 那顆 PID 已易主，是別人的，只清記錄）。
     // 設計取捨：掛 InitializeOnLoad 而不是掛在 `Register` 裡 —— 後者會讓每次 spawn 都多一次
     //          全表掃描（Tim 2026-08-06 拍板）。domain reload 每次編譯都發生，頻率已足夠。
+#if UNITY_EDITOR
     [UnityEditor.InitializeOnLoad]
+#endif
     static class UCL_ProcessRegistryAutoCleanup
     {
         static UCL_ProcessRegistryAutoCleanup()
@@ -545,4 +546,3 @@ namespace UCL.Core.EditorLib
         }
     }
 }
-#endif

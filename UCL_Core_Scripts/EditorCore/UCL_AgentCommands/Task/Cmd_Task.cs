@@ -931,7 +931,13 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 ioR.AppendLine($"    · 或請上面那些人跑，或請他們 `op=assign` 把你加進來");
                 ioR.AppendLine("- ⛔ 本 op **沒有** `qa_note=` 代簽出口（`resolve` 有）——");
                 ioR.AppendLine("  理由：關不掉的單會卡住工作，**沒勾的驗收格不卡任何人** ⇒ 沒有正當的破例用例。");
-                throw new Exception($"[Task] op=check 擋下：`{iActor}` 不是 {e.Id} 的參與者/QA，不能替它簽名");
+                // 🩸 措辭：**不可以寫「不是參與者/QA」** —— 有指名 QA 時，一個「是參與者但不是那個 QA」
+                //   的人也會被擋（basecamp 2026-09-08 在 0114 上實際撞到：她是 dev＋pm）。
+                //   那句話會讓被擋的人去查名單、發現自己明明在上面 ⇒ **下一步他懷疑守衛壞了，而守衛是好的**。
+                //   ⇒ 訊息要說**這張單當下的規則是哪一條**，不要說一個他可以自己反駁的身分判定。
+                throw new Exception($"[Task] op=check 擋下：`{iActor}` 不在 {e.Id} 的可簽名名單裡"
+                    + $"（{(aQa.Count > 0 ? "本單有指名 QA ⇒ 只有 " + string.Join(" / ", aQa) + " 能簽" : "本單沒有指名 QA ⇒ 參與者與開單人能簽")}）"
+                    + "，不能替它簽名");
             }
 
             // ── 沒給序號 ⇒ dry-run：印未勾清單（⛔ 零寫入）───────────

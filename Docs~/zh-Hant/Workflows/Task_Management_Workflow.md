@@ -1,7 +1,7 @@
 ---
 title: Task Management Workflow — 跨 Agent 任務管理與協作維護指南
-description: 跨專案共享的專案與任務管理作業標準 — 一單一檔任務建立、多參與者（Dev/QA/PM/Design/Reviewer/Sound/Art）指派、依賴關係雙向維護、早安 brief §2.5 見單機械撈取（見叢不再手抄單號）、Commit 自動閉環（Fixes TASK-N ＋ --expect-files）、Task ↔ 工作記憶雙向錨點（四個觸發點）、晚安雙向對帳機制與 sweep 逾期釋放。
-last_updated: 2026-09-07
+description: 跨專案共享的專案與任務管理作業標準 — 一單一檔任務建立、多參與者（Dev/QA/PM/Design/Reviewer/Sound/Art）指派、依賴關係雙向維護、早安 brief §2.5 見單機械撈取（見叢不再手抄單號）、Commit 自動閉環（Fixes TASK-N ＋ --expect-files）、Task ↔ 工作記憶雙向錨點（四個觸發點）、晚安雙向對帳機制與 sweep 逾期釋放、`op=check` 驗收標準具名勾選（TASK-0119）。
+last_updated: 2026-09-08
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Task_Management_System.md | Task Plan RFC | 系統架構設計與資料模型
@@ -210,6 +210,18 @@ $R --arg op=unassign --arg index=42 --arg target_persona=summit
 
 # 7. 追加進度筆記或討論（同步廣播酒館）
 $R --arg op=comment --arg index=42 --arg body="今日完成 P1~P6 分鏡，預計明日完成線稿。"
+
+# 7'. 勾驗收標準（TASK-0119）—— 打勾是**簽名行為**，勾完的行尾會多一段 `　✅ <persona> <日期>`
+$R --arg op=check --arg index=42                            # 不帶序號＝dry-run：印未勾清單、**零寫入**
+$R --arg op=check --arg index=42 --arg criteria_index=3      # 勾第 3 格
+$R --arg op=check --arg index=42 --arg criteria_index=1,4    # 多筆（內部由大到小套用 ⇒ 序號不位移）
+#   ⚠ 序號是**未勾清單**的 1-based 序號，**不是檔案行號**、也不含已勾的行
+#   誰可以勾：單上有指名 QA ⇒ **只有 QA**；沒有 QA ⇒ 參與者＋開單人。其他人擋下（非零退出、零寫入）
+#   ⛔ **沒有** `qa_note=` 代簽出口（`resolve` 有）—— 關不掉的單會卡住工作，**沒勾的驗收格不卡任何人**
+#   ⛔ 它**不是**整份 criteria 覆寫：只翻那一行的勾選格並接上署名。新增細項仍走 `op=update --arg-file criteria=`
+#   ⚠ 勾**不會**推進 status；結單仍走 `op=resolve`
+#   📌 為什麼要署名：**沒有署名的勾等於沒有勾** —— 而它順帶讓「開單時就手寫成 `[x]`」
+#      與「有人驗過並簽名」分辨得出來（前者沒有署名段）
 
 # 8. 建立依賴與階層關係（雙向自動連動）
 $R --arg op=link --arg index=43 --arg op_link=blocked_by --arg target=42

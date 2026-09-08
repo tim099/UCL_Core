@@ -28,11 +28,11 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public override string CommandType => "Task";
 
         public override string ShortDescription =>
-            "跨 agent 任務管理：create/list/show/claim/assign/unassign/update/comment/link/resolve/commit/sweep/wrapup/kanban。"
+            "跨 agent 任務管理：create/list/show/claim/assign/unassign/update/comment/check/link/resolve/commit/sweep/wrapup/kanban。"
             + " 一單一檔；跨人承諾建 Task，個人自律留見叢。";
 
         public override string ArgsSchema =>
-            "op=create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|sweep|wrapup|kanban（預設 list） | " +
+            "op=create|list|show|claim|assign|unassign|update|comment|check|link|resolve|commit|sweep|wrapup|kanban（預設 list） | " +
             "sha=<commit SHA，op=commit 必填> | mode=fixes|refs（op=commit 用，預設 fixes） | " +
             "title=<標題，create 必填> | criteria=<驗收標準，create 必填；type=bug 可省（三段骨架自帶）> | description= | " +
             "evidence=<硬證＋讀數怎麼拿到的，type=bug create 必填；不確定算不算就報 —— 拿不出硬證改 type=improvement + tags=friction|suggestion> | " +
@@ -45,6 +45,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "target_persona=<assign 的對象> | assignee=<list 篩選：只看某人參與的單> | " +
             "replace=1（assign 用：**換角色** —— 先拿掉這個人既有的角色再指派；不帶＝加一個角色） | " +
             "body=<comment 內容> | " +
+            "criteria_index=<op=check：**未勾清單**的 1-based 序號，逗號分隔可多筆；不帶＝dry-run 印清單、零寫入> | " +
             "op_link=blocked_by|blocks|subtask_of|has_subtask|related_to（link 用） | target=<link 的對方單號；收 TASK-0008 / 8 / 0008> | " +
             "note=<resolve 的結單說明> | qa_note=<代 QA 結單時的驗收紀錄> | " +
             "milestone= | epic_id= | tags=<逗號分隔> | " +
@@ -94,6 +95,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 ["assign"] = new UCL_CmdOpSpec { Required = new[] { "index", "target_persona" } },
                 ["unassign"] = new UCL_CmdOpSpec { Required = new[] { "index", "target_persona" } },
                 ["comment"] = new UCL_CmdOpSpec { Required = new[] { "index", "body" } },
+                // ⛔ `criteria_index` 刻意**不**列 Required —— 不帶它是合法呼叫（dry-run 印未勾清單）。
+                ["check"] = new UCL_CmdOpSpec { Required = new[] { "index" } },
                 ["link"] = new UCL_CmdOpSpec { Required = new[] { "index", "target" } },
                 ["commit"] = new UCL_CmdOpSpec { Required = new[] { "index", "sha" } },
                 ["wrapup"] = new UCL_CmdOpSpec { Required = new[] { "index", "progress" } },
@@ -123,6 +126,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     case "unassign": OpUnassign(args, aActor, aR); break;
                     case "update": OpUpdate(args, aActor, aR); break;
                     case "comment": await OpComment(args, aActor, aR); break;
+                    case "check": OpCheck(args, aActor, aR); break;
                     case "link": OpLink(args, aActor, aR); break;
                     case "resolve": await OpResolve(args, aActor, aR); break;
                     case "commit": await OpCommit(args, aActor, aR); break;
@@ -131,7 +135,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     case "kanban": OpKanban(aR); break;
                     default:
                         throw new Exception($"[Task] 認不得的 op='{aOp}'"
-                            + "（create|list|show|claim|assign|unassign|update|comment|link|resolve|commit|sweep|wrapup|kanban）");
+                            + "（create|list|show|claim|assign|unassign|update|comment|check|link|resolve|commit|sweep|wrapup|kanban）");
                 }
             }
             catch (Exception e)
@@ -862,6 +866,140 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             AppendNotifyLine(ioR, e, iActor, aOk);
             ioR.AppendLine("- ⚠ 留言**會推進 `updated_at`** ⇒ 它會讓 stale 計時歸零。");
             ioR.AppendLine("  所以「留言說我還在做」跟「真的有做」在 stale 讀數上長得一樣 —— 這是這個讀數的邊界。");
+        }
+
+        // ===========================================================
+        // 區塊職責：把某幾格驗收標準勾起來並**留下是誰勾的**（TASK-0119）。
+        // 物理意義：在此之前 `criteria` 只有 `op=create` 能設、`op=update` 不吃它 ⇒
+        //   一張單交付完成之後**沒有任何 op 能打勾** ⇒
+        //   **「已驗但無處打勾」與「從沒人驗過」在那一欄上完全同形**，
+        //   而看板讀者唯一看得到的就是那一欄。
+        //
+        // ⛔ **刻意不是「開放整份 criteria 覆寫」**（本單明寫的邊界）：
+        //   `--arg-file criteria=` 那條整份覆蓋的路已經存在，本 op **不擴大**它 ——
+        //   這裡只翻某一行的勾選格並接上署名，其餘位元組不動。
+        //   ⇒ 差別在權限而不在方便：整份覆寫讓「正在做它的人」可以把驗收標準整段換掉。
+        //
+        // 🩸 閘為什麼比 `resolve` 嚴（`resolve` 有 `--arg qa_note=` 代簽，本 op **沒有**）：
+        //   `resolve` 需要代簽出口，因為 QA 不在時**一張單會關不掉**，那是真的卡住。
+        //   而一格沒被勾的驗收標準**不卡任何人** ⇒ 沒有正當的破例用例 ⇒ 不留出口。
+        //   ⚠ 這是判斷不是讀數：若哪天量到「有人因為勾不了而卡住」，那個出口再加。
+        // 數值影響：一次讀（Require → Find）＋ 一次寫（Save）＋ 一次**回讀**（印勾後的分母）。
+        // ===========================================================
+        void OpCheck(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)
+        {
+            var e = Require(iArgs, out int aIndex);
+            string aCriteria = UCL_TaskIO.ReadCriteria(aIndex);
+            var aOpen = UCL_TaskIO.ListUncheckedCriteria(aCriteria);
+            var aDone = UCL_TaskIO.ListCheckedCriteria(aCriteria);
+
+            // ── 誰可以勾 ──────────────────────────────────────────
+            // 有指名 QA ⇒ 只有 QA（驗收是他的簽名）；沒有 QA ⇒ 參與者＋開單人。
+            var aQa = e.QaPersonas();
+            bool aAllowed;
+            string aWho;
+            if (aQa.Count > 0)
+            {
+                aAllowed = aQa.Any(s => string.Equals(s, iActor, StringComparison.OrdinalIgnoreCase));
+                aWho = "本單指名的 QA：" + string.Join(" / ", aQa);
+            }
+            else
+            {
+                aAllowed = e.RolesOf(iActor).Count > 0
+                    || string.Equals(e.reporter, iActor, StringComparison.OrdinalIgnoreCase);
+                var aNames = e.participants.Select(p => p.persona)
+                    .Concat(new[] { e.reporter })
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                aWho = "本單**沒有指名 QA** ⇒ 參與者與開單人：" + string.Join(" / ", aNames);
+            }
+
+            ioR.AppendLine($"## {e.Id} 驗收標準　已勾 **{aDone.Count}** / 未勾 **{aOpen.Count}**");
+            ioR.AppendLine($"- 可以勾的人：{aWho}");
+            ioR.AppendLine($"- 你是：`{iActor}`　⇒ {(aAllowed ? "✅ 有權" : "🛑 **無權**")}");
+            ioR.AppendLine();
+
+            if (!aAllowed)
+            {
+                ioR.AppendLine("## blocked");
+                ioR.AppendLine("- reason: 勾驗收標準是**簽名行為** —— 不是參與者也不是 QA 的人勾了它，");
+                ioR.AppendLine("  那個勾對讀單的人**看起來跟真的驗收一模一樣**，而它沒有任何人負責。");
+                ioR.AppendLine("- exits:");
+                ioR.AppendLine($"    · 先入列 → `run Task --arg op=claim --arg index={aIndex} --arg role=qa`");
+                ioR.AppendLine($"    · 或請上面那些人跑，或請他們 `op=assign` 把你加進來");
+                ioR.AppendLine("- ⛔ 本 op **沒有** `qa_note=` 代簽出口（`resolve` 有）——");
+                ioR.AppendLine("  理由：關不掉的單會卡住工作，**沒勾的驗收格不卡任何人** ⇒ 沒有正當的破例用例。");
+                throw new Exception($"[Task] op=check 擋下：`{iActor}` 不是 {e.Id} 的參與者/QA，不能替它簽名");
+            }
+
+            // ── 沒給序號 ⇒ dry-run：印未勾清單（⛔ 零寫入）───────────
+            string aRaw = GetArg(iArgs, "criteria_index", "").Trim();
+            if (aRaw.Length == 0)
+            {
+                ioR.AppendLine("## 未勾的驗收格（序號＝**未勾清單**的序號，不是檔案行號）");
+                if (aOpen.Count == 0) ioR.AppendLine("- （全部都勾了）");
+                for (int i = 0; i < aOpen.Count; i++)
+                    ioR.AppendLine($"- #{i + 1}　{Trunc(aOpen[i], 160)}");
+                ioR.AppendLine();
+                ioR.AppendLine("- 🛑 **dry-run**（沒帶 `criteria_index=`）⇒ **一個位元組都沒寫**。");
+                ioR.AppendLine($"  勾它：`run Task --arg op=check --arg index={aIndex} --arg criteria_index=<n[,n...]>`");
+                return;
+            }
+
+            // ── 序號解析（不猜：非數字／越界一律整批不做）──────────
+            var aWant = new List<int>();
+            foreach (var aTok in aRaw.Split(','))
+            {
+                string t = aTok.Trim();
+                if (t.Length == 0) continue;
+                if (!int.TryParse(t, out int v))
+                    throw new Exception($"[Task] criteria_index 裡有不是數字的東西：「{t}」—— 整批不執行");
+                // ⚠ 未勾清單是空的時候**不可以**印「範圍 1..0」—— 那是一個不存在的區間，
+                //   而它出現的時機正好是「全部都勾完了」，讀的人最需要一句話講清楚。
+                if (aOpen.Count == 0)
+                    throw new Exception($"[Task] {e.Id} 的驗收標準**全部都勾了**（已勾 {aDone.Count} 格）"
+                        + " —— 沒有格子可以勾。⚠ 已勾的行不在序號範圍內（勾兩次不是冪等，是打錯了）");
+                if (v < 1 || v > aOpen.Count)
+                    throw new Exception($"[Task] criteria_index={v} 在範圍外（目前未勾 1..{aOpen.Count}）"
+                        + " —— ⚠ 序號是**未勾清單**的序號，不是檔案行號。整批不執行"
+                        + "（不帶 criteria_index 跑一次可以看清單）");
+                if (!aWant.Contains(v)) aWant.Add(v);
+            }
+            if (aWant.Count == 0)
+                throw new Exception("[Task] criteria_index 解析後一個序號都不剩（只有分隔符？）");
+
+            // ⚠ **由大到小**套用 —— 勾掉一格會讓未勾清單縮短，小的先做會讓大的序號位移。
+            aWant.Sort();
+            aWant.Reverse();
+
+            var aNow = DateTime.Now;
+            string aNowUtc = UCL_TaskIO.NowUtc();
+            var aHit = new List<string>();
+            foreach (int v in aWant)
+            {
+                string aBody = UCL_TaskIO.CheckOffCriteria(ref aCriteria, v, iActor, aNow);
+                if (aBody == null)
+                    throw new Exception($"[Task] criteria_index={v} 勾不起來（清單在本次執行中變了？）—— 整批已中止");
+                aHit.Add(aBody);
+            }
+            aHit.Reverse();   // 印出來照序號由小到大，讀的人才對得上剛才那份清單
+
+            UCL_TaskIO.Touch(e, aNowUtc);
+            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
+            UCL_TaskIO.Save(e, aCriteria, "",
+                $"{aNowUtc}　`check`　{iActor} 勾了 {aHit.Count} 格驗收標準（{string.Join("，", aWant.OrderBy(x => x))}）");
+
+            // ── 回讀：分母從**磁碟**再數一次，不印剛才算出來的值 ──────
+            string aBack = UCL_TaskIO.ReadCriteria(aIndex);
+            int aBackDone = UCL_TaskIO.ListCheckedCriteria(aBack).Count;
+            int aBackOpen = UCL_TaskIO.ListUncheckedCriteria(aBack).Count;
+
+            ioR.AppendLine($"## ✅ 勾了 {aHit.Count} 格（署名 `{iActor}` {aNow:yyyy-MM-dd}）");
+            foreach (string s in aHit) ioR.AppendLine($"- [x] {Trunc(s, 160)}");
+            ioR.AppendLine();
+            ioR.AppendLine($"- 已勾 {aDone.Count} → **{aBackDone}**　未勾 {aOpen.Count} → **{aBackOpen}**"
+                + "（⭐ 這兩個後值是**回讀單檔**數的，不是寫入端的回傳值）");
+            ioR.AppendLine("- ⚠ 勾**不會**推進 status —— 結單仍走 `op=resolve`（本 op 只動那一欄）。");
         }
 
         // ===========================================================

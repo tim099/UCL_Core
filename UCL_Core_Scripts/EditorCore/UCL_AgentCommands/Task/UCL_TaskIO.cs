@@ -699,6 +699,84 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
         public static string NowUtc() => DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
+        // ===========================================================
+        // 區塊職責：驗收標準那一段的**勾選格**讀寫（TASK-0119）。
+        // 物理意義：`## 驗收標準` 是一段自由 markdown，勾選格是其中行首為 `- [ ]` / `- [x]` 的那些行。
+        //   ⇒ 本區塊是**唯一**認得那個形狀的地方；`Cmd_Task` 只拿序號與署名進來，不碰字串格式。
+        //
+        // 🩸 為什麼勾要**帶署名**（本單開單人的原話）：
+        //   「驗收是簽名行為 —— 沒有署名的勾等於沒有勾。」
+        //   ⇒ 所以勾完的行尾會多一段 `　✅ <persona> <yyyy-MM-dd>`，而**不是**只翻五個字元
+        //     （見叢 `SCP_Cmd_Keys` 是只翻五個字元，因為那是給自己看的個人清單，沒有第二個讀者）。
+        //   ⛔ 署名**只有這一份**（可見文字），不另寫 HTML 註解 ——
+        //     兩種標記就是兩份真相，而它們會漂（本檔檔頭同一條）。
+        //
+        // ⚠ 序號的口徑：**未勾清單的 1-based 序號**，不是檔案行號、也不是所有勾選格的序號。
+        //   （與見叢 `--arg done_index` 同一個口徑，刻意一致 —— 兩套口徑會讓人在兩邊各數錯一次。）
+        // 數值影響：純字串處理，不碰磁碟；寫回由呼叫端走 Save(criteria) 一次完成。
+        // ===========================================================
+        /// <summary>驗收標準整段（給呼叫端讀原文用；空的 / `_(未填)_` 回空字串）。</summary>
+        public static string ReadCriteria(int iIndex) => ReadSection(TaskPath(iIndex), "## 驗收標準");
+
+        /// <summary>行首是勾選格嗎？回傳它的標記寬度（`- [ ] ` ／ `- [x] `），不是就回 0。</summary>
+        static int CriteriaBoxWidth(string iLine, out bool oChecked)
+        {
+            oChecked = false;
+            if (iLine == null) return 0;
+            // ⚠ 只認**行首**（不 TrimStart）—— 縮排的 `- [ ]` 是上一格的續行內容，
+            //   把它算進去會讓「第 3 格」在兩個人眼裡指到不同的行。
+            if (iLine.StartsWith("- [ ] ", StringComparison.Ordinal)) return 6;
+            if (iLine.StartsWith("- [x] ", StringComparison.Ordinal)) { oChecked = true; return 6; }
+            if (iLine.StartsWith("- [X] ", StringComparison.Ordinal)) { oChecked = true; return 6; }
+            return 0;
+        }
+
+        /// <summary>未勾的驗收格（1-based 序號 → 那一行的內容，已去掉 `- [ ] ` 前綴）。</summary>
+        public static List<string> ListUncheckedCriteria(string iCriteria)
+        {
+            var aOut = new List<string>();
+            foreach (var aLine in (iCriteria ?? "").Replace("\r", "").Split('\n'))
+                if (CriteriaBoxWidth(aLine, out bool aChecked) > 0 && !aChecked)
+                    aOut.Add(aLine.Substring(6).Trim());
+            return aOut;
+        }
+
+        /// <summary>已勾的驗收格（只給讀數用：印「3/7 格已驗」那個分母的另一半）。</summary>
+        public static List<string> ListCheckedCriteria(string iCriteria)
+        {
+            var aOut = new List<string>();
+            foreach (var aLine in (iCriteria ?? "").Replace("\r", "").Split('\n'))
+                if (CriteriaBoxWidth(aLine, out bool aChecked) > 0 && aChecked)
+                    aOut.Add(aLine.Substring(6).Trim());
+            return aOut;
+        }
+
+        /// <summary>
+        /// 把未勾清單裡的第 <paramref name="iOneBased"/> 格勾起來並簽名。
+        /// <para>成功 ⇒ 回勾起來的那一行內容，`ioCriteria` 已換成新的整段；
+        /// 失敗（序號越界）⇒ 回 <c>null</c> 且 `ioCriteria` **一個字元都不動**。</para>
+        /// ⚠ 多筆勾銷要**由大到小**呼叫，否則前一次勾完會讓後面的序號位移
+        /// （未勾清單會縮短）—— 呼叫端負責排序，這裡不猜。
+        /// </summary>
+        public static string CheckOffCriteria(ref string ioCriteria, int iOneBased, string iActor, DateTime iNowLocal)
+        {
+            if (iOneBased < 1) return null;
+            var aLines = new List<string>((ioCriteria ?? "").Replace("\r", "").Split('\n'));
+            int aSeen = 0;
+            for (int i = 0; i < aLines.Count; i++)
+            {
+                if (CriteriaBoxWidth(aLines[i], out bool aChecked) == 0 || aChecked) continue;
+                if (++aSeen != iOneBased) continue;
+                string aBody = aLines[i].Substring(6);
+                // 署名接在行尾 —— 全角空白當分隔，跟本 repo 其他「讀數＋出處」同一個排版慣例。
+                aLines[i] = "- [x] " + aBody.TrimEnd()
+                    + $"　✅ {Nz2(iActor)} {iNowLocal:yyyy-MM-dd}";
+                ioCriteria = string.Join("\n", aLines);
+                return aBody.Trim();
+            }
+            return null;
+        }
+
         // ── 小工具 ────────────────────────────────────────────────
         static bool AddOnce(List<int> ioList, int iValue)
         {

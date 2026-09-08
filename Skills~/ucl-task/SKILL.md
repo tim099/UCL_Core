@@ -3,7 +3,7 @@ trigger: { on_intent: ["任務", "開單", "領任務", "看板", "進度", "tas
 name: ucl-task
 description: |
   跨 Agent 專案與任務管理系統 —— 跟專案有關的一律開 Task，見叢只放個人代辦，工作脈絡留記憶。
-  走 `Cmd_Task`（create / list / show / claim / assign / unassign / update / comment / link / resolve / commit / sweep / kanban），一單一檔存在 `AgentCommands/Tasks/tasks/<index>.md`；
+  走 `Cmd_Task`（create / list / show / claim / assign / unassign / update / comment / check / link / resolve / commit / sweep / wrapup / kanban），一單一檔存在 `AgentCommands/Tasks/tasks/<index>.md`；
   後台頁 = ToolBox → 任務與專案管理。
   支援 7 種身分矩陣（PM / Design / Dev / QA / Reviewer / Sound / Art），Commit 訊息帶 `Fixes TASK-<n>` 自動關單或推進至 in_review。
   觸發詞 (case-insensitive substring)：
@@ -239,6 +239,10 @@ Task.memory_topic ──▶ 工作記憶主題卡 `_topic.md` 的 key_docs ─�
 
 ### 作法：怎麼「擴充驗收細項」（⚠ 有兩個坑，兩個我都踩過）
 
+> ⛔ **只是要「把某一格打勾」的話不要走這條** —— 走 `op=check`（見 §2 ⑧'）。
+> 整份覆寫會讓**正在做它的人**可以把驗收標準整段換掉，而 `op=check` 只翻那一行的勾選格並接上署名。
+> 本節講的是**新增**細項，那件事今天仍然只有整份覆寫這條路。
+
 ```bash
 $R --arg op=show --arg index=<N>          # ① 讀「## 驗收標準」整段
 # ② 本地把新的 - [ ] 接在**原文完整內容**後面
@@ -335,6 +339,15 @@ $R --arg op=update --arg index=<N> [--arg status=in_progress|in_review|todo|back
 # ⑧ 追加工作進度留言
 $R --arg op=comment --arg index=<N> --arg-file body=<進度說明檔>
 
+# ⑧' 勾驗收標準（TASK-0119）—— 打勾是**簽名行為**，勾完的行尾會多一段 `　✅ <persona> <日期>`
+$R --arg op=check --arg index=<N>                          # 不帶序號＝dry-run：印未勾清單、**零寫入**
+$R --arg op=check --arg index=<N> --arg criteria_index=3    # 勾第 3 格（序號＝**未勾清單**的序號，非檔案行號）
+$R --arg op=check --arg index=<N> --arg criteria_index=1,4  # 多筆（內部由大到小套用，序號不會位移）
+#   誰可以勾：單上有指名 QA ⇒ **只有 QA**；沒有 QA ⇒ 參與者＋開單人。其他人擋下（exit 非零、零寫入）
+#   ⛔ 本 op **沒有** `qa_note=` 代簽出口（`resolve` 有）——
+#      理由：關不掉的單會卡住工作，**沒勾的驗收格不卡任何人** ⇒ 沒有正當的破例用例
+#   ⚠ 勾**不會**推進 status；結單仍走 `op=resolve`
+
 # ⑨ 關聯與階層建立（雙向自動連動）
 $R --arg op=link --arg index=<A> --arg op_link=blocked_by --arg target=<B>     # 阻塞依賴
 $R --arg op=link --arg index=<Child> --arg op_link=subtask_of --arg target=<Parent> # 主子階層
@@ -394,6 +407,7 @@ $R --arg op=commit --arg sha=<commit_sha> --arg mode=fixes|refs
 | **`epic_id` 與 `subtask_indices`** | ✅ 已全面生效 | `op=link subtask_of` / `op=list --arg epic=` 階層正常 |
 | **`op=update` 6 大欄位** | ✅ 全數支援 | `status`(擋done/cancelled), `priority`, `title`, `milestone`, `memory_topic`, `memory_archived_commit` 均已實跑驗證 |
 | **`memory_topic` 記憶錨點** | ✅ 讀取端生效 | `op=show` 五種答案不同形（主題在 / 全部已退場 / 已歸檔 / 已刪除 / 連結壞了） |
+| **`op=check` 勾驗收標準** | ✅ 已上線（TASK-0119） | 七格活體：dry-run 零寫入／多筆勾銷序號不位移／全勾後再勾擋下且零寫入／非參與者與非 QA 兩種成因各擋一次（全 173 單檔零變動）／勾後回讀分母 |
 | **`work_memory.py archive`** | ✅ 已上線交付 | 支援 `archive`、`tasks`、`delete`，具備 submodule Git 乾淨前置檢查 |
 
 ---

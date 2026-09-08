@@ -282,11 +282,18 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         // ===========================================================
         // 區塊職責：收掉一支 cmd 的量測，超過門檻就落一行
-        // 物理意義：`ended_on_main_thread` 是本行最貴的一欄 —— 它回答「這支到底有沒有閃開主執行緒」，
+        // 物理意義：`offloaded` ＋ `bg_tid` 是本行最貴的兩欄 —— 它們回答「這支到底有沒有閃開主執行緒」，
         //          而那正是下一張單（逐支 offload）要照著排的順序。
-        //          ⚠ 它量的是**結束時**站在哪條緒：一支「前半段同步跑完才 await」的 handler 會回 false，
-        //          而一支已 offload 的會回 false→true 之外的組合都不出現在這一欄裡 ⇒
-        //          所以真正的卡住證據仍要跟 kind=stall 那條路徑對，這一欄只是分流線索。
+        //          `offloaded=false` / `bg_tid=0` ＝ 從沒離開主緒；`bg_tid == main_tid` 也是同一件事。
+        //   🩸 **這一段原本寫的欄位名叫 `ended_on_main_thread`，而那個鍵從來沒有被 emit 過**
+        //     （basecamp 2026-09-08 讀 jsonl 抓到，我自己 grep 複驗：全 repo 只有註解命中、
+        //      **零個寫入端**）。⇒ 修的是**名字**不是欄位：`offloaded`／`bg_tid` 已經回答了那個問題，
+        //      再 emit 一個 `ended_on_main_thread` 就是替同一件事造第二個名字。
+        //   ⚠ 而它的失效樣子特別壞：拿那個名字去 grep jsonl 會回零，
+        //     而**「這個鍵不存在」與「這支沒被量到」在畫面上一模一樣**。
+        //          ⚠ 量的是**結束時**站在哪條緒：一支「前半段同步跑完才 await」的 handler
+        //          在這兩欄上看起來會像沒離開過 ⇒ 真正的卡住證據仍要跟 kind=stall 那條路徑對，
+        //          這兩欄只是分流線索。
         // 數值影響：elapsed < CMD_SLOW_MS ⇒ 不寫檔（ring 仍更新，供 stall 歸因）。
         // ===========================================================
         public static void End(UCL_AgentCmdProbe iProbe, bool iSuccess, string iError, double iRunnerMs)

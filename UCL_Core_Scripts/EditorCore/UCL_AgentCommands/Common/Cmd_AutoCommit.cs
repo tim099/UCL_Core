@@ -125,7 +125,9 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {
-            // ⏱ 移出主執行緒（TASK-0162 第 1 支）—— 本支實測 handler **3830.7ms 且 ended_on_main_thread=true**
+            // ⏱ 移出主執行緒（TASK-0162 第 1 支）—— 本支實測 handler **3830.7ms 且 `offloaded=false`**
+            //   （⚠ 原文寫的是 `ended_on_main_thread=true`，而**那個鍵從來沒有被 emit 過** ——
+            //    一個拿不存在的欄位名寫出來的讀數，沒有人驗得動它。真鍵名見 UCL_AgentCmdSlowLog 的區塊註解）
             //   （`AgentCommands/_diagnostics/_cmd_slow.jsonl`，2026-09-07 `op=commit`），
             //   而它做的事整段是 **git subprocess ＋ 檔案 IO**，沒有一格需要 Editor API。
             //   ⚠ 這一行必須是第一行：它先在主緒把路徑快取暖好（DataRoot / RepoRoot / LettersPath），

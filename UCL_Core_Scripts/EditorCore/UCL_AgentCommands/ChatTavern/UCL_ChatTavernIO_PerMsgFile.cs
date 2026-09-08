@@ -263,6 +263,38 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
         static readonly Dictionary<string, RoomFileListCache> s_RoomFiles = new Dictionary<string, RoomFileListCache>();
 
+        // ===========================================================
+        // 區塊職責：`s_CacheLock` 的**等待時間**觀測（2026-09-08，TASK-0162）
+        // 物理意義：2026-09-08 13:33 Editor 靜止 **115 秒**，而三本既有台帳只說得出
+        //          「主緒卡著」＋「同時有一支 offload 的 `Tavern op=read` 在跑（handler 112,300ms）」。
+        //          ⚠ 那兩個讀數**分不出方向**，而兩種成因處置相反：
+        //            甲 背景緒抱著本鎖 ⇒ 主緒撞上來等 ⇒ 要縮小鎖的範圍（別在鎖內做 IO）。
+        //            乙 主緒被別的事佔住 ⇒ 背景緒做完卻排不回主緒 ⇒ 鎖是無辜的，改錯地方。
+        //          `elapsed_ms` 把「工作」與「等回主緒」算在同一格 ⇒ 它永遠答不出這一題。
+        // 數值影響：穩態零成本（只取兩次 timestamp）；**只有等超過門檻才寫一行**。
+        // 邊界：⛔ 不新增第四本台帳 —— 走 `Debug.LogWarning` 落 Editor.log，
+        //      因為那正是出事時**唯一還在記時間**的檔（那 115 秒它是空的，空白本身就是讀數）。
+        //      ⚠ 這一行印在等完之後（不可能更早），所以它回答「等了多久／誰握著」，不回答「現在卡在哪」。
+        // ===========================================================
+        // 1000ms：與 `_cmd_slow.jsonl` 的 stall 門檻同值 ⇒ 兩本台帳的「一次事件」對得起來。
+        // ⭐ 陽性對照做過（2026-09-08）：門檻降 0 時 Editor.log 命中數 7→16，
+        //    印得出 `tid=1＝主執行緒` ⇒ **這支探針不是啞的**（埋一個永遠不出聲的探針是本 repo 最貴的一族）。
+        const double LOCK_WAIT_WARN_MS = 1000.0;
+
+        static void ReportLockWait(string iWhere, string iRoomId, long iStartTicks)
+        {
+            double aMs = (System.Diagnostics.Stopwatch.GetTimestamp() - iStartTicks)
+                         * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            if (aMs < LOCK_WAIT_WARN_MS) return;
+            int aTid = System.Threading.Thread.CurrentThread.ManagedThreadId;
+            bool aIsMain = aTid == UCL_AgentCmdSlowLog.MainThreadId;
+            // ⚠ 只陳述讀數，不寫結論：「等了多久／誰在等」是量到的，
+            //   「誰握著鎖、為什麼久」不在本讀數裡 —— 那要配 Editor.log 同時刻的其他行去看。
+            Debug.LogWarning($"[Tavern s_CacheLock] 進鎖前等了 {aMs:F1}ms ── {iWhere}(room={iRoomId}) "
+                + $"tid={aTid}{(aIsMain ? "＝主執行緒" : "＝背景緒")}"
+                + $"（門檻 {LOCK_WAIT_WARN_MS:F0}ms；⚠ 這一格是**等待**，不含鎖內的工作時間）");
+        }
+
         static string BuildDirSignature(string root)
         {
             var sb = new StringBuilder();
@@ -377,8 +409,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string[] files = GetSortedMessageFiles(roomId, root);
             if (files.Length == 0) return list;
 
+            long aLockT0 = System.Diagnostics.Stopwatch.GetTimestamp();   // TASK-0162：等鎖觀測
             lock (s_CacheLock)
             {
+                ReportLockWait("LoadAllMessages", roomId, aLockT0);
                 if (!s_RoomCache.TryGetValue(roomId, out var cache))
                 {
                     cache = new RoomMsgCache();
@@ -506,8 +540,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // → 每秒 ~3810 次 read+parse 在主執行緒上 = 可見卡頓。改走同一份 cache 後穩態只 parse 新檔。
             // 共用 cache 也表示：同房若已被 LoadAllMessages 讀過，這裡的增量記憶體是零（同一個 dictionary）。
             int rejected = 0;
+            long aLockT0 = System.Diagnostics.Stopwatch.GetTimestamp();   // TASK-0162：等鎖觀測
             lock (s_CacheLock)
             {
+                ReportLockWait("Tail", roomId, aLockT0);
                 if (!s_RoomCache.TryGetValue(roomId, out var cache))
                 {
                     cache = new RoomMsgCache();
@@ -589,8 +625,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             int start = afterSeq < 0 ? 0 : afterSeq;
             if (start >= files.Length) return list;   // 無新訊息
 
+            long aLockT0 = System.Diagnostics.Stopwatch.GetTimestamp();   // TASK-0162：等鎖觀測
             lock (s_CacheLock)
             {
+                ReportLockWait("LoadMessagesAfterSeq", roomId, aLockT0);
                 if (!s_RoomCache.TryGetValue(roomId, out var cache))
                 {
                     cache = new RoomMsgCache();

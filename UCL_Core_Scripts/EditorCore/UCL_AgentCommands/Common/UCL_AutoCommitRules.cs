@@ -91,6 +91,44 @@ namespace UCL.Core.EditorLib.AgentCommands
                 Message = "chore(queue): sync prompt queue state (auto)",
                 DefaultOn = true,
             },
+            // ===========================================================
+            // 區塊職責：`Lessons/` —— 跨 agent 共享的 lesson 知識庫（TASK-0117）。
+            // 物理意義：`lessons.jsonl` 是 `Cmd_NoteLesson` append 的機器檔，
+            //          `_last_lesson.md` 是它的視圖（每次 append 後重寫）。
+            //          內容是誰的教訓寫在**欄位裡**（actor），不是靠 commit 的作者欄表達
+            //          ⇒ 依本表判準它屬於可自動收那側，跟酒館訊息同型（有 sender 欄的機器檔）。
+            // 🩸 為什麼要有這一群：它原本落 `__other`（永不自動收）——
+            //   2026-09-03 summit 實測，`op=commit` 收了 4 群而這兩檔留在工作區，
+            //   顯式帶 `--arg groups=__other` 才收得到。⇒ 那個保護變成每個人每天要繞一次的
+            //   例外手勢，而例外手勢遲早被忘記；忘記的症狀是**工作區靜默累積**，不是報錯。
+            // ⚠ 反向對照（TASK-0117 ①）：全 repo 搜過，**沒有任何一處寫著 Lessons/ 是刻意排除的**
+            //   （`Cmd_AutoCommit.cs` 只把它記成一筆「當日落 __other」的觀測讀數）⇒ 是缺口不是設計。
+            // ===========================================================
+            new GroupDef
+            {
+                Key = "lessons",
+                Label = "Lessons（跨 agent lesson 庫：jsonl ＋ 它的視圖）",
+                Match = p => p.StartsWith("Lessons/"),
+                Message = "chore(lessons): sync lesson log (auto)",
+                DefaultOn = true,
+            },
+            // ===========================================================
+            // 區塊職責：`Plurk/post_audit.jsonl` —— 對外發文的 append-only 稽核帳。
+            // 物理意義：`Cmd_Plurk` 每次發文寫一行（時間／端點／plurk_id／body 的 sha 與長度，
+            //          **不存內文**）⇒ 純機器帳，沒有作者。calli 2026-09-06 在 TASK-0117 上
+            //          點名它「同樣的形狀」，而搜過看板**沒有另一張單在收它** ⇒ 同一個修法一起解。
+            // ⚠ 判準刻意**不是** `Plurk/` 前綴：那底下住著同事親筆的交付單
+            //   （`meadow_*.txt` / `*.md`，tracked）—— 前綴會把有作者的文案當機器帳收走，
+            //   而那種錯不會當場叫，它長得就像一筆正常的自動 commit（同 queue_state 那格的形狀）。
+            // ===========================================================
+            new GroupDef
+            {
+                Key = "plurk_audit",
+                Label = "Plurk 發文稽核帳（post_audit.jsonl —— ⛔ 不含同目錄的親筆交付單）",
+                Match = p => p == "Plurk/post_audit.jsonl",
+                Message = "chore(plurk): sync post audit ledger (auto)",
+                DefaultOn = true,
+            },
         };
 
         // ── persona 信件庫（letters/<persona>/，各自一個 repo）───────────
@@ -213,6 +251,45 @@ namespace UCL.Core.EditorLib.AgentCommands
                 //   單看 `sketchbook/` 前綴會把親筆的濃縮檔一起收走。
                 Match = p => p.StartsWith("sketchbook/") && p.Contains("/raw/"),
                 Message = "[data] 收 sketchbook/<target>/raw/ 歸檔畫像（濃縮時搬入，內容未變）(auto)",
+                DefaultOn = true,
+            },
+            // ===========================================================
+            // 區塊職責：`relationship/<target>/` —— 好感度的**機器算出來那半**（TASK-0117）。
+            // 物理意義：`events/*.md` 是事件帳本（append-only，Cmd 寫）、`_current.md` 是由事件
+            //          重算出來的當前值（delta／加權和／時間戳）⇒ 兩者都是算出來的，不是寫出來的。
+            // ⛔ 而 `opinions/` **刻意不在這一群**：那是她親筆的看法（calli 2026-09-06 在單上點名的那一格）。
+            //   ⇒ 把整包 `relationship/` 丟進來，會讓親筆的 opinion 走上不領薪的那條路；
+            //     而它落 `__other` 才是對的 —— 留給她自己的收尾 commit。
+            //   ⚠ 所以判準要同時吃「在 relationship 底下」與「不是 opinions/」，
+            //     單看前綴會把兩種作者混成一筆。
+            // 🩸 血證：calli 2026-09-06 跑一次 `Relationship op=update` 落三個檔，
+            //   AutoCommit 回 `candidate_files=1 / commits=0 / other_files=1` ——
+            //   **掃到了、分進 __other、然後什麼都沒收**，而那跟「這個 repo 沒東西可收」讀起來一模一樣。
+            // ===========================================================
+            new GroupDef
+            {
+                Key = "relationship",
+                Label = "好感度事件與當前值 relationship/（events/ ＋ _current.md；⛔ 不含親筆的 opinions/）",
+                Match = p => p.StartsWith("relationship/") && !p.Contains("/opinions/"),
+                Message = "[data] 收 relationship/ 事件帳與重算值（⛔ 不含親筆 opinions）(auto)",
+                DefaultOn = true,
+            },
+            // ===========================================================
+            // 區塊職責：`_keys_open.md` —— 見叢（當期交棒清單）。
+            // 物理意義：追加與勾銷**只有一個寫入端**（`senate cmd keys --arg add=` / `--arg done_index=`），
+            //          整份由 Cmd 重寫 ⇒ 檔案本身是機器維護的清單，不是一篇作品。
+            //          （裡面那句話是她想的，但那跟 `bank/` 裡的帳號是她選的一樣 ——
+            //            分界是「這個檔誰在寫」，不是「這個內容誰想的」。）
+            // ⚠ 為什麼單獨一群而不是併進 letters_mech：見叢是**每天都會動的待辦**，
+            //   而 `_latest.md` 那類是指標。`git log` 想一次看到的是「見叢怎麼變的」這一條線。
+            // 🩸 它原本落 `__other` ⇒ 每天靜默累積（summit 2026-09-03 實測 5 檔零收）。
+            // ===========================================================
+            new GroupDef
+            {
+                Key = "keys",
+                Label = "見叢 _keys_open.md（追加／勾銷都走 senate cmd keys，整份由 Cmd 重寫）",
+                Match = p => p == "_keys_open.md",
+                Message = "[data] 收見叢 _keys_open.md（當期交棒清單）(auto)",
                 DefaultOn = true,
             },
             new GroupDef

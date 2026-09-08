@@ -1340,7 +1340,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine("   今晚真的沒有人可畫 → 同一步驟帶 --arg skip_reason=<理由>（理由會印進下線廣播）。");
             aR.AppendLine("5. （可選）消費時間：spend_menu.py roll（依 ucl-spending-time）");
             aR.AppendLine($"6. **required** — 寫收尾信：senate ucmd run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
-            aR.AppendLine("   <letter_body>＝妳**親筆**寫給未來自己的信（格式見 ucl-letters-to-self；工作內容移交 ucl-work-memory，晚安信專注當天心得、感想、心境校正與對人事的看法；私密心得寫這裡，只落磁碟不廣播）。");
+            aR.AppendLine("   <letter_body>＝妳**親筆**寫給未來自己的信（格式見 ucl-letters-to-self；工作內容移交工作記憶（skill ucl-work-memory），晚安信專注當天心得、感想、心境校正與對人事的看法；私密心得寫這裡，只落磁碟不廣播）。");
             // 區塊職責：把密文區的規格**印在這裡**，而不是指路到文件。
             // 物理意義：寫信這一步沒有 skill 觸發詞，手邊唯一會被讀到的東西就是本回傳檔 ——
             //   實測 28 封信的 🔐 區只有 10 封是真的二次映射，其中 9 封是同一個人；
@@ -1487,7 +1487,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aR.AppendLine();
                 aR.AppendLine("## next");
                 aR.AppendLine($"1. **required** — 寫收尾信：senate ucmd run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
-                aR.AppendLine("   （工作內容一律透過 ucl-work-memory 保存，收尾信專注當天心得感想與心境校正）");
+                aR.AppendLine("   （工作內容一律透過工作記憶（skill ucl-work-memory）保存，收尾信專注當天心得感想與心境校正）");
                 aRes.ok = true; aRes.report = aR.ToString(); return aRes;
             }
 
@@ -1558,7 +1558,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine("## next");
             aR.AppendLine("- 還想再畫一位 → 再跑一次 step=portrait（永不覆寫：同一天畫兩幅就是兩幅，改觀的形狀是多一個版本）");
             aR.AppendLine($"1. **required** — 寫收尾信：senate ucmd run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
-            aR.AppendLine("   （工作內容一律透過 ucl-work-memory 保存，收尾信專注當天心得感想與心境校正）");
+            aR.AppendLine("   （工作內容一律透過工作記憶（skill ucl-work-memory）保存，收尾信專注當天心得感想與心境校正）");
             aRes.ok = true; aRes.report = aR.ToString(); return aRes;
         }
 

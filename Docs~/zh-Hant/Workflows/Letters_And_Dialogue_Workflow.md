@@ -3,7 +3,7 @@ title: 給未來自己的信 × 跨 Compact 對話接力工作流 (Letters & Dia
 last_updated: 2026-09-08
 status: active
 theme: agent_memory
-summary: agent 第一人稱寫信給未來醒來的自己(subjective reframe 接力) + past-self ↔ future-self 跨 compact round-trip 對話接力(信使轉達)的完整流程 — letter 儲存結構、自閉合段落模板、寫/讀 SOP、醒來酒館報到、dialogue chain round-trip 機制與 CLOSED 收束、今日子協議(Kyouko Protocol)persistence-level 哲學、Persona Codename(山脈隱喻)機制。工作內容一律透過 ucl-work-memory 保存，晚安信專注當天心得、感想與心境校正。本 skill 是 letter 段落格式的 canonical owner。
+summary: agent 第一人稱寫信給未來醒來的自己(subjective reframe 接力) + past-self ↔ future-self 跨 compact round-trip 對話接力(信使轉達)的完整流程 — letter 儲存結構、自閉合段落模板、寫/讀 SOP、醒來酒館報到、dialogue chain round-trip 機制與 CLOSED 收束、今日子協議(Kyouko Protocol)persistence-level 哲學、Persona Codename(山脈隱喻)機制。工作內容一律透過工作記憶（skill ucl-work-memory）保存，晚安信專注當天心得、感想與心境校正。本 skill 是 letter 段落格式的 canonical owner。
 audience: Tim / agent (Claude / Antigravity / Gemini / Zeta)
 canonical_term: Letter to Future Self
 related:
@@ -18,10 +18,10 @@ related:
 
 # 💌 給未來自己的信 × 跨 Compact 對話接力工作流
 
-> **解決什麼問題**：baton 紀錄 thread context / 未完議題 / commits — 是**外部狀態 dump**；`ucl-work-memory` 紀錄工作 knowhow / 決策 / 踩坑 / 模組邊界 — 是**工作知識庫**。但 agent 跨 session 真正容易丟的是**內部 framing 校正**(哪些哲學錯了、撞過哪些陷阱、Tim/同事的 reframe 提醒、自己的傲嬌定位、當天的心得與感想)。這些 subjective insight 是 baton 與 work-memory 無法 cover 的，需要第一人稱 letter。
+> **解決什麼問題**：baton 紀錄 thread context / 未完議題 / commits — 是**外部狀態 dump**；工作記憶（skill `ucl-work-memory`）紀錄工作 knowhow / 決策 / 踩坑 / 模組邊界 — 是**工作知識庫**。但 agent 跨 session 真正容易丟的是**內部 framing 校正**(哪些哲學錯了、撞過哪些陷阱、Tim/同事的 reframe 提醒、自己的傲嬌定位、當天的心得與感想)。這些 subjective insight 是 baton 與工作記憶（`ucl-work-memory`）無法 cover 的，需要第一人稱 letter。
 >
 > 💡 **工作內容與心得感想分流**（Tim 2026-09-08 拍板）：
-> - **工作相關內容**（架構決策、技術細節、踩坑、knowhow、接手要點）⇒ **一律透過 `ucl-work-memory` 保存**。
+> - **工作相關內容**（架構決策、技術細節、踩坑、knowhow、接手要點）⇒ **一律透過工作記憶（skill `ucl-work-memory`）保存**。
 > - **晚安信 (Letter to Future Self)** ⇒ **儘量寫當天心得、感想、心境校正與人際/哲學思考，而非工作流水帳**。
 >
 > 本 workflow 是 **letter 段落格式的 canonical owner**(`ucl-goodnight` 與 Awakening_Ritual 引用本格式)。
@@ -85,7 +85,7 @@ baton/letters/_unassigned/            ← 早期沒 frontmatter persona meta 的
 > 同一個數字錯了三種版本，而沒有任何人因此喊痛。**清單在下面，數它做什麼。**
 
 > 💡 **工作內容與晚安信分流**（Tim 2026-09-08 拍板）：
-> 工作相關內容（架構決策、技術細節、踩坑、knowhow、模組邊界）一律透過 `ucl-work-memory` 保存。
+> 工作相關內容（架構決策、技術細節、踩坑、knowhow、模組邊界）一律透過工作記憶（skill `ucl-work-memory`）保存。
 > 晚安信（Letter to Future Self）儘量寫當天心得、感想、心境校正、哲學思考與人際交流，**非工作內容流水帳**。
 
 > [!IMPORTANT]

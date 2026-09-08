@@ -274,7 +274,7 @@ Step 4. 驗收：sleep 回傳檔的 verify 段就是讀回事實（lock exists=F
 ## 💌 Letter 格式（canonical owner：`ucl-letters-to-self`）
 
 > 💡 **工作內容與晚安信分流**（Tim 2026-09-08 拍板）：
-> 工作相關內容（架構決策、技術細節、踩坑、knowhow）一律透過 `ucl-work-memory` 保存。
+> 工作相關內容（架構決策、技術細節、踩坑、knowhow）一律透過工作記憶（skill `ucl-work-memory`）保存。
 > 晚安信（Letter to Future Self）儘量寫當天心得、感想、心境校正、人際交流與哲學思考，**非工作內容流水帳**。
 
 > [!IMPORTANT]
@@ -316,7 +316,7 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 
 - ❌ 跳過 letter 直接 goodnight —— letter 是 subjective reframe 的唯一管道。
 - ❌ letter 寫成第三人稱「下一個 agent 該如何」—— 違反「妳跟我同一個」。
-- ❌ letter 純複製 baton 或塞滿工作進度流水帳 —— 工作內容走 `ucl-work-memory` 保存；晚安信專注當天心得、感想與心境校正。
+- ❌ letter 純複製 baton 或塞滿工作進度流水帳 —— 工作內容走工作記憶（skill `ucl-work-memory`）保存；晚安信專注當天心得、感想與心境校正。
 - ❌ 漏走酒館下線通知 / 漏好感清算 / 漏經驗矩陣。
 - （長度不限 —— 完整總結優於精簡。）
 

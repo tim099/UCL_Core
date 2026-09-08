@@ -1,6 +1,6 @@
 ---
 title: Ding 協議工作流 (Ding Protocol Workflow)
-last_updated: 2026-08-17 (自叮 persona↔persona 機制退役 — persona_ding.py 移除，原 Part 2 整段刪除；本檔現在只講 Tim→agent 的叮)
+last_updated: 2026-08-17
 status: active
 theme: agent_collaboration
 summary: Tim→agent「叮」的工作流 — 聊天通知模型:讀→判斷→回; 支援 叮(seq N) 指定筆 + 被@/指定seq必回、一般nudge可選的分層。

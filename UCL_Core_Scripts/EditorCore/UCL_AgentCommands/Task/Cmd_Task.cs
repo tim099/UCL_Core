@@ -47,6 +47,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "body=<comment 內容> | " +
             "criteria_index=<op=check：**未勾清單**的 1-based 序號，逗號分隔可多筆；不帶＝dry-run 印清單、零寫入> | " +
             "op_link=blocked_by|blocks|subtask_of|has_subtask|related_to（link 用） | target=<link 的對方單號；收 TASK-0008 / 8 / 0008> | " +
+            "remove=1（link 用：**解除**該關聯而不是建立 —— 建與解共用同一組 kind 語彙）"
+            + "　⚠ 這是「打錯就做反」的那類：`remov=1` 會被靜默丟掉 ⇒ 走預設 ⇒ **建立**關聯（TASK-0109） | " +
             "note=<resolve 的結單說明> | qa_note=<代 QA 結單時的驗收紀錄> | " +
             "milestone= | epic_id= | tags=<逗號分隔> | " +
             "tag=<list 篩選：有這個 tag 的單> | epic=<list 篩選：TASK-0008 / 8 皆可> | " +

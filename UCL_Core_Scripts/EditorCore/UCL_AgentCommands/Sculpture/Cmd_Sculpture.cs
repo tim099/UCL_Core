@@ -407,7 +407,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             aR.AppendLine("## next");
             aR.AppendLine($"- 看成品：senate ucmd run Sculpture --arg op=view [--arg region=…]（免費）" +
                           (aEx != null ? $"；或 --arg exhibit={aEx.id} 一鍵載入本作品 preset" : ""));
-            aR.AppendLine("- 下次貼圖：先 `canvas.py view --region x,y,w,h` 看預覽 → 把它印的 non_transparent_pixels 當 expect_pixels 帶回來。");
+            aR.AppendLine("- 下次貼圖：先 `senate cmd canvas --arg op=view --arg region=x,y,w,h --arg scale=1` 看預覽 → 把它印的 non_transparent_pixels 當 expect_pixels 帶回來。");
             WritePayload(iArgs, aPath, aR.ToString());
 
             // 預覽 PNG 也一併端出來 —— 讀者不必再去翻檔案才知道「貼進去的是哪張」

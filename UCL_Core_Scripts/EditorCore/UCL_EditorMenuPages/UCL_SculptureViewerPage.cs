@@ -103,7 +103,7 @@ namespace UCL.Core.EditorLib.Page
         static string LastSlicePng => Path.Combine(SculptureDir, "_last_slice.png");
         // 匯出預設資料夾 —— 與 sculpt.py cmd_export 的 fallback 同值（兩端對齊義務）
         static string DefaultExportDir => Path.Combine(SculptureDir, "exports");
-        // 2D 共用畫布的 view 輸出（canvas.py 寫）—— 貼圖預覽讀透明變體，未繪製＝alpha 0
+        // 2D 共用畫布的 view 輸出（SCP_Core canvas op=view 寫）—— 貼圖預覽讀透明變體，未繪製＝alpha 0
         static string CanvasLastViewTPng => Path.Combine(UCL_AgentCommandsPath.DataRoot, "Canvas", "_last_view_t.png");
         // ⚠ 不寫死 UCL_Core 掛載路徑（各專案不同會靜默壞）—— 由 CorePath 現算，只用於組給人複製的指令字串
         static string CoreToolsRel => $"{UCL_EditorPath.CorePath}/Tools~/AgentCommands";
@@ -506,7 +506,7 @@ namespace UCL.Core.EditorLib.Page
 
         // ===========================================================
         // 區塊：2D→3D 貼圖預覽（Tim 2026-08-14 拍板流程「先出預覽再轉繪」的後台入口）
-        // 物理意義：本頁**只做預覽那一半** —— 預覽是唯讀免費（spawn canvas.py view），
+        // 物理意義：本頁**只做預覽那一半** —— 預覽是唯讀免費（in-process 直呼 canvas op=view），
         //          真正落 voxel 走 Cmd_Sculpture（收銀台）。頁面直接落子＝繞過計費，不做。
         //          預覽輸出 _last_view_t.png（RGBA，未繪製＝alpha 0）與非透明像素數，
         //          那個數字原樣填進下方指令的 expect_pixels —— 人核准的圖與引擎吃的圖靠它對帳。
@@ -539,7 +539,7 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (!aShow) return;
 
-                GUILayout.Label("唯讀免費（只 spawn canvas.py view）；落子仍走 Cmd_Sculpture ——"
+                GUILayout.Label("唯讀免費（in-process 直呼 SCP_Core canvas op=view，不 spawn process）；落子仍走 Cmd_Sculpture ——"
                                 + " 本頁不碰錢，也不直接貼。", WrapLabelStyle);
                 m_StampRegion = DrawField("來源區域 x,y,w,h（2D 畫布座標）", m_StampRegion);
                 m_StampAt = DrawField("at（圖左上角貼在 3D 的 x,y,z）", m_StampAt);
@@ -554,33 +554,52 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：spawn canvas.py view 產生 RGBA 預覽並解析非透明像素數 → 組出現成 Cmd 指令。
-        // 失敗處置：region 格式不合 / 引擎失敗 / 解析不到數字 → 訊息寫進 log 且**不組指令**
+        // 區塊職責：產生 2D 畫布區域的 RGBA 預覽並取回非透明像素數 → 組出現成 Cmd 指令。
+        // 物理意義：**in-process 直呼 SCP_Core 的 canvas，不 spawn 任何 process**。
+        //          canvas 的唯讀 op（view）完全在本 process 完成、不碰宿主閘（不需要付款資格）。
+        // 🩸 2026-09-08（TASK-0114 ④）：這裡原本 spawn `python canvas.py view --region=…`，
+        //   而 `canvas.py` 已於 `3db54b8e` 刪除 ⇒ `ResolveCanvasScript()` 從那天起**永遠回 null**，
+        //   本頁的唯讀預覽整個死掉。而死法最貴的是那句錯誤訊息：
+        //   「解析不到 canvas.py（CorePath 空或檔案不存在）」會讓人去查路徑設定，
+        //   **而真相是那支工具三週前被刪了** —— 訊息把「已退場」說成「設定不對」。
+        //   ⇒ 抓到它的不是我（dev），是 QA @summit 讀 code 看出 `File.Exists` 對已刪檔必回 false。
+        // 失敗處置：region 格式不合 / 派遣失敗 / 拿不到讀數 → 訊息寫進 log 且**不組指令**
         //          （組不出可信 expect_pixels 就不給指令 —— 給一個沒有閘門的指令比不給更糟）。
+        // ⚠ `scale` **顯式給 1**：`non_transparent_pixels` 是**放大之後**數的
+        //   ⇒ scale>1 會讓 expect_pixels 膨脹成 scale² 倍，而那個數字看起來完全合理。
         void RenderStampPreview()
         {
             m_StampCmdLine = "";
-            string aScript = ResolveCanvasScript();
-            if (aScript == null)
-            {
-                m_LastRenderLog = "✗ 解析不到 canvas.py（CorePath 空或檔案不存在）";
-                return;
-            }
             var aRegion = ParseXywh(m_StampRegion);
             if (!aRegion.HasValue)
             {
                 m_LastRenderLog = $"✗ 來源區域需為 x,y,w,h 四個正整數（got '{m_StampRegion}'）";
                 return;
             }
-            var (aExit, aSo, aSe) = UCL_ProcessCli.Run("python",
-                $"\"{aScript}\" view --region=\"{m_StampRegion}\"",
-                UCL_RepoPath.RepoRoot, PROC_TAG_PY, nameof(UCL_SculptureViewerPage), RENDER_TIMEOUT_MS);
-            m_LastRenderLog = $"[{DateTime.Now:HH:mm:ss} stamp preview]\n" + (aExit == 0
-                ? (aSo ?? "").Trim()
-                : $"✗ 預覽失敗（exit={aExit}）\n{aSo}\n{aSe}");
-            if (aExit != 0) return;
 
-            int aOpaque = ParseOpaqueCount(aSo);
+            var aArgs = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "op", "view" },
+                { "region", m_StampRegion },
+                { "scale", "1" },
+                { "data_root", UCL_AgentCommandsPath.DataRoot },
+            };
+            SCP.Core.Cmd.SCP_CmdResult aRes;
+            try { aRes = SCP.Core.Cmd.SCP_CmdRegistry.Dispatch("canvas", aArgs); }
+            catch (Exception e)
+            {
+                m_LastRenderLog = $"✗ 派遣 canvas 失敗（{e.GetType().Name}）：{e.Message}";
+                return;
+            }
+            m_LastRenderLog = $"[{DateTime.Now:HH:mm:ss} stamp preview · in-process SCP_Core]\n"
+                              + string.Join("\n", aRes.Lines).Trim();
+            if (!aRes.Ok)
+            {
+                m_LastRenderLog += $"\n✗ 預覽失敗（exit={aRes.ExitCode}）";
+                return;
+            }
+
+            int aOpaque = ReadIntValue(aRes, "non_transparent_pixels");
             if (aOpaque < 0)
             {
                 m_LastRenderLog += "\n✗ 解析不到 non_transparent_pixels —— 不組指令（沒有閘門的指令不給）";
@@ -637,26 +656,18 @@ namespace UCL.Core.EditorLib.Page
             return (aNums[0], aNums[1], aNums[2], aNums[3]);
         }
 
-        /// <summary>從 canvas.py view 的 stdout 撈 non_transparent_pixels 的值；找不到回 -1（不回 0 —— 0 是合法的「全透明」，會被誤當成功）。</summary>
-        static int ParseOpaqueCount(string iStdout)
+        /// <summary>
+        /// 從 Cmd 的機讀 <c>Values</c> 欄取整數；⛔ 不 regex stdout。
+        /// <para>拿不到回 <b>-1 而不是 0</b> —— 0 是合法的「這個區域全透明」，
+        /// 回 0 會讓「讀不到」與「真的空」同形，而下游拿它當 expect_pixels 就是一個沒有閘門的閘。</para>
+        /// </summary>
+        static int ReadIntValue(SCP.Core.Cmd.SCP_CmdResult iRes, string iKey)
         {
-            if (string.IsNullOrEmpty(iStdout)) return -1;
-            const string aKey = "non_transparent_pixels:";
-            int aIdx = iStdout.IndexOf(aKey, StringComparison.Ordinal);
-            if (aIdx < 0) return -1;
-            string aRest = iStdout.Substring(aIdx + aKey.Length).TrimStart();
-            int aEnd = 0;
-            while (aEnd < aRest.Length && char.IsDigit(aRest[aEnd])) aEnd++;
-            return aEnd > 0 && int.TryParse(aRest.Substring(0, aEnd), out int aVal) ? aVal : -1;
-        }
-
-        static string ResolveCanvasScript()
-        {
-            string aCoreRel = UCL_EditorPath.CorePath;
-            if (string.IsNullOrEmpty(aCoreRel)) return null;
-            string aScript = Path.GetFullPath(Path.Combine(
-                UCL_RepoPath.UnityProjectRoot, aCoreRel, "Tools~/AgentCommands/canvas.py"));
-            return File.Exists(aScript) ? aScript : null;
+            if (iRes?.Values == null) return -1;
+            foreach (var aKv in iRes.Values)
+                if (string.Equals(aKv.Key, iKey, StringComparison.Ordinal))
+                    return int.TryParse(aKv.Value, out int aVal) ? aVal : -1;
+            return -1;
         }
 
         // 區塊職責：顯示 _last_view.png — mtime 快取（texture 只在檔案變動時重建）

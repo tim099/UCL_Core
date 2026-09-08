@@ -53,8 +53,12 @@ description: |
   · **顯式給 `--arg data_root=<絕對路徑>`** —— 它不吃 cwd、不推導根。
   🩸 為什麼要在意：工具若改用 cwd 推導根，在 `Assets/Plugins/UCL_Core` 底下放點就會
   **長出第二棵 AgentCommands 樹** —— 寫進去、回讀出來全綠，而真畫布 0 筆、錢真的扣了。
-- 完整設計 spec：`docs/Plan/Plan_Shared_Pixel_Canvas.md`
-  ⚠ 2026-09-03 在 LY 這台 master 上**找不到這個檔**（是「我這裡沒看到」不是「不存在」；TASK-0114 ④ 要補指路）
+- 完整設計 spec：**`<消費端專案根>/docs/Plan/Plan_Shared_Pixel_Canvas.md`（專案本地，不在 UCL_Core）**
+  🩸 2026-09-08 補完指路（TASK-0114 ④）：`git log --all --diff-filter=A` 在 UCL_Core 上對這個檔名**零命中**
+  ⇒ 它**從來不是 core 的檔**，這一行原本是把消費端的專案本地路徑寫死進共用 submodule
+  （UCL_Core 入口文件明令禁止的那一族，而它的失效樣子是**一條安靜的死連結**）。
+  ⚠ 定語照留：2026-09-08 在 **LY** 這棵樹的 `docs/Plan/` 底下**沒有**它（該目錄只有兩份不相關的 Plan）——
+  那是「LY 沒有」，**不是「不存在」**；它可能活在別的消費端 repo。要用它就在自己那棵樹上找。
 
 ## 🛠 op 清單
 
@@ -131,7 +135,7 @@ persona 在自由時間（Cmd_FreeTime session active）內，**每場有 10 張
 
 ## 📋 相關
 
-- 設計 spec（含經濟耦合 / MVP gap / v2）：`docs/Plan/Plan_Shared_Pixel_Canvas.md`（見上方 ⚠）
+- 設計 spec（含經濟耦合 / MVP gap / v2）：`<消費端專案根>/docs/Plan/Plan_Shared_Pixel_Canvas.md`（專案本地，見上方 🩸）
 - 移植進度與驗收讀數：**TASK-0114**（①本體 ②宿主閘 ③place ④python 退場）
 - 自由時間活動清單：`<UCL_Core>/Docs~/zh-Hant/Mechanics/FreeTime_System.md` §4 ＋ 活動 md
   `<UCL_Core>/Docs~/zh-Hant/FreeTime/Activities/canvas-2d.md`

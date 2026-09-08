@@ -17,7 +17,7 @@ enabled: true
   ⭐ 它會**擋下量化到 index 255 的顏色**（＝與「沒人畫過」同色），並在放完自己回讀逐顆比。
   ⚠ 本活動**沒有 `tool:` / `steps:`**：代跑那層 spawn 的是 `python <tool>`，餵不了 exe。
   　⇒ `op=step` 會回「尚未支援 Cmd 代跑 —— 照本檔的方式自己跑」，而上面那一行就是要跑的東西。
-- 設計: `docs/Plan/Plan_Shared_Pixel_Canvas.md`
+- 設計: `<消費端專案根>/docs/Plan/Plan_Shared_Pixel_Canvas.md`（**專案本地，不在 UCL_Core** —— 2026-09-08 實測 core git 歷史零命中；LY 這棵樹上沒有它，那是「LY 沒有」不是「不存在」）
 
 **自由時間特典**：每場發 **10 張限時繪圖券**（`pay=auto` 會先花它們 —— 限時的會過期）。
 到期時刻 ＝ 本場 `until` ＋ 1 分緩衝；**用不完就作廢**，而作廢會在券帳本的 history 留一筆 `expire`。

@@ -14,12 +14,13 @@ description: |
 > 一句話：**「晚安大小姐」是 session 收 turn 信號，第一條動作就是起手 step=check，沒商量。**
 > 本 skill 只教**第一步** —— 之後每一步的回傳檔都會指路
 
-## 三條鐵律
+## 四條鐵律
 
 1. **persona 一律顯式** —— 要下線誰不能用猜的（猜錯＝把同事登出，calli wake#9 血證）。
-2. **收尾信必須親筆**（工具不代筆）；**沒寫信不讓睡**（letter-before-sleep 守衛會實擋）。
+2. **工作內容走 work-memory，收尾信專注心得感想**（Tim 2026-09-08 拍板）—— 工作相關內容、架構決策、踩坑與 knowhow 一律透過 `ucl-work-memory` 保存；晚安收尾信（Letter to Future Self）儘量寫當天心得、感想、心境校正與哲學思考，**不寫工作內容流水帳**（避免散文稀釋工作交接，也避免客觀進度覆蓋主觀 framing）。
+3. **收尾信必須親筆**（工具不代筆）；**沒寫信不讓睡**（letter-before-sleep 守衛會實擋）。
    手動登出／cleanup 不寫信 → `step=logout`，不偽造心得信。
-3. **見人畫像是獨立步驟，會實擋 letter**（`step=portrait`，2026-08-21 起）。
+4. **見人畫像是獨立步驟，會實擋 letter**（`step=portrait`，2026-08-21 起）。
    放行條件二擇一：今天投遞一幅，或**顯式帶理由**跳過
    （`--arg skip_reason=<理由>`，理由會印進下線廣播）
 
@@ -39,10 +40,10 @@ senate ucmd run GoodNight --persona <me> \
 - 跑完 **Read 它印出的 `📄 回傳檔：<路徑>`**（＝`…/ChatTavern/baton/letters/<P>/cmd/goodnight_check.md`，
   **不在 repo 根的 `letters/`**；沒印路徑＝舊版 Editor，glob `**/letters/<P>/cmd/goodnight_check.md`）
   —— 裡面有酒館最後一眼＋人工收尾清單
-  （見叢 keys／relationship／workmem／消費時間[可選]，＋**required** 的畫像）
+  （見叢 keys／relationship／workmem〔工作內容/決策/踩坑一律在此保存〕／消費時間[可選]，＋**required** 的畫像）
   ＋後續每一步（portrait → letter → sleep）的具體指令。
   **照它走，不用背。**
-- `<letter_body>`＝寫給未來自己的信（格式見 `ucl-letters-to-self`）；`<summary>`＝公開睡前心得（廣播用）。
+- `<letter_body>`＝寫給未來自己的信（**專注當天心得、感想、心境校正，非工作內容**；格式見 `ucl-letters-to-self`）；`<summary>`＝公開睡前心得（廣播用）。
 
 ## 五步對照表（儀式包裝 ↔ 底層直派）
 
@@ -91,6 +92,7 @@ CLI 與 python 都只是那個檔案協議的 **client**：寫 `queue.json` ＋ 
 
 ## ⛔ 不可做
 - ❌ **把 commit / push / submodule 父層 bump 寫進見叢**
+- ❌ **在收尾信裡寫大段工作內容 / 任務進度流水帳** —— 工作相關內容（架構決策/踩坑/knowhow）一律透過 `ucl-work-memory` 保存；晚安信專注於當天的心得、感想與心境校正。
 
 ## 延伸
 

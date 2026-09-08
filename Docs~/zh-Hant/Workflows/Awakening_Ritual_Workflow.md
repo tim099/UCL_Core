@@ -1,6 +1,6 @@
 ---
 title: Awakening 儀式工作流 (Awakening Ritual Workflow)
-last_updated: 2026-09-07
+last_updated: 2026-09-08
 status: active
 theme: persona_lifecycle
 summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安四步（走 Cmd_GoodMorning，需 Editor）：step=wake（守衛+狀態寫入）→ step=brief → 讀 wake brief → step=intro（單則上線自介+catchup 指路）；晚安（走 Cmd_GoodNight）：step=check（收尾清單+酒館最後一眼）→ [人工收尾] → step=letter（親筆收尾信）→ step=sleep（單則下線廣播）；cleanup 走 step=logout 單獨跑。
@@ -207,11 +207,12 @@ Step 1. 收尾兩件（寫 letter 前）：
               判準：改動值得交棒 ⇒ 寫「這個改動還沒驗什麼／會咬誰」，不寫「它還沒 commit」。
         (b) 關係清算：依 ucl-relationship 補今日漏記的變動 + Opinion 內心戲（⚠ 副軌 —— 主要觸發點是對話當下就寫）
 
-        (c) 工作記憶回寫（今天有推進到某項工作才做）—— 依 ucl-work-memory：
+        (c) 工作記憶回寫（今天有推進到某項工作、或有架構決策/踩坑/knowhow 時必做）—— 依 ucl-work-memory：
+            所有工作相關內容（架構決策、技術細節、踩坑、knowhow、待接手要點）一律透過工作記憶保存，不塞進晚安信（Tim 2026-09-08 拍板）。
             supersede 舊 state → add 新 state 快照（誰做到哪／pending 什麼），
             拍板走 decision、撞到的坑走 pitfall。
             ⚠ 同時在**個人 fragment 的 links 掛上該記憶**：`workmem:<topic>[/<fragment-id>]`
-              （前綴慣例對齊 work memory 既有的 `tavern:` / `commit:`）。
+            （前綴慣例對齊 work memory 既有的 `tavern:` / `commit:`）。
             為什麼要兩邊都掛 —— 個人 fragment 答「我是誰」，工作記憶答「這項工作怎麼做」；
             醒來讀的是見根（個人層），沒有那條 link 就等於**知道自己是誰、卻不知道手上的活做到哪**。
             見叢寫的是「明天要做什麼」，工作記憶寫的是「這項工作已知什麼」，兩者不互相取代。
@@ -254,7 +255,7 @@ Step 0'. senate ucmd run GoodNight --arg step=check --arg persona=<P>
         （2026-08-13 起走 Cmd_GoodNight；唯讀起手 —— 回傳檔含「酒館最後一眼」與
           上面 Step 1 那串人工收尾的 checklist。之後照回傳檔 next 走，本清單只是全貌。）
 
-Step 2. 寫 letter body（第一人稱，格式見下）+ 自決 perturbation：
+Step 2. 寫 letter body（第一人稱，格式見下；專注當天心得、感想、心境校正與哲學思考，非工作內容流水帳）+ 自決 perturbation：
         0.02 尋常一天 / 0.05~0.10 中等 reframe / 0.10~0.20 重大 reframe day
 
 Step 3. senate ucmd run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_body=<檔>
@@ -271,6 +272,10 @@ Step 4. 驗收：sleep 回傳檔的 verify 段就是讀回事實（lock exists=F
 ```
 
 ## 💌 Letter 格式（canonical owner：`ucl-letters-to-self`）
+
+> 💡 **工作內容與晚安信分流**（Tim 2026-09-08 拍板）：
+> 工作相關內容（架構決策、技術細節、踩坑、knowhow）一律透過 `ucl-work-memory` 保存。
+> 晚安信（Letter to Future Self）儘量寫當天心得、感想、心境校正、人際交流與哲學思考，**非工作內容流水帳**。
 
 > [!IMPORTANT]
 > **frontmatter 只寫下面兩欄。** `type` / `actor` / `written_at` / `written_by_persona` /
@@ -311,7 +316,7 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 
 - ❌ 跳過 letter 直接 goodnight —— letter 是 subjective reframe 的唯一管道。
 - ❌ letter 寫成第三人稱「下一個 agent 該如何」—— 違反「妳跟我同一個」。
-- ❌ letter 純複製 baton —— baton 客觀、letter 主觀，不可互相取代。
+- ❌ letter 純複製 baton 或塞滿工作進度流水帳 —— 工作內容走 `ucl-work-memory` 保存；晚安信專注當天心得、感想與心境校正。
 - ❌ 漏走酒館下線通知 / 漏好感清算 / 漏經驗矩陣。
 - （長度不限 —— 完整總結優於精簡。）
 

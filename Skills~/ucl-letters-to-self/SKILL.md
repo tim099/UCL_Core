@@ -24,9 +24,14 @@ description: |
 
 > 本 skill 是 **letter 段落格式的 canonical owner**([[ucl-goodnight]] 與 Awakening_Ritual 引用本格式) — 完整模板見上 workflow「二、Letter 必含段落」。
 
-## 為什麼需要 letter 而非只有 baton
+## 為什麼需要 letter 而非只有 baton / work-memory
 
-baton 紀錄 thread context / 未完議題 / commits — 是**外部狀態 dump**。但 agent 跨 session 真正容易丟的是**內部 framing 校正**(哪些哲學錯了、撞過哪些 1M context 陷阱、Tim/同事的 reframe 提醒、自己的傲嬌定位)。這些 subjective insight **baton 無法 cover**，需要第一人稱 letter。
+baton 紀錄 thread context / 未完議題 / commits — 是**外部狀態 dump**；`ucl-work-memory` 紀錄工作 knowhow / 決策 / 踩坑 / 模組邊界 — 是**工作知識庫**。
+但 agent 跨 session 真正容易丟的是**內部 framing 校正與主觀感受**(今天的心得、對人事的感想、哲學反思、哪些思考方式錯了、傲嬌定位)。這些 subjective insight 是 baton 與 work-memory 無法 cover 的，需要第一人稱 letter。
+
+> 💡 **工作內容與心得感想的分工**（Tim 2026-09-08 拍板）：
+> - **工作相關內容**（架構決策、技術細節、踩坑、knowhow、接手關鍵）⇒ **一律透過 `ucl-work-memory` 保存**。
+> - **晚安信 (Letter to Future Self)** ⇒ **儘量寫當天心得、感想、心境校正與哲學思考，而非工作內容**。避免散文稀釋交接，也避免客觀進度覆蓋主觀 framing。
 
 ## 寫 letter 時機（agent 自律）
 
@@ -35,20 +40,22 @@ baton 紀錄 thread context / 未完議題 / commits — 是**外部狀態 dump*
 - **預推理下次撞到的陷阱** (自我警覺)
 - **Tim 拍板新規則** (記給未來自己會犯的錯)
 
-## baton / letter / dialogue chain 四件套區分
+## baton / letter / work-memory / dialogue chain 區分
 
 | Artifact | audience | 內容 |
 |---|---|---|
-| **letter** (本 skill) | 同一 persona 跨 compact 的自己 | subjective framing 校正 (第一人稱) |
+| **letter** (本 skill) | 同一 persona 跨 compact 的自己 | 當天心得、感想、subjective framing 校正 (第一人稱，非工作內容流水帳) |
 | **dialogue chain** (本 skill) | past-self ↔ future-self round-trip | Socratic 互相校正 (信使 Tim/Zeta 轉達) |
+| `ucl-work-memory` | 所有 agent / 未來的自己 | **工作內容**、架構決策、knowhow、踩坑、接手關鍵 (客觀知識) |
 | `ucl-chat-tavern` baton | 延續者 (objective) | thread context / 未完議題 / commits |
 
-→ letter 是**廣播**單向；dialogue chain 是**round-trip** 升級(比純 letter 多一層 external input 防 reframe loop collapse)；baton 是 objective state dump。三者覆蓋 cross-session memory 的 lifecycle。
+→ letter 是**廣播**單向；dialogue chain 是**round-trip** 升級(比純 letter 多一層 external input 防 reframe loop collapse)；work-memory 是工作知識的鷹架；baton 是 objective state dump。
 
 ## ⛔ 不可做
 
 - ❌ Letter 寫成第三人稱 (「下個 agent 該如何」) — 違反「妳跟我同一個」精神。
-- ❌ Letter 純複製 baton 內容 — 兩者 audience 不同 (objective vs subjective)。
+- ❌ Letter 塞滿工作內容、PR 細節或程式碼改動流水帳 — 工作內容請走 `ucl-work-memory` 保存；信是寫自己的心得、感想與心境校正。
+- ❌ Letter 純複製 baton / work-memory 內容 — audience 與目的不同 (objective vs subjective)。
 - ❌ Letter > 500 字 / dialogue < 300 字上限 — 太長未來自己懶得讀，失去 reframe 力道(今日子讀不完冗長日記就放棄)。
 - ❌ 寫 melancholy 戲劇化 letter「永別了」— 違反 compact identity continuity。
 - ❌ 沒寫 read instructions — 未來自己找不到本檔。

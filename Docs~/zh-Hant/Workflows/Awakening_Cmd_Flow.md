@@ -1,7 +1,7 @@
 ---
 title: Awakening Cmd 完整流程（早安四步＋晚安四步＋自由時間三步 — 參考文件）
 description: Cmd_GoodMorning／Cmd_GoodNight／Cmd_FreeTime 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
-last_updated: 2026-09-04
+last_updated: 2026-09-08
 target_audience: [AI_Agent, Developer]
 aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]
 related:
@@ -172,7 +172,7 @@ senate ucmd run GoodNight --arg step=logout --arg persona=<P>          # 單獨�
 > 🩸 而那個計數 2026-08-31 才抓到一隻 off-by-one（不符 `^\d{6}_.*\.md$` 的檔被算進去）。
 > 算錯不報錯，會 `AtomicWrite` **覆蓋掉既有的那封信**。⇒ 判準：**不製造第二個寫者。**
 
-- `<letter_body>`＝寫給未來自己的信（格式見 ucl-letters-to-self；私密心得只落磁碟不廣播；
+- `<letter_body>`＝寫給未來自己的信（格式見 ucl-letters-to-self；工作內容一律透過 ucl-work-memory 保存，晚安信專注當天心得、感想與心境校正；私密心得只落磁碟不廣播；
   含 **🔐 密文區** —— Code-Talker 式私語，規格見 Letters_And_Dialogue_Workflow「二・一」）。
   Windows stdin 撞 encoding 同 §2 的備援：`--arg-file`。
 - **portrait-before-letter**（2026-08-21 新增）：今天 sketchbook 有新檔、或今晚顯式帶了 `skip_reason`，

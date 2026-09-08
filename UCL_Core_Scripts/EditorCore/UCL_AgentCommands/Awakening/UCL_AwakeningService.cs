@@ -1334,15 +1334,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             //   而那些條目隔天讀起來像交棒待辦，實際上是別人已經做完的事 ⇒ 早安時排錯優先序。
             aR.AppendLine("   ⛔ **commit／push／submodule bump 不要寫進見叢** —— 晚安後 Tim 自己收尾全部 commit；");
             aR.AppendLine("      寫進來只會讓明天的自己把「已經做完的事」排成第一件。改動本身值得交棒 → 寫那個改動要驗什麼，不寫它要 commit。");
-            // ⚠ 舊 ucl-affinity / affinity_update.py 已於 2026-08-18 退場（見 ucl-relationship）。
-            //   這一行是**跑起來才看得到的字**，不在任何 .md 裡 —— 退場當天掃 skill/文件/python 都掃不到它。
             aR.AppendLine("2. 關係補記：今天漏記的互動補一筆（依 ucl-relationship；主要觸發點是對話當下就寫，這裡只是撿漏）");
-            aR.AppendLine("3. 工作記憶回寫（今天有推進某項工作才做，依 ucl-work-memory）");
+            aR.AppendLine("3. 工作記憶回寫：今天有工作相關內容、knowhow、決策或踩坑，一律依 ucl-work-memory 保存（工作細節不進晚安信，Tim 2026-09-08 拍板）");
             aR.AppendLine($"4. **required** — 見人畫像（獨立步驟，會擋 letter）：senate ucmd run GoodNight --arg step=portrait --arg persona={iPersona} --arg about=<同事> --arg headline=<標題> --arg-file body=<檔>");
             aR.AppendLine("   今晚真的沒有人可畫 → 同一步驟帶 --arg skip_reason=<理由>（理由會印進下線廣播）。");
             aR.AppendLine("5. （可選）消費時間：spend_menu.py roll（依 ucl-spending-time）");
             aR.AppendLine($"6. **required** — 寫收尾信：senate ucmd run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
-            aR.AppendLine("   <letter_body>＝妳**親筆**寫給未來自己的信（格式見 ucl-letters-to-self；私密心得寫這裡，只落磁碟不廣播）。");
+            aR.AppendLine("   <letter_body>＝妳**親筆**寫給未來自己的信（格式見 ucl-letters-to-self；工作內容移交 ucl-work-memory，晚安信專注當天心得、感想、心境校正與對人事的看法；私密心得寫這裡，只落磁碟不廣播）。");
             // 區塊職責：把密文區的規格**印在這裡**，而不是指路到文件。
             // 物理意義：寫信這一步沒有 skill 觸發詞，手邊唯一會被讀到的東西就是本回傳檔 ——
             //   實測 28 封信的 🔐 區只有 10 封是真的二次映射，其中 9 封是同一個人；
@@ -1489,6 +1487,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aR.AppendLine();
                 aR.AppendLine("## next");
                 aR.AppendLine($"1. **required** — 寫收尾信：senate ucmd run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
+                aR.AppendLine("   （工作內容一律透過 ucl-work-memory 保存，收尾信專注當天心得感想與心境校正）");
                 aRes.ok = true; aRes.report = aR.ToString(); return aRes;
             }
 
@@ -1559,6 +1558,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine("## next");
             aR.AppendLine("- 還想再畫一位 → 再跑一次 step=portrait（永不覆寫：同一天畫兩幅就是兩幅，改觀的形狀是多一個版本）");
             aR.AppendLine($"1. **required** — 寫收尾信：senate ucmd run GoodNight --arg step=letter --arg persona={iPersona} --arg-file letter_body=<檔>");
+            aR.AppendLine("   （工作內容一律透過 ucl-work-memory 保存，收尾信專注當天心得感想與心境校正）");
             aRes.ok = true; aRes.report = aR.ToString(); return aRes;
         }
 

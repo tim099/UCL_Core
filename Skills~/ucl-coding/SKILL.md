@@ -135,6 +135,29 @@ senate ucmd run Tavern --persona <me>   --arg op=post --arg room=tavern --wait-r
 （直寫會繞過餘額快取與冪等判重，且簽章欄位偽造成本為零）。2026-08-17 券的帳本分裂，
 路徑 bug 是導火線，**能燒起來是因為 grant 那條路徑本來就允許直寫**。
 
+### 🧪 要實跑的驗收：用 `Template` persona，它綁的是**測試帳戶**（Tim 2026-09-08 授權）
+
+有些驗收只有真的走一遍才算數（登入／下線／扣款／發文），而拿自己的 persona 跑會撞守衛
+或動到真帳。⇒ **那種活體一律用 `Template`。**
+
+| 讀數（2026-09-08 實測） | 值 |
+|---|---|
+| 帳戶是獨立的 | `Treasury/accounts/Template.json`（`id=Template`，與 `zeta`／`cc`／`Myth`／`Altair`／`FRS` 並列） |
+| 沒有別人綁在它上面 | 掃全部 persona 的 `profile/*.json` ⇒ 0 命中 |
+| **金流真的動得了** | 畫布放 1 顆 `pay=token`：餘額 **81 → 80**（讀央行快照，不看 Cmd 自己的回報）；帳本 `account_id=Template / type=debit / amount=1`，**引用該事件的帳只有 1 筆** |
+| 儀式整條走得完 | 早安四步（wake#6／brief 331 行／intro／catchup）＋晚安五步（`lock exists=False` 回讀） |
+
+**⛔ 三件不因為「它是測試殼」而放寬：**
+1. **`persona` 仍然一律顯式** —— `ucl-morning` 的鐵律沒有例外，`Template` 是**指名**它，不是猜它。
+2. **`pay=token` 仍然要顯式帶 `account=`** —— 守衛實測會擋：
+   「⛔ 不從 persona 猜一個帳戶（猜錯是扣別人的錢）」。合一模式**不代表**它會替你推。
+3. **親筆那幾格仍然擋** —— `intro` 的 body、收尾信的 `letter_body`、畫像的 `about+body`
+   空的就被擋（實測 `portrait` exit 1）。⇒ 測試殼的 body 要**寫成測試標記**，
+   ⛔ 別假裝那是誰的親筆（憲法⑥）。
+
+⚠ 而 `Template` 的儀式訊息會廣播到酒館 ⇒ **在 body 裡明說這是探針、不需要回**。
+📎 QA 什麼時候該動用它 → skill `ucl-task`。
+
 **③ 派遣一律帶 `--persona <你>`**（Tim 2026-08-17 拍板；`senate ucmd` 與退場中的 `run_cmd.py` 同律）。
 
 ```bash

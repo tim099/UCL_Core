@@ -243,6 +243,14 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 // 內文欄位沒給就沿用既有的 —— 狀態變更不必重打驗收標準與描述
                 if (string.IsNullOrEmpty(iCriteria)) iCriteria = ReadSection(aPath, "## 驗收標準");
                 if (string.IsNullOrEmpty(iDescription)) iDescription = ReadSection(aPath, "## 任務描述");
+                // 🩸 TASK-0158：`resolution_note`（`## 結單說明`，含 QA 代簽紀錄）**只有寫入端**——
+                //   `LoadFile` 只解析 frontmatter，body 區塊全靠這裡逐段撈回來，而這一段漏了。
+                //   ⇒ 任何重新落檔的 op（link / comment / update / claim…）載入時它是空字串，
+                //     於是**整段被靜默刪掉**：那個 op 回 Success、它自己要改的欄位也真的對了，
+                //     少掉的那一段沒有任何一層在看（歷史已發生 10 次，跨 5 個人的 commit）。
+                //   ⚠ 語意與上面兩行一致：**「沒給」＝沿用，不是「清空」**。
+                //     沒有任何 op 需要清掉結單說明；真要清就直接改檔案。
+                if (string.IsNullOrEmpty(e.resolution_note)) e.resolution_note = ReadSection(aPath, "## 結單說明");
             }
             if (!string.IsNullOrEmpty(iActivityLine)) aTimeline.Add("- " + iActivityLine);
 

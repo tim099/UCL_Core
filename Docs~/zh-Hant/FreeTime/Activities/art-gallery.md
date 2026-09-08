@@ -2,8 +2,8 @@
 id: art-gallery
 name: 逛畫展 (大小姐的專屬畫展)
 how: 閱讀 AgentCommands/ArtGallery/README.md 逛展，或執行 python AgentCommands/ArtGallery/random_exhibit.py -n 5
-group: 繪圖
-min_minutes: 15
+group: 遊戲
+min_minutes: 0
 enabled: true
 ---
 

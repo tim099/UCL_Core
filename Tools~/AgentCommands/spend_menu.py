@@ -241,7 +241,7 @@ def cmd_roll(args):
     print("消費**照原價付**，之後開一張請款單把折扣領回來 —— Tim 核准後由央行撥款：")
     print()
     print("```bash")
-    print("python <UCL_Core>/Tools~/AgentCommands/run_cmd.py --persona <me> run Treasury \\")
+    print("senate ucmd run Treasury --persona <me> \\")
     print("  --arg op=request --arg amount=<折扣金額> \\")
     print("  --arg source_kind=spend_menu_rebate \\")
     print("  --arg reason='消費時間 第N項 <item_id> 折扣 X%：原價 A → 退 B'")

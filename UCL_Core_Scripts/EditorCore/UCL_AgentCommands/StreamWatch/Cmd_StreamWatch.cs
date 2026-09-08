@@ -63,7 +63,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             "**bilibili 一律 `bilibili-<up主 slug>` 並必帶 up=**） | " +
             "up=<up主名> / title=<影片標題> / desc=<影片介紹> / url=<網址> — start 選填（bilibili 場 up 必填） | " +
             "body=<內文> — observe/note 必填（長文走 --arg-file） | " +
-            "回傳落檔 letters/<persona>/cmd/streamwatch_<step>.md（路徑隨 run_cmd verdict 印出）";
+            "回傳落檔 letters/<persona>/cmd/streamwatch_<step>.md（路徑隨判定一起印出）";
 
         public override string ExampleArgs => "step=start;persona=Template;until=23:59";
 

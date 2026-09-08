@@ -50,7 +50,7 @@ def install_hint() -> str:
         "  1.【推薦】Unity Editor → 控制台 →「🧠 知識庫管理」→ 按「📦 安裝 bge-m3 依賴」\n"
         "     （走腳本安裝，跨專案/機器可重現；裝完再按「⬇️ 預熱 bge-m3 權重」）\n"
         "  2. CLI:   python <UCL_Core>/Tools~/AgentCommands/knowledge_base.py install --full\n"
-        "  3. Agent: run_cmd.py run KnowledgeBase --arg op=install --arg full=true"
+        "  3. Agent: senate ucmd run KnowledgeBase --persona <me> --arg op=install --arg full=true"
     )
 
 

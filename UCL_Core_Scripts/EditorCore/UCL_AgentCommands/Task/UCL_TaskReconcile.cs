@@ -26,13 +26,29 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
     {
         static readonly Regex TASK_REF = new Regex(@"TASK-(\d+)", RegexOptions.Compiled);
 
-        /// <summary>見叢裡出現過的單號 → 該行原文（同一單號出現多行時保留第一行）。</summary>
+        /// <summary>
+        /// 見叢裡**還沒勾銷**的行提到的單號 → 該行原文（同一單號出現多行時保留第一行）。
+        /// ⚠ 已勾銷（`- [x]`）的行不算 —— 它們是「做完了」，不是「殘留」。
+        /// </summary>
+        // ===========================================================
+        // 🩸 2026-09-08（TASK-0149）：本函式原本逐行找 `TASK-\d+`，**不看 `[ ]` / `[x]`**。
+        //   實測 summit 的見叢：未勾銷且含 `TASK-` 的行 **0** 行、已勾銷 **64** 行，
+        //   而晚安對帳 ⚠① 印「見叢還有 **26** 筆引用 —— 舊規則殘留，勾銷掉」，
+        //   並把已關的單逐條標成「**假帳：見叢說還沒做**」。
+        //   ⇒ 那句話本身才是假帳：**它叫人去勾銷已經勾銷的行**，而 `senate cmd keys --arg done_index=`
+        //   只認未完行 ⇒ 照它做會撞 exit 2，於是每晚重複報同一批行、而沒有任何動作能讓它變短。
+        // 📌 這正是本單標題講的病長在**消費端**的樣子：生產端補了勾銷入口之後，
+        //   「勾得動，但勾了沒有人讀」—— 做完的行與沒做的行在**讀取端**仍然同形。
+        // ⚠ 非 checkbox 行仍然算（例如手寫的敘述行提到單號）：那種行**無法被勾銷**，
+        //   是真的該從見叢移走的殘留 ⇒ 不能跟「已勾銷」混為一談。
+        // ===========================================================
         public static Dictionary<int, string> ReadKeysRefs(string iKeysPath)
         {
             var aOut = new Dictionary<int, string>();
             if (!File.Exists(iKeysPath)) return aOut;
             foreach (var aLine in File.ReadAllLines(iKeysPath, Encoding.UTF8))
             {
+                if (IsCheckedOffLine(aLine)) continue;
                 foreach (Match m in TASK_REF.Matches(aLine))
                 {
                     if (!int.TryParse(m.Groups[1].Value, out int aIdx)) continue;
@@ -40,6 +56,15 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 }
             }
             return aOut;
+        }
+
+        /// <summary>這一行是不是已勾銷的見叢項（`- [x]` / `- [X]`，容許前置空白）。</summary>
+        static bool IsCheckedOffLine(string iLine)
+        {
+            if (string.IsNullOrEmpty(iLine)) return false;
+            string aTrimmed = iLine.TrimStart();
+            return aTrimmed.StartsWith("- [x] ", StringComparison.Ordinal)
+                || aTrimmed.StartsWith("- [X] ", StringComparison.Ordinal);
         }
 
         /// <summary>這張單跟這個 persona 有關嗎（參與者或開單人）。</summary>

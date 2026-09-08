@@ -569,6 +569,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aShow = $"{aShowTitle} [{aEpisode:00}]";
             string aTitleNote = UCL.Core.EditorLib.Page.UCL_ScreenStreamPage.SetStreamTitle(aShow, aSttPrompt, iPersona);
             aR.AppendLine($"- {aTitleNote}");
+            bool aOpenedRecording = false;   // 收工關錄影的唯一依據（見 UCL_StreamWatchPrepared 該欄位）
             bool aRecOn = IsRecordingEnabled(out string aCfgNote);
             if (aRecOn) aR.AppendLine($"- 錄影：**已在錄** —— 未動作（{aCfgNote}）");
             else if (!aStartRec) aR.AppendLine($"- 錄影：未開，且 `start_recording=false` ⇒ 不代開（{aCfgNote}）");
@@ -576,7 +577,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             {
                 string aRecNote = UCL.Core.EditorLib.Page.UCL_ScreenStreamPage.SetRecordingEnabled(true, iPersona);
                 aR.AppendLine($"- {aRecNote}");
-                aR.AppendLine($"- 回讀：{(IsRecordingEnabled(out string aCfg2) ? "錄影中" : "**仍未錄影**")}（{aCfg2}）　←　寫完再讀，不採信回傳值");
+                bool aRecBack = IsRecordingEnabled(out string aCfg2);
+                aR.AppendLine($"- 回讀：{(aRecBack ? "錄影中" : "**仍未錄影**")}（{aCfg2}）　←　寫完再讀，不採信回傳值");
+                // 收工要不要關錄影，判準是「這是不是我開的」——而那件事**只有此刻知道**。
+                // ⚠ 記的是**回讀值**不是「我呼叫過 SetRecordingEnabled」：沒開成卻記 true，
+                //    收工就會去關一個不是本場開的錄影（或關一個根本沒開的），而兩者都不會報錯。
+                aOpenedRecording = aRecBack;
             }
 
             // ── ⑥ 落檔（陪同者的 join / catchup 都讀這份） ────────────────
@@ -595,6 +601,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 export_chapter = aExportChapter,
                 export_work_title = aExportWorkTitle,
                 auto_export = aAutoExport,
+                recording_opened_by_prepare = aOpenedRecording,
             };
             SavePrepared(aP);
             aR.AppendLine();
@@ -2385,6 +2392,39 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 }
             }
 
+            // ── 收工關錄影（Tim 2026-09-08 拍板：整合進「輸出書籍」那一步）─────────
+            // 區塊職責：最後一個收工的人，順手把**本場開起來的**錄影關掉。
+            // 物理意義：掛在跟匯出**同一個判準**（`aIsLastOut` ＝ 同組沒有人還在線）上 ——
+            //          不另立第二套「誰該收尾」的規則，那種第二把尺會跟第一把慢慢分岔而沒有人會發現。
+            // ⚠ 但**刻意不綁在匯出成敗上**：匯出失敗（章沒進書）與錄影該不該關是兩件事，
+            //   綁在一起會讓 `auto_export=false` 順手把「關錄影」也關掉 —— 那是一個沒有人宣告過的耦合。
+            // 邊界：⛔ 只關**本場 prepare 開起來的**（`recording_opened_by_prepare`）。
+            //   開場時已經在錄 ⇒ 那是別人的狀態（Tim 可能為了別的用途開著），不動它。
+            //   ⇒ 「沒關」有兩種理由，回傳檔**逐條印出來**：不是最後一個 / 不是本場開的。
+            if (aIsLastOut)
+            {
+                ioR.AppendLine();
+                ioR.AppendLine("## 錄影");
+                var (aOpened, aWhyRec) = ReadRecordingOwnedSetting(ioS.library_media_id);
+                if (!aOpened)
+                {
+                    ioR.AppendLine($"- ⏸ **不關** —— {aWhyRec}");
+                    ioR.AppendLine("- ⇒ 要停就自己顯式跑：`senate ucmd run StreamWatch --arg step=capture "
+                                 + $"--arg persona={iPersona} --arg on=0`");
+                }
+                else if (!IsRecordingEnabled(out string aRecNow))
+                {
+                    ioR.AppendLine($"- ⏸ **已經沒在錄** —— 未動作（{aRecNow}）");
+                }
+                else
+                {
+                    string aOffNote = UCL.Core.EditorLib.Page.UCL_ScreenStreamPage.SetRecordingEnabled(false, iPersona);
+                    ioR.AppendLine($"- {aOffNote}");
+                    ioR.AppendLine($"- 回讀：{(IsRecordingEnabled(out string aCfgOff) ? "**仍在錄**" : "已停止")}（{aCfgOff}）"
+                                 + "　←　寫完再讀，不採信回傳值");
+                }
+            }
+
             ioR.AppendLine();
             ioR.AppendLine("## next");
             ioR.AppendLine("1. 本場已收工結算，session 已關閉。");
@@ -3471,6 +3511,26 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         //    ⚠ **不繞檔案協議繞回自己**：本檔就在 Editor 裡，而 SCP_Core 是同一個 assembly 引用得到的
         //      （`UCL_Core.asmdef` 的 references 有 `SCP_Core`）⇒ 直呼即可。
         // ===========================================================
+        /// <summary>本場的錄影是不是自己開的 —— 收工要不要關它的唯一依據。
+        /// 走的是跟 <see cref="ReadAutoExportSetting"/> **同一份準備檔**（不新增第二條讀取路徑）。
+        /// ⚠ 回傳理由字串：「不是我開的」與「找不到準備檔」是兩件事，不可以在回傳檔上長成一樣。</summary>
+        static (bool Owned, string Why) ReadRecordingOwnedSetting(string iLibraryMediaId)
+        {
+            if (string.IsNullOrEmpty(iLibraryMediaId))
+                return (false, "session 沒有 `library_media_id`（舊場次）⇒ 查不到是誰開的錄影，保守不動");
+            if (!File.Exists(PreparedPath(iLibraryMediaId)))
+                return (false, $"找不到準備檔 `StreamWatch/prepared/{iLibraryMediaId}.json` ⇒ 查不到是誰開的，保守不動");
+            try
+            {
+                var aP = LoadPrepared(iLibraryMediaId);
+                if (aP == null) return (false, "準備檔讀不出 JSON ⇒ 保守不動");
+                return aP.recording_opened_by_prepare
+                    ? (true, "本場 prepare 開的")
+                    : (false, "開場前就已經在錄（不是本場開的）⇒ 那是別人的狀態，不替他關");
+            }
+            catch (Exception e) { return (false, $"準備檔解析失敗：{e.Message} ⇒ 保守不動"); }
+        }
+
         static (bool On, string Why) ReadAutoExportSetting(string iLibraryMediaId)
         {
             if (string.IsNullOrEmpty(iLibraryMediaId))
@@ -4235,6 +4295,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public string export_chapter = "";
         public string export_work_title = "";
         public bool auto_export = true;
+
+        /// <summary>錄影是不是**本場 prepare 開起來的**（Tim 2026-09-08 拍板：收工那步順手關錄影）。
+        /// ⚠ 這一格存在的理由是**邊界不是效率**：錄影是全域狀態，Tim 可能為了別的用途先開著它。
+        /// 開場時已在錄 ⇒ 本欄 false ⇒ 收工**不關**（關掉別人開的錄影，跟替別人下線是同一種越界）。
+        /// ⚠ **原生 bool**，理由同下方 `auto_export` 那條血證。</summary>
+        public bool recording_opened_by_prepare = false;
 
         /// <summary>⚠ `auto_export` 必須是**原生 bool**：python 端讀到字串 `"False"` 在 Python 裡是 truthy
         /// ⇒ 「刻意關掉自動匯出」會被讀成「開著」。同族血證見 SCP_ActivitySession。</summary>

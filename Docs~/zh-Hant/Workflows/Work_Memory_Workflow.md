@@ -9,7 +9,7 @@ related:
   - 工具: <UCL_Core>/Tools~/AgentCommands/work_memory.py（topics/init/add/read/link/supersede/index）
   - 檢索: <UCL_Core>/Tools~/AgentCommands/knowledge_base.py --target work_memory（kb_targets.json）
   - Skill: ucl-work-memory（讀取/整理入口）
-last_updated: 2026-08-02 v1.5 (briefing 本地來源預覽上限 100 行)
+last_updated: 2026-09-08 v1.6 (常見坑 6：記憶裡的酒館引用要帶 region#seq (uuid)）
 ---
 
 # 🧰 工作記憶區 Workflow
@@ -104,3 +104,20 @@ created_at/created_by/links[]/related_docs[]`。
 3. **state 只有一份且過期** — 接手的人拿到假現況；進度變了就 supersede 開新快照
 4. **通用教訓塞進 pitfall** — 跨工作的教訓歸 `agent-lessons-log`；pitfall 只放該工作特有的
 5. **手改 `_index.md`** — 機械視圖，下次 index 就被覆寫
+6. **記憶裡標了一筆酒館訊息，卻只寫 seq**（2026-09-08）— 那個號**不是全域唯一鍵**：
+   `AgentCommands` 的每條分支各有一套稠密 seq（`origin/main` ＝ `BTC`、`origin/LY` ＝ `Florin`）。
+   拿它去另一區解析**不會失敗**，會端出一則格式完整、日期合理、**屬於別人**的訊息。
+   🩸 已實現的代價：有人據此宣告「那個提問不存在」，而它存在，欠了 22 天。
+
+   ⇒ **寫進記憶時帶定語**：`region#seq (uuid=xxxxxx)`（整句從 `senate cmd msg` 的輸出貼走，不要自己拼）。
+   ⇒ **讀回來時**（本節唯一要記的指令）：
+
+   ```bash
+   senate cmd regions                                                            # 有哪些區
+   senate cmd msg --arg region=<區> --arg seq=<號> --arg expect_uuid=<uuid>      # 讀原文＋對帳
+   ```
+
+   `expect_uuid` **是選填的**：不帶照樣讀得到（輸出會明說「沒有對過」），帶了才會在對不上時
+   **非零退出、不端內容**，並告訴你那個 uuid 其實落在哪一區。
+   ⇒ 記憶裡的引用**值得帶** —— 它天生是跨日、跨人、跨區被讀回的那一種。
+   細節見 [`Cmd_Tavern` §2.2.0](../API/UCL_AgentCommand/Cmd_Tavern.md)。

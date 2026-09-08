@@ -3,7 +3,7 @@ title: Cmd_Tavern Internals — 儲存結構 / 演進史 / 效能與取捨（工
 description: 酒館的實作面文件 — per-message 檔案佈局與兩代檔名、seq 的推導方式（不寫進檔）、身分三層與計酬 routing、wait 的兩條路（client-side wait-reply vs server-side op=wait）、Discord 橋接、已知限制與設計取捨。**用 Cmd 只需要看使用層文件，本檔給要改實作的人。**
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
-last_updated: 2026-07-31
+last_updated: 2026-09-08
 target_audience: [Tools_Maintainer, AI_Agent]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | 使用層（先看這份） | op 清單與欄位怎麼填
@@ -56,6 +56,27 @@ AgentCommands/ChatTavern/
 > **而且外觀完全正常**（不拋錯、不印警告）。2026-07-29 修 `wait-reply` 時差點種下第二隻
 > 「[同碼失聲](../../../../../docs/Glossary/same-code-mute.md)」。現成的正確實作見
 > `<UCL_Core>/Tools~/AgentCommands/tavern_handshake.py` 的 `_iter_room_messages()`。
+
+### 1.2.1 ⚠ `seq` 是**每條分支一套**，不是全域唯一鍵（2026-09-08）
+
+`seq` 由檔名推導（見 §1.2），而**檔名住在分支上** ⇒ `AgentCommands` submodule 的每條分支
+各有一套**稠密遞增**的 seq，彼此逐格對撞。已量：`origin/main` ＝ 區 `BTC`、`origin/LY` ＝ 區 `Florin`。
+
+> [!WARNING]
+> 拿甲區的號去乙區解析**不會失敗** —— `git show <ref>:…/000<N>.json` 每次都命中，
+> 端出一則格式完整、日期合理、**屬於別人**的訊息。這是 §1.2 那隻蟲的孿生：
+> 前者是「欄位不存在所以判斷恆為 false」，這隻是「**檔案存在但屬於另一個宇宙**」，
+> 兩隻的共同長相都是「跟正常一模一樣」。
+> 🩸 實際代價：有人據此宣告「那個提問不存在」，而它存在，欠了 22 天。
+
+⇒ **寫 reader 的紀律**：
+- 訊息的唯一鍵是 **`region` ＋ `seq`**，而 `region` **不在訊息 JSON 裡** —— 它由那條 ref 的
+  `Treasury/bank_settings.json` 的 `currency_id` 自報（唯一真相源，⛔ 不要另建對照表）。
+- 引用一則訊息時把定語帶上：`region#seq (uuid=xxxxxx)`。`uuid` **在** JSON 裡，
+  所以它是那個號的第二把鍵 —— 兩個軸撞號時，uuid 是唯一分得開的東西。
+- 要跨區讀一則現成的實作：`senate cmd msg` / `senate cmd regions`
+  （`<SCP_Core>/Runtime/Tavern/SCP_TavernRegion.cs`，純讀、不 fetch、不 checkout）。
+  **不要為此再寫第二份 reader** —— git 本身就是跨 ref 的隨機存取層。
 
 ### 1.3 為什麼從 jsonl 改成一訊息一檔（T38）
 

@@ -139,8 +139,125 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public static string[] TryGetOrderedPaths(string roomId, string messagesRoot,
             out bool usedIndex, out int enumeratedDays)
         {
-            usedIndex = false;
-            enumeratedDays = 0;
+            var spans = TryGetValidatedSpans(roomId, messagesRoot, out usedIndex, out enumeratedDays, out int total);
+            if (spans == null) return null;
+            var result = new List<string>(total);
+            foreach (var sp in spans) sp.AppendRange(result, sp.FirstSeq, sp.FirstSeq + sp.Count - 1);
+            return result.ToArray();
+        }
+
+        // ===========================================================
+        // 區塊職責：`Tail(n)` 與「游標之後」的**直接定址**入口（TASK-0162，2026-09-08）
+        // 物理意義：`Tail` 想要的是最後 n 筆，而它以前的取得方式是「先要到全部 19,869 條路徑再切尾巴」。
+        //          有了連號 seq ＋ 每日範圍表，最後 n 筆的檔名是**算得出來**的。
+        // 數值影響：`tail=6` 由 O(訊息數) 降為 O(天數) 的 stat ＋ 6 個字串。
+        // 邊界：⚠ 索引缺天時**照樣要補寫回去** —— 否則就重演 2026-08-19 那筆血證
+        //      （索引一旦存在就再也不會被擴充，落後 10 天而沒有任何一層出聲）。
+        //      回 null ＝ 這條路走不了（呼叫端退回全量列舉），**不是**「沒有訊息」。
+        // ===========================================================
+        public static string[] TryGetTailPaths(string roomId, string messagesRoot, int iCount, out int oTotal)
+        {
+            oTotal = 0;
+            if (iCount <= 0) return null;
+            var spans = TryGetValidatedSpans(roomId, messagesRoot, out _, out int aEnumDays, out oTotal);
+            if (spans == null) return null;
+            if (aEnumDays > 0) RebuildFromSpans(roomId, messagesRoot, spans);
+            return SliceSpans(spans, oTotal - iCount + 1, oTotal, oTotal);
+        }
+
+        /// <summary>回傳「絕對序位 &gt; iAfterIndex0 的那一段」路徑（序位 1-based ＝ seq）。</summary>
+        public static string[] TryGetPathsAfter(string roomId, string messagesRoot, int iAfterIndex0, out int oTotal)
+        {
+            oTotal = 0;
+            var spans = TryGetValidatedSpans(roomId, messagesRoot, out _, out int aEnumDays, out oTotal);
+            if (spans == null) return null;
+            if (aEnumDays > 0) RebuildFromSpans(roomId, messagesRoot, spans);
+            return SliceSpans(spans, iAfterIndex0 + 1, oTotal, oTotal);
+        }
+
+        static string[] SliceSpans(List<DaySpan> iSpans, int iFromSeq, int iToSeq, int iTotal)
+        {
+            int from = Math.Max(1, iFromSeq);
+            int to = Math.Min(iTotal, iToSeq);
+            if (to < from) return Array.Empty<string>();
+            var result = new List<string>(to - from + 1);
+            foreach (var sp in iSpans)
+            {
+                int lo = Math.Max(from, sp.FirstSeq);
+                int hi = Math.Min(to, sp.FirstSeq + sp.Count - 1);
+                if (hi < lo) continue;      // 這一天整段落在區間外 ⇒ 一個字串都不建
+                sp.AppendRange(result, lo, hi);
+            }
+            return result.ToArray();
+        }
+
+        // 由 span 直接寫索引 —— 跟 `Rebuild(orderedPaths)` 是**同一份索引語意**，
+        // 差別只在來源已經是每日區段，不必再從 19,869 條路徑反推回來。
+        static void RebuildFromSpans(string roomId, string messagesRoot, List<DaySpan> iSpans)
+        {
+            try
+            {
+                var byDate = new List<DayEntry>();
+                var seen = new Dictionary<string, DayEntry>(StringComparer.Ordinal);
+                foreach (var sp in iSpans)
+                {
+                    string date = Path.GetFileName(sp.Dir);
+                    var e = new DayEntry { Date = date, FirstSeq = sp.FirstSeq, Count = sp.Count };
+                    seen[date] = e; byDate.Add(e);
+                }
+                foreach (string dir in Directory.GetDirectories(messagesRoot))
+                {
+                    string date = Path.GetFileName(dir);
+                    if (!seen.ContainsKey(date))
+                    {
+                        var e = new DayEntry { Date = date, FirstSeq = 0, Count = 0 };
+                        seen[date] = e; byDate.Add(e);
+                    }
+                }
+                foreach (var e in byDate)
+                    e.MtimeTicks = Directory.GetLastWriteTimeUtc(Path.Combine(messagesRoot, e.Date)).Ticks;
+                byDate.Sort((a, b) => string.CompareOrdinal(a.Date, b.Date));
+                Save(roomId, byDate);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[TavernMsgIndex] 索引重建失敗（span 版，{roomId}）：{e.Message}");
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：索引的**唯一**一份一致性驗證 —— 產出「每日 seq 區段」清單
+        // 物理意義：一天一個 span（目錄 ＋ 起始 seq ＋ 筆數）。乾淨的那幾天路徑用算的，
+        //          動過的那幾天現場列舉並把實際路徑帶在身上。
+        // 邊界：任何一格對不上（跨日不連續 / 有洞 / 重號 / 舊格式檔名 / IO 失敗）一律回 null
+        //      ⇒ 呼叫端退回全量列舉。**把失效降級成「變慢」，不是「算錯」**（見檔頭）。
+        // ===========================================================
+        sealed class DaySpan
+        {
+            public string Dir;
+            public int FirstSeq;
+            public int Count;
+            public string[] Files;   // 非 null ＝ 那天是現場列舉的，路徑照實帶（不重算）
+
+            /// <summary>把 [iLo, iHi]（含端點、絕對 seq）這一段的路徑追加進去。</summary>
+            public void AppendRange(List<string> ioTo, int iLo, int iHi)
+            {
+                for (int seq = iLo; seq <= iHi; seq++)
+                {
+                    int off = seq - FirstSeq;
+                    ioTo.Add(Files != null ? Files[off]
+                                           : Path.Combine(Dir, seq.ToString(SeqFormat) + ".json"));
+                }
+            }
+        }
+
+        static List<DaySpan> TryGetValidatedSpans(string roomId, string messagesRoot,
+            out bool oUsedIndex, out int oEnumeratedDays, out int oTotal)
+        {
+            oUsedIndex = false;
+            oEnumeratedDays = 0;
+            oTotal = 0;
+
             var idx = Load(roomId);
             if (idx == null) return null;
 
@@ -149,7 +266,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             catch { return null; }
             Array.Sort(dirs, StringComparer.Ordinal);
 
-            var result = new List<string>(1024);
+            var spans = new List<DaySpan>(dirs.Length);
             int expectedNextSeq = 1;
             bool anyFromIndex = false;
 
@@ -162,11 +279,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
                 if (idx.TryGetValue(date, out var e) && e.MtimeTicks == mtime)
                 {
-                    // 目錄沒動過 ⇒ 內容不變 ⇒ 直接算路徑，**不列舉**（本設計的收益就在這一行）
+                    // 目錄沒動過 ⇒ 內容不變 ⇒ 只記區段，**不列舉也不建路徑**（本設計的收益就在這裡）
                     if (e.Count == 0) continue;                 // 空目錄（實際存在 3 個）
                     if (e.FirstSeq != expectedNextSeq) return null;   // 跨日不連續 → 整份不信
-                    for (int i = 0; i < e.Count; i++)
-                        result.Add(Path.Combine(dir, (e.FirstSeq + i).ToString(SeqFormat) + ".json"));
+                    spans.Add(new DaySpan { Dir = dir, FirstSeq = e.FirstSeq, Count = e.Count });
                     expectedNextSeq = e.FirstSeq + e.Count;
                     anyFromIndex = true;
                 }
@@ -174,23 +290,26 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 {
                     // 只列舉「動過的那一天」。索引的價值不是全有全無，
                     // 而是把成本從「全部訊息」壓到「今天的訊息」。
-                    enumeratedDays++;      // ← 記帳：這一天沒命中索引，呼叫端要知道索引缺了幾天
+                    oEnumeratedDays++;
                     string[] files;
                     try { files = Directory.GetFiles(dir, "*.json"); }
                     catch { return null; }
                     Array.Sort(files, StringComparer.Ordinal);
+                    if (files.Length == 0) continue;
+                    int first = expectedNextSeq;
                     foreach (string f in files)
                     {
                         if (!TryParseSeq(Path.GetFileName(f), out int seq)) return null;  // 還有舊格式 → 不用索引
                         if (seq != expectedNextSeq) return null;                          // 有洞 / 重號
-                        result.Add(f);
                         expectedNextSeq++;
                     }
+                    spans.Add(new DaySpan { Dir = dir, FirstSeq = first, Count = files.Length, Files = files });
                 }
             }
 
-            usedIndex = anyFromIndex;
-            return result.ToArray();
+            oUsedIndex = anyFromIndex;
+            oTotal = expectedNextSeq - 1;
+            return spans;
         }
 
         /// <summary>

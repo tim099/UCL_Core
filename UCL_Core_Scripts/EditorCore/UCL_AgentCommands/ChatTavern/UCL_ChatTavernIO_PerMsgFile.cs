@@ -11,6 +11,7 @@
 
 #if UNITY_EDITOR
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -216,18 +217,24 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===========================================================
         sealed class RoomMsgCache
         {
-            public readonly Dictionary<string, UCL_ChatMessage> byPath = new Dictionary<string, UCL_ChatMessage>();
-            public readonly HashSet<string> badPaths = new HashSet<string>();
+            // ⚠ 兩者都是 **concurrent** 容器（2026-09-08，TASK-0162）：讀路徑不再抱著全域鎖，
+            //   於是它們會被多條背景緒同時碰。`byPath` 的值是不可變的解析結果 ⇒ 同一鍵被兩條緒
+            //   各寫一次是**冪等**的（頂多多解析一次同一個檔，成本有界）。
+            public readonly ConcurrentDictionary<string, UCL_ChatMessage> byPath = new ConcurrentDictionary<string, UCL_ChatMessage>();
+            public readonly ConcurrentDictionary<string, byte> badPaths = new ConcurrentDictionary<string, byte>();
         }
-        static readonly Dictionary<string, RoomMsgCache> s_RoomCache = new Dictionary<string, RoomMsgCache>();
+        static readonly ConcurrentDictionary<string, RoomMsgCache> s_RoomCache = new ConcurrentDictionary<string, RoomMsgCache>();
         static readonly object s_CacheLock = new object();
 
         /// <summary>清空指定房間（roomId 為 null/空 → 全部）的 message parse cache.
         /// 手動修檔 / 測試 / 確知檔被原地改寫後才需要; 正常 append 不必呼叫（自動列舉新檔）.</summary>
         public static void InvalidateMessageCache(string roomId = null)
         {
+            long aLockT0 = System.Diagnostics.Stopwatch.GetTimestamp();   // TASK-0162：等鎖觀測
             lock (s_CacheLock)
             {
+                ReportLockWait("InvalidateMessageCache", roomId ?? "(all)", aLockT0);
+                using var aHold = LockHolderScope("InvalidateMessageCache", roomId ?? "(all)");
                 if (string.IsNullOrEmpty(roomId))
                 {
                     s_RoomCache.Clear();
@@ -235,8 +242,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
                 else
                 {
-                    s_RoomCache.Remove(roomId);
-                    s_RoomFiles.Remove(roomId);
+                    s_RoomCache.TryRemove(roomId, out _);
+                    s_RoomFiles.TryRemove(roomId, out _);
                 }
             }
         }
@@ -261,7 +268,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             public string[] files;      // 已按 root-relative ordinal 排序
             public string signature;    // 目錄指紋
         }
-        static readonly Dictionary<string, RoomFileListCache> s_RoomFiles = new Dictionary<string, RoomFileListCache>();
+        static readonly ConcurrentDictionary<string, RoomFileListCache> s_RoomFiles = new ConcurrentDictionary<string, RoomFileListCache>();
 
         // ===========================================================
         // 區塊職責：`s_CacheLock` 的**等待時間**觀測（2026-09-08，TASK-0162）
@@ -293,6 +300,68 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             Debug.LogWarning($"[Tavern s_CacheLock] 進鎖前等了 {aMs:F1}ms ── {iWhere}(room={iRoomId}) "
                 + $"tid={aTid}{(aIsMain ? "＝主執行緒" : "＝背景緒")}"
                 + $"（門檻 {LOCK_WAIT_WARN_MS:F0}ms；⚠ 這一格是**等待**，不含鎖內的工作時間）");
+        }
+
+        // ===========================================================
+        // 區塊職責：`s_CacheLock` 的**持有者**快照（2026-09-08，TASK-0162 第二格）
+        // 物理意義：`ReportLockWait` 答的是「**我**等了多久」，而它只在等完之後才印得出來 ——
+        //          Editor 凍住的**當下**，那一行還沒有機會被寫。本區塊補的是另一半：
+        //          **此刻是誰抱著鎖、抱了多久**，讓背景 watchdog（`UCL_AgentCmdSlowLog` 的
+        //          freeze 那條路徑）在凍住當下就讀得到。
+        //          ⇒ 兩者合起來才判得出方向：抱鎖的是背景緒而主緒停著 ⇒ 甲；鎖空著 ⇒ 乙。
+        // 數值影響：進鎖／離鎖各寫三個 static 欄位（無配置、無 IO）。
+        // 邊界（2026-09-08 收窄臨界區之後改寫 —— 舊字面已知為假，不留墓碑）：
+        //      現在**只剩 `InvalidateMessageCache` 一個 `lock`**，三個讀路徑已改走 concurrent 容器。
+        //      ⇒ 穩態下 holder **應該永遠是 null**；freeze 行裡 `tavern_cache_lock` 不是 null，
+        //      本身就是異常訊號（有人在那個極短的臨界區裡待超過一次凍結的長度）。
+        //      ⚠ 反過來不成立：holder 為 null **不證明**主緒沒有在等別的東西 —— 它只說「不是這把鎖」。
+        // ===========================================================
+        static volatile string s_LockHolderWhere;   // null ＝ 那三個點此刻沒有人在鎖內
+        static volatile string s_LockHolderRoom;
+        static int s_LockHolderTid;
+        static long s_LockHolderSinceTicks;
+
+        static void MarkLockHolder(string iWhere, string iRoomId)
+        {
+            s_LockHolderTid = System.Threading.Thread.CurrentThread.ManagedThreadId;
+            System.Threading.Interlocked.Exchange(ref s_LockHolderSinceTicks,
+                System.Diagnostics.Stopwatch.GetTimestamp());
+            s_LockHolderRoom = iRoomId;
+            s_LockHolderWhere = iWhere;   // ⚠ 最後才設 where —— 讀者以它判「有沒有人」，其餘欄位要先就位
+        }
+
+        static void ClearLockHolder() => s_LockHolderWhere = null;
+
+        // `using var aHold = LockHolderScope(...)` ＝ 進鎖登記、離開該區塊（**含拋例外**）自動清。
+        // 🩸 為什麼不是「進鎖登記、鎖尾清一行」：那條路上一個 `return`／一個例外就留下**殘留的持有者**，
+        //   而殘留的樣子是「有人抱著鎖抱了 40 分鐘」—— 一個看起來像重大發現的假讀數。
+        //   ⇒ 量具自己造出的假陽性比沒有量具貴（本 repo 已有三筆同族血證）。
+        readonly struct LockHolderHandle : IDisposable
+        {
+            public void Dispose() => ClearLockHolder();
+        }
+
+        static LockHolderHandle LockHolderScope(string iWhere, string iRoomId)
+        {
+            MarkLockHolder(iWhere, iRoomId);
+            return default;
+        }
+
+        /// <summary>此刻抱著訊息快取鎖的人（那三個 IO 讀路徑），沒有就回 null。
+        /// 回傳 JSON 片段，給 <c>_cmd_slow.jsonl</c> 的 freeze 行內嵌 —— **只陳述讀數，不寫結論**。</summary>
+        public static string LockHolderJson()
+        {
+            string aWhere = s_LockHolderWhere;
+            if (string.IsNullOrEmpty(aWhere)) return null;
+            long aSince = System.Threading.Interlocked.Read(ref s_LockHolderSinceTicks);
+            double aHeldMs = (System.Diagnostics.Stopwatch.GetTimestamp() - aSince)
+                             * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            int aTid = s_LockHolderTid;
+            return "{\"where\":\"" + aWhere + "\",\"room\":\"" + (s_LockHolderRoom ?? "") + "\""
+                 + ",\"tid\":" + aTid.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                 + ",\"is_main\":" + (aTid == UCL_AgentCmdSlowLog.MainThreadId ? "true" : "false")
+                 + ",\"held_ms\":" + aHeldMs.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)
+                 + "}";
         }
 
         static string BuildDirSignature(string root)
@@ -334,10 +403,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             if (sig != null)
             {
-                lock (s_CacheLock)
-                {
-                    if (s_RoomFiles.TryGetValue(roomId, out var hit) && hit.signature == sig) return hit.files;
-                }
+                // ⛔ 無鎖讀（TASK-0162）：這一格曾是主緒等 2290ms 的落點 —— 它只想讀一個字典項，
+                //   卻排在一條正在鎖內讀 16,876 個檔的背景緒後面。ConcurrentDictionary 的讀是無鎖的。
+                if (s_RoomFiles.TryGetValue(roomId, out var hit) && hit.signature == sig) return hit.files;
             }
 
             // ── 落盤索引（2026-08-06）：先問索引，問不到才全量列舉 ──
@@ -362,8 +430,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
                 if (sig != null)
                 {
-                    lock (s_CacheLock)
-                    {
+                    {   // 單鍵寫入 ⇒ 容器自己保證，無需全域鎖
                         s_RoomFiles[roomId] = new RoomFileListCache { files = indexed, signature = sig };
                     }
                 }
@@ -380,8 +447,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             if (sig != null)
             {
-                lock (s_CacheLock)
-                {
+                {   // 單鍵寫入 ⇒ 容器自己保證，無需全域鎖
                     s_RoomFiles[roomId] = new RoomFileListCache { files = files, signature = sig };
                 }
             }
@@ -409,15 +475,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string[] files = GetSortedMessageFiles(roomId, root);
             if (files.Length == 0) return list;
 
-            long aLockT0 = System.Diagnostics.Stopwatch.GetTimestamp();   // TASK-0162：等鎖觀測
-            lock (s_CacheLock)
-            {
-                ReportLockWait("LoadAllMessages", roomId, aLockT0);
-                if (!s_RoomCache.TryGetValue(roomId, out var cache))
-                {
-                    cache = new RoomMsgCache();
-                    s_RoomCache[roomId] = cache;
-                }
+            {   // ⛔ 這裡**刻意沒有鎖**（Tim 2026-09-08 拍板：只鎖寫入段，別佔太久）——
+                //   本區塊的迴圈內有 File.ReadAllText，抱著全域鎖做那件事正是 111 秒凍結的成因。
+                //   共用狀態的執行緒安全改由 concurrent 容器在**每一格寫入**上保證。
+                var cache = s_RoomCache.GetOrAdd(roomId, _ => new RoomMsgCache());
 
                 // 剔除已消失的檔（刪除 / 歸檔）— 僅 cache 總數超過當前檔數時才掃, 純記憶體衛生.
                 // (輸出正確性不依賴此步: 下方只從當前 files 建 list, stale entry 永不被回傳.)
@@ -425,15 +486,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 {
                     var present = new HashSet<string>(files);
                     foreach (var p in cache.byPath.Keys.Where(p => !present.Contains(p)).ToList())
-                        cache.byPath.Remove(p);
-                    cache.badPaths.RemoveWhere(p => !present.Contains(p));
+                        cache.byPath.TryRemove(p, out _);
+                    foreach (var p in cache.badPaths.Keys.Where(p => !present.Contains(p)).ToList())
+                        cache.badPaths.TryRemove(p, out _);
                 }
 
                 int seq = 0;
                 int rejected = 0;
                 foreach (var f in files)
                 {
-                    if (cache.badPaths.Contains(f)) continue;   // 已知壞檔, 不重讀不重 log
+                    if (cache.badPaths.ContainsKey(f)) continue;   // 已知壞檔, 不重讀不重 log
                     if (!cache.byPath.TryGetValue(f, out var m))
                     {
                         // cache miss → 沒見過的新檔, read+parse 一次後存入
@@ -445,14 +507,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         }
                         catch (Exception ex)
                         {
-                            cache.badPaths.Add(f);
+                            cache.badPaths.TryAdd(f, 0);
                             rejected++;
                             Debug.LogError($"[Tavern T38] Skipping malformed message file {Path.GetFileName(f)}: {ex.Message}");
                             continue;
                         }
                         if (parsed == null)
                         {
-                            cache.badPaths.Add(f);
+                            cache.badPaths.TryAdd(f, 0);
                             rejected++;
                             Debug.LogError($"[Tavern T38] ParseMessage returned null for {Path.GetFileName(f)}");
                             continue;
@@ -528,31 +590,42 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string root = GetMessagesRoot(roomId);
             if (!Directory.Exists(root)) return list;
 
-            // 路徑列舉 + 排序走目錄指紋快取（2026-08-01）
-            string[] files = GetSortedMessageFiles(roomId, root);
+            // ⭐ 直接定址（TASK-0162，2026-09-08）：連號 seq ＋ 每日範圍表 ⇒ 最後 n 筆的檔名算得出來，
+            //   不必先把全房路徑物化成陣列再切尾巴。走不了（索引不可信 / 有洞 / 舊格式）就回 null，
+            //   退回下面那條全量列舉 —— **失效降級成「變慢」，不是「算錯」**。
+            int total, start;
+            string[] files = UCL_ChatTavernMessageIndex.TryGetTailPaths(roomId, root, n, out total);
+            if (files != null)
+            {
+                start = total > n ? total - n : 0;   // files 是那一段，start 只用來還原絕對序位
+            }
+            else
+            {
+                // 路徑列舉 + 排序走目錄指紋快取（2026-08-01）
+                files = GetSortedMessageFiles(roomId, root);
+                if (files.Length == 0) return list;
+                total = files.Length;
+                start = total > n ? total - n : 0;   // 只讀尾端 n 筆（不足 n 則全讀）
+                var aSlice = new string[total - start];
+                Array.Copy(files, start, aSlice, 0, aSlice.Length);
+                files = aSlice;
+            }
             if (files.Length == 0) return list;
-
-            int total = files.Length;
-            int start = total > n ? total - n : 0;   // 只讀尾端 n 筆（不足 n 則全讀）
 
             // 2026-08-01：本迴圈原本每次都 File.ReadAllText + ParseMessage，**完全繞過** 上方那份
             // path-keyed parse cache（那份只有 LoadAllMessages 在用）。mirror daemon 一秒倍增回頁七次
             // → 每秒 ~3810 次 read+parse 在主執行緒上 = 可見卡頓。改走同一份 cache 後穩態只 parse 新檔。
             // 共用 cache 也表示：同房若已被 LoadAllMessages 讀過，這裡的增量記憶體是零（同一個 dictionary）。
             int rejected = 0;
-            long aLockT0 = System.Diagnostics.Stopwatch.GetTimestamp();   // TASK-0162：等鎖觀測
-            lock (s_CacheLock)
-            {
-                ReportLockWait("Tail", roomId, aLockT0);
-                if (!s_RoomCache.TryGetValue(roomId, out var cache))
+            {   // ⛔ 這裡**刻意沒有鎖**（Tim 2026-09-08 拍板：只鎖寫入段，別佔太久）——
+                //   本區塊的迴圈內有 File.ReadAllText，抱著全域鎖做那件事正是 111 秒凍結的成因。
+                //   共用狀態的執行緒安全改由 concurrent 容器在**每一格寫入**上保證。
+                var cache = s_RoomCache.GetOrAdd(roomId, _ => new RoomMsgCache());
+                for (int k = 0; k < files.Length; k++)
                 {
-                    cache = new RoomMsgCache();
-                    s_RoomCache[roomId] = cache;
-                }
-                for (int i = start; i < total; i++)
-                {
-                    string f = files[i];
-                    if (cache.badPaths.Contains(f)) continue;   // 已知壞檔, 不重讀不重洗 error log
+                    int i = start + k;          // 絕對序位（0-based），m.seq 靠它還原
+                    string f = files[k];
+                    if (cache.badPaths.ContainsKey(f)) continue;   // 已知壞檔, 不重讀不重洗 error log
                     if (!cache.byPath.TryGetValue(f, out var m))
                     {
                         try
@@ -562,14 +635,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         }
                         catch (Exception ex)
                         {
-                            cache.badPaths.Add(f);
+                            cache.badPaths.TryAdd(f, 0);
                             rejected++;
                             Debug.LogError($"[Tavern T38] Tail skipping malformed message file {Path.GetFileName(f)}: {ex.Message}");
                             continue;
                         }
                         if (m == null)
                         {
-                            cache.badPaths.Add(f);
+                            cache.badPaths.TryAdd(f, 0);
                             rejected++;
                             Debug.LogError($"[Tavern T38] Tail ParseMessage returned null for {Path.GetFileName(f)}");
                             continue;
@@ -619,26 +692,32 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (!Directory.Exists(root)) return list;
 
             // 路徑列舉 + 排序走目錄指紋快取（2026-08-01）
-            string[] files = GetSortedMessageFiles(roomId, root);
-            if (files.Length == 0) return list;
-
             int start = afterSeq < 0 ? 0 : afterSeq;
-            if (start >= files.Length) return list;   // 無新訊息
 
-            long aLockT0 = System.Diagnostics.Stopwatch.GetTimestamp();   // TASK-0162：等鎖觀測
-            lock (s_CacheLock)
+            // ⭐ 直接定址（TASK-0162）：游標之後那一段的檔名算得出來 —— daemon 每 tick 打這條，
+            //   而它以前每次都要先拿到全房 19,869 條路徑才切得出「新的那幾筆」。
+            string[] files = UCL_ChatTavernMessageIndex.TryGetPathsAfter(roomId, root, start, out int aTotal);
+            if (files == null)
             {
-                ReportLockWait("LoadMessagesAfterSeq", roomId, aLockT0);
-                if (!s_RoomCache.TryGetValue(roomId, out var cache))
-                {
-                    cache = new RoomMsgCache();
-                    s_RoomCache[roomId] = cache;
-                }
+                files = GetSortedMessageFiles(roomId, root);
+                if (files.Length == 0) return list;
+                if (start >= files.Length) return list;   // 無新訊息
+                var aSlice = new string[files.Length - start];
+                Array.Copy(files, start, aSlice, 0, aSlice.Length);
+                files = aSlice;
+            }
+            if (files.Length == 0) return list;   // 無新訊息
+
+            {   // ⛔ 這裡**刻意沒有鎖**（Tim 2026-09-08 拍板：只鎖寫入段，別佔太久）——
+                //   本區塊的迴圈內有 File.ReadAllText，抱著全域鎖做那件事正是 111 秒凍結的成因。
+                //   共用狀態的執行緒安全改由 concurrent 容器在**每一格寫入**上保證。
+                var cache = s_RoomCache.GetOrAdd(roomId, _ => new RoomMsgCache());
                 int rejected = 0;
-                for (int i = start; i < files.Length; i++)
+                for (int k = 0; k < files.Length; k++)
                 {
-                    string f = files[i];
-                    if (cache.badPaths.Contains(f)) continue;
+                    int i = start + k;          // 絕對序位（0-based）
+                    string f = files[k];
+                    if (cache.badPaths.ContainsKey(f)) continue;
                     if (!cache.byPath.TryGetValue(f, out var m))
                     {
                         UCL_ChatMessage parsed;
@@ -648,14 +727,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         }
                         catch (Exception ex)
                         {
-                            cache.badPaths.Add(f);
+                            cache.badPaths.TryAdd(f, 0);
                             rejected++;
                             Debug.LogError($"[Tavern T38] LoadMessagesAfterSeq skip malformed {Path.GetFileName(f)}: {ex.Message}");
                             continue;
                         }
                         if (parsed == null)
                         {
-                            cache.badPaths.Add(f);
+                            cache.badPaths.TryAdd(f, 0);
                             rejected++;
                             Debug.LogError($"[Tavern T38] LoadMessagesAfterSeq ParseMessage null for {Path.GetFileName(f)}");
                             continue;

@@ -75,7 +75,7 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// <c>&lt;DataRoot&gt;/_diagnostics/_cmd_slow.jsonl</c>（kind=cmd / kind=stall 兩種行）。
     /// </summary>
     [InitializeOnLoad]
-    public static class UCL_AgentCmdSlowLog
+    public static partial class UCL_AgentCmdSlowLog
     {
         // ===========================================================
         // 區塊職責：門檻與上界常數
@@ -101,6 +101,9 @@ namespace UCL.Core.EditorLib.AgentCommands
         // stall 探針的上一幀時刻。⚠ 用 DateTime.UtcNow 而不是 EditorApplication.timeSinceStartup：
         //   後者是 Unity API，只在主執行緒可靠；而本檔的比較要能在 End()（可能在背景緒）那側做。
         static DateTime s_LastTickUtc = DateTime.MinValue;
+
+        // 同一個讀數的原子副本，**只給背景 watchdog 讀**（見 OnEditorUpdateProbe 的區塊註解）。
+        static long s_LastTickTicks;
 
         // 已結束 / 進行中的 cmd 區間 ring —— stall 行靠它回答「那段時間誰在跑」。
         // ⚠ 上鎖：Begin/End 可能在背景緒，探針在主緒。
@@ -170,6 +173,10 @@ namespace UCL.Core.EditorLib.AgentCommands
             DateTime aNow = DateTime.UtcNow;
             DateTime aPrev = s_LastTickUtc;
             s_LastTickUtc = aNow;
+            // ⚠ 給背景 watchdog 讀的那一份要**原子**寫：`DateTime` 是 8 bytes 的 struct，
+            //   跨執行緒讀寫沒有原子性保證（撕裂讀的樣子是一個荒謬的時刻 ⇒ 假的 freeze 行）。
+            //   ⇒ 另存一份 ticks，用 Interlocked 寫、Interlocked.Read 讀。
+            System.Threading.Interlocked.Exchange(ref s_LastTickTicks, aNow.Ticks);
             if (aPrev == DateTime.MinValue) return;
 
             double aGapMs = (aNow - aPrev).TotalMilliseconds;

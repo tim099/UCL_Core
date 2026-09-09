@@ -113,8 +113,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 case "hotspot": await StepHotspot(args, aPersona, GetArg(args, "from", "").Trim(),
                         GetArg(args, "to", "").Trim(), GetArg(args, "why", ""), token); return;
                 case "claim": await StepClaim(args, aPersona, GetArg(args, "hotspot", "").Trim(), token); return;
+                case "seek": StepSeek(args, aPersona, GetArg(args, "to", "").Trim(),
+                                      GetArg(args, "confirm", "").Trim()); return;
                 default:
-                    throw new Exception($"[StreamWatch] step 必為 prepare|peek|capture|start|join|catchup|cycle|observe|note|hotspot|claim（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
+                    throw new Exception($"[StreamWatch] step 必為 prepare|peek|capture|start|join|catchup|cycle|observe|note|hotspot|claim|seek（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
             }
         }
 
@@ -1623,6 +1625,38 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 }
             }
 
+            // ── 游標下限②＝**本場起點**（TASK-0186，2026-09-09）────────────────────
+            // 物理意義：上面那個下限只保證「不比 buffer 最舊那張更舊」，而 **buffer 的跨度是
+            //          畫格數、不是時間** —— 錄影斷續時 2400 張可以橫跨一整天
+            //          （實撞讀數：名目 2400s，**實有 89773s ≒ 24.9h**）。
+            //          ⇒ 夾完之後游標仍可能落在**本場開始之前**，而那段畫面是別場、甚至前一天的螢幕。
+            // 🩸 2026-09-09（`stream-bilibili-xiaozhong-johnny [01]`，三人整場）：
+            //          場次 23:32 開，cursor 被播種在 **09-08 23:44**，前緣每輪只推一個窗口（180s）
+            //          ⇒ 要追 23.7 小時得跑 475 輪。而每一層讀數都健康：素材照發、OCR 照讀、
+            //          窗口對帳照印 ✅（餘裕 85786s）、酬勞照算 —— 三個人沒有一個當場看出來。
+            // ⇒ 這是**下限不是上限**：游標本來就 ≥ 本場起點的正常場，這一段一格都不會動
+            //   （尾端的上夾仍是既有的 `min(游標＋目標, 可播放前緣)`，本次未改）。
+            // ⚠ 而它必須**出聲**：靜默夾住會讓「跳過」看起來像「看過」。
+            double aSessionStart = SessionStartEpoch(aS);
+            if (aSessionStart > 0 && aCursor > 0 && aCursor < aSessionStart - 1.0)
+            {
+                double aStale = aSessionStart - aCursor;
+                aR.AppendLine($"- ⚠ 場次下限夾正 : 原游標 **{StampLocal(aCursor)}** 早於本場起點 "
+                            + $"**{StampLocal(aSessionStart)}**（差 {aStale / 3600:F1} 小時 ＝ {aStale:F0}s）"
+                            + " ⇒ 那不是本場的畫面，已跳到本場起點。");
+                aR.AppendLine("　　　　　　 ⇒ 成因是 ring buffer 的跨度由**畫格數**決定："
+                            + "錄影斷續時「最舊那張」可以是昨天 ⇒ **它不等於「本場最早」**。");
+                aCursor = aSessionStart;
+                if (aRelay != null && aRelay.frontier_epoch < aCursor)
+                {
+                    // 前緣一起推上去 —— 否則同場其他人會各自再走一遍同一段別場畫面。
+                    aRelay.frontier_epoch = aCursor;
+                    aRelay.updated_by = iPersona;
+                    aRelay.updated_at = UCL_AwakeningService.NowIso();
+                    SaveRelay(aRelayKey, aRelay);
+                }
+            }
+
             // ── 終止判定（唯一的一處；Tim 2026-08-25 拍板「觀影結束看實際錄製時間」）──
             // 物理意義：ends_at 指的是**實錄內容**要看到那一刻，不是牆鐘走到那一刻就停 ——
             //          例：牆鐘 22:39、ends_at 22:35、前緣才補到 22:34 ⇒ 還有 1 分鐘實錄沒看，繼續取材。
@@ -1762,13 +1796,31 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine("## 本輪無新素材（不是錯誤）");
                 // 同 AppendClampAudit 的判準：印兩個讀數的比較，不印「尚未越過」這種宣告 ——
                 // 沒有讀數撐著的話，這一行在「水位真的落後」與「cursor 被算錯」時長得一模一樣。
-                aR.AppendLine($"- 上輪 cursor: {(aCursor > 0 ? FromEpochLocal(aCursor).ToString("HH:mm:ss") : "(無)")}");
+                aR.AppendLine($"- 上輪 cursor: {StampLocal(aCursor)}");
+                // 🩸 TASK-0186：舊版印的是帶號差值 `cursor - 水位` 而標籤寫「落後 cursor」——
+                //   一個負號要讀者自己翻譯成方向，而 2026-09-09 那一場**三個人都翻錯了**。
+                //   ⇒ 改成把方向寫成字，數字只當佐證。
+                double aWmGap = aWatermark > 0 ? aWatermark - aCursor : 0;   // 正＝水位在游標之後（正常）
                 aR.AppendLine($"- 感官水位  : {aWmNote}"
-                            + (aWatermark > 0 ? $"　⇒ {FromEpochLocal(aWatermark):HH:mm:ss}"
-                                                + $"　←　落後 cursor {(aCursor - aWatermark):F0}s" : ""));
+                            + (aWatermark > 0 ? $"　⇒ {StampLocal(aWatermark)}"
+                                                + (aWmGap >= 0
+                                                    ? $"　←　水位**在游標之後** {aWmGap:F0}s（正常方向）"
+                                                    : $"　←　⚠ 水位**在游標之前** {-aWmGap:F0}s（游標超前，不是辨識落後）")
+                                              : ""));
                 aR.AppendLine(aWin.TierLine);   // 檔位讀數兩條路徑都印 —— 等了水位卻沒印，等待與卡住同形
                 aR.AppendLine(RelayLine(aRelayEnabled, aRelay, aRelayKey, aCursor, iPersona));
-                aR.AppendLine("- 意思    : 畫面有，但**字幕/語音還沒辨識到那裡**。看已辨識完的段落是刻意的（Tim 2026-08-15）。");
+                // ⛔ 這句解釋**只有在真的是「辨識還沒追上」時才成立**。它曾經無條件印出來，
+                //   於是「再等一下就好」被拿去解釋一個永遠等不到的狀態（TASK-0186）。
+                double aCursorAge = ToEpoch(DateTime.UtcNow) - aCursor;
+                if (aWatermark > 0 && aWmGap < 0)
+                    aR.AppendLine($"- 意思    : ⚠ **不是辨識落後** —— 游標跑到感官水位前面 {-aWmGap:F0}s，"
+                                + "窗口尾端被夾在水位 ⇒ 它會**恆空**。用 `step=seek` 把游標校回可讀處。");
+                else if (aCursorAge > 6 * 3600)
+                    aR.AppendLine($"- 意思    : ⚠ **不是辨識落後** —— 游標停在 {aCursorAge / 3600:F1} 小時前"
+                                + $"（{StampLocal(aCursor)}），那多半不是本場的時間軸。"
+                                + "用 `step=seek` 校正，或看上方有沒有「場次下限夾正」那一行。");
+                else
+                    aR.AppendLine("- 意思    : 畫面有，但**字幕/語音還沒辨識到那裡**。看已辨識完的段落是刻意的（Tim 2026-08-15）。");
                 // ⚠ **無素材時同樣要印同場訊息** —— 這條是我 2026-08-16 自己寫了「每一段永遠存在」
                 //   卻在同一次改動裡違反的那格：AppendSidecar 原本只掛在有素材那條路徑上。
                 //   而「我這輪沒東西看」正是**最需要看別人講了什麼**的時刻（他的窗口跟我的不一樣）。
@@ -2955,6 +3007,18 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 return;
             }
             double aDiff = iWatermark - iWindowEnd;   // 正 = 尾端在水位之內（正確）
+            // 🩸 TASK-0186：餘裕 **85786s ≒ 23.8h** 那一輪，這行照樣印 ✅ —— 而它為真
+            //   （尾端確實 ≤ 水位）。問題是那個 ✅ 回答的是「有沒有夾」，不是「這兩個數在不在同一場」。
+            //   ⇒ 餘裕大到非物理時要標 ⚠：**一個通過的對帳與一個無意義的對帳不可以長得一樣。**
+            const double aSaneMarginSec = 6 * 3600;
+            if (aDiff >= -1.0 && aDiff > aSaneMarginSec)
+            {
+                ioR.AppendLine($"- 窗口對帳 : ⚠ 窗口尾端 {StampLocal(iWindowEnd)} ≤ 水位 {StampLocal(iWatermark)}"
+                             + $"（夾子生效）**但餘裕 {aDiff / 3600:F1} 小時是非物理值** ——"
+                             + " 這兩個數多半不在同一場／同一天，⛔ 不要把這個 ✅ 讀成「這一輪正常」。");
+                ioR.AppendLine($"　　　　　　 （水位來源：{iWmNote}）");
+                return;
+            }
             ioR.AppendLine(aDiff >= -1.0
                 ? $"- 窗口對帳 : 窗口尾端 {FromEpochLocal(iWindowEnd):HH:mm:ss} ≤ 水位 {FromEpochLocal(iWatermark):HH:mm:ss} ✅（夾子生效，餘裕 {aDiff:F0}s）"
                 : $"- 窗口對帳 : ⚠ 窗口尾端 {FromEpochLocal(iWindowEnd):HH:mm:ss} **>** 水位 {FromEpochLocal(iWatermark):HH:mm:ss} ❌ "
@@ -2977,6 +3041,28 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
         static double ToEpoch(DateTime iUtc) => (iUtc - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
         static DateTime FromEpochLocal(double iEp) => new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(iEp).ToLocalTime();
+
+        // 🩸 TASK-0186：`HH:mm:ss` 把「昨天 23:52」與「今天 23:52」印成同一個字串 ——
+        //   三個人（@summit／@basecamp／我）在同一場各自讀了這行，沒有一個人看出游標差了一天。
+        //   ⇒ 跨日的量要印**日期**；只有確定同日的行才准省。
+        static string StampLocal(double iEp)
+            => iEp <= 0 ? "(無)" : FromEpochLocal(iEp).ToString("MM-dd HH:mm:ss");
+
+        /// <summary>本場（接力組）的起點 epoch —— companion 取 primary 的，取不到才退自己的。
+        /// 0 ＝ 讀不到（呼叫端**不得**把它當成 0 秒，那會夾掉整條時間軸）。</summary>
+        static double SessionStartEpoch(UCL_StreamWatchSession iS)
+        {
+            if (iS == null) return 0;
+            // 陪同者晚進場：下限要用 primary 的起點，否則接力交接會被自己的進場時刻夾掉一段。
+            if (iS.role == "companion" && !string.IsNullOrEmpty(iS.parent_persona))
+            {
+                var aP = LoadSession(iS.parent_persona);
+                var aPs = aP != null ? ParseIsoLocal(aP.start_ts) : null;
+                if (aPs.HasValue) return ToEpoch(aPs.Value.ToUniversalTime());
+            }
+            var aOwn = ParseIsoLocal(iS.start_ts);
+            return aOwn.HasValue ? ToEpoch(aOwn.Value.ToUniversalTime()) : 0;
+        }
 
         /// <summary>讀 _config.json 的感官開關 —— 開著就自動供給，呼叫端不必傳旗標。</summary>
         static (bool ocr, bool stt) ReadSensorFlags()
@@ -4070,6 +4156,137 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         /// <summary>寫回 session（**唯一寫入點** —— 落檔格式與路徑各只有一份實作，都在 SCP_ActivitySessionStore）。</summary>
         /// <remarks>⚠ 由 service 蓋寫 `kind` 欄位：kind 與檔案位置本來由同一個動作決定，
         /// 拆成兩個責任就會長出「檔在、kind 空」的檔，而那種檔讀取端一律當成不符 ⇒ 靜默消失。</remarks>
+        // ===========================================================
+        // step=seek —— **手動把取材游標校回一個正確的時間點**（TASK-0186，Tim 2026-09-09 指定）
+        //
+        // 為什麼要有它：既有的兩個下限（buffer 最舊那張／本場起點）都是**自動**的，而自動夾子
+        //   只認它量得到的那兩條界線。游標被推到一個「合法但沒有內容」的位置時
+        //   （例：錄影中斷留下的空白區、水位倒退、前緣被別人推過頭），
+        //   系統沒有任何一條路可以把它**往回**搬 —— `frontier_epoch` 全部的寫入點都是單調遞增的
+        //   （`if (... > frontier) frontier = ...`），那在併發下是正確設計，**但它同時堵死了修復**。
+        // ⇒ 本 step 是唯一一個准許前緣**倒退**的入口，因此它 ①要人明說目標 ②預設 dry-run。
+        //
+        // ⚠ 預設不寫：不帶 `confirm=1` 只印「會變成什麼」。
+        //   「我只是想看看游標在哪」與「動手把它搬走」**不得同形** —— 同 op=sweep 的判準。
+        // ===========================================================
+        void StepSeek(IDictionary<string, string> iArgs, string iPersona, string iTo, string iConfirm)
+        {
+            string aPath = PayloadPath(iPersona, "seek");
+            var aR = new StringBuilder();
+            aR.AppendLine($"# StreamWatch step=seek persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine();
+
+            var aS = LoadSession(iPersona);
+            if (aS == null || !aS.active)
+            {
+                Blocked(iArgs, aR, aPath, "無進行中的觀影 session（seek 只校正本場的游標，不建場）",
+                        $"先跑 senate ucmd run StreamWatch --arg step=start --arg persona={iPersona} --arg until=<HH:mm> --arg media=<media_id>");
+                throw new Exception($"[StreamWatch] step=seek blocked：無 active session（詳見 {aPath}）");
+            }
+
+            double aNowEp = ToEpoch(DateTime.UtcNow);
+            double aStart = SessionStartEpoch(aS);
+            double aOldest = OldestFrameEpoch();
+            var aFlags = ReadSensorFlags();
+            double aWm = SensorWatermark(aFlags.ocr, aFlags.stt, out string aWmNote);
+
+            // 現況先印 —— 修之前要看得到「壞在哪」，而不是只看到「修好了」。
+            aR.AppendLine("## 現況（讀回的事實）");
+            aR.AppendLine($"- 個人游標 `cursor_epoch` : **{StampLocal(aS.cursor_epoch)}**"
+                        + (aS.cursor_epoch > 0 ? $"（距今 {(aNowEp - aS.cursor_epoch) / 3600:F1} 小時）" : ""));
+            string aKey = (aS.role == "companion" && !string.IsNullOrEmpty(aS.parent_persona)) ? aS.parent_persona : iPersona;
+            string aSid = (aS.role == "companion" && !string.IsNullOrEmpty(aS.parent_session_id)) ? aS.parent_session_id : aS.session_id;
+            var aRelay = LoadRelay(aKey);
+            bool aRelayMine = aRelay != null && aRelay.session_id == aSid;
+            aR.AppendLine($"- 接力前緣 `frontier_epoch` : **{(aRelayMine ? StampLocal(aRelay.frontier_epoch) : "(本場沒有前緣檔)")}**"
+                        + (aRelay != null && !aRelayMine ? $"　⚠ relay 檔綁的是別場（`{aRelay.session_id}`）⇒ 本場不吃它" : ""));
+            aR.AppendLine($"- 本場起點 : {StampLocal(aStart)}　｜　buffer 最舊 frame : {StampLocal(aOldest)}");
+            aR.AppendLine($"- 感官水位 : {StampLocal(aWm)}（{aWmNote}）");
+            aR.AppendLine();
+
+            if (string.IsNullOrEmpty(iTo))
+            {
+                aR.AppendLine("## next（要真的搬，補上 `--arg to=`）");
+                aR.AppendLine("- `--arg to=start`　本場起點　｜　`--arg to=oldest`　buffer 最舊可讀處");
+                aR.AppendLine("- `--arg to=water`　感官水位（＝現在可讀的最前端）　｜　`--arg to=HH:mm[:ss]`　今天的某個時刻");
+                aR.AppendLine("- ⚠ 目標算出來之後**預設只印不寫**；要落盤再加 `--arg confirm=1`。");
+                WritePayload(iArgs, aPath, aR.ToString());
+                return;
+            }
+
+            // 目標解析 —— ⛔ 解析不出就擋下，**不猜**（猜一個時間點＝替人選了一段別的內容）。
+            double aTarget; string aHow;
+            string aToLow = iTo.ToLowerInvariant();
+            if (aToLow == "start") { aTarget = aStart; aHow = "本場起點 `start_ts`"; }
+            else if (aToLow == "oldest") { aTarget = aOldest; aHow = "buffer 最舊 frame 的 mtime"; }
+            else if (aToLow == "water" || aToLow == "watermark") { aTarget = aWm; aHow = "感官水位"; }
+            else { aTarget = ParseClockToEpoch(iTo); aHow = $"`{iTo}` 解析成**今天**該時刻"; }
+
+            if (aTarget <= 0)
+            {
+                Blocked(iArgs, aR, aPath,
+                        $"目標 `to={iTo}` 解析不出（{aHow} 讀不到值）—— ⛔ 不猜一個時間點",
+                        "收 start / oldest / water / HH:mm / HH:mm:ss");
+                throw new Exception($"[StreamWatch] step=seek blocked：目標解析不出（詳見 {aPath}）");
+            }
+
+            aR.AppendLine("## 目標");
+            aR.AppendLine($"- to=`{iTo}` ⇒ **{StampLocal(aTarget)}**（{aHow}）");
+            double aOld = (aRelayMine && aRelay.frontier_epoch > 0) ? aRelay.frontier_epoch : aS.cursor_epoch;
+            // ⚠ aOld ≤ 0 ＝「本場還沒有游標」，**不是 1970 年**。拿它去減會印出「496912 小時」那種
+            //   非物理數字 —— 而本單修的正是「非物理值被當成有意義的量印出來」那一族，
+            //   ⇒ 這裡不准自己再放一個（2026-09-09 實跑第一版就踩到，當場改）。
+            if (aOld <= 0)
+                aR.AppendLine($"- 位移 : (本場尚無游標) → {StampLocal(aTarget)}　←　**首次設定**，不是位移");
+            else
+                aR.AppendLine($"- 位移 : {StampLocal(aOld)} → {StampLocal(aTarget)}"
+                            + $"（{(aTarget >= aOld ? "前進" : "**倒退**")} {Math.Abs(aTarget - aOld):F0}s ＝ {Math.Abs(aTarget - aOld) / 3600:F2} 小時）");
+
+            // 三條界線只**警告**不擋：手動校正的用途正是處理自動夾子處理不了的情況。
+            if (aOldest > 0 && aTarget < aOldest)
+                aR.AppendLine($"- ⚠ 目標早於 buffer 最舊 frame（{StampLocal(aOldest)}）⇒ 那段**已被覆蓋、取不到畫面**，下一輪 cycle 會再把它夾上來。");
+            if (aStart > 0 && aTarget < aStart)
+                aR.AppendLine($"- ⚠ 目標早於本場起點（{StampLocal(aStart)}）⇒ 那不是本場的畫面，下一輪 cycle 的場次下限夾正會再把它夾上來。");
+            if (aWm > 0 && aTarget > aWm)
+                aR.AppendLine($"- ⚠ 目標晚於感官水位（{StampLocal(aWm)}）⇒ 窗口尾端會被夾在水位，本輪很可能**取不到素材**。");
+
+            if (iConfirm != "1" && iConfirm.ToLowerInvariant() != "true")
+            {
+                aR.AppendLine();
+                aR.AppendLine("## ⛔ 未落盤（dry-run）");
+                aR.AppendLine("- **一個位元組都沒有寫** —— 上面是「會變成什麼」，不是「已經變成什麼」。");
+                aR.AppendLine($"- 要真的搬：`senate ucmd run StreamWatch --persona {iPersona} --arg step=seek --arg to={iTo} --arg confirm=1`");
+                WritePayload(iArgs, aPath, aR.ToString());
+                return;
+            }
+
+            // ── 落盤 ────────────────────────────────────────────────
+            aS.cursor_epoch = aTarget;
+            SaveSession(iPersona, aS);
+            if (aRelay == null || !aRelayMine) aRelay = new UCL_StreamWatchRelay { session_id = aSid };
+            aRelay.frontier_epoch = aTarget;     // ⭐ 唯一准許倒退的寫入點（其餘全是單調遞增）
+            aRelay.updated_by = iPersona;
+            aRelay.updated_at = UCL_AwakeningService.NowIso();
+            SaveRelay(aKey, aRelay);
+
+            // 回讀 —— 報的是讀回值，不是我剛才寫進去的那個變數。
+            var aBackS = LoadSession(iPersona);
+            var aBackR = LoadRelay(aKey);
+            aR.AppendLine();
+            aR.AppendLine("## ✅ 已落盤（回讀值，不是寫入的回傳值）");
+            aR.AppendLine($"- `sessions/{iPersona}.json` cursor_epoch = **{StampLocal(aBackS != null ? aBackS.cursor_epoch : 0)}**");
+            aR.AppendLine($"- `StreamWatch/relay/{aKey}.json` frontier_epoch = **{StampLocal(aBackR != null ? aBackR.frontier_epoch : 0)}**"
+                        + $"（session_id `{(aBackR != null ? aBackR.session_id : "(讀不到)")}`）");
+            bool aOk = aBackS != null && Math.Abs(aBackS.cursor_epoch - aTarget) < 1.0
+                    && aBackR != null && Math.Abs(aBackR.frontier_epoch - aTarget) < 1.0;
+            aR.AppendLine(aOk ? "- 兩邊都對上目標 ✅"
+                              : "- ⚠ **回讀值與目標不符** —— 寫入沒有生效或被別人覆蓋，⛔ 不要當成已修好。");
+            aR.AppendLine();
+            aR.AppendLine("## next");
+            aR.AppendLine($"1. senate ucmd run StreamWatch --arg step=cycle --arg persona={iPersona}");
+            WritePayload(iArgs, aPath, aR.ToString());
+        }
+
         static void SaveSession(string iPersona, UCL_StreamWatchSession iS)
             => SCP.Core.Session.SCP_ActivitySessionStore.Save(
                 UCL_AgentCommandsPath.ScpDataRoot, iPersona, iS, SCP.Core.Session.SCP_ActivitySessionKind.StreamWatch);

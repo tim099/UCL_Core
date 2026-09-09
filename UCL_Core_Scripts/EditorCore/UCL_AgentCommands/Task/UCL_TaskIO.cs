@@ -375,9 +375,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //   · ⛔ `iMutator` 裡**不得 await**：那會在持鎖狀態下把控制權交出去。
         //     今天 11 個 RMW 跨度實測全部 await-free（@basecamp 2026-09-08）⇒ 同步 lambda 蓋得住，
         //     所以本入口**刻意不提供 async 版本** —— 需要它的那天，要解的是「持鎖 await」那個更大的題。
-        //   · ⚠ 過渡狀態：目前只有 `Cmd_Task.OpSweep` 走本入口，**其餘 11 個呼叫端仍直呼 `Save`**。
-        //     它們現在靠的仍是舊前提（單一主執行緒），而那道 `AssertMainThread` 因此**還不是化石**
-        //     ⇒ 這一輪刻意不動它。TASK-0163 ②（重新定義那道守衛）與 ④（offload）都還開著。
+        //   · ⚠ 過渡狀態：**遷移進度刻意不寫成數字**（寫了會過期，而過期的斷言不會叫）——
+        //     現況＝數 `UCL_TaskIO.Save(` 還剩幾個呼叫端（`Mutate` 之外的每一個都還走舊路）。
+        //     🩸 這一行原本寫「目前只有 `OpSweep` 走本入口，其餘 11 個直呼 `Save`」，
+        //     而它在被寫下的當天就已經不為真（`OpComment` 同一趟也遷了）⇒ 換成上面那個查法。
+        //     未遷的呼叫端靠的仍是舊前提（單一主執行緒），而那道 `AssertMainThread` 因此**還不是化石**
+        //     ⇒ 它要跟最後一個呼叫端同一天收。TASK-0163 ②（重新定義那道守衛）與 ④（offload）都還開著。
         // ===========================================================
         static readonly object s_RmwLock = new object();
 

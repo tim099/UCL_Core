@@ -1350,29 +1350,63 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             }
 
             string aNow = UCL_TaskIO.NowUtc();
-            var aFrom = e.status;
 
             // ① progress → Task 留言（＋時間線一筆 `wrapup` 事件，供晚安閘判定「今天收工過了」）
-            var aComment = new UCL_TaskComment
+            // ⭐ TASK-0163 形狀甲：整段 RMW 走 `UCL_TaskIO.Mutate`（鎖內重讀 → 改 → 寫）。
+            //   跟 `OpComment` 同族的那一格：`NextCommentId` 是 `max(id) + 1`，在鎖外算會**撞號**
+            //   ⇒ 兩條 lane 同時收工、兩次整檔重寫，**其中一則收工紀錄靜默消失**
+            //   （兩邊都回 Success、兩邊都印得出自己的 #N）。
+            //   ⚠ 而本支多一格 `OpComment` 沒有的：`last_wrapup_at` 是**晚安收工閘的述詞來源**
+            //   （述詞②＝`updated_at > last_wrapup_at`，TASK-0036）⇒ 它必須跟 `Touch` 落在**同一次寫入**裡；
+            //   否則那道閘會讀到「`updated_at` 被別人推進了、而 `last_wrapup_at` 還是上一輪」——
+            //   而那個組合它會判成「收工後又改了」，也就是**它會誤擋一個剛收完工的人**。
+            // ⛔ 舊的 `[RMW-END]` 前哨在此退場 —— 跨度現在由型別決定（`m` 只活在 lambda 裡），不由註解宣告。
+            int aCommentId = 0;
+            var aFrom = e.status;
+            string aTopicAtWrite = aTopic;
+            bool aTopicLostInLock = false;
+            bool aWrote = UCL_TaskIO.Mutate(aIndex, m =>
             {
-                id = UCL_TaskIO.NextCommentId(e),
-                persona = iActor,
-                at = aNow,
-                body = "**[收工 wrapup]**\n\n" + aProgress,
-            };
-            e.comments.Add(aComment);
-            UCL_TaskIO.Touch(e, aNow);
-            // ⚠ 等號陷阱（TASK-0036 驗收標準第三條）：`wrapup` 自己會 `Touch` ⇒ 這兩個欄位
-            //   在寫完的當下**必然相等**。所以述詞②的判準必須是**嚴格大於**（`updated_at > last_wrapup_at`）——
-            //   用 `>=` 的話「剛收完工」會被自己擋住，那是一隻修完立刻天天亮的警示。
-            //   ⇒ 這裡刻意跟 `Touch` 共用同一個 `aNow`，讓「相等」是精確的而不是差幾毫秒。
-            e.last_wrapup_at = aNow;
-            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　`wrapup`　{iActor} 收工（狀態不動：{aFrom}）留言 #{aComment.id}");
+                // ⛔ 形狀乙（判定搬進鎖內重做，@basecamp 2026-09-08 立的條文）：
+                //   上面那道「給了 why 卻沒有 memory_topic」的閘判的是**鎖外**讀到的欄位
+                //   ⇒ 這裡對重讀的那一份再判一次；不成立就回 null ⇒ **一個位元組都不寫**。
+                aTopicAtWrite = (m.memory_topic ?? "").Trim();
+                if (aWhy.Length > 0 && aTopicAtWrite.Length == 0) { aTopicLostInLock = true; return null; }
+
+                aFrom = m.status;
+                aCommentId = UCL_TaskIO.NextCommentId(m);
+                m.comments.Add(new UCL_TaskComment
+                {
+                    id = aCommentId,
+                    persona = iActor,
+                    at = aNow,
+                    body = "**[收工 wrapup]**\n\n" + aProgress,
+                });
+                UCL_TaskIO.Touch(m, aNow);
+                // ⚠ 等號陷阱（TASK-0036 驗收標準第三條）：`wrapup` 自己會 `Touch` ⇒ 這兩個欄位
+                //   在寫完的當下**必然相等**。所以述詞②的判準必須是**嚴格大於** ——
+                //   用 `>=` 的話「剛收完工」會被自己擋住，那是一隻修完立刻天天亮的警示。
+                //   ⇒ 這裡刻意跟 `Touch` 共用同一個 `aNow`，讓「相等」是精確的而不是差幾毫秒。
+                m.last_wrapup_at = aNow;
+                return $"{aNow}　`wrapup`　{iActor} 收工（狀態不動：{aFrom}）留言 #{aCommentId}";
+            });
+            if (!aWrote)
+            {
+                // ⚠ 兩種「沒寫成」要分得出來 —— 單子不在了 vs 鎖內判定不成立，處置不同，
+                //   而它們在一個布林值上同形。
+                ioR.AppendLine("## blocked");
+                if (aTopicLostInLock)
+                    ioR.AppendLine($"- reason: 鎖內重讀時 {e.Id} 的 `memory_topic` 是空的"
+                        + $"（鎖外讀到的是 `{aTopic}`，中間被清掉了）⇒ **一個位元組都沒寫**。");
+                else
+                    ioR.AppendLine($"- reason: 鎖內重讀時 TASK-{aIndex} 不在了（被刪或被搬）⇒ **寫入沒有發生**。");
+                ioR.AppendLine("  ⛔ 這不是「收工失敗」的泛稱：**進度沒有進磁碟**，記憶那半也沒有跑。");
+                throw new Exception("[Task] wrapup 沒有落檔（鎖內重讀）");
+            }
 
             ioR.AppendLine($"## ✅ {e.Id} 已收工（`wrapup`）");
-            ioR.AppendLine($"- 狀態：**維持 `{aFrom}`** —— 收工不是結單，也不是放棄");
-            ioR.AppendLine($"- 進度寫進留言 #{aComment.id}（進度真相源是 Task）");
+            ioR.AppendLine($"- 狀態：**維持 `{aFrom}`** —— 收工不是結單也不是放棄（`{aFrom}` 是鎖內重讀的那一份）");
+            ioR.AppendLine($"- 進度寫進留言 #{aCommentId}（進度真相源是 Task）");
             ioR.AppendLine();
             ioR.AppendLine("```markdown");
             ioR.AppendLine(aProgress);
@@ -1399,12 +1433,13 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     //   🩸 症狀是**靜默的**：整檔覆蓋、留言消失、index 撞號 —— 沒有一格會紅。
                     //   ⚠ 唯一的告警是 `UCL_TaskIO.AssertMainThread`，而它只在**事情已經發生之後**才出聲。
                     //   （通則寫在 UCL_TaskIO 檔頭；這裡指名道姓，因為通則會被讀成建議。）
+                    // ⚠ 主題名用**鎖內重讀**的那一份（`aTopicAtWrite`）—— 鎖外那個 `aTopic` 只是提示。
                     var (aOk, aOut, aDetail) = await UCL_TaskWorkMemoryCli.AddAsync(
-                        aTopic, aType, aId, aTitle, aTmp, iActor);
+                        aTopicAtWrite, aType, aId, aTitle, aTmp, iActor);
                     ioR.AppendLine();
                     if (aOk)
                     {
-                        ioR.AppendLine($"- 🧠 已寫進工作記憶：`{aTopic}` / `{aType}` / `{aId}`（代跑 work_memory.py）");
+                        ioR.AppendLine($"- 🧠 已寫進工作記憶：`{aTopicAtWrite}` / `{aType}` / `{aId}`（代跑 work_memory.py）");
                         if (aOut.Length > 0) ioR.AppendLine($"    · 工具輸出：{Trunc(aOut, 200)}");
                     }
                     else
@@ -1413,7 +1448,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                         ioR.AppendLine($"- ⚠ **記憶那半沒寫成**（{aDetail}）—— 進度已落盤，"
                             + "但「為什麼卡住」還沒有家。");
                         ioR.AppendLine($"    · 手動補：`python <UCL_Core>/Tools~/AgentCommands/work_memory.py add"
-                            + $" --topic {aTopic} --type {aType} --id {aId} --title \"{aTitle}\" --body-file <檔> --by {iActor}`");
+                            + $" --topic {aTopicAtWrite} --type {aType} --id {aId} --title \"{aTitle}\" --body-file <檔> --by {iActor}`");
                     }
                 }
                 finally
@@ -1428,9 +1463,13 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     + "為了通關而寫的記憶比沒有更糟，它佔著位置又看起來像有人整理過）");
             }
 
-            bool aNotified = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Comment, iActor,
+            // ⚠ 通知用**落檔之後**那一份（比照 `OpComment`）：`e` 是鎖前讀的提示，而要 @ 的參與者
+            //   清單可能在鎖內那一刻已經不同（別人剛 assign）。讀不到就退回用提示，
+            //   ⛔ 不因為讀不到就不發（那會讓「發不出去」與「沒有人該被通知」同形）。
+            var aFresh = UCL_TaskIO.Find(aIndex) ?? e;
+            bool aNotified = await UCL_TaskNotify.PostAsync(aFresh, UCL_TaskNotify.Kind.Comment, iActor,
                 "", "**[收工 wrapup]**\n\n" + aProgress, iArgs);
-            AppendNotifyLine(ioR, e, iActor, aNotified);
+            AppendNotifyLine(ioR, aFresh, iActor, aNotified);
         }
 
         // ===========================================================

@@ -1,7 +1,7 @@
 ---
 title: Task Management Workflow — 小團隊任務管理操作手冊（3~5 人）
 description: 3~5 人小團隊的任務管理操作手冊 —— 一單一檔、做的人與驗的人兩個角色為主（其餘五個只是標籤）、驗不過退回不另開 bug 單、Commit 帶 Fixes TASK-N 自動閉環、跨日單用 memory_topic 接回工作記憶、定期清掉沒有人在等的單。判準（什麼時候該開單／解單時不要複雜化）在 ucl-task skill，本檔只寫怎麼做。
-last_updated: 2026-09-08
+last_updated: 2026-09-09
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Task_Management_System.md | Task Plan RFC | 系統架構設計與資料模型
@@ -93,6 +93,23 @@ related:
 ```bash
 $R --arg op=create --arg type=bug --arg title="<症狀，不是猜的原因>" --arg evidence="<讀數＋怎麼拿到的>" --arg-file criteria=<檔>
 ```
+
+> [!WARNING]
+> ## `criteria` 多行**一律走 `--arg-file`** —— `--arg` 裡的 `
+` 是字面兩個字元
+>
+> 🩸 2026-09-09 實測（summit，`TASK-0181`／`TASK-0182` 兩張，同一條 create 路徑）：
+> `--arg criteria="- [ ] A
+- [ ] B"` 落到磁碟上是**一行**，中間帶著字面的 `
+`
+> —— 本檔這一行原本就是這樣寫的，⇒ 它教出來的是一張**四格擠成一格**的單。
+>
+> ⚠ 而失效樣子不是報錯：看板上「有驗收標準」，而 `op=check` 的序號是按**未勾的行**數的
+> ⇒ 四格變成一格 ⇒ **勾一次就全勾完**。
+> 📌 這正是那一族同形：**一個勾不動的驗收條件，跟一個沒有驗收條件，在看板上長得一樣。**
+>
+> ⇒ 一行的 `criteria` 用 `--arg` 沒問題；**兩行以上一律 `--arg-file`**（`description` / `progress` /
+> `body` / `note` 同理 —— 那些的內文本來就都建議走檔案）。
 
 - **`evidence` 必填** —— 沒有讀數的 bug 單會變成「有人覺得怪」，而那個沒辦法驗。
   標題寫**症狀**（看到什麼），⛔ 不要寫猜的原因。
@@ -229,7 +246,7 @@ R="senate ucmd run Task --persona <me>"
 # 1. 開立新任務（必須填寫標題與驗收標準，可綁定 memory_topic）
 $R --arg op=create --arg title="任務標題" --arg type=feature --arg priority=high \
    [--arg milestone="comic-vol-1"] [--arg memory_topic="task-mgmt"] [--arg tags="comic,draft"] \
-   --arg criteria="- [ ] ① 交付：<做到什麼算做完>\n- [ ] ① 驗收：<拿什麼讀數算通過>"
+   --arg-file criteria=<檔>       # ⚠ 多行一律走 --arg-file，見下
 
 # 2. 查詢待辦清單（支援 status, assignee, milestone, tag, epic 過濾）
 $R --arg op=list --arg status=todo

@@ -522,8 +522,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         cache.byPath[f] = parsed;
                         m = parsed;
                     }
-                    m.seq = ++seq;   // seq 每 call 依當前檔序重算（只算成功 parse 的, 與舊行為一致）
-                    list.Add(m);
+                    // seq 每 call 依當前檔序重算（只算成功 parse 的, 與舊行為一致）。
+                    // ⛔ 不寫回 m —— m 是 cache.byPath 的共用實體（見 WithSeq 的邊界說明）。
+                    list.Add(m.WithSeq(++seq));
                 }
                 if (rejected > 0)
                 {
@@ -649,8 +650,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         }
                         cache.byPath[f] = m;
                     }
-                    m.seq = i + 1;   // 絕對序位（1-based），與 LoadAllMessages enumerate 順序一致
-                    list.Add(m);
+                    // 絕對序位（1-based），與 LoadAllMessages enumerate 順序一致。
+                    // ⛔ 不寫回 m —— m 是 cache.byPath 的共用實體（見 WithSeq 的邊界說明）。
+                    list.Add(m.WithSeq(i + 1));
                 }
             }
             if (rejected > 0)
@@ -742,8 +744,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         cache.byPath[f] = parsed;
                         m = parsed;
                     }
-                    m.seq = i + 1;   // 檔序位(1-based), 與 Tail / LoadAllMessages(無壞檔時)一致
-                    list.Add(m);
+                    // 檔序位(1-based), 與 Tail / LoadAllMessages(無壞檔時)一致。
+                    // ⛔ 不寫回 m —— m 是 cache.byPath 的共用實體（見 WithSeq 的邊界說明）。
+                    list.Add(m.WithSeq(i + 1));
                 }
                 if (rejected > 0)
                     Debug.LogError($"[Tavern T38] LoadMessagesAfterSeq({roomId}, {afterSeq}): {rejected} files rejected in tail slice");

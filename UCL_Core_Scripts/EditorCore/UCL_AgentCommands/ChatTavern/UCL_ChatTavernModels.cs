@@ -179,6 +179,26 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public string DisplayName =>
             UCL.Core.EditorLib.AgentCommands.Common.UCL_AgentIdParser.Display(
                 sender_id, sender_persona, sender_name);
+
+        // ===========================================================
+        // 區塊職責：回一份「只有 seq 不同」的淺複本 — 給 reader 補 derived seq 用
+        // 物理意義：seq 是 **derived（reader 動態算、不寫進檔）**，見本類別檔頭 T38 那段。
+        //          而 reader 的 parse 結果是**跨呼叫共用的快取實體**
+        //          （UCL_ChatTavernIO_PerMsgFile 的 cache.byPath）⇒ 把 per-call 的
+        //          derived 值寫回那個實體，等於讓兩條緒互相覆寫同一個物件的 seq，
+        //          而且回傳的 List 離開函式之後值還會再變。
+        //          ⇒ 所以「算 seq」與「快取正典」必須是兩個物件：本方法就是那個分界。
+        // 數值影響：零 —— 除 seq 之外每一欄逐欄相同（MemberwiseClone）。
+        // 邊界：**淺複製** ⇒ meta / refs 與正典實體**共用同一個參照**。
+        //      現況全部 25 個 loader 呼叫端都只讀不寫那兩個容器（2026-09-09 逐一列舉過）；
+        //      ⚠ 哪天有人要改 meta / refs，改的是共用那份 —— 那時要的是深複製，不是這個。
+        // ===========================================================
+        public UCL_ChatMessage WithSeq(int iSeq)
+        {
+            var aCopy = (UCL_ChatMessage)MemberwiseClone();
+            aCopy.seq = iSeq;
+            return aCopy;
+        }
     }
 
 }

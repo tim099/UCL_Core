@@ -110,6 +110,21 @@ namespace UCL.Core.EditorLib.AgentCommands
         static readonly List<Entry> s_Ring = new List<Entry>();
         static readonly object s_RingLock = new object();
 
+        // ===========================================================
+        // 區塊職責：**在飛的 probe 依 cmd_id 查得到** —— 讓 handler 自己標相位。
+        // 🩸 為什麼補這個（TASK-0120，2026-09-10）：`MarkPhase` 只收 probe 物件，而 probe 是
+        //   Runner 的局部變數 ⇒ **handler 拿不到它**，於是相位只有 Runner 前後那幾格
+        //   （`batch_queue_load` / `pre_handler` / …），handler 內部是一個不透明的 `elapsed_ms`。
+        //   ⇒ 2026-09-09 一筆 `op=observe` 佔住主緒 **147.9 秒**，而量具只能告訴我們「148 秒」，
+        //   說不出那 148 秒花在哪一段。**那正是「下次再發生也一樣查不出來」的形狀。**
+        // 物理意義：Runner 在 `Begin` 登記、`End` 移除；handler 用 args 裡的 `_cmd_id` 查。
+        // 邊界：⛔ 查不到就**不寫**（非 queue 路徑、或量具自己壞掉）——
+        //   ⚠ 而「查不到」與「這段很快」在輸出上同形，所以查不到時**不靜默**：出聲一次。
+        // ===========================================================
+        static readonly object s_ActiveLock = new object();
+        static readonly Dictionary<string, UCL_AgentCmdProbe> s_Active = new Dictionary<string, UCL_AgentCmdProbe>(StringComparer.Ordinal);
+        static readonly HashSet<string> s_WarnedMissingProbe = new HashSet<string>(StringComparer.Ordinal);
+
         // 寫檔鎖 —— stall 探針在主緒、End() 可能在背景緒，兩邊寫同一個檔（見 AppendLineLocked 的血證）
         static readonly object s_WriteLock = new object();
 
@@ -232,6 +247,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                     });
                     if (s_Ring.Count > RING_SIZE) s_Ring.RemoveRange(0, s_Ring.Count - RING_SIZE);
                 }
+                if (aProbe.CmdId.Length > 0) lock (s_ActiveLock) s_Active[aProbe.CmdId] = aProbe;
                 return aProbe;
             }
             catch
@@ -248,6 +264,29 @@ namespace UCL.Core.EditorLib.AgentCommands
         //   形狀沿用已驗過的 `UCL_BartenderIO.AppendSlowTick`（那份的相位讓「哪一格慢」不必靠人夾區間）。
         // 數值影響：純記憶體；相位只在該筆 cmd 落行時一起寫出去。
         // ===========================================================
+        /// <summary>
+        /// handler 用的相位入口：**用 args 裡的 `_cmd_id`** 找到在飛的 probe 並標一格（TASK-0120）。
+        /// <para>⚠ 查不到會 `Debug.LogWarning` 一次（per cmd_id）—— ⛔ 不靜默：
+        /// 「這支沒被量到」與「這一段很快」在 jsonl 上完全同形。</para>
+        /// </summary>
+        public static void MarkPhase(string iCmdId, string iName, double iMs)
+        {
+            if (string.IsNullOrEmpty(iCmdId) || string.IsNullOrEmpty(iName)) return;
+            UCL_AgentCmdProbe aProbe = null;
+            lock (s_ActiveLock) s_Active.TryGetValue(iCmdId, out aProbe);
+            if (aProbe == null)
+            {
+                bool aFirst;
+                lock (s_ActiveLock) aFirst = s_WarnedMissingProbe.Add(iCmdId);
+                if (aFirst)
+                    Debug.LogWarning($"[AgentCmdSlowLog] 相位 '{iName}' 標不上去：查不到 cmd_id='{iCmdId}' 的 probe"
+                        + "（非 queue 路徑，或 Begin/End 已經收掉了）⇒ **這一格不會出現在 _cmd_slow.jsonl**。"
+                        + " ⚠ 而缺席的相位跟「這段很快」長得一樣 —— 所以這行警告是刻意的。");
+                return;
+            }
+            lock (aProbe) MarkPhase(aProbe, iName, iMs);
+        }
+
         public static void MarkPhase(UCL_AgentCmdProbe iProbe, string iName, double iMs)
         {
             if (iProbe == null || string.IsNullOrEmpty(iName)) return;
@@ -306,6 +345,10 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static void End(UCL_AgentCmdProbe iProbe, bool iSuccess, string iError, double iRunnerMs)
         {
             if (iProbe == null) return;
+            // ⛔ 先摘登記再做其他事：底下任何一步丟例外都不該讓這張表長出殘留
+            //   （殘留的 probe 會讓下一支同 cmd_id 的相位標到一個已經落檔的物件上）。
+            if (!string.IsNullOrEmpty(iProbe.CmdId))
+                lock (s_ActiveLock) { s_Active.Remove(iProbe.CmdId); s_WarnedMissingProbe.Remove(iProbe.CmdId); }
             try
             {
                 iProbe.Watch.Stop();

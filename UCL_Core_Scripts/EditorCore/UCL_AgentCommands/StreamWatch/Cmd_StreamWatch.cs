@@ -92,8 +92,6 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
             switch (aStep)
             {
-                case "peek": await StepPeek(args, aPersona, GetArg(args, "seconds", "").Trim(),
-                                            GetArg(args, "raw", "").Trim(), token); return;
                 case "capture": StepCapture(args, aPersona, GetArg(args, "on", "").Trim()); return;
                 case "prepare": await StepPrepare(args, aPersona, token); return;
                 case "catchup": StepCatchup(args, aPersona); return;
@@ -106,8 +104,21 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                                                   VideoDesc = GetArg(args, "desc", "").Trim(),
                                                   Url = GetArg(args, "url", "").Trim(),
                                               }, token); return;
-                case "cycle": await StepCycle(args, aPersona, token); return;
-                case "observe": await StepObserve(args, aPersona, GetArg(args, "body", ""), token); return;
+                // ⭐ TASK-0120：**per-step offload**（形狀比照 `Cmd_Tavern` 的 per-op，⛔ 不另造第二種風格）。
+                //   為什麼只有這三步：它們是量到的占用者 —— 2026-09-09 一筆 `observe` 佔住主緒 **147.9s**
+                //   （`_cmd_slow` freeze 連續累加到 144.9s、`last_main_tick_at` 全程不動），
+                //   而 `cycle` 每輪 25–82s。其餘 step 沒有讀數 ⇒ ⛔ 不順手一起搬（沒量過的不動）。
+                //   許可證：本檔對 `EditorApplication` / `AssetDatabase` / `EditorPrefs` / `EditorUtility`
+                //   / `PlayerPrefs` 的用量是 **0 處**（grep 讀數）⇒ 背景緒上沒有碰不得的東西；
+                //   路徑解析器的快取由 `EnterBackground` 在主緒先暖好。
+                //   ⛔ 唯一的例外是**發文**：它必須切回主緒（見 `TavernPost` 的區塊註解 —— seq 配號無鎖）。
+                case "peek": await UCL_AgentCmdOffload.EnterBackground(args);
+                             await StepPeek(args, aPersona, GetArg(args, "seconds", "").Trim(),
+                                            GetArg(args, "raw", "").Trim(), token); return;
+                case "cycle": await UCL_AgentCmdOffload.EnterBackground(args);
+                              await StepCycle(args, aPersona, token); return;
+                case "observe": await UCL_AgentCmdOffload.EnterBackground(args);
+                                await StepObserve(args, aPersona, GetArg(args, "body", ""), token); return;
                 case "note": await StepNote(args, aPersona, GetArg(args, "body", ""), token); return;
                 case "join": await StepJoin(args, aPersona, token); return;
                 case "hotspot": await StepHotspot(args, aPersona, GetArg(args, "from", "").Trim(),
@@ -2333,13 +2344,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     aPayNote = $"**未發薪** —— persona `{iPersona}` 解析不到正式帳號（{aRes.Trace}）";
                     aTotal = 0;
                 }
-                else if (AlreadyCredited($"streamwatch-{aSessionId}"))
+                else if (AlreadyCreditedTimed(iArgs, $"streamwatch-{aSessionId}"))
                 {
                     aPayNote = $"**未重複發薪** —— ledger 已有 `streamwatch-{aSessionId}`（寫入閘判重，事實源）";
                     aTotal = 0;
                 }
                 else
                 {
+                    var aCreditWatch = System.Diagnostics.Stopwatch.StartNew();
                     try
                     {
                         UCL_TreasuryLedger.Credit(
@@ -2355,6 +2367,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         aPayNote = $"**發薪失敗** —— {e.Message}（session 仍關閉，帳待補）";
                         aTotal = 0;
                     }
+                    finally { Phase(iArgs, "settle.ledger_credit", aCreditWatch.Elapsed.TotalMilliseconds); }
                 }
             }
 
@@ -2558,6 +2571,19 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ⚠ 不用 LoadAllEntries()：那支重放全帳本（本專案 14,700+ 檔），
         //   2026-08-15 已因為它讓初開 Editor 卡三分鐘而從跨日結算移除（見 1188e7a）。
         // ⚠ 查詢失敗時**保守視為已發**：壞要往安全的方向壞 —— 少發一次可以補，重複發薪收不回。
+        // ⭐ TASK-0120：判重那支**只量不改**。
+        //   🩸 為什麼特別量它：它自己的區塊註解寫著「不用 `LoadAllEntries()`：那支重放全帳本
+        //   （本專案 14,700+ 檔），2026-08-15 已因為它讓初開 Editor **卡三分鐘**」——
+        //   而 2026-09-09 我們量到的主緒凍結是 **144.9 秒**，同一個量級。
+        //   ⇒ 它現在是有界掃描（最近結帳日之後），⚠ 而「最近結帳日」查不到時那個界是 null
+        //   ⇒ **界有沒有生效這件事，在讀數上跟「界很小」同形。** 所以埋一格相位讓它自己講。
+        static bool AlreadyCreditedTimed(IDictionary<string, string> iArgs, string iUseRef)
+        {
+            var aWatch = System.Diagnostics.Stopwatch.StartNew();
+            try { return AlreadyCredited(iUseRef); }
+            finally { Phase(iArgs, "settle.ledger_dupcheck", aWatch.Elapsed.TotalMilliseconds); }
+        }
+
         static bool AlreadyCredited(string iUseRef)
         {
             try
@@ -3904,13 +3930,27 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         static string SegmentLogPath()
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, "StreamWatch", SEGMENT_LOG_NAME);
 
+        // ===========================================================
+        // 區塊職責：兩份**共用 append-only 台帳**（`segments.jsonl` / `sessions_log.jsonl`）的寫入鎖。
+        // 🩸 為什麼 2026-09-10 才需要它（TASK-0120）：在此之前這兩處 `File.AppendAllText` 無鎖是**安全的**，
+        //   而安全的理由只有一個 —— **全部跑在單一主執行緒上**。本次把 cycle / observe / peek 移出主緒
+        //   之後那個前提就不在了 ⇒ 兩條 lane 可以同時 append 同一個檔。
+        //   ⇒ 失效樣子：交錯寫入把兩行併成一行（或 sharing violation 被下面那個 catch 吞成一行 warning），
+        //   而**匯出排序讀的就是這份台帳** ⇒ 一段觀察會安靜地從書裡消失。
+        // 📌 順序是規矩不是偏好：**先上鎖，才 offload。** 反過來就是拆掉唯一還活著的不變式
+        //   （跟 `Cmd_Tavern` 的 seq 配號同族 —— 那一格我沒動，所以發文仍切回主緒）。
+        // ⛔ 射程：同 process 內。python／另一個 Editor 實例同時 append 答不出來（那要檔案鎖）。
+        // ===========================================================
+        static readonly object s_LedgerAppendLock = new object();
+
         static void AppendSegmentLine(UnityJsonSerializable iRec)
         {
             try
             {
                 string aPath = SegmentLogPath();
                 Directory.CreateDirectory(Path.GetDirectoryName(aPath));
-                File.AppendAllText(aPath, iRec.SerializeToJson().ToJson() + "\n", new UTF8Encoding(false));
+                lock (s_LedgerAppendLock)
+                    File.AppendAllText(aPath, iRec.SerializeToJson().ToJson() + "\n", new UTF8Encoding(false));
             }
             catch (Exception e)
             {
@@ -3981,7 +4021,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                                              //    record_type=export，**不回頭改這一行**。查章號要掃 export 紀錄。
                 };
                 // ⚠ 一行一場（jsonl）⇒ 用 ToJson 不是 ToJsonBeautify；換行由這裡補。
-                File.AppendAllText(aPath, aRec.SerializeToJson().ToJson() + "\n", new UTF8Encoding(false));
+                lock (s_LedgerAppendLock)
+                    File.AppendAllText(aPath, aRec.SerializeToJson().ToJson() + "\n", new UTF8Encoding(false));
             }
             catch (Exception e)
             {
@@ -4380,6 +4421,20 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
         // ⚠ iCmdArgs：本筆 cmd 的 args —— 用來把 `_cmd_id` 帶進子 Cmd，讓 seq 回得到呼叫者的 context。
         //   併行下這是唯一正確的遞出路徑（舊制的全域 static 會拿到別人的號碼）。
+        // ===========================================================
+        // 區塊職責：把一格相位標進 `_cmd_slow.jsonl`（TASK-0120）。
+        // 物理意義：`elapsed_ms` 只回答「這支慢」；相位回答「**慢在哪一格**」——
+        //   而 2026-09-09 那筆 147.9s 的 `observe` 之所以查不出原因，就是因為 handler 內部
+        //   一格相位都沒有（Runner 只標得到自己前後那幾格）。
+        // 邊界：cmd_id 取自 args 的 `_cmd_id`（queue 路徑才有）；查不到 probe 時 SlowLog 會出聲一次。
+        // ===========================================================
+        static void Phase(IDictionary<string, string> iArgs, string iName, double iMs)
+        {
+            // ⚠ 不走 GetArg：那支吃 Dictionary（具體型別），而這條路上手上是 IDictionary。
+            string aId = (iArgs != null && iArgs.TryGetValue("_cmd_id", out string aVal)) ? (aVal ?? "") : "";
+            UCL_AgentCmdSlowLog.MarkPhase(aId, iName, iMs);
+        }
+
         static async UniTask<int> TavernPost(IDictionary<string, string> iCmdArgs, string iPersona, string iBody, string iSubtag, CancellationToken iToken)
         {
             try
@@ -4394,7 +4449,32 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 UCL_AgentCmdContexts.PropagateCmdId(iCmdArgs, aArgs);
                 var aPostCtx = UCL_AgentCmdContexts.FromArgs(iCmdArgs, "StreamWatch.TavernPost");
                 if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
-                await new ChatTavern.Cmd_Tavern().ExecuteAsync(aArgs, iToken);
+
+                // ⛔⛔ **發文一定要在主執行緒上跑**（TASK-0120 的邊界，理由不是效能）：
+                //   `Cmd_Tavern` 的 `op=post` **刻意沒有** offload，而它自己的區塊註解寫著為什麼 ——
+                //   「今天安全只因為全部跑在單一主緒上…兩條 lane 同時 post 會撞號，
+                //     而撞號之後那兩則訊息長得完全正常。⇒ 要 offload post 得先把 seq 配號上鎖」
+                //   （那是 TASK-0164）。⇒ 本 Cmd 的 step 現在跑在背景緒上，所以這裡**切回去**再呼叫。
+                //   🩸 不切的後果不是慢，是 seq 撞號，而它的失效樣子是兩則長得完全正常的訊息。
+                //   📌 順序：上鎖（0164）→ 才可以把這一段留在背景。⛔ 反過來就是拆掉唯一還活著的不變式
+                //     （跟 TASK-0163 ④ 完全同形）。
+                var aWatch = System.Diagnostics.Stopwatch.StartNew();
+                bool aWasBackground = System.Threading.Thread.CurrentThread.ManagedThreadId
+                                      != UCL_AgentCmdSlowLog.MainThreadId;
+                if (aWasBackground) await UniTask.SwitchToMainThread(iToken);
+                double aSwitchMs = aWatch.Elapsed.TotalMilliseconds;
+                try
+                {
+                    await new ChatTavern.Cmd_Tavern().ExecuteAsync(aArgs, iToken);
+                }
+                finally
+                {
+                    // 相位：這一格就是 2026-09-09 那 147.9s 說不出口的部分（見 UCL_AgentCmdSlowLog 的區塊註解）
+                    Phase(iCmdArgs, "tavern_post.switch_to_main", aSwitchMs);
+                    Phase(iCmdArgs, "tavern_post.nested_cmd", aWatch.Elapsed.TotalMilliseconds - aSwitchMs);
+                    // 回背景：後面還有寫檔與帳本掃描，那些不該再佔主緒
+                    if (aWasBackground) await UniTask.SwitchToThreadPool();
+                }
                 return aPostCtx?.LastPostSeq ?? 0;
             }
             catch (Exception e)

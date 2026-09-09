@@ -60,7 +60,7 @@ namespace UCL.Core
 
         /// <summary>
         /// scope 清單所在的成員名 (欄位或屬性), e.g. "Interactions".
-        /// <para>清單被收進子物件時可用 <b>點號路徑</b> 逐層往下, e.g. "Interaction.interactions" —
+        /// <para>清單被收進子物件時可用 <b>點號路徑</b> 逐層往下, e.g. "Interaction.contects" —
         /// 路徑上任一層為 null 就當作沒有 scope (回 fallback), 不丟例外.</para>
         /// </summary>
         protected abstract string ScopeMemberName { get; }
@@ -96,7 +96,7 @@ namespace UCL.Core
         }
 
         // 區塊職責：把 "A.B.C" 這種成員路徑逐層取值（每層可為欄位或屬性）。
-        // 物理意義：清單被收進子物件（e.g. 章節資產的 Interaction.interactions）之後，
+        // 物理意義：清單被收進子物件（e.g. 章節資產的 Interaction.contects）之後，
         //          成員不再直接掛在 asset 型別上 —— 單層 ResolveMember 會回 null，
         //          而 null 的下游是「下拉選單變空」而不是報錯 ⇒ 必須支援逐層往下。
         // 數值影響：回傳最後一層的值；路徑上任一層是 null 就回 null（不丟例外）。

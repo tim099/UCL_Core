@@ -355,6 +355,47 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         }
 
         // ===========================================================
+        // 區塊職責：**唯一**帶鎖的 read-modify-write 入口（TASK-0163 形狀甲）
+        // 物理意義：本檔的寫入是「讀整檔 → 改 → 重寫整檔」，而跨度**起於呼叫端的 READ**
+        //          （`Find`／`Require`），不是起於 `Save`。⇒ 一把只包住 `Save` 的鎖擋不住
+        //          「A 讀 → B 讀 → A 寫 → B 寫」，B 的整檔重寫會把 A 那次靜默吃掉。
+        //          ⇒ 所以鎖必須包住 READ ＋ 改 ＋ WRITE 三段，而讓它包得住的唯一辦法是
+        //          **把那三段收成一個型別擋得住的入口**：`e` 只在 lambda 裡存在，
+        //          呼叫端拿不到一個「不在鎖內的 e」。
+        // 🩸 為什麼不是再貼一種註解：舊慣例 `⛔ [RMW-END]` 已經被量出**兩個表達不出來的形狀** ——
+        //   ① 跨函式（`UCL_TaskReconcile.WriteSkip` 把 `e` 當參數收，前哨貼不到）
+        //   ② 跨迴圈輪次（`Cmd_Task.OpSweep` 的 Save 在含 `await` 的迴圈裡，
+        //      前哨每一輪都印在正確位置上，**而它看不見迴圈**）—— @basecamp 2026-09-08 量的。
+        //   ⇒ 修法不是第三種註解，是讓錯的動作在型別上不存在。
+        // 數值影響：同一個 process 內序列化 Task 檔的 RMW。⛔ **不跨 process**
+        //          （python / 別的 Editor 實例同時寫，本鎖答不出來 —— 那要檔案鎖，不在本單射程）。
+        // 邊界：
+        //   · `iMutator` 回傳**時間線那一行**；回 `null` 或空 ⇒ **不寫**（判定在鎖內重做的出口，形狀乙）。
+        //   · 單不存在 ⇒ 回 `false`，不寫、不丟例外（呼叫端自己決定那算不算錯）。
+        //   · ⛔ `iMutator` 裡**不得 await**：那會在持鎖狀態下把控制權交出去。
+        //     今天 11 個 RMW 跨度實測全部 await-free（@basecamp 2026-09-08）⇒ 同步 lambda 蓋得住，
+        //     所以本入口**刻意不提供 async 版本** —— 需要它的那天，要解的是「持鎖 await」那個更大的題。
+        //   · ⚠ 過渡狀態：目前只有 `Cmd_Task.OpSweep` 走本入口，**其餘 11 個呼叫端仍直呼 `Save`**。
+        //     它們現在靠的仍是舊前提（單一主執行緒），而那道 `AssertMainThread` 因此**還不是化石**
+        //     ⇒ 這一輪刻意不動它。TASK-0163 ②（重新定義那道守衛）與 ④（offload）都還開著。
+        // ===========================================================
+        static readonly object s_RmwLock = new object();
+
+        public static bool Mutate(int iIndex, System.Func<UCL_TaskEntry, string> iMutator)
+        {
+            if (iMutator == null) return false;
+            lock (s_RmwLock)
+            {
+                var e = Find(iIndex);          // 鎖內重讀 —— 呼叫端鎖外撈的那份只算「提示」
+                if (e == null) return false;
+                string aActivityLine = iMutator(e);
+                if (string.IsNullOrEmpty(aActivityLine)) return false;   // 判定在鎖內不成立 ⇒ 不寫
+                Save(e, "", "", aActivityLine);
+                return true;
+            }
+        }
+
+        // ===========================================================
         // 區塊職責：解析一張單的 frontmatter。
         // ⚠ participants 是**巢狀清單**，所以這裡是手寫的極簡 YAML 子集 parser：
         //   只認 `  - persona:` / `    role:` / `    assigned_at:` 三種縮排行。

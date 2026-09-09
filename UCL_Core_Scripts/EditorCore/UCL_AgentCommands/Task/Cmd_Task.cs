@@ -852,20 +852,32 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             string aBody = GetArg(iArgs, "body", "").Trim();
             if (aBody.Length == 0) throw new Exception("[Task] op=comment 需要 --arg body=<內容>");
             string aNow = UCL_TaskIO.NowUtc();
-            var aComment = new UCL_TaskComment
+            // ⭐ TASK-0163 形狀甲：整段 RMW 走 `UCL_TaskIO.Mutate`（鎖內重讀 → 改 → 寫）。
+            //   🩸 這一支最值錢的一格是 `NextCommentId`：它是 `max(e.comments.id) + 1`，
+            //   而 `e` 原本是**鎖外**讀的 ⇒ 兩條緒同時留言會算出**同一個 id**，
+            //   接著兩次整檔重寫 ⇒ **其中一則留言靜默消失**（回傳都是 Success、兩邊都印得出自己的 #N）。
+            //   ⇒ 配號必須在鎖內對重讀的 `e` 算，這才是把它變成原子的那一步。
+            // ⛔ 舊的 `[RMW-END]` 前哨在此退場 —— 跨度現在由型別決定，不由註解宣告。
+            int aCommentId = 0;
+            bool aWrote = UCL_TaskIO.Mutate(aIndex, e =>
             {
-                id = UCL_TaskIO.NextCommentId(e),
-                persona = iActor,
-                at = aNow,
-                body = aBody,
-            };
-            e.comments.Add(aComment);
-            UCL_TaskIO.Touch(e, aNow);
-            // 時間線只留一行「有人留言了」的索引 —— 內容在留言區，**不存兩份**
-            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　`comment`　{iActor} 留言 #{aComment.id}");
+                aCommentId = UCL_TaskIO.NextCommentId(e);
+                e.comments.Add(new UCL_TaskComment
+                {
+                    id = aCommentId,
+                    persona = iActor,
+                    at = aNow,
+                    body = aBody,
+                });
+                UCL_TaskIO.Touch(e, aNow);
+                // 時間線只留一行「有人留言了」的索引 —— 內容在留言區，**不存兩份**
+                return $"{aNow}　`comment`　{iActor} 留言 #{aCommentId}";
+            });
+            if (!aWrote)
+                throw new Exception($"[Task] TASK-{aIndex} 留言沒有落檔 —— 鎖內重讀時那張單不在了"
+                    + "（被刪或被搬）。⛔ 這不是「留言失敗」的泛稱，是**寫入沒有發生**，妳的內容沒有進磁碟。");
 
-            ioR.AppendLine($"## ✅ {e.Id} 已留言 #{aComment.id}");
+            ioR.AppendLine($"## ✅ {e.Id} 已留言 #{aCommentId}");
             ioR.AppendLine($"- 作者：{iActor}　時間：{aNow}");
             ioR.AppendLine("- 落點：單檔的 `## 留言` 區塊（時間線只留一行索引）");
             ioR.AppendLine();
@@ -873,8 +885,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine(aBody);
             ioR.AppendLine("```");
             ioR.AppendLine();
-            bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Comment, iActor, "", aBody, iArgs);
-            AppendNotifyLine(ioR, e, iActor, aOk);
+            // ⚠ 通知要用**落檔之後**的那一份：`e` 是鎖前讀的提示，而公告要 @ 的參與者清單
+            //   可能在鎖內那一刻已經不同（別人剛 assign）。⇒ 重讀一次；讀不到就退回用提示，
+            //   ⛔ 不因為讀不到就不發公告（那會讓「發不出去」與「沒有人該被通知」同形）。
+            var aFresh = UCL_TaskIO.Find(aIndex) ?? e;
+            bool aOk = await UCL_TaskNotify.PostAsync(aFresh, UCL_TaskNotify.Kind.Comment, iActor, "", aBody, iArgs);
+            AppendNotifyLine(ioR, aFresh, iActor, aOk);
             ioR.AppendLine("- ⚠ 留言**會推進 `updated_at`** ⇒ 它會讓 stale 計時歸零。");
             ioR.AppendLine("  所以「留言說我還在做」跟「真的有做」在 stale 讀數上長得一樣 —— 這是這個讀數的邊界。");
         }
@@ -1459,25 +1475,53 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 return;
             }
 
+            // ⭐ TASK-0163 形狀乙：**候選清單從這裡起降級成「提示」**。
+            //   上面那份 `aCandidates` 是在迴圈**外**讀的，而本迴圈每一輪尾端有 `await`
+            //   ⇒ 第 k 張落檔的時候，那份判定已經是 k-1 次 await 之前的事了。
+            //   而 sweep 是 check-then-act：判定（in_progress 且 ≥N 天沒動）與動作（改回 todo）
+            //   必須原子，否則別人剛剛才認領／剛剛才留言的單會被我釋放掉，
+            //   🩸 而失效的樣子是**時間線上多一行「sweep 釋放」而它的理由已經不為真** —— 沒有任何一層會叫。
+            //   ⇒ 走 `UCL_TaskIO.Mutate`：鎖內重讀那張單、**把判定原樣再跑一次**，不成立就回 null 不寫。
             int aDone = 0;
-            foreach (var e in aCandidates)
+            int aSkipped = 0;
+            foreach (var aHint in aCandidates)
             {
                 string aTs = UCL_TaskIO.NowUtc();
-                int aDays = e.DaysSinceUpdate(aNow);
-                var aFrom = e.status;
-                e.status = UCL_TaskStatus.todo;
-                UCL_TaskIO.Touch(e, aTs);
-                // ⚠ 時間線一定要留一行說**為什麼**被釋放 ——
-                //   沒有這行的話，明天看到它從 in_progress 變回 todo 會像有人手動改的
-                // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-                UCL_TaskIO.Save(e, "", "", $"{aTs}　`todo`　sweep 釋放（{aFrom} 已 {aDays} 天沒動作，"
-                    + $"逾期 {UCL_TaskIO.STALE_DAYS} 天門檻）by {iActor}");
-                bool aOk = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
-                    $"{aFrom} → **todo**（sweep：認領後 {aDays} 天沒動，釋放回待領）", iCallerArgs: iArgs);
-                AppendNotifyLine(ioR, e, iActor, aOk);
+                var aFromCaptured = UCL_TaskStatus.todo;
+                int aDaysCaptured = 0;
+                bool aWrote = UCL_TaskIO.Mutate(aHint.index, e =>
+                {
+                    // ⛔ 判定在鎖內對**重讀的 e** 重做一次 —— 不用 aHint 的欄位。
+                    if (e.status != UCL_TaskStatus.in_progress) return null;
+                    int aDays = e.DaysSinceUpdate(aNow);
+                    if (aDays < UCL_TaskIO.STALE_DAYS) return null;
+                    if (aOnly.Length > 0 && e.RolesOf(aOnly).Count == 0) return null;
+
+                    aFromCaptured = e.status;
+                    aDaysCaptured = aDays;
+                    e.status = UCL_TaskStatus.todo;
+                    UCL_TaskIO.Touch(e, aTs);
+                    // ⚠ 時間線一定要留一行說**為什麼**被釋放 ——
+                    //   沒有這行的話，明天看到它從 in_progress 變回 todo 會像有人手動改的
+                    return $"{aTs}　`todo`　sweep 釋放（{aFromCaptured} 已 {aDaysCaptured} 天沒動作，"
+                        + $"逾期 {UCL_TaskIO.STALE_DAYS} 天門檻）by {iActor}";
+                });
+                if (!aWrote)
+                {
+                    aSkipped++;
+                    ioR.AppendLine($"- ⏭ {aHint.Id} **跳過**：鎖內重讀之後它已經不符合釋放條件"
+                        + "（有人剛動了它，或它已經不是 `in_progress`）⇒ 這不是失敗，是判定在寫入時重做的結果。");
+                    continue;
+                }
+                bool aOk = await UCL_TaskNotify.PostAsync(aHint, UCL_TaskNotify.Kind.Status, iActor,
+                    $"{aFromCaptured} → **todo**（sweep：認領後 {aDaysCaptured} 天沒動，釋放回待領）", iCallerArgs: iArgs);
+                AppendNotifyLine(ioR, aHint, iActor, aOk);
                 aDone++;
             }
             ioR.AppendLine($"- ✅ 已釋放 **{aDone}** 張回 `todo`（每張的時間線都留了釋放理由）");
+            if (aSkipped > 0)
+                ioR.AppendLine($"- ⏭ **{aSkipped}** 張在鎖內重判時已不符條件而跳過"
+                    + "（候選清單是迴圈外的讀數 ⇒ 它是提示不是判定）。");
             ioR.AppendLine("- ⚠ 釋放**不代表那件事不必做** —— 它只是把「有人在做」這個假讀數收回來。");
         }
 

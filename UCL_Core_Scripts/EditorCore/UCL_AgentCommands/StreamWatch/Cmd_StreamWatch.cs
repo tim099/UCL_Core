@@ -2345,11 +2345,22 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   （主場 ∪ 其 companions ∪ 已匯進同一章的舊場次），所以自動化不會把第二場漏掉。
             // 數值影響：只有 **primary** 觸發（陪同者收工不觸發，否則同一章會被每個人各匯一次）；
             //   準備檔沒填章名或 auto_export=false ⇒ 完全不跑，退回原本的手動指令。
-            // ⭐ **最後收工的人觸發匯出**（Tim 2026-08-26 拍板；取代原本的「只有 primary 觸發」）
+            //
+            // ⭐ **現行判準：primary 觸發 ＋ 收工後等 SETTLE_GRACE_SEC 秒，到期強制結算殘留場**
+            //   （TASK-0176，Tim 2026-09-08 拍板）。
+            // 🩸 而下面那段「最後收工的人」是**沿革不是現況** —— 2026-08-26 到 2026-09-08 之間的判準。
+            //   ⚠ 這幾行到 2026-09-09 還把它寫成現行規則，而碼早就改了（`aIsWrapUpOwner = aIsPrimary`）
+            //   ⇒ 一個讀註解的人會照字面相信一個已經不存在的判準。**修的是字，不是行為。**
             // 🩸 為什麼要換：primary 的 ends_at 通常先到 ⇒ 她收工時陪看者還 active ⇒
             //    那些場次**還不在台帳上**（AppendSessionLog 只在結算時跑）⇒
             //    `--from-session` 撈不到它們 ⇒ **不會有人替它們 append `record_type=export` 那一筆**，
             //    於是「已匯出」與「還沒匯出」在台帳上同形（BUG-9 那一族）。
+            // ⇒ **而那個修法自己壞在另一頭**（2026-09-08 實撞）：「等每一個人都回來」把整條收尾
+            //   掛在最不可靠的那個參與者身上 —— 有人沒回來跑收工 ⇒ 沒有人成為最後一個
+            //   ⇒ 章沒進書、錄影整晚開著，**而失效樣子是沉默**（每個人的回傳檔都印「還不是最後一個」，
+            //   那句話在「正常等待」與「那個人再也不會回來」兩種情況下逐字相同）。
+            //   ⇒ 現行修法保留它想解的那件事（台帳要有全部場次）而換掉判準：
+            //   primary 收尾 ＋ 有界的寬限 ＋ 到期強制回收 —— 不確定性被**有界化**，不再無限等待。
             //    ⚠ 這裡講的是**那筆 export 紀錄缺席**，不是「欄位沒被填」——
             //      場次列的 `exported_chapter` 任何情況下都不會被填（見該欄位的 remarks）。
             //    實撞（今晚 charlie 第一場）：書收錄 4 人 38 筆，而 `場次` 只列 2 場。
@@ -2374,7 +2385,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //   其餘一律當 primary。**不確定時傾向「有人收尾」**，因為漏收尾是靜默的、重複收尾會被判重擋下。
             bool aIsPrimary = !string.Equals(ioS.role, "companion", StringComparison.OrdinalIgnoreCase);
             var aStillOn = ActiveGroupPeers(aGroupSid, iPersona);
-            bool aIsLastOut = aIsPrimary;   // ⇐ 收尾者＝primary（不再是「最後一個收工的人」）
+            bool aIsWrapUpOwner = aIsPrimary;   // 收尾者＝primary。⚠ 這個變數 2026-09-09 之前叫 aIsWrapUpOwner，
+            //   而那個名字在判準換掉之後就在說謊 —— 一個讀它的人會以為條件是「同組沒人在線」。
 
             // ⚠ **補結算舊殘留那條路不等寬限**（`residue-settled` / `forced-by-…`）：
             //   那一刻通常是「某人正要開新場」或「有人在關殘留」，讓他們卡 2 分鐘是把成本轉嫁給無關的人；
@@ -2395,7 +2407,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
             var (aAutoOn, aAutoWhy) = ReadAutoExportSetting(ioS.library_media_id);
             bool aExported = false;
-            if (!aIsLastOut)
+            if (!aIsWrapUpOwner)
             {
                 ioR.AppendLine();
                 ioR.AppendLine("## 實錄匯出（自動）");
@@ -2406,7 +2418,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 ioR.AppendLine("- 📌 改掉「最後一個收工的人」的理由：那個判準要求**每一個人都回來**，"
                              + "而缺席時它的失效樣子是沉默（2026-09-08 實撞：章沒進書、錄影一直開著）。");
             }
-            if (aIsLastOut && aAutoOn)
+            if (aIsWrapUpOwner && aAutoOn)
             {
                 var (aOk, aOut, aErr) = await RunExportWatch(aSessionId, iToken);
                 aExported = aOk;
@@ -2427,15 +2439,15 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
 
             // ── 收工關錄影（Tim 2026-09-08 拍板：整合進「輸出書籍」那一步）─────────
-            // 區塊職責：最後一個收工的人，順手把**本場開起來的**錄影關掉。
-            // 物理意義：掛在跟匯出**同一個判準**（`aIsLastOut` ＝ 同組沒有人還在線）上 ——
+            // 區塊職責：**主觀影者（primary）**收工時，順手把**本場開起來的**錄影關掉。
+            // 物理意義：掛在跟匯出**同一個判準**（`aIsWrapUpOwner` ＝ 本場是 primary）上 ——
             //          不另立第二套「誰該收尾」的規則，那種第二把尺會跟第一把慢慢分岔而沒有人會發現。
             // ⚠ 但**刻意不綁在匯出成敗上**：匯出失敗（章沒進書）與錄影該不該關是兩件事，
             //   綁在一起會讓 `auto_export=false` 順手把「關錄影」也關掉 —— 那是一個沒有人宣告過的耦合。
             // 邊界：⛔ 只關**本場 prepare 開起來的**（`recording_opened_by_prepare`）。
             //   開場時已經在錄 ⇒ 那是別人的狀態（Tim 可能為了別的用途開著），不動它。
             //   ⇒ 「沒關」有兩種理由，回傳檔**逐條印出來**：不是最後一個 / 不是本場開的。
-            if (aIsLastOut)
+            if (aIsWrapUpOwner)
             {
                 ioR.AppendLine();
                 ioR.AppendLine("## 錄影");
@@ -2470,9 +2482,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 ioR.AppendLine("   （併章時的副標保留、跨作品併章仍是人的判斷，工具只覆蓋「一場＝一章」與「同章多場併區間」）");
                 return;
             }
-            if (aIsLastOut && !aAutoOn)
+            if (aIsWrapUpOwner && !aAutoOn)
                 ioR.AppendLine($"   ℹ 自動匯出未啟用：{aAutoWhy}");
-            else if (!aIsLastOut)
+            else if (!aIsWrapUpOwner)
                 // ⚠ 2026-09-08：舊字面是「本場尚有人在線（…）—— 匯出由最後收工的人觸發」，
                 //   而收尾者改成 primary 之後那句有兩個錯：① 判準過期 ② 沒人在線時會印**空括號**
                 //   （測試當場撞到）。⇒ 改成陳述本場的角色，不再轉述一個已經不存在的判準。
@@ -3692,7 +3704,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         //   台帳的缺漏會顯示成「這段沒有 seq」——**讀不到與沒有，在輸出上可分**。
         // ⚠ 這份**不是暫存**：書可能幾週後才重出（TASK-0061），對照表必須跟書一樣長壽 ⇒ 進版控。
         // ===========================================================
-        /// <summary>同一場（同 relay 組）**還在線**的其他人 —— 給「最後收工的人觸發匯出」用。
+        /// <summary>同一場（同 relay 組）**還在線**的其他人 —— 給 primary 的**收尾寬限**用
+        /// （TASK-0176：等這份清單清空或到期強制結算；⛔ 不再是舊的「最後收工的人觸發匯出」判準）。
         /// 判定只認 session 檔的顯式 `active` 欄位，不推論。
         /// ⚠ 呼叫端必須**先**把自己存成 active=false 再問，否則永遠問不到 0。</summary>
         // ===========================================================
@@ -3719,6 +3732,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             ioR.AppendLine("## 收尾寬限（primary 等同場的人收播）");
             ioR.AppendLine($"- 起手仍在線：{string.Join(" / ", iStillOn.Select(p => "@" + p))}"
                          + $"　｜上限 **{SETTLE_GRACE_SEC:F0}s**（每 {SETTLE_POLL_SEC:F0}s 回讀一次 session 檔）");
+            // ⚠ 逾時處置要印在**等待開始之前**（TASK-0176 ⑥）——
+            //   這一行的讀者是「CLI 已經回 exit 3、正在決定要不要重打」的那個人，
+            //   而他此刻手上唯一的東西就是這個檔案。印在後面等於沒印（那時他已經重打了）。
+            //   🩸 在此之前這段話只活在**碼的註解裡**，回傳檔一個字都沒有。
+            ioR.AppendLine($"- ⚠ **這一步會讓 CLI 逾時**（`senate ucmd` 預設等 120s，而本步上限就是 {SETTLE_GRACE_SEC:F0}s）"
+                         + "　⇒ `exit 3` 與 `delegate_failure = timeout` 是**預期**，不是失敗。");
+            ioR.AppendLine("- ⛔ **逾時 ≠ 沒執行，不要重打** —— 處置是看本檔的 mtime（它會在收尾跑完後更新）；"
+                         + "重打會讓強制結算與收播公告**再發一次**。");
 
             var aWatch = System.Diagnostics.Stopwatch.StartNew();
             var aStill = iStillOn;

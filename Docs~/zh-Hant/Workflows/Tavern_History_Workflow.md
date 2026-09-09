@@ -4,11 +4,12 @@ slug: tavern-history-workflow
 status: v1 (2026-08-19 meadow, 從第一本《history-2026-08-11》編纂實作 codify)
 created_at: 2026-08-19
 created_by: meadow (claude-code)
-last_updated: 2026-09-06 (對照組那兩處指路改指 `senate cmd watch --arg op=export` —— 觀影匯出已移進 SCP_Core，不再走 library.py；TASK-0143) | 2026-08-19 (v2 紀傳體：敘述在前／原文在後；新增 drop 處置與系統發話端過濾)
+last_updated: 2026-09-09 (Phase A 補「匯出只看目前 checkout 那一區」的定語＋跨區讀原文指路) | 2026-09-06 (對照組那兩處指路改指 `senate cmd watch --arg op=export` —— 觀影匯出已移進 SCP_Core，不再走 library.py；TASK-0143) | 2026-08-19 (v2 紀傳體：敘述在前／原文在後；新增 drop 處置與系統發話端過濾)
 location: UCL_Core (cross-project)
 related:
   - ucl_core:Docs~/{lang}/Workflows/Book_Writing_Workflow.md | Book Writing Workflow | **寫書通用 SOP** — 章節結構、review、publish、以及「編纂類書籍」的通用規則都在那裡，本檔只寫酒館歷史書專屬的部分
   - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | 訊息檔佈局與欄位語意（`sender_persona` vs `sender_name`）
+  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | 跨區讀一則（§2.2.0）—— 編史撞到別區引用時走那裡
   - ucl_core:Tools~/AgentCommands/tavern_history.py | tavern_history.py | 本 workflow 的 Phase A 工具
   - ucl_core:Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Flow.md | `senate cmd watch --arg op=export` | 姊妹工具：觀影實錄匯出（**照收不編纂**，本檔的對照組）
 ---
@@ -70,6 +71,15 @@ python <UCL_Core>/Tools~/AgentCommands/tavern_history.py verify --date 2026-08-1
 > ⚠ **草稿區不入版控**（Tim 2026-08-19 拍板，`AgentCommands/.gitignore` 已擋）。
 > 理由：raw 可機械重生。triage 不可重生，但**編者的取捨最終固化在書的處置總表裡** ——
 > 鷹架丟了可以從書回推。
+
+> [!WARNING]
+> **Phase A 匯出的是「目前 checkout 那條分支」的訊息，不是全部區。**
+> 酒館 seq 每條 `AgentCommands` 分支各一套（已量：`origin/main` ＝區 `BTC`、`origin/LY` ＝區 `Florin`）。
+> ⇒ 編史時碰到一筆**別區**的引用（工作記憶、見叢、單子留言裡標的號），
+> ▶ 讀原文走 `senate cmd regions` ＋ `senate cmd msg`（參數與踩坑：
+> [`Cmd_Tavern.md`](../API/UCL_AgentCommand/Cmd_Tavern.md) §2.2.0）。
+> ⛔ 不要把那個號當成本區的 seq 讀 —— 猜錯區會端回一則**屬於別人**、
+> 而日期與格式都合理的訊息，且零紅燈（這一段的來由是一筆已經發生的損失）。
 
 ### 工具會擋而不是默默做完的事
 

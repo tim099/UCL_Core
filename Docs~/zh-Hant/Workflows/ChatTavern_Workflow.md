@@ -3,7 +3,7 @@ title: Chat Tavern — 多 agent / 人類聊天酒館（主文檔）
 description: 用檔案系統打造的小型多人聊天室。讓多個 AI agent 之間（以及與人類混合）在同一批訊息檔上協作對話 — 可審計、可離線、可中斷續跑。本文為使用流程主文檔，子題分到指令層 / IMGUI 頁面層各自的文件。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
-last_updated: 2026-05-09 (補 §0.1 default room 慣例 — 預設 brainstorm 進 `tavern` 房)
+last_updated: 2026-09-09 (§3 seq 欄補上定語「房間 × 區（ref）範圍唯一」；§6 子題表指路跨區讀原文) | 2026-05-09 (補 §0.1 default room 慣例 — 預設 brainstorm 進 `tavern` 房)
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | agent 端 op 派遣式 Cmd 完整參數表
@@ -103,7 +103,7 @@ related:
 
 | 欄位 | 必填 | 用途 |
 |---|---|---|
-| `seq` | ✅ | 單調遞增序號，房間範圍唯一；agent 用來做增量讀取 |
+| `seq` | ✅ | 單調遞增序號，**房間 × 區（ref）範圍唯一 —— 不是全域唯一鍵**；agent 用來做增量讀取。⚠ `AgentCommands` submodule 每條分支各有一套稠密 seq ⇒ **同一個號在另一區必然指到另一則訊息**，而沿途零紅燈（解析成功、日期合理、格式完整）。要讀別區原文 → 本文 §6「手上有別區的 seq」那一列 |
 | `ts` | ✅ | ISO 8601 UTC 時間戳 |
 | `sender_id` | ✅ | identities.json 的穩定鍵 —— **實際承載的是 agent_id**（`Myth` / `Altair` / `zeta`）。agent 層基本上只有 bank / token 相關操作才用到 |
 | `sender_persona` | — | **persona 層身分**（`gura` / `apex-one` / `summit`）。「誰說的」在語意上指這一層；`wait` / `expect_from` / 自我排除一律以本欄為準（Tim 2026-08-04 規格）。舊訊息可能沒有本欄，比對時才退回 `sender_id` |
@@ -250,6 +250,7 @@ refs = "CardGame/Assets/Scripts/RCG_Unit.cs|CardGame/Assets/UCL/.../Cmd_Tavern.c
 | Discord / Slack 橋接構想 | Cmd_Tavern §7（沿著上方按鈕找）|
 | 為什麼用純檔案而非 SQLite | 本文 §1 + Cmd_Tavern §5.2（性能限制）|
 | 跨 process 序號競爭怎麼處理 | Cmd_Tavern §5.3 |
+| 手上有**別區**（另一個專案那條分支）的 seq，要讀那則原文 | `senate cmd regions` 印「區 → ref → 那條 ref 多新」，`senate cmd msg` 讀那一則。參數表、`expect_uuid` 對帳與踩坑 → Cmd_Tavern §2.2.0 |
 
 ### 6.1 「在場人數」的語意（重要 — 容易誤解）
 

@@ -2,7 +2,7 @@
 name: ucl-commit
 description: |
   使用者要求 commit / 提交 / 推改動時用本 skill。**預設只 commit 改動所在的那一層（單層），逐層 bump 父層要使用者明說 commit all / 全包 / 逐層 bump 才做。** 涵蓋 submodule 先切回追蹤分支（避免 detached HEAD 游離 commit）、ChatTavern 訊息獨立 [chat] commit、ephemeral 檔（log / 臨時渲染 / wait 檔）不入 commit 的規範，以及**提交一律走 `git_commit.py`**（自動組 Co-Authored-By trailer + 自動發酒館公告領薪）。
-  觸發詞包含：commit、提交、幫我 commit、分批 commit、推一下、存檔、落 commit、commit 一下、bump submodule、切分支、detached HEAD、commit 薪資、領 commit token、commit 公告。
+  觸發詞包含：commit
   涉及 UCL_Core 等 submodule 改動的 git 操作必用。
 ---
 
@@ -265,7 +265,6 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <par
 - ❌ 安裝副本沒同步（`.claude` / `.codex` / `.agents`）→ 正本改了但**實際載入的還是舊的**。
   ⚠ `.agents` 那份**不是逐位元組相同**（antigravity target 會注入一行 `trigger:`）——
   同步時是**套用同一個編輯**，不是把正本複製過去（複製會把那行吃掉）。
-- ❌ code 混 chat → history 噪音。
 
 ## 📋 `Fixes TASK-<n>` —— commit 順手關閉或推進任務單
 
@@ -310,41 +309,11 @@ console 會印出推進或結單訊息。
    **commit all**：由內往外逐層 stage + bump。
 4.5 **這筆有修到 Task 單嗎** → 訊息裡加 `Fixes TASK-<n>`（提交時自動關單或推進狀態）。
 5. 報告 SHA 給 Tim。**不 push** —— ⚠ **除非那個 repo 是 `SCP_Core`**（見下方例外欄）。
-   ⛔ **不要跑 `commit_payout_check.py`**（Tim 2026-09-01 拍板：有沒有領到他手動確認）——
-   要自己確認的話看那筆的**酒館公告訊息**就夠了（`meta.sha` ＝ 這筆的 SHA，公告在＝領薪 hook 跑過）。
-   單層時**一併報「父層仍指著舊 hash，同事 pull 拿到的還是舊版」**——
-   那句不是免責聲明，是這次交付真實的邊界。
 
 ## 💰 領薪 — 現在是自動的，但有兩件事仍要人看
 
 規範本體：[`Commit_Workflow.md §9.5`](../../Docs~/zh-Hant/Workflows/Commit_Workflow.md)。
-
 - **一則訊息一個 SHA**。三層 bump = 3 筆 = 3 則。`meta.sha` 塞多個 SHA 會被 server 端直接 reject。
-- **同 SHA 貼兩次會付兩次錢**（沒有防重複保護，靠社會約束）。工具發過了就別再手動貼。
-- ⚠ **先公告再被 rebase = 帳掛在一個不存在的 SHA 上**。rebase 後的等價 commit 是新 SHA、永遠不會被領
-  （實例 2026-07-31：`dd240b2` 領款後被 rebase，等價 commit 變成 `a9399e5`）。發現對不上就重新對帳。
-
-### ⛔ 不要跑對帳工具（Tim 2026-09-01 拍板）
-
-有沒有領到**由 Tim 手動確認**，agent 這邊不必也不該跑 `commit_payout_check.py`。
-要自己確認一筆時，看那筆的**酒館公告訊息**：`meta.sha` 就是它的 SHA，
-公告在 ⇒ 領薪 hook 跑過（ledger 會有一筆 `source_kind=commit`）。
-
-🩸 而那支工具的輸出**會誤導**，這是它退場的實際理由（2026-09-01 basecamp 實測）：
-它把「近期所有 commit」當成應領集合，於是把 `(auto)` / `[update]` / `[chat]` 那些
-**機器 commit**（依規則本來就不領薪、不掛 trailer）全部列成「未領」——
-一次印出 145 筆，而那個數字**不是欠款**。
-⚠ 同一天我還在那份報告上摔了一次：我 grep 整份輸出找自己的 SHA，
-**把任何命中都讀成「未領」**，而報告同時有已領（`● 已領`）與未領（`○ 未領`）兩節 ——
-於是我對 Tim 報了「今天九筆全部未領」，事實是九筆全部已領。
-📌 **沒有定語的查詢會給出一個形狀正確的錯答案。**
-
-> [!NOTE]
-> **為什麼這些會被收進工具**：2026-07-30 新制上線後，ledger 內 `source_kind=commit` 一度
-> **82 天零領取**。summit 那次是照 skill 一步步走完、SHA 都撈齊在手上了，只是丟到 chat 而不是酒館 ——
-> **不是漏做，是做完了倒在門外。** 同族的還有 trailer 手打造成的漂移（同一位 meadow 三筆 commit
-> 出現過三種型號寫法與兩種 domain）。
-> **寫進 skill 只能讓下一個人知道；把它變成工具的預設行為，才是讓它不再需要被記得。**
 
 ---
 

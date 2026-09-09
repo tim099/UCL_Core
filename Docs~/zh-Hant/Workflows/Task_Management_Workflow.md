@@ -1,7 +1,7 @@
 ---
 title: Task Management Workflow — 小團隊任務管理操作手冊（3~5 人）
 description: 3~5 人小團隊的任務管理操作手冊 —— 一單一檔、做的人與驗的人兩個角色為主（其餘五個只是標籤）、驗不過退回不另開 bug 單、Commit 帶 Fixes TASK-N 自動閉環、跨日單用 memory_topic 接回工作記憶、定期清掉沒有人在等的單。判準（什麼時候該開單／解單時不要複雜化）在 ucl-task skill，本檔只寫怎麼做。
-last_updated: 2026-09-09
+last_updated: 2026-09-09 (op=check 新增 expect_text 呼叫端錨；0/0 不再說「全部都勾了」；TASK-0163) | 2026-09-09
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Task_Management_System.md | Task Plan RFC | 系統架構設計與資料模型
@@ -72,6 +72,24 @@ related:
 
 **要不要拆成「交付／驗收」兩行**：**只有單上指名了 QA 才拆**（那時才真的有兩個人、兩種憑據）。
 沒有指名 QA 的單維持一行 —— 一個人做的事拆兩行只是寫兩遍。
+> [!IMPORTANT]
+> ## `expect_text` —— 序號會位移，文字不會（TASK-0163）
+>
+> `criteria_index` 是**未勾清單**的序號 ⇒ **別人在你讀完清單之後勾了任何一格，同一個號碼就指到另一條標準**，
+> 而 `op=check` 是**簽名行為** ⇒ 失效樣子是「我的名字出現在一格我沒驗過的標準上」，**兩邊都回 Success**。
+>
+> 🩸 活體（basecamp 2026-09-09，兩條真 lane 相距 31ms）：意圖是「A 勾甲、B 勾乙」，
+> 而 B 的 `criteria_index=2` 落在**丙**（A 先勾掉甲 ⇒ 清單位移）。
+> ⚠ 那**不是**鎖沒鎖住：鎖內那個錨保護的是「**本次 cmd 鎖外那一讀**」（毫秒級），
+> 而人的決定來自**更早一次** dry-run（秒／分鐘級）—— 那份清單從來不進到 cmd 裡。
+>
+> ⇒ 要簽名就帶 `expect_text=<你看到的那一行前綴>`。形狀照 `senate cmd msg --arg expect_uuid`。
+> ⛔ 選填（不帶＝舊行為），但**跨越一次 dry-run 才決定要勾哪格時，它是唯一的守衛**。
+
+⚠ 另一格（同族，2026-09-09 修）：驗收標準**沒有 `- [ ]`** 的單，`op=check` 讀數是 `0/0`，
+而它原本印「（全部都勾了）」⇒ 看板上長成「已驗完」而**一格都沒簽**。現在它會明說
+「這張單一格勾選格都沒有」並印修法。📌 現況：183 張單裡 **22 張**是這樣（照 `UCL_TaskIO` 同一條規則數的）。
+
 ⚠ 現況邊界：`op=check` 的權限是整張單一個尺度（有指名 QA ⇒ 只有 QA 能勾），
 ⇒ 做的人目前勾不了自己的交付格；過渡期由 QA 一併勾。
 📎 完整判準與血證 → skill §4。
@@ -275,6 +293,8 @@ $R --arg op=comment --arg index=42 --arg body="今日完成 P1~P6 分鏡，預�
 $R --arg op=check --arg index=42                            # 不帶序號＝dry-run：印未勾清單、**零寫入**
 $R --arg op=check --arg index=42 --arg criteria_index=3      # 勾第 3 格
 $R --arg op=check --arg index=42 --arg criteria_index=1,4    # 多筆（內部由大到小套用 ⇒ 序號不位移）
+$R --arg op=check --arg index=42 --arg criteria_index=3 --arg expect_text="<那一行的前綴>"   # ⭐ 呼叫端的錨
+#   多筆用 `|` 分隔、筆數要與 criteria_index 相同、照你寫的順序配對；對不上 ⇒ 整批不做、零位元組。
 #   ⚠ 序號是**未勾清單**的 1-based 序號，**不是檔案行號**、也不含已勾的行
 #   誰可以勾：單上有指名 QA ⇒ **只有 QA**；沒有 QA ⇒ 參與者＋開單人。其他人擋下（非零退出、零寫入）
 #   ⛔ **沒有** `qa_note=` 代簽出口（`resolve` 有）—— 關不掉的單會卡住工作，**沒勾的驗收格不卡任何人**

@@ -1019,7 +1019,24 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             if (aRaw.Length == 0)
             {
                 ioR.AppendLine("## 未勾的驗收格（序號＝**未勾清單**的序號，不是檔案行號）");
-                if (aOpen.Count == 0) ioR.AppendLine("- （全部都勾了）");
+                // ⭐ TASK-0163：**零個勾選格**與**全部都勾了**是兩件相反的事，而它們原本共用同一句話。
+                //   🩸 basecamp 2026-09-09 在本單上實撞：①〜⑤ 是散文行（沒有 `- [ ]`）⇒ 讀數 0/0，
+                //     而工具印「全部都勾了」⇒ 看板上 `in_review` ＋「全都勾了」＝**看起來已驗完，而一格都沒簽**。
+                //   ⇒ 分辨不靠猜：兩邊都 0 ＝ 這一段裡一格勾選格都沒有。
+                if (aOpen.Count == 0 && aDone.Count == 0)
+                {
+                    int aTextLines = CountCriteriaTextLines(aCriteria);
+                    ioR.AppendLine("- 🛑 **這張單一格勾選格都沒有**（⛔ 不是「全部都勾了」）"
+                        + (aTextLines > 0
+                            ? $" —— 驗收標準那一段有 {aTextLines} 行文字，但沒有一行是 `- [ ]` 開頭"
+                            : " —— 驗收標準那一段是空的"));
+                    ioR.AppendLine("  ⇒ 它現在**結構上簽不掉**：`op=check` 沒有東西可以勾，"
+                        + "而看板只看得到「這張單有驗收標準」。");
+                    ioR.AppendLine("  ▶ 修法：每一條改寫成 `- [ ] <一格一行>`，走整份覆寫（title 要原封不動）：");
+                    ioR.AppendLine($"    `run Task --arg op=update --arg index={aIndex}"
+                        + " --arg title=\"<原標題>\" --arg-file criteria=<整段>`");
+                }
+                else if (aOpen.Count == 0) ioR.AppendLine($"- （全部都勾了 —— 已勾 {aDone.Count} 格）");
                 for (int i = 0; i < aOpen.Count; i++)
                     ioR.AppendLine($"- #{i + 1}　{Trunc(aOpen[i], 160)}");
                 ioR.AppendLine();
@@ -1039,8 +1056,16 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 // ⚠ 未勾清單是空的時候**不可以**印「範圍 1..0」—— 那是一個不存在的區間，
                 //   而它出現的時機正好是「全部都勾完了」，讀的人最需要一句話講清楚。
                 if (aOpen.Count == 0)
+                {
+                    // ⭐ TASK-0163：兩種相反的 0 —— 「一格勾選格都沒有」與「全部都勾了」。
+                    if (aDone.Count == 0)
+                        throw new Exception($"[Task] {e.Id} **一格勾選格都沒有**（⛔ 不是「全部都勾了」）"
+                            + $" —— 驗收標準那一段有 {CountCriteriaTextLines(aCriteria)} 行文字，"
+                            + "但沒有一行是 `- [ ]` 開頭 ⇒ 這張單結構上簽不掉。"
+                            + " 不帶 `criteria_index` 跑一次，它會印修法");
                     throw new Exception($"[Task] {e.Id} 的驗收標準**全部都勾了**（已勾 {aDone.Count} 格）"
                         + " —— 沒有格子可以勾。⚠ 已勾的行不在序號範圍內（勾兩次不是冪等，是打錯了）");
+                }
                 if (v < 1 || v > aOpen.Count)
                     throw new Exception($"[Task] criteria_index={v} 在範圍外（目前未勾 1..{aOpen.Count}）"
                         + " —— ⚠ 序號是**未勾清單**的序號，不是檔案行號。整批不執行"
@@ -1049,6 +1074,41 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             }
             if (aWant.Count == 0)
                 throw new Exception("[Task] criteria_index 解析後一個序號都不剩（只有分隔符？）");
+
+            // ⭐ TASK-0163：`expect_text` —— 讓**呼叫端**把「我看到的那一行」帶進來當錨。
+            //   🩸 為什麼鎖內那個錨不夠：它錨的是「**本次 handler 鎖外那一讀**」（毫秒級），
+            //     而人的決定來自**更早一次** dry-run（秒／分鐘級）—— 那份清單從來不進到這支 cmd 裡。
+            //   🩸 活體（basecamp 2026-09-09，兩條真 lane 相距 31ms）：意圖是「A 勾甲、B 勾乙」，
+            //     而 B 的 `criteria_index=2` 落在**丙** —— A 先勾掉甲 ⇒ 未勾清單位移
+            //     ⇒ 一個署名落在呼叫端從來沒選過的那條標準上，**兩邊都回 Success**。
+            //   📌 形狀照 `senate cmd msg --arg expect_uuid`：**序號會位移，文字不會。**
+            //   ⛔ 選填 —— 不帶＝行為與過去完全一樣（既有呼叫端不受影響）。
+            var aWantAsTyped = new List<int>(aWant);
+            string aExpectRaw = GetArg(iArgs, "expect_text", "").Trim();
+            if (aExpectRaw.Length > 0)
+            {
+                var aParts = aExpectRaw.Split('|')
+                    .Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+                if (aParts.Count != aWantAsTyped.Count)
+                    throw new Exception($"[Task] expect_text 給了 {aParts.Count} 筆、"
+                        + $"criteria_index 給了 {aWantAsTyped.Count} 個 —— **筆數必須相同**"
+                        + "（用 `|` 分隔，照 criteria_index 的順序配對）。整批不執行");
+                for (int i = 0; i < aParts.Count; i++)
+                {
+                    int v = aWantAsTyped[i];
+                    string aSeen = aOpen[v - 1].Trim();
+                    if (aSeen.StartsWith(aParts[i], StringComparison.Ordinal)) continue;
+                    ioR.AppendLine("## blocked");
+                    ioR.AppendLine($"- reason: `expect_text` 對不上 —— 序號 #{v} 現在指到的是");
+                    ioR.AppendLine($"    「{Trunc(aSeen, 60)}」");
+                    ioR.AppendLine($"  而你帶進來的是「{Trunc(aParts[i], 60)}」"
+                        + " ⇒ **一個位元組都沒寫**，沒有任何格子被簽名。");
+                    ioR.AppendLine("  📌 序號是**未勾清單**的序號 ⇒ 別人在你讀清單之後勾了任何一格，"
+                        + "同一個號碼就指到另一條驗收標準。");
+                    ioR.AppendLine($"  ▶ 重讀清單再決定：`run Task --arg op=check --arg index={aIndex}`");
+                    throw new Exception("[Task] check 沒有落檔（expect_text 對不上 ⇒ 序號位移，整批不做）");
+                }
+            }
 
             // ⚠ **由大到小**套用 —— 勾掉一格會讓未勾清單縮短，小的先做會讓大的序號位移。
             aWant.Sort();
@@ -1567,10 +1627,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     // ⛔⛔ **這個 `await` 必須留在 `UCL_TaskIO.Save` 之後，不可以搬到前面。**
                     //   它內部是 `await Task.Run(...)`（`UCL_TaskWorkMemoryCli.cs:74`）——
                     //   **本檔唯一一個真的會離開主執行緒的地方**。
-                    //   本單（TASK-0026）的併發安全完全依賴「read-modify-write 中間沒有 yield 點」，
-                    //   而搬動這一句就會把 yield 點放進那個窗口裡。
-                    //   🩸 症狀是**靜默的**：整檔覆蓋、留言消失、index 撞號 —— 沒有一格會紅。
-                    //   ⚠ 唯一的告警是 `UCL_TaskIO.AssertMainThread`，而它只在**事情已經發生之後**才出聲。
+                    //   ⚠ 這一段原本寫「併發安全完全依賴 RMW 中間沒有 yield 點」，而 TASK-0163 之後
+                    //   **那句已經不為真**：安全來自 `UCL_TaskIO` 的那把鎖（唯一寫入面 `Mutate`／`Create`，
+                    //   `Save` 已 private），⛔ 不再是靠這裡不出現 yield 點。
+                    //   🩸 症狀仍然是**靜默的**：整檔覆蓋、留言消失、index 撞號 —— 沒有一格會紅。
+                    //   ⚠ 而告警也換代了：`UCL_TaskIO.AssertHoldsRmwLock`（`Monitor.IsEntered`）——
+                    //   它量的是「寫的時候鎖在手上嗎」，不是「我在主緒嗎」。舊名 `AssertMainThread` 已不存在。
                     //   （通則寫在 UCL_TaskIO 檔頭；這裡指名道姓，因為通則會被讀成建議。）
                     // ⚠ 主題名用**鎖內重讀**的那一份（`aTopicAtWrite`）—— 鎖外那個 `aTopic` 只是提示。
                     var (aOk, aOut, aDetail) = await UCL_TaskWorkMemoryCli.AddAsync(
@@ -1835,6 +1897,19 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         {
             s = (s ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
             return s.Length <= n ? s : s.Substring(0, n) + "…";
+        }
+
+        // 區塊職責：驗收標準那一段裡「有幾行文字」—— 給「零個勾選格」那句話當定語。
+        // 物理意義：**有寫東西但沒有一行是 `- [ ]`** 與 **那一段是空的**，處置不同：
+        //           前者要改寫成勾選格，後者是根本還沒寫驗收標準。
+        // 🩸 TASK-0163：這兩種都會讓 `op=check` 回 0/0，而它原本只有「全部都勾了」一句話可講。
+        static int CountCriteriaTextLines(string iCriteria)
+        {
+            if (string.IsNullOrWhiteSpace(iCriteria)) return 0;
+            int n = 0;
+            foreach (string aLine in iCriteria.Replace("\r", "").Split('\n'))
+                if (aLine.Trim().Length > 0) n++;
+            return n;
         }
 
         static string Ids(List<int> iList)

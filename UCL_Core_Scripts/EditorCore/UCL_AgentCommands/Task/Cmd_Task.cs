@@ -238,9 +238,20 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             }
 
             string aNow = UCL_TaskIO.NowUtc();
-            var e = new UCL_TaskEntry
+            // ⭐ TASK-0163：**配號與落檔在同一把鎖內**（`UCL_TaskIO.Create`）。
+            //   🩸 舊路是「先 `IncrementAndGetIndex()` 配號、離開那段之後才 `Save`」——
+            //   而配號自己就是一段 RMW（讀計數檔 → +1 → 寫回）⇒ 兩條 lane 同時開單會**配到同一個號**，
+            //   接著兩次整檔重寫，第二張把第一張**整份覆蓋**，而兩邊都回 Success、都印得出自己的單號。
+            //   ⇒ 這裡把整段建構搬進 lambda：號碼由入口在鎖內發，`e` 由它落盤。
+            //   ⚠ 內文兩區（criteria／description）走 `UCL_TaskWrite.Body` —— 開單是唯一必須寫它們的時機
+            //   （其餘 op 給空字串＝沿用磁碟那一份）。
+            UCL_TaskEntry e = null;
+            string aDescription = null;
+            int aNewIndex = UCL_TaskIO.Create(aIdx =>
             {
-                index = UCL_TaskIO.IncrementAndGetIndex(),
+            e = new UCL_TaskEntry
+            {
+                index = aIdx,
                 type = aType,
                 priority = ParseEnumArg(iArgs, "priority", UCL_TaskPriority.normal),
                 // 傷害形狀（TASK-0086）：bug 單沒給就沿 BugReport 舊預設 wrong，其餘 none（未標注）
@@ -261,7 +272,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             foreach (var t in SplitList(GetArg(iArgs, "tags", ""))) e.tags.Add(t);
 
             // evidence 落進任務描述的固定子區 —— 描述整段由 Save/ReadSection 原樣保存，免動檔案 schema
-            string aDescription = GetArg(iArgs, "description", "").Trim();
+            aDescription = GetArg(iArgs, "description", "").Trim();
             if (aEvidence.Length > 0)
                 aDescription = (aDescription.Length == 0 ? "" : aDescription + "\n\n")
                     + "### 🔬 證據（開單時附；含「讀數怎麼拿到的」）\n\n" + aEvidence;
@@ -283,9 +294,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 aCriteria = aCriteria.Length == 0 ? aSkeleton : aCriteria.TrimEnd() + "\n" + aSkeleton;
             }
 
-            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, aCriteria, aDescription,
-                $"{aNow}　`{e.status}`　由 {iActor} 開單");
+            // ⛔ 舊的 `[RMW-END]` 前哨在此退場 —— 跨度現在由型別決定（`e` 由入口在鎖內落盤）。
+            return (e, UCL_TaskWrite.Body($"{aNow}　`{e.status}`　由 {iActor} 開單", aCriteria, aDescription));
+            });
+            if (aNewIndex < 0 || e == null)
+                throw new Exception("[Task] op=create 沒有落檔 —— 配號成功但建構回了 null，"
+                    + "⇒ **一個位元組都沒寫**（號碼已消耗，下一張單會跳號，那是刻意的：號碼不回收）。");
 
             ioR.AppendLine($"## ✅ 已建單 **{e.Id}**");
             ioR.AppendLine($"- `{e.type}` / "
@@ -600,7 +614,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var e = Require(iArgs, out int aIndex);
             var aRole = ParseEnumArg(iArgs, "role", UCL_TaskRole.dev);
             string aNow = UCL_TaskIO.NowUtc();
-            bool aNew = AddParticipant(e, iActor, aRole, aNow);
+            bool aNew = false;
             var aFrom = e.status;
 
             // ===========================================================
@@ -615,17 +629,29 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             // ===========================================================
             bool aDoingRole = aRole == UCL_TaskRole.dev || aRole == UCL_TaskRole.design
                 || aRole == UCL_TaskRole.sound || aRole == UCL_TaskRole.art;
-            bool aNotStarted = aFrom == UCL_TaskStatus.backlog || aFrom == UCL_TaskStatus.todo;
             string aWhyNoMove = null;
-            if (!aDoingRole) aWhyNoMove = $"`{aRole}` 是驗收／協調角色，不是「開工」⇒ 狀態不動";
-            else if (!aNotStarted) aWhyNoMove = $"單子已經在 `{aFrom}` ⇒ 不往回推（認領只從 backlog/todo 推進）";
+            // ⭐ TASK-0163：加人＋推狀態的整段 RMW 進 `Mutate`。
+            //   ⚠ 「該不該推狀態」是拿**狀態**做的判斷（backlog/todo 才推）⇒ 照形狀乙，
+            //   那個判斷必須對鎖內重讀的那一份重做：別人剛把它推成 in_review 的話，
+            //   用鎖外的舊讀數會把它**往回推**成 in_progress，而時間線會留一行有出處的假話。
+            bool aWrote = UCL_TaskIO.Mutate(aIndex, m =>
+            {
+                aNew = AddParticipant(m, iActor, aRole, aNow);
+                aFrom = m.status;
+                bool aNotStarted = aFrom == UCL_TaskStatus.backlog || aFrom == UCL_TaskStatus.todo;
+                aWhyNoMove = null;
+                if (!aDoingRole) aWhyNoMove = $"`{aRole}` 是驗收／協調角色，不是「開工」⇒ 狀態不動";
+                else if (!aNotStarted) aWhyNoMove = $"單子已經在 `{aFrom}` ⇒ 不往回推（認領只從 backlog/todo 推進）";
 
-            if (aWhyNoMove == null) e.status = UCL_TaskStatus.in_progress;
-            UCL_TaskIO.Touch(e, aNow);
-            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, "", "", aWhyNoMove == null
-                ? $"{aNow}　`in_progress`　{iActor} 認領（role={aRole}，原狀態 {aFrom}）"
-                : $"{aNow}　`{e.status}`　{iActor} 加入為 {aRole}（狀態不動：{aWhyNoMove}）");
+                if (aWhyNoMove == null) m.status = UCL_TaskStatus.in_progress;
+                UCL_TaskIO.Touch(m, aNow);
+                return UCL_TaskWrite.Line(aWhyNoMove == null
+                    ? $"{aNow}　`in_progress`　{iActor} 認領（role={aRole}，原狀態 {aFrom}）"
+                    : $"{aNow}　`{m.status}`　{iActor} 加入為 {aRole}（狀態不動：{aWhyNoMove}）");
+            });
+            if (!aWrote)
+                throw new Exception($"[Task] TASK-{aIndex} 認領沒有落檔 —— 鎖內重讀時那張單不在了"
+                    + "（被刪或被搬）⇒ **寫入沒有發生**，妳沒有被加進參與者。");
 
             ioR.AppendLine($"## ✅ {e.Id} 已認領");
             ioR.AppendLine(aWhyNoMove == null
@@ -664,22 +690,35 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             //   ⇒ 修法是：① 給「換角色」一條**顯式**的路（`--arg replace=1`）
             //             ② 沒帶 replace 而那個人已經有別的角色時，**在回傳檔說出來**——
             //                讓「我加了一個角色」與「我以為我換了角色」不再同形。
-            var aExisting = e.participants
-                .Where(p => string.Equals(p.persona, aTarget, StringComparison.OrdinalIgnoreCase))
-                .Select(p => p.role).ToList();
-            var aOtherRoles = aExisting.Where(r => r != aRole).ToList();
+            // ⭐ TASK-0163：讀既有角色 → 決定要不要拿掉 → 加人 —— 整段是 RMW，進 `Mutate`。
+            //   ⚠ `replace=1` 那條路特別需要它：既有角色清單是**判斷的輸入**，
+            //   鎖外讀的話，別人剛指派的角色會被這一次的整檔重寫**靜默吃掉**
+            //   （而回傳檔會說「換角色：拿掉 X」—— 一句有出處而不完整的話）。
             string aRemoved = "";
-            if (aReplace && aOtherRoles.Count > 0)
+            bool aNew = false;
+            var aExisting = new List<UCL_TaskRole>();     // 鎖內讀到的既有角色（回報用）
+            var aOtherRoles = new List<UCL_TaskRole>();
+            bool aWrote = UCL_TaskIO.Mutate(aIndex, m =>
             {
-                e.participants.RemoveAll(p => string.Equals(p.persona, aTarget, StringComparison.OrdinalIgnoreCase)
-                                              && p.role != aRole);
-                aRemoved = string.Join("／", aOtherRoles);
-            }
-            bool aNew = AddParticipant(e, aTarget, aRole, aNow);
-            UCL_TaskIO.Touch(e, aNow);
-            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　`assign`　{iActor} 指派 {aTarget} 為 {aRole}"
-                + (aRemoved.Length > 0 ? $"（**換角色**：拿掉 {aRemoved}）" : ""));
+                aExisting = m.participants
+                    .Where(p => string.Equals(p.persona, aTarget, StringComparison.OrdinalIgnoreCase))
+                    .Select(p => p.role).ToList();
+                aOtherRoles = aExisting.Where(r => r != aRole).ToList();
+                aRemoved = "";
+                if (aReplace && aOtherRoles.Count > 0)
+                {
+                    m.participants.RemoveAll(p => string.Equals(p.persona, aTarget, StringComparison.OrdinalIgnoreCase)
+                                                  && p.role != aRole);
+                    aRemoved = string.Join("／", aOtherRoles);
+                }
+                aNew = AddParticipant(m, aTarget, aRole, aNow);
+                UCL_TaskIO.Touch(m, aNow);
+                return UCL_TaskWrite.Line($"{aNow}　`assign`　{iActor} 指派 {aTarget} 為 {aRole}"
+                    + (aRemoved.Length > 0 ? $"（**換角色**：拿掉 {aRemoved}）" : ""));
+            });
+            if (!aWrote)
+                throw new Exception($"[Task] TASK-{aIndex} 指派沒有落檔 —— 鎖內重讀時那張單不在了"
+                    + $"（被刪或被搬）⇒ **寫入沒有發生**，{aTarget} 沒有被指派。");
 
             ioR.AppendLine($"## ✅ {e.Id} 參與者已更新");
             ioR.AppendLine($"- {(aNew ? "新增" : "已存在，未重複加")}：{aTarget}（{aRole}）");
@@ -716,131 +755,141 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var e = Require(iArgs, out int aIndex);
             string aNow = UCL_TaskIO.NowUtc();
             var aChanges = new List<string>();
-
-            string aStatus = GetArg(iArgs, "status", "").Trim();
-            if (aStatus.Length > 0)
-            {
-                var aNorm = ParseEnumArg(iArgs, "status", UCL_TaskStatus.todo);
-                if (aNorm == UCL_TaskStatus.all || aNorm == UCL_TaskStatus.open)
-                    throw new Exception($"[Task] status=`{aNorm}` 是篩選用的成員，不是可落盤的狀態");
-                // ⛔ 結單只能走 resolve —— 那條路上有 blocker 與 QA 兩道閘。
-                //    留一個「用 update 也能推 done」的旁路等於那兩道閘不存在。
-                if (aNorm == UCL_TaskStatus.done || aNorm == UCL_TaskStatus.cancelled)
-                    throw new Exception("[Task] 結單請走 `op=resolve`（那條路上有 blocker 與 QA 兩道閘，"
-                        + "而 update 沒有）。這不是麻煩，是刻意不留旁路。");
-                aChanges.Add($"status {e.status} → {aNorm}");
-                e.status = aNorm;
-                // 🩸 2026-08-24：我誤關了別人的單再改回 todo，而 `closed_at` **留著我那筆取消的時戳** ⇒
-                //   status=todo 而 closed_at 有值 —— 資料自己跟自己打架，且看不出哪一邊是真的。
-                //   ⇒ 從已關改回未關時一律清掉它，並在時間線寫明清了什麼（不靜默改數字）。
-                if (e.closed_at.Length > 0)
-                {
-                    aChanges.Add($"closed_at 清空（原 {e.closed_at} —— 未關的單不該有結案時間）");
-                    e.closed_at = "";
-                }
-            }
-            string aPriority = GetArg(iArgs, "priority", "").Trim();
-            if (aPriority.Length > 0)
-            {
-                var aPri = ParseEnumArg(iArgs, "priority", UCL_TaskPriority.normal);
-                aChanges.Add($"priority {e.priority} → {aPri}");
-                e.priority = aPri;
-            }
-            // 傷害形狀（TASK-0086）：severity=none 即顯式清回「未標注」，合法
-            string aSeverityArg = GetArg(iArgs, "severity", "").Trim();
-            if (aSeverityArg.Length > 0)
-            {
-                var aSev = ParseEnumArg(iArgs, "severity", UCL_TaskSeverity.none);
-                aChanges.Add($"severity {e.severity} → {aSev}");
-                e.severity = aSev;
-            }
-            string aTitle = GetArg(iArgs, "title", "").Trim();
-            if (aTitle.Length > 0) { aChanges.Add("title 改寫"); e.title = aTitle; }
-            string aMilestone = GetArg(iArgs, "milestone", "").Trim();
-            if (aMilestone.Length > 0) { aChanges.Add($"milestone → {aMilestone}"); e.milestone = aMilestone; }
-            // 記憶錨點（契約①：這兩格歸 Task 側寫，記憶側的 task_indices 歸 CLI）
-            string aMemTopic = GetArg(iArgs, "memory_topic", "").Trim();
-            if (aMemTopic.Length > 0)
-            {
-                aChanges.Add($"memory_topic {(e.memory_topic.Length == 0 ? "(空)" : e.memory_topic)} → {aMemTopic}"
-                    + (UCL_TaskMemoryLink.TopicExists(aMemTopic) ? "" : "　⚠ **這個主題目前不在磁碟上**（照樣寫入，但要知道）"));
-                e.memory_topic = aMemTopic;
-            }
-            string aMemSha = GetArg(iArgs, "memory_archived_commit", "").Trim();
-            if (aMemSha.Length > 0)
-            { aChanges.Add($"memory_archived_commit → {aMemSha}"); e.memory_archived_commit = aMemSha; }
-
-            // ===========================================================
-            // 顯式清除（TASK-0079，與 BUG-16 `PersonaProfile op=unset` 同形）
-            // 物理意義：`--arg <欄位>=` 給空值在這支是**保留原值**（上面每一格都是 `.Length > 0` 才寫），
-            //   所以「打錯字的 memory_topic」沒有任何回頭路 —— 而晚安對帳每天為它亮一次警示。
-            //   ⇒ 補的是**逆操作**，不是把空值改成有意義：空值仍然是「這次不動這欄」，
-            //     要清就得指名道姓 `--arg unset=memory_topic`（BUG-16 選的也是這個形狀：
-            //     另立一個方向明確的入口，而不是讓 set 兼差）。
-            // 數值影響：把指名的欄位寫回 ""，並在 aChanges 留痕（⇒ 時間線那一行會寫清了什麼、原值是什麼）。
-            // ⚠ 冪等：本來就空 ⇒ **不計入變更**（不留一筆看起來發生過的帳），但仍逐格印出「本來就是空的」——
-            //   「清掉了」與「本來就空」不可以同形，否則讀的人分不出自己清的是哪一格。
-            // ===========================================================
             var aUnsetNotes = new List<string>();
-            string aUnsetArg = GetArg(iArgs, "unset", "").Trim();
-            if (aUnsetArg.Length > 0)
+            // ⭐ TASK-0163：整段「逐欄位比對舊值 → 改 → 落檔」進 `Mutate`。
+            //   ⚠ 這一支的每一行 `aChanges.Add($"status {舊} → {新}")` 都是**拿舊值講給人看的話**
+            //   ⇒ 舊值必須是鎖內重讀的那一份，否則時間線會寫「status todo → in_progress」
+            //   而它其實是從別人剛改成的 in_review 被推過去的 —— 一句有出處而錯的紀錄。
+            //   ⚠ 內文兩區走 `UCL_TaskWrite.Body`（`op=update` 是唯一會整段改寫驗收標準的入口）。
+            bool aFoundEntry = false;
+            bool aWrote = UCL_TaskIO.Mutate(aIndex, m =>
             {
-                foreach (string aRawField in aUnsetArg.Split(','))
-                {
-                    string aField = aRawField.Trim();
-                    if (aField.Length == 0) continue;
-                    // 認不得的欄位名**不靜默略過** —— 打錯字的失效樣子會跟「清過了」一模一樣，
-                    // 而這張單修的正是「打錯字沒有回頭路」。
-                    if (!UNSETTABLE.Contains(aField))
-                        throw new Exception($"[Task] unset 認不得欄位 `{aField}`"
-                            + $"（可清的只有：{string.Join(" / ", UNSETTABLE)}）"
-                            + "　—— status／priority／title 這種**沒有「空」這個合法狀態**的欄位不在清單上。");
-                    string aOld = aField switch
-                    {
-                        "memory_topic" => e.memory_topic ?? "",
-                        "memory_archived_commit" => e.memory_archived_commit ?? "",
-                        "milestone" => e.milestone ?? "",
-                        _ => "",
-                    };
-                    if (aOld.Trim().Length == 0) { aUnsetNotes.Add($"`{aField}` 本來就是空的 ⇒ 沒有寫入"); continue; }
-                    switch (aField)
-                    {
-                        case "memory_topic": e.memory_topic = ""; break;
-                        case "memory_archived_commit": e.memory_archived_commit = ""; break;
-                        case "milestone": e.milestone = ""; break;
-                    }
-                    aChanges.Add($"{aField} 清空（原 `{aOld}`）");
-                }
-            }
-            // criteria / description 是 Save 的參數不是 entry 欄位 —— 但它們一樣是變更（TASK-0033 ③）。
-            // 🩸 血證（Tim 2026-08-25 撞到）：只給 --arg criteria= 是**靜默 no-op** ——
-            //   它沒進 aChanges ⇒ 走「沒有任何變更」那條路 ⇒ 單子一個字都不變，而回傳檔看起來像判斷。
-            //   而「擴充當前 Task 的驗收細項」是收斂機制的主要出口，等於主要出口需要 workaround（多帶 title）才會開。
-            string aCriteria = GetArg(iArgs, "criteria", "");
-            if (aCriteria.Trim().Length > 0) aChanges.Add("criteria 整段改寫");
-            string aDescription = GetArg(iArgs, "description", "");
-            if (aDescription.Trim().Length > 0) aChanges.Add("description 整段改寫");
+                aFoundEntry = true;
+                aChanges.Clear(); aUnsetNotes.Clear();   // 鎖內重跑一次 ⇒ 清掉上一輪（Mutate 只呼叫一次，這是防呆）
 
-            if (aChanges.Count == 0)
+                string aStatus = GetArg(iArgs, "status", "").Trim();
+                if (aStatus.Length > 0)
+                {
+                    var aNorm = ParseEnumArg(iArgs, "status", UCL_TaskStatus.todo);
+                    if (aNorm == UCL_TaskStatus.all || aNorm == UCL_TaskStatus.open)
+                        throw new Exception($"[Task] status=`{aNorm}` 是篩選用的成員，不是可落盤的狀態");
+                    // ⛔ 結單只能走 resolve —— 那條路上有 blocker 與 QA 兩道閘。
+                    //    留一個「用 update 也能推 done」的旁路等於那兩道閘不存在。
+                    if (aNorm == UCL_TaskStatus.done || aNorm == UCL_TaskStatus.cancelled)
+                        throw new Exception("[Task] 結單請走 `op=resolve`（那條路上有 blocker 與 QA 兩道閘，"
+                            + "而 update 沒有）。這不是麻煩，是刻意不留旁路。");
+                    aChanges.Add($"status {m.status} → {aNorm}");
+                    m.status = aNorm;
+                    // 🩸 2026-08-24：我誤關了別人的單再改回 todo，而 `closed_at` **留著我那筆取消的時戳** ⇒
+                    //   status=todo 而 closed_at 有值 —— 資料自己跟自己打架，且看不出哪一邊是真的。
+                    //   ⇒ 從已關改回未關時一律清掉它，並在時間線寫明清了什麼（不靜默改數字）。
+                    if (m.closed_at.Length > 0)
+                    {
+                        aChanges.Add($"closed_at 清空（原 {m.closed_at} —— 未關的單不該有結案時間）");
+                        m.closed_at = "";
+                    }
+                }
+                string aPriority = GetArg(iArgs, "priority", "").Trim();
+                if (aPriority.Length > 0)
+                {
+                    var aPri = ParseEnumArg(iArgs, "priority", UCL_TaskPriority.normal);
+                    aChanges.Add($"priority {m.priority} → {aPri}");
+                    m.priority = aPri;
+                }
+                // 傷害形狀（TASK-0086）：severity=none 即顯式清回「未標注」，合法
+                string aSeverityArg = GetArg(iArgs, "severity", "").Trim();
+                if (aSeverityArg.Length > 0)
+                {
+                    var aSev = ParseEnumArg(iArgs, "severity", UCL_TaskSeverity.none);
+                    aChanges.Add($"severity {m.severity} → {aSev}");
+                    m.severity = aSev;
+                }
+                string aTitle = GetArg(iArgs, "title", "").Trim();
+                if (aTitle.Length > 0) { aChanges.Add("title 改寫"); m.title = aTitle; }
+                string aMilestone = GetArg(iArgs, "milestone", "").Trim();
+                if (aMilestone.Length > 0) { aChanges.Add($"milestone → {aMilestone}"); m.milestone = aMilestone; }
+                // 記憶錨點（契約①：這兩格歸 Task 側寫，記憶側的 task_indices 歸 CLI）
+                string aMemTopic = GetArg(iArgs, "memory_topic", "").Trim();
+                if (aMemTopic.Length > 0)
+                {
+                    aChanges.Add($"memory_topic {(m.memory_topic.Length == 0 ? "(空)" : m.memory_topic)} → {aMemTopic}"
+                        + (UCL_TaskMemoryLink.TopicExists(aMemTopic) ? "" : "　⚠ **這個主題目前不在磁碟上**（照樣寫入，但要知道）"));
+                    m.memory_topic = aMemTopic;
+                }
+                string aMemSha = GetArg(iArgs, "memory_archived_commit", "").Trim();
+                if (aMemSha.Length > 0)
+                { aChanges.Add($"memory_archived_commit → {aMemSha}"); m.memory_archived_commit = aMemSha; }
+
+                // ===========================================================
+                // 顯式清除（TASK-0079，與 BUG-16 `PersonaProfile op=unset` 同形）
+                // 物理意義：`--arg <欄位>=` 給空值在這支是**保留原值**（上面每一格都是 `.Length > 0` 才寫），
+                //   所以「打錯字的 memory_topic」沒有任何回頭路 —— 而晚安對帳每天為它亮一次警示。
+                //   ⇒ 補的是**逆操作**，不是把空值改成有意義：空值仍然是「這次不動這欄」，
+                //     要清就得指名道姓 `--arg unset=memory_topic`（BUG-16 選的也是這個形狀：
+                //     另立一個方向明確的入口，而不是讓 set 兼差）。
+                // 數值影響：把指名的欄位寫回 ""，並在 aChanges 留痕（⇒ 時間線那一行會寫清了什麼、原值是什麼）。
+                // ⚠ 冪等：本來就空 ⇒ **不計入變更**（不留一筆看起來發生過的帳），但仍逐格印出「本來就是空的」——
+                //   「清掉了」與「本來就空」不可以同形，否則讀的人分不出自己清的是哪一格。
+                // ===========================================================
+                string aUnsetArg = GetArg(iArgs, "unset", "").Trim();
+                if (aUnsetArg.Length > 0)
+                {
+                    foreach (string aRawField in aUnsetArg.Split(','))
+                    {
+                        string aField = aRawField.Trim();
+                        if (aField.Length == 0) continue;
+                        // 認不得的欄位名**不靜默略過** —— 打錯字的失效樣子會跟「清過了」一模一樣，
+                        // 而這張單修的正是「打錯字沒有回頭路」。
+                        if (!UNSETTABLE.Contains(aField))
+                            throw new Exception($"[Task] unset 認不得欄位 `{aField}`"
+                                + $"（可清的只有：{string.Join(" / ", UNSETTABLE)}）"
+                                + "　—— status／priority／title 這種**沒有「空」這個合法狀態**的欄位不在清單上。");
+                        string aOld = aField switch
+                        {
+                            "memory_topic" => m.memory_topic ?? "",
+                            "memory_archived_commit" => m.memory_archived_commit ?? "",
+                            "milestone" => m.milestone ?? "",
+                            _ => "",
+                        };
+                        if (aOld.Trim().Length == 0) { aUnsetNotes.Add($"`{aField}` 本來就是空的 ⇒ 沒有寫入"); continue; }
+                        switch (aField)
+                        {
+                            case "memory_topic": m.memory_topic = ""; break;
+                            case "memory_archived_commit": m.memory_archived_commit = ""; break;
+                            case "milestone": m.milestone = ""; break;
+                        }
+                        aChanges.Add($"{aField} 清空（原 `{aOld}`）");
+                    }
+                }
+                // criteria / description 是 Save 的參數不是 entry 欄位 —— 但它們一樣是變更（TASK-0033 ③）。
+                // 🩸 血證（Tim 2026-08-25 撞到）：只給 --arg criteria= 是**靜默 no-op** ——
+                //   它沒進 aChanges ⇒ 走「沒有任何變更」那條路 ⇒ 單子一個字都不變，而回傳檔看起來像判斷。
+                //   而「擴充當前 Task 的驗收細項」是收斂機制的主要出口，等於主要出口需要 workaround（多帶 title）才會開。
+                string aCriteria = GetArg(iArgs, "criteria", "");
+                if (aCriteria.Trim().Length > 0) aChanges.Add("criteria 整段改寫");
+                string aDescription = GetArg(iArgs, "description", "");
+                if (aDescription.Trim().Length > 0) aChanges.Add("description 整段改寫");
+
+                if (aChanges.Count == 0) return UCL_TaskWrite.Skip;
+                UCL_TaskIO.Touch(m, aNow);
+                return UCL_TaskWrite.Body($"{aNow}　`update`　{iActor}：{string.Join("／", aChanges)}",
+                    aCriteria, aDescription);
+            });
+            if (!aWrote)
             {
+                if (!aFoundEntry)
+                    throw new Exception($"[Task] TASK-{aIndex} 更新沒有落檔 —— 鎖內重讀時那張單不在了"
+                        + "（被刪或被搬）⇒ **寫入沒有發生**。");
                 ioR.AppendLine($"## {e.Id} 沒有任何變更");
                 // ⚠ 冪等的 unset 走到這裡 —— 要印出「我確實看了那幾格，它們本來就空」，
                 //   否則它跟「我根本沒收到 unset」同形（TASK-0079）。
                 foreach (var n in aUnsetNotes) ioR.AppendLine($"- ✓ {n}");
-                // ⚠ 欄位清單要列全 —— 錯誤訊息自己低報的話，讀的人分不出
-                //   「這不是欄位」與「這是欄位但沒被計入」（TASK-0033 ③ 的第二格）。
-                // ⛔ 但**給了 unset 卻走到這裡**的時候不可以印它 —— 那句話會是假的
-                //   （我確實給了可更新的欄位，只是那幾格本來就空）。上面那行 ✓ 才是這次的答案。
                 if (aUnsetNotes.Count > 0) return;
                 ioR.AppendLine("- 沒給任何可更新的欄位（status / priority / title / milestone /"
                     + " memory_topic / memory_archived_commit / criteria / description"
                     + " / unset=<欄位>）⇒ **什麼都沒寫**。");
                 return;
             }
-            UCL_TaskIO.Touch(e, aNow);
-            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, GetArg(iArgs, "criteria", ""), GetArg(iArgs, "description", ""),
-                $"{aNow}　`update`　{iActor}：{string.Join("／", aChanges)}");
             ioR.AppendLine($"## ✅ {e.Id} 已更新");
             foreach (var c in aChanges) ioR.AppendLine($"- {c}");
             foreach (var n in aUnsetNotes) ioR.AppendLine($"- ✓ {n}");
@@ -871,7 +920,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 });
                 UCL_TaskIO.Touch(e, aNow);
                 // 時間線只留一行「有人留言了」的索引 —— 內容在留言區，**不存兩份**
-                return $"{aNow}　`comment`　{iActor} 留言 #{aCommentId}";
+                return UCL_TaskWrite.Line($"{aNow}　`comment`　{iActor} 留言 #{aCommentId}");
             });
             if (!aWrote)
                 throw new Exception($"[Task] TASK-{aIndex} 留言沒有落檔 —— 鎖內重讀時那張單不在了"
@@ -1008,19 +1057,61 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var aNow = DateTime.Now;
             string aNowUtc = UCL_TaskIO.NowUtc();
             var aHit = new List<string>();
-            foreach (int v in aWant)
-            {
-                string aBody = UCL_TaskIO.CheckOffCriteria(ref aCriteria, v, iActor, aNow);
-                if (aBody == null)
-                    throw new Exception($"[Task] criteria_index={v} 勾不起來（清單在本次執行中變了？）—— 整批已中止");
-                aHit.Add(aBody);
-            }
-            aHit.Reverse();   // 印出來照序號由小到大，讀的人才對得上剛才那份清單
 
-            UCL_TaskIO.Touch(e, aNowUtc);
-            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, aCriteria, "",
-                $"{aNowUtc}　`check`　{iActor} 勾了 {aHit.Count} 格驗收標準（{string.Join("，", aWant.OrderBy(x => x))}）");
+            // ⭐ TASK-0163：本支的危害**不是掉更新，是簽到別的格子上。**
+            //   序號是「未勾清單」的序號 ⇒ 別人在這中間勾掉任何一格，同一個號碼就指向**另一條驗收標準**，
+            //   而 `op=check` 是**簽名行為**（勾完的行尾接上 `✅ <persona> <日期>`）
+            //   ⇒ 失效樣子是「我的名字出現在一格我沒有驗過的標準上」，兩邊都回 Success。
+            //   ⛔ 所以鎖內不只重讀，還要**比對文字**：把鎖外看到的那幾行原文帶進來當錨，
+            //   對不上就整批不做（回 `Skip` ⇒ 零位元組）—— 序號可以位移，文字不會。
+            var aWantAnchor = aWant.ToDictionary(v => v, v => aOpen[v - 1]);
+            string aRaceNote = null;
+            bool aFoundEntry = false;
+            bool aWrote = UCL_TaskIO.Mutate(aIndex, m =>
+            {
+                aFoundEntry = true;
+                string aFresh = UCL_TaskIO.ReadCriteria(aIndex);          // 鎖內重讀那一欄
+                var aFreshOpen = UCL_TaskIO.ListUncheckedCriteria(aFresh);
+                foreach (int v in aWant)                                   // 已由大到小
+                {
+                    if (v > aFreshOpen.Count)
+                    {
+                        aRaceNote = $"序號 {v} 現在超出未勾清單（鎖內只剩 {aFreshOpen.Count} 格）"
+                            + " —— 有人在這中間勾了格子";
+                        return UCL_TaskWrite.Skip;
+                    }
+                    if (aFreshOpen[v - 1] != aWantAnchor[v])
+                    {
+                        aRaceNote = $"序號 {v} 指到的已經不是同一條驗收標準了"
+                            + $"（我要簽的是「{Trunc(aWantAnchor[v], 40)}」，鎖內那一格是「{Trunc(aFreshOpen[v - 1], 40)}」）"
+                            + " —— 序號位移了，整批不做";
+                        return UCL_TaskWrite.Skip;
+                    }
+                    string aBody = UCL_TaskIO.CheckOffCriteria(ref aFresh, v, iActor, aNow);
+                    if (aBody == null)
+                    {
+                        aRaceNote = $"序號 {v} 勾不起來（鎖內重讀的清單與預期不符）—— 整批不做";
+                        return UCL_TaskWrite.Skip;
+                    }
+                    aHit.Add(aBody);
+                }
+                aHit.Reverse();   // 印出來照序號由小到大，讀的人才對得上剛才那份清單
+                UCL_TaskIO.Touch(m, aNowUtc);
+                return UCL_TaskWrite.Body(
+                    $"{aNowUtc}　`check`　{iActor} 勾了 {aHit.Count} 格驗收標準（{string.Join("，", aWant.OrderBy(x => x))}）",
+                    aFresh, "");
+            });
+            if (!aWrote)
+            {
+                ioR.AppendLine("## blocked");
+                ioR.AppendLine(aRaceNote != null
+                    ? $"- reason: {aRaceNote} ⇒ **一個位元組都沒寫**，沒有任何格子被簽名。"
+                    : (aFoundEntry
+                        ? "- reason: 鎖內判定不成立 ⇒ **零寫入**。"
+                        : $"- reason: 鎖內重讀時 TASK-{aIndex} 不在了（被刪或被搬）⇒ **寫入沒有發生**。"));
+                ioR.AppendLine($"  ▶ 重跑一次不帶 `criteria_index` 看現在的清單：`run Task --arg op=check --arg index={aIndex}`");
+                throw new Exception("[Task] check 沒有落檔（鎖內重判：序號位移或單子不在）");
+            }
 
             // ── 回讀：分母從**磁碟**再數一次，不印剛才算出來的值 ──────
             string aBack = UCL_TaskIO.ReadCriteria(aIndex);
@@ -1166,15 +1257,51 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
             string aNow = UCL_TaskIO.NowUtc();
             var aFrom = e.status;
-            e.status = aStatus;
-            e.closed_at = aNow;
-            if (aNote.Length > 0) e.resolution_note = aNote;
-            if (aQaNote.Length > 0)
-                e.resolution_note = (e.resolution_note + "\n\n**QA 代簽紀錄**：" + aQaNote).Trim();
-            UCL_TaskIO.Touch(e, aNow);
-            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　`{aStatus}`　{iActor} 結單（原狀態 {aFrom}）"
-                + (aNote.Length == 0 ? "" : $"：{aNote.Replace("\r", " ").Replace("\n", " ")}"));
+            // ⭐ TASK-0163：結單的整段 RMW 進 `Mutate`，而**三道閘在鎖內重判一次**（形狀乙）。
+            //   🩸 為什麼不是「閘在上面驗過就好」：那三道閘的輸入是**鎖外讀的狀態** ——
+            //   別人在這中間掛上一個新 blocker、或把 QA 移掉，舊讀數會讓這一次照樣關單，
+            //   而時間線留下的是「結單（原狀態 X）」這種**有出處而已經不為真**的句子。
+            //   ⇒ 鎖內不成立就回 `Skip`（零位元組），並把原因帶出來報。
+            string aRaceBlock = null;
+            bool aFoundEntry = false;
+            bool aWrote = UCL_TaskIO.Mutate(aIndex, m =>
+            {
+                aFoundEntry = true;
+                var aNowBlockers = UCL_TaskIO.OpenBlockers(m);
+                if (aStatus == UCL_TaskStatus.done && aNowBlockers.Count > 0)
+                {
+                    aRaceBlock = $"鎖內重讀時它有 {aNowBlockers.Count} 個未解 blocker"
+                        + $"（{string.Join("；", aNowBlockers)}）—— 上面那道閘讀的是鎖外的快照";
+                    return UCL_TaskWrite.Skip;
+                }
+                string aNowQa = UCL_TaskIO.QaGateBlocked(m, iActor, aQaNote);
+                if (aStatus == UCL_TaskStatus.done && aNowQa != null)
+                {
+                    aRaceBlock = $"鎖內重讀時 QA 閘不放行：{aNowQa}（有人在這中間改了參與者）";
+                    return UCL_TaskWrite.Skip;
+                }
+                aFrom = m.status;
+                m.status = aStatus;
+                m.closed_at = aNow;
+                if (aNote.Length > 0) m.resolution_note = aNote;
+                if (aQaNote.Length > 0)
+                    m.resolution_note = (m.resolution_note + "\n\n**QA 代簽紀錄**：" + aQaNote).Trim();
+                UCL_TaskIO.Touch(m, aNow);
+                return UCL_TaskWrite.Line($"{aNow}　`{aStatus}`　{iActor} 結單（原狀態 {aFrom}）"
+                    + (aNote.Length == 0 ? "" : $"：{aNote.Replace("\r", " ").Replace("\n", " ")}"));
+            });
+            if (!aWrote)
+            {
+                ioR.AppendLine("## blocked");
+                ioR.AppendLine(aRaceBlock != null
+                    ? $"- reason: {aRaceBlock} ⇒ **一個位元組都沒寫**，單子沒有被關。"
+                    : (aFoundEntry
+                        ? "- reason: 鎖內判定不成立 ⇒ **零寫入**。"
+                        : $"- reason: 鎖內重讀時 TASK-{aIndex} 不在了（被刪或被搬）⇒ **寫入沒有發生**。"));
+                throw new Exception("[Task] resolve 沒有落檔（鎖內重判）");
+            }
+            // ⚠ 回報用落檔後那一份 —— 底下印的 closed_at／blocks 是它的欄位（鎖前那份的 closed_at 是空的）。
+            e = UCL_TaskIO.Find(aIndex) ?? e;
 
             ioR.AppendLine();
             ioR.AppendLine($"## ✅ {e.Id} 已結單");
@@ -1218,59 +1345,70 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 throw new Exception($"[Task] op=commit 的 mode 只能是 fixes|refs（收到 '{aMode}'）");
 
             string aNow = UCL_TaskIO.NowUtc();
-            bool aShaNew = !e.commit_shas.Contains(aSha);
-            if (aShaNew) e.commit_shas.Add(aSha);
-
+            // ⭐ TASK-0163：整段判定＋落檔進 `Mutate`。這一支的判定**全部**吃 entry 的狀態
+            //   （已關？有 blocker？有 QA？）⇒ 鎖外讀的話，`git_commit.py` 打進來的那一刻
+            //   單子可能剛被別人關掉或剛被掛上 blocker，而這裡會照舊讀數推狀態 ——
+            //   失效樣子是「commit 把一張已經有 blocker 的單推成 done」，時間線還留一行有出處的判定。
+            bool aShaNew = false;
             var aFrom = e.status;
-            string aVerdict;
-            var aBlockers = UCL_TaskIO.OpenBlockers(e);
-            if (e.IsClosed())
+            string aVerdict = "";
+            bool aWrote = UCL_TaskIO.Mutate(aIndex, m =>
             {
-                aVerdict = $"這張單已經是 `{aFrom}` ⇒ **只追加 sha，狀態不動**（不靜默重開）";
-            }
-            else if (aMode == "refs")
-            {
-                aVerdict = "`Refs` ⇒ 只追加 sha，狀態不動（這是 Refs 的定義，不是失敗）";
-            }
-            else if (aBlockers.Count > 0)
-            {
-                aVerdict = $"🛑 **不推進**：還有 {aBlockers.Count} 個未解 blocker —— {string.Join("；", aBlockers)}"
-                    + "。commit 不是特權通道，機械閘照樣生效。";
-            }
-            else
-            {
-                var aQa = e.QaPersonas();
-                if (aQa.Count > 0)
+                aShaNew = !m.commit_shas.Contains(aSha);
+                if (aShaNew) m.commit_shas.Add(aSha);
+                aFrom = m.status;
+                var aBlockers = UCL_TaskIO.OpenBlockers(m);   // ⭐ 鎖內重讀的那一份（形狀乙：判定不用鎖外的舊讀數）
+                if (m.IsClosed())
                 {
-                    e.status = UCL_TaskStatus.in_review;
-                    aVerdict = $"→ **in_review**（單上有 QA：{string.Join(" / ", aQa)}"
-                        + " —— commit 不能替 QA 簽名）";
+                    aVerdict = $"這張單已經是 `{aFrom}` ⇒ **只追加 sha，狀態不動**（不靜默重開）";
+                }
+                else if (aMode == "refs")
+                {
+                    aVerdict = "`Refs` ⇒ 只追加 sha，狀態不動（這是 Refs 的定義，不是失敗）";
+                }
+                else if (aBlockers.Count > 0)
+                {
+                    aVerdict = $"🛑 **不推進**：還有 {aBlockers.Count} 個未解 blocker —— {string.Join("；", aBlockers)}"
+                        + "。commit 不是特權通道，機械閘照樣生效。";
                 }
                 else
                 {
-                    e.status = UCL_TaskStatus.done;
-                    e.closed_at = aNow;
-                    aVerdict = "→ **done**（這張單沒有指名 QA ⇒ 沒有人要驗，commit 直接結）";
-                    // ⚠ 落差要出聲（basecamp 拍板 ③，TASK-0015）：
-                    //   單上有 dev 以外的角色（pm / reviewer / design…）卻**沒有 qa** ⇒
-                    //   「沒有人要驗」這個假設要攤在被影響的人面前，而不是靜默生效。
-                    //   🩸 血證就是 TASK-0009 本身：basecamp 掛的是 pm，我的 commit 直接把它關了，
-                    //     而她一整天都在驗我的交付。閘做對了它的事 —— 錯的是沒有人被告知。
-                    //   ⛔ **警示不是擋**：擋會讓真正不需要 QA 的小單無法自動結，而那是設計要的。
-                    var aNonDev = e.participants
-                        .Where(p => p.role != UCL_TaskRole.dev)
-                        .Select(p => $"{p.persona}({p.role})").Distinct().ToList();
-                    if (aNonDev.Count > 0)
-                        aVerdict += $"\n  ⚠ **本單沒有 QA 卻有其他角色：{string.Join("、", aNonDev)}**"
-                            + " —— 若非預期請 reopen 並補 `op=assign --arg role=qa`"
-                            + "（`pm` 不是 QA 閘：PM 排序、QA 簽名，混起來會讓「有人管」被讀成「有人驗」）";
+                    var aQa = m.QaPersonas();
+                    if (aQa.Count > 0)
+                    {
+                        m.status = UCL_TaskStatus.in_review;
+                        aVerdict = $"→ **in_review**（單上有 QA：{string.Join(" / ", aQa)}"
+                            + " —— commit 不能替 QA 簽名）";
+                    }
+                    else
+                    {
+                        m.status = UCL_TaskStatus.done;
+                        m.closed_at = aNow;
+                        aVerdict = "→ **done**（這張單沒有指名 QA ⇒ 沒有人要驗，commit 直接結）";
+                        // ⚠ 落差要出聲（basecamp 拍板 ③，TASK-0015）：
+                        //   單上有 dev 以外的角色（pm / reviewer / design…）卻**沒有 qa** ⇒
+                        //   「沒有人要驗」這個假設要攤在被影響的人面前，而不是靜默生效。
+                        //   🩸 血證就是 TASK-0009 本身：basecamp 掛的是 pm，我的 commit 直接把它關了，
+                        //     而她一整天都在驗我的交付。閘做對了它的事 —— 錯的是沒有人被告知。
+                        //   ⛔ **警示不是擋**：擋會讓真正不需要 QA 的小單無法自動結，而那是設計要的。
+                        var aNonDev = m.participants
+                            .Where(p => p.role != UCL_TaskRole.dev)
+                            .Select(p => $"{p.persona}({p.role})").Distinct().ToList();
+                        if (aNonDev.Count > 0)
+                            aVerdict += $"\n  ⚠ **本單沒有 QA 卻有其他角色：{string.Join("、", aNonDev)}**"
+                                + " —— 若非預期請 reopen 並補 `op=assign --arg role=qa`"
+                                + "（`pm` 不是 QA 閘：PM 排序、QA 簽名，混起來會讓「有人管」被讀成「有人驗」）";
+                    }
                 }
-            }
-
-            UCL_TaskIO.Touch(e, aNow);
-            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　`{e.status}`　commit `{aSha}`（{aMode}）by {iActor}"
-                + (aShaNew ? "" : "（這個 sha 本來就在，沒重複加）"));
+                UCL_TaskIO.Touch(m, aNow);
+                return UCL_TaskWrite.Line($"{aNow}　`{m.status}`　commit `{aSha}`（{aMode}）by {iActor}"
+                    + (aShaNew ? "" : "（這個 sha 本來就在，沒重複加）"));
+            });
+            if (!aWrote)
+                throw new Exception($"[Task] TASK-{aIndex} 掛 commit 沒有落檔 —— 鎖內重讀時那張單不在了"
+                    + "（被刪或被搬）⇒ **寫入沒有發生**，那顆 sha 沒有掛上去。");
+            // ⚠ 回報一律用**落檔後**那一份 —— 下面印的 status／commit_shas／closed_at 都是它的欄位。
+            e = UCL_TaskIO.Find(aIndex) ?? e;
 
             ioR.AppendLine($"## {e.Id} ← commit `{aSha}`（mode=`{aMode}`）");
             // ♻ 重複 sha 要在**回傳檔**分形（TASK-0033 ①）——
@@ -1371,7 +1509,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 //   上面那道「給了 why 卻沒有 memory_topic」的閘判的是**鎖外**讀到的欄位
                 //   ⇒ 這裡對重讀的那一份再判一次；不成立就回 null ⇒ **一個位元組都不寫**。
                 aTopicAtWrite = (m.memory_topic ?? "").Trim();
-                if (aWhy.Length > 0 && aTopicAtWrite.Length == 0) { aTopicLostInLock = true; return null; }
+                if (aWhy.Length > 0 && aTopicAtWrite.Length == 0)
+                { aTopicLostInLock = true; return UCL_TaskWrite.Skip; }
 
                 aFrom = m.status;
                 aCommentId = UCL_TaskIO.NextCommentId(m);
@@ -1388,7 +1527,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 //   用 `>=` 的話「剛收完工」會被自己擋住，那是一隻修完立刻天天亮的警示。
                 //   ⇒ 這裡刻意跟 `Touch` 共用同一個 `aNow`，讓「相等」是精確的而不是差幾毫秒。
                 m.last_wrapup_at = aNow;
-                return $"{aNow}　`wrapup`　{iActor} 收工（狀態不動：{aFrom}）留言 #{aCommentId}";
+                return UCL_TaskWrite.Line($"{aNow}　`wrapup`　{iActor} 收工（狀態不動：{aFrom}）留言 #{aCommentId}");
             });
             if (!aWrote)
             {
@@ -1531,10 +1670,10 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 bool aWrote = UCL_TaskIO.Mutate(aHint.index, e =>
                 {
                     // ⛔ 判定在鎖內對**重讀的 e** 重做一次 —— 不用 aHint 的欄位。
-                    if (e.status != UCL_TaskStatus.in_progress) return null;
+                    if (e.status != UCL_TaskStatus.in_progress) return UCL_TaskWrite.Skip;
                     int aDays = e.DaysSinceUpdate(aNow);
-                    if (aDays < UCL_TaskIO.STALE_DAYS) return null;
-                    if (aOnly.Length > 0 && e.RolesOf(aOnly).Count == 0) return null;
+                    if (aDays < UCL_TaskIO.STALE_DAYS) return UCL_TaskWrite.Skip;
+                    if (aOnly.Length > 0 && e.RolesOf(aOnly).Count == 0) return UCL_TaskWrite.Skip;
 
                     aFromCaptured = e.status;
                     aDaysCaptured = aDays;
@@ -1542,8 +1681,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     UCL_TaskIO.Touch(e, aTs);
                     // ⚠ 時間線一定要留一行說**為什麼**被釋放 ——
                     //   沒有這行的話，明天看到它從 in_progress 變回 todo 會像有人手動改的
-                    return $"{aTs}　`todo`　sweep 釋放（{aFromCaptured} 已 {aDaysCaptured} 天沒動作，"
-                        + $"逾期 {UCL_TaskIO.STALE_DAYS} 天門檻）by {iActor}";
+                    return UCL_TaskWrite.Line($"{aTs}　`todo`　sweep 釋放（{aFromCaptured} 已 {aDaysCaptured} 天沒動作，"
+                        + $"逾期 {UCL_TaskIO.STALE_DAYS} 天門檻）by {iActor}");
                 });
                 if (!aWrote)
                 {
@@ -1578,26 +1717,41 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             bool aHasRole = GetArg(iArgs, "role", "").Trim().Length > 0;   // 沒帶＝該 persona 的所有角色
             var aRole = aHasRole ? ParseEnumArg(iArgs, "role", UCL_TaskRole.dev) : default;
 
-            int aBefore = e.participants.Count;
-            e.participants.RemoveAll(p =>
-                string.Equals(p.persona, aTarget, StringComparison.OrdinalIgnoreCase)
-                && (!aHasRole || p.role == aRole));
-            int aRemoved = aBefore - e.participants.Count;
-
-            if (aRemoved == 0)
+            string aNow = UCL_TaskIO.NowUtc();
+            // ⭐ TASK-0163：數幾筆被移除 → 移除 → 落檔，是同一段 RMW（`aRemoved` 是判斷也是回報）。
+            //   ⚠ 「找不到那個人 ⇒ 什麼都沒寫」這個出口照形狀乙搬進鎖內：回 `Skip` ⇒ 零位元組，
+            //   而它跟「單子不在了」用 `aFoundEntry` 分辨 —— 兩者都讓 `Mutate` 回 false，
+            //   ⛔ 而處置不同（前者是正常結果，後者是寫入沒發生）。
+            int aRemoved = 0;
+            bool aFoundEntry = false;
+            var aAfter = new List<UCL_TaskParticipant>();
+            bool aWrote = UCL_TaskIO.Mutate(aIndex, m =>
             {
+                aFoundEntry = true;
+                int aBefore = m.participants.Count;
+                m.participants.RemoveAll(p =>
+                    string.Equals(p.persona, aTarget, StringComparison.OrdinalIgnoreCase)
+                    && (!aHasRole || p.role == aRole));
+                aRemoved = aBefore - m.participants.Count;
+                aAfter = new List<UCL_TaskParticipant>(m.participants);
+                if (aRemoved == 0) return UCL_TaskWrite.Skip;
+                UCL_TaskIO.Touch(m, aNow);
+                return UCL_TaskWrite.Line($"{aNow}　`unassign`　{iActor} 移除 {aTarget}"
+                    + (!aHasRole ? "（全部角色）" : $"（role={aRole}）") + $"　共 {aRemoved} 筆");
+            });
+            if (!aWrote)
+            {
+                if (!aFoundEntry)
+                    throw new Exception($"[Task] TASK-{aIndex} 移除沒有落檔 —— 鎖內重讀時那張單不在了"
+                        + "（被刪或被搬）⇒ **寫入沒有發生**。");
                 ioR.AppendLine($"## {e.Id} 沒有變更");
                 ioR.AppendLine($"- {aTarget}"
                     + (!aHasRole ? "" : $"（role={aRole}）")
                     + " 不在參與者裡 ⇒ **什麼都沒寫**（這是「找不到」，不是「移除成功」）");
-                ioR.AppendLine($"- 現有參與：{Participants(e)}");
+                ioR.AppendLine($"- 現有參與：{ParticipantsOf(aAfter)}");
                 return;
             }
-            string aNow = UCL_TaskIO.NowUtc();
-            UCL_TaskIO.Touch(e, aNow);
-            // ⛔ [RMW-END] 從本 Op 取得 `e` 到這一行之間**不得出現 `await`** —— 併發安全靠這個（見 UCL_TaskIO 檔頭），破了是靜默的。
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　`unassign`　{iActor} 移除 {aTarget}"
-                + (!aHasRole ? "（全部角色）" : $"（role={aRole}）") + $"　共 {aRemoved} 筆");
+            e.participants = aAfter;   // 回報用落檔後那一份（`e` 是鎖前的提示）
             ioR.AppendLine($"## ✅ {e.Id} 已移除 {aRemoved} 筆參與");
             ioR.AppendLine($"- 移除：{aTarget}{(!aHasRole ? "（全部角色）" : $"（{aRole}）")}");
             ioR.AppendLine($"- 現有參與：{Participants(e)}");
@@ -1662,10 +1816,14 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             return true;
         }
 
-        static string Participants(UCL_TaskEntry e)
+        static string Participants(UCL_TaskEntry e) => ParticipantsOf(e.participants);
+
+        /// <summary>參與者清單的字串化 —— 收 list 而不是 entry，
+        /// 讓「落檔後那一份」也印得出來（`Mutate` 之後呼叫端手上的 `e` 是鎖前的提示）。</summary>
+        static string ParticipantsOf(List<UCL_TaskParticipant> iList)
         {
-            if (e.participants.Count == 0) return "**無**（沒有人在做這件事）";
-            return string.Join("、", e.participants.Select(p => $"{p.persona}({p.role})"));
+            if (iList == null || iList.Count == 0) return "**無**（沒有人在做這件事）";
+            return string.Join("、", iList.Select(p => $"{p.persona}({p.role})"));
         }
 
         /// <summary>一張單的**全部**關係欄位（含 epic_id / subtask_indices）—— 回讀用，別漏欄位。</summary>

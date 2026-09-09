@@ -19,6 +19,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using UnityEngine;   // TASK-0163：WriteSkip 沒落盤時要出聲（Debug.LogError）
 
 namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 {
@@ -400,13 +401,30 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         /// <para>⚠ 不是寫進 log —— **跳過要留在別人看得到的地方**（basecamp 拍板：
         /// 可跳過但留名，比不可跳過更持久；硬擋會讓人去找繞過的方法，而繞過一次那道閘就永久失效）。</para>
         /// </summary>
-        public static void WriteSkip(UCL_TaskEntry e, string iPersona, string iReason)
+        public static bool WriteSkip(UCL_TaskEntry e, string iPersona, string iReason)
         {
-            if (e == null) return;
+            if (e == null) return false;
             string aNow = UCL_TaskIO.NowUtc();
-            UCL_TaskIO.Touch(e, aNow);
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　`wrapup-skip`　{iPersona} 顯式跳過收工："
-                + iReason.Replace("\r", " ").Replace("\n", " "));
+            // ⭐ TASK-0163：本函式就是那個「`⛔ [RMW-END]` 前哨貼不進來」的位置 ——
+            //   它把 `e` **當參數收**，於是 READ 發生在更上游（`UCL_AwakeningService.PrepareSleep`
+            //   的 `foreach` 之前就把清單載好了），這裡沒有一個地方放得下那個標記。
+            //   ⇒ 走 `Mutate` 之後跨度由型別決定：拿 index 進去、在鎖內重讀，
+            //   呼叫端傳進來的 `e` 降級成「提示」（只用它的 index）。
+            //   📌 這一格是本次遷移的**原型**：前哨表達不出來的形狀，換成入口就消失了。
+            bool aWrote = UCL_TaskIO.Mutate(e.index, m =>
+            {
+                UCL_TaskIO.Touch(m, aNow);
+                return UCL_TaskWrite.Line($"{aNow}　`wrapup-skip`　{iPersona} 顯式跳過收工："
+                    + iReason.Replace("\r", " ").Replace("\n", " "));
+            });
+            // ⚠ 回 false ＝ 鎖內重讀時那張單不在了 ⇒ **跳過紀錄沒有落盤**。
+            //   ⛔ 不吞掉：這個函式存在的理由就是「跳過要留在別人看得到的地方」，
+            //   而一個沒寫成的跳過紀錄，跟「他根本沒跳過」長得一樣。
+            if (!aWrote)
+                Debug.LogError($"[TaskReconcile] TASK-{e.index} 的 `wrapup-skip` **沒有落盤**"
+                    + "（鎖內重讀時那張單不在了：被刪或被搬）⇒ 跳過的理由沒有留在單上，"
+                    + "而「跳過但留名」正是這道閘的設計。⇒ 去看那張單是不是剛被刪掉。");
+            return aWrote;
         }
 
         static List<string> RolesOrReporter(UCL_TaskEntry e, string iPersona)

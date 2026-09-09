@@ -404,19 +404,39 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // ⚠ 寫入與通知都走與 Cmd 相同的兩支（`UCL_TaskIO.Save` / `UCL_TaskNotify`）——
+        // ⚠ 寫入與通知都走與 Cmd 相同的兩支（`UCL_TaskIO.Mutate` / `UCL_TaskNotify`）——
         //   後台頁不自己組 md、也不自己發酒館訊息（兩份格式會漂，而漂移是靜默的）。
+        // ⭐ TASK-0163：這裡曾經是**兩個人都沒數到的那一格** ——
+        //   遷移面被算成「`Task/` 目錄底下的 N 個呼叫端」，而本檔不在那個目錄裡
+        //   ⇒ 我與 @basecamp 各自 grep 那個目錄，兩份清單**都少了後台頁這兩處**。
+        //   📌 「射程由目錄決定」是枚舉盲區的一種：缺的那兩個不會出現在自己的清單上。
+        //   而它偏偏是最該進鎖的一格：**這裡是人在按鈕**，另一邊是 agent 的 cmd
+        //   ⇒ offload 之後這條競爭是「人 vs agent」，而人不會知道自己的留言被吃掉了。
         void AddComment(UCL_TaskEntry e, string iAuthor, string iBody)
         {
             string aNow = UCL_TaskIO.NowUtc();
-            var aComment = new UCL_TaskComment
-            { id = UCL_TaskIO.NextCommentId(e), persona = iAuthor, at = aNow, body = iBody };
-            e.comments.Add(aComment);
-            UCL_TaskIO.Touch(e, aNow);
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　`comment`　{iAuthor} 留言 #{aComment.id}（後台頁）");
-            UCL_TaskNotify.PostFireAndForget(e, UCL_TaskNotify.Kind.Comment, iAuthor, "", iBody);
+            int aCommentId = 0;
+            bool aWrote = UCL_TaskIO.Mutate(e.index, m =>
+            {
+                aCommentId = UCL_TaskIO.NextCommentId(m);   // 配號在鎖內（鎖外算會撞號 ⇒ 一則留言靜默消失）
+                m.comments.Add(new UCL_TaskComment
+                { id = aCommentId, persona = iAuthor, at = aNow, body = iBody });
+                UCL_TaskIO.Touch(m, aNow);
+                return UCL_TaskWrite.Line($"{aNow}　`comment`　{iAuthor} 留言 #{aCommentId}（後台頁）");
+            });
+            if (!aWrote)
+            {
+                // ⛔ 失敗要在**畫面看得到的層**出聲：這裡是人在操作，而
+                //   「送出了但沒寫進去」與「送出成功」在 GUI 上長得一樣（草稿已經被清掉了）。
+                Debug.LogError($"[TaskManager] {e.Id} 的留言**沒有落盤**（鎖內重讀時那張單不在了："
+                    + $"被刪或被搬）⇒ 內容沒有進磁碟。草稿內文：\n{iBody}");
+                Refresh();
+                return;
+            }
+            var aFresh = UCL_TaskIO.Find(e.index) ?? e;   // 通知用落檔後那一份（參與者清單可能剛變）
+            UCL_TaskNotify.PostFireAndForget(aFresh, UCL_TaskNotify.Kind.Comment, iAuthor, "", iBody);
             Refresh();
-            Debug.Log($"[TaskManager] {e.Id} 留言 #{aComment.id} by {iAuthor}（已請酒館通知；失敗會印 [TaskNotify]）");
+            Debug.Log($"[TaskManager] {e.Id} 留言 #{aCommentId} by {iAuthor}（已請酒館通知；失敗會印 [TaskNotify]）");
         }
 
         /// <summary>UTC ISO → 本地 `MM-dd HH:mm`。解析不了就**原樣回**（不假裝知道時間）。</summary>
@@ -485,16 +505,40 @@ namespace UCL.Core.EditorLib.Page
                 }
             }
             string aNow = UCL_TaskIO.NowUtc();
-            var aQa = e.QaPersonas();
-            string aNote = "";
-            if (iStatus == UCL_TaskStatus.done && aQa.Count > 0)
-                aNote = $"（後台頁代簽 —— 單上的 QA 是 {string.Join(" / ", aQa)}）";
-
+            // ⭐ TASK-0163：狀態變更的整段 RMW 進 `Mutate`，而 blocker／QA 兩項判定**在鎖內重做**
+            //   （上面那道 blocker 閘讀的是鎖前的快照 —— 人按下按鈕與真正落檔之間，
+            //   agent 那側可能剛掛上一個 blocker）。
             var aFrom = e.status;
-            e.status = iStatus;   // 成員名＝wire 字串（UCL_TaskStatus 的約定；frontmatter 落盤仍是字串）
-            if (iStatus == UCL_TaskStatus.done || iStatus == UCL_TaskStatus.cancelled) e.closed_at = aNow;
-            UCL_TaskIO.Touch(e, aNow);
-            UCL_TaskIO.Save(e, "", "", $"{aNow}　`{iStatus}`　由後台頁操作（原狀態 {aFrom}）{aNote}");
+            string aNote = "";
+            string aRace = null;
+            bool aWrote = UCL_TaskIO.Mutate(e.index, m =>
+            {
+                if (iStatus == UCL_TaskStatus.done)
+                {
+                    var aNowBlockers = UCL_TaskIO.OpenBlockers(m);
+                    if (aNowBlockers.Count > 0)
+                    {
+                        aRace = $"鎖內重讀時還有 {aNowBlockers.Count} 個未解 blocker（{string.Join("；", aNowBlockers)}）";
+                        return UCL_TaskWrite.Skip;
+                    }
+                }
+                var aQaNow = m.QaPersonas();
+                aNote = (iStatus == UCL_TaskStatus.done && aQaNow.Count > 0)
+                    ? $"（後台頁代簽 —— 單上的 QA 是 {string.Join(" / ", aQaNow)}）" : "";
+                aFrom = m.status;
+                m.status = iStatus;   // 成員名＝wire 字串（UCL_TaskStatus 的約定；frontmatter 落盤仍是字串）
+                if (iStatus == UCL_TaskStatus.done || iStatus == UCL_TaskStatus.cancelled) m.closed_at = aNow;
+                UCL_TaskIO.Touch(m, aNow);
+                return UCL_TaskWrite.Line($"{aNow}　`{iStatus}`　由後台頁操作（原狀態 {aFrom}）{aNote}");
+            });
+            if (!aWrote)
+            {
+                Debug.LogError($"[TaskManager] {e.Id} 的狀態**沒有變更**："
+                    + (aRace ?? "鎖內重讀時那張單不在了（被刪或被搬）")
+                    + " ⇒ 一個位元組都沒寫。⚠ 畫面會在 Refresh 之後顯示磁碟上的真實狀態。");
+                Refresh();
+                return;
+            }
             Refresh();
             Debug.Log($"[TaskManager] {e.Id} {aFrom} → {iStatus}{aNote}");
         }

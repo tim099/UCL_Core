@@ -1,10 +1,17 @@
 // 區塊職責：任務單的磁碟層 —— index 配發 / 單檔讀寫 / 清單 / 依賴雙向寫入 / stale 與 blocker 讀數。
 //
-// ⚠⚠ **這個檔的併發安全來自「單一主執行緒 ＋ read-modify-write 中間沒有 `await`」，
-//     不是來自任何鎖。** 這裡沒有鎖，而且是刻意沒有（TASK-0026，2026-08-25）。
-//   讀數：三個 persona 同時 `op=create` ⇒ 3 檔連號零空洞；兩人同秒 `op=comment` ⇒ 兩則都在。
-//   ⇒ 所以**加一把守不到東西的鎖**被判為有害：它會讓下一個人不再去問這裡到底安不安全。
-//   ⛔ 要動多執行緒／多 process 的人請從這一段開始讀：**前提一旦破，症狀是靜默的**
+// ⚠⚠ **這個檔的併發安全來自「一把鎖 ＋ 只有兩個寫入入口」**（TASK-0163，2026-09-09 起）。
+//   入口只有 `Mutate`（改一張既有的單）與 `Create`（開一張新的單）——
+//   兩者都在 `s_RmwLock` 內完成「讀 → 改 → 寫」，而 `Save` 已經是 **private**：
+//   ⇒ 呼叫端在型別上拿不到一個「不在鎖內的 entry」，也拿不到 `Save`。
+//   🩸 舊的前提是「單一主執行緒 ＋ RMW 中間沒有 `await`」（TASK-0026，2026-08-25），
+//     它靠 11 行 `⛔ [RMW-END]` 註解維持，而那個慣例被量出**兩個表達不出來的形狀**：
+//     ① 跨函式（`UCL_TaskReconcile.WriteSkip` 把 entry 當參數收，前哨貼不到）
+//     ② 跨迴圈輪次（`OpSweep` 的 Save 在含 `await` 的迴圈裡 —— 前哨每一輪都印在正確位置上，
+//        **而它看不見迴圈**）〔@basecamp 2026-09-08 量的〕
+//     ⇒ 修法不是第三種註解，是讓錯的動作在型別上不存在。
+//   ⛔ **射程：同一個 process 內。** python／另一個 Editor 實例同時寫，本鎖答不出來
+//     （那要檔案鎖，不在 TASK-0163 射程）。前提破掉的症狀仍然是靜默的
 //     （整檔覆蓋、留言消失、index 撞號 —— 沒有一格會紅）。
 // 物理意義：AgentCommands/Tasks/ 底下的唯一寫入端。Cmd 與後台頁都走這裡，不各自碰檔案。
 //
@@ -29,6 +36,34 @@ using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 {
+    // ===========================================================
+    // 區塊職責：一次寫入要落盤的東西 —— 時間線那一行 ＋（選填）兩個內文區塊。
+    // 物理意義：`Save` 對空的 `criteria`／`description` 的語意是**「沿用磁碟那一份」**
+    //   （跟留言與 `resolution_note` 同一族的沿用規則）⇒ 所以「不動內文」與「把內文寫成空的」
+    //   在參數上長得一樣，而前者是常態。⇒ 用三個具名的建構子把意圖說出來，不讓呼叫端傳空字串猜。
+    // 🩸 為什麼需要它：`Mutate` 原本固定呼叫 `Save(e, "", "", line)` ⇒ 它在型別上**寫不了內文欄位**，
+    //   於是 `OpCreate`／`OpUpdate`／`OpCheck` 三支過不去 —— 而 `OpCheck` 寫的就是驗收那一欄，
+    //   它偏偏是最該進鎖的（序號取自鎖外讀的未勾清單，兩人同時勾會吃掉別人的**署名**）。
+    // 邊界：`Skip` ＝ 這次不寫（鎖內判定不成立的出口）。判準是 `activity` 是否為空。
+    // ===========================================================
+    public struct UCL_TaskWrite
+    {
+        public string activity;      // 時間線那一行；空 ⇒ 這次不寫
+        public string criteria;      // 空 ⇒ 沿用磁碟那一份
+        public string description;   // 空 ⇒ 沿用磁碟那一份
+
+        /// <summary>這次不寫（鎖內重判不成立）。⛔ 不是失敗，是刻意零寫入。</summary>
+        public static UCL_TaskWrite Skip => default;
+        /// <summary>只寫時間線一行，內文兩區沿用磁碟。</summary>
+        public static UCL_TaskWrite Line(string iActivity)
+            => new UCL_TaskWrite { activity = iActivity };
+        /// <summary>連內文一起寫（`criteria` / `description` 給空字串＝那一區沿用）。</summary>
+        public static UCL_TaskWrite Body(string iActivity, string iCriteria, string iDescription)
+            => new UCL_TaskWrite { activity = iActivity, criteria = iCriteria, description = iDescription };
+
+        public bool WillWrite => !string.IsNullOrEmpty(activity);
+    }
+
     public static class UCL_TaskIO
     {
         /// <summary>InProgress 超過這個天數沒動 ⇒ stale。與 BugReport 同一個數字，刻意不另開一個旋鈕。</summary>
@@ -79,8 +114,13 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //   只有「磁碟上出現我從沒發過的號」（嚴格大於）才是真的有人繞過 Cmd 直接建檔。
         // 數值影響：一次讀計數檔 ＋ 一次列目錄；寫回計數檔。
         // ===========================================================
-        public static int IncrementAndGetIndex()
+        // ⛔ **private ＋ 必須在鎖內呼叫（TASK-0163）**：它自己就是一段 read-modify-write
+        //   （讀計數檔 → +1 → 寫回）。它曾經是 public 且不持鎖 ⇒ 兩條 lane 同時開單會**配到同一個 index**，
+        //   而症狀是第二張單把第一張整檔覆蓋掉（檔頭那句「index 撞號」講的就是這個）。
+        //   ⇒ 現在唯一呼叫端是 `Create`，而 `Create` 在鎖內。
+        static int IncrementAndGetIndexLocked()
         {
+            AssertHoldsRmwLock(nameof(IncrementAndGetIndexLocked), -1);
             EnsureDir();
             int aCounter = ReadCurrentIndex();
             int aDiskMax = ReadMaxIndexOnDisk();
@@ -183,47 +223,39 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //   而那會逼下一個人把斷言拿掉，不是去修前提。
         // 數值影響：正常路徑零成本（一次 int 比較），且**不改變任何行為**。
         // ===========================================================
-        // ⚠ 定錨方式刻意**不是**「第一次寫入時記下當前執行緒」：
-        //   那樣的話，萬一第一次寫入本身就在非主執行緒上，它會錨到錯的那條，
-        //   然後**反過來對所有正確的呼叫誤報** —— 一個會誤報的告警活不過三天。
-        //   ⇒ 走 `[InitializeOnLoadMethod]`（Unity 保證在主執行緒跑，本 repo 既有慣例）。
-        // 邊界：錨沒設成（理論上不該發生）⇒ 這道斷言**停用但出聲一次**。
-        //   🩸 這一格是我自己第一版犯的：原本寫「錨沒設成就 return」，於是
-        //   「錨對上了」與「根本沒在量」**在輸出上完全同形（都是安靜）**——
-        //   而那正是本檔今天修的一整族（找不到 vs 不存在、被 ignore vs 乾淨）。
-        //   ⇒ 「量不到」不可以長得像「量到了而且正常」。出聲一次，不重複洗版。
-        static int s_MainThreadId = -1;
-        static bool s_WarnedNoAnchor = false;
-
-        [UnityEditor.InitializeOnLoadMethod]
-        static void AnchorMainThread()
-            => s_MainThreadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
-
-        static void AssertMainThread(string iWho, int iIndex)
+        // 區塊職責：**量新的那個不變式** —— 「寫檔的時候，鎖在手上」。
+        // 🩸 這一格是換代來的（TASK-0163 ②）：前一版是 `AssertMainThread`，它量的是舊前提
+        //   （單一主執行緒）。上鎖之後那道守衛會變成兩件事之一，而兩件都不能留：
+        //     · 若仍留著「非主緒就 LogError」⇒ offload 之後**每次都叫**，
+        //       而一個每次都叫的 LogError 三天內會被人拿掉（那時真正的錯就沒有人在看了）。
+        //     · 若直接刪掉不換 ⇒ 這個檔會變成「沒有任何一層在量自己的前提」。
+        //   ⇒ 所以它不是化石，是**反過來量**：從「誰在哪條緒上」換成「寫的時候有沒有持鎖」。
+        // 物理意義：`Monitor.IsEntered` 問的是**本執行緒**是否已經進入那把鎖 ——
+        //   而 `Save` 現在是 private，唯一的外部路徑是 `Mutate` / `Create`（兩者都在鎖內）
+        //   ⇒ 它會叫的唯一情境是**本類別內部**有人新加了一條繞過鎖的寫入路徑。
+        //   ⚠ 那不是假想：`IncrementAndGetIndex` 就曾經是 public 且不持鎖（index 撞號的來源）。
+        // 邊界：⛔ 它答不出跨 process（另一個 Editor 實例／python）—— 那要檔案鎖。
+        //   所以這道探針的射程是「本 process 內有沒有人繞過入口」，不是「這個檔安全了」。
+        // ===========================================================
+        static void AssertHoldsRmwLock(string iWho, int iIndex)
         {
-            int aNow = System.Threading.Thread.CurrentThread.ManagedThreadId;
-            if (s_MainThreadId < 0)
-            {
-                if (!s_WarnedNoAnchor)
-                {
-                    s_WarnedNoAnchor = true;
-                    Debug.LogWarning("[Task] 主執行緒錨沒設成（InitializeOnLoadMethod 沒跑到）⇒"
-                        + " **併發前提這一輪沒有人在量**。這不是「安全」，是「沒有讀數」。");
-                }
-                return;
-            }
-            if (aNow == s_MainThreadId) return;
+            if (System.Threading.Monitor.IsEntered(s_RmwLock)) return;
             Debug.LogError(
-                $"[Task] ⚠️ {iWho}(index={iIndex}) 跑在**非主執行緒**上（tid={aNow}，主={s_MainThreadId}）。"
-                + " 本檔沒有鎖 —— 併發安全完全依賴『單一主執行緒 ＋ RMW 中間沒有 await』，"
-                + " 而這行讀數說那個前提已經破了。"
-                + " ⇒ 去看是誰在 read-modify-write 中間加了 await（最可能是 Cmd_Task 的某個 Op），"
-                + " 把它移到 Save 之後；或者這裡真的需要鎖了，那要開一張新單而不是把這行拿掉。");
+                $"[Task] ⚠️ {iWho}(index={iIndex}) **在鎖外寫檔**（tid={System.Threading.Thread.CurrentThread.ManagedThreadId}）。"
+                + " 本檔的併發安全來自 `s_RmwLock` ＋ 只有 `Mutate`／`Create` 兩個入口，"
+                + " 而這行讀數說有一條路徑繞過了它們。"
+                + " ⇒ 去看是誰在鎖外呼叫了 `Save`（它是 private ⇒ 只可能是本類別內部新加的路徑），"
+                + " 把那段包進 `Mutate`／`Create`；⛔ 不要把這行拿掉，也不要另外開一把鎖"
+                + "（第二把鎖擋不住第一把，而兩把鎖的錯是靜默的）。");
         }
 
-        public static void Save(UCL_TaskEntry e, string iCriteria, string iDescription, string iActivityLine)
+        // ⛔ **private（TASK-0163）**：唯一的寫入路徑是 `Mutate`／`Create`，它們在鎖內呼叫本方法。
+        //   🩸 改成 private 才是那條規則的實體 —— 在此之前它是 public，而 13 個呼叫端裡
+        //   有 2 個不在 `Task/` 目錄底下（後台頁），⇒ 兩個人各自 grep 那個目錄都少數了兩個。
+        //   **「射程由目錄決定」是枚舉盲區的一種**：缺的那兩個不會出現在自己的清單上。
+        static void Save(UCL_TaskEntry e, string iCriteria, string iDescription, string iActivityLine)
         {
-            AssertMainThread(nameof(Save), e?.index ?? -1);
+            AssertHoldsRmwLock(nameof(Save), e?.index ?? -1);
             EnsureDir();
             string aPath = TaskPath(e.index);
 
@@ -375,26 +407,55 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //   · ⛔ `iMutator` 裡**不得 await**：那會在持鎖狀態下把控制權交出去。
         //     今天 11 個 RMW 跨度實測全部 await-free（@basecamp 2026-09-08）⇒ 同步 lambda 蓋得住，
         //     所以本入口**刻意不提供 async 版本** —— 需要它的那天，要解的是「持鎖 await」那個更大的題。
-        //   · ⚠ 過渡狀態：**遷移進度刻意不寫成數字**（寫了會過期，而過期的斷言不會叫）——
-        //     現況＝數 `UCL_TaskIO.Save(` 還剩幾個呼叫端（`Mutate` 之外的每一個都還走舊路）。
-        //     🩸 這一行原本寫「目前只有 `OpSweep` 走本入口，其餘 11 個直呼 `Save`」，
-        //     而它在被寫下的當天就已經不為真（`OpComment` 同一趟也遷了）⇒ 換成上面那個查法。
-        //     未遷的呼叫端靠的仍是舊前提（單一主執行緒），而那道 `AssertMainThread` 因此**還不是化石**
-        //     ⇒ 它要跟最後一個呼叫端同一天收。TASK-0163 ②（重新定義那道守衛）與 ④（offload）都還開著。
+        //   · ✅ 遷移已完成（2026-09-09）：**`Save` 是 private，外部寫入端 0 個。**
+        //     驗法（不寫死數字 —— 寫了會過期而過期的斷言不會叫）：
+        //     `grep -rn "UCL_TaskIO.Save(" --include=*.cs Assets/` ⇒ 只該剩註解，不該有呼叫。
+        //     🩸 而遷移面的真值是 **13** 不是 11：`Cmd_Task` 11 ＋ `UCL_TaskReconcile` 1 ＋
+        //     **`UCL_TaskManagerPage` 2** —— 最後那兩個我與 @basecamp **兩個人都沒數到**，
+        //     因為兩份清單都是 grep `Task/` 那個目錄撈的，而後台頁不在那個目錄裡。
+        //     📌 「射程由目錄決定」是枚舉盲區的一種：缺的那兩個不會出現在自己的清單上。
+        //   · ⚠ TASK-0163 ②（守衛換代）已同日完成：`AssertMainThread` 換成 `AssertHoldsRmwLock`
+        //     （見那個區塊）。④（`Cmd_Task` 走 `EnterBackground`）仍開著 —— 那是 TASK-0162 的事。
         // ===========================================================
         static readonly object s_RmwLock = new object();
 
-        public static bool Mutate(int iIndex, System.Func<UCL_TaskEntry, string> iMutator)
+        public static bool Mutate(int iIndex, System.Func<UCL_TaskEntry, UCL_TaskWrite> iMutator)
         {
             if (iMutator == null) return false;
             lock (s_RmwLock)
             {
                 var e = Find(iIndex);          // 鎖內重讀 —— 呼叫端鎖外撈的那份只算「提示」
                 if (e == null) return false;
-                string aActivityLine = iMutator(e);
-                if (string.IsNullOrEmpty(aActivityLine)) return false;   // 判定在鎖內不成立 ⇒ 不寫
-                Save(e, "", "", aActivityLine);
+                var aWrite = iMutator(e);
+                if (!aWrite.WillWrite) return false;   // 判定在鎖內不成立 ⇒ 不寫（`UCL_TaskWrite.Skip`）
+                Save(e, aWrite.criteria ?? "", aWrite.description ?? "", aWrite.activity);
                 return true;
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：開一張新的單 —— **配號與落檔在同一把鎖內**。
+        // 物理意義：`IncrementAndGetIndexLocked` 自己是一段 RMW（讀計數檔 → +1 → 寫回），
+        //   而開單的內文有一部分**依賴那個號碼**（bug 單的驗收骨架寫著 `Fixes TASK-<n>`）
+        //   ⇒ 呼叫端必須在鎖內才拿得到號碼 ⇒ 用一個「收號碼、回 (單, 要寫什麼)」的 lambda。
+        // 🩸 為什麼不能讓呼叫端先配號再自己 Save：那正是舊路 ——
+        //   兩條 lane 同時開單會配到同一個 index，而第二張把第一張**整檔覆蓋**，兩邊都回 Success。
+        // 邊界：
+        //   · `iBuild` 回 `null` 單 ⇒ 回 -1、不寫（呼叫端自己決定那算不算錯）。
+        //   · `iBuild` 裡 ⛔ 不得 `await`（持鎖交出控制權）—— 同 `Mutate`，本入口刻意沒有 async 版本。
+        //   · 回傳值＝真正落盤的 index；⛔ 別再從 lambda 外面的變數推它。
+        // ===========================================================
+        public static int Create(System.Func<int, (UCL_TaskEntry entry, UCL_TaskWrite write)> iBuild)
+        {
+            if (iBuild == null) return -1;
+            lock (s_RmwLock)
+            {
+                int aIndex = IncrementAndGetIndexLocked();
+                var (e, aWrite) = iBuild(aIndex);
+                if (e == null) return -1;
+                e.index = aIndex;              // 號碼由本入口決定，不信呼叫端填的那格
+                Save(e, aWrite.criteria ?? "", aWrite.description ?? "", aWrite.activity ?? "");
+                return aIndex;
             }
         }
 

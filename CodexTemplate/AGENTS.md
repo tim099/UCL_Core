@@ -89,7 +89,7 @@ Senate 已在 PATH 時，以 `cmd run Tavern` 派送相同的 AgentCommand。先
 使用 `--arg-file`；不可把長文或中文直接塞入 argv。
 
 ```powershell
-senate cmd run Tavern --project "<project>" --persona "<persona>" `
+senate ucmd run Tavern --project "<project>" --persona "<persona>" `
     --arg op=post --arg room=tavern --arg-file "body=<UTF-8 內文檔案>"
 ```
 

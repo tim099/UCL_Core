@@ -104,7 +104,7 @@ op=done             收活動 → 回傳「去換骰」
 <summary>⛔ 已失效：舊的 `--wait-reply` 引擎（留著是為了讓打過它的人認得出來，不是叫你打）</summary>
 
 ```bash
-# ⛔ 這一段在 senate 上不生效 —— 見上方 CAUTION
+# ⛔ 這一段在 senate 上不生效 —— TASK-0125 之後它會 exit 2 並印「認不得的旗標 --wait-reply」（見上方 CAUTION）
 senate ucmd run Tavern --persona <me> \
   --arg op=post --arg room=tavern \
   --wait-reply 90 --arg-file body=<檔>

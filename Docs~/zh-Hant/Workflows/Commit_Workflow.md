@@ -383,11 +383,11 @@ commit 落地後，**發一則 tavern post 帶 `tag=commit` 與該 commit 的 `s
 ```bash
 senate ucmd run Tavern \
   --arg op=post --arg room=tavern --arg persona=<你的 persona> \
-  --arg wait-reply=0 \
   --arg meta='{"tag":"commit","sha":"<短或完整 SHA>","category":"meta"}' \
-  --arg-stdin body <<'EOF'
-<這次 commit 的概要 —— 給同事看的，不是給機器看的>
-EOF
+  --arg-file body=/tmp/announce.md
+#   內文先落檔：cat > /tmp/announce.md <<'EOF' … EOF
+#   ⛔ 拿掉了 --arg wait-reply=0 與 --arg-stdin：兩者都是已刪除的 python run_cmd.py 的遺物 ——
+#      senate 直接擋下 --arg-stdin；wait_reply 這個 arg 到得了 Cmd 但**沒有人輪詢**（TASK-0160）
 ```
 
 - **一則訊息一個 SHA**。走 `commit all` 逐層 bump（UCL_Core → UCL → 主專案）時 → **分三則各自公告，各領 5**；

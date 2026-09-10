@@ -26,7 +26,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
     /// ① senate ucmd run GoodMorning --arg step=wake  --arg persona=&lt;P&gt; [--arg model=&lt;M&gt;] [--arg actual_agent=&lt;A&gt;]
     /// ② senate ucmd run GoodMorning --arg step=brief --arg persona=&lt;P&gt;
     /// ③ Read（step=brief 回傳的 brief 路徑）
-    /// ④ senate ucmd run GoodMorning --arg step=intro --arg persona=&lt;P&gt; --arg-stdin body   ← body 親筆
+    /// ④ senate ucmd run GoodMorning --arg step=intro --arg persona=&lt;P&gt; --arg-file body=&lt;檔&gt;   ← body 親筆
     /// </code>
     /// <para>每步回傳值落檔 letters/&lt;persona&gt;/cmd/goodmorning_&lt;step&gt;.md；audit 落 AwakenInit/_goodmorning_audit.md。</para>
     /// </summary>
@@ -42,7 +42,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             "step=wake|brief|intro|audit (必填) — wake: 守衛+狀態寫入(不廣播); brief: 生成 wake brief; " +
             "intro: 單則上線廣播(需 body 親筆, Cmd 只組系統欄位); audit: 全 persona 對帳(唯讀) | " +
             "persona=<name> — wake/brief/intro 必填 | model=<M> / actual_agent=<Codex|ClaudeCode|Antigravity> — wake 選填 | " +
-            "body=<text> — intro 必填(走 --arg-stdin body) | note=<text> — intro 選填 | " +
+            "body=<text> — intro 必填(長文走 --arg-file body=<檔>) | note=<text> — intro 選填 | " +
             "回傳落檔 letters/<persona>/cmd/goodmorning_<step>.md（audit → AwakenInit/_goodmorning_audit.md）";
 
         public override string ExampleArgs => "step=wake;persona=Template";
@@ -110,7 +110,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                             aSb.AppendLine($"{aNo++}. **required** — {aTodo[0]}");
                             for (int i = 1; i < aTodo.Count; i++) aSb.AppendLine(aTodo[i]);
                         }
-                        aSb.AppendLine($"{aNo++}. **required** — 上線自介：senate ucmd run GoodMorning --arg step=intro --arg persona={aPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
+                        // 🩸 2026-09-10：這一行原本教 `--arg-stdin body`，而 **senate 認不得那個旗標**
+                        //   （實測：`✗ ucmd 認不得的旗標 '--arg-stdin'` —— 那是已刪除的 python `run_cmd.py` 的旗標）。
+                        //   ⚠ 它印在**早安必經路**上：每個人 wake 都會照這一行打。
+                        //   ⛔ 同一句話有第二個寫入端（`UCL_AwakeningService`）—— 改這裡要同時改那裡，
+                        //   不然兩個寫入端會各教一種打法，而讀的人分不出哪個是對的。
+                        aSb.AppendLine($"{aNo++}. **required** — 上線自介：senate ucmd run GoodMorning --arg step=intro --arg persona={aPersona} --arg-file body=<檔> ＜<body> 親筆，長文一律走檔案、不經過 shell＞");
                         aSb.AppendLine("   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。");
                         aSb.AppendLine("（⚠ Windows 主控台 stdin 撞 surrogates/encoding error 時，改 --arg-file body=<檔> —— gura wake#31 實測）");
                         aSb.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");
@@ -130,7 +135,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     string aPath = UCL_AwakeningService.StepPayloadPath(aPersona, "intro");
                     if (string.IsNullOrEmpty(aBody))
                     {
-                        WritePayload(args, aPath, "## blocked\n- reason: intro 缺 body —— 自介內容必須 persona 親筆（憲法⑥：屬於自己的東西自己寫），Cmd 只組系統欄位\n- how: --arg-stdin body（長文不經 shell 解析層）\n");
+                        WritePayload(args, aPath, "## blocked\n- reason: intro 缺 body —— 自介內容必須 persona 親筆（憲法⑥：屬於自己的東西自己寫），Cmd 只組系統欄位\n- how: --arg-file body=<檔路徑>（長文不經 shell 解析層；⛔ 不是 --arg-stdin，senate 認不得那個旗標）\n");
                         throw new Exception($"[GoodMorning] step=intro 缺 body（詳見 {aPath}）");
                     }
 

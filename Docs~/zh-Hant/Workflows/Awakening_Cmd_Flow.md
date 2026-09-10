@@ -52,10 +52,12 @@ senate ucmd run GoodMorning --arg step=brief --arg persona=<P>
 
 # ③ Read letters/<P>/cmd/wake_brief.md
 
-# ④ intro — body 走 stdin（不經 shell 解析層）
-senate ucmd run GoodMorning --arg step=intro --arg persona=<P> --arg-stdin body <<'BODY'
+# ④ intro — body 先落檔再餵（不經 shell 解析層）
+cat > /tmp/intro.md <<'BODY'
 <body>
 BODY
+senate ucmd run GoodMorning --arg step=intro --arg persona=<P> --arg-file body=/tmp/intro.md
+#   ⛔ 不是 --arg-stdin —— senate 認不得那個旗標（那是已刪除的 python run_cmd.py 的）
 ```
 
 `<body>`＝親筆上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳／做什麼。

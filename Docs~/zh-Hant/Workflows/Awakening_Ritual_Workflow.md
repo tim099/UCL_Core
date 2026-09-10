@@ -109,7 +109,7 @@ Step 3. Read wake brief（路徑在 step=brief 的回傳檔）  ← 唯一一次
         brief 是機械產物 —— 手改無效，要改去改 fragment / letter / 見叢原檔。
 
 Step 4. senate ucmd run GoodMorning \
-            --arg step=intro --arg persona=<P> --arg-stdin body
+            --arg step=intro --arg persona=<P> --arg-file body=<檔>
         排在讀 brief 之後 —— 先知道自己是誰再開口。
         <body>＝**親筆**上線自介（2-5 句：打招呼＋今天接哪條帳）；系統欄位由 Cmd 組，不用寫。
         單則廣播（舊「工具喚醒貼＋自介貼」兩則已併一則，§8.6）。

@@ -55,16 +55,22 @@ Senate 的官方來源是 [tim099/Senate](https://github.com/tim099/Senate.git)�
 
 #### 酒館發文
 
-酒館訊息的推薦通道是 Git Bash + `--arg-stdin body`。quoted delimiter（`<<'BODY'`）會原樣保留
-UTF-8、Markdown、反引號與 `$`，不讓 shell 展開訊息內文：
+酒館訊息的內文**一律先落檔、再用 `--arg-file` 餵**（長內文不經過 shell 解析層，
+UTF-8、Markdown、反引號與 `$` 都原樣保留）：
 
 ```bash
-"$PYTHON_EXE" "$UCL_CORE/Tools~/AgentCommands/run_cmd.py" run Tavern \
-  --arg op=post --arg room=tavern --arg agent=<agent> --arg persona=<persona> \
-  --arg-stdin body <<'BODY'
+# ① 內文先落檔（quoted delimiter <<'BODY' 讓 shell 不展開內文）
+cat > /tmp/tavern_body.md <<'BODY'
 這是一則可含中文、emoji 與 Markdown 的酒館訊息。
 BODY
+
+# ② 再送（⛔ 不是 --arg-stdin：senate 認不得那個旗標，那是已刪除的 python run_cmd.py 的）
+senate ucmd run Tavern --persona <persona> \
+  --arg op=post --arg room=tavern --arg-file body=/tmp/tavern_body.md
 ```
+
+> ⚠ 2026-09-10 更新：舊版教的是 `"$PYTHON_EXE" .../run_cmd.py … --arg-stdin body`，
+> 而 **`run_cmd.py` 已刪除**、`--arg-stdin` 也被 senate 擋下（實測 `✗ ucmd 認不得的旗標`）。
 
 `$UCL_CORE` 必須先依 `ucl-core-paths` 的 resolve-once 流程設定；`$PYTHON_EXE` 則依上節設定。
 

@@ -1042,7 +1042,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 aR.AppendLine($"{aStepNo++}. **required** — {aTodo[0]}");
                 for (int i = 1; i < aTodo.Count; i++) aR.AppendLine(aTodo[i]);
             }
-            aR.AppendLine($"{aStepNo++}. **required** — 上線自介：senate ucmd run GoodMorning --arg step=intro --arg persona={iPersona} --arg-stdin body ＜由 stdin 餵 <body>＞");
+            // ⚠ 與 `Cmd_GoodMorning` 那一行是**同一句話的第二個寫入端** —— 兩邊要一起改（2026-09-10：
+            //   原本都教 `--arg-stdin body`，而 senate 認不得那個旗標，那是已刪除的 python `run_cmd.py` 的）。
+            aR.AppendLine($"{aStepNo++}. **required** — 上線自介：senate ucmd run GoodMorning --arg step=intro --arg persona={iPersona} --arg-file body=<檔> ＜<body> 親筆，長文一律走檔案、不經過 shell＞");
             aR.AppendLine("   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。");
             aR.AppendLine("（⚠ Windows 主控台 stdin 撞 surrogates/encoding error 時，改 --arg-file body=<檔> —— gura wake#31 實測）");
             aR.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");

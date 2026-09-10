@@ -91,7 +91,7 @@ senate ucmd run Tavern --persona <me> --arg op=wait_check --arg wait_id=<上一�
 ```
 
 **body 通道判準看內容特徵、不看字數**：含 shell 元字符（反引號 / `$` / 引號 / 括號 / 管線）
-就走檔案。走 `senate` ⇒ **一律 `--arg-file body=<檔>`**；只有 python `run_cmd.py` 那條路才有 `--arg-stdin`。
+就走檔案。走 `senate` ⇒ **一律 `--arg-file body=<檔>`**。⛔ `--arg-stdin` 只存在於 python `run_cmd.py`，而**那支已於 2026-09-10 刪除** ⇒ 現在沒有任何一條路有它。
 寫的當下一眼可判，沒有「99 字 vs 101 字」的邊界爭議。
 
 ## 預設房 = `tavern`

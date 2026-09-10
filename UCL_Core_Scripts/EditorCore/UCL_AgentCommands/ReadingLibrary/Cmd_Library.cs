@@ -34,7 +34,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
     /// <code>
     /// senate ucmd run Library \
     ///   --arg op=note_chapter --arg media_id=film-xxx --arg persona=summit \
-    ///   --arg chapter=0001 --wait-reply 0 --arg-stdin body
+    ///   --arg chapter=0001 --arg-file body=&lt;檔&gt;   ⛔ 不要帶 --wait-reply / --arg-stdin（senate 認不得，那是 run_cmd.py 的）
     /// </code>
     /// </summary>
     public class Cmd_Library : UCL_AgentCommandHandlerBase
@@ -58,7 +58,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             "character=人物 id（add_character / revise_view required） | " +
             "name=人物顯示名（add_character required） | name_original=原文讀音，供 STT prompt 用（選填） | " +
             "facts=已確認的客觀資料（選填；與主觀 view 分開存） | " +
-            "view=你的第一人稱看法（add_character / revise_view required；長文走 --arg-stdin view） | " +
+            "view=你的第一人稱看法（add_character / revise_view required；長文走 --arg-file view=<檔>） | " +
             "change_reason=什麼畫面或台詞讓你改觀（revise_view required —— 為什麼變比變成什麼更難事後重建） | " +
             "persona=讀者 persona，必須與 readers/<persona>/reader.json 相符（required，無預設） | " +
             "media_id=媒材 id，前綴須與 media_kind 同字，例 film-xxx / comic-xxx（required，無預設） | " +
@@ -70,7 +70,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             "漏建的後果是「搜不到 → 有人再建一本」） | genre_tags=題材標籤，同上分隔 | " +
             "anticipation=期待度 0-5（media_init 選填） | " +
             "chapter=四位數章節 id；0001 起算，0000 保留給序章（note_chapter required） | " +
-            "body=章節心得正文（note_chapter required；長文走 --arg-stdin body） | " +
+            "body=章節心得正文（note_chapter required；長文走 --arg-file body=<檔>） | " +
             "time_range=手動切段的時間區間，例 00:00-30:00（note_chapter 建議必給 —— 這是切段動作留下的事實） | " +
             "display_number=人話段落名，例 Part 1（note_chapter 選填；缺則由 chapter_id 派生，別填成 id 複寫） | " +
             "append=1 表示這是**同一話的下一場**（note_chapter 選填）：追加在既有 round 尾端、不開新 round —— " +
@@ -253,7 +253,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
 
             string body = GetArg(args, "body", "");
             if (string.IsNullOrWhiteSpace(body))
-                throw new ArgumentException($"[{CommandType}] body 必填（本章心得正文；長文走 --arg-stdin body）");
+                throw new ArgumentException($"[{CommandType}] body 必填（本章心得正文；長文走 --arg-file body=<檔>）");
 
             // 續寫（TASK-0121）：同一話的第二場接在同一個 round 尾端，不開 r2。
             // ⚠ `round=` 只在 append 時有意義 —— 不 append 卻帶它，是在要求一個工具做不到的事
@@ -391,7 +391,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 throw new ArgumentException($"[{CommandType}] name 必填（人物顯示名）");
             if (string.IsNullOrWhiteSpace(view))
                 throw new ArgumentException(
-                    $"[{CommandType}] view 必填（你的第一人稱看法；長文走 --arg-stdin view）—— " +
+                    $"[{CommandType}] view 必填（你的第一人稱看法；長文走 --arg-file view=<檔>）—— " +
                     "只記 facts 不記看法的話，這套系統就退化成人物百科了");
 
             string log = UCL_ReadingLibraryIO.AddCharacter(mediaId, persona, characterId, name,
@@ -417,7 +417,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             string changeReason = GetArg(args, "change_reason", "").Trim();
 
             if (string.IsNullOrWhiteSpace(view))
-                throw new ArgumentException($"[{CommandType}] view 必填（新版看法；長文走 --arg-stdin view）");
+                throw new ArgumentException($"[{CommandType}] view 必填（新版看法；長文走 --arg-file view=<檔>）");
             if (string.IsNullOrEmpty(changeReason))
                 throw new ArgumentException(
                     $"[{CommandType}] change_reason 必填 —— 是什麼畫面／台詞讓你改觀？" +

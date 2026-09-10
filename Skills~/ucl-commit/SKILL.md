@@ -144,13 +144,17 @@ description: |
   而那包含同事三分鐘前才落盤的檔。
   🩸 2026-08-24 summit：`git add Tasks` 把 @basecamp 正在寫的兩張探針單收進自己的 commit，
   而那筆的訊息只講了另外兩張單。`--name-only` 的清單**印出來了**，就在下一行輸出裡。
-- 🛡 **帶 `--expect-files N`** —— 宣告這一筆該收幾個檔，不符就擋下（exit 2，**commit 前返回**）：
+- 🛡 **`--arg expect_files=N` 是必填**（TASK-0193，2026-09-10 起）—— 宣告這一筆該收幾個檔，不符就擋下（exit 2，**commit 前返回**）：
   ```bash
   senate cmd commit --arg repo=<repo> --arg personas=<你> \
       --arg expect_files=3 --arg-file message=<訊息檔>
   ```
   它把「我以為我在提交幾個檔」變成一個**必須先算過**的數字（同 `sculpt.py --expect-pixels` 的形狀）。
-  不帶＝不檢查（既有呼叫端行為不變）—— 但**具名 stage ＋ 這個數字**才是完整的那道手勢。
+  ⛔ 真的不想數就顯式打 `expect_files=any` —— 它會**大聲印出整份 staged 清單**並落一個讀數。
+  📌 放棄本身沒有錯，錯的是**放棄得沒有痕跡**：「忘了帶」與「我想過了，這次不數」以前是同一個畫面。
+  🩸 為什麼從選填改成必填：2026-09-10 gura 要提交 2 支 .cs，`expect_files=2` 擋下「實際 staged 5」——
+  多的三支是同事正在寫、還沒提交的文件。**而救了那一筆的旗標當時是選填的** ——
+  一道要人記得帶才生效的防線，跟沒有防線的差別只是運氣。
 - 別漏 stage `.meta`，否則 Unity 跳 missing reference。
 
 ## Submodule 先切追蹤分支（必做）

@@ -46,6 +46,16 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "replace=1（assign 用：**換角色** —— 先拿掉這個人既有的角色再指派；不帶＝加一個角色） | " +
             "body=<comment 內容> | " +
             "criteria_index=<op=check：**未勾清單**的 1-based 序號，逗號分隔可多筆；不帶＝dry-run 印清單、零寫入> | " +
+            // ⭐ 2026-09-10 補宣告：`expect_text` 是 TASK-0163 加的，**加完沒有寫進本 schema** ——
+            //   而它是「勾錯格子」唯一的那道錨 ⇒ 沒宣告的代價是沒有人知道可以帶它。
+            //   ⚠ 而補這一格的過程本身是一次血證：我先用 `sed -n '34,51p'` 讀本 schema，
+            //     據此報了「15 個參數未宣告」並動手補 —— 而它們**全都宣告在第 72 行之後**，
+            //     只是不在我開的那個窗裡。⇒ 我的插入還把 `remove=1` 那句
+            //     「打錯就做反」的警語從它的主詞上切斷了（讀起來像在警告 `unset`）。
+            //   📌 同一族第 N 次：射程由我選的窗決定，而**缺的那些不會出現在自己的清單上**。
+            //     這一次抓到我的是「缺必填」錯誤訊息把整份 schema 印出來 —— 不是我更仔細。
+            "expect_text=<op=check 的錨：未勾清單那一行的**前綴**；多筆用 `|` 分隔，"
+            + "筆數必須等於 criteria_index。序號會位移、文字不會 ⇒ 對不上**整批不做**（TASK-0163）> | " +
             "op_link=blocked_by|blocks|subtask_of|has_subtask|related_to（link 用） | target=<link 的對方單號；收 TASK-0008 / 8 / 0008> | " +
             "remove=1（link 用：**解除**該關聯而不是建立 —— 建與解共用同一組 kind 語彙）"
             + "　⚠ 這是「打錯就做反」的那類：`remov=1` 會被靜默丟掉 ⇒ 走預設 ⇒ **建立**關聯（TASK-0109） | " +

@@ -3,7 +3,7 @@
 # DO NOT EDIT BY HAND - re-run "Tools/UCL/Generate All Localized Docs Manifests" instead.
 # Module: UCL_Core (prefix=ucl_core)
 # Source: ucl_core:Docs~
-# Entries: 334
+# Entries: 335
 Docs~/en/API/UCL_AgentCommand/Cmd_DebugLog.md
 Docs~/en/API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md
 Docs~/en/API/UCL_AgentCommand/Cmd_ExportDocsCatalog.md
@@ -186,6 +186,7 @@ Docs~/zh-Hant/Agent/Web_Coding_Standards.md
 Docs~/zh-Hant/Architecture/Polymorphism_In_UCL.md
 Docs~/zh-Hant/CommandTable.md
 Docs~/zh-Hant/FreeTime/Activities/_README.md
+Docs~/zh-Hant/FreeTime/Activities/art-gallery.md
 Docs~/zh-Hant/FreeTime/Activities/book-writing.md
 Docs~/zh-Hant/FreeTime/Activities/canvas-2d.md
 Docs~/zh-Hant/FreeTime/Activities/chess.md

@@ -3,7 +3,7 @@
 # DO NOT EDIT BY HAND - re-run "Tools/UCL/Generate All Localized Docs Manifests" instead.
 # Module: UCL_Core (prefix=ucl_core)
 # Source: ucl_core:Docs~
-# Entries: 335
+# Entries: 332
 Docs~/en/API/UCL_AgentCommand/Cmd_DebugLog.md
 Docs~/en/API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md
 Docs~/en/API/UCL_AgentCommand/Cmd_ExportDocsCatalog.md
@@ -312,9 +312,6 @@ Docs~/zh-Hant/Workflows/Hardcoded_Localize.md
 Docs~/zh-Hant/Workflows/HelpURL_Workflow.md
 Docs~/zh-Hant/Workflows/Hook_Setup_Workflow.md
 Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md
-Docs~/zh-Hant/Workflows/Manga_Adaptation_Artist.md
-Docs~/zh-Hant/Workflows/Manga_Adaptation_Author.md
-Docs~/zh-Hant/Workflows/Manga_Adaptation_Workflow.md
 Docs~/zh-Hant/Workflows/Memory_Common_Principles.md
 Docs~/zh-Hant/Workflows/Memory_Fragment_Backfill_Workflow.md
 Docs~/zh-Hant/Workflows/Persona_Letters_Submodule_Workflow.md

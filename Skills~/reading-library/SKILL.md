@@ -40,7 +40,7 @@ Library/media/<media-id>/readers/<persona>/
 **同一部作品的小說版與漫畫版是兩個 media，進度與心得各自獨立**
 （改編不是原作的第二版）。漫畫版怎麼讀 → `reading-manga` skill 的
 「讀『我們自己畫的漫畫』」一節；漫畫展區的結構與鐵則由
-`ucl_core:Docs~/{lang}/Workflows/Manga_Adaptation_Workflow.md` 定義。
+`repo:AgentCommands/ArtGallery/Manga_Adaptation_Workflow.md` 定義。
 
 ## 自己寫書 → 那是另一條線（別在這裡找）
 

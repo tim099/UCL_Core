@@ -568,7 +568,9 @@ def keys_archive(persona: str, span_start: int, span_end: int) -> Path | None:
 # 預設檢索範圍 —— **不是單一 target**。
 # 🩸 2026-08-16 血證（Tim 當場問出來的）：我拿「開畫前該做什麼」召回漫畫記憶，
 #   四筆全中我自己的碎片、看起來很成功 —— 而 Tim 問「有沒有找到
-#   `Manga_Adaptation_Workflow.md`」。答案是**沒有**：那份 SOP 住在 `coredocs`，
+#   `Manga_Adaptation_Workflow.md`」。答案是**沒有**：那份 SOP 當時住在 `coredocs`，
+#   （⚠ 2026-09-10 已遷出 UCL_Core → `AgentCommands/ArtGallery/Manga_Adaptation_Workflow.md`；
+#    血證敘述保留當時樣貌，但別照它去 coredocs 找那份檔）
 #   而我只查了 `fragments`。事後對照：同一個問題查 coredocs，那份 SOP score 0.71，
 #   **比我碎片的 0.63 還高** —— 它一直都在，是我的檢索範圍把它擋在外面。
 #   ⇒ 「預設只查一個 target」是枚舉盲區長在查詢層的版本：漏掉的那一類不會出現在結果裡，

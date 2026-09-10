@@ -1597,20 +1597,38 @@ namespace UCL.Core.EditorLib.Plurk
             if (iCtx == null) return;
             if (iCtx.Hit + iCtx.Miss + iCtx.NewSeen == 0) return;
             ioR.AppendLine();
-            ioR.AppendLine($"### 🙂 表情查表：命中 **{iCtx.Hit}**／待描述 **{iCtx.Miss}**"
-                + $"／本次新登記 **{iCtx.NewSeen}** 張");
+            // ⚠ 每個數字都要自己說出**它數的是哪一群、單位是什麼** —— 見本函式尾端那段血證。
+            //   Hit / Miss 數的是「這一趟訊息裡 `[emoN]` 的**出現次數**」（同一張圖出現兩次算兩次），
+            //   ⛔ 不是「表上有幾列」；NewSeen 才是張數。
+            ioR.AppendLine($"### 🙂 表情查表（**本趟訊息內**，單位＝出現次數）："
+                + $"命中描述 **{iCtx.Hit}** 次／查表無描述 **{iCtx.Miss}** 次"
+                + $"／本趟新登記 **{iCtx.NewSeen}** 張圖");
             if (iCtx.Dirty)
             {
                 SaveEmoTable(iCtx.Table.Values.ToList(), ioR);
                 ioR.AppendLine("- ⚠ 本 op 對 Plurk 是唯讀，但**寫了本地共用表**（新圖登記／別名補齊）——"
                     + "這一行就是那個寫入的讀數。");
             }
-            var aTodo = iCtx.Table.Values.Where(r => r.Desc.Length == 0 && r.State == "seen")
-                .OrderBy(r => r.FirstSeen).Take(8).ToList();
-            if (aTodo.Count > 0)
+            // ⭐ 這一段數的是**整張共用表**，不是本趟訊息 —— 兩個不同的族群，所以標題與這裡各自帶定語。
+            // 🩸 2026-09-10：改之前兩邊都只寫「待描述」⇒ 同一份輸出印「待描述 **0**」而底下列了 8 張。
+            //   實測真值：`state=seen` 且無描述 **74 列**（全表 253 列）⇒ 標題少報 74、清單少報 66，
+            //   而清單**靜默截在 8** 連一句「還有多少」都沒有。
+            //   ⇒ 「這一趟沒有待描述」與「表上沒有待描述」在那份輸出上同形，而處置完全不同
+            //   （前者＝繼續做事，後者＝去看圖描述）。
+            //   📌 對應 Glossary《作用域錯位》Review #0（@summit 2026-09-10）：
+            //      **「這個東西的名字，宣告了它的範圍嗎？」** —— 「待描述」沒有宣告它數的是哪一群。
+            const int k_TodoShown = 8;
+            var aTodoAll = iCtx.Table.Values.Where(r => r.Desc.Length == 0 && r.State == "seen")
+                .OrderBy(r => r.FirstSeen).ToList();
+            int aNoDescAnyState = iCtx.Table.Values.Count(r => r.Desc.Length == 0);
+            if (aTodoAll.Count > 0)
             {
-                ioR.AppendLine("- 待描述（看一次圖，之後永遠查表）:");
-                foreach (var aRow in aTodo)
+                ioR.AppendLine($"- **整張共用表**待描述：**{aTodoAll.Count}** 列"
+                    + $"（`state=seen` 且無描述；全表 {iCtx.Table.Count} 列、無描述的共 {aNoDescAnyState} 列）"
+                    + $"　⚠ 以下只列最舊 {System.Math.Min(k_TodoShown, aTodoAll.Count)} 列"
+                    + (aTodoAll.Count > k_TodoShown ? $"，**其餘 {aTodoAll.Count - k_TodoShown} 列沒有印出來**" : "")
+                    + "：");
+                foreach (var aRow in aTodoAll.Take(k_TodoShown))
                     ioR.AppendLine($"    · {aRow.Url}"
                         + (aRow.Aliases.Count == 0 ? "" : "　（" + string.Join(" ", aRow.Aliases) + "）"));
                 ioR.AppendLine("    ⇒ 描述寫回: `--arg op=emoticons --arg emo_desc=<URL片段>=<描述>`");

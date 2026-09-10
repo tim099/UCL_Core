@@ -65,6 +65,30 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         public const string Key_Aliases = "aliases";
         public const string Key_GenreTags = "genre_tags";
 
+        // ===========================================================
+        // 區塊職責：寫書線（authored）在 work.json 上的四欄 —— TASK-0146 ①
+        // 物理意義：舊 store（`BookNotes/<book>/book.json`）用這四欄承接「這本正在寫、只有作者看得見」。
+        //          新 store 的 work.json 原本一欄都沒有 ⇒ **搬過去就沒有任何欄位承接得了「正在寫」**。
+        // 🔴 為什麼是四欄不是三欄（開單時寫三欄，這是量出來的第四欄）：
+        //   `SCP_BookStore` 列 authored 書的第一個動作是 `origin != "authored" ⇒ 跳過`，
+        //   下面三欄是**過了那一關之後才被讀的**。
+        //   ⇒ 少了 `origin`，搬過去的書對整條寫書線**完全不可見**，而失效樣子是「**0 本**」——
+        //     跟「這個人沒有在寫的書」**同形**（早安 brief 見筆那一節印的就是這個數字）。
+        //   📌 所以它不是加需求：① 自己寫著「三欄的**語意**要跟舊 store 一致」，
+        //     而語意的承重點在 `origin` 上。
+        // ⚠ `Key_Status` 是**共用的鍵名而不是共用的語意**：
+        //   reader.json 的 `status` ＝這個人**讀到哪**；work.json 的 `status` ＝這部作品**寫到哪**
+        //   （舊 store 的值是 `writing`）。兩個不同層、兩種意思、同一個字。
+        //   ⛔ 別把任何一邊的讀取器指到另一邊 —— 它不會報錯，它會給你另一個宇宙的答案。
+        // 數值影響：**四欄都只在非空時才落盤** ⇒ 純閱讀作品的 work.json 逐位元組不變
+        //          （① 明文要求「既有欄位與讀取端一個字不動」）。
+        // ===========================================================
+        public const string Key_AuthorPersona = "author_persona";
+        public const string Key_PublishStatus = "publish_status";
+        public const string Key_Origin = "origin";
+        /// <summary>舊 store 的 `origin` 值：唯一代表「這是自己寫的」的那個字面。</summary>
+        public const string OriginAuthored = "authored";
+
         const string k_BookNotesDirName = "BookNotes";
         const string k_LibraryDirName = "Library";
         const string k_MediaDirName = "media";
@@ -74,6 +98,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         const string k_ReaderJsonName = "reader.json";
         const string k_MediaJsonName = "media.json";
         const string k_WorkJsonName = "work.json";
+        // authored 正文的兩個容器（TASK-0146 ②）—— 名字刻意與舊 store 逐字相同，讓遷移是「搬」不是「改版面」
+        const string k_WorkChaptersDirName = "chapters";
+        const string k_WorkArcsDirName = "arcs";
         const string k_ChapterJsonName = "chapter.json";
         const string k_BookshelfName = "bookshelf.md";
         const string k_CharactersDirName = "characters";
@@ -109,6 +136,108 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         public static string LibraryRoot => Path.Combine(BookNotesRoot, k_LibraryDirName);
         public static string MediaRoot(string mediaId) => Path.Combine(LibraryRoot, k_MediaDirName, mediaId);
         public static string WorkRoot(string workId) => Path.Combine(LibraryRoot, k_WorksDirName, workId);
+
+        // ===========================================================
+        // 區塊職責：authored 正文的容器 —— TASK-0146 ②（設計決定寫在該單留言，⛔ 不只定在這裡）
+        // 物理意義：正文放 **work 層**，與 work.json 並列：
+        //            works/<work_id>/chapters/<NNN>.md   章
+        //            works/<work_id>/arcs/<range>.md     卷／弧
+        //          為什麼不是 media 層或 reader 層：三層語意是
+        //          work（作品本身）／media（某個版本或媒材）／reader（某個人的進度與看法），
+        //          而 authored 的正文**是作品本身**，不是任何人的閱讀視圖。
+        //          一個譯本會是另一個 media，而原文屬於 work。
+        //          ⇒ 放 reader 層會讓「作者」被當成一個 reader，那是把寫書塞進讀書的形狀。
+        // ⚠ 為什麼維持與舊 store 相同的相對版面（`<book>/chapters/`）：遷移就變成「搬目錄」，
+        //   而不是「重新設計落點」⇒ 逐欄對拍不必為位置差異多一層映射。
+        //   ⛔ 不趁遷移順手改版面 —— 那會讓「搬壞了」與「版面改了」在對拍結果上同形。
+        // 🩸 而 `arcs/` 是量出來才補進來的：② 原文只寫「章的容器」，
+        //   而 ④ 指定第一本搬的 @gura《深海對拍錄》**`chapters/` 真的 0 個、`arcs/arc_1-3.md` 有 1 個**
+        //   （日期 2026-09-09，比那張單晚三天）⇒ 只做章的容器會**靜默丟掉她唯一的內容**。
+        // ===========================================================
+        public static string WorkChaptersRoot(string workId)
+            => Path.Combine(WorkRoot(workId), k_WorkChaptersDirName);
+        public static string WorkArcsRoot(string workId)
+            => Path.Combine(WorkRoot(workId), k_WorkArcsDirName);
+
+        /// <summary>
+        /// 正文容器的**存在性讀數** —— ⚠ 回三態而不是回檔數（TASK-0146 ② 的反向對照）。
+        /// 🩸 現行讀取端數章數用的是「目錄不存在就回 0」，
+        ///   ⇒ **容器放錯位置 ＝ 靜默 0**，而 ④ 指定的第一本正好真的是 0 章
+        ///   ⇒ 兩者逐位元組同形，**搬壞了會長得像搬對了**。
+        ///   （@gura 開單時那句「內容為空反而讓『搬壞了』更難被看見」的機制版本。）
+        /// ⇒ 所以這裡把「沒有這個目錄」與「有目錄但裡面 0 個」做成**兩個不同的值**，
+        ///   ⛔ 不留一個 0 讓讀的人去猜是哪一種 —— 人往空格裡填的一定是成功。
+        /// </summary>
+        public enum WorkProseState { NoDir, EmptyDir, HasFiles }
+
+        public static WorkProseState ProbeWorkProse(string dir, out int fileCount)
+        {
+            fileCount = 0;
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return WorkProseState.NoDir;
+            try { fileCount = Directory.GetFiles(dir).Length; }
+            catch (System.Exception) { return WorkProseState.NoDir; }
+            return fileCount > 0 ? WorkProseState.HasFiles : WorkProseState.EmptyDir;
+        }
+
+        // ===========================================================
+        // 區塊職責：寫書線四欄的寫入與讀回 —— TASK-0146 ①
+        // ⚠ 刻意**不動 `MediaInit` 的簽名**：那是閱讀線的建檔路徑，
+        //   而四欄只屬於 authored。混進去會讓每一本閱讀作品都多帶四個空欄
+        //   ⇒ 違反 ① 明文的「既有欄位與讀取端一個字不動」。
+        // 數值影響：**空值不落盤** ⇒ 沒帶寫書線的 work.json 逐位元組不變。
+        // ===========================================================
+        public sealed class WorkAuthored
+        {
+            public string AuthorPersona = "";
+            public string Status = "";
+            public string PublishStatus = "";
+            public string Origin = "";
+            /// <summary>四欄全空 ＝ 這份 work.json 上沒有寫書線（⛔ 不等於「它不是 authored」，只是這裡沒寫）。</summary>
+            public bool IsEmpty => AuthorPersona.Length == 0 && Status.Length == 0
+                                   && PublishStatus.Length == 0 && Origin.Length == 0;
+            /// <summary>對寫書線讀取端可見的唯一條件 —— `origin` 必須逐字是 `authored`（見 Key_Origin 的區塊註解）。</summary>
+            public bool VisibleToWritingLine => Origin == OriginAuthored;
+        }
+
+        /// <summary>把寫書線四欄寫上既有的 work.json（**只寫非空的那幾欄**）。work.json 不存在 ⇒ 不建、回 false。</summary>
+        public static bool TrySetWorkAuthored(string workId, WorkAuthored fields, out string error)
+        {
+            error = null;
+            if (fields == null) { error = "fields 是 null"; return false; }
+            string path = Path.Combine(WorkRoot(workId), k_WorkJsonName);
+            if (!File.Exists(path))
+            {
+                // ⛔ 刻意不順手建一份：這裡若建檔，「作品本來就在」與「我剛剛替它生了一份」會同形。
+                error = $"work.json 不存在：`{path}` —— ⛔ 本函式不建檔（那是 media_init 的職責）";
+                return false;
+            }
+            JsonData work = LoadJson(path, out string loadErr);
+            if (work == null) { error = loadErr; return false; }
+            if (fields.AuthorPersona.Length > 0) work[Key_AuthorPersona] = fields.AuthorPersona;
+            if (fields.Status.Length > 0) work[Key_Status] = fields.Status;
+            if (fields.PublishStatus.Length > 0) work[Key_PublishStatus] = fields.PublishStatus;
+            if (fields.Origin.Length > 0) work[Key_Origin] = fields.Origin;
+            SaveJson(path, work);
+            return true;
+        }
+
+        /// <summary>讀回寫書線四欄（③ 逐欄對拍的讀取側）。work.json 不存在或解析不動 ⇒ 回 false，⛔ 不回一個空物件假裝讀到了。</summary>
+        public static bool TryReadWorkAuthored(string workId, out WorkAuthored fields, out string error)
+        {
+            fields = null; error = null;
+            string path = Path.Combine(WorkRoot(workId), k_WorkJsonName);
+            if (!File.Exists(path)) { error = $"work.json 不存在：`{path}`"; return false; }
+            JsonData work = LoadJson(path, out string loadErr);
+            if (work == null) { error = loadErr; return false; }
+            fields = new WorkAuthored
+            {
+                AuthorPersona = work.GetString(Key_AuthorPersona, ""),
+                Status = work.GetString(Key_Status, ""),
+                PublishStatus = work.GetString(Key_PublishStatus, ""),
+                Origin = work.GetString(Key_Origin, ""),
+            };
+            return true;
+        }
         public static string ReaderRoot(string mediaId, string persona)
             => Path.Combine(MediaRoot(mediaId), k_ReadersDirName, persona);
         public static string ReaderJsonPath(string mediaId, string persona)

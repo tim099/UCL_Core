@@ -184,12 +184,14 @@ namespace UCL.Core.EditorLib.AgentCommands
             //   差額 ＝ 0 才叫「沒東西可收」。⚠ `op=scan` 的 commits 恆為 0（它不提交），別拿它當讀數。
             //   當日讀數：候選 25 ＝ `__other` 7（Lessons/Plurk/PromptQueue）
             //   ＋ `__subptr` 10（ArtGallery／Chess／Tasks ＋ 7 個 persona 信件庫）＋ 可收的 8。
-            int failedGroups = 0, otherFiles = 0, subPtrFiles = 0;
+            int failedGroups = 0, otherFiles = 0, subPtrFiles = 0, otherUntrackedFiles = 0;
             // TASK-0080：失敗的**明細**（repo／群／stderr 一筆一行）—— 給呼叫端，不只給 log。
             var failures = new List<string>();
             foreach (var t in targets)
             {
                 if (t.Groups.TryGetValue(UCL_AutoCommitRules.KEY_OTHER, out var aOther)) otherFiles += aOther.Count;
+                if (t.Groups.TryGetValue(UCL_AutoCommitRules.KEY_OTHER_UNTRACKED, out var aOtherU))
+                    otherUntrackedFiles += aOtherU.Count;
                 if (t.Groups.TryGetValue(UCL_AutoCommitRules.KEY_SUBPTR, out var aPtr)) subPtrFiles += aPtr.Count;
             }
             var shas = new List<string>();
@@ -244,14 +246,42 @@ namespace UCL.Core.EditorLib.AgentCommands
                     // 失敗要被**數**出來 —— CommitGroup 已經把原因寫進 oLog，但 log 不是呼叫端的通道。
                     else failedGroups++;
                 }
+                // 區塊職責：**永不自動收**的那幾群，清單一律印出來（TASK-0129）。
+                // 物理意義：它們不會被收，但「有什麼落在裡面」是使用者唯一需要知道的事 ——
+                //          舊行為只在**顯式帶 `groups=__other`** 時才印，於是想看清單得先猜到要問它，
+                //          而 `op=commit` 帶同一個旗標就會**真的收走**。⇒ 看與收不該共用同一個手勢。
+                // 數值影響：純輸出，不改變收哪些檔。清單走 PreviewPaths（長清單會截斷並標明總數）。
+                // 🩸 @summit 2026-09-04 的原話：「`op=scan` 只印 `other_files=N`，而 N 是什麼永遠讀不到
+                //   —— 那正是我這次栽的地方。」
+                foreach (string aNever in new[] { UCL_AutoCommitRules.KEY_OTHER,
+                                                  UCL_AutoCommitRules.KEY_OTHER_UNTRACKED,
+                                                  UCL_AutoCommitRules.KEY_SUBPTR })
+                {
+                    if (explicitGroups != null && explicitGroups.Contains(aNever))
+                        continue;                       // 顯式要了 ⇒ 上面那圈已經印過，不重印
+                    if (!t.Groups.TryGetValue(aNever, out var aList) || aList.Count == 0) continue;
+                    sb.AppendLine($"  ⚠ {t.Name} [{aNever}] {aList.Count} 檔 —— **不自動收**，"
+                        + $"要收得顯式 `--arg groups={aNever}`：");
+                    foreach (string f in PreviewPaths(aList)) sb.AppendLine($"      {f}");
+                }
                 if (!any) sb.AppendLine($"  ・{t.Name}：這幾群都沒有候選檔");
             }
 
             sb.AppendLine($"  ⇒ {(op == "scan" ? "掃描" : "提交")}完成："
                 + $"候選檔 {scannedFiles}／ephemeral 略過 {ephemeral}／"
                 + $"commit {committed}／失敗的群 {failedGroups}／空的群 {emptyGroups}／"
-                + $"__other（不自動收）{otherFiles}／__subptr（不自動收）{subPtrFiles}／擋下的 repo {skippedRepos}");
+                + $"__other（不自動收）{otherFiles}／__other_untracked（不自動收）{otherUntrackedFiles}"
+                + $"／__subptr（不自動收）{subPtrFiles}／擋下的 repo {skippedRepos}");
             Debug.Log(sb.ToString());
+            // 區塊職責：同一份文字也落回傳檔（TASK-0129）。
+            // 物理意義：`Debug.Log` 只到 **Unity Editor log** —— CLI 呼叫端讀不到它。
+            //          於是「分群明細」在畫面上存在、在呼叫端不存在，而呼叫端拿到的只有一個數字。
+            // 數值影響：純輸出，不改變收哪些檔。⛔ 少了這一步，上面那段「不自動收的群一律印清單」
+            //          等於印給沒有人看的地方 —— 而那跟沒印一模一樣。
+            // 🩸 @summit 2026-09-04 的原話是「`op=scan` 只印 `other_files=N`，而 N 是什麼永遠讀不到」：
+            //   我一開始只補了「印清單」，回讀回傳檔才發現這支**根本沒有回傳檔**。
+            //   ⇒ 印在哪裡跟印不印是兩個問題，而前者不會有人喊。
+            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
 
             UCL_AgentCommandRunner.ReportOutputValue(args, "op", op);
             UCL_AgentCommandRunner.ReportOutputValue(args, "mode", modeArg);
@@ -285,6 +315,8 @@ namespace UCL.Core.EditorLib.AgentCommands
                 failures.Count == 0 ? "" : string.Join(" ／ ", failures.ToArray()));
             UCL_AgentCommandRunner.ReportOutputValue(args, "empty_groups", emptyGroups.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "other_files", otherFiles.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "other_untracked_files",
+                                                     otherUntrackedFiles.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "subptr_files", subPtrFiles.ToString());
             if (shas.Count > 0)
                 UCL_AgentCommandRunner.ReportOutputValue(args, "shas", string.Join(" ", shas.ToArray()));
@@ -320,8 +352,13 @@ namespace UCL.Core.EditorLib.AgentCommands
         {
             if (iKey == UCL_AutoCommitRules.KEY_SUBPTR)
                 return $"chore(submodule): bump nested submodule pointers (auto) [{iCount} files]";
+            // ⚠ 刻意**不寫 `generated`**（TASK-0129）：`__other` 的定義是「規則沒認出來」，
+            //   而那**不等於**「機器生成的」—— 有作者的產出沒進規則表時也會落在這裡。
+            //   一句宣稱它不知道的事的 commit 訊息，比沒有訊息貴：它會讓讀 log 的人不再去看那些檔。
             if (iKey == UCL_AutoCommitRules.KEY_OTHER)
-                return $"chore: sync unclassified generated files (auto) [{iCount} files]";
+                return $"chore: sync unclassified files (auto) [{iCount} files]";
+            if (iKey == UCL_AutoCommitRules.KEY_OTHER_UNTRACKED)
+                return $"chore: add unclassified untracked files (auto) [{iCount} files]";
             foreach (var d in iDefs)
                 if (d.Key == iKey) return $"{d.Message} [{iCount} files]";
             return $"chore: sync {iKey} (auto) [{iCount} files]";
@@ -471,6 +508,16 @@ namespace UCL.Core.EditorLib.AgentCommands
 
                 string key = UCL_AutoCommitRules.Classify(path, iDefs, subPaths.Contains(path));
                 if (key == null) { ephemeral++; continue; }
+                // 區塊職責：未分類**且 untracked** 的檔，從 `__other` 拆成獨立一群（TASK-0129）。
+                // 物理意義：`??` 是 porcelain 對「從來沒進過版控」的表示 —— 那是**別人做過的決定**，
+                //          替他翻案要顯式。⇒ 兩群都仍然永不自動收，但它們是**兩筆**、訊息也不同。
+                // 數值影響：只在 key 已經是 `__other` 時改判 —— ⛔ 不碰任何有名字的群
+                //          （那些群的檔本來就該被它們的規則收，tracked 與否不是那條規則的判準）。
+                // 🩸 血證：@summit 2026-09-04 一句 `groups=__other` 收走 4 個 @calli／@kiara 的
+                //   untracked 交付單，而那筆訊息說它們是機器生成的。三本帳同時錯。
+                if (key == UCL_AutoCommitRules.KEY_OTHER
+                    && l.Length >= 2 && l.Substring(0, 2) == "??")
+                    key = UCL_AutoCommitRules.KEY_OTHER_UNTRACKED;
                 if (!iRepo.Groups.TryGetValue(key, out var list))
                     iRepo.Groups[key] = list = new List<string>();
                 list.Add(path);

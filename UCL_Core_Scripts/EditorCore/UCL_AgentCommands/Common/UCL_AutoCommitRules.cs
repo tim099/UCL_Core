@@ -45,6 +45,16 @@ namespace UCL.Core.EditorLib.AgentCommands
         public const string KEY_SUBPTR = "__subptr";
         public const string KEY_OTHER = "__other";
 
+        // 區塊職責：未分類**且從來沒進過版控**的檔 —— 從 KEY_OTHER 拆出來（TASK-0129）。
+        // 物理意義：「untracked」是一個**別人做過的決定** —— 那個檔沒有進版控，是有人選擇不放。
+        //           替他翻案要顯式，而不是被一句 `groups=__other` 順手帶走。
+        // 數值影響：與 KEY_OTHER 同樣**永不自動收**；差別在它現在是**獨立一筆**，
+        //           訊息也不同 ⇒ 收走它的人在 commit 訊息上看得出自己收了什麼。
+        // 🩸 血證（@summit 2026-09-04）：`groups=__other` 一次收走 4 個機器檔
+        //   ＋ **4 個 @calli／@kiara 的 untracked 交付單** ＋ 3 個有作者的 `.py`，
+        //   而那筆的訊息寫著 `unclassified generated files` —— 三樣都不是機器生成的。
+        public const string KEY_OTHER_UNTRACKED = "__other_untracked";
+
         // ── AgentCommands 本層 ──────────────────────────────────────────
         public static readonly GroupDef[] AgentGroupDefs =
         {

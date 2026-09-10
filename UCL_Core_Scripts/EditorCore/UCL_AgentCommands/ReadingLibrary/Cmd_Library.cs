@@ -45,7 +45,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             "閱讀心得庫讀寫（新 work/media/reader 模型）— 讀回與寫入同一套實作，與閱讀心得管理頁共用。";
 
         public override string ArgsSchema =>
-            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share|scan（required） | " +
+            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share|scan|authored_diff（required） | " +
+            // ③ 逐欄對拍（唯讀）：舊 store ↔ 新 store 的寫書線四欄＋正文容器。
+            // ⚠ `book` 與 `work_id` **兩個都必填、不互相推導** —— 兩個 store 的 id 慣例不同，
+            //   推導會讓「id 對不上」與「這本還沒搬」同形。
+            "　↳ authored_diff ＝ TASK-0146 ③ 的對拍器：印**對不上的欄位名**，⛔ 不是回一個 exit 0；" +
+            "「新 store 四欄全空」是**獨立的回傳值**（⛔ 不算全對 —— 兩個空字串逐欄比會綠） | " +
+            "book=舊 store 的書 slug，例 book-gura-abyssal-verifications（authored_diff required） | " +
             // ⚠ 名字只說了一半，而那一半害人不敢用它：`media_init` 同時是**「把我登記成這部的讀者」**
             //   的唯一入口，而 `reader.json` 是所有寫入 op 的前置。media 已存在時它不覆寫任何東西。
             //   🩸 TASK-0137：有人因此在收工時寫不了接續點，而場次帳照樣結算成功（兩本帳分開）。
@@ -62,7 +68,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             "change_reason=什麼畫面或台詞讓你改觀（revise_view required —— 為什麼變比變成什麼更難事後重建） | " +
             "persona=讀者 persona，必須與 readers/<persona>/reader.json 相符（required，無預設） | " +
             "media_id=媒材 id，前綴須與 media_kind 同字，例 film-xxx / comic-xxx（required，無預設） | " +
-            "work_id=作品 id（media_init required；同作品跨媒材共用） | " +
+            "work_id=作品 id（media_init / authored_diff required；同作品跨媒材共用） | " +
             "media_kind=comic|anim|film|series|stream|book（media_init required，須與 media_id 前綴同字） | " +
             "title=作品中文名（media_init required）／章節名（note_chapter 選填） | " +
             "title_original=原文名（media_init 選填） | author=作者／監督（media_init 選填） | " +
@@ -119,12 +125,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 case "revise_view": Op_ReviseView(args); break;
                 case "share": await Op_Share(args, token); break;
                 case "scan": Op_Scan(args); break;
+                case "authored_diff": Op_AuthoredDiff(args); break;
 
                 default:
                     throw new ArgumentException(
                         $"[{CommandType}] 未知 op：{op}" +
                         "（可用：paths / recall / media_init / note_chapter / bookmark / " +
-                        "add_character / revise_view / share / scan）");
+                        "add_character / revise_view / share / scan / authored_diff）");
             }
         }
 
@@ -373,6 +380,50 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 (reportPath != null ? $"\n\n📄 報告檔：`{reportPath}`" : "") +
                 (string.IsNullOrEmpty(error) ? "" : $"\n\n> [!WARNING]\n> {error}"));
             Debug.Log($"[{CommandType}] scan 完成" + (reportPath != null ? $" → {reportPath}" : ""));
+        }
+
+        /// <summary>
+        /// 區塊職責：③ 逐欄對拍的 agent 入口（唯讀）—— 舊 store ↔ 新 store 的寫書線四欄＋正文容器。
+        /// 物理意義：搬遷**之前**與**之後**跑的是同一支；它印的是對不上的欄位名，⛔ 不是一個 exit code。
+        /// 數值影響：純讀。不建目錄、不寫任何檔。
+        /// <para>⚠ 為什麼這一格必須走 Cmd 而不是反射：`DiffWorkAuthored` 帶 `out` 參數，
+        /// 而 `Cmd_Invoke` 那條反射路徑餵不進 `out`（TASK-0146 留言 #1 量過）。</para>
+        /// </summary>
+        void Op_AuthoredDiff(Dictionary<string, string> args)
+        {
+            string book = RequireId(args, "book");
+            string workId = RequireId(args, "work_id");
+
+            var outcome = UCL_ReadingLibraryIO.DiffWorkAuthored(book, workId,
+                out List<string> mismatched, out string report);
+
+            string headline;
+            switch (outcome)
+            {
+                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.AllMatch:
+                    headline = "✓ **AllMatch** —— 四欄逐欄相同，且正文容器沒有遺漏"; break;
+                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.FieldsMatchProseMissing:
+                    headline = "⛔ **FieldsMatchProseMissing** —— 四欄對得上，**而正文容器對不上** ⇒ " +
+                               "搬下去會靜默丟掉正文（⛔ 這不是通過）"; break;
+                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.Mismatch:
+                    headline = $"⛔ **Mismatch** —— {mismatched.Count} 欄對不上：" +
+                               string.Join("、", mismatched.ConvertAll(k => "`" + k + "`")); break;
+                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.NewStoreNoWritingLine:
+                    headline = "⛔ **NewStoreNoWritingLine** —— 新 store 四欄全空 ⇒ 這本還沒搬（⛔ 不是「值不同」）"; break;
+                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.NeitherHasWritingLine:
+                    headline = "⚠ **NeitherHasWritingLine** —— 兩邊都沒有寫書線 ⇒ 無事可拍（⛔ 不是通過）"; break;
+                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.NewStoreMissing:
+                    headline = "⛔ **NewStoreMissing** —— 新 store 還沒有這份 work.json"; break;
+                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.OldStoreMissing:
+                    headline = "⛔ **OldStoreMissing** —— 舊 store 沒有這本"; break;
+                default:
+                    headline = "⛔ **ParseFailed** —— 有一邊解析不動（⛔ 不當成「值不同」）"; break;
+            }
+
+            Cmd_Library_Helpers.ResolveLastOp(args,
+                $"# 🔍 Library authored_diff　`{book}` ↔ `{workId}`\n\n{headline}\n\n{report}");
+            Debug.Log($"[{CommandType}] authored_diff {book} ↔ {workId} → {outcome}" +
+                      (mismatched.Count > 0 ? $"（{string.Join(",", mismatched)}）" : ""));
         }
 
         /// <summary>

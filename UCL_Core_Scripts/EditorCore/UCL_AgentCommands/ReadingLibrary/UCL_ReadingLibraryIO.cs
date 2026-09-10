@@ -238,6 +238,220 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             };
             return true;
         }
+
+        // ===========================================================
+        // 區塊職責：③ 逐欄對拍 —— 舊 store（`BookNotes/<slug>/book.json`）↔ 新 store（`works/<work_id>/work.json`）
+        // 物理意義：搬遷前後的**唯一判準讀取器**。回傳的不是 bool，是「對不上的欄位名」。
+        // 數值影響：**純讀**。不建目錄、不寫任何檔（搬遷本身是 ④ 的事，不是對拍的事）。
+        // 設計取捨：
+        //   - 為什麼要 `mismatchedFields` 而不是 `bool ok`：① 條文明文「⛔ 不是『有這個 key 就算』」，
+        //     而 ③ 明文「印出對不上的欄位名；⛔ 不是看 exit 0」。
+        //     🩸 一個永遠回「全對」的對拍與一個真的全對的對拍，在 exit code 上逐位元組同形。
+        //   - ⭐ 為什麼「四欄都空」不算全對（這一格是本函式最重要的判準）：
+        //     新 store 的 work.json 沒有那四欄時，逐欄比較會拿**兩個空字串**去比，
+        //     ⇒ 「還沒搬」會回報「全對」。那正是 @gura 開單時說的那個形狀，只是換到欄位這一維。
+        //     ⇒ 所以「新 store 上沒有寫書線」是**一個獨立的回傳值**，⛔ 不准掉進 AllMatch。
+        //   - 為什麼 `book` 與 `work_id` 都必填、不從對方推導：兩個 store 的 id 慣例不同
+        //     （@gura 舊 store 是 `book-gura-abyssal-verifications`，而新 store 那本還不存在）。
+        //     推導會讓「id 對不上」與「這本沒搬」同形。
+        // ===========================================================
+        public enum AuthoredDiffOutcome
+        {
+            /// <summary>舊 store 那本 `book.json` 不存在 ⇒ 沒有比較的左邊（⛔ 不是「值不同」）。</summary>
+            OldStoreMissing,
+            /// <summary>新 store 那份 `work.json` 不存在 ⇒ 還沒建（⛔ 不是「值不同」）。</summary>
+            NewStoreMissing,
+            /// <summary>任一邊解析不動 ⇒ ⛔ 不回報「不同」，那會把壞檔講成搬壞了。</summary>
+            ParseFailed,
+            /// <summary>兩邊都沒有寫書線四欄 ⇒ 這本不是 authored，⛔ 對拍沒有通過，只是無事可拍。</summary>
+            NeitherHasWritingLine,
+            /// <summary>舊 store 有寫書線而新 store 四欄全空 ⇒ **還沒搬**（⛔ 這格若掉進 AllMatch 就是綠得最假的一格）。</summary>
+            NewStoreNoWritingLine,
+            /// <summary>有欄位對不上 ⇒ `mismatchedFields` 逐欄指名。</summary>
+            Mismatch,
+            /// <summary>
+            /// 四欄逐欄相同，**而正文容器對不上**（舊 store 有檔、新 store 沒有）⇒ 搬下去會靜默丟掉正文。
+            /// 🩸 這個值是 2026-09-10 自己吃自己的狗糧吃出來的：第一版讓這種情況回 `AllMatch`，
+            ///   於是回傳檔標題印「✓ 四欄逐欄相同」而底下那張表同時印「⛔ 舊 store 有 2 個檔而新 store 沒有」。
+            ///   ⇒ 掃標題的人讀到「搬對了」，而真搬下去會丟掉兩章正文。
+            ///   ⛔ 修法不是把標題措辭寫好一點 —— 是讓「欄位全對」不再能獨自產生一個 ✓。
+            /// </summary>
+            FieldsMatchProseMissing,
+            /// <summary>四欄逐欄相同、新 store 真的有寫書線，**且正文容器沒有遺漏**。</summary>
+            AllMatch,
+        }
+
+        /// <summary>舊 store 的草稿檔位置（`origin`／`author_persona`／`status`／`publish_status` 的事實源）。</summary>
+        public static string OldStoreBookJsonPath(string bookSlug)
+            => Books.UCL_BooksIO.BookNotesJsonPath(bookSlug);
+
+        /// <summary>③ 逐欄對拍。⛔ 純讀；`report` 是給人看的逐欄表，`mismatchedFields` 是給程式判的欄位名。</summary>
+        public static AuthoredDiffOutcome DiffWorkAuthored(string bookSlug, string workId,
+            out List<string> mismatchedFields, out string report)
+        {
+            mismatchedFields = new List<string>();
+            var sb = new StringBuilder();
+
+            string oldPath = OldStoreBookJsonPath(bookSlug);
+            string newPath = Path.Combine(WorkRoot(workId), k_WorkJsonName);
+            sb.AppendLine($"- 舊 store：`{oldPath}`");
+            sb.AppendLine($"- 新 store：`{newPath}`");
+            sb.AppendLine();
+
+            if (!File.Exists(oldPath))
+            {
+                sb.AppendLine("⛔ **舊 store 那本不存在** ⇒ 沒有比較的左邊。" +
+                              "⛔ 這不是「值不同」，是 `book` 給錯或那本不在舊 store。");
+                report = sb.ToString();
+                return AuthoredDiffOutcome.OldStoreMissing;
+            }
+            if (!File.Exists(newPath))
+            {
+                sb.AppendLine("⛔ **新 store 還沒有這份 work.json** ⇒ 這本還沒建（④ 的前置）。⛔ 這不是「值不同」。");
+                report = sb.ToString();
+                return AuthoredDiffOutcome.NewStoreMissing;
+            }
+
+            JsonData oldData = LoadJson(oldPath, out string oldErr);
+            if (oldData == null)
+            {
+                sb.AppendLine($"⛔ 舊 store 解析失敗：{oldErr}　⇒ ⛔ 不回報「不同」—— 壞檔與搬壞了是兩件事。");
+                report = sb.ToString();
+                return AuthoredDiffOutcome.ParseFailed;
+            }
+            if (!TryReadWorkAuthored(workId, out WorkAuthored newFields, out string newErr))
+            {
+                sb.AppendLine($"⛔ 新 store 讀取失敗：{newErr}　⇒ ⛔ 不回報「不同」。");
+                report = sb.ToString();
+                return AuthoredDiffOutcome.ParseFailed;
+            }
+
+            var oldFields = new WorkAuthored
+            {
+                AuthorPersona = oldData.GetString(Key_AuthorPersona, ""),
+                Status = oldData.GetString(Key_Status, ""),
+                PublishStatus = oldData.GetString(Key_PublishStatus, ""),
+                Origin = oldData.GetString(Key_Origin, ""),
+            };
+
+            // 逐欄表 —— 順序固定，`origin` 放第一列：它是寫書線可見性的承重欄（見 Key_Origin 的區塊註解）。
+            var keys = new[] { Key_Origin, Key_AuthorPersona, Key_Status, Key_PublishStatus };
+            var oldVals = new[] { oldFields.Origin, oldFields.AuthorPersona, oldFields.Status, oldFields.PublishStatus };
+            var newVals = new[] { newFields.Origin, newFields.AuthorPersona, newFields.Status, newFields.PublishStatus };
+
+            sb.AppendLine("| 欄位 | 舊 store | 新 store | 判定 |");
+            sb.AppendLine("|---|---|---|---|");
+            for (int i = 0; i < keys.Length; i++)
+            {
+                bool same = oldVals[i] == newVals[i];
+                if (!same) mismatchedFields.Add(keys[i]);
+                sb.AppendLine($"| `{keys[i]}` | {ShowFieldValue(oldVals[i])} | {ShowFieldValue(newVals[i])} | " +
+                              (same ? "✓ 相同" : "**✗ 對不上**") + " |");
+            }
+            sb.AppendLine();
+            sb.Append(ProseSection(bookSlug, workId, out bool proseMissing));
+
+            // ⭐ 空對空不准算全對 —— 見本區塊註解第三條。
+            if (oldFields.IsEmpty && newFields.IsEmpty)
+            {
+                sb.AppendLine();
+                sb.AppendLine("⚠ **兩邊都沒有寫書線四欄** ⇒ 這本不是 authored。⛔ 這不是「對拍通過」，是無事可拍。");
+                report = sb.ToString();
+                return AuthoredDiffOutcome.NeitherHasWritingLine;
+            }
+            if (newFields.IsEmpty)
+            {
+                sb.AppendLine();
+                sb.AppendLine("⛔ **新 store 那份 work.json 上四欄全空 ⇒ 這本還沒搬。**");
+                sb.AppendLine("　⚠ 上表把四個空字串逐欄比出「對不上」是對的讀數，但**處置不同**：" +
+                              "這裡要跑的是 ④ 搬遷（而 ④ 的前置是本人的搬遷確認），不是去修欄位值。");
+                report = sb.ToString();
+                return AuthoredDiffOutcome.NewStoreNoWritingLine;
+            }
+            if (mismatchedFields.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"⛔ **對不上的欄位（{mismatchedFields.Count} 欄）：** " +
+                              string.Join("、", mismatchedFields.ConvertAll(k => "`" + k + "`")));
+                report = sb.ToString();
+                return AuthoredDiffOutcome.Mismatch;
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("✓ **四欄逐欄相同**，且新 store 真的有寫書線" +
+                          (newFields.VisibleToWritingLine
+                              ? "（`origin=authored` ⇒ 對寫書線讀取端可見）。"
+                              : "　⚠ 但 `origin` 不是 `authored` ⇒ **對寫書線讀取端仍然不可見**。"));
+
+            // ⭐ 欄位全對**不足以**產生一個 ✓ —— 正文容器對不上時，搬下去會靜默丟掉正文。
+            //   見 FieldsMatchProseMissing 的註解（那是本函式自己咬到自己的那一格）。
+            if (proseMissing)
+            {
+                sb.AppendLine();
+                sb.AppendLine("⛔ **但正文容器對不上**（上表已逐列指出）⇒ **這一趟還不能搬**：" +
+                              "欄位對得起來只證明 metadata，正文是另一本帳。");
+                report = sb.ToString();
+                return AuthoredDiffOutcome.FieldsMatchProseMissing;
+            }
+            report = sb.ToString();
+            return AuthoredDiffOutcome.AllMatch;
+        }
+
+        /// <summary>空字串要看得出是空的 —— ⛔ 不印成空白格（空白格與「我沒讀那一欄」同形）。</summary>
+        static string ShowFieldValue(string v) => string.IsNullOrEmpty(v) ? "_(空)_" : "`" + v + "`";
+
+        /// <summary>
+        /// 正文容器對拍 —— ⭐ 這是 `ProbeWorkProse` 三態的**第一個讀取端**（在此之前它存在而未生效）。
+        /// 🩸 @gura《深海對拍錄》舊 store 的 `chapters/` 是**目錄存在、0 個檔**，而 `arcs/` 有 1 個
+        ///   ⇒ 「還沒寫」與「搬掉了」在數章數那條路上同形，所以這裡印的是三態的名字，不是檔數。
+        /// ⚠ 舊 store 的相對版面與新 store 相同（`&lt;book&gt;/chapters`、`&lt;book&gt;/arcs`），
+        ///   所以這裡沿用同兩個目錄名常數 —— ⛔ 不另立一套舊版面的名字。
+        /// </summary>
+        static string ProseSection(string bookSlug, string workId, out bool anyMissing)
+        {
+            string oldRoot = Path.Combine(BookNotesRoot, bookSlug);
+            var sb = new StringBuilder();
+            sb.AppendLine("| 正文容器 | 舊 store | 新 store | 判定 |");
+            sb.AppendLine("|---|---|---|---|");
+            sb.Append(ProseRow(k_WorkChaptersDirName,
+                Path.Combine(oldRoot, k_WorkChaptersDirName), WorkChaptersRoot(workId), out bool missA));
+            sb.Append(ProseRow(k_WorkArcsDirName,
+                Path.Combine(oldRoot, k_WorkArcsDirName), WorkArcsRoot(workId), out bool missB));
+            anyMissing = missA || missB;
+            return sb.ToString();
+        }
+
+        /// <param name="missing">
+        /// 只在「**舊 store 有檔而新 store 沒有**」時為 true —— 那是唯一會靜默丟內容的那一種。
+        /// ⛔ 舊 store 是空目錄或沒有容器時**不算遺漏**（那兩種搬過去沒有東西會不見）。
+        /// </param>
+        static string ProseRow(string name, string oldDir, string newDir, out bool missing)
+        {
+            WorkProseState o = ProbeWorkProse(oldDir, out int oldCount);
+            WorkProseState n = ProbeWorkProse(newDir, out int newCount);
+            missing = o == WorkProseState.HasFiles && n != WorkProseState.HasFiles;
+            string verdict;
+            if (missing)
+                verdict = $"⛔ **舊 store 有 {oldCount} 個檔而新 store 沒有** ⇒ 搬過去會靜默丟掉它";
+            else if (o == WorkProseState.HasFiles)
+                verdict = oldCount == newCount ? $"✓ 兩邊都 {oldCount} 個檔" : $"⚠ 檔數不同（{oldCount} → {newCount}）";
+            else if (o == WorkProseState.EmptyDir)
+                verdict = "⚠ 舊 store 是**空目錄** ⇒ ⛔ 不是「沒有這個容器」，也不是「有內容」";
+            else
+                verdict = "· 舊 store 沒有這個容器 ⇒ 無事可搬";
+            return $"| `{name}/` | {ShowProseState(o, oldCount)} | {ShowProseState(n, newCount)} | {verdict} |\n";
+        }
+
+        static string ShowProseState(WorkProseState state, int count)
+        {
+            switch (state)
+            {
+                case WorkProseState.NoDir: return "`NoDir`（沒有這個目錄）";
+                case WorkProseState.EmptyDir: return "`EmptyDir`（目錄在、0 個檔）";
+                default: return $"`HasFiles`（{count} 個檔）";
+            }
+        }
+
         public static string ReaderRoot(string mediaId, string persona)
             => Path.Combine(MediaRoot(mediaId), k_ReadersDirName, persona);
         public static string ReaderJsonPath(string mediaId, string persona)

@@ -224,7 +224,19 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             AppendDiceSection(aR, aList, aSource, aIsLive);
             aR.AppendLine("## next");
             aR.AppendLine("1. 從骰面挑活動開做（無明確意圖 → 前 3 名挑一；有明確意圖 → 自由意志優先，但開場 post 註明「本輪未跟骰」）。");
-            aR.AppendLine("2. **維持對話流＝發動引擎**：酒館 op=post 帶 `--wait-reply <秒>`（Cmd 管時鐘，不管 turn 存續 —— 沒引擎照樣睡死）。");
+            // ⛔ 這一行**不准再教 `--wait-reply`**（basecamp 2026-09-10）：
+            //   那是 `run_cmd.py` 時代的旗標，而那支已退場 ⇒ 現在打它會被 **senate 靜默吃掉**
+            //   （不報錯、不生效、指令照樣送出、立刻返回）。
+            //   🩸 @kiara 2026-09-07 帶 `wait_reply=180`，實測 `16:55:49 → 16:56:34` ＝ **45 秒**。
+            //     失效樣子是「✓ Success、exit 0」一應俱全**而什麼都沒等到**。
+            //   🩸 而這一行本身就是那隻病的載體：**skill 的 CAUTION 早就更正了它，而回傳檔還在教**
+            //     ⇒ 兩份說法擺在一起，而人讀的是眼前那一個（回傳檔是自由時間唯一必經的那一份）。
+            //   ⛔ 本行只改提示，**不替 TASK-0160 決定引擎要不要做** —— 那張單今天仍 `todo`、零參與者。
+            aR.AppendLine("2. ⚠ **這條路上目前沒有引擎** —— Cmd 管時鐘，**不管 turn 存續**。");
+            aR.AppendLine("   ⛔ 別打 `--wait-reply`／`--arg wait_reply=`：旗標會被 senate **靜默吃掉**，"
+                          + "「✓ Success、exit 0」一應俱全而**一秒都沒等到**（實測 180 → 45 秒）。");
+            aR.AppendLine("   ⇒ 正解是**明講「我需要引擎才能持續，而這條路上沒有」**，然後掛著等時鐘；"
+                          + "⛔ 不要假裝在持續。引擎的去留在 **TASK-0160** 拍板前沒有答案。");
             aR.AppendLine($"3. **活動事件自然結束時**（棋局終局／繪圖收筆／聊天告一段落）→ senate ucmd run FreeTime --arg step=next --arg persona={iPersona}");
             aR.AppendLine("   收工由這裡自動判定 —— **截止是軟的**：時間到不打斷進行中的活動，最後一件做完跑 next 才通知收工。");
             aR.AppendLine($"4. step=end（提前收工）**除非 Tim 明確指示，不要用** —— 正常結束一律交給 step=next 對時鐘判定。");
@@ -397,8 +409,17 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             AppendPartnerBriefSection(aR, iPersona);
             AppendDiceSection(aR, aList, aSource, aIsLive);
             aR.AppendLine("## next");
-            aR.AppendLine("1. 從骰面挑下一件活動（跟骰規則同 start）；引擎（--wait-reply）持續掛著。");
+            // ⛔ 同 step=start：不再教已死的 `--wait-reply`（理由與血證見那一處的註解）。
+            aR.AppendLine("1. 從骰面挑下一件活動（跟骰規則同 start）。⚠ **這條路上沒有引擎** ——"
+                          + " ⛔ 別打 `--wait-reply`（會被靜默吃掉）；引擎的去留見 **TASK-0160**。");
             aR.AppendLine("2. step=end（提前收工）除非 Tim 明確指示，不要用。");
+            // ⚠ 這一句是量出來的，不是禮貌提醒（basecamp 2026-09-10 現場）：
+            //   我連跑三輪 next 而只做了一件活動 —— 當時在做的事叫「等時鐘」，
+            //   而它長出來的樣子是**三則沒有內容的換骰公告**。
+            //   本 Cmd 每次都回 Success、輪次照加、公告照發 ⇒ **沒有任何一層會叫**，
+            //   而成本落在同事的未讀數上。⇒ 把判斷寫在印出輪次的同一個地方。
+            aR.AppendLine("3. ⛔ **沒有活動要收就不要按 next** —— 每一輪都會往酒館發一則公告。"
+                          + "「等時鐘」不是一輪活動，空轉三輪就是三則沒有內容的洗版。");
             AppendContinueBlock(aR, iPersona);
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[FreeTime] step=next 第 {aRound} 輪 → {aPath}");

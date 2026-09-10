@@ -416,7 +416,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 throw new Exception($"[StreamWatch] step=prepare blocked：缺 title/media_id（詳見 {aPath}）");
             }
             // ── 章名不可以自帶「第 N 章 ·」前綴（TASK-0064）────────────────
-            // 物理意義：**匯出端自己會加** `# 第 N 章 · ` 前綴（`library.py` 組表頭那一行），
+            // 物理意義：**匯出端自己會加** `# 第 N 章 · ` 前綴（`SCP_WatchWriter` 組表頭那一行），
             //          所以章名裡再寫一次就會出現「第 2 章 · 第 2 章 · …」。
             // 🩸 實體讀數（2026-08-27 basecamp `head -1`）：
             //   `watch-charlie-chocolate-factory/002` 與 `003` 兩章都是雙前綴，
@@ -3663,7 +3663,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         //   而更早的 python 版狀態檔（ChatTavern/stream_watch_sessions.json）自 2026-08-11 起就沒再被寫過，
         //   看起來卻完全正常 —— 那份不能當歷史來源。
         // 數值影響：一行一場 JSON、append-only、失敗只 warning（結算不能因為寫台帳失敗而回頭）。
-        //   欄位是給 `library.py export-watch` 用的：media_id + start_seq/end_seq 就是匯出區間。
+        //   欄位是給 `senate cmd watch --arg op=export` 用的：media_id + start_seq/end_seq 就是匯出區間。
         // ===========================================================
         // ===========================================================
         // 區塊職責：收工自動匯出的兩支 helper（BUG-10）。
@@ -4602,8 +4602,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
     //          唯一差別：過去「值為空就不寫鍵」的欄位（session 的 up/video_* 等）現在一律寫出來。
     //          加鍵相容（讀取端本來就用預設值判空），少鍵才是查不出來的那種差異。
     // ⚠ 欄位名＝JSON 鍵名（`FieldNameUnityVer` 只脫 `m_`）⇒ **刻意不走 `m_PascalCase`**。
-    //   `prepared/*.json` 與 `sessions_log.jsonl` 有 python 讀取端（`library.py export-watch`），
+    //   `prepared/*.json` 與 `sessions_log.jsonl` 有**外部組件的讀取端**（SCP_Core 的 `SCP_WatchResolve`／
+    //   `SCP_WatchLedger`，即 `senate cmd watch`；2026-09-10 起 python 那條已退場），
     //   改名 ＝ 改契約。動任何一個欄位名要同時改那邊。
+    //   ⚠ 判準沒有變、只是對象換了：從「有沒有別的**語言**在讀」變成「有沒有別的**組件**在讀」。
     // ===========================================================
 
     /// <summary>一場觀影 session（`&lt;DataRoot&gt;/sessions/&lt;persona&gt;.json`，`kind="StreamWatch"`；開下一場就覆寫）。</summary>
@@ -4713,7 +4715,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
     }
 
     /// <summary>準備階段的產物（`StreamWatch/prepared/&lt;media_id&gt;.json`）—— join / catchup / 收工匯出都讀它。</summary>
-    /// <remarks>⚠ **python 讀取端**：`library.py export-watch` 讀 `export_chapter` / `chapter_id` / `chapter_title`。</remarks>
+    /// <remarks>⚠ **外部讀取端**：`senate cmd watch --arg op=export`（SCP_Core `SCP_WatchResolve`）讀 `export_chapter` / `chapter_id` / `chapter_title`。</remarks>
     public class UCL_StreamWatchPrepared : UnityJsonSerializable
     {
         public string media_id = "";
@@ -4815,7 +4817,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
     /// 於是 start_seq/end_seq 這種**只有當下才知道**的事實，過了就再也拿不回來。
     /// 🩸 血證：apocalypse-hotel 02-04 話的實錄補不出來，不是訊息不見了（都在磁碟上），
     /// 是沒有任何地方記得那幾場的區間。
-    /// ⚠ **python 讀取端**：`library.py export-watch --from-session`。
+    /// ⚠ **外部讀取端**：`senate cmd watch --arg op=export --arg from_session=<場次 id>`（SCP_Core `SCP_WatchLedger`）。
     /// </remarks>
     public class UCL_StreamWatchSessionLogRecord : UnityJsonSerializable
     {

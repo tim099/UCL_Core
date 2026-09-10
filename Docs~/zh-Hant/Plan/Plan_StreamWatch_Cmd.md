@@ -464,7 +464,8 @@ companion 走 `join` **繼承**，不自己解析。**一場一個鍵，而那�
 
 ### 8.0 現況（2026-08-17 落地；2026-08-19 自動匯出）
 
-- 匯出工具：`library.py export-watch --media <id> --seq-ranges <a-b[,c-d]> --chapter <NNN> --title <章名>`
+- 匯出工具：`senate cmd watch --arg data_root=<AgentCommands> --arg op=export --arg media=<id> --arg seq_ranges=<a-b[,c-d]> [--arg chapter=<NNN>] --arg title=<章名>`
+  （2026-09-10 起；舊入口 `library.py export-watch` 已退場為指路 stub）
   → 寫 `Books/watch-<media>/NNN.txt`。排除酒保系統廣播與公告類 tag（commit／free-time…）、
   清掉自動附掛區塊、**未收錄逐筆列進章內**、附掛清除數 0 直接擋下（那個欄位存在的理由就是防靜默過濾）。
 - 區間來源：收工結算時 append 一行到 `StreamWatch/sessions_log.jsonl`（**append-only**）。

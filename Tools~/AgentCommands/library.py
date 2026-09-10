@@ -336,47 +336,33 @@ def _write_view_md(book: str, cid: str, ver: dict, facts, view, diff) -> str:
 # ===========================================================
 
 def cmd_add_book(args):
-    book = args.id or _slugify(args.title)
-    if _book_json(book).exists():
-        print(f"⚠ 書已存在: {book}（不覆寫）", file=sys.stderr)
-        return 1
-    (_book_dir(book) / "chapters").mkdir(parents=True, exist_ok=True)
-    (_book_dir(book) / "characters").mkdir(parents=True, exist_ok=True)
-    # 區塊職責：origin 區分原創 (authored) vs 調入別人的書 (imported)
-    # 物理意義：authored = agent 自由時間「寫書」自產 (Plan_FreeTime_BookWriting);
-    #          原創書的「讀者」語意上就是作者本人 → reader_persona 預設帶 author_persona;
-    #          publish_status: authored 預設 draft (草稿僅作者可見, publish 後才全員可讀);
-    #          imported / 無 origin → 沿用現況 (向後相容, 不帶這些欄位的舊書照常)
-    origin = getattr(args, "origin", None)
-    author_persona = getattr(args, "author_persona", None)
-    reader = args.reader_persona or author_persona or "basecamp"
-    data = {
-        "id": book,
-        "title": args.title,
-        "title_original": args.title_original or "",
-        "author": args.author or "",
-        "aliases": list(dict.fromkeys([args.title, *(_split_list(args.aliases)),
-                                         *([args.title_original] if args.title_original else [])])),
-        "reader_persona": reader,
-        "status": "reading",
-        "progress": {"current_chapter": 0, "last_read": _today()},
-        "characters": [],
-    }
-    if origin == "authored":
-        data["origin"] = "authored"
-        data["author_persona"] = author_persona or reader
-        data["publish_status"] = "draft"
-        data["status"] = "writing"   # 原創書狀態語意: 撰寫中
-    elif origin == "imported":
-        data["origin"] = "imported"
-    _write_json(_book_json(book), data)
-    kind = "✍ 原創書(草稿)" if origin == "authored" else "📖 書"
-    print(f"✅ 建立{kind}: {book}  《{args.title}》 / {args.author or '?'}"
-          + (f"  作者: {data.get('author_persona')}" if origin == "authored" else ""))
-    print(f"   {_book_dir(book)}")
-    if origin == "authored":
-        print("   → 用 UCL_BookEditPage 寫章節; 完稿後跑 publish --book 發布入庫")
-    return 0
+    """⛔ 已退場（2026-09-10 Tim 拍板「library.py 全面退場」）—— 指路 stub，**不寫任何檔**。
+
+    ⭐ **落點沒有變**：C# 那支寫的是同一個舊 store（`BookNotes/<slug>/book.json`
+      ＋ `chapters/`／`characters/`）⇒ 換入口**不搬資料**，舊書照常讀得到。
+    ⚠ 對拍讀數的**來源要標清楚**：`SCP_Cmd_Book` 的條文自己宣告
+      「產物逐位元組對齊 `library.py add-book`：JSON 縮排 2 空格、非 ASCII 不轉義、換行 CRLF」
+      —— 那是 TASK-0143 的交付讀數，**不是本次退場時重跑的**。
+    ⚠ 而 `--origin authored`（寫書線）在**新** store（`BookNotes/Library/`）沒有對應概念，
+      所以它留在舊 store 是刻意的：⛔ 退場的是 python 這個**實作**，不是那條資料線。
+    """
+    print("⛔ library.py add-book 已退場（2026-09-10）——本子指令不再寫任何檔。",
+          file=sys.stderr)
+    print("   新入口（本地跑，不需要 Editor）：", file=sys.stderr)
+    print("     senate cmd book --arg data_root=<AgentCommands 絕對路徑> --arg op=add \\",
+          file=sys.stderr)
+    print("         --arg title=<書名> --arg aliases=<別名;別名> [--arg id=<slug>] \\",
+          file=sys.stderr)
+    print("         [--arg title_original=…] [--arg author=…] [--arg reader_persona=<p>] \\",
+          file=sys.stderr)
+    print("         [--arg origin=authored|imported] [--arg author_persona=<p>]", file=sys.stderr)
+    print("   ⚠ 參數是 `--arg k=v`，⛔ 不是 `--flag value`；`--title-original` ⇒ `title_original`。",
+          file=sys.stderr)
+    print("   ⚠ `aliases` 是**必填**（使用者提供的書名必須含在裡面）—— 這是 C# 那支比本支嚴的一格。",
+          file=sys.stderr)
+    print("   ⭐ 落點與本支相同（同一份 `BookNotes/<slug>/book.json`）⇒ 舊資料不必動。",
+          file=sys.stderr)
+    return 2
 
 
 def cmd_prepare(args):
@@ -2099,29 +2085,20 @@ UNTITLED_MARKER = _untitled_marker()
 
 
 def cmd_list_untitled(args):
-    """列出章名仍掛哨兵的章 —— 哨兵可查性由這支提供。"""
-    root = _DATA_ROOT / "Books"
-    if not root.is_dir():
-        print(f"❌ 找不到 Books/（{root}）", file=sys.stderr)
-        return 1
-    hits = []
-    for book in sorted(root.iterdir()):
-        if not book.is_dir():
-            continue
-        for ch in sorted(book.glob("[0-9][0-9][0-9].txt")):
-            head = ch.read_text(encoding="utf-8", errors="replace")[:2000]
-            if UNTITLED_MARKER in head:
-                first = (head.splitlines() or [""])[0]
-                hits.append((book.name, ch.name, first.strip()))
-    if not hits:
-        print(f"✅ 沒有任何章掛著 {UNTITLED_MARKER}")
-        return 0
-    print(f"⚠ {len(hits)} 章章名未定（{UNTITLED_MARKER}）：")
-    for b, c, first in hits:
-        print(f"  {b}/{c}  {first}")
-    print("補名：改 prepared/<media_id>.json 的 chapter_title 後 --force 重出"
-          "（不能手改 .txt）")
-    return 0
+    """⛔ 已退場（2026-09-10 Tim 拍板「library.py 全面退場」）—— 指路 stub，**純讀也不做**。
+
+    ⚠ 本支是純讀的，退場理由因此**只有一條**（⛔ 不借 export-watch 那兩條）：
+      **C# 已有同一件事的本地出口，而指路牌已全改指它** ——
+      `senate cmd watch --arg op=untitled`，且那支是 `op` 的**預設值**（純讀的那個當預設）。
+    📌 @apex-one 2026-09-06 已確認沒有其他 persona 在用本支（TASK-0143 條文①第二關）。
+    """
+    print("⛔ library.py list-untitled 已退場（2026-09-10）——本子指令不再讀寫任何檔。",
+          file=sys.stderr)
+    print("   新入口（本地跑，不需要 Editor；`untitled` 是 op 的預設值）：", file=sys.stderr)
+    print("     senate cmd watch --arg data_root=<AgentCommands 絕對路徑> --arg op=untitled",
+          file=sys.stderr)
+    print("   ⚠ 參數是 `--arg k=v`，⛔ 不是 `--flag value`。", file=sys.stderr)
+    return 2
 
 
 def _parse_seq_ranges(spec: str):
@@ -2444,263 +2421,36 @@ def _resolve_from_session(session_id: str, explicit_chapter=None):
 
 
 def cmd_export_watch(args):
-    # 收工自動匯出：由場次 id 反查 media/區間/章號/章名（缺的才用旗標補）。
-    resolved = None
-    if getattr(args, "from_session", None):
-        resolved = _resolve_from_session(args.from_session, explicit_chapter=args.chapter)
-        prep = resolved["prepared"]
-        args.media = args.media or resolved["media"]
-        args.seq_ranges = args.seq_ranges or ",".join(f"{lo}-{hi}" for lo, hi in resolved["ranges"])
-        args.sessions = args.sessions or ",".join(resolved["sessions"])
-        args.chapter = args.chapter or (resolved["chapter"] or None)
-        # 章名的真相源順序（同章號）：--title 明示 → 台帳記過的 → 準備檔（意圖）→ 哨兵。
-        # ⚠ 台帳排在準備檔前面，因為準備檔是 per-media 單槽 ⇒ 跨集之後它是**下一話的名字**。
-        #   而台帳的那一筆是「這一章上次匯出時叫什麼」＝ 這一章的事實。
-        args.title = (args.title or (resolved.get("ledger_title") or "").strip()
-                      or (prep.get("chapter_title") or "").strip() or None)
-        args.work_title = (args.work_title or (resolved.get("ledger_work_title") or "").strip()
-                           or (prep.get("export_work_title")
-                               or prep.get("show_title") or "").strip() or None)
-        if not args.title:
-            # ⛔ 章名一定要親筆 —— 不拿影片標題（show_title）當預設值。
-            # ✅ 但「沒有章名」不該讓**整本書不存在**（Tim 2026-08-26 拍板，TASK-0064）：
-            #    🩸 ep10 實撞：四場全收工、48 則觀察都在河道上，而書一章都沒有 ——
-            #    而「書不存在」跟「這一話沒人看」在產物上**完全同形**，沒有任何一層會喊。
-            #    ⇒ 改成用哨兵值出書：工具仍然沒有代取章名，只是把「還沒有名字」寫成明確記號。
-            args.title = UNTITLED_MARKER
-            _note_add = (f"⚠ 章名未定（{UNTITLED_MARKER}）—— 匯出時準備檔沒有 chapter_title。"
-                         "補名**不能手改本檔**（機械產物，下次匯出會覆寫）："
-                         "改 prepared/<media_id>.json 的 chapter_title 後 --force 重出，"
-                         "或 export-watch --force --title 《章名》。")
-            args.note = ((args.note + " ") if args.note else "") + _note_add
-            print(f"⚠ 準備檔沒有 chapter_title ⇒ 章名用哨兵值 {UNTITLED_MARKER} 出書"
-                  f"（章名仍要人親筆補）。補名："
-                  f"library.py export-watch --from-session {args.from_session} --force --title <章名>",
-                  file=sys.stderr)
-        print(f"↩ from-session {args.from_session}："
-              f"media={args.media} 章={args.chapter or '(自動)'} "
-              f"區間={args.seq_ranges} 場次={args.sessions}")
-    if not args.media or not args.seq_ranges:
-        print("❌ 缺 --media / --seq-ranges（或改用 --from-session 由台帳反查）。", file=sys.stderr)
-        return 1
-    media = args.media
-    # 區塊職責：決定書的 slug。
-    # 🩸 2026-08-17 實跑踩到：預設寫成 `watch-<media_id>`，而既有那本是 `watch-<work_id>`
-    #   （media `anim-apocalypse-hotel` 的 work 是 `apocalypse-hotel`）⇒ 同一部片長出兩本書，
-    #   而**兩邊都能寫、都不報錯**。⇒ 先看既有目錄，再決定；兩本都不存在時才用 media 命名。
-    book = args.book
-    if not book:
-        cands = [f"watch-{media}"]
-        try:
-            mj = json.loads((_media_root(media) / "media.json").read_text(encoding="utf-8")) \
-                if (_media_root(media) / "media.json").is_file() else {}
-            wid = (mj or {}).get("work_id") or ""
-            if wid:
-                cands.append(f"watch-{wid}")
-        except Exception:
-            pass
-        existing = [c for c in cands if (_books_root() / c).is_dir()]
-        if len(existing) > 1:
-            raise SystemExit(f"❌ 同一部片有多本觀影實錄：{existing} —— 不猜，用 --book 指定要寫哪一本")
-        book = existing[0] if existing else cands[-1]
-    bdir = _books_root() / book
-    ranges = _parse_seq_ranges(args.seq_ranges)
-    room = args.room
+    """⛔ 已退場（2026-09-10 Tim 拍板「library.py 全面退場」）—— 指路 stub，**不寫任何檔**。
 
-    # 章號：沒給就取現有 NNN.txt 的 max+1（000.txt 是序，不算章 → 從既有最大值往上）
-    if args.chapter:
-        chapter = f"{int(args.chapter):03d}"
-    else:
-        nums = [int(p.stem) for p in bdir.glob("[0-9][0-9][0-9].txt")] if bdir.is_dir() else []
-        chapter = f"{(max(nums) + 1) if nums else 1:03d}"
-    out_path = bdir / f"{chapter}.txt"
-    if out_path.exists() and not args.force:
-        print(f"❌ {out_path.relative_to(_REPO_ROOT)} 已存在 —— 拒絕覆寫。"
-              f"要重出請先刪除該檔，或改 --chapter。", file=sys.stderr)
-        return 1
-
-    # 區塊職責：擋「同一段 seq 被兩章各自收錄」。
-    # 🩸 2026-08-17 首日就發生：basecamp 匯出 005（15777-15817）、gura 十分鐘後匯出 006（15780-15816）——
-    #   同一話兩章、區間重疊，而**兩邊都成功、都不報錯**。章 ≠ 場，但一話也不該有兩章。
-    # 物理意義：既有章的表頭本來就寫著自己的 seq 區間（機械產物、可回讀）⇒ 拿它當事實源，不另建索引。
-    # 數值影響：重疊即擋下並指名是哪一章；真的要並存（例如刻意保留另一人視角）走 --allow-overlap 明說。
-    if bdir.is_dir():
-        clash = []
-        for prev in sorted(bdir.glob("[0-9][0-9][0-9].txt")):
-            if prev.name == out_path.name:
-                continue
-            head = prev.read_text(encoding="utf-8", errors="replace")[:2000]
-            m = re.search(r"seq 區間 \|([^|]+)\|", head)
-            if not m:
-                continue
-            for seg in re.findall(r"(\d+)\s*[–\-]\s*(\d+)", m.group(1)):
-                a, b = int(seg[0]), int(seg[1])
-                for lo, hi in ranges:
-                    if lo <= b and a <= hi:
-                        clash.append((prev.name, a, b))
-        if clash and not args.allow_overlap:
-            print("❌ seq 區間與既有章重疊 —— 一話不該有兩章：", file=sys.stderr)
-            for name, a, b in clash:
-                print(f"   {name} 已收錄 {a}–{b}", file=sys.stderr)
-            print("   ⇒ 併成一章（把兩邊區間一起給、覆寫那一章）或 --allow-overlap 明說要並存。", file=sys.stderr)
-            return 1
-
-    exclude_tags = {t.strip() for t in (args.exclude_tags or "").split(",") if t.strip()}
-    kept, excluded = [], []
-    stripped = 0
-    for lo, hi in ranges:
-        for seq, msg, f in _iter_tavern_messages(room, lo, hi):
-            if msg is None:
-                excluded.append((seq, "讀檔失敗"))
-                continue
-            meta = msg.get("meta") or {}
-            persona = msg.get("sender_persona") or msg.get("sender_id") or "?"
-            tag = str(meta.get("tag", ""))
-            body = msg.get("body") or ""
-            # 排除：酒保系統廣播（不是在場的人說的話）
-            if persona in ("酒保", "bartender", "tavern-keeper"):
-                excluded.append((seq, f"系統廣播 tag={tag or '-'} sender={persona}"))
-                continue
-            # 排除：機器代組的公告類訊息 —— 它們**剛好落在觀影期間**，但不是在看片時說的話。
-            # 🩸 首版只擋酒保，於是 002 混進 3 則 commit 公告、004 混進 1 則自由時間公告
-            #    （001 那章沒事只是因為它的區間裡剛好沒有公告 —— 樣本乾淨不等於過濾器對）。
-            if tag in exclude_tags:
-                excluded.append((seq, f"公告類 tag={tag}（機器代組，非觀影發言）"))
-                continue
-            if args.only_personas and persona not in args.only_personas.split(","):
-                excluded.append((seq, f"不在 --only-personas 名單 ({persona})"))
-                continue
-            new_body, n = _WATCH_AUTO_ATTACH_RE.subn("", body)
-            stripped += n
-            kept.append({"seq": seq, "ts": msg.get("ts", ""), "persona": persona,
-                         "tag": tag, "subtag": str(meta.get("subtag", "")),
-                         "body": new_body.strip()})
-
-    if not kept:
-        print("❌ 區間內沒有可收錄的訊息 —— 先確認 seq 區間與 --room 對不對。", file=sys.stderr)
-        return 1
-
-    # 🩸 assert：附掛清除數若為 0，很可能是 regex 又沒對上（001 首版就是這樣靜默的）。
-    #   真的一則附掛都沒有時用 --allow-zero-stripped 明說，別讓工具自己決定「這次沒有」。
-    if stripped == 0 and not args.allow_zero_stripped:
-        print("❌ 自動附掛清除數 = 0 —— 這個欄位存在的唯一理由就是防靜默過濾，"
-              "而它自己回報 0 通常代表 pattern 沒對上（換行 \\r\\n 混排是慣犯）。\n"
-              "   確認過真的沒有附掛區塊 → 加 --allow-zero-stripped 明說。", file=sys.stderr)
-        return 1
-
-    # ── 依段序重排（TASK-0061）─────────────────────────────────
-    # 🩸 為什麼要有這一段：`_iter_tavern_messages` 照 tavern seq 掃 ⇒ 書把**河道的亂序原樣複印**。
-    #   實證 010.txt：章內素材時間 20:51:59 → 20:52:31 → **20:52:19** → 20:53:51 → **20:54:21**。
-    #   ⇒ 河道亂序是當下不好讀；**書亂序是永久錯的實錄**。
-    # ⚠ 排序來源一律明印在表頭（下方「排序」列）—— ⛔ 沒有台帳時**不得靜默 fallback**：
-    #   「照段序排過」與「照 seq 排的舊章」必須在產物上分得出來。
-    seg_of_seq = _load_segment_order()
-    kept, _n_seg, _n_noseg = _order_by_segment(kept, seg_of_seq) if seg_of_seq else (kept, 0, len(kept))
-    if _n_seg:
-        _sort_note = (f"**段序**（`segments.jsonl`）—— 有段號 {_n_seg} 則"
-                      + (f"／無段號 {_n_noseg} 則（保留原 seq 相對位置，併在前一段之後）"
-                         if _n_noseg else "／全部有段號"))
-    else:
-        _sort_note = ("**tavern seq**（本章區間在段台帳裡沒有任何一則有段號 —— "
-                      "舊章或台帳上線前的場次）⇒ 素材時間可能亂序，這不是漏排是沒得排")
-
-    by_persona = {}
-    for k in kept:
-        by_persona[k["persona"]] = by_persona.get(k["persona"], 0) + 1
-    _seqs = [k["seq"] for k in kept]
-    span = f"{min(_seqs)} – {max(_seqs)}"
-
-    lines = []
-    lines.append(f"# 第 {int(chapter)} 章 · {args.title}" if args.title else f"# 第 {int(chapter)} 章")
-    # 副標：併章時保留另一位匯出者取的章名 —— 併章是為了不讓同一段 seq 出現兩次，
-    #       不是為了讓其中一個人的命名消失。
-    if args.subtitle:
-        lines.append("")
-        lines.append(f"### —— {args.subtitle}")
-    lines.append("")
-    lines.append(f"> 機械匯出 —— 內容為聊天酒館 seq {span} 原文，僅移除自動附掛區塊。")
-    lines.append("> 手改會被下次匯出覆寫；要改內容請改酒館訊息本身。")
-    lines.append("")
-    lines.append("## 場次讀數")
-    lines.append("")
-    lines.append("| | |")
-    lines.append("|---|---|")
-    if args.work_title:
-        lines.append(f"| 作品 | {args.work_title} |")
-    lines.append(f"| 媒材 | `{media}` |")
-    if args.sessions:
-        lines.append(f"| 場次 | {' ／ '.join(args.sessions.split(','))} |")
-    lines.append(f"| seq 區間 | {' ／ '.join(f'{lo}–{hi}' for lo, hi in ranges)} |")
-    lines.append(f"| 排序 | {_sort_note} |")
-    lines.append(f"| 收錄 | **{len(kept)} 筆**（"
-                 + "／".join(f"{p} {n}" for p, n in sorted(by_persona.items(), key=lambda kv: -kv[1]))
-                 + f"）／未收錄 **{len(excluded)} 筆**／清掉自動附掛 **{stripped}** 處 |")
-    if args.note:
-        lines.append(f"| 備註 | {args.note} |")
-    lines.append("")
-    if excluded:
-        # 未收錄逐筆列出（含理由）—— 讀者才分得出「本來就只有這些」與「被濾掉了」
-        lines.append("<details><summary>未收錄清單（點開）</summary>")
-        lines.append("")
-        for seq, why in excluded:
-            lines.append(f"- seq {seq} — {why}")
-        lines.append("")
-        lines.append("</details>")
-        lines.append("")
-    lines.append("## 實錄")
-    lines.append("")
-    for k in kept:
-        hhmm = (k["ts"] or "")[11:16]
-        head = f"### [seq {k['seq']}] {hhmm} · {k['persona']}"
-        if k["subtag"]:
-            head += f" · {k['subtag']}"
-        lines.append(head)
-        lines.append("")
-        lines.append(k["body"])
-        lines.append("")
-
-    bdir.mkdir(parents=True, exist_ok=True)
-    out_path.write_text("\n".join(lines).replace("\r\n", "\n"), encoding="utf-8")
-
-    # 印 ✓ 不算數 —— 回讀落地的檔案再報數字
-    back = out_path.read_text(encoding="utf-8")
-    print(f"✅ 匯出 {out_path.relative_to(_REPO_ROOT)}")
-    print(f"   收錄 {len(kept)} 筆 / 未收錄 {len(excluded)} 筆 / 清掉附掛 {stripped} 處 / seq {span}")
-    print(f"   回讀驗證：{len(back.splitlines())} 行、{len(back)} 字元"
-          f"、實錄段 {back.count('### [seq ')} 則")
-    if len(excluded):
-        print("   ⚠ 未收錄清單已寫進章內 <details>，不靜默截斷")
-
-    # BUG-9：在台帳 append 一筆 `record_type=export` 紀錄（台帳 append-only，**不就地改行**）。
-    #   ⛔ 場次列自己的 `exported_chapter` 欄從來不會被填 —— 它從建立到永遠都是 ""，
-    #      所以「這一場進了哪一章」只能靠這些 export 紀錄回答，讀那個欄位一定得到「還沒進章」。
-    #      （2026-09-04 讀數，Bar 樹：場次列 89 筆非空 0 筆／export 列 97 筆覆蓋 77 個 session。）
-    #   對象＝--sessions 明列者 ∪ 區間被本章完全涵蓋的場次（陪同場常常沒被列進 --sessions）。
-    want_sids = [x.strip() for x in (args.sessions or "").split(",") if x.strip()]
-    try:
-        for sid, rec in _sessions_log_state().items():
-            lo0, hi0 = int(rec.get("start_seq") or 0), int(rec.get("end_seq") or 0)
-            if not lo0 or not hi0:
-                continue
-            if any(lo <= lo0 and hi0 <= hi for lo, hi in ranges) and sid not in want_sids:
-                want_sids.append(sid)
-        done = _append_export_events(want_sids, chapter, book,
-                                      chapter_title=(args.title or ""),
-                                      work_title=(args.work_title or ""))
-        if done:
-            print(f"   ↳ 台帳 append {len(done)} 筆 export 紀錄（chapter={chapter}）：{', '.join(done)}")
-            print("     ⚠ 場次列的 exported_chapter 欄**不會被填**（append-only）—— 查章號請掃 export 紀錄")
-        else:
-            print("   ⚠ 台帳沒有 append 任何 export 紀錄（沒有對得上的場次）"
-                  "—— 「已匯出」在台帳上仍與「未匯出」同形")
-    except Exception as e:
-        print(f"   ⚠ 台帳 append export 紀錄失敗（章已落地，不回頭）：{e}", file=sys.stderr)
-    return 0
-
-
-# ===========================================================
-# argparse
-# ===========================================================
+    ⚠ 退場理由**不是「對拍通過」** —— 照實寫，別讓下一個人以為兩邊等價：
+      ① **已無活的消費端**：指路牌 2026-09-06 全改指 C#
+         （`Tavern_History_Workflow.md` 的 last_updated 明寫「觀影匯出已移進 SCP_Core，不再走 library.py」）；
+         收工自動匯出走 `--arg from_session=`，那條也在 C# 那側。
+      ② **本支帶已知缺陷**（TASK-0126）：章檔輸出根吃 cwd ⇒ 讀對樹、**寫錯樹**，
+         而回讀驗證跟著寫入端走所以**全綠**。
+      ③ **C# 版結構上沒有那個缺陷**：`data_root` 是**必填的絕對路徑**。
+    ⛔ 而 `senate cmd watch --arg op=audit`（38 章：identical 0／different 36／unmeasured 2）
+      **不能拿來當等價憑據** —— 它比的是「現有章檔 vs 今天重出」，中間隔著時間與資料變動，
+      天生不是「新舊實作對拍」。差異多數是跨區讀不到（那些章的 seq 來自別的區）。
+    """
+    print("⛔ library.py export-watch 已退場（2026-09-10）——本子指令不再寫任何檔。",
+          file=sys.stderr)
+    print("   新入口（本地跑，不需要 Editor）：", file=sys.stderr)
+    print("     senate cmd watch --arg data_root=<AgentCommands 絕對路徑> --arg op=export \\",
+          file=sys.stderr)
+    print("         --arg from_session=<場次 id> --arg title=<章名>", file=sys.stderr)
+    print("       或改給 --arg media=<id> --arg seq_ranges=<a-b[,c-d]> [--arg chapter=<NNN>]",
+          file=sys.stderr)
+    print("   ⚠ 參數是 `--arg k=v`，⛔ 不是 `--flag value`；`--seq-ranges` ⇒ `seq_ranges`。",
+          file=sys.stderr)
+    print("   ⭐ `data_root` **必填且是絕對路徑** —— 那正是本支 TASK-0126 那個 bug 消失的原因。",
+          file=sys.stderr)
+    print("   ℹ 兩道守衛照舊是擋：章檔已存在（`--arg force=1` 才覆寫）／seq 區間重疊",
+          file=sys.stderr)
+    print("     （`--arg allow_overlap=1` 才並存）。查哨兵章走 `--arg op=untitled`。",
+          file=sys.stderr)
+    return 2
 
 def _add_reader_arg(parser, with_continue=False):
     # 區塊職責：給「讀者耦合」的子命令統一加 --reader (+ 選配 --continue-from)
@@ -2718,10 +2468,10 @@ def build_parser():
 
     a = sub.add_parser("add-book", help="建立新書 (--origin authored = 原創寫書)")
     a.add_argument("--id", help="書本 slug（缺則由 title 生成）")
-    a.add_argument("--title", required=True)
+    a.add_argument("--title")
     a.add_argument("--title-original", dest="title_original")
     a.add_argument("--author")
-    a.add_argument("--aliases", required=True, help="別名（使用者提供的書名必含；用 ; | 或換行分隔）")
+    a.add_argument("--aliases", help="別名（使用者提供的書名必含；用 ; | 或換行分隔）")
     a.add_argument("--reader-persona", dest="reader_persona")
     a.add_argument("--origin", choices=["authored", "imported"],
                    help="authored=原創寫書(自由時間, 作者=捐贈者, 預設草稿) / imported=調入別人的書; 省略=沿用現況")
@@ -2735,8 +2485,8 @@ def build_parser():
     a.set_defaults(func=cmd_prepare)
 
     a = sub.add_parser("log-chapter", help="記錄一章")
-    a.add_argument("--book", required=True)
-    a.add_argument("--chapter", required=True)
+    a.add_argument("--book")
+    a.add_argument("--chapter")
     a.add_argument("--title")
     a.add_argument("--slug")
     a.add_argument("--summary")
@@ -2871,8 +2621,8 @@ def build_parser():
     a.set_defaults(func=cmd_terms)
 
     a = sub.add_parser("arc", help="記階段大綱(每 ~6 章一個見林總結)")
-    a.add_argument("--book", required=True)
-    a.add_argument("--chapters", required=True, help="涵蓋章節範圍, 如 1-6")
+    a.add_argument("--book")
+    a.add_argument("--chapters", help="涵蓋章節範圍, 如 1-6")
     a.add_argument("--title", help="這個 arc 的標題")
     a.add_argument("--summary", help="階段大綱(見林)")
     a.add_argument("--threads", help="貫穿線索/伏筆狀態, 用 ; | 或換行分隔")

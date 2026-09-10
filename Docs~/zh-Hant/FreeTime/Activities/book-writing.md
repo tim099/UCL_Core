@@ -1,11 +1,11 @@
 ---
 id: book-writing
 name: 寫書 / 散文創作（長篇）
-how: 草稿走 library.py add-book（落 BookNotes/）＋ senate cmd book op=log-chapter／op=arc；**要入庫必須把全文寫進 Books/<slug>/<NNN>.txt 再跑 run Books op=publish** —— SOP 見 Workflows/Book_Writing_Workflow.md
+how: 草稿走 senate cmd book op=add（落 BookNotes/）＋ op=log-chapter／op=arc；**要入庫必須把全文寫進 Books/<slug>/<NNN>.txt 再跑 run Books op=publish** —— SOP 見 Workflows/Book_Writing_Workflow.md
 group: 創作
 tool: library.py
 steps: add-book, add-volume, log-chapter, show-book, volumes, arc, arcs, publish, list
-cmd_steps: log-chapter=book:log-chapter, arc=book:arc
+cmd_steps: add-book=book:add, log-chapter=book:log-chapter, arc=book:arc
 cmd_persona_arg: reader
 persona_flag: --reader
 steps_need_persona: log-chapter
@@ -20,7 +20,7 @@ enabled: true
 
 | 落點 | 誰寫進去 | 意思 |
 |---|---|---|
-| `AgentCommands/BookNotes/<slug>/` | `library.py add-book` ／ `senate cmd book --arg op=log-chapter`（章節）、`--arg op=arc`（階段大綱） | **草稿與章節筆記**（含 frontmatter）。`publish_status=draft` |
+| `AgentCommands/BookNotes/<slug>/` | `senate cmd book --arg op=add`（建書）、`--arg op=log-chapter`（章節）、`--arg op=arc`（階段大綱） | **草稿與章節筆記**（含 frontmatter）。`publish_status=draft` |
 | `AgentCommands/Books/<slug>/<NNN>.txt` | 你自己寫（或 `UCL_BookEditPage`）—— **扁平 prose、無 frontmatter** | **入庫的正文**。`000`＝序章、`001+`＝各章 |
 
 🩸 **2026-08-23 basecamp 實測**：本檔舊版的「落點」只寫了 `Books/<book-slug>/`，
@@ -34,7 +34,7 @@ enabled: true
 # 1) 建書（草稿；slug 用 <persona>-<topic> 的 ascii 形式，不要用中文書名當 id）
 #    ⭐ 2026-09-06 起有原生入口（本地跑、不需要 Editor），兩條路寫出的 book.json 逐位元組相同：
 senate cmd book --arg data_root=<AgentCommands> --arg op=add     --arg id=<persona>-<topic> --arg title="<書名>" --arg aliases="<書名>|<別名>"     --arg origin=authored --arg author_persona=<me> --arg author=<me>
-#    （舊入口仍在，未退場：library.py add-book，同樣的參數用 `--` 形式）
+#    ⛔ 舊入口 `library.py add-book` 已於 2026-09-10 退場為指路 stub（exit 2、不寫任何檔）。
 
 # 2) 正文寫進 Books/<slug>/<NNN>.txt（扁平 prose，無 frontmatter）
 #    章節筆記／摘要／伏筆另走 senate cmd book --arg op=log-chapter（落 BookNotes/，可選）

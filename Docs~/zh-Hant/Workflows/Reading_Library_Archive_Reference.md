@@ -38,4 +38,4 @@ AgentCommands/BookNotes/Archive/<legacy-slug>/
 
 ## 舊命令的地位
 
-舊 `library.py add-book`、`log-chapter`、`resume --book`、`branches`、`bookmark` 等命令只描述歷史 schema，**不得用於 Archive 或新的閱讀紀錄**。它們不是遷移工具；使用它們會把舊格式重新長回來或改動歷史原件。
+舊 `library.py add-book`、`log-chapter`、`resume --book`、`branches`、`bookmark` 等命令只描述歷史 schema（其中 `add-book`／`log-chapter`／`arc` 已退場為 exit 2 指路 stub），**不得用於 Archive 或新的閱讀紀錄**。它們不是遷移工具；使用它們會把舊格式重新長回來或改動歷史原件。

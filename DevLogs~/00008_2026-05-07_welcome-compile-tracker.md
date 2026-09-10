@@ -5,6 +5,14 @@ title: UCL_WelcomePage + UCL_CompileErrorTracker + check_compile.py — 新人�
 tags: [feature]
 ---
 
+> [!CAUTION]
+> ⛔ **本篇是 2026-05-07 的歷史紀錄，內文那三段 `check_compile.py` 指令現在跑不起來** ——
+> 該支已於 **2026-09-10 整支刪除**（檔案不存在了，TASK-0155）。內文刻意不改：改了就是竄改歷史。
+> ⇒ 現在的編譯這條走 Senate CLI：`senate cmd unity-recompile --arg persona=<me>`（觸發＋等那一趟）／
+> `senate cmd unity-compile-status`（只讀，不需要 Editor）。
+> ⚠ 而 `--fallback-log`（Tracker 沒跑過時解 Editor.log）與 `--watch-timeout` 那兩格**沒有替代品**，
+> 不是搬走了 —— 詳見 `Docs~/zh-Hant/Workflows/CompileError_Diagnose_Workflow.md`。
+
 # UCL_WelcomePage + UCL_CompileErrorTracker + check_compile.py
 
 ## What

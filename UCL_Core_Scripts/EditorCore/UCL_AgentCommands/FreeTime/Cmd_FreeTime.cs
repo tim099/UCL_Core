@@ -362,7 +362,8 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 AppendOnlineSection(aR, iPersona);
                 AppendTavernCatchupSection(aR, iPersona);
                 aR.AppendLine("## next");
-                aR.AppendLine("1. **繼續當前活動**（`op=step` / 做完 `op=done`）—— 本次沒有新骰面。");
+                aR.AppendLine("1. **繼續當前活動** —— `run FreeTimeActivity --arg op=step` ／ 做完 `--arg op=done`"
+                    + "（⚠ 那是 **FreeTimeActivity**，不是本支）—— 本次沒有新骰面。");
                 aR.AppendLine("2. 想換活動再跑一次 `step=next`（不帶 `roll=0`）。");
                 AppendContinueBlock(aR, iPersona);
                 WritePayload(iArgs, aPath, aR.ToString());
@@ -1159,7 +1160,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // 骰面印「這是什麼」，**不印「怎麼做」**（Tim 2026-08-21）。
         // 物理意義：挑活動時需要的是**一句話認出它**；執行細節（md 全文路徑）在挑之前沒有用，
         //          每輪重印一次只是把未讀訊息與時間欄擠出視線。
-        //          ⇒ 細節長在**需要它的那一刻**：`op=pick` 的回傳檔會印該活動 md 的全文路徑。
+        //          ⇒ 細節長在**需要它的那一刻**：`FreeTimeActivity op=pick` 的回傳檔會印該活動 md 的全文路徑。
+        // ⚠ 跨 Cmd 指路一律帶主詞（TASK-0192）：本支的參數叫 `step=`，而 `op=` 屬於 `FreeTimeActivity`
+        //   —— 而**那支也有一個叫 `step` 的參數** ⇒ 少了主詞，讀者會把它接到手上這一支。
+        //   🩸 血證：kiara 2026-09-10 照著打了 `run FreeTime --arg step=pick`，還據此開了一張假單。
         // ⚠ 刻意不留 `verbose` 旋鈕 —— 沒有呼叫端會傳 true 的分支等於一條沒人走的路，遲早有人把它接回去。
         static void AppendDiceSection(StringBuilder ioR, List<DiceEntry> iList, string iSource, bool iIsLive)
         {
@@ -1167,8 +1171,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             ioR.AppendLine("- ⭐＝優先層（條件成立：直播中／棋局對手也在自由時間）；層內仍隨機。");
             ioR.AppendLine("- 做不成的活動**已隱藏**（例：沒開播時不列「觀看直播」）—— 清單長度會隨當下狀況變動，那是正常的。");
             ioR.AppendLine("- **同組收成同一項**；觸發特殊規則的活動會**脫離分組成單獨一項**排最前（理由跟著印在它旁邊）。");
-            ioR.AppendLine("- `op=pick` 要填的是**具體活動 id**（下面反引號裡那個），不是組名。");
-            ioR.AppendLine("- ℹ 這裡只說「是什麼」；**怎麼做**（活動 md 全文路徑）在 `op=pick` 之後才印。");
+            ioR.AppendLine("- 挑好之後：`senate ucmd run FreeTimeActivity --arg op=pick --arg persona=<P> --arg activity=<id>`");
+            ioR.AppendLine("  ⚠ 是 **FreeTimeActivity** 不是本支 **FreeTime** —— 本支的參數叫 `step=`，那支叫 `op=`（而那支**也有**一個 `step`）。");
+            ioR.AppendLine("  `activity=` 填**具體活動 id**（下面反引號裡那個），不是組名。");
+            ioR.AppendLine("- ℹ 這裡只說「是什麼」；**怎麼做**（活動 md 全文路徑）在 `FreeTimeActivity op=pick` 之後才印。");
             for (int i = 0; i < iList.Count; i++)
             {
                 var aEntry = iList[i];

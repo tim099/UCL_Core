@@ -221,6 +221,37 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             return true;
         }
 
+        // ===========================================================
+        // 區塊職責：建 work.json（不存在才建；已存在一律不覆寫）—— `MediaInit` 與 ④ 搬遷**共用這一份**
+        // 物理意義：兩條路都會需要「這部作品在新 store 有一份 work.json」，而它們建出來的
+        //          schema 必須逐欄相同 —— 各寫一份的話，兩種來源的 work.json 會慢慢長歪，
+        //          🩸 而那個漂移**不會報錯**：讀取端 `GetString(key, "")` 對缺欄回空字串，
+        //          於是「這本沒填」與「這條路徑沒寫這欄」同形。
+        // 數值影響：檔案不存在 ⇒ 建一份；存在 ⇒ 一個位元組都不動（⛔ 不補欄、不升版）。
+        // ===========================================================
+        static string EnsureWorkJson(string workId, string title, string titleOriginal, string author,
+                                     IList<string> aliases, IList<string> genreTags)
+        {
+            string workPath = Path.Combine(WorkRoot(workId), k_WorkJsonName);
+            if (File.Exists(workPath)) return $"- work.json 已存在，不覆寫：`{workId}`\n";
+
+            var work = new JsonData();
+            work[Key_WorkId] = workId;
+            work[Key_Title] = title;
+            work[Key_TitleOriginal] = titleOriginal ?? "";
+            work[Key_Author] = author ?? "";
+            // 區塊職責：aliases 是**日後搜尋的唯一入口**（中／日／英 + 常見異譯）。
+            // 物理意義：搜尋比對打的是 title / title_original / aliases 三欄；
+            //          漏建 alias 的後果不是「找不到」，是「找不到 → 有人再建一本」
+            //          （arakawa 雙 entry 的成因，2026-08-05 實測 101 本裡有四組重複）。
+            // 數值影響：純 metadata；不影響進度與章節。
+            work[Key_Aliases] = ToStringArray(aliases, title, titleOriginal);
+            work[Key_GenreTags] = ToStringArray(genreTags);
+            work[Key_SchemaVersion] = 1;
+            SaveJson(workPath, work);
+            return $"- ✅ 建立 work.json：`{workId}`《{title}》（aliases {work[Key_Aliases].Count} 筆）\n";
+        }
+
         /// <summary>讀回寫書線四欄（③ 逐欄對拍的讀取側）。work.json 不存在或解析不動 ⇒ 回 false，⛔ 不回一個空物件假裝讀到了。</summary>
         public static bool TryReadWorkAuthored(string workId, out WorkAuthored fields, out string error)
         {
@@ -419,6 +450,164 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 Path.Combine(oldRoot, k_WorkArcsDirName), WorkArcsRoot(workId), out bool missB));
             anyMissing = missA || missB;
             return sb.ToString();
+        }
+
+        // ===========================================================
+        // 區塊職責：④ 把一本 authored 書從舊 store 搬進新 store（四欄 ＋ 正文容器）
+        // 物理意義：**複製，不是移動** —— 舊 store 那份原地保留。
+        //   🩸 理由是 @gura 在 TASK-0146 留言 #3 寫下的驗收條件：搬完之後 `arcs/` 要是
+        //   `HasFiles(1) ↔ HasFiles(1)`。移動的話舊側會變 `EmptyDir`，而**那個讀數與「搬壞了」同形**
+        //   —— 兩邊都不再是她交出來的那個形狀。舊 store 何時退場是 TASK-0143 的事，⛔ 不在本刀。
+        // 數值影響：`confirm=false` ⇒ **零寫入**（只回計畫）。`confirm=true` ⇒ 可能建 work.json、
+        //   補四欄、複製 .md；⛔ 一律不覆寫既有檔（同名檔跳過並出聲）。
+        // ⛔ 為什麼不順手拆 `status` 的兩條軸（舊 store：草稿 `writing`／發表後 `reading`）：
+        //   ① 的條文是「逐欄相同」，拆軸會讓對拍**必然紅**，而那格紅的原因不是搬壞了。
+        //   ⇒ 拆軸是另一個決定，要另一張單；這裡照搬（TASK-0146 留言 #5 的甲案）。
+        // ⚠ 只搬 `origin=authored` 的書：閱讀線的書搬過來會多出四個空欄，而 ① 明文
+        //   「既有欄位與讀取端一個字不動」。⇒ 不是 authored 就出聲拒絕，⛔ 不靜默跳過。
+        // ===========================================================
+        public enum AuthoredMigrateOutcome
+        {
+            /// <summary>舊 store 沒有這本 ⇒ 沒有可搬的來源（⛔ 不是「搬完了」）。</summary>
+            OldStoreMissing,
+            /// <summary>舊 store 的 book.json 解析不動 ⇒ ⛔ 不當成「沒有內容」。</summary>
+            ParseFailed,
+            /// <summary>舊 store 那本 `origin` 不是 `authored` ⇒ 這支不搬它。</summary>
+            NotAuthored,
+            /// <summary>沒給 confirm ⇒ 只回計畫，**一個位元組都沒寫**。</summary>
+            Planned,
+            /// <summary>真的搬了（報告裡附回讀對拍的結果）。</summary>
+            Migrated,
+        }
+
+        public static AuthoredMigrateOutcome MigrateAuthoredWork(string bookSlug, string workId,
+            bool confirm, out string report, out string error)
+        {
+            error = null;
+            var sb = new StringBuilder();
+            string oldRoot = Path.Combine(BookNotesRoot, bookSlug);
+            string oldPath = OldStoreBookJsonPath(bookSlug);
+            sb.AppendLine($"- 舊 store：`{oldPath}`");
+            sb.AppendLine($"- 新 store：`{Path.Combine(WorkRoot(workId), k_WorkJsonName)}`");
+            sb.AppendLine($"- 模式：{(confirm ? "**confirm ⇒ 真的寫**" : "**dry-run ⇒ 零寫入**（要寫就加 `confirm=1`）")}");
+            sb.AppendLine();
+
+            if (!File.Exists(oldPath))
+            {
+                error = $"舊 store 沒有這本：`{oldPath}`";
+                report = sb.ToString();
+                return AuthoredMigrateOutcome.OldStoreMissing;
+            }
+            JsonData oldData = LoadJson(oldPath, out string loadErr);
+            if (oldData == null)
+            {
+                error = $"舊 store 解析失敗：{loadErr} —— ⛔ 這不是「沒有內容」";
+                report = sb.ToString();
+                return AuthoredMigrateOutcome.ParseFailed;
+            }
+
+            var fields = new WorkAuthored
+            {
+                AuthorPersona = oldData.GetString(Key_AuthorPersona, ""),
+                Status = oldData.GetString(Key_Status, ""),
+                PublishStatus = oldData.GetString(Key_PublishStatus, ""),
+                Origin = oldData.GetString(Key_Origin, ""),
+            };
+            if (!fields.VisibleToWritingLine)
+            {
+                error = $"舊 store 那本的 `{Key_Origin}` 是 `{fields.Origin}`，不是 `{OriginAuthored}` ⇒ " +
+                        "這支只搬寫書線的書。⛔ 不靜默跳過，也不替它補上 origin。";
+                report = sb.ToString();
+                return AuthoredMigrateOutcome.NotAuthored;
+            }
+
+            sb.AppendLine("## 要搬的四欄（照搬，⛔ 不轉換）");
+            sb.AppendLine();
+            sb.AppendLine("| 欄 | 值 |");
+            sb.AppendLine("|---|---|");
+            sb.AppendLine($"| `{Key_Origin}` | `{fields.Origin}` |");
+            sb.AppendLine($"| `{Key_AuthorPersona}` | `{fields.AuthorPersona}` |");
+            sb.AppendLine($"| `{Key_Status}` | `{fields.Status}` |");
+            sb.AppendLine($"| `{Key_PublishStatus}` | `{fields.PublishStatus}` |");
+            sb.AppendLine();
+
+            sb.AppendLine("## 正文容器（三態，⛔ 不是檔數）");
+            sb.AppendLine();
+            sb.AppendLine(ProseSection(bookSlug, workId, out _));
+
+            if (!confirm)
+            {
+                sb.AppendLine("⇒ **dry-run 到此為止** —— 上面每一格都是讀出來的，沒有任何寫入。");
+                report = sb.ToString();
+                return AuthoredMigrateOutcome.Planned;
+            }
+
+            // --- 這行以下才會動磁碟 ---
+            sb.AppendLine("## 寫入");
+            sb.AppendLine();
+            var aliases = new List<string>();
+            JsonData oldAliases = oldData.Contains(Key_Aliases) ? oldData[Key_Aliases] : null;
+            if (oldAliases != null && oldAliases.IsArray)
+                for (int i = 0; i < oldAliases.Count; i++)
+                {
+                    string a = AliasToString(oldAliases[i]);
+                    if (!string.IsNullOrEmpty(a) && !aliases.Contains(a)) aliases.Add(a);
+                }
+            sb.Append(EnsureWorkJson(workId,
+                oldData.GetString(Key_Title, bookSlug),
+                oldData.GetString(Key_TitleOriginal, ""),
+                oldData.GetString(Key_Author, ""),
+                aliases, null));
+
+            if (!TrySetWorkAuthored(workId, fields, out string setErr))
+            {
+                error = $"四欄寫入失敗：{setErr}";
+                report = sb.ToString();
+                return AuthoredMigrateOutcome.ParseFailed;
+            }
+            sb.AppendLine("- ✅ 四欄已寫上 work.json（空值不落盤）");
+
+            sb.Append(CopyProseDir(Path.Combine(oldRoot, k_WorkChaptersDirName), WorkChaptersRoot(workId),
+                                   k_WorkChaptersDirName));
+            sb.Append(CopyProseDir(Path.Combine(oldRoot, k_WorkArcsDirName), WorkArcsRoot(workId),
+                                   k_WorkArcsDirName));
+
+            // 回讀：⛔ 不印「寫入成功」當收據 —— 用同一支對拍器（③）重讀一次落地結果。
+            sb.AppendLine();
+            sb.AppendLine("## 回讀對拍（走 ③ 那支 `DiffWorkAuthored`，⛔ 不是本函式自己說了算）");
+            sb.AppendLine();
+            AuthoredDiffOutcome after = DiffWorkAuthored(bookSlug, workId, out List<string> mism, out string diffReport);
+            sb.AppendLine($"**{after}**" + (mism.Count > 0 ? $"　對不上：{string.Join("、", mism)}" : ""));
+            sb.AppendLine();
+            sb.Append(diffReport);
+
+            report = sb.ToString();
+            return AuthoredMigrateOutcome.Migrated;
+        }
+
+        /// <summary>
+        /// 複製一個正文容器（⛔ 不移動、⛔ 不覆寫既有同名檔）。
+        /// <para>⚠ 來源目錄不存在 ⇒ 回一行「NoDir，無事可搬」而**不建空目錄** ——
+        /// 建了的話新側會從 `NoDir` 變成 `EmptyDir`，而那正是 ② 要分開的兩個值。</para>
+        /// </summary>
+        static string CopyProseDir(string srcDir, string dstDir, string label)
+        {
+            WorkProseState src = ProbeWorkProse(srcDir, out int srcCount);
+            if (src == WorkProseState.NoDir) return $"- `{label}/`：舊 store `NoDir` ⇒ 無事可搬（⛔ 不建空目錄）\n";
+            if (src == WorkProseState.EmptyDir) return $"- `{label}/`：舊 store `EmptyDir`（0 檔）⇒ 無事可搬\n";
+
+            Directory.CreateDirectory(dstDir);
+            int copied = 0, skipped = 0;
+            foreach (string f in Directory.GetFiles(srcDir))
+            {
+                string dst = Path.Combine(dstDir, Path.GetFileName(f));
+                if (File.Exists(dst)) { skipped++; continue; }
+                File.Copy(f, dst);
+                copied++;
+            }
+            string line = $"- `{label}/`：來源 {srcCount} 檔 ⇒ 複製 {copied}";
+            if (skipped > 0) line += $"、**跳過 {skipped}（目標已有同名檔，⛔ 不覆寫）**";
+            return line + "\n";
         }
 
         /// <param name="missing">
@@ -1046,27 +1235,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             error = null;
             var log = new StringBuilder();
 
-            string workPath = Path.Combine(WorkRoot(workId), k_WorkJsonName);
-            if (File.Exists(workPath)) log.AppendLine($"- work.json 已存在，不覆寫：`{workId}`");
-            else
-            {
-                var work = new JsonData();
-                work[Key_WorkId] = workId;
-                work[Key_Title] = title;
-                work[Key_TitleOriginal] = titleOriginal ?? "";
-                work[Key_Author] = author ?? "";
-                // 區塊職責：aliases 是**日後搜尋的唯一入口**（中／日／英 + 常見異譯）。
-                // 物理意義：搜尋比對打的是 title / title_original / aliases 三欄；
-                //          漏建 alias 的後果不是「找不到」，是「找不到 → 有人再建一本」
-                //          （arakawa 雙 entry 的成因，2026-08-05 實測 101 本裡有四組重複）。
-                // 數值影響：純 metadata；不影響進度與章節。
-                work[Key_Aliases] = ToStringArray(aliases, title, titleOriginal);
-                work[Key_GenreTags] = ToStringArray(genreTags);
-                work[Key_SchemaVersion] = 1;
-                SaveJson(workPath, work);
-                log.AppendLine($"- ✅ 建立 work.json：`{workId}`《{title}》" +
-                               $"（aliases {work[Key_Aliases].Count} 筆）");
-            }
+            log.Append(EnsureWorkJson(workId, title, titleOriginal, author, aliases, genreTags));
 
             string mediaPath = Path.Combine(MediaRoot(mediaId), k_MediaJsonName);
             if (File.Exists(mediaPath))

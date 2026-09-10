@@ -45,7 +45,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             "閱讀心得庫讀寫（新 work/media/reader 模型）— 讀回與寫入同一套實作，與閱讀心得管理頁共用。";
 
         public override string ArgsSchema =>
-            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share|scan|authored_diff（required） | " +
+            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share|scan|authored_diff|authored_migrate（required） | " +
+            // ④ 搬遷（唯一會寫新 store 寫書線的入口）：**複製不移動**、不給 confirm ＝ 零寫入。
+            "　↳ authored_migrate ＝ TASK-0146 ④ 的搬遷器：舊 store → 新 store（四欄 ＋ chapters/ ＋ arcs/）；" +
+            "**不給 `confirm=1` ⇒ 只印計畫、一個位元組都不寫**；" +
+            "搬完會走 ③ 那支對拍器回讀（⛔ 不拿自己的「寫入成功」當收據） | " +
+            "confirm=1（authored_migrate 選填 —— 不給就是 dry-run） | " +
             // ③ 逐欄對拍（唯讀）：舊 store ↔ 新 store 的寫書線四欄＋正文容器。
             // ⚠ `book` 與 `work_id` **兩個都必填、不互相推導** —— 兩個 store 的 id 慣例不同，
             //   推導會讓「id 對不上」與「這本還沒搬」同形。
@@ -126,6 +131,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 case "share": await Op_Share(args, token); break;
                 case "scan": Op_Scan(args); break;
                 case "authored_diff": Op_AuthoredDiff(args); break;
+                case "authored_migrate": Op_AuthoredMigrate(args); break;
 
                 default:
                     throw new ArgumentException(
@@ -424,6 +430,45 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 $"# 🔍 Library authored_diff　`{book}` ↔ `{workId}`\n\n{headline}\n\n{report}");
             Debug.Log($"[{CommandType}] authored_diff {book} ↔ {workId} → {outcome}" +
                       (mismatched.Count > 0 ? $"（{string.Join(",", mismatched)}）" : ""));
+        }
+
+        /// <summary>
+        /// 區塊職責：④ 搬遷的 agent 入口 —— 舊 store 的一本 authored 書 → 新 store 的 `works/`。
+        /// 物理意義：**複製不移動**（@gura 的驗收條件是搬完兩側都 `HasFiles(1)`）；
+        /// 不給 <c>confirm=1</c> ＝ dry-run，零寫入。
+        /// 數值影響：confirm 時會建 work.json（不存在才建）、補四欄、複製 .md；⛔ 既有檔一律不覆寫。
+        /// <para>⚠ 回讀走的是 ③ 那支 <c>DiffWorkAuthored</c> —— 同一個判準讀取器，
+        /// ⛔ 不讓搬遷器自己出「我搬對了」的收據（那個證人跟寫入端同源）。</para>
+        /// </summary>
+        void Op_AuthoredMigrate(Dictionary<string, string> args)
+        {
+            string book = RequireId(args, "book");
+            string workId = RequireId(args, "work_id");
+            bool confirm = GetArg(args, "confirm", "").Trim() == "1";
+
+            var outcome = UCL_ReadingLibraryIO.MigrateAuthoredWork(book, workId, confirm,
+                out string report, out string error);
+
+            string headline;
+            switch (outcome)
+            {
+                case UCL_ReadingLibraryIO.AuthoredMigrateOutcome.Planned:
+                    headline = "🧪 **Planned** —— dry-run，**零寫入**。確認計畫沒問題就加 `--arg confirm=1`"; break;
+                case UCL_ReadingLibraryIO.AuthoredMigrateOutcome.Migrated:
+                    headline = "✅ **Migrated** —— 已搬（⚠ 判定看底下那段**回讀對拍**，⛔ 不是看這一行）"; break;
+                case UCL_ReadingLibraryIO.AuthoredMigrateOutcome.NotAuthored:
+                    headline = "⛔ **NotAuthored** —— 舊 store 那本不是寫書線的書 ⇒ 這支不搬它"; break;
+                case UCL_ReadingLibraryIO.AuthoredMigrateOutcome.OldStoreMissing:
+                    headline = "⛔ **OldStoreMissing** —— 舊 store 沒有這本 ⇒ 沒有可搬的來源"; break;
+                default:
+                    headline = "⛔ **ParseFailed** —— 有一步讀不動或寫不進去（⛔ 不當成「沒有內容」）"; break;
+            }
+
+            Cmd_Library_Helpers.ResolveLastOp(args,
+                $"# 📦 Library authored_migrate　`{book}` → `{workId}`\n\n{headline}\n\n" +
+                (string.IsNullOrEmpty(error) ? "" : $"> [!WARNING]\n> {error}\n\n") + report);
+            Debug.Log($"[{CommandType}] authored_migrate {book} → {workId} → {outcome}" +
+                      (string.IsNullOrEmpty(error) ? "" : $"（{error}）"));
         }
 
         /// <summary>

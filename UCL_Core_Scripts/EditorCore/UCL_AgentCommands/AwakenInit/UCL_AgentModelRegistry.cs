@@ -1,16 +1,24 @@
-// 區塊職責：agent 預設型號表，以及「model 欄被填成 agent 名」時的底層翻譯（C# 端）。
-// 物理意義：實測發現**提示反而讓人填錯** —— apex-one 的 system prompt 第一句是 "You are Antigravity"
-//          所以他把 Antigravity 填進 model；kaguya 填 Codex。兩人都是誠實作答，錯的是我們要求他們
-//          回答一個他們讀起來意思不同的問題。所以不靠提示，改在底層辨識並翻譯（Tim 2026-08-03 拍板）。
-// 數值影響：辨識無視大小寫／空白／連字號／底線；翻不出來**保留原值**而不是清空 ——
-//          原值至少是某人真的寫下的資訊，空白什麼都不是。
+// 區塊職責：trailer 型號欄的 **Editor 端 facade** —— 轉呼叫 SCP_Core 的共用實作，本檔不做任何解析。
+// 物理意義：Unity 與 senate.exe 各有一個宿主，而 trailer 只有一種正確答案 ⇒ 實作必須只有一份。
+//          本檔存在的唯一理由是**補上 Editor 才知道的兩個參數**（letters 根、央行區域），
+//          跟 `UCL_PersonaProfile` 那個 facade 是同一個樣板、同一個理由。
+// 數值影響：純唯讀。⛔ 不讀也不寫任何設定檔。
+//
+// 🩸 2026-09-10（TASK-0187，Tim 拍板）本檔退掉三樣東西：
+//   ① `RegistryPath` / `SaveAll` / `SaveModels` —— `AwakenInit/agent_models.json` **不再是輸入**。
+//      兩張表（vendors／models）已寫死在 `SCP_AgentModelRegistry`。
+//      理由：`UCL_Core` 是掛在多棵樹底下的 submodule，而那個檔是**專案級**的 ⇒ 同一位同事
+//      從不同的樹提交會得到不同的 trailer，而那寫進 git history 之後改不掉。
+//      實測（同一個 submodule、同一天）：`Zeta@summit(Claude / claude-opus-5)` 與
+//      `zeta@summit(claude-opus-5)` 並存 —— 差別只在「提交的人站在哪棵樹」。
+//   ② 自己那份 `s_Aliases` / `Normalize` / `Resolve` / `FormatTrailerModel` 實作 —— 全部轉呼叫。
+//   ③ `UCL_ActualAgent` 列舉當表 key 的種子 —— 正規清單改由共用層提供（key 與 value 同一處）。
+// ⛔ 這裡不准長出任何邏輯：facade 一旦「順手多做一點」就是第二份實作，
+//   而兩份實作對同一個 persona 給出不同答案時，**不會有任何一層報錯**。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Text;
 using UnityEngine;
-using UCL.Core.JsonLib;
 
 namespace UCL.Core.EditorLib.AgentCommands
 {
@@ -25,203 +33,48 @@ namespace UCL.Core.EditorLib.AgentCommands
 
     public static class UCL_AgentModelRegistry
     {
-        public static string RegistryPath =>
-            Path.Combine(UCL_AgentCommandsPath.DataRoot, "AwakenInit", "agent_models.json").Replace('\\', '/');
+        /// <summary>正規 actual_agent → 廠牌名。**唯讀** —— 值寫死在共用層，不是設定。</summary>
+        public static Dictionary<string, string> LoadVendors()
+            => new Dictionary<string, string>(
+                (IDictionary<string, string>)SCP.Core.Letters.SCP_AgentModelRegistry.Vendors,
+                StringComparer.OrdinalIgnoreCase);
 
-        // ⛔ `PersonaPath` 已退場（2026-08-21）：persona 欄位改走 UCL_PersonaProfile 接縫
-        //    （中央 json 退場、model / actual_agent 住 letters/<p>/profile/）。
-
-        // 已知會被填進 model 欄的 agent 別名 → 正規 actual_agent。
-        // 收的是**人真的會寫出來的字**，不是理論上的正確值；漏一個就翻不出來，多一個沒有代價。
-        // value 為 None(空字串) = 有歧義：Claude / Gemini 也可能是誠實給的模糊型號，一律當型號不翻。
-        static readonly Dictionary<string, string> s_Aliases = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            { "codex", "Codex" },
-            { "openai", "Codex" },
-            { "chatgpt", "Codex" },
-            { "claudecode", "ClaudeCode" },
-            { "anthropic", "ClaudeCode" },
-            { "antigravity", "Antigravity" },
-            { "claude", "" },
-            { "gemini", "" },
-        };
+        /// <summary>正規 actual_agent → 預設型號。**唯讀** —— 值寫死在共用層，不是設定。</summary>
+        public static Dictionary<string, string> LoadModels()
+            => new Dictionary<string, string>(
+                (IDictionary<string, string>)SCP.Core.Letters.SCP_AgentModelRegistry.Models,
+                StringComparer.OrdinalIgnoreCase);
 
         /// <summary>辨識用正規化 —— 無視大小寫、空白、連字號、底線。</summary>
         public static string Normalize(string value)
-        {
-            if (string.IsNullOrEmpty(value)) return "";
-            var sb = new StringBuilder(value.Length);
-            foreach (char c in value)
-                if (char.IsLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
-            return sb.ToString();
-        }
-
-        public static Dictionary<string, string> LoadModels()
-        {
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (UCL_ActualAgent agent in Enum.GetValues(typeof(UCL_ActualAgent)))
-            {
-                if (agent == UCL_ActualAgent.None) continue;
-                map[agent.ToString()] = "";
-            }
-            try
-            {
-                if (!File.Exists(RegistryPath)) return map;
-                var data = JsonData.ParseJson(File.ReadAllText(RegistryPath));
-                if (data == null || !data.Contains("models")) return map;
-                var models = data["models"];
-                foreach (var key in new List<string>(map.Keys))
-                    if (models.Contains(key)) map[key] = models.GetString(key, "");
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[AgentModel] 讀預設型號失敗（視為全空）：{e.Message}");
-            }
-            return map;
-        }
-
-        /// <summary>actual_agent → 廠牌名。vendor 是可驗的必填身分，由 actual_agent 推導不靠人填。</summary>
-        public static Dictionary<string, string> LoadVendors()
-        {
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (UCL_ActualAgent agent in Enum.GetValues(typeof(UCL_ActualAgent)))
-            {
-                if (agent == UCL_ActualAgent.None) continue;
-                map[agent.ToString()] = "";
-            }
-            try
-            {
-                if (!File.Exists(RegistryPath)) return map;
-                var data = JsonData.ParseJson(File.ReadAllText(RegistryPath));
-                if (data == null || !data.Contains("vendors")) return map;
-                var vendors = data["vendors"];
-                foreach (var key in new List<string>(map.Keys))
-                    if (vendors.Contains(key)) map[key] = vendors.GetString(key, "");
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[AgentModel] 讀廠牌表失敗（視為全空）：{e.Message}");
-            }
-            return map;
-        }
-
-        /// <summary>
-        /// trailer 的型號欄字串。規則（2026-08-03 三票拍板）：
-        /// vendor 推不出來 → 整段沿用原值（不印假精確的 `?`）；version 等於 vendor → 只印 vendor；
-        /// **不剝 version 開頭的 vendor 前綴** —— 冗餘只是難看，剝字串是猜測。
-        /// </summary>
-        public static string FormatTrailerModel(string persona)
-        {
-            var resolved = Resolve(persona);
-            string raw = resolved.Model ?? "";
-            string actualAgent = "";
-            try
-            {
-                // 走接縫（2026-08-21：中央 persona json 退場，actual_agent 住 profile/）
-                var data = UCL_PersonaProfile.GetRaw(persona);
-                if (data != null) actualAgent = data.GetString("actual_agent", "");
-            }
-            catch { /* 讀不到就當沒有 vendor */ }
-            if (string.IsNullOrEmpty(actualAgent)) return raw;
-            var vendors = LoadVendors();
-            if (!vendors.TryGetValue(actualAgent, out string vendor) || string.IsNullOrWhiteSpace(vendor))
-                return raw;
-            vendor = vendor.Trim();
-            if (string.IsNullOrEmpty(raw) || raw == "?" || Normalize(raw) == Normalize(vendor)) return vendor;
-            return $"{vendor} / {raw}";
-        }
-
-        public static bool SaveModels(Dictionary<string, string> models, out string error)
-            => SaveAll(models, LoadVendors(), out error);
-
-        /// <summary>
-        /// 整檔覆寫 models + vendors。**兩張表必須一起寫** —— 只寫一張會把另一張洗掉
-        /// （同檔整檔覆寫的典型陷阱，而且它不會報錯）。
-        /// </summary>
-        public static bool SaveAll(Dictionary<string, string> models, Dictionary<string, string> vendors, out string error)
-        {
-            error = "";
-            try
-            {
-                var sb = new StringBuilder();
-                sb.AppendLine("{");
-                sb.AppendLine("  \"_schema_version\": 1,");
-                sb.AppendLine("  \"_description\": \"agent 預設型號（key = actual_agent）。persona 的 model 欄若被填成 agent 名，解析時自動翻成這裡的值。唯一設定入口是 UCL_PersonaAgentAdminPage。\",");
-                sb.AppendLine("  \"models\": {");
-                int i = 0;
-                foreach (var kv in models)
-                {
-                    string comma = (++i < models.Count) ? "," : "";
-                    sb.AppendLine($"    \"{kv.Key}\": \"{Esc(kv.Value)}\"{comma}");
-                }
-                sb.AppendLine("  },");
-                sb.AppendLine("  \"vendors\": {");
-                int j = 0;
-                foreach (var kv in vendors)
-                {
-                    string comma = (++j < vendors.Count) ? "," : "";
-                    sb.AppendLine($"    \"{kv.Key}\": \"{Esc(kv.Value)}\"{comma}");
-                }
-                sb.AppendLine("  }");
-                sb.AppendLine("}");
-                string dir = Path.GetDirectoryName(RegistryPath);
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                File.WriteAllText(RegistryPath, sb.ToString(), new UTF8Encoding(false));
-                return true;
-            }
-            catch (Exception e) { error = e.Message; return false; }
-        }
-
-        static string Esc(string v) => (v ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+            => SCP.Core.Letters.SCP_AgentModelRegistry.Normalize(value);
 
         /// <summary>這個字串是不是 agent 名？是的話回正規 actual_agent，不是（或有歧義）回空字串。</summary>
         public static string IdentifyAgent(string value)
-        {
-            string n = Normalize(value);
-            if (string.IsNullOrEmpty(n)) return "";
-            foreach (UCL_ActualAgent agent in Enum.GetValues(typeof(UCL_ActualAgent)))
-            {
-                if (agent == UCL_ActualAgent.None) continue;
-                if (n == Normalize(agent.ToString())) return agent.ToString();
-            }
-            return s_Aliases.TryGetValue(n, out string mapped) ? mapped : "";
-        }
+            => SCP.Core.Letters.SCP_AgentModelRegistry.IdentifyAgent(value);
 
         /// <summary>persona.model → 是 agent 名就翻成該 agent 預設型號；翻不出來保留原值。</summary>
         public static UCL_AgentModelResolution Resolve(string persona)
         {
-            var result = new UCL_AgentModelResolution();
-            string raw = "", actualAgent = "";
-            try
+            var aScp = SCP.Core.Letters.SCP_AgentModelRegistry.Resolve(
+                UCL_LettersPath.Root, persona,
+                Treasury.UCL_CentralBankSettings.CurrencyId,
+                w => Debug.LogWarning(w));
+            return new UCL_AgentModelResolution
             {
-                var data = UCL_PersonaProfile.GetRaw(persona);
-                if (data != null)
-                {
-                    raw = (data.GetString("model", "") ?? "").Trim();
-                    actualAgent = data.GetString("actual_agent", "");
-                }
-            }
-            catch (Exception e) { Debug.LogWarning($"[AgentModel] 讀 persona {persona} 失敗：{e.Message}"); }
-
-            result.Raw = raw;
-            result.AgentKey = actualAgent;
-            if (string.IsNullOrEmpty(raw)) { result.Model = "?"; result.Source = "empty"; return result; }
-
-            string key = IdentifyAgent(raw);
-            if (string.IsNullOrEmpty(key)) { result.Model = raw; result.Source = "as-written"; return result; }
-
-            result.AgentKey = key;
-            var models = LoadModels();
-            if (models.TryGetValue(key, out string mapped) && !string.IsNullOrWhiteSpace(mapped))
-            {
-                result.Model = mapped.Trim();
-                result.Source = "agent-translated";
-                return result;
-            }
-            result.Model = raw;                 // 認得出是 agent 名但後台沒設 → 別把資訊擦掉
-            result.Source = "agent-unmapped";
-            return result;
+                Model = aScp.Model,
+                Raw = aScp.Raw,
+                Source = aScp.Source,
+                AgentKey = aScp.AgentKey,
+            };
         }
+
+        /// <summary>trailer 的型號欄字串（`vendor / version`）。規則與射程見共用層。</summary>
+        public static string FormatTrailerModel(string persona)
+            => SCP.Core.Letters.SCP_AgentModelRegistry.FormatTrailerModel(
+                UCL_LettersPath.Root, persona,
+                Treasury.UCL_CentralBankSettings.CurrencyId,
+                w => Debug.LogWarning(w));
     }
 }
 #endif

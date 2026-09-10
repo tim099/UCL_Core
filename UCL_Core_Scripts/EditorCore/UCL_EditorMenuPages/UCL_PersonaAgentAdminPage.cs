@@ -582,27 +582,28 @@ namespace UCL.Core.EditorLib.Page
                 string aKey = m_ModelAgentSel.ToString();
                 if (!m_ModelDrafts.ContainsKey(aKey)) m_ModelDrafts[aKey] = "";
                 if (!m_VendorDrafts.ContainsKey(aKey)) m_VendorDrafts[aKey] = "";
+                // 區塊職責：兩張表**唯讀展示**（TASK-0187，Tim 2026-09-10 拍板寫死進 code）。
+                // 物理意義：vendor 描述的是「這個工具是誰家的」，跟專案無關 ⇒ 它不該是專案級設定檔。
+                // 數值影響：本區塊零寫入。要改值＝改 `SCP_AgentModelRegistry` 的兩張表並重編兩個宿主。
+                // 🩸 為什麼把編輯 UI 拿掉而不是留著：舊值放在**專案級**的 `AwakenInit/agent_models.json`，
+                //   而 `UCL_Core` 掛在多棵樹底下 ⇒ 同一位同事從不同的樹提交會得到不同的 trailer
+                //   （實測同一天並存：`Zeta@summit(Claude / claude-opus-5)` 與 `zeta@summit(claude-opus-5)`），
+                //   而那**寫進 git history 之後改不掉**。留一個「可覆寫」的入口＝把那個分裂原封不動留著。
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label("廠牌 vendor", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_VendorDrafts[aKey] = GUILayout.TextField(m_VendorDrafts[aKey] ?? "");
+                    GUILayout.Label($"<b>{(m_VendorDrafts[aKey] ?? "")}</b>", WrapLabelStyle);
                 }
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label("預設型號", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(80)));
-                    m_ModelDrafts[aKey] = GUILayout.TextField(m_ModelDrafts[aKey] ?? "");
-                    if (GUILayout.Button("💾 儲存", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)), GUILayout.Width(UCL_GUIStyle.GetScaledSize(72))))
-                    {
-                        // 兩張表一起寫 —— 只寫一張會把另一張洗掉，而且不會報錯。
-                        if (UCL_AgentModelRegistry.SaveAll(m_ModelDrafts, m_VendorDrafts, out string aErr))
-                            SetResult($"✓ {aKey} 廠牌／預設型號已存 → {UCL_AgentModelRegistry.RegistryPath}");
-                        else
-                            SetResult($"❌ 儲存失敗：{aErr}");
-                    }
+                    GUILayout.Label($"<b>{(m_ModelDrafts[aKey] ?? "")}</b>", WrapLabelStyle);
                 }
                 GUILayout.Label("vendor 是 trailer 必印的身分（由 actual_agent 推導）；預設型號只在 model 欄被填成 agent 名時拿來翻譯。",
                     WrapLabelStyle);
-                GUILayout.Label($"檔案：{UCL_AgentModelRegistry.RegistryPath}", WrapLabelStyle);
+                GUILayout.Label("🔒 <b>唯讀</b> —— 這兩張表寫死在 <b>SCP_AgentModelRegistry</b>（共用層，Unity 與 senate.exe 同一份）。"
+                    + "改值要動 code 並重編兩個宿主；⛔ 刻意不提供檔案覆寫，否則不同的樹會組出不同的 trailer。",
+                    WrapLabelStyle);
 
                 // 攤開「誰會被這格影響」—— 只看設定值看不出效果，看得到受影響的人才知道改了什麼。
                 GUILayout.Space(4);

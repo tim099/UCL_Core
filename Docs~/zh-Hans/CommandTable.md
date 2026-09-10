@@ -118,8 +118,8 @@ related:
 - **必做**: 执行 `senate cmd unity-recompile --arg persona=<me>`（触发＋等到**那一趟**结束才印）。
   只想看现况不触发 ⇒ `senate cmd unity-compile-status`。
   ⛔ 只量 Unity assemblies，**不涵盖 `senate.exe`**。状态档不存在时的 Editor.log fallback 仍只有 python 有：
-  `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log`。
-  ⛔ **不要用 `check_compile.py --watch`** —— 它会回上一次的快照且不印 STALE（TASK-0154）。
+  ⛔ 旧的 `check_compile.py` **已于 2026-09-10 退场**（**整支删除**，文件不存在了）；`--fallback-log` / `--editor-alive` 两格**没有替代品**。
+  🩸 血证留着：那支的 `--watch` 会回上一次的快照且不印 STALE（TASK-0154）——而 CLI 这侧**送出触发的那一刻天生就是基准**，那个洞在新结构里不存在。
 - **不要做**: 在编译还有错时跑 runtime 测试；只看 `Simulation_*.log`。
 
 ### 建立 AgentCommand 指令

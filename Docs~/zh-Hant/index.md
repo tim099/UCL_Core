@@ -140,7 +140,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | 🛠️ [Create_Persona_Workflow](Workflows/Create_Persona_Workflow.md) | 步驟化 SOP — 在 UCL_Core 與 Python 喚醒系統下，建立全新 Persona 人格所需的一切設定。涵蓋 Registry 註冊、頭像生成與 UCL_SpriteAsset 登記、UCL_ChatTavernPersonaCardAsset 角色卡配置，以及 Templates~ 備份同步工作流。 |
 | 📦 [Persona_Letters_Submodule_Workflow](Workflows/Persona_Letters_Submodule_Workflow.md) | **persona 信件庫 submodule 化 SOP** — 純資料夾 → 獨立 repo → 掛回 `letters/<persona>`。**護欄先於 add**（session_token / 信箱不得入公開 history）/ 換手對帳 CRLF 假紅燈 / parent index 先看再 commit / clone-local 配置逐份設 / hook 兩向實測讀訊息本文 / 驗收清單 + 8 大「看起來成功」地雷速查 |
 | 🔁 [Edit_Recompile_Loop_Workflow](Workflows/Edit_Recompile_Loop_Workflow.md) ⭐ | **agent 改 .cs 後的強制同步 SOP** — `Cmd_Recompile` + Python `recompile` 子命令 + `.compile_status.json` 三件套；Edit → recompile → 0 errors 才繼續，否則讀 messages 修錯 loop（≤5 輪），故障模式對照表 |
-| 🔧 [CompileError_Diagnose_Workflow](Workflows/CompileError_Diagnose_Workflow.md) ⭐ | **Unity Compile Error 排查 SOP** — `UCL_CompileErrorTracker` + `check_compile.py` standalone Python 工具，讓 agent 在「Cmd 系統因 compile error 也載不進來」的雞生蛋情境下也能讀到 dedup 過 of 錯誤清單。含 4 步排查 SOP、8 大常見 CS 錯誤對照、asmdef 跨界 / namespace 陷阱、Editor.log session 邊界偵測演算法、實戰 case study |
+| 🔧 [CompileError_Diagnose_Workflow](Workflows/CompileError_Diagnose_Workflow.md) ⭐ | **Unity Compile Error 排查 SOP** — `UCL_CompileErrorTracker` + Senate CLI（`unity-recompile` / `unity-compile-status`），讓 agent 在「Cmd 系統因 compile error 也載不進來」的雞生蛋情境下也能讀到 dedup 過 of 錯誤清單。含 4 步排查 SOP、8 大常見 CS 錯誤對照、asmdef 跨界 / namespace 陷阱、Editor.log session 邊界偵測演算法、實戰 case study |
 | 💰 [Treasury_Account_Consolidation_Workflow](Workflows/Treasury_Account_Consolidation_Workflow.md) | **帳號歸戶 SOP** — 錢落到哪個帳戶的六段解析規則 / 解析何時**不**介入（轉帳認字面）/ 人工標記 → 審批 → 核准才動錢 / 幽靈帳號銷戶三道閘 / 解析不出來時「搬走 vs 原地承認」的二選一 / SelfTest 六條不變式 / 七個實際踩過的地雷 |
 | 🪙 [Bank_Region_Binding_Migration_Workflow](Workflows/Bank_Region_Binding_Migration_Workflow.md) | **區域綁定遷移 SOP（半自動）** — 在新專案把 persona → 帳號的綁定導出成 `letters/<persona>/bank/<區域ID>.md` / 四格前置檢查（UCL_Core 版本・Editor・別區 ID 不可同名）/ **dry-run 先印給人看**再落檔 / 四格驗收讀數（含「別區的檔沒被動」）/ **硬警告：綁定值是 agent id，而錢可能還在舊帳號名下** —— 解析端在改名歸併前不可直接把它當帳號用（症狀是薪水靜默轉向餘額 0 的合法帳號）/ 六個卡住出口 |
 | 🌐 [Plurk_Posting_Workflow](Workflows/Plurk_Posting_Workflow.md) ⭐ | **對外發噗 SOP（v2：走 `Cmd Plurk`）** — `lint → preview → post`（post 需 `confirm=1`，預設 dry-run）／**五欄**交付單（含 `公開度`，沒填就擋、⛔ 不預設「所有人」）／排版三鐵律（不手動斷行・300 字元・表情以特徵為準）／超限拆則「是兩半還是兩篇」的判準／**機器只驗形式，公開度審查與 `confirm` 永遠是人的** |
@@ -164,7 +164,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 | 文件 | 一句話描述 |
 |---|---|
-| 🐍 [Tools/Python_Tools_Index](Tools/Python_Tools_Index.md) ⭐ | **UCL_Core/Tools~ 全 Python 工具索引** — awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。含 project-specific Tools 對照 + Localize 工具缺位提醒 |
+| 🐍 [Tools/Python_Tools_Index](Tools/Python_Tools_Index.md) ⭐ | **UCL_Core/Tools~ 全 Python 工具索引** — awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (hooks；check_compile 已退場) / migration scripts / skill installer。含 project-specific Tools 對照 + Localize 工具缺位提醒 |
 
 ---
 

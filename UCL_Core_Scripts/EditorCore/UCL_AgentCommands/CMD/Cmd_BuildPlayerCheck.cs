@@ -4,7 +4,7 @@
 // 物理意義: BuildPipeline.BuildPlayer + BuildOptions.BuildScriptsOnly → 只跑 player script compile,
 //          不打 asset bundle / addressables / app packaging, ~5-15s vs full build 30-60s.
 // 數值影響: 出 BuildReport, parse summary.result + steps[].messages → 寫 markdown to _last_op.md
-//          (對齊 check_compile.py 格式給 agent 讀)。
+//          (對齊 `senate cmd unity-compile-status` 的輸出格式給 agent 讀)。
 // 設計取捨:
 //   - 走 BuildOptions.BuildScriptsOnly 而非完整 BuildPlayer — 10x 快, 對 CS 驗證足夠
 //   - 用 BuildProfile.GetActiveBuildProfile() 取當前 (per Tim 指定); 沒設 profile 退 EditorUserBuildSettings
@@ -28,7 +28,7 @@ namespace UCL.Core.EditorLib.AgentCommands
 {
     /// <summary>
     /// 用當前 Build Profile 跑 Player Script Compile-only build, 驗 CS error / preprocessor bug。
-    /// 比 check_compile.py 強之處: 走 Player 編譯路徑, 抓得到 #if UNITY_EDITOR 排除後的 missing type
+    /// 比 `senate cmd unity-compile-status` 強之處: 走 Player 編譯路徑, 抓得到 #if UNITY_EDITOR 排除後的 missing type
     /// + Mono preprocessor verbatim-string bug 等 Editor compile 看不出來的問題。
     /// </summary>
     public class Cmd_BuildPlayerCheck : UCL_AgentCommandHandlerBase

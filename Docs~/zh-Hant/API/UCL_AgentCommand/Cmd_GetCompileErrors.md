@@ -14,7 +14,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 ## 1. 概覽
 
 - **CommandType**：`GetCompileErrors`
-- **原始碼 ShortDescription**：Read UCL_CompileErrorTracker JSON and report Unity compile status. For broken-assembly cases, use Tools~/check_compile.py instead (standalone Python).
+- **原始碼 ShortDescription**：Read UCL_CompileErrorTracker JSON and report Unity compile status. For broken-assembly cases, use `senate cmd unity-compile-status` instead (local, no Editor needed).
 
 **什麼時候用**：想在 Editor 內拿編譯錯誤清單時。
 
@@ -29,7 +29,7 @@ senate ucmd run GetCompileErrors --arg <k>=<v>
 
 ## 3. 注意
 
-- ⚠ **assembly 整個編不起來時這支也會失效**（它自己也在那個 assembly 裡）——那種情況要走 `Tools~/AgentCommands/check_compile.py`，那支是 standalone Python、不依賴 Cmd 系統。
+- ⚠ **assembly 整個編不起來時這支也會失效**（它自己也在那個 assembly 裡）——那種情況要走 `senate cmd unity-compile-status`，它本地跑、不需要 Editor、不依賴 Cmd 系統。（⛔ 舊的 `Tools~/AgentCommands/check_compile.py` 2026-09-10 **已刪除**。）
 - 改完 .cs 的完整手勢是 `senate ucmd run Recompile`（送編譯並等它跑完）；**Cmd 回 Success 只代表請求被收下，不代表編譯發生過。**
 
 ## 4. 關聯

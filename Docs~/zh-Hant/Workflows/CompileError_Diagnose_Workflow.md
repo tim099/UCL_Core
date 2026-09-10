@@ -1,6 +1,6 @@
 ---
 title: Unity Compile Error 排查工作流程
-description: 用 UCL_CompileErrorTracker 寫的 .compile_status.json ＋ Senate CLI（unity-recompile / unity-compile-status，python check_compile.py 尚未退場），讓 agent 即使在「Cmd 系統因 compile error 也載不進來」的雞生蛋情境下，也能讀到完整錯誤清單；含 dedupe / log fallback / session 邊界偵測 / 4 步排查 SOP / 8 大常見錯誤類型對照 / 實戰 case study
+description: 用 UCL_CompileErrorTracker 寫的 .compile_status.json ＋ Senate CLI（unity-recompile / unity-compile-status；python check_compile.py 已於 2026-09-10 退場），讓 agent 即使在「Cmd 系統因 compile error 也載不進來」的雞生蛋情境下，也能讀到完整錯誤清單；含 dedupe / log fallback / session 邊界偵測 / 4 步排查 SOP / 8 大常見錯誤類型對照 / 實戰 case study
 last_updated: 2026-09-07
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [編譯錯誤, compile error, CompileError, CS0103, CS0117, CS1503, CS0246, asmdef, assembly, 排查, debug, troubleshooting]
@@ -16,8 +16,9 @@ tags: [compile, debug, agent_commands, workflow]
 > `senate cmd unity-compile-status`（只讀現況，**不需要 Editor**）。兩者都只讀 `.compile_status.json`
 > 這個檔，**不依賴 Cmd 系統**（那正是本工作流存在的前提：編譯壞掉時 Cmd 也載不進來）。
 >
-> python [`check_compile.py`](../../../Tools~/AgentCommands/check_compile.py) **尚未退場**，仍保留
-> `--fallback-log`（解 Editor.log）與 `--editor-alive`（心跳）這兩格 CLI 還沒移的能力。
+> ⛔ python `check_compile.py` **已於 2026-09-10 整支刪除**（Tim 拍板）—— 檔案不存在了。
+> ⚠ 而 `--fallback-log`（解 Editor.log）與 `--editor-alive`（心跳）**沒有搬過去，也沒有替代品** ——照實記在這裡，不要以為換個入口就有。
+> ⇒ 狀態檔不存在時，`unity-compile-status` 說的是「**沒有讀數**」而不是 0 errors；Editor 在不在，改看 `unity-recompile` 是否逾時。
 
 ---
 
@@ -30,12 +31,12 @@ senate cmd unity-recompile --arg persona=<me>
 # 只讀現況（不觸發、不需要 Editor）—— 它會自己說明「我不知道這是不是你的改動」
 senate cmd unity-compile-status
 
-# 狀態檔不存在 → fallback 解 Editor.log（**CLI 未移，仍走 python**）
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log
+# ⛔ 狀態檔不存在時：沒有 fallback 了（舊的 --fallback-log 隨 check_compile.py 一起被刪掉了）
+#    unity-compile-status 會說「沒有讀數」——⛔ 那不等於 0 errors，兩者的處置相反
 ```
 
 > [!WARNING]
-> ⛔ **`check_compile.py --watch` 會給假綠燈（TASK-0154）—— 改走 `unity-recompile`。**
+> 🩸 **⛔ 血證（留著，因為這個形狀會換工具重來）：舊的 `check_compile.py --watch` 會給假綠燈（TASK-0154）。**
 > 它的結束條件只有 `in_progress=false`，而觸發還沒開始時那已經是 false ⇒ 回上一次的快照。
 > 🩸 2026-09-07 實測：送出 recompile 後立刻 `--watch`，印出的是**三天前**（`2026-09-04T17:14`）
 > 那份、`Errors: 0`，**而且沒印 STALE 橫幅** —— 不帶 `--watch` 時同一支工具有印。
@@ -280,7 +281,7 @@ sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 - [`UCL_CompileErrorTracker.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/UCL_CompileErrorTracker.cs) — Tracker 本體
 - [`Cmd_GetCompileErrors.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/CMD/Cmd_GetCompileErrors.cs) — Cmd 包裝（healthy 狀態才用）
 - `senate cmd unity-recompile` ／ `senate cmd unity-compile-status` — **主路徑**（Senate CLI，2026-09-07 起）
-- [`check_compile.py`](../../../Tools~/AgentCommands/check_compile.py) — python 工具（**尚未退場**；`--fallback-log` / `--editor-alive` 仍只有它有）
+- `check_compile.py` — ⛔ **已於 2026-09-10 整支刪除**（歷史見 `git log`）；`--fallback-log` / `--editor-alive` 兩格沒有替代品
 - [Workflows/Create_Cmd_Workflow](Create_Cmd_Workflow.md) — 新增 Cmd SOP
 - [API/UCL_AgentCommand/UCL_AgentCommand_Architecture](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command 系統架構
 

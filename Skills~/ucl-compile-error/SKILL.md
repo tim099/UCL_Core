@@ -4,7 +4,8 @@ description: |
   Unity compile error 排查。當改完 .cs 後懷疑編譯有錯、agent 改了腳本要驗收、或使用者問「編譯有錯嗎」「CS0103 / CS0117 / CS1503 / CS0246」「assembly / asmdef」相關問題時用本 skill。
   主入口是 Senate CLI：`senate cmd unity-recompile`（觸發＋等到那一趟編譯結束）／
   `senate cmd unity-compile-status`（只讀現況，不需要 Editor）。
-  python `check_compile.py` 仍在（尚未退場），保留 `--fallback-log` / `--editor-alive` 那幾格 CLI 還沒移的能力。
+  ⛔ python `check_compile.py` **已於 2026-09-10 整支刪除**（檔案不存在了）——
+  `--fallback-log` / `--editor-alive` 那兩格**沒有搬過去**，見本檔「沒有替代品的那兩格」。
 trigger: { on_files: ["*.cs"], on_intent: ["編譯錯", "compile error", "CS0103", "CS0117", "CS1503", "CS0246", "asmdef", "assembly"] }
 ---
 
@@ -35,20 +36,22 @@ senate cmd unity-compile-status
 （Unity 那側 LangVersion 9、nullable 沒開；Senate 那側 nullable 開著且警告當錯誤）。
 **兩個宿主的尺不同形，而且不可以合成一把。**
 
-### python 那支還在（**尚未退場**），這幾格 CLI 還沒移
+### ⛔ python 那支已退場（2026-09-10，Tim 拍板）—— 而**兩格能力沒有搬過去**
 
-```bash
-# .compile_status.json 不存在 → fallback 解 Editor.log（CLI 沒移）
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log
+`check_compile.py` **已整支刪除**（2026-09-10）—— 檔案不存在了，跑它會得到 `No such file`。
+⛔ 先前一度改成 exit 2 的指路 stub，同日 Tim 判定直接刪 —— 保留 stub 的唯一理由是「回 0 會讓呼叫端把『什麼都沒做』讀成『檢查通過』」，
+而 `No such file` 是**非零退出＋一句話說清楚**，同樣不會被讀成綠燈（TASK-0154：沒發生的事看起來像綠燈）。
 
-# Editor 還在不在 tick（純 stat 心跳檔，不送 Cmd）（CLI 沒移）
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --editor-alive
+| 舊用法 | 現在走哪 |
+|---|---|
+| `--errors-only` / `--format json` / `--max` | `senate cmd unity-compile-status`（本地跑，含 ErrorLog 交叉對帳） |
+| `--watch` | `senate cmd unity-recompile --arg persona=<me>`（送出時刻＝基準，等那一趟結束） |
+| `--strict-fresh` | 同上 —— `unity-recompile` 天生只收「晚於基準」的那一份 |
+| **`--fallback-log`**（`.compile_status.json` 不存在時解 Editor.log） | ⛔ **沒有替代品**。`unity-compile-status` 在狀態檔不存在時說「**沒有讀數**」而不是 0 errors ⇒ 那個情境的答案是「沒有量到」 |
+| **`--editor-alive`**（心跳停跳偵測） | ⛔ **沒有替代品**。Editor 在不在，改看 `unity-recompile` 是否逾時（逾時會明說 `delegate_failure = timeout`，且**刻意不去讀上一輪的回傳檔**） |
 
-# CI / 腳本：狀態沒涵蓋改動就 exit 4（CLI 這側改由 unity-recompile 的 exit 4 表達）
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --strict-fresh
-```
-
-> 🩸 **⛔ `check_compile.py --watch` 已知會給假綠燈（TASK-0154）——改走 `unity-recompile`。**
+> 🩸 **⛔ `check_compile.py --watch` 曾給假綠燈（TASK-0154）—— 那支已於 2026-09-10 整支退場。**
+> 血證留著，因為**這個形狀會換工具重來**：
 > 它的結束條件只有 `in_progress=false`，而**觸發還沒開始時它已經是 false**
 > ⇒ 直接返回上一次的快照。2026-09-07 實測：送出 recompile 後立刻 `--watch`，
 > 印出的是 **三天前**（`2026-09-04T17:14`）那份，Errors: 0，**而且沒印 STALE 橫幅**
@@ -80,12 +83,15 @@ python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --strict-f
 > 主執行緒長工 / Editor 關閉期間都會停跳。而且停跳只有在**恢復的那一拍**才寫得出來：
 > 進行中的凍結沒有紀錄，Editor 死掉不再回來則永遠不寫。**沒有條目 ≠ 沒有停跳。**
 
-## 💓 `--editor-alive` — Editor 還在 tick 嗎（純 stat 一個檔，不送 Cmd）
+## 💓 `--editor-alive` — ⛔ **這一格隨 `check_compile.py` 一起沒了（2026-09-10 整支刪除），沒有替代品**
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --editor-alive
-# exit 0 = 在 tick / 1 = 沒在 tick / 3 = 無心跳檔
+# ⛔ 這支工具已於 2026-09-10 整支刪除，沒有替代品（舊用法：check_compile.py --editor-alive）
 ```
+
+⇒ 現在要判「Editor 在不在」只有一條路：**`senate cmd unity-recompile` 是否逾時**（逾時會印 `delegate_failure = timeout`，而且**刻意不去讀上一輪的回傳檔** ——逾時代表它沒被更新，讀到的會是上一輪那份「格式完整、數字合理」的舊快照）。
+⚠ 代價要說清楚：那是**送一支 Cmd 去探**，比純 stat 心跳檔慢，而且 Editor 忙的時候要等到逾時。
+⛔ 而下面這一整節講的性質（心跳是瞬時值、答的不是「我的改動編了沒」）**仍然成立**，所以留著 —— 它防的是「拿一個活著的訊號當成編譯過了」，那個誤讀跟工具無關。
 
 用途：**「現在叫 Editor 做事會不會等」**。編譯 / domain reload 期間整個 update 迴圈不跑 → 心跳自然停。
 比送一支 Cmd 探針快得多（探針要 2s 空閒 / 13s 編譯中）。順帶印最近一次停跳（時間 + 停多久）。

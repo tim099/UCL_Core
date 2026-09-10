@@ -19,7 +19,7 @@ related:
 
 | 現象 | 細節 |
 |---|---|
-| Editor recompile 0 errors | `check_compile.py` 永遠綠燈 |
+| Editor recompile 0 errors | Editor 側讀數永遠綠燈（`unity-compile-status` 也一樣） |
 | Player Build 卻 fail | Tim 跑 Addressables Build 才暴露 CS error |
 | Lag time | 通常一輪修復 cycle: Tim 跑 build → 拿 error log 給 agent → agent 看 → fix → Tim 再跑 build |
 | 根因類別 | 多半屬「Editor 有 define `UNITY_EDITOR` 但 Player 沒有」family — `#if UNITY_EDITOR` guard 不一致, Mono preprocessor verbatim string bug, Editor-only type 被 Player asmdef code 引用 等 |
@@ -62,7 +62,7 @@ related:
 ┌──────────────────────────────────────────────────────────┐
 │ Step 4 — 套對應 fix family + 動工                         │
 │   - 改檔                                                  │
-│   - check_compile.py 確認 Editor 還是 0 errors            │
+│   - unity-compile-status 確認 Editor 還是 0 errors        │
 └──────────────────────────────────────────────────────────┘
                           ↓
                   ┌───── ↺ ─────┐
@@ -122,7 +122,7 @@ grep -nE "using UnityEditor|EditorApplication|AssetDatabase" <file>
 1. **(最佳) 搬走** — UCL_CodeLocalize regular string with `\n` escape
 2. (workaround) string concat 讓 source line 不以 `#` 開頭
 
-**Editor 為何 0 errors**: Roslyn 正確 track string state; Mono 不會。`check_compile.py` 永遠看不出此 bug, 必須跑 Player Build。
+**Editor 為何 0 errors**: Roslyn 正確 track string state; Mono 不會。Editor 側的讀數（`unity-compile-status` / 舊的 `check_compile.py`）永遠看不出此 bug, 必須跑 Player Build。
 
 ### Family C: Editor-only API in Player code (CS0234)
 
@@ -163,7 +163,7 @@ grep -nE "using UnityEditor|EditorApplication|AssetDatabase" <file>
 |---|---|
 | 跑 Player Build check | `senate ucmd run BuildPlayerCheck --arg mode=scripts_only` |
 | 讀結果 | `cat AgentCommands/ChatTavern/_last_op.md` |
-| Editor 端 quick check | `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only` |
+| Editor 端 quick check | `senate cmd unity-compile-status`（本地跑，不需要 Editor） |
 | Refresh + recompile | `python ... run Recompile` |
 
 ---

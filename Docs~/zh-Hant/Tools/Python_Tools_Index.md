@@ -1,6 +1,6 @@
 ---
 title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
-description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (check_compile / hooks) / migration scripts / skill installer。
+description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (hooks；check_compile 已退場) / migration scripts / skill installer。
 last_updated: 2026-09-07
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
 related:
@@ -29,7 +29,7 @@ Tools~/
 └── AgentCommands/
     ├── awakening.py                    # 早安 / 晚安 ritual CLI
     ├── private_letter.py                # 密封信 / 密文封緘對帳 — 寫 private 分支
-    ├── check_compile.py                # Editor 編譯報告
+    ├── check_compile.py                # ⛔ 已刪除（2026-09-10）—— 檔案不存在了
     ├── check_task_lease.py             # 動 code 前 lease 守門
     ├── hook_validate_modified.py       # Claude Code PostToolUse / Stop hook
     ├── run_cmd.py                      # ⭐ queue.json 提交器 — 觸發 C# Cmd
@@ -110,7 +110,7 @@ python private_letter.py --persona <P> list | show <path> | sync | restore | res
 
 ## 🛠 Editor 整合
 
-### `check_compile.py` — Editor 編譯報告　⚠ **不再是主入口**（2026-09-07）
+### `check_compile.py` — ⛔ **已刪除（2026-09-10，Tim 拍板）**
 
 > 主入口已換成 Senate CLI：`senate cmd unity-recompile`（觸發＋等那一趟）／
 > `senate cmd unity-compile-status`（只讀）。本支**尚未退場**，留著是因為
@@ -120,11 +120,10 @@ python private_letter.py --persona <P> list | show <path> | sync | restore | res
 讀 Editor 端 `Library/Bee/build.txt` 等檔, 印 markdown / json 編譯錯誤 + warning 報告。
 
 ```bash
-python check_compile.py                  # markdown 報告
-python check_compile.py --errors-only    # 只看 Error
-python check_compile.py --max 10         # 限制筆數
-python check_compile.py --format json    # 機器讀
-# ⛔ python check_compile.py --watch    # 已退場用法：會回上一次的快照且不印 STALE（TASK-0154）
+# ⛔ 整支已刪除（2026-09-10）—— 檔案不存在了
+senate cmd unity-compile-status          # 只讀現況（本地跑，不需要 Editor，含 ErrorLog 交叉對帳）
+senate cmd unity-recompile --arg persona=<me>   # 觸發＋等那一趟結束（送出時刻＝基準）
+# ⛔ 沒有替代品的兩格：--fallback-log（解 Editor.log）／--editor-alive（心跳）
 #    ⇒ 改走 senate cmd unity-recompile
 ```
 

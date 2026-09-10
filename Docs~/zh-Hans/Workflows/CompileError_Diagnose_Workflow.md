@@ -1,6 +1,6 @@
 ---
 title: Unity Compile Error 排查工作流程
-description: 用 UCL_CompileErrorTracker 写的 .compile_status.json ＋ Senate CLI（unity-recompile / unity-compile-status，python check_compile.py 尚未退场），让 agent 即使在 Cmd 系统因 compile error 也载不进来的鸡生蛋情境下也能读到完整错误清单；含 dedupe / log fallback / session 边界侦测 / 4 步排查 SOP / 8 大常见错误类型对照 / 实战 case study
+description: 用 UCL_CompileErrorTracker 写的 .compile_status.json ＋ Senate CLI（unity-recompile / unity-compile-status，python check_compile.py 已于 2026-09-10 退场），让 agent 即使在 Cmd 系统因 compile error 也载不进来的鸡生蛋情境下也能读到完整错误清单；含 dedupe / log fallback / session 边界侦测 / 4 步排查 SOP / 8 大常见错误类型对照 / 实战 case study
 last_updated: 2026-09-07
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [编译错误, compile error, CompileError, CS0103, CS0117, CS1503, asmdef, debug, troubleshooting]
@@ -16,7 +16,7 @@ tags: [compile, debug, agent_commands, workflow]
 > `senate cmd unity-compile-status`（只读现况，**不需要 Editor**）。两者都只读 `.compile_status.json`
 > 这个档，**不依赖 Cmd 系统**（那正是本工作流存在的前提：编译坏掉时 Cmd 也载不进来）。
 >
-> python [`check_compile.py`](../../../Tools~/AgentCommands/check_compile.py) **尚未退场**，仍保留
+> ⛔ python `check_compile.py` **已于 2026-09-10 整支删除**（文件不存在了）。而下面两格**没有搬过去，也没有替代品**：
 > `--fallback-log`（解 Editor.log）与 `--editor-alive`（心跳）这两格 CLI 还没移的能力。
 
 ## 0. TL;DR
@@ -29,11 +29,11 @@ senate cmd unity-recompile --arg persona=<me>
 senate cmd unity-compile-status
 
 # 状态档不存在 → fallback 解 Editor.log（**CLI 未移，仍走 python**）
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log
+# ⛔ 已退场 —— 没有 fallback 了；unity-compile-status 会说「没有读数」（⛔ 那不等于 0 errors）
 ```
 
 > [!WARNING]
-> ⛔ **`check_compile.py --watch` 会给假绿灯（TASK-0154）—— 改走 `unity-recompile`。**
+> 🩸 **血证（留着 —— 这个形状会换工具重来）：旧的 `check_compile.py --watch` 会给假绿灯（TASK-0154）。**
 > 它的结束条件只有 `in_progress=false`，而触发还没开始时那已经是 false ⇒ 回上一次的快照。
 > 🩸 2026-09-07 实测：送出 recompile 后立刻 `--watch`，印出的是**三天前**（`2026-09-04T17:14`）
 > 那份、`Errors: 0`，**而且没印 STALE 横幅** —— 不带 `--watch` 时同一支工具有印。

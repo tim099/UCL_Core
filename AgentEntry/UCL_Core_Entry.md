@@ -46,7 +46,7 @@ senate cmd goodnight-check --arg persona=<P>   # 晚安①
 senate cmd unity-recompile --arg persona=<me>
 senate cmd unity-compile-status                # 只讀現況，不觸發、不需要 Editor
 #   ↳ ⛔ 兩支都只量 Unity assemblies，**不涵蓋 senate.exe**（那條走 dotnet build / build.sh）
-#   ↳ ⛔ 舊的 check_compile.py --watch 會回上一次的快照且不印 STALE（TASK-0154）—— 別走它
+#   ↳ ⛔ check_compile.py 已於 2026-09-10 整支退場（**整支刪除**，檔案不存在了）—— 編譯這條只走上面兩支
 ```
 
 ## 消費端 repo 的規則放哪

@@ -30,7 +30,7 @@ senate ucmd run Recompile --arg refresh=true
 
 - ⚠ `senate ucmd run Recompile` 只**送出請求就返回**，不等編譯完成（刻意的：domain reload 會殺掉 in-flight 的 async Cmd）。
 - 要等到編完並拿到錯誤清單，用 python 子命令：`senate ucmd run Recompile`。
-- **編譯真的發生過的唯一憑據是 `check_compile.py` 沒標 STALE**（時間戳晚於你最後一次存檔）。
+- **編譯真的發生過的唯一憑據是 `senate cmd unity-recompile` 收下的那份時間戳晚於送出時刻**（⛔ 舊的 `check_compile.py` 2026-09-10 已退場；它比的是「晚於最後一次存檔」，CLI 比的是「晚於送出觸發」）。
 
 ## 4. 關聯
 

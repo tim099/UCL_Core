@@ -7,7 +7,7 @@
 // 物理意義：給 healthy 狀態下的 batch 用 — 例如 agent 想跑「ExportNotes → 確認 compile 狀態 → 進行下一步」
 //          這種 chained workflow，可以一次 submit 多個 cmd 得到完整資訊。
 //          注意：當其他 assembly 編譯失敗時，本 Cmd handler 自己也載不進來（因為 Registry 反射發現失敗）→
-//          那種情境請改用 Tools~/AgentCommands/check_compile.py（standalone Python，不依賴 Cmd 系統）。
+//          那種情境請改用 `senate cmd unity-compile-status`（本地跑，不需要 Editor、不依賴 Cmd 系統）。
 // 數值影響：純讀檔；可選 outputPath 寫一份報告檔。
 #if UNITY_EDITOR
 using System;
@@ -27,7 +27,7 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// 注意「chicken-and-egg」：
     /// <list type="bullet">
     ///   <item>當其他 assembly 編譯失敗時，本 Cmd 也載不進 Registry → 無法觸發。</item>
-    ///   <item>那種情境改用 <c>Tools~/AgentCommands/check_compile.py</c>（standalone Python，直接讀 JSON，不依賴 Cmd 系統）。</item>
+    ///   <item>那種情境改用 <c>senate cmd unity-compile-status</c>（本地跑，直接讀 JSON，不需要 Editor、不依賴 Cmd 系統）。</item>
     /// </list>
     ///
     /// 參數：
@@ -43,7 +43,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         public override string CommandType => "GetCompileErrors";
 
         public override string ShortDescription =>
-            "Read UCL_CompileErrorTracker JSON and report Unity compile status. For broken-assembly cases, use Tools~/check_compile.py instead (standalone Python).";
+            "Read UCL_CompileErrorTracker JSON and report Unity compile status. For broken-assembly cases, use `senate cmd unity-compile-status` instead (local, no Editor needed).";
 
         public override string ArgsSchema =>
             "errorsOnly=true|false (default false) — only list Error messages\n" +

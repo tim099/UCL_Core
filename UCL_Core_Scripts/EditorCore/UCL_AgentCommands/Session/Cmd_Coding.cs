@@ -329,7 +329,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          而他會先懷疑自己（那正是本單動機血證的形狀）。
         // 數值影響：讀 .compile_status.json（tracker 寫的），不寫它。放行才翻 session 三欄。
         //
-        // ⚠ 本閘只有 **tracker** 這一欄。ErrorLog 那一欄的實作**只活在 check_compile.py**，
+        // ⚠ 本閘只有 **tracker** 這一欄。ErrorLog 那一欄的實作在 `senate cmd unity-compile-status`，
         //   本閘沒有它 ⇒ 「只跑到 Editor ErrorLog 的錯」會通過本閘
         //   （2026-08-14 實測過同一時刻 tracker 說 0、ErrorLog 有 CS0117）。
         //   ⛔ 不在這裡重寫一份 ErrorLog 解析 —— 那會變成第二把尺，而兩把尺不一致時沒有人會發現。
@@ -354,11 +354,11 @@ namespace UCL.Core.EditorLib.AgentCommands
             ioR.AppendLine("| 欄 | 尺 | 結果 |");
             ioR.AppendLine("|---|---|---|");
             ioR.AppendLine($"| tracker | `.compile_status.json` | {(aGreen ? "🟢 綠" : "🔴 紅")}　{aGateWhy} |");
-            ioR.AppendLine("| ErrorLog | `check_compile.py` 的第二來源 | ⚪ **本閘未量** —— 見下 |");
+            ioR.AppendLine("| ErrorLog | `senate cmd unity-compile-status` 的第二來源 | ⚪ **本閘未量** —— 見下 |");
             ioR.AppendLine();
-            ioR.AppendLine("> ⚠ ErrorLog 那一欄的實作只活在 `check_compile.py`，本閘沒有它。");
+            ioR.AppendLine("> ⚠ ErrorLog 那一欄的實作在 `senate cmd unity-compile-status`（它會交叉對帳），本閘沒有它。");
             ioR.AppendLine("> ⇒ **只跑到 Editor ErrorLog 的錯會通過本閘**（2026-08-14 實測：同一時刻 tracker 說 0、ErrorLog 有錯）。");
-            ioR.AppendLine("> 要那一欄請自己跑：`python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only`");
+            ioR.AppendLine("> 要那一欄請自己跑：`senate cmd unity-compile-status`（⛔ 舊的 `check_compile.py` 2026-09-10 **已刪除**）。");
             ioR.AppendLine();
 
             if (!aGreen && !aForce)
@@ -372,7 +372,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 ioR.AppendLine();
                 ioR.AppendLine("**① 修完再退**（建議）");
                 ioR.AppendLine("```bash");
-                ioR.AppendLine("python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only");
+                ioR.AppendLine("senate cmd unity-recompile --arg persona=" + iPersona + "   # 觸發＋等那一趟編譯結束");
                 ioR.AppendLine("```");
                 ioR.AppendLine("修完後重跑：");
                 ioR.AppendLine("```bash");
@@ -466,14 +466,14 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
 
             // ⚠ 射程要寫在讀數裡，不是只寫在註解裡：本閘比的是「tracker ≥ **開場時刻**」，
-            //   而 `check_compile.py` 比的是「tracker ≥ **最後一次改檔的 mtime**」——**它比本閘嚴**。
+            //   而 `senate cmd unity-recompile` 比的是「tracker 時間戳 > **送出觸發的那一刻**」——**它比本閘嚴**。
             //   🩸 差別會咬人的情況：開場 → 改檔 → **不 recompile** → 退場。
             //      那時 tracker 仍晚於開場（因為開場前剛編過）⇒ **本閘放行，而那份綠燈不涵蓋你剛改的東西。**
             //   ⛔ 不在這裡重做一份「掃工作區 mtime」—— 那是第二把尺（同 ErrorLog 那欄的理由）。
             //   ⇒ 把差異印出來，讓它會出聲。
             oWhy = $"0 errors，讀數量於 {aStamp:yyyy-MM-dd HH:mm:ss}（**晚於開場**；"
                    + "⚠ 本閘只比到開場時刻，開場後改了檔又沒 recompile 的話它看不到 —— "
-                   + "要比到「最後一次改檔」請跑 check_compile.py，它會印 STALE）";
+                   + "要比到「你這次的改動」請跑 senate cmd unity-recompile —— 它拿送出時刻當基準）";
             return true;
         }
 

@@ -1,6 +1,6 @@
 ---
 title: Unity コンパイルエラー診断ワークフロー
-description: UCL_CompileErrorTracker が書く .compile_status.json ＋ Senate CLI（unity-recompile / unity-compile-status。python check_compile.py は未退場）で、Cmd システム自体が compile error で読み込めない卵が先か鶏が先か状況でも完全なエラー一覧を取得できる；dedupe / log fallback / session 境界検出 / 4 ステップ SOP / 8 大エラータイプ対照 / 実戦ケーススタディ含む
+description: UCL_CompileErrorTracker が書く .compile_status.json ＋ Senate CLI（unity-recompile / unity-compile-status。python check_compile.py は 2026-09-10 に退場）で、Cmd システム自体が compile error で読み込めない卵が先か鶏が先か状況でも完全なエラー一覧を取得できる；dedupe / log fallback / session 境界検出 / 4 ステップ SOP / 8 大エラータイプ対照 / 実戦ケーススタディ含む
 last_updated: 2026-09-07
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [コンパイルエラー, compile error, CS0103, CS1503, asmdef, debug, トラブルシューティング]
@@ -16,7 +16,7 @@ tags: [compile, debug, agent_commands, workflow]
 > `senate cmd unity-compile-status`（現状を読むだけ、**Editor 不要**）。どちらも読むのは `.compile_status.json`
 > だけで、**Cmd システムに依存しない**（コンパイルが壊れると Cmd も読み込めない、というのが本ワークフローの前提）。
 >
-> python [`check_compile.py`](../../../Tools~/AgentCommands/check_compile.py) は **未退場**。
+> ⛔ python `check_compile.py` は **2026-09-10 にファイルごと削除**。`--fallback-log` / `--editor-alive` は**移植されず、代替もない**。
 > `--fallback-log`（Editor.log 解析）と `--editor-alive`（ハートビート）の 2 つは CLI 未移植で今も python だけが持つ。
 
 ## 0. TL;DR
@@ -29,11 +29,11 @@ senate cmd unity-recompile --arg persona=<me>
 senate cmd unity-compile-status
 
 # ステータスファイルが無い → Editor.log フォールバック（**CLI 未移植、python のまま**）
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log
+# ⛔ 2026-09-10 退場 —— fallback はもう無い。unity-compile-status は「読み取りなし」と言う（0 errors ではない）
 ```
 
 > [!WARNING]
-> ⛔ **`check_compile.py --watch` は偽のグリーンを返す（TASK-0154）—— `unity-recompile` に切り替えること。**
+> 🩸 **血証（残す —— この形は道具を変えて戻ってくる）：旧 `check_compile.py --watch` は偽のグリーンを返した（TASK-0154）。**
 > 終了条件が `in_progress=false` だけで、起動前の時点で既に false ⇒ 前回のスナップショットを返す。
 > 🩸 2026-09-07 実測：recompile 送出直後に `--watch` した結果、出たのは**3 日前**（`2026-09-04T17:14`）の
 > `Errors: 0`、**しかも STALE バナー無し** —— `--watch` 無しなら同じツールが出す。

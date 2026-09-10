@@ -313,7 +313,7 @@ senate ucmd run Invoke --persona <me> --arg type=System.IO.File --arg member=Wri
 ### 4.5 順序陷阱：`recompile` 回報的 `errors=0` 可能是舊快照
 
 改完 `.cs` 送 `recompile` 之後，`errors=0` 不代表你的新 code 編過了。
-判準見 skill `ucl-compile-error`：**`check_compile.py` 沒標 STALE 才算編過**。
+判準見 skill `ucl-compile-error`：**`senate cmd unity-recompile` 收下一份晚於送出時刻的讀數才算編過**。
 🩸 2026-08-18 那隻 bool 就是在「recompile 回報 0 錯」之後才被 round-trip 抓到的。
 
 ---

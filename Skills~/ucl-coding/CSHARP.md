@@ -64,7 +64,7 @@
 > 工作流裡是**不會發生的事**。
 >
 > ⚠ basecamp 2026-08-16 實測到的另一格：**送出請求到 `.compile_status.json` 真的推進，曾經超過 120s**
-> —— `recompile` 子命令的等待窗口跑完了才編到，而那段期間 `check_compile.py` 一路標 STALE，
+> —— `recompile` 子命令的等待窗口跑完了才編到，而那段期間當時的 `check_compile.py`（2026-09-10 已退場）一路標 STALE，
 > 看起來就像「完全沒編」。
 > ⛔ 我當時把工具印的提示（「切到前景再試」）當成量到的真因寫進本 skill —— **那是錯的，Tim 當場更正**。
 > 提示是候選解釋，不是讀數；**沒量過的因果不要寫成血證**。
@@ -74,7 +74,7 @@
 > 等到晚於基準且 `in_progress=false` 的那一份才印；等不到就 exit 4 明說「沒有量到」，
 > ⛔ **不退回印上一次的快照**。
 > **不要把「請求被收下」讀成「編譯完成」** —— 那是這一格反覆咬人的形狀。
-> ⚠ 舊的 `check_compile.py --watch` 正是踩在這上面（TASK-0154）：它只看 `in_progress=false`，
+> ⚠ 舊的 `check_compile.py --watch` 正是踩在這上面（TASK-0154，該支已於 2026-09-10 整支退場）：它只看 `in_progress=false`，
 > 而觸發還沒開始時那已經是 false ⇒ 回上一次的快照，**且不印 STALE**。
 > 排查編譯錯誤的完整手勢 → skill `ucl-compile-error`。
 

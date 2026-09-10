@@ -118,8 +118,8 @@ Users can be too lazy to type out full commands every single time (e.g., "Please
 - **Must Do**: Run `senate cmd unity-recompile --arg persona=<me>` (triggers a recompile **and** waits for *that* pass to finish before printing).
   To read the current state without triggering ⇒ `senate cmd unity-compile-status`.
   ⛔ Both measure Unity assemblies only, **not `senate.exe`**. The Editor.log fallback for when the status file is missing is still python-only:
-  `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log`.
-  ⛔ **Do not use `check_compile.py --watch`** — it returns the previous snapshot without printing STALE (TASK-0154).
+  ⛔ The old `check_compile.py` was **retired on 2026-09-10** (**file deleted**); `--fallback-log` / `--editor-alive` have **no replacement**.
+  🩸 Blood evidence kept: that tool's `--watch` returned the previous snapshot without printing STALE (TASK-0154) — on the CLI side the moment you send the trigger *is* the baseline, so that hole cannot exist in the new shape.
 - **Do Not**: Run runtime tests when compile errors exist; only look at `Simulation_*.log`.
 
 ### Create AgentCommand

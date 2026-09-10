@@ -125,7 +125,7 @@ senate cmd wake-brief --arg letters_root=<letters 根> --arg persona=<P> --arg o
 ## 8. 已知行為邊界（實測 2026-08-13）
 
 - **compile error 時 Cmd 照跑舊 assembly 回 Success**（不是卡死）——改完 awakening C# 先
-  `check_compile.py` 綠燈再跑流程；另有 refresh race：壞檔落地後第一拍編譯可能假綠，看兩拍。
+  `senate cmd unity-compile-status` 綠燈再跑流程；另有 refresh race：壞檔落地後第一拍編譯可能假綠，看兩拍。
 - 廣播觸發 post reward（+1 token）——Template 殼的「錢類排除」是人工約定，尚無 code enforce。
 - 檔案排版：C# 寫入為 tab 縮排（ToJsonBeautify）、python 為 2 空格——值層等價，排版乒乓屬已知現象。
 

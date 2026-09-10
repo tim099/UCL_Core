@@ -64,7 +64,7 @@
     },
     {
       "name": "ucl-compile-error",
-      "summary": "Unity compile error 排查 SOP（check_compile.py + .compile_status.json）",
+      "summary": "Unity compile error 排查 SOP（senate cmd unity-recompile / unity-compile-status）",
       "optional": false
     },
     {

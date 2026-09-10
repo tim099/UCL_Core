@@ -118,8 +118,8 @@ related:
 - **必須動作**: `senate cmd unity-recompile --arg persona=<me>` を実行すること（リコンパイルを起動し、**その回**が終わるまで待ってから出力）。
   起動せず現状だけ見る場合 ⇒ `senate cmd unity-compile-status`。
   ⛔ どちらも計測対象は Unity assemblies のみで、**`senate.exe` は含まない**。ステータスファイルが無い場合の Editor.log フォールバックは今も python だけが持つ：
-  `python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log`。
-  ⛔ **`check_compile.py --watch` は使わないこと** —— 前回のスナップショットを返し、しかも STALE を出さない（TASK-0154）。
+  ⛔ 旧 `check_compile.py` は **2026-09-10 に退場**（**ファイルごと削除**）。`--fallback-log` / `--editor-alive` の 2 つは**代替なし**。
+  🩸 血証として残す：あのツールの `--watch` は前回のスナップショットを返し、STALE も出さなかった（TASK-0154）。CLI 側は**トリガを送った瞬間が基準**なので、その穴は新しい構造では存在しない。
 - **禁止事項**: コンパイルエラーが残存した状態でランタイムの挙動検証に進むこと。`Simulation_*.log` だけを確認して、ビルド状態全体を見過ごすこと。
 
 ### AgentCommand（エディタ拡張指令）の新規作成

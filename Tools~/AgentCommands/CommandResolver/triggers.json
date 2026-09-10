@@ -219,7 +219,7 @@
         "編譯排查"
       ],
       "workflow_path": "ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md",
-      "intent": "當修改 `.cs` 腳本後，排查 Unity 的編譯錯誤。使用 standalone 腳本 `check_compile.py`，即使在 Cmd 系統因編譯錯誤失效時也能正常印出錯誤清單。",
+      "intent": "當修改 `.cs` 腳本後，排查 Unity 的編譯錯誤。走 `senate cmd unity-recompile`（觸發＋等那一趟結束）／`senate cmd unity-compile-status`（只讀現況，本地跑），即使 Cmd 系統因編譯錯誤失效也印得出錯誤清單。",
       "lang": [
         "zh",
         "en"

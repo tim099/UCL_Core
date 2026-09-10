@@ -1,6 +1,6 @@
 ---
 title: Unity Compile Error Diagnosis Workflow
-description: Use UCL_CompileErrorTracker's .compile_status.json plus the Senate CLI (unity-recompile / unity-compile-status; python check_compile.py is not retired) to read compile errors even when the Cmd system itself can't load due to compile errors (chicken-and-egg). Includes dedupe / log fallback / session boundary detection / 4-step SOP / 8 common error types / real-world case study.
+description: Use UCL_CompileErrorTracker's .compile_status.json plus the Senate CLI (unity-recompile / unity-compile-status; python check_compile.py was retired on 2026-09-10) to read compile errors even when the Cmd system itself can't load due to compile errors (chicken-and-egg). Includes dedupe / log fallback / session boundary detection / 4-step SOP / 8 common error types / real-world case study.
 last_updated: 2026-09-07
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [compile error, CompileError, CS0103, CS0117, CS1503, CS0246, asmdef, debug, troubleshooting]
@@ -17,7 +17,7 @@ tags: [compile, debug, agent_commands, workflow]
 > (reads the current state only, **no Editor needed**). Both read nothing but `.compile_status.json`,
 > so they are **independent of the Cmd system** — which is the whole premise of this workflow.
 >
-> python [`check_compile.py`](../../../Tools~/AgentCommands/check_compile.py) is **not retired**. It still
+> ⛔ python `check_compile.py` was **deleted on 2026-09-10** (the file is gone). It no longer
 > owns the two capabilities the CLI has not taken over: `--fallback-log` (parse Editor.log) and
 > `--editor-alive` (heartbeat).
 
@@ -33,11 +33,11 @@ senate cmd unity-recompile --arg persona=<me>
 senate cmd unity-compile-status
 
 # `.compile_status.json` missing → fall back to parsing Editor.log (**still python, not moved to the CLI**)
-python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback-log
+# ⛔ retired 2026-09-10 — there is no fallback any more; unity-compile-status says "no reading" (which is NOT 0 errors)
 ```
 
 > [!WARNING]
-> ⛔ **`check_compile.py --watch` gives a false green light (TASK-0154) — use `unity-recompile` instead.**
+> 🩸 **Blood evidence (kept — this shape comes back with a different tool): the old `check_compile.py --watch` gave a false green light (TASK-0154).**
 > Its only exit condition is `in_progress=false`, which is already false before the trigger has begun ⇒ it
 > returns the *previous* snapshot.
 > 🩸 Measured 2026-09-07: right after submitting a recompile, `--watch` printed a **three-day-old**
@@ -49,7 +49,7 @@ python <UCL_Core>/Tools~/AgentCommands/check_compile.py --errors-only --fallback
 > ⛔ **Both commands measure Unity assemblies only — they do not cover `senate.exe`** (that goes through
 > `dotnet build` / `build.sh` factory acceptance).
 
-Exit codes (python `check_compile.py`):
+Exit codes of the deleted `check_compile.py` (kept for reading old logs / old commits — ⛔ the tool no longer exists):
 
 | Exit | Meaning |
 |---|---|
@@ -254,7 +254,7 @@ Fallback algorithm:
 
 - [`UCL_CompileErrorTracker.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/UCL_CompileErrorTracker.cs)
 - [`Cmd_GetCompileErrors.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/CMD/Cmd_GetCompileErrors.cs)
-- [`check_compile.py`](../../../Tools~/AgentCommands/check_compile.py) — python tool (**not retired**; `--fallback-log` / `--editor-alive` are still exclusive to it)
+- `check_compile.py` — ⛔ **deleted 2026-09-10** (file is gone; history in `git log`); `--fallback-log` / `--editor-alive` have no replacement
 - [Workflows/Create_Cmd_Workflow](Create_Cmd_Workflow.md)
 - [API/UCL_AgentCommand/UCL_AgentCommand_Architecture](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md)
 

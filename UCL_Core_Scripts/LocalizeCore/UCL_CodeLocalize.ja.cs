@@ -432,7 +432,7 @@ namespace UCL.Core.LocalizeLib
                 "LibraryManage.Btn.Donate" => "💝 寄贈",
                 "LibraryManage.Donate.Hint" => "寄贈は Cmd_Treasury debit で token を消費しますわ（デフォルト 100/冊）。Books/ に存在し、未寄贈の書籍に限ります。押してもまずは確認が出ますからね。",
                 "LibraryManage.Dialog.Donate.Title" => "寄贈してもよろしくて？",
-                "LibraryManage.Dialog.Donate.BodyFmt" => "口座から共有図書館へ以下の書籍を寄贈しますわ：\n\n書籍: {0}\n寄贈者: {1}\n費用: {2} token\n\nこの操作は Treasury debit で引き落とされ、寄贈インデックスに書き込まれます。よろしいですわね？",
+                "LibraryManage.Dialog.Donate.BodyFmt" => "口座から共有図書館へ以下の書籍を寄贈しますわ：\n\n書籍: {0}\n寄贈者 bank: {1}\n寄贈 persona: {3}\n費用: {2} token\n\nこの操作は Books op=donate を発行し、Treasury debit で引き落とし・寄贈インデックス書き込み・酒場への告知まで行いますわ。よろしいですわね？",
                 "LibraryManage.Recommend.HeaderFmt" => "💡 お勧めリスト（{0} 冊、展開/折りたたみ）",
                 "LibraryManage.Recommend.Empty" => "（お勧めリストは空ですわ）",
                 // 全文書庫 Books/ 区画

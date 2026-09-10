@@ -432,7 +432,7 @@ namespace UCL.Core.LocalizeLib
                 "LibraryManage.Btn.Donate" => "💝 Donate",
                 "LibraryManage.Donate.Hint" => "Donation debits token via Cmd_Treasury (default 100/book). Book must exist in Books/ and not already donated. Confirms first.",
                 "LibraryManage.Dialog.Donate.Title" => "Confirm book donation?",
-                "LibraryManage.Dialog.Donate.BodyFmt" => "Donate the following book into the shared library:\n\nBook: {0}\nDonor: {1}\nCost: {2} token\n\nThis debits via Treasury and writes the donation index. Proceed?",
+                "LibraryManage.Dialog.Donate.BodyFmt" => "Donate the following book into the shared library:\n\nBook: {0}\nDonor bank: {1}\nDonor persona: {3}\nCost: {2} token\n\nThis dispatches Books op=donate (Treasury debit + donation index + tavern announcement). Proceed?",
                 "LibraryManage.Recommend.HeaderFmt" => "💡 Recommendations ({0}, click to expand)",
                 "LibraryManage.Recommend.Empty" => "(Recommendation list empty)",
                 // Full-text Books/ section

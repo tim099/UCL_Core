@@ -432,7 +432,7 @@ namespace UCL.Core.LocalizeLib
                 "LibraryManage.Btn.Donate" => "💝 捐贈",
                 "LibraryManage.Donate.Hint" => "捐贈走 Cmd_Treasury debit 扣 token（預設 100/本），書須已存在於 Books/ 且未被捐過。按下會先確認。",
                 "LibraryManage.Dialog.Donate.Title" => "確認捐贈圖書？",
-                "LibraryManage.Dialog.Donate.BodyFmt" => "將從帳戶捐贈以下書籍進共享圖書館：\n\n書: {0}\n捐贈者: {1}\n花費: {2} token\n\n此操作會走 Treasury debit 扣款並寫入捐贈索引，確定？",
+                "LibraryManage.Dialog.Donate.BodyFmt" => "將從帳戶捐贈以下書籍進共享圖書館：\n\n書: {0}\n捐贈者 bank: {1}\n捐贈 persona: {3}\n花費: {2} token\n\n此操作會派 Books op=donate（Treasury debit 扣款 ＋ 寫入捐贈索引 ＋ 酒館公告），確定？",
                 "LibraryManage.Recommend.HeaderFmt" => "💡 推薦書單（{0} 本，點開/收合）",
                 "LibraryManage.Recommend.Empty" => "（推薦書單為空）",
                 // 全文書庫 Books/ 區塊

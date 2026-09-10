@@ -1,9 +1,10 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Text;
+using System.Linq;
+using Cysharp.Threading.Tasks;
+using UCL.Core.EditorLib.AgentCommands;
 using UCL.Core.EditorLib.AgentCommands.ReadingLibrary;
 using UCL.Core.JsonLib;
 using UCL.Core.LocalizeLib;
@@ -20,12 +21,16 @@ namespace UCL.Core.EditorLib.Page
     //          - AgentCommands/BookNotes/_recommended/<slug>.json  推薦書單（T-split：一 rec 一檔；舊單檔 _recommended.json 自動 migrate 成本資料夾）
     //          - AgentCommands/Books/_donations.json         捐贈索引（誰付 token 認領了哪本書）
     //          - 外部漫畫庫（D:\commic 等）：透過 UCL_ProjectEditorPrefs 儲存路徑，支援本機漫畫探索
-    //          工具 library.py 在 UCL_Core（跨專案共用），Page 直讀 JSON 顯示，變更操作走 process spawn 跑 library.py
-    // 數值影響：UI 顯示純 read。Add/Donate/Bookmark 按鈕觸發外部 python process，改 book.json / _donations.json
+    //          Page 直讀 JSON 顯示；**寫入一律走 AgentCommand**（捐贈＝派 `Books` 跑 op=donate）。
+    // 數值影響：UI 顯示純 read。捐贈鈕只寫 queue.json；真正的扣款與登記發生在 Runner 跑 Cmd_Books 那一刻。
     //
     // 設計理由 (Tim 2026-05-26 派 task)：
-    //   原生 library.py 只有 CLI 介面，Tim / agent 想一眼看「圖書館裡有哪些書、誰捐的、進度到哪」沒有可視化介面。
-    //   本 page 補可視化清單 + 常用操作 GUI fallback，結構對齊 UCL_LoginStatusPage（讀 per-project 資料 + spawn UCL_Core 工具）。
+    //   原生 CLI 沒有可視化介面，Tim / agent 想一眼看「圖書館裡有哪些書、誰捐的、進度到哪」沒地方看。
+    //   本 page 補可視化清單 + 常用操作 GUI fallback。
+    // ⚠ 2026-09-10（basecamp）：捐贈鈕原本 spawn `library.py donate`，而那支同日已整支退場成
+    //   指路 stub（69 行、一律 exit 2、零副作用）⇒ **按鈕在、能力不在**，
+    //   而 Console 照樣印一段看起來執行過的紀錄（stdout ＋ exit code）—— 兩種相反的結果同形。
+    //   改派 `Books` AgentCommand：與 agent 走的是同一個寫入端，⛔ 本頁不再有第二條寫入路。
     // 2026-08-17：Mechanics/Reading_Library.md 不存在（死連結）。暫改指既有的閱讀庫 workflow ——
     // ⚠ 這是**止血不是治好**：按「說明」的人要的是「這頁怎麼用」，而 workflow 講的是流程。
     //   本頁該有自己的 UCL_EditorPage/ 文件，但它同日剛被大改（外部漫畫庫入口），
@@ -39,9 +44,6 @@ namespace UCL.Core.EditorLib.Page
             UCL_GUIPageController.CurrentRenderIns.Push(page);
             return page;
         }
-
-        // Process 註冊中心的 tag（硬規則：每顆外部 Process 都要登記）。
-        const string PROC_TAG_PY = "library_py";
 
         public override string WindowName => UCL_CodeLocalize.Get("LibraryManage.Title");
         public override bool ShowInPageMenu => true;
@@ -123,7 +125,9 @@ namespace UCL.Core.EditorLib.Page
         List<string> m_ComicDisplayOptions = new List<string>();
 
         // 區塊職責：捐贈表單 state
-        // 物理意義：Tim 輸入要捐的書 slug + 捐贈者 agent id + token 數，按「捐贈」後 spawn library.py donate
+        // 物理意義：Tim 輸入要捐的書 slug + 捐贈者 bank + 捐贈 persona + token 數，按「捐贈」後派 `Books` op=donate
+        // ⚠ persona 是 **required**（`Cmd_Books.Op_Donate` 走 `RequireArg`）—— 舊 python 那條是選填，
+        //   而它現在空著送出去只會換來一個 Failed 的 Cmd ⇒ 本頁在送出前就擋。
         string m_DonateBook = "";
         string m_DonateDonor = "claude-da-xiaojie";
         string m_DonateTokens = "100";
@@ -155,24 +159,19 @@ namespace UCL.Core.EditorLib.Page
         string m_BookNotesDir = "";
         string m_LibraryDir = "";
         string m_BooksDir = "";
-        string m_UCLCorePath = "";
 
         public override void Init(UCL_GUIPageController p_Controller)
         {
             base.Init(p_Controller);
             // 區塊：路徑解析
-            // 物理意義：BookNotes / Books 落 per-project repo root；library.py 在 UCL_Core 給 process spawn
+            // 物理意義：BookNotes / Books 落 per-project repo root。
+            // ⚠ 2026-09-10 起本頁不再解析 UCL_Core 安裝路徑 —— 那一格只服務 `library.py` 的 spawn，
+            //   而那條路已整段移除（寫入走 `Books` AgentCommand，資料根由 Cmd 那側解析）。
             m_AgentCommandsDir = UCL_RepoPath.AgentCommandsDir;
             m_BookNotesDir = Path.Combine(m_AgentCommandsDir, "BookNotes");
             // 新 Library 根 —— 書籍索引的事實源（舊的 BookNotes/<slug>/ 已空）
             m_LibraryDir = Path.Combine(m_BookNotesDir, "Library");
             m_BooksDir = Path.Combine(m_AgentCommandsDir, "Books");
-            // 區塊：UCL_Core path 解析 — 走 UCL_EditorPath.CorePath（對齊 UCL_LoginStatusPage）
-            string corePathRel = UCL_EditorPath.CorePath;
-            if (!string.IsNullOrEmpty(corePathRel))
-            {
-                m_UCLCorePath = Path.GetFullPath(Path.Combine(UCL_RepoPath.UnityProjectRoot, corePathRel));
-            }
             LoadData();
         }
 
@@ -325,7 +324,7 @@ namespace UCL.Core.EditorLib.Page
             }
 
             // 區塊：讀推薦書單（T-split 2026-07-20：優先 _recommended/ 資料夾一 rec 一檔；退回舊單檔）
-            // 物理意義：想讀但未必建檔的書。library.py 是 write-owner（Page 的寫走 spawn library.py），Page 這裡只直讀顯示。
+            // 物理意義：想讀但未必建檔的書。write-owner 是 `Books` / `Library` 那幾支 Cmd，Page 這裡只直讀顯示。
             try
             {
                 // local：把一個 rec JsonData 物件收進 m_Recommends（資料夾/舊陣列共用）
@@ -913,7 +912,7 @@ namespace UCL.Core.EditorLib.Page
         }
 
 
-        // 區塊職責：捐贈表單 — spawn library.py donate（會扣 token，故確認後再跑）
+        // 區塊職責：捐贈表單 — 派 `Books` op=donate（會扣 token，故確認後再跑）
         void DrawDonateForm()
         {
             using (new GUILayout.VerticalScope("box"))
@@ -985,106 +984,108 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // ==================== Process actions ====================
+        // ==================== Write actions（一律派 AgentCommand，⛔ 本頁不自己寫資料） ====================
 
 
-        // 區塊職責：彈窗確認後 spawn library.py donate
+        // 區塊職責：彈窗確認後派 `Books` op=donate
         // 物理意義：捐贈會扣 token（走 Cmd_Treasury debit），destructive，故先 popup 確認
+        // ⛔ 不直呼 `UCL_BooksIO.Donate`：那支只做「扣款＋寫登記」，酒館廣播那半留在 `Cmd_Books.Op_Donate`
+        //   ⇒ 繞過 Cmd 會讓錢動了而公告沒發，而**兩層脫鉤時沒有任何一層會喊**。
         void DoDonate()
         {
-            if (string.IsNullOrWhiteSpace(m_DonateBook) || string.IsNullOrWhiteSpace(m_DonateDonor))
+            if (string.IsNullOrWhiteSpace(m_DonateBook) || string.IsNullOrWhiteSpace(m_DonateDonor)
+                || string.IsNullOrWhiteSpace(m_DonatePersona))
             {
-                Debug.LogWarning("[LibraryManage] donate: book / donor 都不能空");
+                Debug.LogWarning("[LibraryManage] donate: book / donor bank / donate persona 都不能空"
+                                 + "（persona 是 Cmd_Books 的 required —— 空著送出去只會換一個 Failed 的 Cmd）");
                 return;
             }
+            string book = m_DonateBook.Trim();
+            string bank = m_DonateDonor.Trim();
+            string persona = m_DonatePersona.Trim();
             string tokens = string.IsNullOrWhiteSpace(m_DonateTokens) ? "100" : m_DonateTokens.Trim();
             string body = string.Format(UCL_CodeLocalize.Get("LibraryManage.Dialog.Donate.BodyFmt"),
-                m_DonateBook.Trim(), m_DonateDonor.Trim(), tokens);
+                book, bank, tokens, persona);
             UCL.Core.Page.UCL_OptionPage.Create(
                 UCL_CodeLocalize.Get("LibraryManage.Dialog.Donate.Title"),
                 body,
                 new ButtonData(UCL_CodeLocalize.Get("Cancel"), () => { }),
                 new ButtonData(UCL_CodeLocalize.Get("LibraryManage.Btn.Donate"),
-                    () =>
-                    {
-                        var args = new List<string>
-                        {
-                            $"\"{LibraryPyPath()}\"", "donate",
-                            "--book", m_DonateBook.Trim(),
-                            "--donor", m_DonateDonor.Trim(),
-                            "--tokens", tokens,
-                        };
-                        if (!string.IsNullOrWhiteSpace(m_DonatePersona))
-                        {
-                            args.Add("--donor-persona");
-                            args.Add(m_DonatePersona.Trim());
-                        }
-                        RunLibrary(args, $"donate {m_DonateBook}");
-                        LoadData();
-                    },
+                    () => EnqueueBooksDonate(book, bank, persona, tokens),
                     UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(Color.red))
             );
         }
 
 
-        // 區塊職責：實際 spawn library.py subprocess（對齊 UCL_LoginStatusPage.RunAwakening 的 async 雙 stream 讀法）
-        // 物理意義：async stdout + stderr 並行消費，避免 .NET Process redirect deadlock
-        // 數值影響：執行結果印到 Unity Console；exit!=0 印 error。實際資料變更由 library.py 寫檔
-        void RunLibrary(List<string> args, string opLabel)
+        // 區塊職責：把一筆 `Books op=donate` 寫進**共用 queue** 並叫 Runner 跑
+        // 物理意義：與 agent 端 `senate ucmd run Books --arg op=donate …` 完全同一條路
+        //          （同一個 handler、同一個資料根、同一份廣播）—— 這頁只是另一個下單的人。
+        // 數值影響：本方法只寫 `queue.json`；扣款／登記／廣播都發生在 Runner 執行那一刻，
+        //          結果看 Console 與 `_cmd_results/<id>.json`。
+        // ⚠ 三道守衛照抄 `UCL_AgentCommandsPage` 的補跑那條（⛔ 不重造）：
+        //   ① queue 正在跑就不寫 —— Runner 收尾會整批寫回，期間的 load→add→save 會被靜默吃掉（lost update）
+        //   ② 寫完回讀驗「新 id 在不在」—— Save 沒例外不等於檔案裡有這筆
+        //   ③ 驗不到就什麼都不做、印 error —— ⛔ 不留一個假的「已送出」
+        void EnqueueBooksDonate(string iBook, string iBank, string iPersona, string iTokens)
         {
-            string scriptPath = LibraryPyPath();
-            if (!File.Exists(scriptPath))
+            if (UCL_AgentCommandRunner.IsRunningForAgent(null))
             {
-                Debug.LogError($"[LibraryManage] library.py 不存在: {scriptPath}");
+                Debug.LogWarning("[LibraryManage] 共用 queue 正在執行 —— 捐贈暫不送出。"
+                                 + "現在寫進去會被那一批收尾時的整批寫回吃掉（lost update）。等它跑完再按。");
                 return;
             }
-            try
+
+            var aData = UCL_AgentCommandQueue.Load() ?? new UCL_AgentCommandQueueData();
+            aData.Commands ??= new List<UCL_AgentCommand>();
+            var aCmd = new UCL_AgentCommand
             {
-                var stdoutSb = new StringBuilder();
-                var stderrSb = new StringBuilder();
-                using (var p = new Process())
+                Id = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-books-donate",
+                Type = "Books",
+                Mode = UCL_AgentCommandMode.OneShot,
+                RunCount = 0,
+                Args = new Dictionary<string, string>
                 {
-                    p.StartInfo.FileName = "python";
-                    p.StartInfo.Arguments = string.Join(" ", args);
-                    p.StartInfo.UseShellExecute = false;
-                    p.StartInfo.RedirectStandardOutput = true;
-                    p.StartInfo.RedirectStandardError = true;
-                    p.StartInfo.CreateNoWindow = true;
-                    p.StartInfo.StandardOutputEncoding = Encoding.UTF8;
-                    p.StartInfo.StandardErrorEncoding = Encoding.UTF8;
-                    p.StartInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
-                    p.OutputDataReceived += (_, e) => { if (e.Data != null) stdoutSb.AppendLine(e.Data); };
-                    p.ErrorDataReceived += (_, e) => { if (e.Data != null) stderrSb.AppendLine(e.Data); };
-                    p.Start();
-                    // 硬規則：每顆外部 Process 都要登記（Coding_Standards.md「外部 Process」）。
-                    // using 宣告 → 正常結束與例外路徑都會反登記，成對性由語言保證。
-                    using var procScope_ = UCL_ProcessRegistryService.RegisterScope(
-                        p, PROC_TAG_PY, "library.py", nameof(UCL_LibraryManagePage));
-                    p.BeginOutputReadLine();
-                    p.BeginErrorReadLine();
-                    p.WaitForExit(30000);
-                    string stdout = stdoutSb.ToString();
-                    string stderr = stderrSb.ToString();
-                    if (!string.IsNullOrEmpty(stdout))
-                        Debug.Log($"[LibraryManage:{opLabel}] stdout:\n{stdout}");
-                    if (!string.IsNullOrEmpty(stderr))
-                        Debug.LogWarning($"[LibraryManage:{opLabel}] stderr:\n{stderr}");
-                    if (p.ExitCode != 0)
-                        Debug.LogError($"[LibraryManage:{opLabel}] library.py exit={p.ExitCode}");
-                    else
-                        Debug.Log($"[LibraryManage:{opLabel}] ✓ 完成");
-                }
-            }
-            catch (Exception e)
+                    ["op"] = "donate",
+                    ["book"] = iBook,
+                    ["agent"] = iBank,
+                    ["persona"] = iPersona,
+                    ["tokens"] = iTokens,
+                },
+                CreatedAt = DateTime.UtcNow.ToString("o"),
+                Description = $"LibraryManagePage 捐贈《{iBook}》（{iPersona} / {iBank} / {iTokens} token）",
+            };
+            aData.Commands.Add(aCmd);
+            UCL_AgentCommandQueue.Save(aData);
+
+            var aVerify = UCL_AgentCommandQueue.Load();
+            bool aLanded = aVerify?.Commands != null
+                           && aVerify.Commands.Any(c => c != null && c.Id == aCmd.Id);
+            if (!aLanded)
             {
-                Debug.LogError($"[LibraryManage:{opLabel}] spawn failed: {e.Message}");
+                Debug.LogError($"[LibraryManage] 捐贈寫入 queue 後回讀不到 {aCmd.Id} —— "
+                               + "可能有另一個寫入者同時收尾（lost update）。**沒有送出**，請稍後再按。");
+                return;
             }
+
+            Debug.Log($"[LibraryManage] 已排入 Books op=donate：id={aCmd.Id}，book={iBook}，"
+                      + $"persona={iPersona}，bank={iBank}，tokens={iTokens}"
+                      + $"（⚠ 此刻只寫了 queue —— 扣款與登記看 _cmd_results/{aCmd.Id}.json）");
+            UCL_AgentCommandRunner.Menu_RunPending();
+            DelayedReloadAfterDonate().Forget();
         }
 
-        string LibraryPyPath()
+
+        // 區塊職責：捐贈派出去之後延遲刷新清單
+        // 物理意義：Runner 是 async ——「送出」與「登記落盤」不是同一刻，
+        //          立刻 LoadData() 讀到的是**捐贈前**的 `_donations.json`（而它長得完全正常）。
+        // ⚠ 這一格是 best-effort 顯示，不是讀數：清單沒更新 ⇒ 去看 Console / `_cmd_results`，
+        //   ⛔ 別把「清單裡沒有」讀成「捐贈失敗」。
+        async UniTaskVoid DelayedReloadAfterDonate()
         {
-            return Path.Combine(m_UCLCorePath, "Tools~", "AgentCommands", "library.py");
+            await UniTask.Delay(TimeSpan.FromSeconds(2));
+            LoadData();
         }
+
 
         // 區塊職責：在系統檔案總管開啟指定資料夾（跨平台 best-effort）
         void OpenInExplorer(string path)

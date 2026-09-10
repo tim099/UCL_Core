@@ -1,4 +1,4 @@
-// 區塊職責：Cmd_FreeTime — 自由時間流程的 Cmd 入口（Plan_FreeTime_Cmd.md，Tim 2026-08-13 拍板）。
+﻿// 區塊職責：Cmd_FreeTime — 自由時間流程的 Cmd 入口（Plan_FreeTime_Cmd.md，Tim 2026-08-13 拍板）。
 //          同一支 Cmd 以 step 參數分步：start（註冊 until＋發免費像素＋開場擲骰＋宣告）→
 //          [做活動] → next（活動事件自然結束時跑：未到期重擲、到期收工）→ end（提前收工，附 reason）。
 // 物理意義：時間感由 Cmd 供給（每步回傳三個時間欄），agent 不自己心算 —— 時限判定只認時鐘，
@@ -282,23 +282,34 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     : "expired";
                 CloseSession(iPersona, aSession, aEndReason, out int aRounds);
                 // 收工**不再需要作廢寫入** —— 限時券到期自己失效（且 ledger 下次寫入時
-                // 會清掉並在 history 記一筆 `expire`）。這裡只要讀回「本場還剩幾張」來回報。
-                int aLeftover = UCL_CanvasVoucherLedger.GetExpiringByRef(iPersona, aSession.session_id);
-                int aUsed = Math.Max(0, FREE_PIXELS_PER_SESSION - aLeftover);
-                int aForfeited = aLeftover;   // 沒用完的 ＝ 即將到期作廢的（ledger 下次寫入時清並記 history）
+                // 會清掉並在 history 記一筆 `expire`）。這裡只要讀回「本場那一批的用量」。
+                // 🩸 TASK-0195：這裡曾經讀 `GetExpiringByRef`（**只算未過期的**）再用
+                //    「發放量 − 它」推用量 —— 而到點收工必然發生在 `until` 之後，
+                //    券的到期是 `until + grace` ⇒ 晚一分鐘跑 next，那批就已經過期、回 0，
+                //    於是公告印出「用 10 張、全數用畢」而實際一張都沒用。
+                //    **查無與用完在輸出上一模一樣**，所以兩個人（@Sirius／我）同一小時各中一次都沒被任何一層擋下。
+                // ⇒ 改讀批次自己的 amount/remain（忽略過期）；⛔ 查無就明說查無，不用常數補一個數字。
+                bool aLedgerKnows = UCL_CanvasVoucherLedger.TryGetUsageByRef(
+                    iPersona, aSession.session_id, out int aGrantedBatch, out int aLeftover, out int aUsed);
+                int aForfeited = aLeftover;   // 沒用完的 ＝ 到期作廢（ledger 下次寫入時清並記 history）
+                string aVoucherBrief = aLedgerKnows
+                    ? $"🎟 限時券用 {aUsed}/{aGrantedBatch} 張{(aForfeited > 0 ? $"、{aForfeited} 張到期作廢" : "、全數用畢")}"
+                    : "🎟 限時券用量：**帳本查無本場批次**（不猜 —— 見 TASK-0195）";
 
                 var aBody = new StringBuilder();
                 aBody.AppendLine(iEarlyEnd
                     ? $"🏁 [{iPersona} 大小姐] 自由時間提前收工（{(string.IsNullOrEmpty(iReason) ? "未附 reason" : iReason)}）"
                     : $"⏰ [{iPersona} 大小姐] 自由時間到點收工（至 {aUntil:HH:mm}）");
-                aBody.AppendLine($"本場 {aRounds} 輪活動｜🎟 限時券用 {aUsed} 張{(aForfeited > 0 ? $"、{aForfeited} 張到期作廢" : "、全數用畢")}。回工位了。");
+                aBody.AppendLine($"本場 {aRounds} 輪活動｜{aVoucherBrief}。回工位了。");
                 int aSeq = await TavernPost(iArgs, iPersona, aBody.ToString(), iEarlyEnd ? "session-end-early" : "session-end", iToken);
 
                 AppendTimeFields(aR, aNow, aUntil);
                 aR.AppendLine(aExpired && !iEarlyEnd ? "- ⏰ **時間到** —— session 已收工" : "- 🏁 提前收工 —— session 已收工");
                 aR.AppendLine($"- end_reason: {aEndReason}");
                 aR.AppendLine($"- 本場輪次: {aRounds}");
-                aR.AppendLine($"- 🎟 限時券: 用 {aUsed} 張{(aForfeited > 0 ? $"、**{aForfeited} 張到期作廢**（券帳本會在下次寫入時清掉並記一筆 expire）" : "（全數用畢）")}");
+                aR.AppendLine(aLedgerKnows
+                    ? $"- 🎟 限時券: 用 {aUsed}/{aGrantedBatch} 張{(aForfeited > 0 ? $"、**{aForfeited} 張到期作廢**（券帳本會在下次寫入時清掉並記一筆 expire）" : "（全數用畢）")}"
+                    : $"- 🎟 限時券: **帳本查無本場批次**（ref=`{aSession.session_id}`）⇒ 用量無法判定，⛔ 不以發放量推導（TASK-0195）");
                 aR.AppendLine($"- 收工宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
                 aR.AppendLine("## ⏹ 已收工 —— 自由時間結束，**不要再跑 step=next**");
                 aR.AppendLine("- 回工作；或走晚安流程：senate ucmd run GoodNight --arg step=check --arg persona=" + iPersona);

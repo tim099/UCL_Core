@@ -1,4 +1,4 @@
-// 區塊職責：繪圖券 (Canvas voucher) 的 C# 端 canonical ledger — grant / 三種餘額查詢 / consume 單一 owner。
+﻿// 區塊職責：繪圖券 (Canvas voucher) 的 C# 端 canonical ledger — grant / 三種餘額查詢 / consume 單一 owner。
 // 物理意義：Tim 2026-07-22 拍板 — 券發放流程收攏到 C# static class(對齊 UCL_TreasuryLedger)，根治
 //          「C# spawn python canvas.py → canvas.py 的 cwd 相對 DEFAULT_CANVAS_ROOT 解析到錯的
 //           AgentCommands(CardGame/AgentCommands stray) → 寫進讀不到的地方」那一整類跨 process 路徑 split bug。
@@ -81,6 +81,33 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
             foreach (var b in LoadBatches(persona))
                 if (!b.IsPermanent && b.IsSpendableAt(aNow) && b.@ref == refText) aSum += b.remain;
             return aSum;
+        }
+
+        // ===========================================================
+        // 區塊職責：某一批（按 ref）的**用量三值** —— granted / remain / used，⛔ **忽略是否過期**。
+        // 物理意義：收工回報要回答的是「本場用了幾張」，而那個問題**必然在批次過期之後**才被問 ——
+        //          到點收工的定義是 `now > until`，而券的到期是 `until + grace`。
+        //          `GetExpiringByRef` 只算**未過期**的 ⇒ 它在那一刻回 0，
+        //          🩸 而呼叫端用「發放量 − 0」推出「全數用畢」＝ TASK-0195：**查無被算成用完**。
+        //          兩者在輸出上一模一樣，所以沒有任何一層會喊。
+        // 數值影響：純讀。回 false ＝ 帳本上找不到這個 ref 的批次（已被清理／ref 不符／別棵 DataRoot）。
+        //          ⛔ 呼叫端不准把 false 當成 0 —— 那就是同一隻病換一個地方發作。
+        // ===========================================================
+        public static bool TryGetUsageByRef(string persona, string refText,
+                                            out int granted, out int remain, out int used)
+        {
+            granted = 0; remain = 0; used = 0;
+            if (string.IsNullOrEmpty(refText)) return false;
+            bool aFound = false;
+            foreach (var b in LoadBatches(persona))
+            {
+                if (b.IsPermanent || b.@ref != refText) continue;
+                aFound = true;
+                granted += b.amount;
+                remain += b.remain;
+            }
+            used = Math.Max(0, granted - remain);
+            return aFound;
         }
 
         /// <summary>**可花總額**（未過期的限時 ＋ 永久）。規劃付款用這支。</summary>

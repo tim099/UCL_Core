@@ -1,7 +1,7 @@
 ---
 title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
-description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / queue infra (run_cmd) / Editor 整合 (hooks；check_compile 已退場) / migration scripts / skill installer。
-last_updated: 2026-09-07
+description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / Editor 整合 (hooks) / migration scripts / skill installer。⚠ 退場有三種狀態（整支刪除／整支指路／部分退場），見本檔開頭那張表 —— 「在索引裡」不等於「還有功能」。
+last_updated: 2026-09-10
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md | Awakening Init Protocol | morning/goodnight 三步驟設計
@@ -14,13 +14,26 @@ related:
 > 一句話: UCL_Core 的 Python 工具集中在 `Tools~/AgentCommands/`, 跨專案共用; 真正 project-specific 的 Python tool 放主專案 `AgentCommands/Tools/` (見最末段對照)。
 
 > [!WARNING]
-> **本索引不完整**：UCL_Core 現有 **62 支** .py，本檔只列到 21 支
-> （`memory.py` / `knowledge_base.py` / `work_memory.py` / `chess.py` … 皆未列入）。
-> ⛔ **提交走 `senate cmd commit`**；**閱讀線走 `senate ucmd run Library`**、
-> **寫書線走 `senate cmd book`** —— 這三條沒有 python 入口。
->
+> **本索引不完整**：UCL_Core 現有 **53 支** .py（頂層 36 ＋ 子目錄 17；2026-09-10 `find` 實測），
+> 本檔只列到 21 支（`memory.py` / `knowledge_base.py` / `chess.py` … 皆未列入）。
 > ⇒ 查不到某支工具**不代表它不存在** —— 直接 `ls <UCL_Core>/Tools~/AgentCommands/`
 > 是比本索引可信的來源。
+>
+> ## ⚠ 而「在這份索引裡」與「還有功能」是兩件事 —— 退場有**三種狀態**
+>
+> | 狀態 | 長相 | 例 |
+> |---|---|---|
+> | **整支刪除** | 檔案不存在（`ls` 撈不到） | `check_compile.py`／`run_cmd.py` |
+> | **整支指路** | 檔案在、**零功能零副作用**，一律 exit 2 ＋ 印新入口對照 | `git_commit.py`（73 行）／`library.py`（69 行） |
+> | **部分退場** | 本體還在，**只有某幾個子指令** exit 2 | `awakening.py`（2700 行）／`work_memory.py`（1071）／`bili_meta.py`（387） |
+>
+> 🩸 這三種在「只列檔名」的索引裡**長得一模一樣**，而處置完全不同：
+> 第一種要改指路、第二種照它印的對照表走、**第三種你要先確認你要的那個子指令還在不在**。
+> ⇒ 判準：**先跑一次看它印什麼**（三種都會自己說），⛔ 別用「檔案在不在」推「功能在不在」。
+> ⚠ 而檔頭有「退場」字樣**不等於整支退場** —— 撈關鍵字會把第三種算成第二種（實測踩過）。
+>
+> ⛔ 已經沒有 python 入口的三條：**提交走 `senate cmd commit`**、
+> **閱讀線走 `senate ucmd run Library`**、**寫書線走 `senate cmd book`**。
 
 ## 📂 目錄結構
 

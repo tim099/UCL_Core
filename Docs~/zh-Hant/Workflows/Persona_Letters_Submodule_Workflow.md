@@ -1,12 +1,12 @@
 ---
 title: Persona 信件庫 Submodule 化工作流（Persona Letters Submodule Workflow）
 description: 把 persona 信件庫（`ChatTavern/baton/letters/<persona>`）從純資料夾升級為獨立 git repo 並掛回 submodule 的完整 SOP。涵蓋外洩防線（session_token / 個人信箱不得入 history）、初始落檔 commit、submodule add、clone-local 配置（remote / hooksPath）、換手對帳（CRLF 假紅燈）、以及每一步「看起來成功」的失敗判準。
-last_updated: 2026-08-21
+last_updated: 2026-09-10
 target_audience: [AI_Agent, Tools_Maintainer]
 aliases: [信件庫 submodule, persona repo 安裝, letters submodule, 信件檔案庫落檔]
 tags: [workflow, persona, letters, git, submodule, security]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 單層 vs 逐層 bump、git_commit.py 提交規範
+  - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 單層 vs 逐層 bump、`senate cmd commit` 提交規範
   - ucl_core:Docs~/{lang}/Workflows/Create_Persona_Workflow.md | Create Persona Workflow | persona 本體（registry / 角色卡）的建立
   - ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md | Awakening Ritual Workflow | 信件庫的產生端（早晚安儀式）
 ---
@@ -34,7 +34,7 @@ graph TD
 | 步驟 | 誰做 |
 |---|---|
 | `.gitignore` / `.gitattributes` 護欄、staged 全文掃憑證 | **agent** |
-| 初始落檔 commit（走 `git_commit.py`） | **agent** |
+| 初始落檔 commit（走 `senate cmd commit`） | **agent** |
 | 建 GitHub / GitLab 遠端、push、舊資料夾 rename 讓位 | **Tim（手動）** |
 | `submodule add` + `.gitmodules` commit | **agent** |
 | clone-local 配置（remote / hooksPath）與兩向 hook 實測 | **agent** |
@@ -101,13 +101,17 @@ git diff --cached | grep -nE "[A-Za-z0-9._%-]+@[A-Za-z0-9.-]+\.(com|net|org|tw)"
 
 ### A3. 提交
 
-走 `git_commit.py`（trailer 與酒館公告自動；規範見 Commit_Workflow）：
+走 `senate cmd commit`（trailer 與酒館公告自動；規範見 Commit_Workflow）：
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
-    --persona <操刀者> --persona <信件著作 persona> \
-    --repo <persona-repo 絕對路徑> \
-    --message-file <訊息檔>
+senate cmd commit \
+    --arg repo=<persona-repo 絕對路徑> \
+    --arg personas=<操刀者>,<信件著作 persona> \
+    --arg letters_root=<AgentCommands>/ChatTavern/baton/letters/<信件著作 persona> \
+    --arg data_root=<AgentCommands> \
+    --arg region=<現地區域 ID> \
+    --arg expect_files=<N> \
+    --arg-file message=<訊息檔>
 ```
 
 - 代人落檔時**雙 persona**：操刀者在前（sender，決定入帳），著作者在後（co-author trailer）。
@@ -164,7 +168,7 @@ git -C <AgentCommands> submodule status ChatTavern/baton/letters/<persona>
 #   ↑ 驗三件事：gitlink SHA == 遠端 HEAD；括號內是 (heads/master) 不是 detached；路徑正確
 ```
 
-`submodule add` 會自動 stage `.gitmodules` + gitlink，直接走 `git_commit.py --repo <AgentCommands>` 提交。
+`submodule add` 會自動 stage `.gitmodules` + gitlink，直接走 `senate cmd commit` 提交；完整參數見 Phase A3。
 
 > [!IMPORTANT]
 > **預設單層**（Commit_Workflow 拍板）：AgentCommands commit 完就停，**LY 父層指標仍指舊 hash，

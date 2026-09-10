@@ -32,7 +32,9 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// <code>
     /// public override async UniTask ExecuteAsync(Dictionary&lt;string,string&gt; args, CancellationToken token)
     /// {
-    ///     await UCL_AgentCmdOffload.EnterBackground();   // 取代 await UniTask.Yield();
+    ///     await UCL_AgentCmdOffload.EnterBackground(args);   // 取代 await UniTask.Yield();
+    ///     //  ⚠ `args` **要帶** —— 讀數（offloaded / bg_tid）從它的 `_cmd_id` 戳出去；
+    ///     //     不帶會「切了但不記錄」，而那個假紅燈跟「沒 offload」逐字同形（2026-09-10 實測踩過）。
     ///     …原本的同步 IO 全部照舊，只是不在主緒上跑…
     /// }
     /// </code>

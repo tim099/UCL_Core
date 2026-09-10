@@ -117,7 +117,20 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {
-            await UniTask.Yield();
+            // ⭐ TASK-0162：本 handler 移出主執行緒（0163 上鎖之後的第一支）。
+            // 物理意義：慢的是**檔案 IO**，不是酒館公告 —— 讀數（`_cmd_slow.jsonl`，2026-09-10）：
+            //   `wrapup` 4185ms／`check` 3640ms／`update` 2564ms **都不發公告**，而 Runner 側
+            //   phases 加總只有約 10ms ⇒ 時間全在 handler 內讀寫單檔（一張單近千行，且有些 op 掃全部單）。
+            // ⛔ 前置不可反：本族的 RMW 併發安全靠 `UCL_TaskIO` 的鎖（TASK-0163），
+            //   **不再**靠「單一主執行緒」那個前提（`AssertMainThread` 已換成 `AssertHoldsRmwLock`）。
+            // ⚠ 掃過才敢切：Task 族內**零個**主緒 only 的 Unity API（AssetDatabase／PlayerPrefs／
+            //   EditorPrefs／Application.dataPath／EditorUtility 全 0 命中）；唯一碰 Unity 的是
+            //   三族**有快取**的路徑解析器，而那正是 `EnterBackground()` 先摸一次的東西。
+            // ⚠ **必須帶 `args`**：`EnterBackground` 的讀數（`offloaded` / `bg_tid`）是從 args 的
+            //   `_cmd_id` 戳進去的 ⇒ 不帶就**切了但不記錄**，而 `offloaded=false` 同時是
+            //   「沒 offload」與「忘了帶 args」兩件事 —— 我 2026-09-10 就照它的用法註解打了無參數版，
+            //   拿到一個看起來像「offload 沒生效」的假紅燈（既有 6 個呼叫點全都帶）。
+            await UCL_AgentCmdOffload.EnterBackground(args);
             string aOp = GetArg(args, "op", "list").Trim().ToLowerInvariant();
             string aActor = GetArg(args, "persona", "unknown").Trim();
             var aR = new StringBuilder();

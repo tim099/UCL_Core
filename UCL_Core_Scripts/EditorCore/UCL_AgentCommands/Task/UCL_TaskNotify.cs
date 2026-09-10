@@ -73,6 +73,13 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 };
                 // `_cmd_id` 隨子 args 穿透 —— 子 Cmd 的回報才回得到本筆 context（併行下唯一正確的路徑）。
                 UCL_AgentCmdContexts.PropagateCmdId(iCallerArgs, aArgs);
+                // ⚠ TASK-0162：呼叫端（`Cmd_Task`）現在跑在**背景緒**上，而下面這支子 Cmd
+                //   自己的第一行是 `EnterBackground()` —— 從背景緒呼叫它，**prewarm 會靜默失效**
+                //   （那幾個路徑 getter 會丟例外而被吞掉），於是「快取暖好了」與「這次沒暖到」同形。
+                //   🩸 那不是假想：**TASK-0175** 就是「Tavern offload 之後 PlayerPrefs 在背景緒」那一隻，
+                //   而它壞的是「沒帶參數」那條預設路徑 —— 冷 domain 的第一次才會現形，最難重現的那種。
+                // ⇒ 先回主緒，讓子 Cmd 自己按設計切出去。⛔ 不在這裡幫它切（那會變成第二套規則）。
+                await UniTask.SwitchToMainThread();
                 var aCmd = new Cmd_Tavern();
                 await aCmd.ExecuteAsync(aArgs, default);
                 return true;

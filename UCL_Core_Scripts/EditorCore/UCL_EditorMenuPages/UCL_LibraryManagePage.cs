@@ -128,10 +128,26 @@ namespace UCL.Core.EditorLib.Page
         // 物理意義：Tim 輸入要捐的書 slug + 捐贈者 bank + 捐贈 persona + token 數，按「捐贈」後派 `Books` op=donate
         // ⚠ persona 是 **required**（`Cmd_Books.Op_Donate` 走 `RequireArg`）—— 舊 python 那條是選填，
         //   而它現在空著送出去只會換來一個 Failed 的 Cmd ⇒ 本頁在送出前就擋。
+        //
+        // 🔑 **兩個身分欄位各自對到 Cmd 的哪一格**（TASK-0150 ② 明文要求寫在這裡，⛔ 不准猜、不准同值代入）：
+        //   · `m_DonateDonor`   → Cmd 參數 **`agent`**   ＝ **錢從誰的帳出**（bank / 錢包身分，例 `claude-code`）
+        //   · `m_DonatePersona` → Cmd 參數 **`persona`** ＝ **誰捐的**（行為人 persona，例 `basecamp`）
+        //   🩸 為什麼要在這裡寫死這兩行：合一模式下同一個人的 bank 與 persona 常常長得很像，
+        //     ⇒ 把其中一個代進另一個**不會報錯**，只會讓錢從別人的帳出、或登記成別人捐的。
         string m_DonateBook = "";
         string m_DonateDonor = "claude-da-xiaojie";
         string m_DonateTokens = "100";
         string m_DonatePersona = "";
+
+        // 區塊職責：最後一次捐贈派工的**頁面回饋**（TASK-0150 ③(ii)）
+        // 物理意義：舊路把結果全丟進 Unity Console（exit≠0 一行 LogError）——
+        //          🩸 而按這顆鈕的人不看 Console ⇒ 失敗與成功在**頁面上**逐像素相同。
+        // ⚠ 三態分開，⛔ 不留空格讓人自己填：Pending（送出了，還沒有結果檔）／
+        //   Success／Failed。**「查不到結果」永遠不畫成成功** —— 人往空格裡填的一定是成功。
+        enum DonateFeedback { None, Pending, Success, Failed }
+        DonateFeedback m_DonateState = DonateFeedback.None;
+        string m_DonateMsg = "";
+        string m_DonateCmdId = "";
 
         // 區塊職責：BookNotes 下拉選單 state（對齊 UCL_RelationshipPage 的 persona picker 模式）
         // 物理意義：m_SelectedBookId = 當前選中的 BookNotes id；m_BookPickerDic 給 PopupSearchCache 暫存搜尋 state
@@ -945,7 +961,31 @@ namespace UCL.Core.EditorLib.Page
                     }
                 }
                 GUILayout.Label(UCL_CodeLocalize.Get("LibraryManage.Donate.Hint"), UCL_GUIStyle.LabelStyle);
+                DrawDonateFeedback();
             }
+        }
+
+
+        // 區塊職責：把最後一次捐贈的結果畫在**頁面上**（TASK-0150 ③(ii)）
+        // 物理意義：三態各一種顏色與前綴 —— ⛔ Pending 不畫綠：那一格的意思是「還不知道」，
+        //          而它與 Success 在使用者眼裡的差別，正是這顆鈕從前缺的那一格。
+        // 數值影響：純顯示，不觸發任何寫入。
+        void DrawDonateFeedback()
+        {
+            if (m_DonateState == DonateFeedback.None) return;
+            string prefix;
+            Color color;
+            switch (m_DonateState)
+            {
+                case DonateFeedback.Success: prefix = "✅"; color = new Color(0.4f, 1f, 0.6f); break;
+                case DonateFeedback.Failed: prefix = "⛔"; color = new Color(1f, 0.45f, 0.45f); break;
+                default: prefix = "⏳"; color = new Color(1f, 0.85f, 0.4f); break;
+            }
+            string hex = ColorUtility.ToHtmlStringRGB(color);
+            GUILayout.Label($"<color=#{hex}>{prefix} {m_DonateMsg}</color>", UCL_GUIStyle.LabelStyle);
+            if (!string.IsNullOrEmpty(m_DonateCmdId))
+                GUILayout.Label($"<size=10>cmd_id `{m_DonateCmdId}`　—　完整報告：_cmd_results/{m_DonateCmdId}.json</size>",
+                                UCL_GUIStyle.LabelStyle);
         }
 
 
@@ -996,8 +1036,9 @@ namespace UCL.Core.EditorLib.Page
             if (string.IsNullOrWhiteSpace(m_DonateBook) || string.IsNullOrWhiteSpace(m_DonateDonor)
                 || string.IsNullOrWhiteSpace(m_DonatePersona))
             {
-                Debug.LogWarning("[LibraryManage] donate: book / donor bank / donate persona 都不能空"
-                                 + "（persona 是 Cmd_Books 的 required —— 空著送出去只會換一個 Failed 的 Cmd）");
+                SetDonateFeedback(DonateFeedback.Failed,
+                    "沒有送出：書 slug／捐贈者 bank／捐贈 persona 三格都不能空"
+                    + "（persona 是 Cmd_Books 的 required —— 空著送出去只會換一個 Failed 的 Cmd）", "");
                 return;
             }
             string book = m_DonateBook.Trim();
@@ -1030,8 +1071,9 @@ namespace UCL.Core.EditorLib.Page
         {
             if (UCL_AgentCommandRunner.IsRunningForAgent(null))
             {
-                Debug.LogWarning("[LibraryManage] 共用 queue 正在執行 —— 捐贈暫不送出。"
-                                 + "現在寫進去會被那一批收尾時的整批寫回吃掉（lost update）。等它跑完再按。");
+                SetDonateFeedback(DonateFeedback.Failed,
+                    "沒有送出：共用 queue 正在執行。現在寫進去會被那一批收尾時的整批寫回吃掉"
+                    + "（lost update）—— 等它跑完再按。", "");
                 return;
             }
 
@@ -1062,28 +1104,72 @@ namespace UCL.Core.EditorLib.Page
                            && aVerify.Commands.Any(c => c != null && c.Id == aCmd.Id);
             if (!aLanded)
             {
-                Debug.LogError($"[LibraryManage] 捐贈寫入 queue 後回讀不到 {aCmd.Id} —— "
-                               + "可能有另一個寫入者同時收尾（lost update）。**沒有送出**，請稍後再按。");
+                SetDonateFeedback(DonateFeedback.Failed,
+                    $"沒有送出：寫進 queue 後回讀不到 {aCmd.Id}，可能有另一個寫入者同時收尾"
+                    + "（lost update）。請稍後再按。", aCmd.Id);
                 return;
             }
 
-            Debug.Log($"[LibraryManage] 已排入 Books op=donate：id={aCmd.Id}，book={iBook}，"
-                      + $"persona={iPersona}，bank={iBank}，tokens={iTokens}"
-                      + $"（⚠ 此刻只寫了 queue —— 扣款與登記看 _cmd_results/{aCmd.Id}.json）");
+            SetDonateFeedback(DonateFeedback.Pending,
+                $"已排入 Books op=donate（《{iBook}》／{iPersona}／{iBank}／{iTokens} token）——"
+                + " ⚠ 此刻**只寫了 queue**，還沒扣款也還沒登記。等結果…", aCmd.Id);
             UCL_AgentCommandRunner.Menu_RunPending();
-            DelayedReloadAfterDonate().Forget();
+            DelayedReloadAfterDonate(aCmd.Id).Forget();
         }
 
 
-        // 區塊職責：捐贈派出去之後延遲刷新清單
+        // 區塊職責：設定頁面回饋，並**同時**留一份在 Console（兩個讀者，不是兩個真相源）
+        // 物理意義：頁面給按鈕的人看、Console 給事後翻 log 的人看 —— 同一句話。
+        void SetDonateFeedback(DonateFeedback iState, string iMsg, string iCmdId)
+        {
+            m_DonateState = iState;
+            m_DonateMsg = iMsg;
+            m_DonateCmdId = iCmdId ?? "";
+            string aLine = $"[LibraryManage:donate] {iMsg}" + (string.IsNullOrEmpty(iCmdId) ? "" : $"（{iCmdId}）");
+            if (iState == DonateFeedback.Failed) Debug.LogError(aLine);
+            else Debug.Log(aLine);
+        }
+
+
+        // 區塊職責：捐贈派出去之後等結果 —— 刷新清單 ＋ **把判定讀回頁面**
         // 物理意義：Runner 是 async ——「送出」與「登記落盤」不是同一刻，
         //          立刻 LoadData() 讀到的是**捐贈前**的 `_donations.json`（而它長得完全正常）。
-        // ⚠ 這一格是 best-effort 顯示，不是讀數：清單沒更新 ⇒ 去看 Console / `_cmd_results`，
-        //   ⛔ 別把「清單裡沒有」讀成「捐贈失敗」。
-        async UniTaskVoid DelayedReloadAfterDonate()
+        //          判定的真相源是 `_cmd_results/<id>.json`（Runner 寫的），⛔ 不是本頁的清單有沒有變。
+        // ⚠ 輪詢有上限：到期仍讀不到結果檔 ⇒ 停在 **Pending** 並說「還不知道」，
+        //   ⛔ 不改判成功也不改判失敗 —— 那一格的真值就是「沒有讀數」。
+        // 數值影響：純讀 `_cmd_results/`；不寫任何檔。
+        async UniTaskVoid DelayedReloadAfterDonate(string iCmdId)
         {
-            await UniTask.Delay(TimeSpan.FromSeconds(2));
-            LoadData();
+            string aPath = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_cmd_results", iCmdId + ".json");
+            for (int i = 0; i < 15; i++)   // 15 × 2s ＝ 最多等 30 秒
+            {
+                await UniTask.Delay(TimeSpan.FromSeconds(2));
+                LoadData();
+                if (m_DonateCmdId != iCmdId) return;   // 這期間有人按了新的一筆 ⇒ 舊的不覆寫新的
+                if (!File.Exists(aPath)) continue;
+
+                JsonData aResult = null;
+                try { aResult = JsonData.ParseJson(File.ReadAllText(aPath)); }
+                catch (Exception e)
+                {
+                    SetDonateFeedback(DonateFeedback.Pending,
+                        $"結果檔讀不動（{e.Message}）—— ⚠ 這不是「失敗」，去看 _cmd_results/{iCmdId}.json", iCmdId);
+                    return;
+                }
+                string aVerdict = aResult != null ? aResult.GetString("result", "") : "";
+                if (aVerdict == "Success")
+                    SetDonateFeedback(DonateFeedback.Success, "捐贈完成（扣款／登記／酒館公告都在那一筆 Cmd 裡）", iCmdId);
+                else if (aVerdict == "Failed")
+                    SetDonateFeedback(DonateFeedback.Failed,
+                        "捐贈失敗：" + aResult.GetString("error", "（結果檔沒寫 error）"), iCmdId);
+                else
+                    SetDonateFeedback(DonateFeedback.Pending,
+                        $"結果檔在，但 `result` 是 `{aVerdict}` —— ⚠ 認不得的判定值，去看 _cmd_results/{iCmdId}.json", iCmdId);
+                return;
+            }
+            SetDonateFeedback(DonateFeedback.Pending,
+                "等了 30 秒還沒有結果檔 —— ⚠ **不知道**成不成（不是失敗）。"
+                + "Editor 可能正忙；去看 _cmd_results/ 或 Console，⛔ 別直接再按一次（那會送出第二筆）。", iCmdId);
         }
 
 

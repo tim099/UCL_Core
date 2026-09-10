@@ -1262,31 +1262,76 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 log.AppendLine($"- ✅ 建立 media.json：`{mediaId}`（{mediaKind}）");
             }
 
-            string readerPath = ReaderJsonPath(mediaId, persona);
-            if (File.Exists(readerPath))
-                log.AppendLine($"- reader.json 已存在，不覆寫：`{persona}`（既有進度保留）");
-            else
-            {
-                var reader = new JsonData();
-                reader[Key_SchemaVersion] = 2;
-                reader[Key_ReaderPersona] = persona;
-                reader[Key_MediaId] = mediaId;
-                reader[Key_Status] = "reading";
-                reader[Key_Anticipation] = anticipation;
-                reader[Key_ReadingStartedAt] = Today();
-                var progress = new JsonData();
-                progress[Key_CurrentChapterId] = "";
-                progress[Key_LastRead] = Today();
-                progress[Key_BookmarkNote] = "（尚未開始）";
-                reader[Key_Progress] = progress;
-                reader[Key_CurrentImpression] = "（尚未寫下第一筆心得）";
-                reader[Key_UpdatedAt] = Today();
-                SaveJson(readerPath, reader);
-                log.AppendLine($"- ✅ 建立 reader.json：`{persona}`（期待度 {anticipation}／5）");
-                SyncBookshelf(mediaId, persona, out _);
-            }
+            log.Append(EnsureReaderJson(mediaId, persona, anticipation, out _));
 
             return log.ToString();
+        }
+
+        // ===========================================================
+        // 區塊職責：**建 reader.json（不存在才建）** —— `MediaInit` 與 `RegisterReader` 共用這一份。
+        // 物理意義：reader.json 是「這個人在看這部」這件事的落檔，schema 只准有一種形狀。
+        // 數值影響：已存在 ⇒ **零寫入**（既有進度一個位元組都不動），`oCreated=false`。
+        // 🩸 為什麼抽出來：TASK-0137 要在進場時也能登記，而「再寫一次同樣的初值」＝ 第二份 schema。
+        //   兩份初值長得一樣時不會有人發現它們已經分岔（少一個欄位的 reader 讀回來也「正常」）。
+        // ===========================================================
+        static string EnsureReaderJson(string mediaId, string persona, int anticipation, out bool oCreated)
+        {
+            oCreated = false;
+            string readerPath = ReaderJsonPath(mediaId, persona);
+            if (File.Exists(readerPath))
+                return $"- reader.json 已存在，不覆寫：`{persona}`（既有進度保留）" + Environment.NewLine;
+
+            var reader = new JsonData();
+            reader[Key_SchemaVersion] = 2;
+            reader[Key_ReaderPersona] = persona;
+            reader[Key_MediaId] = mediaId;
+            reader[Key_Status] = "reading";
+            reader[Key_Anticipation] = anticipation;
+            reader[Key_ReadingStartedAt] = Today();
+            var progress = new JsonData();
+            progress[Key_CurrentChapterId] = "";
+            progress[Key_LastRead] = Today();
+            progress[Key_BookmarkNote] = "（尚未開始）";
+            reader[Key_Progress] = progress;
+            reader[Key_CurrentImpression] = "（尚未寫下第一筆心得）";
+            reader[Key_UpdatedAt] = Today();
+            SaveJson(readerPath, reader);
+            SyncBookshelf(mediaId, persona, out _);
+            oCreated = true;
+            return $"- ✅ 建立 reader.json：`{persona}`（期待度 {anticipation}／5）" + Environment.NewLine;
+        }
+
+        // ===========================================================
+        // 區塊職責：把 persona 登記成**既有 media** 的 reader（進場即註冊）——
+        //          給觀影／閱讀流程在「我要開始看這部」的那一刻呼叫，⛔ 不是給建新作品用的。
+        // 物理意義：reader 的語意是「這個人在看這部」，而那件事發生在**進場**，不是收工。
+        //   🩸 TASK-0137（summit 2026-09-05）：第一次陪看某作品的人，收工回傳檔叫他寫接續點，
+        //   而 `note_chapter`／`bookmark`／`recall` 三支的前置都是 reader.json ⇒ 三支全失敗。
+        //   場次帳 exit 0、+10 token、公告照發，記憶帳是空的 —— **兩本帳分開結算，而空的那本不會叫**。
+        // 數值影響：
+        //   · media.json **不存在 ⇒ 什麼都不建**、回 false 並給 error。
+        //     ⛔ 不從 media_id 反推 work/title 去補建 —— 那是替作品層捏身分，而它「看起來會很正常」。
+        //   · reader.json 已存在 ⇒ 零寫入、`oCreated=false`、回 true（冪等，進場每次呼叫都安全）。
+        //   · anticipation 預設 3（中性）—— 進場時本人還沒讀，工具**不替他表態**；他自己改。
+        // ===========================================================
+        public static bool RegisterReader(string mediaId, string persona,
+                                          out bool oCreated, out string oLog, out string error)
+        {
+            oCreated = false; oLog = ""; error = null;
+            if (string.IsNullOrEmpty(mediaId) || string.IsNullOrEmpty(persona))
+            {
+                error = "RegisterReader：media_id 與 persona 都必填";
+                return false;
+            }
+            string mediaPath = Path.Combine(MediaRoot(mediaId), k_MediaJsonName);
+            if (!File.Exists(mediaPath))
+            {
+                error = $"media.json 不存在：{mediaPath} —— 這部作品還沒進閱讀庫，" +
+                        $"⇒ 先走 `Library op=media_init`（那一支才會建 work／media 層）";
+                return false;
+            }
+            oLog = EnsureReaderJson(mediaId, persona, 3, out oCreated);
+            return true;
         }
 
         // ===========================================================

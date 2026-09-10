@@ -229,6 +229,34 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
         /// <summary>某 reader 已有哪些章（chapter id 昇冪）。讀目錄本身 —— 不推 reader.json 的 progress
         /// （progress 是「最後讀到哪」，不等於「哪幾章有心得」，兩者曾經不一致）。</summary>
+        // ===========================================================
+        // 區塊職責：**進場即把自己登記成這部的 reader**（TASK-0137 的 (C)）。
+        // 物理意義：reader 的語意是「這個人在看這部」，而那件事發生在 join／catchup，不是收工。
+        //   🩸 在這之前，第一次看某作品的人收工時才被叫去寫接續點，而三支寫入 op 的前置都是
+        //   `reader.json` ⇒ 全部失敗；而場次那本帳是綠的（exit 0／發薪／公告照發）
+        //   ⇒ **記憶帳空著而沒有任何一層會叫**。
+        // 數值影響：冪等 —— 已是 reader ⇒ 零寫入。media 還沒進閱讀庫 ⇒ **不建**，只在回傳檔留一行 ⚠
+        //   （⛔ 不從 media_id 反推 work／title 去補建作品層：那是替作品捏身分，而它看起來會很正常）。
+        //   ⛔ 一律不擋流程：登記失敗不影響進場／補課，它只是讓收工那一步不會撞牆。
+        // ===========================================================
+        static void EnsureLibraryReader(StringBuilder ioR, string iMediaId, string iPersona)
+        {
+            if (ioR == null || string.IsNullOrEmpty(iMediaId) || string.IsNullOrEmpty(iPersona)) return;
+            bool aOk;
+            bool aCreated = false;
+            string aErr = null;
+            try { aOk = UCL_ReadingLibraryIO.RegisterReader(iMediaId, iPersona, out aCreated, out _, out aErr); }
+            catch (Exception e) { aOk = false; aErr = e.Message; }
+
+            if (aOk && aCreated)
+                ioR.AppendLine($"- 📖 閱讀庫登記: **已建立** `readers/{iPersona}/reader.json`（進場即註冊，TASK-0137）"
+                             + "　←　收工寫接續點不會再撞「你還不是這部的 reader」");
+            else if (aOk)
+                ioR.AppendLine($"- 📖 閱讀庫登記: 早就是 `{iMediaId}` 的 reader —— **未動任何檔**");
+            else
+                ioR.AppendLine($"- ⚠ 閱讀庫登記**未完成**（不擋本步）：{aErr}");
+        }
+
         static List<string> ReaderChapters(string iMediaId, string iPersona)
         {
             var aOut = new List<string>();
@@ -733,6 +761,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aRef = aP.reference_reader;
             string aShow = aP.show_title;
             var aMine = ReaderChapters(aMediaId, iPersona);
+            EnsureLibraryReader(aR, aMediaId, iPersona);   // TASK-0137：補課也是「我要開始看這部」的時刻
             aR.AppendLine($"> **{aShow}**｜媒材 `{aMediaId}`｜本場第 {aEpisode} 話｜接續基準 `{aRef}`");
             aR.AppendLine($"> 我（`{iPersona}`）已有的章：{(aMine.Count == 0 ? "**無**" : string.Join(" ", aMine))}");
             aR.AppendLine();
@@ -2225,6 +2254,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine($"- 截止    : {aPrimary.until_local}（沿用 primary）");
             aR.AppendLine($"- primary 進度: 已 {aPrimary.cycles} 輪／{aPrimary.observations} 筆評論");
             aR.AppendLine($"- 加入公告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
+            // TASK-0137：用 `aLibId`（＝準備檔那把鍵）登記，⛔ 不用 `aMedia`
+            //   —— 兩者在多數場相同，而不同的那幾場正是會把心得寫進錯 media 的那幾場。
+            EnsureLibraryReader(aR, aLibId, iPersona);
             aR.AppendLine();
             aR.AppendLine("## 觀影不變式（Tim 2026-08-25 拍板：全員同一條接力段）");
             aR.AppendLine("- **所有觀影者（含 primary）跑同一條接力前緣** —— 誰的 cycle 先回來誰拿下一段，交接自帶重疊");

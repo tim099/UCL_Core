@@ -1,17 +1,17 @@
 ---
 name: ucl-commit
 description: |
-  使用者要求 commit / 提交 / 推改動時用本 skill。**預設只 commit 改動所在的那一層（單層），逐層 bump 父層要使用者明說 commit all / 全包 / 逐層 bump 才做。** 涵蓋 submodule 先切回追蹤分支（避免 detached HEAD 游離 commit）、ChatTavern 訊息獨立 [chat] commit、ephemeral 檔（log / 臨時渲染 / wait 檔）不入 commit 的規範，以及**提交一律走 `git_commit.py`**（自動組 Co-Authored-By trailer + 自動發酒館公告領薪）。
+  使用者要求 commit / 提交 / 推改動時用本 skill。**預設只 commit 改動所在的那一層（單層），逐層 bump 父層要使用者明說 commit all / 全包 / 逐層 bump 才做。** 涵蓋 submodule 先切回追蹤分支（避免 detached HEAD 游離 commit）、ChatTavern 訊息獨立 [chat] commit、ephemeral 檔（log / 臨時渲染 / wait 檔）不入 commit 的規範，以及**提交一律走 `senate cmd commit`**（自動組 Co-Authored-By trailer + 自動發酒館公告領薪）。
   觸發詞包含：commit
   涉及 UCL_Core 等 submodule 改動的 git 操作必用。
 ---
 
 # UCL Commit — 提交規範速查
 
-> 一句話：**你負責判斷「哪些檔走哪一筆」與 stage；提交走 `git_commit.py`，trailer 與領薪公告它自己來。**
+> 一句話：**你負責判斷「哪些檔走哪一筆」與 stage；提交走 `senate cmd commit`，trailer 與領薪公告它自己來。**
 >
 > ⚠ **兩條路，沒有第三條**：
-> **有作者的產出**（code / 文件 / 她寫的信）走 `git_commit.py` —— **一律公告領薪，沒有關閉開關**；
+> **有作者的產出**（code / 文件 / 她寫的信）走 `senate cmd commit` —— **一律公告領薪，沒有關閉開關**；
 > **沒有作者的檔**（帳本 / 訊息 / cursor / 狀態快照）走 `Cmd AutoCommit` —— 純 git commit，不掛
 > trailer、不公告、不領薪。**「手動但不公告」不是一個選項** —— 不想公告就表示它不該走手動那條。
 
@@ -70,7 +70,7 @@ description: |
 
 | 類型 | 走哪筆 commit |
 |---|---|
-| 代碼 / 文檔 / `.meta` | 主 commit（**具名 stage**，走 `git_commit.py`） |
+| 代碼 / 文檔 / `.meta` | 主 commit（**具名 stage**，走 `senate cmd commit`） |
 | **機器生成的重複性檔**（酒館訊息 / Treasury 帳本 / runtime state / persona 的 `mailbox` `portraits` `profile` `bank` `_latest.md`） | **交給自動 commit**（`Cmd AutoCommit`，見下節）—— 不必自己分類 |
 | ephemeral：`*.log` / `_last_op.md` / `_last_view.md` / `_active_waits.json` / `_wait_*.md` / DebugLogs / 臨時渲染檔 | **不 commit**（自動 commit 也永遠不收） |
 
@@ -81,7 +81,7 @@ description: |
 >
 > | | 有作者的產出（code / 文件 / 她寫的信） | 機器生成的狀態（帳本 / 訊息 / cursor / `profile/` / `bank/`） |
 > |---|---|---|
-> | 走哪支 | `git_commit.py` | `Cmd AutoCommit` |
+> | 走哪支 | `senate cmd commit` | `Cmd AutoCommit` |
 > | trailer | ✅ 掛作者 | ❌ 純 git commit |
 > | 酒館公告＋領薪 | ✅ | ❌ **不領薪** —— 掛誰的名字領誰的薪都是假帳 |
 >
@@ -146,8 +146,8 @@ description: |
   而那筆的訊息只講了另外兩張單。`--name-only` 的清單**印出來了**，就在下一行輸出裡。
 - 🛡 **帶 `--expect-files N`** —— 宣告這一筆該收幾個檔，不符就擋下（exit 2，**commit 前返回**）：
   ```bash
-  python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <repo> \
-      --expect-files 3 --message-file <訊息檔>
+  senate cmd commit --arg repo=<repo> --arg personas=<你> \
+      --arg expect_files=3 --arg-file message=<訊息檔>
   ```
   它把「我以為我在提交幾個檔」變成一個**必須先算過**的數字（同 `sculpt.py --expect-pixels` 的形狀）。
   不帶＝不檢查（既有呼叫端行為不變）—— 但**具名 stage ＋ 這個數字**才是完整的那道手勢。
@@ -195,21 +195,24 @@ commit 訊息裡開一段，**寫「為什麼」與「它會怎麼咬人」，�
 
 ---
 
-## 提交 — `git_commit.py`
+## 提交 — `senate cmd commit`
 
 ```bash
 git -C <repo> add <files>          # stage 自己來
 
-python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
-    --persona <你> [--persona <協作者> ...] \
-    --repo <該層 repo 路徑> \
-    --message-file <訊息檔> \
-    [--announce-body-file <開場白檔>]
+senate cmd commit \
+    --arg repo=<該層 repo 路徑> \
+    --arg personas=<你>[,<協作者>…] \
+    --arg letters_root=<letters 根> --arg data_root=<AgentCommands 根> \
+    --arg region=<現地區域 ID> \
+    --arg expect_files=<N> \
+    --arg-file message=<訊息檔> \
+    [--arg-file announce_body=<開場白檔>]
 ```
 
 > [!CAUTION]
 > **body 一律走檔案，inline 只準用在「無標點的短句」。**
-> `--message-file` / `--announce-body-file`，不要用 `-m "…"` / `--announce-body "…"` 塞長文。
+> `--arg-file message=<檔>` / `--arg-file announce_body=<檔>`，⛔ 不要把長文塞進 `--arg k=v`。
 >
 > 🩸 2026-08-05 summit 一天被反引號咬**四次**（`commit -m` 兩次、`work_memory --body` 一次、
 > `--announce-body` 一次）。最後那次最難看：**同一道指令裡 commit 訊息走了 `--message-file`
@@ -233,7 +236,10 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py \
 - 沒有 staged 變更 —— 本工具只提交，不 stage
 - 查不到 sender 的 bank —— sender 決定錢進誰的帳，猜錯是把薪水發給別人
 
-**exit 6 = commit 成功但公告失敗**（錢沒領到，需手動補）。這兩件事刻意分開回報。
+**exit 6 ＝ commit 落地、公告「確定沒發」**（錢沒領到，補發是安全的）／
+**exit 7 ＝ commit 落地、公告「不知道」**（沒等到回執）⇒ ⛔ **先回讀再決定** ——
+同一個 SHA 貼兩次是**付兩次錢**，而「逾時」與「真的沒發」在 CLI 這端同形。
+🩸 舊的 `git_commit.py` 把這兩格併成一個 6 並無條件叫人補發（TASK-0187 拆開）。
 
 ⚠ 也別走 stdin heredoc：內文若含 `EOF` 字樣，結束標記會把外層提前關掉
 （2026-08-03 實測自摔，公告被截斷）。**一律 `--message-file`** ——
@@ -248,10 +254,10 @@ heredoc 與 `-m` 兩條路都會經過 shell，而上面那條 CAUTION 講的就
 
 ```bash
 git -C <inner-sub> add <files>
-python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <inner-sub> -m "..."
+senate cmd commit --arg repo=<inner-sub> --arg personas=<你> --arg-file message=<訊息檔>
 
 git -C <parent> add <child-sub-relative-path>
-python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <parent> -m "Bump <child>: ..."
+senate cmd commit --arg repo=<parent> --arg personas=<你> --arg-file message=<bump 訊息檔>
 ```
 
 **驗證**：每層 `git -C <sub> log <tracked-branch> -1 --oneline` 確認落在追蹤分支（非 detached）；
@@ -274,7 +280,7 @@ python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <par
 Fixes TASK-12
 ```
 
-`git_commit.py` 會在**公告成功之後**自動推進狀態（有 QA 時轉 `in_review`，無 QA 時直接 `done`）並把 SHA 掛上去，
+`senate cmd commit` 會在**公告成功之後**自動推進狀態（有 QA 時轉 `in_review`，無 QA 時直接 `done`）並把 SHA 掛上去，
 console 會印出推進或結單訊息。
 
 **為什麼掛在 commit 上**：修東西或交付功能的人本來就要 commit ——
@@ -300,11 +306,11 @@ console 會印出推進或結單訊息。
    `run AutoCommit --arg op=scan`（＋ `--arg mode=letters`）看清分群 → `--arg op=commit`。
    先做這步，剩下的 `git status` 就只剩「有作者的產出」——
    **分類這件事交給規則，而不是交給你這一刻的注意力。**
-   ⇒ 之後 `git_commit.py` 收到的每一筆都該公告領薪；**發現有東西「不想公告」＝它站錯隊了**，
+   ⇒ 之後 `senate cmd commit` 收到的每一筆都該公告領薪；**發現有東西「不想公告」＝它站錯隊了**，
    把它移到這一步，不是去找一個關掉公告的方法。
    🩸 為什麼值得先做：2026-08-17 有人把同事 staged 的 gitlink 掃進自己的 commit，
    而那筆的 `--name-only` 清單其實印出來了 —— 印了但沒讀。**縮短要讀的清單比要求自己更專心有效。**
-4. stage → `git_commit.py` 提交（trailer 與公告自動）。
+4. stage → `senate cmd commit` 提交（trailer 與公告自動）。
    **單層**：只做改動所在那一層，做完就停。
    **commit all**：由內往外逐層 stage + bump。
 4.5 **這筆有修到 Task 單嗎** → 訊息裡加 `Fixes TASK-<n>`（提交時自動關單或推進狀態）。

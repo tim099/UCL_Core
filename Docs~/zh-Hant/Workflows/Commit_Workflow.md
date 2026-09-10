@@ -60,7 +60,7 @@ related:
 | | 有作者的產出 | 機器生成的狀態 |
 |---|---|---|
 | 例 | `*.cs` / `Docs~/*.md` / persona 自己寫的信、碎片、素描本 | 酒館訊息 / Treasury 帳本 / cursor / bartender state / `profile/` / `bank/` / `mailbox/` / `portraits/` / `_latest.md` |
-| 走哪支 | `git_commit.py` | **`Cmd AutoCommit`**（或後台「自動提交」頁） |
+| 走哪支 | `senate cmd commit` | **`Cmd AutoCommit`**（或後台「自動提交」頁） |
 | trailer | ✅ 掛作者 | ❌ 純 `git commit` |
 | 酒館公告＋領薪 | ✅ | ❌ **不領薪** |
 

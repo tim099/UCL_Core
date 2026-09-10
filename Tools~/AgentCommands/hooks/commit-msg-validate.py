@@ -2,7 +2,10 @@
 """
 commit-msg-validate.py — commit-msg hook：只擋「已有 trailer 但格式或 domain 對不上」。
 
-# 區塊職責：抓沒走 git_commit.py 的人。走工具的人在工具內已經被驗過，這裡是第二道。
+# 區塊職責：抓沒走 `senate cmd commit` 的人。走工具的人在工具內已經被驗過，這裡是第二道。
+# ⚠ 2026-09-10（TASK-0187）：正路從 `git_commit.py` 換成 `senate cmd commit`，
+#   舊入口已退場成指路 stub（exit 2、零副作用）。本 hook 的**判準一個字都沒改** ——
+#   它驗的是 trailer 的形狀，而形狀沒有變；改的只有「擋下時要指去哪」。
 # 物理意義：**不擋沒有 trailer 的 commit** —— Tim 自己手改的、機器產生的 bump，本來就不該掛
 #          agent trailer。只擋「宣稱是某 persona 做的、但署名內容與 registry 對不上」那種：
 #          那是會靜默寫進不可變 history 的失真（2026-08-03 三方共識）。
@@ -91,7 +94,9 @@ def main() -> int:
     print("", file=sys.stderr)
     print("  這道檢查只擋「已經有 trailer 但內容不符」—— 沒有 trailer 的 commit 一律放行。", file=sys.stderr)
     print("  修法：別手打 trailer，改用", file=sys.stderr)
-    print("    python <UCL_Core>/Tools~/AgentCommands/git_commit.py --persona <你> --repo <repo> -m \"...\"", file=sys.stderr)
+    print("    senate cmd commit --arg repo=<repo> --arg personas=<你> \\", file=sys.stderr)
+    print("        --arg letters_root=<letters 根> --arg data_root=<AgentCommands 根> \\", file=sys.stderr)
+    print("        --arg region=<現地區域 ID> --arg-file message=<訊息檔>", file=sys.stderr)
     print("  真的要硬過：git commit --no-verify（但那筆會永遠留在 history 裡）", file=sys.stderr)
     return 1
 

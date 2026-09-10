@@ -142,7 +142,7 @@ return "
   `0` 是「有帳戶但沒錢」，`None` 是「問不到」—— 混淆會讓額度顯示成 0 而看起來像破產。
 - **印 ✓ 不算數，讀回來才算**：寫檔／發券／post 之後，要驗就去讀落地結果，
   不要用記憶體裡的值印「new balance」。
-- **純 stdlib 優先**（對齊 library.py / awakening.py）；要 pip 依賴先問。
+- **純 stdlib 優先**（對齊 `awakening.py` / `chess.py`）；要 pip 依賴先問。
 
 ---
 

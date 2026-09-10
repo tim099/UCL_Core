@@ -88,7 +88,7 @@ STT **嚴格耦合錄影**：錄影開關一動，`stt_enabled` 跟著動（whis
 
 whisper 的 `initial_prompt` 能把「前文語境」餵進去做詞彙偏置——最痛的用途是**壓人名咬字**（シャーリー→サレイ、ケイト→ケート 之類，換 medium 模型都沒解）。
 
-- **資料源 = 新 reading-library session 的人物 `name_original` 欄（片假名）**：新 API 完成後由同 persona／同 media 的人物資料組成 whisper prompt。**MUST 日文字形**——餵中文譯名（夏麗/凱特）給日語 ASR 沒用甚至更糟（whisper 往 prompt 字形偏置）。重做期間不可用 legacy `library.py stt-prompt` 回讀 Archive。
+- **資料源 = 新 reading-library session 的人物 `name_original` 欄（片假名）**：新 API 完成後由同 persona／同 media 的人物資料組成 whisper prompt。**MUST 日文字形**——餵中文譯名（夏麗/凱特）給日語 ASR 沒用甚至更糟（whisper 往 prompt 字形偏置）。⛔ 而缺這一格時**不可回讀 Archive 去補** —— Archive 是歷史原件，不是資料源。
 - **管道**：`stream_watch start --stt-prompt "<抽出的字串>"` → 寫進 daemon `_config.json` 的 `stt_prompt` → daemon 起 `SttCacheWorker(prompt=…)` → `transcribe(initial_prompt=…)` → `model.transcribe(initial_prompt=…)`。轉錄在 **daemon 端**做（不是 montage），故 prompt 必須經 config 傳到 daemon。
 - **生命週期**：綁 worker，跟 model/lang 一樣**改動需 toggle `stt_enabled` off→on 重起才生效**；daemon 偵測到 `stt_prompt` 改了卻沒重起會 log 一行警告（反靜默失效，別讓「設了沒吃到」默默發生）。
 - **上限**：whisper initial_prompt ~224 token，`stt-prompt` 預設截 200 字、砍名詞尾巴保住人名。

@@ -28,10 +28,14 @@ enabled: true                # false = 暫時下架 (shuffle/list 跳過, 檔案
 group: 知識沉澱               # 選填 — 分組，見下節 (缺欄位 = 不分組，自成骰面一項)
 min_minutes: 20              # 選填 — 建議所需分鐘 (Cmd_FreeTime 擲骰時剩餘時間不足 → 排尾標明「時間不夠」，不隱藏)
 kind: Default                # 選填 — 特殊邏輯標記，見下節 (缺欄位 = Default)
-tool: library.py             # 選填 — 代跑用腳本 (空 = 本活動不支援 op=step 代跑)
-steps: resume, shelf, list   # 選填 — 允許代跑的子命令白名單 (空 = 即使有 tool 也不放行)
-persona_flag: --persona      # 選填 — 這支工具接身分用的旗標名 (chess.py 是 --persona，library.py 是 --reader)
-steps_need_persona: shelf, resume=--reader   # 選填 — 這些 step 由 op=step 自動補身分；`step=--flag` 可覆寫單一 step 的旗標（同一支工具不一定一致）
+tool: chess.py               # 選填 — 代跑用**腳本檔名** (空 = 本活動不走腳本代跑；改走 cmd_steps 或完全不支援)
+steps: move, board, lobby    # 選填 — 允許代跑的子命令白名單 (空 = 即使有 tool 也不放行)
+cmd_steps: add-book=book:add # 選填 — 把某個 step 改走 **in-process SCP cmd**（`<step>=<cmd>:<op>`）
+                             #        ⭐ 有這一格的 step **不經過腳本**；⛔ 宣告壞了不回退舊路（fail-closed）
+                             #        ⚠ 目標只能是 `senate cmd` 註冊表裡的 cmd —— `ucmd run <Type>` 路不進來
+cmd_persona_arg: reader      # 選填 — 走 cmd_steps 時身分塞進哪個 `--arg`
+persona_flag: --persona      # 選填 — **只有腳本那條路**用得到：這支腳本接身分的旗標名
+steps_need_persona: move     # 選填 — 這些 step 由 op=step 自動補身分；`step=--flag` 可覆寫單一 step 的旗標（同一支工具不一定一致）
 ---
 
 # 閱讀 (自選讀書)

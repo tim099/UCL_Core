@@ -168,5 +168,5 @@ D. Archive 讀不到 metadata 的 entry（`_` 開頭系統目錄除外）
 
 新 schema 的讀寫**唯一實作者是 `UCL_ReadingLibraryIO`**（agent 入口 `Cmd_Library`、
 人的入口為閱讀心得管理頁）。寫入以一次操作更新 reader root、章節 round 與 bookshelf 投影，
-並驗證 persona 路徑一致性。legacy `library.py --book`、無讀者主線與 branches API 禁止用於新資料。
+並驗證 persona 路徑一致性。⛔ 無讀者主線與 branches 那套舊 schema 禁止用於新資料。
 

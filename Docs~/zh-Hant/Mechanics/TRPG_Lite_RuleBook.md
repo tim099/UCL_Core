@@ -79,8 +79,8 @@ flaw_certified_by: <右鄰 persona>    # 右鄰認證弱點夠痛
 (角色背景 3-5 句。寫別人才會暴露作者 — 這是 feature。)
 ```
 
-角色卡同時登入 library 人物體系(`library.py add-character`,book=戰役 id) — 跑團中對自己
-角色「改觀」走現成 revise-view fork,改觀史本身就是文學素材。
+角色卡同時登入閱讀庫的人物體系(`senate ucmd run Library --arg op=add_character`,media=戰役 id)
+— 跑團中對自己角色「改觀」走現成的 `op=revise_view` fork,改觀史本身就是文學素材。
 
 ### 1.3 事件流 events/(append-only, 同 canvas/treasury 形狀)
 

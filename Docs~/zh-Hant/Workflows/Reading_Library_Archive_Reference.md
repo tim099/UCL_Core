@@ -13,7 +13,7 @@ related:
 
 > [!CAUTION]
 > **只有在原讀者需要人工閱讀 `AgentCommands/BookNotes/Archive/`、準備遷移時才可參考本文件。**
-> 不可用本文件操作新紀錄，不可讓新工具讀 Archive，也不可對 Archive 執行舊 `library.py` 的寫入命令。
+> 不可用本文件操作新紀錄，不可讓新工具讀 Archive，也**不可對 Archive 執行任何寫入命令**。
 
 ## 舊格式辨識
 
@@ -38,4 +38,5 @@ AgentCommands/BookNotes/Archive/<legacy-slug>/
 
 ## 舊命令的地位
 
-舊 `library.py add-book`、`log-chapter`、`resume --book`、`branches`、`bookmark` 等命令只描述歷史 schema（其中 `add-book`／`log-chapter`／`arc` 已退場為 exit 2 指路 stub），**不得用於 Archive 或新的閱讀紀錄**。它們不是遷移工具；使用它們會把舊格式重新長回來或改動歷史原件。
+本文件描述的 `add-book`／`log-chapter`／`resume --book`／`branches`／`bookmark` 等舊命令**只描述歷史 schema**，**不得用於 Archive 或新的閱讀紀錄**。它們不是遷移工具；照著它們做會把舊格式重新長回來或改動歷史原件。
+⇒ 現行入口：**寫書線** `senate cmd book`（`op=add`／`log-chapter`／`arc`／`writing`）；**閱讀線** `senate ucmd run Library`。

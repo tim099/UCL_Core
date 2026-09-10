@@ -9,12 +9,12 @@
     },
     {
       "name": "reading-library",
-      "summary": "閱讀心得圖書館 — 記章節摘要/人物/名詞 + 對人物看法改觀時 fork 新版本(同構 affinity opinion history); 含 bookmark/resume 續讀 + 推薦書單. 工具 library.py 在 Tools~/AgentCommands/, 資料 per-project.",
+      "summary": "閱讀心得圖書館 — 記章節摘要/人物/名詞 + 對人物看法改觀時 fork 新版本(同構 affinity opinion history); 含 bookmark/resume 續讀 + 推薦書單. 入口 senate ucmd run Library（唯一寫入端）, 資料 per-project.",
       "optional": false
     },
     {
       "name": "reading-manga",
-      "summary": "閱讀漫畫心得 — Tim 逐張貼漫畫頁+標章節, agent 邊看邊賞析並落帳; 複用 library.py 同一套 chapter/character(含外觀)/term/arc + 改觀 fork. 與 reading-library 同構, 媒材改視覺.",
+      "summary": "閱讀漫畫心得 — Tim 逐張貼漫畫頁+標章節, agent 邊看邊賞析並落帳; 複用 reading-library 同一套 chapter/character(含外觀)/改觀 fork（入口 senate ucmd run Library）. 與 reading-library 同構, 媒材改視覺.",
       "optional": false
     },
     {

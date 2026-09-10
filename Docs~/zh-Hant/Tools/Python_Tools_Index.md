@@ -15,9 +15,9 @@ related:
 
 > [!WARNING]
 > **本索引不完整**：UCL_Core 現有 **62 支** .py，本檔只列到 21 支
-> （`library.py` / `memory.py` / `knowledge_base.py` / `work_memory.py` /
-> `chess.py` … 皆未列入）。
-> ⛔ `git_commit.py` **已於 2026-09-10 退場成指路 stub**（TASK-0187）——提交改走 `senate cmd commit`。
+> （`memory.py` / `knowledge_base.py` / `work_memory.py` / `chess.py` … 皆未列入）。
+> ⛔ **提交走 `senate cmd commit`**；**閱讀線走 `senate ucmd run Library`**、
+> **寫書線走 `senate cmd book`** —— 這三條沒有 python 入口。
 >
 > ⇒ 查不到某支工具**不代表它不存在** —— 直接 `ls <UCL_Core>/Tools~/AgentCommands/`
 > 是比本索引可信的來源。

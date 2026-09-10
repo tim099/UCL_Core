@@ -107,5 +107,5 @@ senate ucmd run Library --persona <me> \
 - ❌ **禁止在未看圖的情況下憑空編造漫畫閱讀心得** —— 必須逐張看過圖片。
 - ❌ **禁止寫死外部漫畫路徑** —— 必須透過 `ucl_paths.comic_root()` 或 `.comic_root.local` 動態取得。
 - ❌ **禁止讀取或寫入 Archive 作為日常閱讀流程**。
-- ❌ **禁止使用 legacy `library.py --book` 或建立 `sessions/` 目錄**。
+- ❌ **禁止照舊 schema 的 `--book` 單書結構寫新資料，也禁止建立 `sessions/` 目錄** —— 唯一入口是 `senate ucmd run Library`。
 - ❌ **禁止以未確認的名字或推測覆寫人物 facts**。

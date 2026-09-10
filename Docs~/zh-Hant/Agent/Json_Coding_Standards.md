@@ -204,7 +204,7 @@ public override JsonData SerializeToJson()
 |---|---|
 | 2026-08-18 `FreeTime/sessions/*.json` | 改 typed model 後 `"active":"False"` ⇒ `freetime.py` 的 `if not s.get("active")` 通過 ⇒ **提前收工的人被判成還在自由時間**，且完全不報錯（該 python 讀取端已於 2026-08-26 退役 —— 血證留著：教訓在「bool 序列化」不在那支工具） |
 | 2026-08-21 `_screenstream/_config.json` | daemon 是 `if cfg.get("enabled")` ⇒ 若寫成字串就是**停不掉的錄影**。9 個 bool 全部 override 回原生，實跑回讀 0 個字串 bool |
-| 2026-08-21 `prepared/*.json` | `auto_export` 被 `library.py export-watch` 讀 ⇒ 「刻意關掉」會被讀成「開著」（該 python 讀取端已於 2026-09-10 退場，改由 `senate cmd watch --arg op=export` 讀 —— 血證留著：教訓在「bool 序列化」不在那支工具） |
+| 2026-08-21 `prepared/*.json` | `auto_export` 被匯出端讀 ⇒ 「刻意關掉」會被讀成「開著」（現行讀取端：`senate cmd watch --arg op=export` —— 🩸 血證留著：教訓在「bool 序列化」，不在哪一支工具讀它） |
 
 ⛔ **別把這個 override 當樣板無腦套**：純 C# 內部使用的資料沿用舊慣例即可（載入端雙接）。
 **判準是「有沒有別的語言在讀」**；而既有檔已是原生 bool 時，override 也是為了**不改變 wire format**。

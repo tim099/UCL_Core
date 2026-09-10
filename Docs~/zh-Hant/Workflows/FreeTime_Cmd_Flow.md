@@ -38,7 +38,7 @@ FreeTimeActivity op=done                收活動：回傳「去換骰」
 ```
 
 **為什麼要有活動層**：在此之前流程提示只活在 `Cmd_FreeTime` 的回傳檔裡，
-而人一旦進到活動工具（`chess.py` / `library.py` / …），那些工具的輸出**一個字都沒提自由時間**
+而人一旦進到活動工具（`chess.py` / `senate cmd …` / …），那些工具的輸出**一個字都沒提自由時間**
 —— 流程就斷在那裡。原本的修法是「在五個活動工具的收尾各加一段提示」，
 那是**五個不同的收尾**，其中一個漏掉不會有人發現。包一層之後，提示長在**唯一的入口**上。
 
@@ -208,7 +208,8 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> 
 - 掃描器**跳過 `_` 開頭的檔**（`_README.md` 等）
 - 雙層：共用層（UCL_Core）＋專案層，**同 id 專案覆蓋**
 
-已接代跑：`chess` → `chess.py`／`reading`・`book-writing` → `library.py`。
+已接代跑：`chess` → `chess.py`（腳本那條路）／`reading`・`book-writing` → **`cmd_steps` 路由到
+`senate cmd book`**（in-process，不經過腳本；沒有 cmd 平替的 step 一律不列進 `steps`）。
 ⚠ `canvas-2d` **不接代跑**：它的寫入端是 `senate cmd canvas`，而代跑那層 spawn 的是
 `python <tool>`（`FileName` 寫死 python）⇒ 餵不了 exe。
 ⇒ 它走引擎既有的另一條路：`op=step` 回「尚未支援 Cmd 代跑 —— 自己跑」，指令寫在該活動 md 裡。

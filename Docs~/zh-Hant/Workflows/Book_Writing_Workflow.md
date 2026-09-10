@@ -263,8 +263,7 @@ XX 在 XX 章還會深入: ...(留到 chN 拆)
 ⛔ **別拿自己寫的書去 `donate`** —— 那會把 authored 線的書標成調入品，
 是**寫錯資料**而不是「換一支指令達成同樣的事」。
 
-> 📌 **金流入口 2026-09-06 起收斂到 ucmd**（Tim 拍板）：
-> `library.py` 的 `donate` / `publish` / `tip` 已退場為指路 stub（exit 2、不動帳）。
+> 📌 **金流入口收斂到 ucmd**（Tim 拍板）：`donate` / `publish` / `tip` **只有 `run Books` 這一條路**。
 
 #### 🩸 已知不一致：`publish` **不會回寫 `book.json`**（2026-09-06 實測，未修）
 
@@ -413,7 +412,7 @@ letters/<作者 persona>/writing/<slug>.md
 （`history-*` → 酒館史、`watch-*` → 觀影實錄），任何一次寫入把推導結果寫實。
 
 > ✅ **`source` 已退場（2026-09-04 meadow）**：兩端都改成先讀 `origin`、沒有才回退 legacy `source`
-> （C# `UCL_BooksClassification.DeriveOrigin` ／ python `library.py::_derive_origin` —— **同一條規則，要改一起改**），
+> （唯一實作：C# `UCL_BooksClassification.DeriveOrigin`），
 > 之後 publish 不再寫出 `source`。舊檔留著的 `source` 照讀不動，**不需要遷移**。
 >
 > 🩸 順手修掉的一格：python 端舊邏輯是 `source == "authored"` 才算自產，

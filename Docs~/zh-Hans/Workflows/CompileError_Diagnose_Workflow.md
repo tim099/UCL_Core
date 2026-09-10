@@ -16,8 +16,10 @@ tags: [compile, debug, agent_commands, workflow]
 > `senate cmd unity-compile-status`（只读现况，**不需要 Editor**）。两者都只读 `.compile_status.json`
 > 这个档，**不依赖 Cmd 系统**（那正是本工作流存在的前提：编译坏掉时 Cmd 也载不进来）。
 >
-> ⛔ python `check_compile.py` **已于 2026-09-10 整支删除**（文件不存在了）。而下面两格**没有搬过去，也没有替代品**：
-> `--fallback-log`（解 Editor.log）与 `--editor-alive`（心跳）这两格 CLI 还没移的能力。
+> ⛔ python `check_compile.py` **已于 2026-09-10 整支删除**（文件不存在了）。未搬到 CLI 的两格处置**不一样**：
+> · `--fallback-log`（解 Editor.log）—— **真的没有替代品**（全库零实现解 Unity 的 `Editor.log`）。
+> · `--editor-alive`（心跳）—— **有**：stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`（0.5s 一拍，>1.5s 没动＝没在 tick）。
+>   死的只是 python 包装，数据源一直在写。
 
 ## 0. TL;DR
 

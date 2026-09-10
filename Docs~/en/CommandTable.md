@@ -118,7 +118,7 @@ Users can be too lazy to type out full commands every single time (e.g., "Please
 - **Must Do**: Run `senate cmd unity-recompile --arg persona=<me>` (triggers a recompile **and** waits for *that* pass to finish before printing).
   To read the current state without triggering ⇒ `senate cmd unity-compile-status`.
   ⛔ Both measure Unity assemblies only, **not `senate.exe`**. The Editor.log fallback for when the status file is missing is still python-only:
-  ⛔ The old `check_compile.py` was **retired on 2026-09-10** (**file deleted**); `--fallback-log` / `--editor-alive` have **no replacement**.
+  ⛔ The old `check_compile.py` was **retired on 2026-09-10** (**file deleted**); ⚠ The two are **not** in the same situation: `--fallback-log` (parsing Editor.log) has **no replacement**; `--editor-alive` **does** — just stat `<data_root>/ChatTavern/bartender/_heartbeat.txt` (one beat per 0.5s; older than 1.5s = not ticking). (Corrected 2026-09-10: the earlier "both have no replacement" under-reported the scope — only the python wrapper died, the data source is still written.)
   🩸 Blood evidence kept: that tool's `--watch` returned the previous snapshot without printing STALE (TASK-0154) — on the CLI side the moment you send the trigger *is* the baseline, so that hole cannot exist in the new shape.
 - **Do Not**: Run runtime tests when compile errors exist; only look at `Simulation_*.log`.
 

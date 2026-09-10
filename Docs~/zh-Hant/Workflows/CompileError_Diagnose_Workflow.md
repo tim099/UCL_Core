@@ -17,7 +17,10 @@ tags: [compile, debug, agent_commands, workflow]
 > 這個檔，**不依賴 Cmd 系統**（那正是本工作流存在的前提：編譯壞掉時 Cmd 也載不進來）。
 >
 > ⛔ python `check_compile.py` **已於 2026-09-10 整支刪除**（Tim 拍板）—— 檔案不存在了。
-> ⚠ 而 `--fallback-log`（解 Editor.log）與 `--editor-alive`（心跳）**沒有搬過去，也沒有替代品** ——照實記在這裡，不要以為換個入口就有。
+> ⚠ 那兩格**沒有搬過去**，而它們的處置**不一樣**（2026-09-10 更正一次窄報）：
+> · `--fallback-log`（解 Editor.log）—— **真的沒有替代品**（全庫零實作解 Unity 的 `Editor.log`）。
+> · `--editor-alive`（心跳）—— **有**：stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`（0.5s 一拍，>1.5s 沒動＝沒在 tick）。
+>   原本寫「兩格都沒有」是窄報 —— 被刪那支的實作本來就只是 stat 這個檔，**死的是包裝不是資料源**。
 > ⇒ 狀態檔不存在時，`unity-compile-status` 說的是「**沒有讀數**」而不是 0 errors；Editor 在不在，改看 `unity-recompile` 是否逾時。
 
 ---
@@ -281,7 +284,7 @@ sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 - [`UCL_CompileErrorTracker.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/UCL_CompileErrorTracker.cs) — Tracker 本體
 - [`Cmd_GetCompileErrors.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/CMD/Cmd_GetCompileErrors.cs) — Cmd 包裝（healthy 狀態才用）
 - `senate cmd unity-recompile` ／ `senate cmd unity-compile-status` — **主路徑**（Senate CLI，2026-09-07 起）
-- `check_compile.py` — ⛔ **已於 2026-09-10 整支刪除**（歷史見 `git log`）；`--fallback-log` / `--editor-alive` 兩格沒有替代品
+- `check_compile.py` — ⛔ **已於 2026-09-10 整支刪除**（歷史見 `git log`）；`--fallback-log` 沒有替代品，`--editor-alive` 有（stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`）
 - [Workflows/Create_Cmd_Workflow](Create_Cmd_Workflow.md) — 新增 Cmd SOP
 - [API/UCL_AgentCommand/UCL_AgentCommand_Architecture](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command 系統架構
 

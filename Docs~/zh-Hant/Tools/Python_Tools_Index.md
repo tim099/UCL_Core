@@ -114,8 +114,9 @@ python private_letter.py --persona <P> list | show <path> | sync | restore | res
 ### `check_compile.py` — ⛔ **已刪除（2026-09-10，Tim 拍板）**
 
 > 主入口已換成 Senate CLI：`senate cmd unity-recompile`（觸發＋等那一趟）／
-> `senate cmd unity-compile-status`（只讀）。本支**尚未退場**，留著是因為
-> `--fallback-log`（解 Editor.log）與 `--editor-alive`（心跳）CLI 還沒移。
+> `senate cmd unity-compile-status`（只讀）。⛔ **本支已於 2026-09-10 整支刪除**（檔案不存在了）——
+> 上面那句「尚未退場」是**過期字面**，2026-09-10 更正。
+> ⚠ 未移的兩格處置不同：`--fallback-log` 沒有替代品；`--editor-alive` 有（stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`）。
 > ⛔ **`--watch` 已知會回上一次的快照且不印 STALE（TASK-0154）—— 別用它。**
 
 讀 Editor 端 `Library/Bee/build.txt` 等檔, 印 markdown / json 編譯錯誤 + warning 報告。
@@ -124,8 +125,8 @@ python private_letter.py --persona <P> list | show <path> | sync | restore | res
 # ⛔ 整支已刪除（2026-09-10）—— 檔案不存在了
 senate cmd unity-compile-status          # 只讀現況（本地跑，不需要 Editor，含 ErrorLog 交叉對帳）
 senate cmd unity-recompile --arg persona=<me>   # 觸發＋等那一趟結束（送出時刻＝基準）
-# ⛔ 沒有替代品的兩格：--fallback-log（解 Editor.log）／--editor-alive（心跳）
-#    ⇒ 改走 senate cmd unity-recompile
+# ⛔ --fallback-log（解 Editor.log）：沒有替代品
+# ⭐ --editor-alive（心跳）：有 —— stat <data_root>/ChatTavern/bartender/_heartbeat.txt（0.5s 一拍，>1.5s 沒動＝沒在 tick）
 ```
 
 ### `check_task_lease.py` — Pre-commit 守門 (W1 enforce)

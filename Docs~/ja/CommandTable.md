@@ -118,7 +118,7 @@ related:
 - **必須動作**: `senate cmd unity-recompile --arg persona=<me>` を実行すること（リコンパイルを起動し、**その回**が終わるまで待ってから出力）。
   起動せず現状だけ見る場合 ⇒ `senate cmd unity-compile-status`。
   ⛔ どちらも計測対象は Unity assemblies のみで、**`senate.exe` は含まない**。ステータスファイルが無い場合の Editor.log フォールバックは今も python だけが持つ：
-  ⛔ 旧 `check_compile.py` は **2026-09-10 に退場**（**ファイルごと削除**）。`--fallback-log` / `--editor-alive` の 2 つは**代替なし**。
+  ⛔ 旧 `check_compile.py` は **2026-09-10 に退場**（**ファイルごと削除**）。⚠ この 2 つは扱いが**異なる**：`--fallback-log`（Editor.log 解析）は**代替なし**。`--editor-alive` は**代替あり** —— `<data_root>/ChatTavern/bartender/_heartbeat.txt` を stat するだけ（0.5s ごとに 1 拍、1.5s 以上更新なし＝tick していない）。（2026-09-10 訂正：以前の「2 つとも代替なし」は射程を狭く言い過ぎた —— 削除されたのは python のラッパーだけで、データ源は今も書かれている。）
   🩸 血証として残す：あのツールの `--watch` は前回のスナップショットを返し、STALE も出さなかった（TASK-0154）。CLI 側は**トリガを送った瞬間が基準**なので、その穴は新しい構造では存在しない。
 - **禁止事項**: コンパイルエラーが残存した状態でランタイムの挙動検証に進むこと。`Simulation_*.log` だけを確認して、ビルド状態全体を見過ごすこと。
 

@@ -17,9 +17,11 @@ tags: [compile, debug, agent_commands, workflow]
 > (reads the current state only, **no Editor needed**). Both read nothing but `.compile_status.json`,
 > so they are **independent of the Cmd system** — which is the whole premise of this workflow.
 >
-> ⛔ python `check_compile.py` was **deleted on 2026-09-10** (the file is gone). It no longer
-> owns the two capabilities the CLI has not taken over: `--fallback-log` (parse Editor.log) and
-> `--editor-alive` (heartbeat).
+> ⛔ python `check_compile.py` was **deleted on 2026-09-10** (the file is gone). Two of its
+> capabilities were never moved to the CLI, and they are **not** in the same situation:
+> · `--fallback-log` (parse Editor.log) — **no replacement** (nothing in the tree parses Unity's `Editor.log`).
+> · `--editor-alive` (heartbeat) — **there is one**: stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`
+>   (one beat per 0.5s; older than 1.5s = not ticking). Only the python wrapper died; the file is still written.
 
 ---
 
@@ -254,7 +256,7 @@ Fallback algorithm:
 
 - [`UCL_CompileErrorTracker.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/UCL_CompileErrorTracker.cs)
 - [`Cmd_GetCompileErrors.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/CMD/Cmd_GetCompileErrors.cs)
-- `check_compile.py` — ⛔ **deleted 2026-09-10** (file is gone; history in `git log`); `--fallback-log` / `--editor-alive` have no replacement
+- `check_compile.py` — ⛔ **deleted 2026-09-10** (file is gone; history in `git log`); `--fallback-log` has no replacement, `--editor-alive` does (stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`)
 - [Workflows/Create_Cmd_Workflow](Create_Cmd_Workflow.md)
 - [API/UCL_AgentCommand/UCL_AgentCommand_Architecture](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md)
 

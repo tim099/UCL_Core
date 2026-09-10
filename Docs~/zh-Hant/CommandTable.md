@@ -127,7 +127,7 @@ related:
 - **必做**: 執行 `senate cmd unity-recompile --arg persona=<me>`（觸發＋等到**那一趟**結束才印）。
   只想看現況不觸發 ⇒ `senate cmd unity-compile-status`。
   ⛔ 只量 Unity assemblies，**不涵蓋 `senate.exe`**。狀態檔不存在時的 Editor.log fallback 仍只有 python 有：
-  ⛔ 舊的 `check_compile.py` **已於 2026-09-10 退場**（**整支刪除**，檔案不存在了）；`--fallback-log` / `--editor-alive` 兩格**沒有替代品**。
+  ⛔ 舊的 `check_compile.py` **已於 2026-09-10 退場**（**整支刪除**，檔案不存在了）；⚠ 那兩格的處置**不一樣**：`--fallback-log`（解 Editor.log）**沒有替代品**；`--editor-alive` **有** —— 直接 stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`（0.5s 一拍，>1.5s 沒動＝沒在 tick）。（2026-09-10 更正：原本寫「兩格都沒有替代品」是窄報 —— 被刪的是 python 包裝，資料源一直在。）
   🩸 血證留著：那支的 `--watch` 會回上一次的快照且不印 STALE（TASK-0154）—— 而 CLI 這側**送出觸發的那一刻天生就是基準**，那個洞在新結構裡不存在。
 - **不要做**: 在編譯還有錯時跑 runtime 測試；只看 `Simulation_*.log`。
 

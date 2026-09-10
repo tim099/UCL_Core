@@ -16,8 +16,10 @@ tags: [compile, debug, agent_commands, workflow]
 > `senate cmd unity-compile-status`（現状を読むだけ、**Editor 不要**）。どちらも読むのは `.compile_status.json`
 > だけで、**Cmd システムに依存しない**（コンパイルが壊れると Cmd も読み込めない、というのが本ワークフローの前提）。
 >
-> ⛔ python `check_compile.py` は **2026-09-10 にファイルごと削除**。`--fallback-log` / `--editor-alive` は**移植されず、代替もない**。
-> `--fallback-log`（Editor.log 解析）と `--editor-alive`（ハートビート）の 2 つは CLI 未移植で今も python だけが持つ。
+> ⛔ python `check_compile.py` は **2026-09-10 にファイルごと削除**。CLI へ未移植の 2 つは扱いが**異なる**：
+> · `--fallback-log`（Editor.log 解析）—— **代替なし**（Unity の `Editor.log` を解析する実装はツリー内に無い）。
+> · `--editor-alive`（ハートビート）—— **代替あり**：`<data_root>/ChatTavern/bartender/_heartbeat.txt` を stat するだけ
+>   （0.5s ごとに 1 拍、1.5s 以上更新なし＝tick していない）。消えたのはラッパーだけで、ファイルは今も書かれている。
 
 ## 0. TL;DR
 

@@ -5,7 +5,8 @@ description: |
   主入口是 Senate CLI：`senate cmd unity-recompile`（觸發＋等到那一趟編譯結束）／
   `senate cmd unity-compile-status`（只讀現況，不需要 Editor）。
   ⛔ python `check_compile.py` **已於 2026-09-10 整支刪除**（檔案不存在了）——
-  `--fallback-log` / `--editor-alive` 那兩格**沒有搬過去**，見本檔「沒有替代品的那兩格」。
+  `--fallback-log` / `--editor-alive` 那兩格**沒有搬過去** —— ⚠ 而它們的處置**不一樣**，見下面兩節：
+  `--fallback-log` 真的沒有替代品；**`--editor-alive` 有**（它量的資料源一直在，死的只是 python 包裝）。
 trigger: { on_files: ["*.cs"], on_intent: ["編譯錯", "compile error", "CS0103", "CS0117", "CS1503", "CS0246", "asmdef", "assembly"] }
 ---
 
@@ -48,7 +49,7 @@ senate cmd unity-compile-status
 | `--watch` | `senate cmd unity-recompile --arg persona=<me>`（送出時刻＝基準，等那一趟結束） |
 | `--strict-fresh` | 同上 —— `unity-recompile` 天生只收「晚於基準」的那一份 |
 | **`--fallback-log`**（`.compile_status.json` 不存在時解 Editor.log） | ⛔ **沒有替代品**。`unity-compile-status` 在狀態檔不存在時說「**沒有讀數**」而不是 0 errors ⇒ 那個情境的答案是「沒有量到」 |
-| **`--editor-alive`**（心跳停跳偵測） | ⛔ **沒有替代品**。Editor 在不在，改看 `unity-recompile` 是否逾時（逾時會明說 `delegate_failure = timeout`，且**刻意不去讀上一輪的回傳檔**） |
+| **`--editor-alive`**（心跳停跳偵測） | ⭐ **有替代品，而且更便宜**：直接 stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`（酒保 daemon 每 0.5s 寫一拍；>1.5s 沒動＝沒在 tick）。⚠ 2026-09-10 本欄原寫「沒有替代品」，那是**窄報** —— 被刪的是 python 包裝，那支的實作本來就只是 stat 這個檔 |
 
 > 🩸 **⛔ `check_compile.py --watch` 曾給假綠燈（TASK-0154）—— 那支已於 2026-09-10 整支退場。**
 > 血證留著，因為**這個形狀會換工具重來**：
@@ -83,15 +84,26 @@ senate cmd unity-compile-status
 > 主執行緒長工 / Editor 關閉期間都會停跳。而且停跳只有在**恢復的那一拍**才寫得出來：
 > 進行中的凍結沒有紀錄，Editor 死掉不再回來則永遠不寫。**沒有條目 ≠ 沒有停跳。**
 
-## 💓 `--editor-alive` — ⛔ **這一格隨 `check_compile.py` 一起沒了（2026-09-10 整支刪除），沒有替代品**
+## 💓 「Editor 在不在 tick」 — ⭐ **這一格沒有消失：stat 心跳檔就是答案**
 
 ```bash
-# ⛔ 這支工具已於 2026-09-10 整支刪除，沒有替代品（舊用法：check_compile.py --editor-alive）
+# 心跳檔（酒保 daemon hook 在 EditorApplication.update，每 0.5s 寫一拍）
+stat -c %y <data_root>/ChatTavern/bartender/_heartbeat.txt   # 或 ls -la
+#   距今 <= 1.5s ⇒ Editor 在 tick／> 1.5s ⇒ 沒在 tick／檔案不存在 ⇒ 判不出來（daemon 沒跑過）
+# 最近的停跳台帳（心跳只答「此刻」，這個答「什麼時候凍過、凍多久」）：
+#   <data_root>/ChatTavern/bartender/_heartbeat_stalls.jsonl
 ```
 
-⇒ 現在要判「Editor 在不在」只有一條路：**`senate cmd unity-recompile` 是否逾時**（逾時會印 `delegate_failure = timeout`，而且**刻意不去讀上一輪的回傳檔** ——逾時代表它沒被更新，讀到的會是上一輪那份「格式完整、數字合理」的舊快照）。
-⚠ 代價要說清楚：那是**送一支 Cmd 去探**，比純 stat 心跳檔慢，而且 Editor 忙的時候要等到逾時。
-⛔ 而下面這一整節講的性質（心跳是瞬時值、答的不是「我的改動編了沒」）**仍然成立**，所以留著 —— 它防的是「拿一個活著的訊號當成編譯過了」，那個誤讀跟工具無關。
+🩸 **這一節 2026-09-10 原本寫著「沒有替代品」—— 那是我自己寫的窄報，同一天被自己推翻。**
+被刪的 `check_compile.py --editor-alive` 實作是「**純 stat 一個檔，不送 Cmd**」
+（它的註解自己寫了為什麼不送：Cmd 探針要 2.13s 空閒／13.13s 編譯中）
+⇒ **死的是包裝，資料源一直在**。而窄報之所以活得久，是因為
+**「這格沒救了」聽起來像謹慎，它不會讓寫的人付出任何代價** —— 代價是別人不再去打開那個檔看一眼。
+
+⚠ 舊那支多做的一件事沒了：它會**併印最近停跳**。要那一半就自己讀 `_heartbeat_stalls.jsonl`。
+⚠ 另一條路仍然成立、但比較貴：**`senate cmd unity-recompile` 是否逾時**（逾時會印 `delegate_failure = timeout`，
+且**刻意不去讀上一輪的回傳檔** —— 逾時代表它沒被更新，讀到的會是上一輪那份「格式完整、數字合理」的舊快照）。
+⇒ 那是**送一支 Cmd 去探**，Editor 忙的時候要等到逾時。**能 stat 就不要送 Cmd。**
 
 用途：**「現在叫 Editor 做事會不會等」**。編譯 / domain reload 期間整個 update 迴圈不跑 → 心跳自然停。
 比送一支 Cmd 探針快得多（探針要 2s 空閒 / 13s 編譯中）。順帶印最近一次停跳（時間 + 停多久）。
@@ -104,7 +116,9 @@ senate cmd unity-compile-status
 > 🩸 2026-08-05：我就是這樣被騙 40 分鐘 —— 兩次 `RequestScriptCompilation()` 都被受理
 > （Editor.log 有 `Requested through public api`），但後面**沒有** `Starting: bee_backend … ScriptAssemblies`，
 > 編譯連開始都沒有；而探針一路印綠燈。
-> **要問「我的改動編了沒」跑 `--errors-only`（新鮮度守衛會答），不是看 `--editor-alive`。**
+> **要問「我的改動編了沒」跑 `senate cmd unity-recompile`（它拿送出時刻當基準，等到那一趟結束才印；
+> 另有 `stale_sources` 答「有幾個 .cs 比組件新」），不是看心跳。**
+> ⚠ 原文寫的是 `--errors-only` —— 那是被刪那支的旗標（2026-09-10 更正）。
 
 ## 順序
 

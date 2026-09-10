@@ -1,4 +1,4 @@
-// RCG_AutoHeader
+﻿// RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 09/07 2026
 
@@ -429,6 +429,22 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          進行中（EndUtc == null）的一律算重疊（它確實橫跨了那段時間）。
         // 數值影響：純記憶體掃 ring（<= RING_SIZE 筆），零 IO。
         // ===========================================================
+        // ===========================================================
+        // 區塊職責：一支 cmd **能解釋多少**這段斷拍（毫秒）。
+        // 物理意義：交集長度 ＝ min(斷拍尾, cmd 結束) − max(斷拍頭, cmd 開始)。
+        //          cmd 還在跑（EndUtc 無值）⇒ 用斷拍尾當它的尾（它至少活到那裡）。
+        // 數值影響：純算術，不落檔決策。負值夾成 0（無交集）。
+        //   ⚠ 它**不是**因果 —— 「同時發生」與「造成」本量具分不出來，這只是把
+        //     「重疊了多久」從讀者的腦補變成一個可比較的數。
+        // ===========================================================
+        static double OverlapMs(Entry iEntry, DateTime iFrom, DateTime iTo)
+        {
+            DateTime aStart = iEntry.StartUtc > iFrom ? iEntry.StartUtc : iFrom;
+            DateTime aEnd = iEntry.EndUtc.HasValue && iEntry.EndUtc.Value < iTo ? iEntry.EndUtc.Value : iTo;
+            double aMs = (aEnd - aStart).TotalMilliseconds;
+            return aMs > 0 ? aMs : 0;
+        }
+
         static string OverlapsJson(DateTime iFrom, DateTime iTo)
         {
             var aSb = new StringBuilder(96);
@@ -447,6 +463,24 @@ namespace UCL.Core.EditorLib.AgentCommands
                        .Append(",\"op\":\"").Append(Esc(e.Op)).Append('"')
                        .Append(",\"persona\":\"").Append(Esc(e.Persona)).Append('"')
                        .Append(",\"running\":").Append(e.EndUtc.HasValue ? "false" : "true")
+// 🩸 這兩個數字是為了讓「時間重疊」變成「它能解釋多少」（2026-09-10 實測）：
+                       //   斷拍 08:25:26 / 5.0s，嫌疑 `Task/list` 的 started_at 是 08:25:29
+                       //   ⇒ 它**最多只能解釋最後 2 秒**，前 3 秒與它無關（而它還是 offloaded=True）。
+                       //   舊格式只印 cmd_id/type/op/persona/running ⇒ 讀的人手上**沒有時刻**，
+                       //   於是「重疊」被讀成「就是它」，而 offload 之後那支跑得更久、
+                       //   又常是當下唯一在跑的 ⇒ **它越乾淨越容易被點名**。
+                       // ⛔ 不改 overlapping_cmds 的語意（它一直是「時間重疊」不是「兇手」），
+                       //   也不在寫入端替讀者篩掉 —— 篩掉會讓同一個欄位名前後兩種意思（無錨引用）。
+                       //
+                       // ⚠ **不要改成布林**（第一版我寫了 `began_after_stall`，當天就被讀數推翻）：
+                       //   真兇若卡在主緒上，探針只 tick 得到它開跑**前**的那一幀
+                       //   ⇒ `stalled_since` 必然早於它的 `started_at` ⇒ 那個布林對真兇也回 true。
+                       //   實測 3/3 全 true、零 false ＝ 一個恆真的旗標，跟寫死 true 讀起來一樣。
+                       //   ⇒ 所以給**數字**：`explains_ms` ＝ 這支能覆蓋的斷拍長度
+                       //   （與 gap_ms 相比才有意義：≈gap 是強嫌疑，≈0 是雜訊）。
+                       .Append(",\"started_at\":\"").Append(Iso(e.StartUtc)).Append('"')
+                       .Append(",\"starts_after_begin_ms\":").Append(F1((e.StartUtc - iFrom).TotalMilliseconds))
+                       .Append(",\"explains_ms\":").Append(F1(OverlapMs(e, iFrom, iTo)))
                        .Append('}');
                 }
             }

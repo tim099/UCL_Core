@@ -864,6 +864,31 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             return aOut;
         }
 
+        // ===========================================================
+        // 區塊職責：讀出某一條驗收標準行上的「指定簽名人」標記 `[signer:<persona>]`。
+        // 物理意義：驗收條文有時是**一格一個尺度**的 —— 「⑤c @Sirius 的搬遷確認：只有本人能簽」。
+        //          而 op=check 的權限是**整張單一個尺度** ⇒ 本人被擋、開單人反而代簽得掉，
+        //          兩把尺在同一格上給出相反的答案（TASK-0194 活體）。本標記讓那條條文
+        //          從「靠自律」變成一個機制擋得到的東西。
+        // 🩸 為什麼**不認裸 `@persona`**：那個形狀會誤命中 —— TASK-0146 的
+        //   「④ 第一本搬 @gura《深海對拍錄》」裡 @gura 是**被搬的書的主人**，不是簽名人。
+        //   ⇒ 「這一格屬於誰」與「這一格提到誰」必須不同形，否則守衛會擋錯人，
+        //     而擋錯人的樣子跟擋對人一模一樣。
+        // 數值影響：純字串解析，無副作用；沒有標記回 null（＝這一格走整張單的尺度）。
+        // ===========================================================
+        /// <summary>
+        /// 取出驗收標準行上的 `[signer:&lt;persona&gt;]` 指定簽名人；沒有標記回 <c>null</c>。
+        /// <para>⛔ 不認裸 `@persona` —— 那會把「提到誰」誤讀成「誰負責簽」。</para>
+        /// </summary>
+        public static string CriteriaSigner(string iCriteriaLine)
+        {
+            if (string.IsNullOrEmpty(iCriteriaLine)) return null;
+            var aMatch = System.Text.RegularExpressions.Regex.Match(
+                iCriteriaLine, @"\[signer:\s*([A-Za-z0-9_\-\.]+)\s*\]",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return aMatch.Success ? aMatch.Groups[1].Value : null;
+        }
+
         /// <summary>
         /// 把未勾清單裡的第 <paramref name="iOneBased"/> 格勾起來並簽名。
         /// <para>成功 ⇒ 回勾起來的那一行內容，`ioCriteria` 已換成新的整段；

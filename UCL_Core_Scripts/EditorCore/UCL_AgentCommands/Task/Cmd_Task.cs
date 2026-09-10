@@ -1000,12 +1000,31 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 aWho = "本單**沒有指名 QA** ⇒ 參與者與開單人：" + string.Join(" / ", aNames);
             }
 
+            // ── ⭐ TASK-0194：一格一個尺度的簽名人（`[signer:<persona>]`）────────
+            //   整張單的尺度（上面那段）回答不了「⑤c 只有本人能簽」這種條文 ——
+            //   而它失效的方向是**相反的兩邊**：本人被擋下，開單人卻代簽得掉。
+            //   ⇒ 帶標記的那一格改由標記說了算：**只有 owner 能簽，其他人一律不行**
+            //     （含 QA 與開單人 —— 那正是條文要防的代簽），
+            //     而 owner **不需要**先入列（要求他入列＝為了簽一格而拿到整張單的簽名權）。
+            //   ⛔ 沒有標記的行完全維持舊行為 ⇒ 既有的單一個字都不受影響。
+            var aOwners = aOpen.Select(UCL_TaskIO.CriteriaSigner).ToList();
+            bool aOwnsAny = aOwners.Any(o => o != null
+                && string.Equals(o, iActor, StringComparison.OrdinalIgnoreCase));
+
             ioR.AppendLine($"## {e.Id} 驗收標準　已勾 **{aDone.Count}** / 未勾 **{aOpen.Count}**");
             ioR.AppendLine($"- 可以勾的人：{aWho}");
-            ioR.AppendLine($"- 你是：`{iActor}`　⇒ {(aAllowed ? "✅ 有權" : "🛑 **無權**")}");
+            ioR.AppendLine($"- 你是：`{iActor}`　⇒ {(aAllowed ? "✅ 有權" : "🛑 **無權**")}（整張單的尺度）");
+            if (aOwners.Any(o => o != null))
+            {
+                ioR.AppendLine($"- ⭐ 本單有 **{aOwners.Count(o => o != null)}** 格帶 `[signer:…]` 指定簽名人"
+                    + " ⇒ 那幾格**只有本人**簽得掉（QA 與開單人也不行），且本人不必先入列。"
+                    + $"　你{(aOwnsAny ? "**有**" : "沒有")}這樣的格子。");
+            }
             ioR.AppendLine();
 
-            if (!aAllowed)
+            // ⚠ 擋下的時機**往後挪**：整張單無權、但持有某一格的 owner 仍該看得到清單、簽得掉那一格。
+            //   ⇒ 這裡只擋「整張單無權**且**一格都不屬於他」的人。逐格判定在下面。
+            if (!aAllowed && !aOwnsAny)
             {
                 ioR.AppendLine("## blocked");
                 ioR.AppendLine("- reason: 勾驗收標準是**簽名行為** —— 不是參與者也不是 QA 的人勾了它，");
@@ -1048,7 +1067,16 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 }
                 else if (aOpen.Count == 0) ioR.AppendLine($"- （全部都勾了 —— 已勾 {aDone.Count} 格）");
                 for (int i = 0; i < aOpen.Count; i++)
-                    ioR.AppendLine($"- #{i + 1}　{Trunc(aOpen[i], 160)}");
+                {
+                    // ⭐ TASK-0194：owner 標在清單上 —— 「這一格我簽不掉」要在**選號之前**就看得到，
+                    //   不然讀的人會挑一個號碼、跑一次、才被擋（而那時他已經以為自己在簽了）。
+                    string aOwn = aOwners[i];
+                    string aTag = aOwn == null ? ""
+                        : (string.Equals(aOwn, iActor, StringComparison.OrdinalIgnoreCase)
+                            ? $"　🖊 **只有 `{aOwn}` 能簽 ⇒ 那是你**"
+                            : $"　🔒 只有 `{aOwn}` 能簽");
+                    ioR.AppendLine($"- #{i + 1}　{Trunc(aOpen[i], 160)}{aTag}");
+                }
                 ioR.AppendLine();
                 ioR.AppendLine("- 🛑 **dry-run**（沒帶 `criteria_index=`）⇒ **一個位元組都沒寫**。");
                 ioR.AppendLine($"  勾它：`run Task --arg op=check --arg index={aIndex} --arg criteria_index=<n[,n...]>`");
@@ -1084,6 +1112,32 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             }
             if (aWant.Count == 0)
                 throw new Exception("[Task] criteria_index 解析後一個序號都不剩（只有分隔符？）");
+
+            // ── ⭐ TASK-0194：逐格判定簽名權（整張單的尺度只管沒有標記的那些行）──
+            //   ⚠ 整批不做 —— 一批裡有一格簽不掉就零寫入，⛔ 不做「能簽的先簽掉」，
+            //     那會讓呼叫端拿到一個部分成功而**回傳碼是成功**。
+            foreach (int v in aWant)
+            {
+                string aOwn = aOwners[v - 1];
+                if (aOwn == null)
+                {
+                    if (aAllowed) continue;
+                    ioR.AppendLine("## blocked");
+                    ioR.AppendLine($"- reason: 序號 #{v} 沒有 `[signer:…]` 標記 ⇒ 它走**整張單**的尺度，"
+                        + $"而 `{iActor}` 不在名單裡（{aWho}）。⇒ **一個位元組都沒寫**。");
+                    throw new Exception($"[Task] op=check 擋下：序號 #{v} 走整張單的尺度，"
+                        + $"而 `{iActor}` 不在 {e.Id} 的可簽名名單裡，不能替它簽名");
+                }
+                if (string.Equals(aOwn, iActor, StringComparison.OrdinalIgnoreCase)) continue;
+                ioR.AppendLine("## blocked");
+                ioR.AppendLine($"- reason: 序號 #{v} 帶 `[signer:{aOwn}]` ⇒ **只有 `{aOwn}` 本人簽得掉**。");
+                ioR.AppendLine($"  ⛔ 你是 `{iActor}`　—— 就算你是 QA 或開單人也不行，"
+                    + "**代簽正是這個標記要防的那件事**。⇒ 一個位元組都沒寫。");
+                ioR.AppendLine($"  ▶ 出口：請 `{aOwn}` 自己跑（他不必先入列）；"
+                    + "或他把書面同意留在單上，由你**另開一格**紀錄，⛔ 不要替他勾這一格。");
+                throw new Exception($"[Task] op=check 擋下：序號 #{v} 指定簽名人是 `{aOwn}`，"
+                    + $"而你是 `{iActor}` —— 這一格不接受代簽");
+            }
 
             // ⭐ TASK-0163：`expect_text` —— 讓**呼叫端**把「我看到的那一行」帶進來當錨。
             //   🩸 為什麼鎖內那個錨不夠：它錨的是「**本次 handler 鎖外那一讀**」（毫秒級），

@@ -147,8 +147,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     $"[Treasury] 帳號 `{resolved}` 已銷戶，拒絕 {opLabel}（銷戶理由：{closeReason}）。" +
                     $"還有金流打進已銷戶帳號 = 有呼叫路徑沒清乾淨，請查來源而不是重開帳戶。");
             }
-#endif
             return resolved;
+#else
+            //   ⛔ player build：`resolved` 的宣告在上面那個 guard 內（Tim `2b2a4f73` 加的），
+            //   而這一行原本落在 #endif 之後 ⇒ CS0103「resolved 不存在」。
+            //   歸一與銷戶檢查都要 Editor 端的 registry ⇒ 非 Editor 原樣回傳，
+            //   與 `resolveAccount=false` 同語意（不是靜默失敗）。
+            return accountId;
+#endif
         }
 
         // ==========================================================
@@ -619,6 +625,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         //   - **不做一致性驗證** —— 見呼叫端註解，那是刻意的語意
         static void TryWarmStartFromClosing_NoLock(string root, string[] files)
         {
+#if UNITY_EDITOR   // ⛔ player build：`UCL_TreasuryClosing` 整檔在 guard 內 ⇒ CS0103。
+            //   非 Editor 時本方法整段不做事 ＝「沒有任何結帳檔」—— 本區塊註解已寫明那條路：退回全量重放，仍然正確。
             try
             {
                 string todayKey = UCL_TreasuryPaths.DateKey(DateTime.UtcNow);
@@ -647,6 +655,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 // 熱啟失敗不影響正確性 —— 退回全量重放
                 Debug.LogWarning($"[Treasury] 結帳熱啟失敗，改走全量重放：{ex.Message}");
             }
+#endif
         }
 
         // 區塊職責：載入落盤 snapshot 並驗證（呼叫端必須已持有 s_BalanceCacheLock）

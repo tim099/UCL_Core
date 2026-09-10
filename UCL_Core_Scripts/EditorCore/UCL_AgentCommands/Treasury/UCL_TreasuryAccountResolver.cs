@@ -106,6 +106,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string personaKey = "";
             try
             {
+#if UNITY_EDITOR   // ⛔ player build（無 UNITY_EDITOR）：`UCL_LettersPath` 整檔在 guard 內 ⇒ CS0103。
+                //   非 Editor 時 personaKey 留空 ＝「沒有 persona 目錄可比對」，與 catch 分支同語意（不是靜默失敗）。
                 // 戳章改看 letters 根目錄（persona 資料已整合到 letters/<persona>/，2026-08-21）。
                 // ⚠ 只看「有哪些 persona 目錄」這一層：綁定檔內容的改動由呼叫端 Invalidate() 負責，
                 //   不在金流熱路徑上逐檔 stat（一區一檔 × 30 人 = 每次解析都要走檔案系統）。
@@ -121,6 +123,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     }
                     personaKey = dirs.Length + "|" + newest.Ticks;
                 }
+#endif
             }
             catch { personaKey = "?"; }
 
@@ -207,6 +210,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
             try
             {
+#if UNITY_EDITOR   // ⛔ player build：`UCL_CentralBankSettings` / `UCL_PersonaProfile` 都是 Editor-only ⇒ CS0103。
+                //   非 Editor 時 s_PersonaToAgentLower 留空 ＝ persona 名無法歸一，與下方 catch 的降級語意相同。
                 // persona → 帳號（＝agent id）：真相源是 `letters/<persona>/bank/<本專案區域>.md`
                 // （2026-08-21：中央 persona json 退場）。實測 21/21 與舊 registry 的 agent 欄逐字相同，
                 // 所以這不是換語意，是把「同一件事的第二份」拿掉。
@@ -219,6 +224,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     if (string.IsNullOrEmpty(agent)) continue;   // 無綁定：留給 ⑥ 攤成 unresolved，不 mint
                     s_PersonaToAgentLower[name.ToLowerInvariant()] = agent;
                 }
+#endif
             }
             catch (Exception ex)
             {
@@ -243,8 +249,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             //     同族第二次：LY 遷移後的 `FRS` 也是「真的在用、裡面有錢、被判定不存在」。
             try
             {
+#if UNITY_EDITOR   // ⛔ player build：`UCL_CentralBankSettings` 是 Editor-only ⇒ CS0103。
+                //   非 Editor 時央行帳戶不加入 canonical，與 catch 分支同語意。
                 string cb = UCL_CentralBankSettings.CentralBankAccount;
                 if (!string.IsNullOrEmpty(cb)) AddCanonical_NoLock(cb);
+#endif
             }
             catch (Exception ex)
             {

@@ -83,6 +83,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         /// </summary>
         public static string DetectEnvMarker(string iCmdId)
         {
+#if UNITY_EDITOR
             // tier-0：per-cmd context（併行安全 —— 每筆 cmd 自己的值，不受他人起跑影響）
             if (!string.IsNullOrEmpty(iCmdId))
             {
@@ -105,6 +106,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GEMINI_API_KEY"))
              || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GEMINI_SESSION")))
                 return "gemini";
+#endif
             return "unknown";
         }
 
@@ -120,6 +122,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         // ==========================================================
         static string ResolveAccountOrThrow(string accountId, bool resolveAccount, string opLabel)
         {
+#if UNITY_EDITOR
             string resolved = accountId;
             if (resolveAccount)
             {
@@ -144,6 +147,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     $"[Treasury] 帳號 `{resolved}` 已銷戶，拒絕 {opLabel}（銷戶理由：{closeReason}）。" +
                     $"還有金流打進已銷戶帳號 = 有呼叫路徑沒清乾淨，請查來源而不是重開帳戶。");
             }
+#endif
             return resolved;
         }
 

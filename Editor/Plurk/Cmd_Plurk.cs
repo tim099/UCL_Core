@@ -471,7 +471,9 @@ namespace UCL.Core.EditorLib.Plurk
             }
             string aPlurkId = PickJsonValue(aBody, "plurk_id") ?? PickJsonValue(aBody, "id") ?? "?";
             ioR.AppendLine($"- plurk_id: **{aPlurkId}**");
-            WriteAudit(iRes, aSlip, aPayload, aPlurkId, aReplyTo);
+            WriteAudit(iRes, aSlip, aPayload, aPlurkId, aReplyTo, ioR);
+            // ⚠ 這一行印的是**台帳在哪**，不是「寫成功了」—— 失敗的話上一句已經在 ioR 裡喊過。
+            //   台帳按 data_root 分裂（TASK-0184）⇒ 路徑本身就是那筆帳的定語，要印全的。
             ioR.AppendLine($"- audit: `{AuditPath()}`（append-only）");
         }
 
@@ -2667,13 +2669,99 @@ namespace UCL.Core.EditorLib.Plurk
         // 區塊職責：audit —— 發出去的東西留一筆不可回復動作的帳
         // 物理意義：Plurk 沒有 history ⇒ 對帳只能靠自己留。內容存 **SHA256 前 16 位**不存全文
         //          （全文在 Plurk 上；這裡要的是「這則是不是我發的」而不是再存一份）。
-        // 數值影響：append 一行 jsonl；寫失敗只 LogError 不影響已發出的事實。
+        // 數值影響：append 一行 jsonl；寫失敗**同時**進 Editor.log 與回傳檔（見下）。
+        //
+        // 🩸 2026-09-10（TASK-0184）這一區塊被兩件事同時咬過，而兩隻都是**靜默**的：
+        //   ① 台帳路徑長在 `UCL_AgentCommandsPath.DataRoot` 底下，而 `data_root` 是可 override 的
+        //      ⇒ **每棵資料樹一份帳**。而一行帳不說自己是哪棵樹寫的，於是
+        //      「這棵樹沒記到」與「根本沒記到」**逐位元組同形**。
+        //      現場：我在 `D:/Unity/Bar/...` 那棵樹上找 09-09 17:1x 那 4 則，報「漏記」並開了本單；
+        //      隔天站在 `D:/Unity/LY/...` 一撈就在（`2026-09-09T09:12:23Z`）。一小時 git 考古全白費。
+        //      ⇒ 修法＝每行自帶定語（`host` / `data_root` / `git_ref`），**不是**把帳搬去別的地方
+        //        （搬儲存位置是政策不是 bug 修法，而在成因未收斂時動它是拿穩定性換乾淨）。
+        //   ② 寫失敗只 `LogError` ⇒ **agent 讀不到**（回傳檔是 agent 唯一會讀的那格）。
+        //      於是「沒寫」與「寫失敗」也同形，而兩者的處置相反（一個補發、一個修寫入端）。
+        //      ⇒ 失敗一律進 `ioR`。⛔ 但仍然不 throw：噗已經發出去了，這裡拋只會把
+        //        「對外動作成功」報成整支失敗 —— 那是把一個更貴的假象換進來。
         // ===========================================================
         static string AuditPath()
             => Path.Combine(UCL_AgentCommandsPath.DataRoot, AuditRelative).Replace('\\', '/');
 
+        // 區塊職責：讀出「這一行是哪條 git ref 寫的」
+        // 物理意義：`AgentCommands` 在各專案是 **submodule** ⇒ 它的 `.git` 是**檔案**不是目錄
+        //          （內容 `gitdir: ../.git/modules/...`）⇒ 直接接 `.git/HEAD` 會撈不到。
+        // ⚠ 失敗一律回一個**看得出是失敗的字串**，⛔ 不回空字串 ——
+        //   空字串與「這個欄位沒被寫」同形，而人往空格裡填的一定是成功。
+        // 🩸 而首版就在同一句話上失手（2026-09-10，反射實跑當場抓到）：
+        //   「目錄不存在」與「目錄在但不是 git 樹」都回 `(no-git)` ⇒ **兩個處置相反的情況同形**
+        //   （前者是 `data_root` 設錯 —— 那筆帳可能根本沒落地；後者是資料根不在版控下 —— 政策問題）。
+        //   ⇒ 拆成 `(no-dir)` / `(not-in-git)`。⛔ 不是把註解寫得更好，是把那個共用的值拿掉。
+        // ⚠ 往上走找 `.git`（git 自己就是這樣找的）：`data_root` 若被指到 repo 的**子目錄**，
+        //   不往上走就會回「不在版控下」——而那棵樹其實在版控下。**有出處的假定語比未知更毒。**
+        static string ResolveGitRef(string iDataRoot)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(iDataRoot)) return "(no-data-root)";
+                if (!Directory.Exists(iDataRoot)) return "(no-dir)";
+
+                // 從 iDataRoot 往上找第一個帶 `.git` 的祖先（含自己）
+                string aDotGit = null;
+                for (var aDir = new DirectoryInfo(Path.GetFullPath(iDataRoot)); aDir != null; aDir = aDir.Parent)
+                {
+                    string aCandidate = Path.Combine(aDir.FullName, ".git");
+                    if (Directory.Exists(aCandidate) || File.Exists(aCandidate)) { aDotGit = aCandidate; break; }
+                }
+                if (aDotGit == null) return "(not-in-git)";
+                string aOwnerDir = Path.GetDirectoryName(aDotGit);
+
+                string aGitDir;
+                if (Directory.Exists(aDotGit)) aGitDir = aDotGit;
+                else
+                {
+                    // submodule / worktree：`gitdir: <path>`（相對路徑相對於 `.git` 所在目錄）
+                    string aLine = File.ReadAllText(aDotGit).Trim();
+                    const string aPrefix = "gitdir:";
+                    if (!aLine.StartsWith(aPrefix, StringComparison.Ordinal)) return "(gitdir-unparsed)";
+                    string aRel = aLine.Substring(aPrefix.Length).Trim();
+                    aGitDir = Path.IsPathRooted(aRel) ? aRel : Path.GetFullPath(Path.Combine(aOwnerDir, aRel));
+                }
+
+                string aHeadPath = Path.Combine(aGitDir, "HEAD");
+                if (!File.Exists(aHeadPath)) return "(no-head)";
+                string aHead = File.ReadAllText(aHeadPath).Trim();
+
+                // detached：HEAD 直接是 sha
+                if (!aHead.StartsWith("ref:", StringComparison.Ordinal))
+                    return "(detached)@" + Short(aHead);
+
+                string aRefName = aHead.Substring(4).Trim();              // refs/heads/<branch>
+                string aShortName = aRefName.StartsWith("refs/heads/", StringComparison.Ordinal)
+                    ? aRefName.Substring("refs/heads/".Length) : aRefName;
+                string aRefFile = Path.Combine(aGitDir, aRefName.Replace('/', Path.DirectorySeparatorChar));
+                if (File.Exists(aRefFile)) return aShortName + "@" + Short(File.ReadAllText(aRefFile).Trim());
+
+                // ref 檔不在 ⇒ 走 packed-refs（剛 clone / gc 過的 repo 是這個形狀）
+                string aPacked = Path.Combine(aGitDir, "packed-refs");
+                if (File.Exists(aPacked))
+                {
+                    foreach (string aRow in File.ReadAllLines(aPacked))
+                    {
+                        if (aRow.Length == 0 || aRow[0] == '#' || aRow[0] == '^') continue;
+                        int aSp = aRow.IndexOf(' ');
+                        if (aSp > 0 && aRow.Substring(aSp + 1).Trim() == aRefName)
+                            return aShortName + "@" + Short(aRow.Substring(0, aSp));
+                    }
+                }
+                return aShortName + "@(unresolved)";
+            }
+            catch (Exception ex) { return "(git-read-failed: " + ex.GetType().Name + ")"; }
+
+            string Short(string iSha) => iSha.Length >= 7 ? iSha.Substring(0, 7) : iSha;
+        }
+
         void WriteAudit(UCL_PlurkAccountResolution iRes, UCL_PlurkSlip iSlip,
-            Dictionary<string, string> iPayload, string iPlurkId, string iReplyTo)
+            Dictionary<string, string> iPayload, string iPlurkId, string iReplyTo, StringBuilder ioR)
         {
             try
             {
@@ -2697,12 +2785,38 @@ namespace UCL.Core.EditorLib.Plurk
                 aJd["body_sha256_16"] = new UCL.Core.JsonLib.JsonData(aHash);
                 aJd["body_len"] = new UCL.Core.JsonLib.JsonData(iSlip.Body.Length);
                 aJd["plurk_id"] = new UCL.Core.JsonLib.JsonData(iPlurkId ?? "");
+                // ⭐ 定語三欄（TASK-0184，**純新增** —— 既有欄位與讀取端一個字不動）：
+                //    讓一行帳說得出自己是「哪台機器、哪棵資料樹、哪條 git ref」寫的。
+                string aDataRoot = UCL_AgentCommandsPath.DataRoot;
+                aJd["host"] = new UCL.Core.JsonLib.JsonData(SafeHost());
+                aJd["data_root"] = new UCL.Core.JsonLib.JsonData((aDataRoot ?? "").Replace('\\', '/'));
+                aJd["git_ref"] = new UCL.Core.JsonLib.JsonData(ResolveGitRef(aDataRoot));
                 File.AppendAllText(aPath, aJd.ToJson() + "\n", new UTF8Encoding(false));
             }
             catch (Exception ex)
             {
+                // ⚠ 兩個出口都要走：Editor.log 給人看，回傳檔給 agent 看。
+                //   只寫 log 的話，agent 端「沒寫」與「寫失敗」同形（而處置相反）。
                 Debug.LogError($"[Plurk] audit 寫入失敗（噗已經發出去了，這筆帳要手動補）：{ex.Message}");
+                if (ioR != null)
+                {
+                    ioR.AppendLine($"- ⚠ **audit 寫入失敗**（{ex.GetType().Name}）：{ex.Message}");
+                    ioR.AppendLine($"　　路徑: `{AuditPath()}`");
+                    ioR.AppendLine($"　　⛔ **噗已經發出去了**（plurk_id `{iPlurkId}`）—— 失敗的是**記帳**不是發文，"
+                        + "別重發；這筆帳要手動補。");
+                }
             }
+        }
+
+        // 主機名 —— 取不到也要回一個看得出是「取不到」的值（⛔ 不回空字串）
+        static string SafeHost()
+        {
+            try
+            {
+                string aName = Environment.MachineName;
+                return string.IsNullOrEmpty(aName) ? "(host-empty)" : aName;
+            }
+            catch { return "(host-unavailable)"; }
         }
 
         // 極簡取值：只為了從回應撈幾個純量欄位，不值得為它引入完整反序列化。

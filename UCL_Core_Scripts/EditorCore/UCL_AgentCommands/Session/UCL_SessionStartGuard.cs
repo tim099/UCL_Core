@@ -82,15 +82,16 @@ namespace UCL.Core.EditorLib.AgentCommands
             string aUntil = string.IsNullOrEmpty(iBlocker.until_local) ? "未寫截止時刻" : "至 " + iBlocker.until_local;
             string aOut = $"**{aWho}** 正在 **{KindLabel(iBlocker.kind)}**（`{iBlocker.session_id}`，{aUntil}）";
             if (!SCP_ActivitySessionKind.IsGlobalExclusive(iBlocker.kind)) return aOut;
-
-            string aMine = string.IsNullOrEmpty(iScope) ? "" : iScope;
-            string aTheirs = SCP_ActivitySessionStore.ScopeOf(iBlocker);
-            if (aMine.Length == 0)
-                return aOut + " —— 而**你沒有宣告施工範圍** ⇒ 你這一場退化成全域獨佔，所以誰在場上都擋你";
-            if (aTheirs.Length == 0)
-                return aOut + " —— 而**他沒有宣告施工範圍** ⇒ 視同他可能改任何地方，所以擋你";
-            return aOut + $" —— 範圍撞到：{SCP_SessionScope.Explain(aMine, aTheirs)}";
+            // ⛔ 三種理由的判定與措辭**不寫在這裡**（TASK-0203）——
+            //   本檔的檔頭早就寫著「措辭有兩份」會怎麼壞，而 2026-09-11 我在這裡又寫了一次。
+            //   ⇒ 共用層給句子，宿主只補「誰、到幾點」這半。
+            return aOut + " —— " + SCP_SessionScope.ReasonOf(
+                ScopeBlockKind(iBlocker, iScope), iScope ?? "", SCP_ActivitySessionStore.ScopeOf(iBlocker));
         }
+
+        /// <summary>擋你的是三種裡的哪一種（非全域互斥的 kind 走不到這裡）。</summary>
+        static SCP_SessionScope.BlockKind ScopeBlockKind(SCP_ActivitySession iBlocker, string iScope)
+            => SCP_SessionScope.Classify(iScope ?? "", SCP_ActivitySessionStore.ScopeOf(iBlocker));
 
         /// <summary>別人持有時的出口：**等或去問他**，⛔ 不要叫人去收別人的場。</summary>
         static string ExitOther(SCP_ActivitySession iBlocker, string iScope)
@@ -100,11 +101,13 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             // ⭐ 三種擋下裡**只有一種是你自己補得了的** —— 那一條要先講，
             //   不然讀的人會照著「等他」去等一件他本來不必等的事。
-            if (SCP_ActivitySessionKind.IsGlobalExclusive(iBlocker.kind) && string.IsNullOrEmpty(iScope))
+            //   ⛔ 那句話由共用層給（TASK-0203），本檔只補宿主自己的重試指令。
+            if (SCP_ActivitySessionKind.IsGlobalExclusive(iBlocker.kind))
             {
-                return "先補上施工範圍再試一次（範圍不重疊就進得去）："
-                     + $"senate ucmd run Coding --persona <你> --arg step=start --arg status=<一句> --arg scope=<絕對路徑>"
-                     + $"；真的撞到才需要等 {aUntil} 或去酒館問 {aWho}";
+                string aScopeExit = SCP_SessionScope.ExitOf(ScopeBlockKind(iBlocker, iScope),
+                    "senate ucmd run Coding --persona <你> --arg step=start --arg status=<一句> --arg scope=<絕對路徑>");
+                if (aScopeExit.Length > 0)
+                    return aScopeExit + $"；真的撞到才需要等 {aUntil} 或去酒館問 {aWho}";
             }
             string aOut = $"等 {aUntil}，或去酒館 {aWho} 問他還要多久；查現況：senate cmd sessions --arg op=list";
 

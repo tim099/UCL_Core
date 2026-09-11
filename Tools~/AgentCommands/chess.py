@@ -31,6 +31,7 @@ runtime 對局狀態: <data_root>/Chess/games/ (獨立 repo, 跨專案共用一�
 子指令 (start/join/move/resign/draw 皆可帶 --say "<一句話>": 自言自語或跟對手聊天):
   start   開新局 (--persona / --side white|black|both / --vs-open 留座等人 / --say)
   lobby   列出『等待加入』的對局 (OPEN 座或可中途切入的 solo)
+  match   自動配對 (--persona [--say]): 有可加入的局就入座, 沒有就開一局自己下
   join    加入 (idx --persona [--side]): 認領 OPEN 座, 或中途切入 solo 局轉 1v1
   release 中途釋出一座 → OPEN 等人加入 (idx --persona [--side])
   move    走子 (idx <uci> --persona [--say])  e2e4 / e7e8q(升變) / e1g1(易位)
@@ -854,28 +855,124 @@ def cmd_release(a):
 
 def cmd_lobby(a):
     """列出『等待加入』的對局 (有 OPEN 座, 或 solo 局可中途切入)。"""
+    waiting = waiting_games(iter_games())
+    if not waiting:
+        print("(目前沒有等待加入的對局; 用 `match` 開一局自己下等人切入)")
+        return
+    print(f"🪑 等待加入的對局 ({len(waiting)}):")
+    for g, open_sides, solo in waiting:
+        tag = ("OPEN座:" + "/".join(open_sides)) if open_sides else f"solo({g['seats']['white']}) 可中途切入"
+        print(f"  #{g['index']:>2} 白:{str(g['seats']['white'] or 'OPEN'):<10} 黑:{str(g['seats']['black'] or 'OPEN'):<10}"
+              f" 已走{count_moves(g)}手 — {tag}")
+        print(f"      → python chess.py join {g['index']} --persona <你> [--say \"...\"]")
+    # ⚠ 本支**不吃 --persona** ⇒ 上面這張清單含「我自己的局」，而那些我配不上去
+    #   (cmd_join 會擋)。要自動挑一局一律走 `match`，它吃 persona 並排除掉那些。
+    print("\n⚠ 這張清單不分「誰的局」—— 自己的 solo 局也在裡面（那些你加入不了）。")
+    print("   自動挑一局: python chess.py match --persona <你>")
+
+
+# ═════════════════════════ 對局清單與配對挑選 (T07) ═════════════════════════
+# 區塊職責: 「哪些局在等人加入」與「我該配哪一局」—— 讀取與挑選，**不寫檔、不廣播**。
+# 物理意義: lobby 與 match 用的是同一組判準。兩邊各寫一份的話，lobby 會印出一局
+#          而 match 配不上去（或反之），而**兩邊都不會報錯** —— 那是前例
+#          (VRAM_BUDGET_GB 門檻在 python、C# 只顯示) 講過的「兩份判準必漂」。
+# 數值影響: pick_match_candidate 是**純函式**（吃 list[dict] + persona，零 IO），
+#          所以「挑哪一局」這件事可以單獨驗，不必造真的棋局。
+
+
+def iter_games():
+    """讀全部對局 → list[dict]，index 升冪。"""
     ensure_dirs()
-    files = sorted(_GAMES_DIR.glob("*.json"), key=lambda p: int(p.stem))
-    waiting = []
-    for fpath in files:
-        g = json.loads(fpath.read_text(encoding="utf-8"))
+    out = []
+    for fpath in sorted(_GAMES_DIR.glob("*.json"), key=lambda p: int(p.stem)):
+        out.append(json.loads(fpath.read_text(encoding="utf-8")))
+    return out
+
+
+def count_moves(g):
+    """真正的走子數 —— history 裡也記 join:/release: 這類事件，那些不是手數。"""
+    return len([h for h in g["history"]
+                if len(h.get("uci", "")) >= 4 and ":" not in h.get("uci", "")])
+
+
+def waiting_games(games):
+    """『等待加入』的局 → [(g, open_sides, solo)]。lobby 與 match 共用這一份判準。"""
+    out = []
+    for g in games:
         if g["status"] != "in_progress":
             continue
         s = g["seats"]
         open_sides = [k for k in ("white", "black") if s[k] is None]
         solo = bool(s["white"]) and s["white"] == s["black"]
         if open_sides or solo:
-            waiting.append((g, open_sides, solo))
-    if not waiting:
-        print("(目前沒有等待加入的對局; 用 `start --vs-open` 開一局徵人)")
-        return
-    print(f"🪑 等待加入的對局 ({len(waiting)}):")
-    for g, open_sides, solo in waiting:
-        tag = ("OPEN座:" + "/".join(open_sides)) if open_sides else f"solo({g['seats']['white']}) 可中途切入"
-        nmoves = len([h for h in g["history"] if len(h.get("uci", "")) >= 4 and ":" not in h.get("uci", "")])
-        print(f"  #{g['index']:>2} 白:{str(g['seats']['white'] or 'OPEN'):<10} 黑:{str(g['seats']['black'] or 'OPEN'):<10}"
-              f" 已走{nmoves}手 — {tag}")
-        print(f"      → python chess.py join {g['index']} --persona <你> [--say \"...\"]")
+            out.append((g, open_sides, solo))
+    return out
+
+
+def pick_match_candidate(games, persona, skip_indices=()):
+    """
+    自動配對挑一局 —— **純函式**。回 (g or None, reason)。
+
+    排除三種（前兩種都是「lobby 看得到但我配不上去」，而 lobby 不吃 --persona 所以它印不出差別）:
+      · 我已經坐在裡面的局（含我自己的 solo 局 —— cmd_join 本來就會擋，這裡先擋以免白撞一次）
+      · skip_indices（上一輪被搶掉的，重掃時排除）
+    排序: (已走手數, index) 升冪。
+      · 手數最少優先 —— 接一局走了 50 手的殘局對接手的人不公平（Tim 2026-09-11 拍板）。
+      · 同手數取小 index 讓結果**可複驗**；⛔ 不用「最久沒動」之類會隨時間改變的鍵當決勝。
+    """
+    cands = []
+    for g, open_sides, solo in waiting_games(games):
+        if g["index"] in skip_indices:
+            continue
+        s = g["seats"]
+        if persona in (s["white"], s["black"]):
+            continue
+        cands.append(g)
+    if not cands:
+        return None, "沒有可加入的局"
+    cands.sort(key=lambda g: (count_moves(g), g["index"]))
+    return cands[0], "已走手數最少"
+
+
+def cmd_match(a):
+    """
+    自動配對: 有可加入的 solo/OPEN 局就入座, 沒有就開一局自己下 (solo, 等人中途切入)。
+
+    ⚠ 兩條分支的回報**刻意不同形** —— 「入了別人的局」與「沒配到、自己開了一局」
+      是兩件事。共用一句「配對完成」的話，第二種會被讀成第一種。
+    """
+    say = (a.say or "").strip()
+    skip = []
+    attempts = 0
+    while attempts < 3:
+        attempts += 1
+        g, reason = pick_match_candidate(iter_games(), a.persona, tuple(skip))
+        if g is None:
+            break
+        idx = g["index"]
+        holder = g["seats"]["white"] or g["seats"]["black"]
+        print(f"🤝 配對: Chess #{idx}（{holder}，已走 {count_moves(g)} 手；挑選判準: {reason}）")
+        try:
+            cmd_join(argparse.Namespace(
+                idx=idx, persona=a.persona, side=None, say=say,
+                no_broadcast=a.no_broadcast))
+            print(f"\n✅ 入座既有對局 Chess #{idx} —— 這是**加入別人開的局**，不是開新局。")
+            print(f"下一步: python chess.py move {idx} <uci> --persona {a.persona}")
+            return
+        except SystemExit as e:
+            # 併發: 兩人同時配對搶同一座。⛔ 不靜默改道 —— 說出本來要入哪一局、為什麼沒成。
+            skip.append(idx)
+            print(f"⚠ 入座 #{idx} 沒成（{e}）—— 重掃候選", file=sys.stderr)
+    if skip:
+        # ⚠ 這一格不能印成「沒有可加入的局」—— 當時**有**候選，是被搶掉了。
+        #   兩者都收在同一句的話，「沒人開局」與「有人開局但我沒搶到」就同形。
+        print(f"⚠ 本來要入 {'/'.join('#' + str(i) for i in skip)}，都被搶了 "
+              f"⇒ 改開新局（solo，等人中途切入）")
+    else:
+        print("🆕 沒有可加入的局 ⇒ 開一局自己下（solo，等人中途切入）")
+    cmd_start(argparse.Namespace(
+        persona=a.persona, side="both", vs_open=False, say=say,
+        no_broadcast=a.no_broadcast))
 
 
 def cmd_move(a):
@@ -1032,6 +1129,11 @@ def main():
 
     plo = sub.add_parser("lobby", help="列出等待加入的對局 (OPEN座/可切入的 solo)")
     plo.set_defaults(func=cmd_lobby)
+
+    pmt = sub.add_parser("match", help="自動配對: 有可加入的局就入座, 沒有就開一局自己下")
+    pmt.add_argument("--persona", required=True)
+    pmt.add_argument("--say", default="", help="入座/開局帶一句話")
+    pmt.set_defaults(func=cmd_match)
 
     pm = sub.add_parser("move", help="走子 (UCI: e2e4 / e7e8q / e1g1)")
     pm.add_argument("idx", type=int)

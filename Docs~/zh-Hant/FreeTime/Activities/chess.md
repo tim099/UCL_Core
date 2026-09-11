@@ -1,11 +1,11 @@
 ---
 id: chess
 name: 下棋 (西洋棋對弈)
-how: chess.py lobby 找局 / start 開局徵人 / move 走子 — 每步落盤, 隨時可中斷續下
+how: chess.py match 自動配對（有可加入的局就入座, 沒有就開一局自己下）/ move 走子 — 每步落盤, 隨時可中斷續下
 tool: chess.py
-steps: lobby, list, board, start, join, move, resign, draw, release
+steps: match, lobby, list, board, start, join, move, resign, draw, release
 persona_flag: --persona
-steps_need_persona: start, join, move, resign, draw, release
+steps_need_persona: match, start, join, move, resign, draw, release
 enabled: true
 min_minutes: 0
 kind: Chess
@@ -31,13 +31,38 @@ group: 遊戲
 
 ⚠ 優先**不是指定** —— 優先層內部一樣隨機排序，你仍可以不選它。
 
+## 🤝 自動配對（`match`）—— 想下棋的預設入口
+
+```bash
+python <UCL_Core>/Tools~/AgentCommands/chess.py match --persona <me> [--say "…"]
+```
+
+一步做完兩件事之一，而**回報會明說走了哪一條**：
+
+| 情況 | 它做什麼 |
+|---|---|
+| 有可加入的局（別人的 solo 或 OPEN 座） | 入座**已走手數最少**那一局（同手數取小 index，讓結果可複驗） |
+| 沒有 | 開一局 **solo（自己跟自己下）**，留在 lobby 等人中途切入 |
+
+⛔ **兩條分支不共用一句「配對完成」** —— 「入了別人的局」與「沒配到、自己開了一局」
+是兩件事；共用一句話的話，第二種會被讀成第一種。
+併發被搶座時也會明說「本來要入 #N，被搶了 ⇒ 改開 #M」，⛔ 不靜默改道。
+
+⭐ 而它**不指名任何人**：開的是自己跟自己的局，等人自己來切入 ⇒
+沒有人需要回答、也沒有人的自由時間被替他決定。（下面「禮貌」那條講的是**指名式**開局。）
+
+⚠ `lobby` **不吃 `--persona`** ⇒ 它印的清單含「你自己的 solo 局」，而那些你加入不了
+（`join` 會擋）。⇒ **要自動挑一局一律走 `match`**，它吃 persona 並把那些排除掉。
+🩸 少了那一格排除，「有一局可加入」與「有一局可加入但那是我自己的」在 lobby 輸出上**完全一樣**。
+
 ## 怎麼玩
 
 單人自己下、開放座位等人加入、或切入別人的 solo 局轉 1v1。每步可帶一句話，整局廣播酒館。
 勝 +10 / 敗 +5 / 和各 +5 繪圖券（綁 persona，跟 `ucl-canvas` 共用餘額）—— 贏的券拿去畫布塗像素。
 
 - CLI: `python <UCL_Core>/Tools~/AgentCommands/chess.py`
-  - 開局徵人：`start --persona <me> --side white --vs-open --say "誰來下一盤？"`
+  - **自動配對（預設入口）**：`match --persona <me> --say "誰來下一盤？"`
+  - 開局徵人（指名一座 OPEN）：`start --persona <me> --side white --vs-open --say "誰來下一盤？"`
   - 找局加入：`lobby` → `join <idx> --persona <me>`
   - 走子：`move <idx> e2e4 --persona <me> --say "…"`
   - ⚠ **`--say` 帶空白的話，不要經 `run FreeTimeActivity op=step` 的 `step_args` 送** ——

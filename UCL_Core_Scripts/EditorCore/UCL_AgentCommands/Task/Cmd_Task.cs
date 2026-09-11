@@ -42,6 +42,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "status=<create/update 設定值；list 篩選：open（預設）/all/backlog/todo/in_progress/in_review/done/cancelled> | " +
             "index=<單號：show/claim/assign/update/comment/link/resolve 必填；收 TASK-0008 / 8 / 0008> | " +
             "role=dev|design|qa|pm|reviewer|sound|art（claim/assign 用，預設 dev） | " +
+            "scope=<施工範圍，絕對路徑，取施工的最大範圍>（op=claim 選填）——**給了就等於「我現在要動工」**："
+            + "認領＋開 Coding 場＋把這張單綁上去，三件事一步；開場被擋時**認領也不發生**（TASK-0202） | " +
             "target_persona=<assign 的對象> | assignee=<list 篩選：只看某人參與的單> | " +
             "replace=1（assign 用：**換角色** —— 先拿掉這個人既有的角色再指派；不帶＝加一個角色） | " +
             "body=<comment 內容> | " +
@@ -636,6 +638,33 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         {
             var e = Require(iArgs, out int aIndex);
             var aRole = ParseEnumArg(iArgs, "role", UCL_TaskRole.dev);
+
+            // ===========================================================
+            // ⭐ TASK-0202：**給了 `scope` ＝「我現在要動工」** ⇒ 認領＋開場＋綁單，一步。
+            //   而它必須**原子**：開場被擋時認領一個位元組都不寫。
+            //   🩸 半套的失效樣子是「單子寫著我在做，而我其實進不了場」——
+            //     看板上跟「有人在做」一模一樣，而實際上沒有人動得了它。
+            //   ⛔ 順序不可對調：先寫認領再開場的話，擋下那一刻已經留下假狀態了。
+            // ⚠ 不給 `scope` ＝「我先記錄我在做這件事」⇒ 行為**一格都不變**。
+            //   那兩件事常常差好幾天，把它們綁死會讓一個便宜的動作變貴，而貴的動作會被繞過。
+            // ===========================================================
+            string aScopeRaw = GetArg(iArgs, "scope", "").Trim();
+            string aSessionNote = "";
+            if (aScopeRaw.Length > 0
+                && !TryStartOrBindCodingSession(iActor, aIndex, aScopeRaw,
+                                                out aSessionNote, out string aSessionFail))
+            {
+                ioR.AppendLine("## ⛔ 沒有認領 —— 開場被擋");
+                ioR.AppendLine();
+                ioR.AppendLine(aSessionFail);
+                ioR.AppendLine();
+                ioR.AppendLine("⚠ **認領一個位元組都沒寫** —— 妳帶了 `scope`，那句話的意思是「我現在要動工」，"
+                               + "而動不了。⛔ 不留一張「寫著有人在做、其實沒人動得了」的單。");
+                ioR.AppendLine("⇒ 只想記錄「我在做這件事」的話，拿掉 `--arg scope=` 再跑一次：");
+                ioR.AppendLine($"　 `senate ucmd run Task --persona {iActor} --arg op=claim --arg index={aIndex}`");
+                throw new Exception($"[Task] TASK-{aIndex} 沒有認領 —— 開場被擋，詳見回傳檔");
+            }
+
             string aNow = UCL_TaskIO.NowUtc();
             bool aNew = false;
             var aFrom = e.status;
@@ -673,8 +702,19 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     : $"{aNow}　`{m.status}`　{iActor} 加入為 {aRole}（狀態不動：{aWhyNoMove}）");
             });
             if (!aWrote)
+            {
+                // ⚠ 認領沒落檔而場已經開了 ⇒ **收掉它**，⛔ 不留一個沒有單的孤兒場擋住所有人。
+                //   這一格是原子那句話的另一半：前半擋「開不了場就別認領」，後半擋「認領沒成就別留著場」。
+                string aRollback = aScopeRaw.Length > 0 ? CloseCodingSessionQuietly(iActor) : "";
                 throw new Exception($"[Task] TASK-{aIndex} 認領沒有落檔 —— 鎖內重讀時那張單不在了"
-                    + "（被刪或被搬）⇒ **寫入沒有發生**，妳沒有被加進參與者。");
+                    + "（被刪或被搬）⇒ **寫入沒有發生**，妳沒有被加進參與者。" + aRollback);
+            }
+
+            // ⚠ 回報一律用**落檔後**那一份（同 `OpCommit` 那格的理由）——
+            //   🩸 2026-09-11 實測：Template 認領成功，而這行印「參與：basecamp(dev)」
+            //     （`e` 是 `Mutate` **之前**讀的那一份）⇒ 剛加進去的人不在自己的成功回報裡。
+            //     那不會報錯，它只是**少印一個人**，而讀的人會以為自己沒被加進去。
+            e = UCL_TaskIO.Find(aIndex) ?? e;
 
             ioR.AppendLine($"## ✅ {e.Id} 已認領");
             ioR.AppendLine(aWhyNoMove == null
@@ -683,6 +723,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 : $"- 狀態**維持 `{aFrom}`**　role=`{aRole}` —— {aWhyNoMove}"
                     + (aNew ? "" : "（這個 persona＋role 本來就在參與者裡，沒有重複加）"));
             ioR.AppendLine($"- 參與：{Participants(e)}");
+            // ⚠ 沒開場那一行**要印**，不要安靜 —— 安靜的話「我只是記錄」與「我以為我已經進場了」同形。
+            ioR.AppendLine(aSessionNote.Length > 0
+                ? aSessionNote
+                : "- ⚠ **沒有開 Coding 場**（沒給 `--arg scope=`）⇒ 這只是「記錄我在做這件事」。"
+                  + $"要動工（會改 C#）請帶範圍：`senate ucmd run Task --persona {iActor} "
+                  + $"--arg op=claim --arg index={aIndex} --arg scope=<絕對路徑>`");
             var aBlockers = UCL_TaskIO.OpenBlockers(e);
             if (aBlockers.Count > 0)
             {
@@ -694,6 +740,109 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     ? $"{aFrom} → **in_progress**（{iActor} 認領 role={aRole}）"
                     : $"{iActor} 加入為 `{aRole}`（狀態維持 `{aFrom}` —— {aWhyNoMove}）", iCallerArgs: iArgs);
             AppendNotifyLine(ioR, e, iActor, aOk);
+        }
+
+        // 區塊職責：認領時「開一場新的」或「綁到現有那一場」—— 兩條路，**而它們不同形**。
+        // 物理意義：軸1（每人一場）仍然成立 ⇒ 已經有場的人**不可以**因為認領第二張單就開第二場，
+        //           那一格的正解是**補綁**（同 `op=bind`），不是開場。
+        // 數值影響：成功時寫一份 session 檔（或改一個欄位）；失敗時**一個位元組都不寫**
+        //           （`TryStart` 自己保證前半，補綁那半由 `BindTasks` 回讀確認）。
+        // ⚠ 綁的單號走 `SCP_Cmd_Coding.NormalizeTasks` —— ⛔ 不自己 `ToString()` 拼：
+        //   「去前導零」那層只要有一邊沒做，自動收場就永遠不成立，而它不會叫。
+        static bool TryStartOrBindCodingSession(string iPersona, int iIndex, string iScopeRaw,
+                                                out string oNote, out string oFail)
+        {
+            oNote = "";
+            oFail = "";
+            if (!SCP.Core.Session.SCP_SessionScope.TryNormalize(iScopeRaw, out string aScope, out string aScopeErr))
+            {
+                oFail = $"- `--arg scope` 解析不了：`{iScopeRaw}`"
+                        + (aScopeErr.Length > 0 ? $"（{aScopeErr}）" : "")
+                        + "\n- 要的是**絕對路徑**，例：`D:/Unity/LY/Assets/Plugins/UCL_Core`";
+                return false;
+            }
+
+            var aRoot = UCL_AgentCommandsPath.ScpDataRoot;
+            string aKind = SCP.Core.Session.SCP_ActivitySessionKind.Coding;
+            var aMine = SCP.Core.Session.SCP_ActivitySessionStore
+                .Load<SCP.Core.Session.SCP_CodingSession>(aRoot, iPersona, aKind);
+            if (aMine != null && aMine.active && aMine.IsRunningAt(DateTime.Now, out _))
+            {
+                string aRead = SCP.Core.Cmd.SCP_Cmd_Coding.BindTasks(aRoot, iPersona, iIndex.ToString());
+                if (aRead == null)
+                {
+                    oFail = "- 妳已經有一場 Coding，但**補綁沒有落檔**（回讀不到那一場）"
+                            + "\n- 先查現況：`senate cmd coding --arg data_root=<AgentCommands 根>`";
+                    return false;
+                }
+                oNote = $"- 🛠 **綁到妳現有的場**（⛔ 沒有開第二場）：`{aMine.session_id}`"
+                        + $"　回讀 tasks = **{aRead}**（回讀單檔，不是寫入端的回傳值）";
+                string aHave = SCP.Core.Session.SCP_ActivitySessionStore.ScopeOf(aMine);
+                if (!string.Equals(aHave, aScope, StringComparison.OrdinalIgnoreCase))
+                {
+                    // ⛔ **不自動擴大現有場的範圍** —— 靜默擴大會在別人完全不知情的狀況下擋掉更多人，
+                    //    而被擋的人看到的理由會是一個我從來沒宣告過的路徑。
+                    oNote += $"\n- ⚠ 現有場的範圍**沒有變**："
+                             + (aHave.Length > 0 ? $"`{aHave}`" : "**（沒宣告 ⇒ 整棵樹）**")
+                             + $"；這次給的 `{aScope}` **沒有被套用**。"
+                             + $"要換範圍得先 `senate ucmd run Coding --persona {iPersona} --arg step=end` 再開新的場。";
+                }
+                return true;
+            }
+
+            int aHours = SCP.Core.Cmd.SCP_Cmd_Coding.DefaultLeaseHours;
+            DateTime aUntil = DateTime.Now.AddHours(aHours);
+            var aSession = new SCP.Core.Session.SCP_CodingSession
+            {
+                persona = iPersona,
+                kind = aKind,
+                session_id = "coding-" + DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'") + "-" + iPersona,
+                start_ts = SCP.Core.Session.SCP_ActivitySession.NowIso(),
+                // ⚠ 兩個欄位的格式與另外兩個入口（`Cmd_Coding` / `SCP_Cmd_Coding`）**逐字一致** ——
+                //   同一個檔被三個宿主讀寫，格式不一致的那天沒有任何一層會出聲。
+                end_ts = aUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                until_local = aUntil.ToString("yyyy-MM-dd HH:mm"),
+                active = true,
+                status = $"TASK-{iIndex:0000}（由 op=claim 開場）",
+                status_updated = DateTime.Now.ToString("yyyy-MM-dd HH:mm:sszzz"),
+                scope = aScope,
+                tasks = SCP.Core.Cmd.SCP_Cmd_Coding.NormalizeTasks(iIndex.ToString()),
+            };
+            if (!UCL_SessionStartGuard.TryStart(iPersona, aSession, aKind,
+                                                out string aReason, out string aExit, aScope))
+            {
+                oFail = $"- 原因：{aReason}\n- 處理方式：{aExit}";
+                return false;
+            }
+            oNote = $"- 🛠 **已開 Coding 場**：`{aSession.session_id}`　範圍 `{aScope}`　"
+                    + $"租期至 **{aSession.until_local}**（{aHours} 小時）"
+                    + $"\n- ⭐ 綁定單 **{aSession.tasks}** ⇒ 它離開施工狀態（`in_review`／`done`）時本場**自動收**";
+            return true;
+        }
+
+        /// <summary>認領落檔失敗時的回捲：把剛剛開起來的場收掉。回一句可以接在例外訊息後面的話。</summary>
+        /// <remarks>⚠ 回捲**本身也可能失敗** —— 失敗要說出來，⛔ 不可以靜默（那會留下一個沒人知道的鎖）。</remarks>
+        static string CloseCodingSessionQuietly(string iPersona)
+        {
+            try
+            {
+                var aRoot = UCL_AgentCommandsPath.ScpDataRoot;
+                string aKind = SCP.Core.Session.SCP_ActivitySessionKind.Coding;
+                var aS = SCP.Core.Session.SCP_ActivitySessionStore
+                    .Load<SCP.Core.Session.SCP_CodingSession>(aRoot, iPersona, aKind);
+                if (aS == null || !aS.active) return "";
+                SCP.Core.Session.SCP_ActivitySessionStore.Close(aRoot, iPersona, aS, "task-claim-rollback");
+                var aBack = SCP.Core.Session.SCP_ActivitySessionStore.Load(aRoot, iPersona);
+                bool aClosed = aBack != null && !aBack.active;
+                return aClosed
+                    ? "（剛開的場已回捲收掉，回讀確認=True）"
+                    : "（⚠ **回捲失敗：那一場還開著** —— 請手動 `senate ucmd run Coding --persona "
+                      + iPersona + " --arg step=end`）";
+            }
+            catch (Exception ex)
+            {
+                return "（⚠ **回捲丟例外，那一場可能還開著**：" + ex.GetType().Name + "）";
+            }
         }
 
         async UniTask OpAssign(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)

@@ -74,6 +74,18 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         public bool enabled = true;
         public bool isProjectLayer;     // true＝專案層（同 id 會覆蓋共用層）
 
+        // 區塊職責：這件活動是否**必須在自由時間裡**才做得成（frontmatter `needs_session`，預設 true）。
+        // 物理意義：多數活動是「自由時間才做的事」，而少數活動本身跟自由時間無關 ——
+        //          下棋每一步都落盤、一局跨好幾次醒來（`min_minutes: 0` 就是那個意思），
+        //          把它綁在場次上會讓「想走一步」變成「要先開一場自由時間」。
+        //          （Tim 2026-09-11 拍板：下棋不綁定自由時間。）
+        // 數值影響：false ⇒ `Cmd_FreeTimeActivity` 的 session 守衛放行，`iSession` 傳 null，
+        //          **場次計數器（`activity` / `activities_done`）不寫**；
+        //          ⭐ 而飢餓統計照記（`RecordPick` 只吃 persona，不吃 session）。
+        // ⚠ 宣告式，⛔ 不在 Cmd 裡寫 `if (id == "chess")` —— 那會把規則裝在其中一條路上，
+        //   而下一個「也不該綁場次」的活動不會有人想起來要改那一行。
+        public bool needsSession = true;
+
         // 區塊職責：把「這件活動屬於哪一類」從活動本身分離出來（Tim 2026-08-18 拍板）。
         // 物理意義：原本一份 md 就是一「組」活動（`canvas-draw` ＝ 2D 畫布**或** 3D 雕刻、
         //          `gaming` ＝ TRPG**或** QA），於是子分支的選擇**完全沒有落盤** ——
@@ -290,6 +302,8 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                         enabled = !string.Equals(Nz(UCL_AwakeningService.ReadFrontmatterField(aMd, "enabled"), "true"),
                                                  "false", StringComparison.OrdinalIgnoreCase),
                         isProjectLayer = iIsProject,
+                        needsSession = !string.Equals(Nz(UCL_AwakeningService.ReadFrontmatterField(aMd, "needs_session"), "true"),
+                                                      "false", StringComparison.OrdinalIgnoreCase),
                         tool = (UCL_AwakeningService.ReadFrontmatterField(aMd, "tool") ?? "").Trim(),
                         steps = ParseSteps(UCL_AwakeningService.ReadFrontmatterField(aMd, "steps")),
                         personaFlag = (UCL_AwakeningService.ReadFrontmatterField(aMd, "persona_flag") ?? "").Trim(),

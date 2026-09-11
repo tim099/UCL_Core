@@ -84,6 +84,32 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             aR.AppendLine($"# FreeTimeActivity op={aOp} persona={aPersona}  ts=`{DateTime.Now:yyyy-MM-dd HH:mm:sszzz}`（本地時間）");
             aR.AppendLine();
 
+            var aSession = Cmd_FreeTime.LoadSession(aPersona);
+            DateTime aNow = DateTime.Now;
+            DateTime? aEnd = aSession != null ? SCP.Core.Session.SCP_ActivitySession.ParseIsoToLocal(aSession.end_ts) : null;
+
+            // ── 不綁自由時間的活動（md `needs_session: false`）──────────────
+            // 物理意義：少數活動本身跟場次無關 —— 下棋每一步都落盤、一局跨好幾次醒來
+            //          （`min_minutes: 0` 就是那個意思）。把它綁在場次上，「想走一步」
+            //          就變成「要先開一場自由時間」。（Tim 2026-09-11 拍板。）
+            // ⚠ 判準讀的是**md 的宣告**，⛔ 不在這裡寫 `if (id == "chess")` ——
+            //   那會把規則裝在其中一條路上，而下一個該豁免的活動不會有人想起來改這一行。
+            // ⚠ 而豁免要先知道「是哪個活動」：沒有 session 時 `activity` **無處可 fallback**
+            //   ⇒ 沒帶 `--arg activity=` 就解不開 ⇒ 照舊擋，並把那句出口印出來。
+            //   ⛔ 不猜活動 —— 猜錯會把「下棋」記成「閱讀」，而帳面上看不出來。
+            string aWantId = GetArg(args, "activity", "").Trim();
+            if (string.IsNullOrEmpty(aWantId) && aSession != null) aWantId = (aSession.activity ?? "").Trim();
+            bool aSessionFree = false;
+            if (!string.IsNullOrEmpty(aWantId))
+            {
+                foreach (var a in UCL_FreeTimeIO.ScanActivities())
+                {
+                    if (!string.Equals(a.id, aWantId, StringComparison.OrdinalIgnoreCase)) continue;
+                    aSessionFree = !a.needsSession;
+                    break;
+                }
+            }
+
             // ── 守衛：session 必須存在且尚未收工 ──────────────────────────
             // ⚠ 判準刻意**不是** IsRunningAt —— 那條含「已過 end_ts」，而截止是**軟的**：
             //   「時間到不打斷進行中的活動，最後一件做完跑 next 才收工」。
@@ -95,31 +121,46 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             // ⇒ 只擋兩種真的不能做事的狀態：沒有 session／已經收工。
             //   逾時但仍 active ＝ 正在進行的那件事還沒收 ⇒ **放行**，並在時間欄明講已逾時。
             //   收工的判定權留在 step=next（它是唯一會寫 end_reason 的地方），本檔不代它判。
-            var aSession = Cmd_FreeTime.LoadSession(aPersona);
-            DateTime aNow = DateTime.Now;
-            DateTime? aEnd = aSession != null ? SCP.Core.Session.SCP_ActivitySession.ParseIsoToLocal(aSession.end_ts) : null;
-            if (aSession == null || !aSession.active)
+            if ((aSession == null || !aSession.active) && !aSessionFree)
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine(aSession == null
                     ? "- reason: 沒有自由時間 session"
                     : $"- reason: session 已收工（{(string.IsNullOrEmpty(aSession.end_reason) ? "未記原因" : aSession.end_reason)}）");
+                if (string.IsNullOrEmpty(aWantId))
+                {
+                    aR.AppendLine("- ⚠ 而本次**沒帶 `--arg activity=<id>`** ⇒ 解不開是哪個活動，"
+                                  + "所以連「這個活動不綁自由時間」都判不了（有些活動 md 宣告 `needs_session: false`）。"
+                                  + "⇒ 帶上 activity 再試一次，它可能就過了。");
+                }
                 aR.AppendLine($"- exit①: 開新場 → senate ucmd run FreeTime --arg step=start --arg persona={aPersona} --arg until=<HH:mm>");
                 aR.AppendLine($"- exit②: 過期殘留要結算 → senate ucmd run FreeTime --arg step=next --arg persona={aPersona}（它會宣布收工）");
                 Cmd_FreeTime.WritePayload(args, aPath, aR.ToString());
                 throw new Exception($"[FreeTimeActivity] blocked：不在自由時間中（詳見 {aPath}）");
             }
+            // 豁免生效時 session 可能是 null 或已收工 ⇒ 一律當「沒有場次」走，
+            // ⛔ 不用一個收工的場次冒充在場（那會讓 activities_done 繼續加在一個已結算的場上）。
+            if (aSessionFree && (aSession == null || !aSession.active)) aSession = null;
 
-            bool aOvertime = aEnd.HasValue && aNow > aEnd.Value;
-            int aRemain = aEnd.HasValue ? (int)Math.Max(0, (aEnd.Value - aNow).TotalMinutes) : 0;
-            int aOverBy = aOvertime ? (int)Math.Max(0, (aNow - aEnd.Value).TotalMinutes) : 0;
+            bool aOvertime = aSession != null && aEnd.HasValue && aNow > aEnd.Value;
+            int aRemain = aSession != null && aEnd.HasValue ? (int)Math.Max(0, (aEnd.Value - aNow).TotalMinutes) : 0;
             aR.AppendLine("## time（時間感由 Cmd 供給 —— 別自己心算）");
             // ⛔ 不印剩餘分鐘（Tim 2026-09-04）：活動持續做到時間到，倒數不是下一步的依據。
             //    逾時那半保留 —— 那是「時間到了」這個**狀態**，不是倒數。
-            aR.AppendLine(aOvertime
-                ? $"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　自由時間到: **{aSession.until_local}**　⏰ **時間到了**（軟截止 —— 手上這件做完就跑 step=next 收工，別再開新的）"
-                : $"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　自由時間到: **{aSession.until_local}**　**時間還沒到** —— 挑下一項活動");
-            aR.AppendLine($"- 本場換骰 {aSession.rounds} 輪｜活動實作 {aSession.activities_done} 件");
+            if (aSession == null)
+            {
+                aR.AppendLine($"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　⭐ **本活動不綁自由時間**"
+                              + $"（`{aWantId}` 的 md 宣告 `needs_session: false`）—— 沒有場次時鐘，做完就收。");
+                aR.AppendLine("- ⚠ 本次**不計入場次統計**（`activities_done`／換骰輪次不動）；"
+                              + "飢餓統計照記（那一份只吃 persona，不吃場次）。");
+            }
+            else
+            {
+                aR.AppendLine(aOvertime
+                    ? $"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　自由時間到: **{aSession.until_local}**　⏰ **時間到了**（軟截止 —— 手上這件做完就跑 step=next 收工，別再開新的）"
+                    : $"- 當前時間: **{aNow:yyyy-MM-dd HH:mm}**　自由時間到: **{aSession.until_local}**　**時間還沒到** —— 挑下一項活動");
+                aR.AppendLine($"- 本場換骰 {aSession.rounds} 輪｜活動實作 {aSession.activities_done} 件");
+            }
             aR.AppendLine();
 
             string aBody = GetArg(args, "body", "").Trim();
@@ -178,9 +219,15 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             }
 
             // 記錄選擇（活動層是 activities_done 的唯一寫入端）
-            ioSession.activity = aHit.id;
-            ioSession.activities_done += 1;
-            Cmd_FreeTime.SaveSession(iPersona, ioSession);
+            // ⚠ 不綁自由時間的活動（md `needs_session: false`）進來時 ioSession 是 null
+            //   ⇒ **不寫場次計數器**。⛔ 不新造一個假場次來裝 —— 那會讓「這件事在某一場裡做的」
+            //   與「這件事不綁場次」在帳上同形。⭐ 而飢餓統計在下一段，它照記。
+            if (ioSession != null)
+            {
+                ioSession.activity = aHit.id;
+                ioSession.activities_done += 1;
+                Cmd_FreeTime.SaveSession(iPersona, ioSession);
+            }
 
             // 飢餓統計的唯一寫入端就是這裡（Tim 2026-08-24）。
             // ⚠ **骰面出現不算被選** —— 出現而沒人做，正是「飢餓」這個詞要描述的狀態。
@@ -295,7 +342,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             StringBuilder ioR, string iPath, CancellationToken iToken)
         {
             string aWant = GetArg(iArgs, "activity", "").Trim().ToLowerInvariant();
-            if (string.IsNullOrEmpty(aWant)) aWant = (iSession.activity ?? "").Trim().ToLowerInvariant();
+            // iSession 可能是 null（不綁自由時間的活動）⇒ 沒有場次可 fallback，
+            //   那時 activity 一定是呼叫端顯式帶的（閘那邊已經要求過）。
+            if (string.IsNullOrEmpty(aWant) && iSession != null)
+                aWant = (iSession.activity ?? "").Trim().ToLowerInvariant();
             string aStep = GetArg(iArgs, "step", "").Trim();
             string aStepArgs = GetArg(iArgs, "step_args", "").Trim();
 
@@ -674,7 +724,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             UCL_FreeTimeSession iSession, string iBody,
             StringBuilder ioR, string iPath, CancellationToken iToken)
         {
-            string aWhat = string.IsNullOrEmpty(iSession.activity) ? "（本場沒有經 op=pick 記錄的活動）" : iSession.activity;
+            // iSession 為 null ＝ 不綁自由時間的活動 ⇒ 本來就沒有「本場」這回事。
+            string aWhat = iSession == null
+                ? "（不綁自由時間的活動 —— 沒有場次紀錄）"
+                : (string.IsNullOrEmpty(iSession.activity) ? "（本場沒有經 op=pick 記錄的活動）" : iSession.activity);
             var aPost = new StringBuilder();
             aPost.AppendLine($"⏹ [{iPersona} 大小姐] 活動收筆：**{aWhat}**");
             if (!string.IsNullOrEmpty(iBody))
@@ -686,19 +739,31 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
             ioR.AppendLine($"## 已收筆：{aWhat}");
             ioR.AppendLine($"- 收筆宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
-            if (string.IsNullOrEmpty(iSession.activity))
+            if (iSession != null && string.IsNullOrEmpty(iSession.activity))
             {
                 // 「沒有記錄」與「有記錄」要長得不一樣 —— 前者代表流程被繞過，那是資訊不是錯誤。
                 ioR.AppendLine("- ⚠ 本場沒有經 `op=pick` 選過活動 —— 這則收筆記在帳上，但沒有對應的開工紀錄。");
             }
             ioR.AppendLine();
-            ioR.AppendLine("## ▶ 下一步（換骰 —— **順便讀未讀訊息、順便跟同事講話**）");
-            ioR.AppendLine("```bash");
-            ioR.AppendLine($"senate ucmd run FreeTime --persona {iPersona} \\");
-            ioR.AppendLine($"    --arg step=next --arg persona={iPersona} [--arg-file body=<想跟同事說的話>]");
-            ioR.AppendLine("```");
-            ioR.AppendLine("- 換骰的回傳檔**同一份**就含：未讀酒館訊息（會推已讀游標）＋ 新骰面 ＋ 剩餘時間。");
-            ioR.AppendLine("- **截止是軟的**：時間到不打斷進行中的活動；到期時換骰那一步會自己宣布收工並結算。");
+            // ⚠ 不綁自由時間時**不要指去換骰** —— 那條路會擋（沒有場次），
+            //   而一個指向死路的「下一步」比沒有下一步更貴。
+            if (iSession == null)
+            {
+                ioR.AppendLine("## ▶ 下一步（本活動不綁自由時間 —— 沒有換骰這一步）");
+                ioR.AppendLine("- 想再做一輪就再跑一次 `op=step`；⛔ 不要跑 `FreeTime step=next`（沒有場次，它會擋）。");
+                ioR.AppendLine("- 要進自由時間另算：`senate ucmd run FreeTime --arg step=start --arg persona="
+                                 + iPersona + " --arg until=<HH:mm>`");
+            }
+            else
+            {
+                ioR.AppendLine("## ▶ 下一步（換骰 —— **順便讀未讀訊息、順便跟同事講話**）");
+                ioR.AppendLine("```bash");
+                ioR.AppendLine($"senate ucmd run FreeTime --persona {iPersona} \\");
+                ioR.AppendLine($"    --arg step=next --arg persona={iPersona} [--arg-file body=<想跟同事說的話>]");
+                ioR.AppendLine("```");
+                ioR.AppendLine("- 換骰的回傳檔**同一份**就含：未讀酒館訊息（會推已讀游標）＋ 新骰面 ＋ 剩餘時間。");
+                ioR.AppendLine("- **截止是軟的**：時間到不打斷進行中的活動；到期時換骰那一步會自己宣布收工並結算。");
+            }
             Cmd_FreeTime.WritePayload(iArgs, iPath, ioR.ToString());
             Debug.Log($"[FreeTimeActivity] op=done {iPersona}（{aWhat}）→ {iPath}");
         }

@@ -8,6 +8,7 @@ persona_flag: --persona
 steps_need_persona: match, start, join, move, resign, draw, release
 enabled: true
 min_minutes: 0
+needs_session: false
 kind: Chess
 group: 遊戲
 ---
@@ -18,6 +19,13 @@ group: 遊戲
 > 這是它跟其他活動最大的不同：別的活動「這場做不完就別起頭」，下棋走一步就是一步。
 > （2026-08-17 Tim 拍板從 `gaming` 合併組抽離獨立 —— 綁在有 `min_minutes` 的組裡，
 > 會讓一件根本沒有時間壓力的事跟著被判「時間不夠」。）
+
+> ⭐ **而它也不綁自由時間**（`needs_session: false`，Tim 2026-09-11 拍板）——
+> `op=pick` / `op=step` / `op=done` 在**沒有自由時間場次**時照樣放行，不必為了走一步棋先開一場。
+> ⚠ 那時 `iSession` 是 null ⇒ **場次計數器不寫**（`activities_done`／換骰輪次不動），
+> 而**飢餓統計照記**（那一份只吃 persona）。回傳檔會明講這兩件事，⛔ 不靜默。
+> ⚠ 沒有場次時 `activity` 無處可 fallback ⇒ **必須顯式帶 `--arg activity=chess`**，
+> 否則閘解不開是哪個活動、照舊擋（它會把這句出口印出來）。
 
 ## ⭐ 什麼時候它會被頂到最優先
 

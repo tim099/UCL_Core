@@ -919,6 +919,14 @@ def pick_match_candidate(games, persona, skip_indices=()):
     排序: (已走手數, index) 升冪。
       · 手數最少優先 —— 接一局走了 50 手的殘局對接手的人不公平（Tim 2026-09-11 拍板）。
       · 同手數取小 index 讓結果**可複驗**；⛔ 不用「最久沒動」之類會隨時間改變的鍵當決勝。
+
+    ⛔⛔ **判準重複警告 —— 本函式與 C# 的 `UCL_FreeTimeGating.TryFindJoinableChess`
+      是同一份判斷的兩份實作**（那邊是骰面優先層「有人開了一局在等」，這邊是真的去配）。
+      跨語言沒辦法共用一份，所以把失效樣子寫死在紙上：
+      **漂掉的症狀是「骰面說有一局在等，而 match 去了卻開了新局」** ——
+      兩邊都不報錯，而讀的人會以為是配對壞了。
+      ⇒ 改任一邊的過濾條件（status／OPEN 座／solo／排除自己在座）或排序鍵
+        **必須同時改另一邊**。（那邊也有一條指回本函式的註解。）
     """
     cands = []
     for g, open_sides, solo in waiting_games(games):

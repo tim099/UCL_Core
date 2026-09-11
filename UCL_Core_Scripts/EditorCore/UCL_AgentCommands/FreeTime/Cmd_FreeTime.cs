@@ -1195,7 +1195,13 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         static void AppendDiceSection(StringBuilder ioR, List<DiceEntry> iList, string iSource, bool iIsLive)
         {
             ioR.AppendLine("## dice（兩層隨機排序，僅供參考 — 自由意志優先；無明確意圖從前 3 挑）");
-            ioR.AppendLine("- ⭐＝優先層（條件成立：直播中／棋局對手也在自由時間）；層內仍隨機。");
+            // ⚠ 這一行是**圖例**，而圖例過期的樣子是「它照樣印，只是不再描述實際行為」。
+            //   改 UCL_FreeTimeGating 的任何一個 kind 條件、或飢餓置頂的判準 ⇒ **回來改這一行**。
+            //   🩸 2026-09-11 實撞：Chess 的條件從「對手在自由時間」收窄成「輪到我走」
+            //     並加了「有人開了一局在等」，而這行還寫著舊條件 —— 骰面自己解釋錯自己。
+            ioR.AppendLine("- ⭐＝優先層；層內仍隨機。條件（任一成立即置頂）：");
+            ioR.AppendLine("    · 直播中　· 棋局**輪到你走**且對手也在自由時間　· **有人開了一局在等而你配得上去**");
+            ioR.AppendLine("    · 永久繪圖券囤太多　· 💤 太久沒被選（**通用**飢餓置頂，判準不看活動是什麼）");
             ioR.AppendLine("- 做不成的活動**已隱藏**（例：沒開播時不列「觀看直播」）—— 清單長度會隨當下狀況變動，那是正常的。");
             ioR.AppendLine("- **同組收成同一項**；觸發特殊規則的活動會**脫離分組成單獨一項**排最前（理由跟著印在它旁邊）。");
             ioR.AppendLine("- 挑好之後：`senate ucmd run FreeTimeActivity --arg op=pick --arg persona=<P> --arg activity=<id>`");

@@ -84,11 +84,29 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                         //     那會變成兩份飢餓判準，而它們遲早各說各話且兩邊都不報錯。
                         if (TryFindWaitingChess(iPersona, out string aOpponent, out int aGameIdx, out bool aMyTurn))
                         {
-                            aRes.priority = aMyTurn;
+                            // ⚠ `|=` 不是 `=` —— 下面還有第二個置頂理由，
+                            //   用 `=` 會讓後來的理由被這一行的 false 抹掉。
+                            aRes.priority |= aMyTurn;
                             // 用「對方」不用「他」—— 骰面不該替沒說明稱謂的人做假設。
                             aRes.nameSuffix += aMyTurn
                                 ? $" ♟ 第 {aGameIdx} 局輪到你，@{aOpponent} 也在自由時間"
                                 : $" ♟ 第 {aGameIdx} 局進行中，@{aOpponent} 也在自由時間（**等對方走，不急**）";
+                        }
+
+                        // ── 理由二：有人開了一局在等，而我配得上去（Tim 2026-09-11 拍板加）──
+                        // ⭐ 這一格**不看對方在不在自由時間** —— 一局在等人跟開局的人此刻在不在無關。
+                        //   ⛔ 它也不是理由一的替代品：理由一是「我那局該我走」，這裡是「有一局我還沒坐進去」。
+                        //   兩者可以同時成立，那時骰面**兩句都印**（它們回答不同的問題）。
+                        // 🩸 為什麼要有它：`start --vs-open` 躺了三個月（全酒館徵人廣播 5 筆、最後一筆 08-17）
+                        //   —— 積木在、路通，而沒有任何一層告訴人「現在有一局在等」⇒ 它就不會被用。
+                        //   **積木存在 ≠ 有人用它。**
+                        if (TryFindJoinableChess(iPersona, out string aOpener, out int aJoinIdx,
+                                                 out int aJoinMoves, out int aWaiting))
+                        {
+                            aRes.priority = true;
+                            aRes.nameSuffix += $" 🪑 @{aOpener} 開了一局在等（第 {aJoinIdx} 局，已走 {aJoinMoves} 手"
+                                               + (aWaiting > 1 ? $"；共 {aWaiting} 局在等" : "")
+                                               + "）—— `match` 直接入座";
                         }
                         return aRes;
                     }
@@ -216,6 +234,99 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         /// 把過期的 session 讀成「他在」，等於叫人去 @ 一個早就下線的對手。
         /// </para>
         /// </summary>
+
+        // ===========================================================
+        // 區塊：可加入的棋局判定 —— 「**別人**開了一局在等人，而我配得上去」
+        // 物理意義：這一格跟上面那個判定問的是**相反的問題**：上面問「我那局輪到我了嗎」，
+        //          這裡問「有沒有一局我還沒坐進去」。兩者都成立時骰面會同時講。
+        // ⭐ 而它**刻意不看對手在不在自由時間**（上面那條看）——
+        //   一局在等人，跟開局的人此刻是否在線無關：下棋每步落盤、跨好幾次醒來
+        //   （`min_minutes: 0` 就是那個意思）。要求對方在線才顯示，等於把一局等了三天的棋藏起來。
+        // 🩸 為什麼這一格值得存在（Tim 2026-09-11 拍板加）：`chess.py start --vs-open`
+        //   躺了三個月 —— 全酒館「徵人」廣播只有 5 筆、最後一筆 2026-08-17。
+        //   積木在、路通、而**沒有任何一層告訴人「現在有一局在等」** ⇒ 它就不會被用。
+        //
+        // ⛔⛔ **判準重複警告 —— 這裡與 `chess.py` 的 `pick_match_candidate` 是同一份判斷的兩份實作。**
+        //   跨語言（C# 骰面／python 配對）沒辦法共用一份，所以這裡把失效樣子寫死在紙上：
+        //   **漂掉的症狀是「骰面說有一局在等，而 `match` 去了卻開了新局」** ——
+        //   兩邊都不會報錯，而讀的人會以為是配對壞了。
+        //   ⇒ 改任一邊的過濾條件（status／OPEN 座／solo／排除自己在座）**必須同時改另一邊**。
+        //   📌 對應位置：`<UCL_Core>/Tools~/AgentCommands/chess.py` → `pick_match_candidate()`
+        //      （那邊也有一條指回本函式的註解）。
+        // 數值影響：掃同一批 `<DataRoot>/Chess/games/*.json`；取 status=in_progress 且
+        //          （有 OPEN 座 或 solo）且**我不在任何一座**；多局取「已走手數最少、同手數取小 index」
+        //          —— 與 python 那側的排序鍵逐字相同（那也是可複驗的理由）。
+        //          任何讀取失敗 → 回 false（少一個優先推薦，不炸擲骰）。
+        // ===========================================================
+        public static bool TryFindJoinableChess(string iPersona, out string oOpener, out int oGameIndex,
+                                                out int oMoves, out int oWaitingCount)
+        {
+            oOpener = null; oGameIndex = 0; oMoves = 0; oWaitingCount = 0;
+            if (string.IsNullOrEmpty(iPersona)) return false;
+            try
+            {
+                string aDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Chess", "games");
+                if (!Directory.Exists(aDir)) return false;
+                bool aFound = false;
+                int aBestMoves = int.MaxValue, aBestIdx = int.MaxValue;
+                foreach (var aFile in Directory.GetFiles(aDir, "*.json"))
+                {
+                    JsonData aGame;
+                    try { aGame = JsonData.ParseJson(File.ReadAllText(aFile, Encoding.UTF8)); }
+                    catch (Exception) { continue; }     // 單一壞檔不該讓整個判定失效
+                    if (aGame == null) continue;
+                    if (!string.Equals(Str(aGame, "status"), "in_progress", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!aGame.Contains("seats")) continue;
+
+                    var aSeats = aGame["seats"];
+                    string aWhite = Str(aSeats, "white");
+                    string aBlack = Str(aSeats, "black");
+                    bool aHasOpen = string.IsNullOrEmpty(aWhite) || string.IsNullOrEmpty(aBlack);
+                    bool aSolo = !string.IsNullOrEmpty(aWhite)
+                                 && string.Equals(aWhite, aBlack, StringComparison.OrdinalIgnoreCase);
+                    if (!aHasOpen && !aSolo) continue;
+                    // ⛔ 我已經在座的局不算「可加入」—— `chess.py join` 本來就會擋，
+                    //    而骰面把它算進來的話，人照著去跑 match 會拿到一個他配不上去的理由。
+                    if (string.Equals(aWhite, iPersona, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(aBlack, iPersona, StringComparison.OrdinalIgnoreCase)) continue;
+
+                    oWaitingCount++;
+                    int aIdx = 0; int.TryParse(Str(aGame, "index"), out aIdx);
+                    int aMoves = CountChessMoves(aGame);
+                    if (aMoves < aBestMoves || (aMoves == aBestMoves && aIdx < aBestIdx))
+                    {
+                        aBestMoves = aMoves; aBestIdx = aIdx;
+                        oOpener = string.IsNullOrEmpty(aWhite) ? aBlack : aWhite;
+                        oGameIndex = aIdx; oMoves = aMoves;
+                        aFound = true;
+                    }
+                }
+                return aFound;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[FreeTime] 可加入棋局判定失敗（骰面照常，只是少一個優先推薦）: {e.Message}");
+            }
+            return false;
+        }
+
+        // 真正的走子數 —— history 裡也記 join:/release: 這類事件，那些不是手數。
+        // ⚠ 與 `chess.py` 的 `count_moves()` 同一份定義（見上面的判準重複警告）。
+        static int CountChessMoves(JsonData iGame)
+        {
+            if (iGame == null || !iGame.Contains("history")) return 0;
+            var aHist = iGame["history"];
+            // 照 codebase 慣例先問 IsArray 再 Count（見 UCL_ReadingLibraryIO 的 aliases 走法）。
+            if (aHist == null || !aHist.IsArray) return 0;
+            int aN = 0;
+            for (int i = 0; i < aHist.Count; i++)
+            {
+                string aUci = Str(aHist[i], "uci");
+                if (aUci != null && aUci.Length >= 4 && !aUci.Contains(":")) aN++;
+            }
+            return aN;
+        }
+
         public static bool IsInFreeTime(string iPersona)
         {
             try
@@ -235,8 +346,21 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             catch (Exception) { return false; }
         }
 
+        // 🩸 2026-09-11：這一行原本是 `iJd != null && iJd.Contains(iKey) ? iJd[iKey].ToString() : ""`，
+        //   而它漏了第三格：**鍵在、而值是 JSON null**（棋局的 OPEN 座就是 `"white": null`）。
+        //   三格的失敗長得一樣（NullRef），而呼叫端 `TryFindWaitingChess` 把例外
+        //   fail-soft 吞掉 ⇒ **Chess 優先層在任何一局有 OPEN 座時就整條靜默失效**，
+        //   而骰面照常印、只是少一個推薦 —— 沒有任何人會發現。
+        //   ⇒ 「不隱藏」變成了「沒有人看見」：fail-soft 有出聲（Debug.LogWarning），
+        //     而那行警告躺在 Editor.log 裡沒有人讀。抓到它的是我加新判定時**同一行警告出現兩次**。
+        // ⚠ 而 JSON null 不能回 `"null"` 字串 —— 那會讓空座位變成一個叫 "null" 的人。
         static string Str(JsonData iJd, string iKey)
-            => iJd != null && iJd.Contains(iKey) ? iJd[iKey].ToString() : "";
+        {
+            if (iJd == null || !iJd.Contains(iKey)) return "";
+            var aV = iJd[iKey];
+            if (aV == null || aV.JsonType == JsonType.None) return "";
+            return aV.ToString();
+        }
     }
 }
 #endif

@@ -622,35 +622,27 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             }
         }
 
+        // 區塊職責：寫 JSON 到 Books store。
+        // 物理意義：**正典格式由 SCP_Core 那支 writer 決定**（Tim 2026-09-11 拍板：
+        //          同一件事有多份時以 SCP_Core 版（Senate CLI）為準）。
+        //          型別邊界只有這一個點：`JsonData` → 文字 → `SCP_JsonData`
+        //          （＝ `UCL_PersonaProfile:137` 那個手勢的反向，而那裡寫著
+        //          「收成一個點的理由是**它可驗**」）。
+        //          ⛔ 不在本層重寫一個「跟 SCP 同格式」的 formatter —— 兩份 formatter
+        //          保持同步靠的是「記得注意」，而修法優先序裡那是最後一級
+        //          （讓失敗不可能 ＞ 讓它當場喊 ＞ 記得注意）。
+        //          走同一支 writer 之後，**格式漂移在結構上不可能發生**。
+        // 數值影響：產物從「tab／冒號後無空格／無結尾換行」換成
+        //          「2 空格／冒號後有空格／有結尾換行／CRLF」，與 `SCP_Cmd_Book` 的 838 份產物同形。
+        //          🩸 改前這層與 `SCP_Cmd_Book` 兩支同時活著、寫同一批 `book.json`，
+        //          而同一個檔在 git 上翻面過（TASK-0200）—— 那不是新舊檔並存，是來回振盪。
+        // ⚠ 非 ASCII **不再需要** `UnescapeNonAscii` 那支補丁：`SCP_JsonWriter.WriteString`
+        //          天生照原字寫 ⇒ 那支已隨本改動整支移除，⛔ 不留墓碑。
         internal static void SaveJson(string path, JsonData data)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            // 與 UCL_ReadingLibraryIO.SaveJson 同款：非 ASCII 逃脫還原成原生 UTF-8
-            //（既有簿冊是 Python 寫的原生中文 —— 同一份 schema 兩種寫法就是漂移的起點）
-            string json = UnescapeNonAscii(data.ToJsonBeautify());
-            File.WriteAllText(path, json, new UTF8Encoding(false));
-        }
-
-        // \uXXXX → 原生字元（只處理非 ASCII 範圍；控制字元照舊保留逃脫）
-        static string UnescapeNonAscii(string json)
-        {
-            var sb = new StringBuilder(json.Length);
-            for (int i = 0; i < json.Length; i++)
-            {
-                if (json[i] == '\\' && i + 5 < json.Length && json[i + 1] == 'u'
-                    && int.TryParse(json.Substring(i + 2, 4),
-                        System.Globalization.NumberStyles.HexNumber, null, out int code)
-                    && code > 0x7F)
-                {
-                    sb.Append((char)code);
-                    i += 5;
-                }
-                else
-                {
-                    sb.Append(json[i]);
-                }
-            }
-            return sb.ToString();
+            var aScp = SCP.Core.Json.SCP_JsonData.Parse(data.ToJson());
+            SCP.Core.Io.SCP_TextFile.WriteCrLf(
+                path, SCP.Core.Json.SCP_JsonWriter.Write(aScp, iIndented: true, iIndent: "  ") + "\n");
         }
     }
 }

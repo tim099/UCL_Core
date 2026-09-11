@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Cysharp.Threading.Tasks;
@@ -45,7 +46,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             "閱讀心得庫讀寫（新 work/media/reader 模型）— 讀回與寫入同一套實作，與閱讀心得管理頁共用。";
 
         public override string ArgsSchema =>
-            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share|scan|authored_diff|authored_migrate（required） | " +
+            "op=paths|recall|media_init|note_chapter|bookmark|add_character|revise_view|share|scan|authored_diff|authored_migrate|sync_shelf（required） | " +
+            // ⑤ 重出閱讀卡（唯一「只重生成投影、不動資料」的入口，TASK-0147）：
+            //    投影的寫入端本來只掛在 bookmark／note_chapter／revise_view 上 ⇒
+            //    **想把一張舊卡換成機械投影，就得先假裝寫一筆閱讀紀錄**，而那是造假讀數。
+            "　↳ sync_shelf ＝ 由 `reader.json` 重出該 persona 在該 media 的閱讀卡"
+            + "（`media_id` ＋ `persona` 必填；⛔ 不寫任何閱讀資料，只重生成投影） | " +
             // ④ 搬遷（唯一會寫新 store 寫書線的入口）：**複製不移動**、不給 confirm ＝ 零寫入。
             "　↳ authored_migrate ＝ TASK-0146 ④ 的搬遷器：舊 store → 新 store（四欄 ＋ chapters/ ＋ arcs/）；" +
             "**不給 `confirm=1` ⇒ 只印計畫、一個位元組都不寫**；" +
@@ -132,12 +138,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 case "scan": Op_Scan(args); break;
                 case "authored_diff": Op_AuthoredDiff(args); break;
                 case "authored_migrate": Op_AuthoredMigrate(args); break;
+                case "sync_shelf": Op_SyncShelf(args); break;
 
                 default:
                     throw new ArgumentException(
                         $"[{CommandType}] 未知 op：{op}" +
                         "（可用：paths / recall / media_init / note_chapter / bookmark / " +
-                        "add_character / revise_view / share / scan / authored_diff）");
+                        "add_character / revise_view / share / scan / authored_diff / " +
+                        "authored_migrate / sync_shelf）");
             }
         }
 
@@ -545,6 +553,64 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
 
             Cmd_Library_Helpers.ResolveLastOp(args, $"# 📚 Library bookmark\n\n{log}\n");
             Debug.Log($"[{CommandType}] bookmark → {mediaId} / {persona}");
+        }
+
+        // ===========================================================
+        // 區塊職責：由 `reader.json` **重出**閱讀卡投影（`letters/<persona>/bookshelf/<media_id>.md`）。
+        // 物理意義：投影的寫入端 `SyncBookshelf` 一直都在，但它**只掛在三個會寫閱讀資料的 op 上**
+        //           （bookmark／note_chapter／revise_view）⇒ 想把一張舊時代的卡換成機械投影，
+        //           就得先假裝寫一筆閱讀紀錄。**那是造假讀數，不是清理。**
+        //           ⇒ 本 op 是那個缺掉的入口：只重生成投影，⛔ 一個閱讀欄位都不碰。
+        // 數值影響：整份覆寫兩個檔（`Library/.../bookshelf.md` 正本與 letters 那份副本）。
+        //           ⚠ `reader.json` 不存在時**擋下並說出來** —— ⛔ 不可以「靜靜地什麼都沒生成」，
+        //           那會跟「生成了但內容一樣」在輸出上同形。
+        // ===========================================================
+        void Op_SyncShelf(Dictionary<string, string> args)
+        {
+            string persona = RequireId(args, "persona");
+            string mediaId = RequireId(args, "media_id");
+
+            string cardPath = Path.Combine(UCL_LettersPath.PersonaDir(persona), "bookshelf", mediaId + ".md");
+            bool existedBefore = File.Exists(cardPath);
+
+            UCL_ReadingLibraryIO.SyncBookshelf(mediaId, persona, out string error);
+            if (!string.IsNullOrEmpty(error))
+                throw new InvalidOperationException(
+                    $"[{CommandType}] sync_shelf 失敗：{error}"
+                    + "（⚠ 沒有 reader.json 就沒有真相源可投影 —— 先 media_init／bookmark 建立閱讀線）");
+
+            // ⛔ 不信寫入端的沉默 —— 回讀那個檔，並回讀它有沒有蓋上機械投影的戳。
+            bool existsNow = File.Exists(cardPath);
+            bool mechanical = false;
+            if (existsNow)
+            {
+                foreach (string line in File.ReadLines(cardPath))
+                {
+                    if (line.Trim() == "---") continue;
+                    if (line.TrimStart().StartsWith("generated: mechanical", StringComparison.Ordinal))
+                    {
+                        mechanical = true;
+                        break;
+                    }
+                }
+            }
+            if (!existsNow)
+                throw new InvalidOperationException(
+                    $"[{CommandType}] sync_shelf 回讀不到投影：{cardPath}（寫入端沒有喊，而檔案不在）");
+
+            var sb = new StringBuilder();
+            sb.AppendLine("# 📚 Library sync_shelf");
+            sb.AppendLine();
+            sb.AppendLine($"- persona / media：`{persona}` / `{mediaId}`");
+            sb.AppendLine($"- 卡片：`{cardPath}`");
+            sb.AppendLine($"- 這次是**{(existedBefore ? "覆寫既有的卡" : "新生成一張卡")}**");
+            sb.AppendLine($"- 回讀檔頭的機械投影戳：**{(mechanical ? "有" : "沒有")}**"
+                          + (mechanical ? "" : "　⚠ 寫入端沒蓋戳 —— 這不該發生，請看 SyncBookshelf"));
+            sb.AppendLine();
+            sb.AppendLine("> ⛔ 本 op **沒有動任何閱讀資料**（進度／期待度／看法都來自 `reader.json`）——");
+            sb.AppendLine("> 它只是把投影重畫一次。要改內容請改 `reader.json`（走 bookmark／revise_view）。");
+            Cmd_Library_Helpers.ResolveLastOp(args, sb.ToString());
+            Debug.Log($"[{CommandType}] sync_shelf → {mediaId} / {persona}（mechanical={mechanical}）");
         }
 
         /// <summary>

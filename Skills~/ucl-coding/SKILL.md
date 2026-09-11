@@ -104,6 +104,37 @@ senate ucmd run Tavern --persona <me>   --arg op=post --arg room=tavern   --arg 
   分不出「這半邊有人正在寫」）—— 在線清單看得到「誰正在改什麼」，這種對撞就不會發生。
 - 換工作目標時再發一則帶新 `status` 即可；登出後 lock 消滅，狀態不殘留。
 
+## 📐 改 C# 前先進場，並**宣告施工範圍**（Tim 2026-09-11，TASK-0201）
+
+改任何 C# 之前進 Coding 施工場，而**進場時要宣告這一場要動哪一塊**（絕對路徑）：
+
+```bash
+senate cmd coding --arg data_root=<AgentCommands 根> --arg op=start --arg persona=<你> \
+    --arg status="在改 <哪一部分>" \
+    --arg scope="D:/Unity/LY/Assets/Plugins/UCL_Core" \
+    --arg tasks=<單號>          # 綁單：單子進 in_review 就自動收場
+```
+
+- **範圍不重疊的人可以同時開場** —— 重疊才擋。重疊＝**路徑包含**：
+  `…/Assets/Scripts` 與 `…/Assets/Scripts/Conditions` 重疊；與 `…/Assets/Plugins` 不重疊。
+- ⚠ **宣告要取施工的最大範圍**，不是取你這一刻在打字的那支檔。
+  宣告得比實際改的窄 ⇒ 擋不住真正會撞的人，而失效樣子是**兩個人都進場了然後改到同一支檔，閘不會叫**。
+- ⛔ **不宣告 `scope` ＝ 整個 kind 全域獨佔（誰都擋）** —— 那是安全側，不是「可以先不填」。
+  不填的代價落在別人身上：他們被擋下時看到的理由會是「他沒有宣告，這一格你補不了」。
+- ⚠ 路徑打錯會**當場 exit 2**，不會靜默退化 —— 這是刻意的（靜默退化＝你拿到一個沒要的全域鎖）。
+- 看現在誰在場上、各自的範圍：`senate cmd coding --arg data_root=<根>`（列**全部**，不是只列第一個）。
+
+### ⚠ 兩格範圍判準的射程（⛔ 不要讀成「有閘就安全」）
+
+1. **純路徑判準（Tim 2026-09-11 拍板）**：同一個 repo 的兩份工作副本
+   （`D:/Unity/Senate/SCP_Core` 與 `D:/Unity/LY/Assets/Plugins/SCP_Core`）**不算衝突**。
+   ⇒ 兩個人各改一份副本的同一支檔時**這道閘不會叫**，要到 push 分叉才現形。
+   📌 反過來說，這也正是 **SCP_Core 一律改 `D:/Unity/Senate/SCP_Core` 那份**的理由：
+   Senate 是獨立 repo、獨立編譯，**不被 Unity 側的施工場排隊**。
+2. **退場的編譯閘量的是整棵樹**，不是你那一塊 ⇒ 多場並行時它**分不出紅字是誰造的**
+   （輸出會把同時在場的人印出來）。紅的不是你範圍內的檔就去問他，
+   ⛔ 別替別人改，也⛔ 別拿它當 `force=1` 的理由。
+
 ## ⛔ 跨語言硬規則（兩個語言都成立）
 
 > 各語言自己的硬規則在 [`CSHARP.md`](CSHARP.md)（外部 Process／`UCL_Asset<T>`／銀行餘額 API）

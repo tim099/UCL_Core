@@ -628,9 +628,26 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             return buffer.ToString();
         }
 
+        // 區塊職責：由 pid 取 process basename —— **而且用完就把 handle 還掉**。
+        // 物理意義：`Process.GetProcessById` 回傳的物件持有一顆**OS process handle**。
+        //           本函式被 `EnumWindows` 的 callback **逐一個可見視窗**呼叫一次
+        //           ⇒ 沒 Dispose 的話，一次掃描就洩漏「可見視窗數」顆 handle，
+        //           而它們活到 **Editor 關閉**為止（domain reload 不一定收）。
+        // 數值影響：只改資源歸還，回傳值逐字不變。
+        // 🩸 為什麼這一格值得寫這麼長（2026-09-11，TASK-0204）：
+        //   一顆還開著的 process handle 會讓**已經結束的行程留在「未完全消失」的狀態**。
+        //   而 Claude Code 是 MSIX 套件，它的自動更新要求**舊套件的行程全部消失**才註冊得了新版
+        //   （實測錯誤 `0x80073D02`：「必須先關閉 Claude_1.49585」）。
+        //   ⇒ 這個洩漏的形狀，跟「關掉 Unity Editor 之後 Claude 才更新得了」**吻合**。
+        //   ⛔ 但吻合不是證明 —— 真兇要在現場用 `resmon` 抓持有者（TASK-0204 ①）。
+        //      這一筆修的是**一個本來就不該存在的洩漏**，不是一個已證實的成因。
         static string GetProcessName(uint processId)
         {
-            try { return Process.GetProcessById((int)processId).ProcessName ?? ""; }
+            try
+            {
+                using (var process = Process.GetProcessById((int)processId))
+                    return process.ProcessName ?? "";
+            }
             catch { return ""; }
         }
 

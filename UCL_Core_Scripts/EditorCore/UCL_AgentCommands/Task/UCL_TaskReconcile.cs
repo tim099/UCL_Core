@@ -27,10 +27,6 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
     {
         static readonly Regex TASK_REF = new Regex(@"TASK-(\d+)", RegexOptions.Compiled);
 
-        /// <summary>
-        /// 見叢裡**還沒勾銷**的行提到的單號 → 該行原文（同一單號出現多行時保留第一行）。
-        /// ⚠ 已勾銷（`- [x]`）的行不算 —— 它們是「做完了」，不是「殘留」。
-        /// </summary>
         // ===========================================================
         // 🩸 2026-09-08（TASK-0149）：本函式原本逐行找 `TASK-\d+`，**不看 `[ ]` / `[x]`**。
         //   實測 summit 的見叢：未勾銷且含 `TASK-` 的行 **0** 行、已勾銷 **64** 行，
@@ -40,33 +36,85 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //   只認未完行 ⇒ 照它做會撞 exit 2，於是每晚重複報同一批行、而沒有任何動作能讓它變短。
         // 📌 這正是本單標題講的病長在**消費端**的樣子：生產端補了勾銷入口之後，
         //   「勾得動，但勾了沒有人讀」—— 做完的行與沒做的行在**讀取端**仍然同形。
-        // ⚠ 非 checkbox 行仍然算（例如手寫的敘述行提到單號）：那種行**無法被勾銷**，
-        //   是真的該從見叢移走的殘留 ⇒ 不能跟「已勾銷」混為一談。
         // ===========================================================
-        public static Dictionary<int, string> ReadKeysRefs(string iKeysPath)
+        // 🩸 2026-09-09（TASK-0180）：上一版只看「這一行自己是不是 `- [x]`」，**不看它屬於誰**。
+        //   而見叢的條目是多行的：續行縮排兩格接在條目底下。實測 kiara 的見叢 ——
+        //   `TASK-0057` / `TASK-0121` 兩個單號都只出現在 **`- [x]` 條目的續行**裡
+        //   （第 42 行那筆 `[x]` 的 ②③ 續行），而同一時刻 `senate cmd keys` 的兩筆未完
+        //   **一個單號都沒有** ⇒ 對帳 ① 照樣印「見叢說還沒做」。
+        //   ⇒ 上一版修的是「條目」那一格，而引用可以長在「續行」那一格 —— **守了一條路，而入口有兩個。**
+        // ⚠ 非縮排的散文行仍然算（手寫敘述提到單號）：那種行**無法被勾銷**，
+        //   是真的該從見叢移走的殘留 ⇒ 不能跟「已勾銷」混為一談。而它現在會被標成「不屬於任何未完條目」，
+        //   ⛔ 不再借用「見叢說還沒做」那句話 —— 那句話的主詞是條目，而它沒有條目。
+        // ⭐ `OpenIndex` 的尺**刻意跟 `SCP_Cmd_Keys` 的 `done_index` 對齊**（`- [ ]` 的 1-based 出現序）：
+        //   對帳印出來的序號要能直接貼進那道指令，否則這一段給的處置照樣是做不了的。
+        // ===========================================================
+
+        /// <summary>見叢裡一筆 `[TASK-n]` 引用：它在哪一行、屬於第幾筆未完條目。</summary>
+        public struct KeysRef
         {
-            var aOut = new Dictionary<int, string>();
+            /// <summary>引用所在行（原文，已 Trim）。</summary>
+            public string Line;
+            /// <summary>擁有這一行的**未完**條目序號（1-based，與 `senate cmd keys --arg done_index=` 同一把尺）；
+            /// <c>0</c> ＝這一行不屬於任何未完條目（散文殘留 ⇒ 勾不掉，要手動移走）。</summary>
+            public int OpenIndex;
+        }
+
+        /// <summary>
+        /// 見叢裡**還沒勾銷**的條目（含其續行）提到的單號 → 那筆引用。
+        /// <para>⚠ 已勾銷（`- [x]`）的條目**連同它的續行**都不算 —— 它們是「做完了」，不是「殘留」。</para>
+        /// </summary>
+        public static Dictionary<int, KeysRef> ReadKeysRefs(string iKeysPath)
+        {
+            var aOut = new Dictionary<int, KeysRef>();
             if (!File.Exists(iKeysPath)) return aOut;
+
+            int aOpenSeq = 0;        // 到目前為止數過幾筆未完條目（＝ done_index 的那把尺）
+            int aOwnerOpen = 0;      // 目前這一段的擁有者是第幾筆未完條目（0 ＝沒有未完擁有者）
+            bool aOwnerChecked = false;  // 目前這一段的擁有者是不是已勾銷條目
+
             foreach (var aLine in File.ReadAllLines(iKeysPath, Encoding.UTF8))
             {
-                if (IsCheckedOffLine(aLine)) continue;
+                string aTrimmed = aLine.TrimStart();
+                if (IsOpenEntryLine(aTrimmed))
+                {
+                    aOpenSeq++; aOwnerOpen = aOpenSeq; aOwnerChecked = false;
+                }
+                else if (IsCheckedEntryLine(aTrimmed))
+                {
+                    aOwnerOpen = 0; aOwnerChecked = true;
+                }
+                else if (aLine.Trim().Length == 0 || !char.IsWhiteSpace(aLine[0]))
+                {
+                    // 空行結束一段；沒縮排的非條目行是自成一段的散文 —— 兩者都沒有擁有者。
+                    aOwnerOpen = 0; aOwnerChecked = false;
+                }
+                // else：縮排的續行 ⇒ 沿用目前這一段的擁有者（這就是上一版漏掉的那一格）
+
+                if (aOwnerChecked) continue;
+
                 foreach (Match m in TASK_REF.Matches(aLine))
                 {
                     if (!int.TryParse(m.Groups[1].Value, out int aIdx)) continue;
-                    if (!aOut.ContainsKey(aIdx)) aOut[aIdx] = aLine.Trim();
+                    if (aOut.ContainsKey(aIdx)) continue;
+                    aOut[aIdx] = new KeysRef { Line = aLine.Trim(), OpenIndex = aOwnerOpen };
                 }
             }
             return aOut;
         }
 
-        /// <summary>這一行是不是已勾銷的見叢項（`- [x]` / `- [X]`，容許前置空白）。</summary>
-        static bool IsCheckedOffLine(string iLine)
-        {
-            if (string.IsNullOrEmpty(iLine)) return false;
-            string aTrimmed = iLine.TrimStart();
-            return aTrimmed.StartsWith("- [x] ", StringComparison.Ordinal)
-                || aTrimmed.StartsWith("- [X] ", StringComparison.Ordinal);
-        }
+        /// <summary>這一行是不是**未勾銷**的見叢條目（`- [ ]`）。⚠ 傳入的字串應已 TrimStart。</summary>
+        // ⚠ 這兩支刻意**不要求結尾空白**：`SCP_WakeLetters.KeysEntries`（`done_index` 的來源）
+        //   比對的是 `- [ ]` / `- [x]`，要求空白會讓兩把尺在「條目後面沒有內容」那一行分家，
+        //   而分家的樣子是序號差一格 —— 那種錯不會報錯，只會勾錯行。
+        static bool IsOpenEntryLine(string iTrimmed)
+            => !string.IsNullOrEmpty(iTrimmed) && iTrimmed.StartsWith("- [ ]", StringComparison.Ordinal);
+
+        /// <summary>這一行是不是**已勾銷**的見叢條目（`- [x]` / `- [X]`）。⚠ 傳入的字串應已 TrimStart。</summary>
+        static bool IsCheckedEntryLine(string iTrimmed)
+            => !string.IsNullOrEmpty(iTrimmed)
+            && (iTrimmed.StartsWith("- [x]", StringComparison.Ordinal)
+                || iTrimmed.StartsWith("- [X]", StringComparison.Ordinal));
 
         /// <summary>這張單跟這個 persona 有關嗎（參與者或開單人）。</summary>
         static bool Involves(UCL_TaskEntry e, string iPersona)
@@ -106,20 +154,39 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 // 🩸 2026-09-07 之前這裡只抓「指向已關單」的引用，而規則改成
                 //   「專案的事一律開 Task、見叢只放個人代辦」之後，**引用本身**就是殘留：
                 //   開著的那些會跟早安 §2.5 重複報一次，關掉的那些會躺在見叢裡變成假帳。
+                // ⚠ 這一段每一句都只准講**量到的東西**（TASK-0180）：
+                //   上一版對每個已關單一律加註「**假帳**：見叢說還沒做」，而那句話的主詞是「見叢的某一筆」——
+                //   引用長在已勾銷條目的續行裡時，見叢**根本沒有說**那句話，是掃描器替它說的。
+                //   ⇒ 現在分三種講法，而且每一種都帶位址（第幾筆未完／不屬於任何條目）。
                 var aStaleRefs = new List<string>();
+                var aCheckOffIdx = new List<int>();   // 真的勾得掉的那幾筆（序號直接貼進指令）
                 foreach (var kv in aRefs.OrderBy(k => k.Key))
                 {
                     var e = aAll.FirstOrDefault(t => t.index == kv.Key);
-                    string aState = e == null ? "**單子不存在**"
-                                  : e.IsClosed() ? $"已 `{e.status}`（**假帳**：見叢說還沒做）"
-                                  : "還開著（早安 §2.5 已經會列它，這行是重複的）";
+                    int aOpen = kv.Value.OpenIndex;
+                    string aWhere = aOpen > 0
+                        ? $"見叢第 **#{aOpen}** 筆（未完）引用了它"
+                        : "而引用它的那一行**不屬於任何未完條目**（勾不掉 —— 要手動從見叢移走）";
+                    string aState;
+                    if (e == null) aState = $"**單子不存在** —— {aWhere}";
+                    else if (e.IsClosed())
+                    {
+                        aState = $"已 `{e.status}` —— {aWhere}";
+                        if (aOpen > 0) aCheckOffIdx.Add(aOpen);
+                    }
+                    else aState = $"還開著（早安 §2.5 已經會列它，這行是重複的）—— {aWhere}";
                     aStaleRefs.Add($"TASK-{kv.Key:0000} {aState}"
-                        + $"\n      · 見叢原文：{Trunc(kv.Value, 120)}");
+                        + $"\n      · 見叢原文：{Trunc(kv.Value.Line, 120)}");
                 }
+                // 處置只在**真的勾得掉**的時候才印，而且印的是實際序號 ——
+                // 🩸 上一版一律印 `<未完序號>` 這個佔位字，而那兩筆根本不在未完清單上 ⇒
+                //   照它走的人會拿一個不存在的序號去勾，或勾掉無關的第 1 筆。
+                string aHint = aCheckOffIdx.Count == 0 ? ""
+                    : $"\n    ⇒ `senate cmd keys --arg persona={iPersona} --arg done_index="
+                      + string.Join(",", aCheckOffIdx.Distinct().OrderBy(i => i)) + "`";
                 sb.AppendLine(aStaleRefs.Count == 0
                     ? "- ✅ ① 見叢裡沒有任何 `[TASK-n]` 引用（合乎新規則：見叢只放個人代辦）"
-                    : $"- ⚠ ① 見叢還有 **{aStaleRefs.Count}** 筆 `[TASK-n]` 引用 —— 舊規則殘留，勾銷掉："
-                        + $"\n    ⇒ `senate cmd keys --arg persona={iPersona} --arg done_index=<未完序號>`");
+                    : $"- ⚠ ① 見叢還有 **{aStaleRefs.Count}** 筆 `[TASK-n]` 引用 —— 舊規則殘留：" + aHint);
                 foreach (var s in aStaleRefs) sb.AppendLine("    · " + s);
 
                 // ② 跟我有關、還開著的單 —— **只報張數**。

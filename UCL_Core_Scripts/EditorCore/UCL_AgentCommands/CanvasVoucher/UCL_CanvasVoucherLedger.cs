@@ -110,6 +110,67 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
             return aFound;
         }
 
+        // ===========================================================
+        // 區塊職責：某一批（按 ref）的用量三值 —— **從 history 結算**，給批次已被清掉的場次用。
+        // 物理意義：`TryGetUsageByRef` 讀的是 `batches`，而批次在**花完**或**過期後的下一次寫入**
+        //          就被清掉 ⇒ 它回 false。而收工要回答的正是「本場用了幾張」。
+        //          🩸 TASK-0198：0195 的修法把「查無被算成用完」換成了「無法判定」，
+        //          而在「全部用完」那個 case，被換掉的那條錯公式**剛好會印對**（10 − 0 = 10）
+        //          ⇒ 一個誠實但沒用的答案取代了一個答得出來的問題。**誠實不是目標，
+        //          它只是不准用猜的去補。**
+        // 數值影響：純讀。granted ← `grant` 列；forfeited ← `expire` 列；
+        //          used = granted − forfeited（`exhaust` 列 ⇒ forfeited=0，全用完）。
+        //          回 false 的條件很嚴：**沒有 grant 列，或沒有任何一筆清理列**
+        //          （expire / exhaust）—— 後者代表那一批在寫入端留痕之前就被清掉了
+        //          （2026-09-11 之前的所有批次），⛔ 那時仍然只能答「查無」，不准推導。
+        // ===========================================================
+        public static bool TryGetUsageFromHistoryByRef(string persona, string refText,
+                                                       out int granted, out int forfeited, out int used)
+        {
+            granted = 0; forfeited = 0; used = 0;
+            if (string.IsNullOrEmpty(refText)) return false;
+
+            bool aHasGrant = false, aHasSettle = false;
+            foreach (var e in LoadHistory(persona))
+            {
+                if (!e.Contains("ref") || e.GetString("ref", "") != refText) continue;
+                string aType = e.GetString("type", "");
+                int aAmount = e.GetInt("amount", 0);
+                if (aType == "grant") { aHasGrant = true; granted += aAmount; }
+                else if (aType == "expire") { aHasSettle = true; forfeited += aAmount; }
+                else if (aType == "exhaust") { aHasSettle = true; }
+            }
+            // ⛔ 回 false 時把三個值歸零 —— 否則 `granted` 會帶著一個真實的發放量離開，
+            //    而呼叫端只要做一次「granted − 0」就回到 TASK-0195 那隻病（查無被算成用完）。
+            //    🩸 2026-09-11 實測：`op=usage` 第一版就印出 `found=0 granted=10`，
+            //    我自己造的出口把那個減法重新遞了出去。⇒ 讓它在物理上拿不到那個數字。
+            if (!aHasGrant || !aHasSettle) { granted = 0; forfeited = 0; used = 0; return false; }
+            used = Math.Max(0, granted - forfeited);
+            return true;
+        }
+
+        // history 是 append-only 且**無上界**（2026-09-11 實測：無任何裁剪碼，最長的帳 461 筆全在），
+        // 所以這條回退不會因為舊列被丟掉而失效。壞檔比照 LoadBatches：回空並出聲。
+        static List<JsonData> LoadHistory(string persona)
+        {
+            var aOut = new List<JsonData>();
+            if (string.IsNullOrEmpty(persona)) return aOut;
+            try
+            {
+                string p = PathFor(persona);
+                if (!File.Exists(p)) return aOut;
+                var d = JsonData.ParseJson(File.ReadAllText(p));
+                if (d == null || !d.Contains("history") || !d["history"].IsArray) return aOut;
+                var aArr = d["history"];
+                for (int i = 0; i < aArr.Count; i++) aOut.Add(aArr[i]);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[CanvasVoucher] {persona} 券檔 history 讀取失敗（視為空，未吞錯）: {e.Message}");
+            }
+            return aOut;
+        }
+
         /// <summary>**可花總額**（未過期的限時 ＋ 永久）。規劃付款用這支。</summary>
         public static int GetSpendable(string persona)
         {
@@ -269,8 +330,19 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
         // 區塊職責：讀改寫的骨架 —— 過期清理也在這裡（唯一會動 batches 的通道）。
         // 物理意義：過期批次每次寫入時清掉，並**在 history 記一筆 `expire`** ——
         //          作廢留痕是「我的券去哪了」唯一的答案來源。
-        //          花完的批次（remain=0）也一併清掉：它的 amount 已經在 history 的 grant 那筆裡。
+        //          花完的批次（remain=0）也一併清掉，並記一筆 `exhaust`。
         // ⚠ **不寫 `balance` 欄**（方案乙）。留著它就是留一個看起來是餘額、實際是舊快照的數字。
+        //
+        // ── 2026-09-11 TASK-0198：清理留痕改成**逐批可歸戶** ─────────────────
+        // 🩸 舊寫法有兩格讓「這一批用了幾張」在批次被清掉之後**永久不可回答**：
+        //   ① `expire` 只記**加總**（多批同時過期併成一筆）；
+        //   ② 那一筆的 `ref` 欄填的是人看的字串「到期作廢」，而 `ref` 在別處一律是**批次的 ref**
+        //      ⇒ glossary `借位`：欄位合法、值合法，而它回答的是另一個問題。
+        //   ③ 花完的批次**一個字都不留** ⇒ 它跟「這批從來不存在」同形。
+        // ⇒ 於是 TASK-0198 開單時我自己寫的補法（「history 的 grant − expire 差額」）
+        //   **在舊資料上算不出來** —— 那是一個沒有去讀 schema 就寫下的處方。
+        // 修法在**寫入端**：每一批各記一筆，`ref` 放批次自己的 ref、`batch` 放 uuid，
+        //   人看的字串移到 `source`。⛔ 舊資料回不去（在此之前的批次仍然只能答「查無」）。
         // ===========================================================
         static void MutateLedger(string persona,
             Action<List<UCL_CanvasVoucherBatch>, JsonData> iMutate)
@@ -290,14 +362,26 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
                 var aKeep = new List<UCL_CanvasVoucherBatch>();
                 foreach (var b in aBatches)
                 {
-                    if (b.remain <= 0) continue;                       // 花完了，grant 那筆 history 已記
-                    if (b.IsExpiredAt(aNow)) { aForfeited += b.remain; continue; }
+                    if (b.remain <= 0)
+                    {
+                        // 花完了 ⇒ 記一筆 `exhaust`：⛔ 不能只靠「grant 有、batches 沒有」去推用量，
+                        // 那是從**缺席**推結論（缺席另一個成因是檔被重建／別棵 DataRoot）。
+                        AppendHistory(d["history"], "exhaust", b.amount, "spent", b.@ref, b.uuid, b.expires_at);
+                        continue;
+                    }
+                    if (b.IsExpiredAt(aNow))
+                    {
+                        aForfeited += b.remain;
+                        // 逐批一筆（⛔ 不加總）—— `ref` 是批次的 ref，人看的字串放 `source`
+                        AppendHistory(d["history"], "expire", b.remain, "expired（到期作廢）",
+                                      b.@ref, b.uuid, b.expires_at);
+                        continue;
+                    }
                     aKeep.Add(b);
                 }
                 if (aForfeited > 0)
                 {
-                    AppendHistory(d["history"], "expire", aForfeited, "expired", "到期作廢", "", "");
-                    Debug.Log($"[CanvasVoucher] {persona} 限時券到期作廢 {aForfeited} 張（已記 history）");
+                    Debug.Log($"[CanvasVoucher] {persona} 限時券到期作廢 {aForfeited} 張（已逐批記 history）");
                 }
 
                 d["persona"] = persona;

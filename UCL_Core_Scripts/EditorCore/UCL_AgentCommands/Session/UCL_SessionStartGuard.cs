@@ -35,13 +35,20 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// </summary>
         /// <param name="oReason">被擋的原因（誰的哪一場、到幾點）。成功時為空字串。</param>
         /// <param name="oExit">處理方式（可直接複製執行的指令，或「等到期」）。成功時為空字串。</param>
+        /// <param name="iScope">
+        /// 施工範圍（絕對路徑，TASK-0201）。**只有全域互斥的 kind 會讀它。**
+        /// ⚠ 空字串／不給 ＝ **沒宣告 ⇒ 退化成舊行為（整個 kind 全域獨佔）**。
+        /// 那是安全側：缺欄位絕不可以讓一道既有的閘變成誰都擋不住。
+        /// ⇒ 所以它是**選填**的 —— FreeTime／StreamWatch 那兩個呼叫端一個字都不必改。
+        /// </param>
         public static bool TryStart(string iPersona, SCP_ActivitySession iSession, string iKind,
-                                    out string oReason, out string oExit)
+                                    out string oReason, out string oExit, string iScope = null)
         {
             oReason = "";
             oExit = "";
             if (SCP_ActivitySessionStore.TryStart(UCL_AgentCommandsPath.ScpDataRoot, iPersona, iSession,
-                                                  iKind, DateTime.Now, out SCP_ActivitySession aBlocker))
+                                                  iKind, DateTime.Now, out SCP_ActivitySession aBlocker,
+                                                  iScope))
             {
                 return true;
             }
@@ -59,25 +66,46 @@ namespace UCL.Core.EditorLib.AgentCommands
             //   ⛔ 用同一句話講會給出相反的處理方式（關自己的場 vs 等別人）。
             //   ⇒ 判準用 `persona` 欄，不猜 —— 它就寫在那份 session 檔裡。
             bool aMine = string.Equals(aBlocker.persona, iPersona, StringComparison.Ordinal);
-            oReason = aMine ? ReasonMine(aBlocker) : ReasonOther(aBlocker);
-            oExit = aMine ? ExitMine(iPersona, aBlocker) : ExitOther(aBlocker);
+            oReason = aMine ? ReasonMine(aBlocker) : ReasonOther(aBlocker, iScope);
+            oExit = aMine ? ExitMine(iPersona, aBlocker) : ExitOther(aBlocker, iScope);
             return false;
         }
 
         /// <summary>擋你的是**別人**持有的場（全域互斥那條軸）—— 主詞要換人，出口也要換。</summary>
-        static string ReasonOther(SCP_ActivitySession iBlocker)
+        /// <remarks>
+        /// ⚠ TASK-0201 之後「被別人擋下」有**三種**，而它們的處置不同 ——
+        /// 壓成一句「這種場同時只能一個人」會讓讀的人去做錯的那件事。
+        /// </remarks>
+        static string ReasonOther(SCP_ActivitySession iBlocker, string iScope)
         {
             string aWho = string.IsNullOrEmpty(iBlocker.persona) ? "(session 檔沒寫 persona)" : "@" + iBlocker.persona;
             string aUntil = string.IsNullOrEmpty(iBlocker.until_local) ? "未寫截止時刻" : "至 " + iBlocker.until_local;
-            return $"**{aWho}** 正在 **{KindLabel(iBlocker.kind)}**（`{iBlocker.session_id}`，{aUntil}）"
-                 + $" —— 這種場全域同時只能一個人";
+            string aOut = $"**{aWho}** 正在 **{KindLabel(iBlocker.kind)}**（`{iBlocker.session_id}`，{aUntil}）";
+            if (!SCP_ActivitySessionKind.IsGlobalExclusive(iBlocker.kind)) return aOut;
+
+            string aMine = string.IsNullOrEmpty(iScope) ? "" : iScope;
+            string aTheirs = SCP_ActivitySessionStore.ScopeOf(iBlocker);
+            if (aMine.Length == 0)
+                return aOut + " —— 而**你沒有宣告施工範圍** ⇒ 你這一場退化成全域獨佔，所以誰在場上都擋你";
+            if (aTheirs.Length == 0)
+                return aOut + " —— 而**他沒有宣告施工範圍** ⇒ 視同他可能改任何地方，所以擋你";
+            return aOut + $" —— 範圍撞到：{SCP_SessionScope.Explain(aMine, aTheirs)}";
         }
 
         /// <summary>別人持有時的出口：**等或去問他**，⛔ 不要叫人去收別人的場。</summary>
-        static string ExitOther(SCP_ActivitySession iBlocker)
+        static string ExitOther(SCP_ActivitySession iBlocker, string iScope)
         {
             string aWho = string.IsNullOrEmpty(iBlocker.persona) ? "持有者" : "@" + iBlocker.persona;
             string aUntil = string.IsNullOrEmpty(iBlocker.until_local) ? "他收工" : iBlocker.until_local;
+
+            // ⭐ 三種擋下裡**只有一種是你自己補得了的** —— 那一條要先講，
+            //   不然讀的人會照著「等他」去等一件他本來不必等的事。
+            if (SCP_ActivitySessionKind.IsGlobalExclusive(iBlocker.kind) && string.IsNullOrEmpty(iScope))
+            {
+                return "先補上施工範圍再試一次（範圍不重疊就進得去）："
+                     + $"senate ucmd run Coding --persona <你> --arg step=start --arg status=<一句> --arg scope=<絕對路徑>"
+                     + $"；真的撞到才需要等 {aUntil} 或去酒館問 {aWho}";
+            }
             string aOut = $"等 {aUntil}，或去酒館 {aWho} 問他還要多久；查現況：senate cmd sessions --arg op=list";
 
             // 🩸 2026-09-05（@summit）：原本到上一行為止。而讀到它的人下一句一定會問

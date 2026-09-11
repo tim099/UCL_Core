@@ -50,6 +50,8 @@ namespace UCL.Core.EditorLib.AgentCommands
             "status=<一句話在改什麼>（step=start/status 必填） | " +
             "hours=<租期小時數>（step=start 選填，預設 "
             + SCP.Core.Cmd.SCP_Cmd_Coding.DefaultLeaseHours + "；step=status 會用它續期） | " +
+            "scope=<施工範圍，絕對路徑，取施工的最大範圍>（step=start 選填）—— "
+            + "範圍不重疊的人可以同時開場；⛔ **不給＝整個 kind 全域獨佔**（舊行為） | " +
             "force=1（step=end 專用：跳過編譯閘，需同時給 reason） | reason=<為什麼要 force>";
 
         public override string ExampleArgs => "step=start persona=summit status=TASK-0058 加 Coding kind";
@@ -59,8 +61,13 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         // 這一句在三個地方要一字不差（進場成功／狀態更新／退出）——抽成常數，
         // 免得 A2 落地時只改到其中兩處，留下一句宣稱射程比事實大的話。
-        const string kScopeCaveat = "⚠ 射程：**Unity 側已上線，Senate 側未納入**（A2 未做）——"
-                                    + "在 Senate 那側改 .cs 目前不會被本場擋下，也不會擋下本場。";
+        // 🩸 這一行到 2026-09-11 為止都還寫著「Senate 側未納入（A2 未做）」—— 而 A2 早就做完了
+        //   （`SCP_Cmd_Coding` 在跑，兩個入口寫的是同一個檔位）。
+        //   ⇒ 一句**有出處**的過期斷言，比沒有那句話更毒：讀的人會照著它去 Senate 那側改 .cs，
+        //     以為不會被擋，然後撞上一個他被告知不存在的閘。
+        const string kScopeCaveat = "⚠ 射程：Unity 與 Senate **兩個入口寫同一個檔位** ⇒ 互相擋得到"
+                                    + "（Senate 側走 `senate cmd coding`）。"
+                                    + "⛔ 但編譯閘各量各的：Unity 側量 Unity assemblies，Senate 側量 `dotnet build`。";
 
         // ===========================================================
         // 區塊職責：把本 kind 的**宿主行為**登記進 `UCL_SessionKindHost`（補收工那條路要用）。
@@ -169,6 +176,19 @@ namespace UCL.Core.EditorLib.AgentCommands
                 throw new Exception("[Coding] step=start 需要 --arg status=<一句話在改什麼>（進場必填）");
             }
 
+            // ⚠ 範圍**解不開**時當場丟例外，⛔ 不靜默退化成「沒宣告」——
+            //   靜默退化會讓打錯路徑的人拿到一個他沒要的全域鎖，
+            //   而輸出上跟「我刻意不宣告」一模一樣。
+            string aScopeRaw = GetArg(args, "scope", "").Trim();
+            string aScope = "";
+            if (aScopeRaw.Length > 0
+                && !SCP.Core.Session.SCP_SessionScope.TryNormalize(aScopeRaw, out aScope, out string aScopeErr))
+            {
+                throw new Exception($"[Coding] --arg scope 解析不了：'{aScopeRaw}'"
+                    + (aScopeErr.Length > 0 ? $"（{aScopeErr}）" : "")
+                    + " —— 要的是絕對路徑，例：D:/Unity/LY/Assets/Plugins/UCL_Core");
+            }
+
             int aHours = ParseHours(args);
             DateTime aUntil = DateTime.Now.AddHours(aHours);
 
@@ -233,6 +253,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 active = true,
                 status = aStatus,
                 status_updated = DateTime.Now.ToString("yyyy-MM-dd HH:mm:sszzz"),
+                scope = aScope,
             };
 
             // ⚠ 走 `UCL_SessionStartGuard` 而**不是**直接呼叫 `Store.TryStart`（2026-09-05 改，@basecamp 提案）。
@@ -242,7 +263,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             //   ⇒ 收斂成一份，而且是**會被跑到的那一份**。本檔只負責鋪陳，不再自己組原因與出口。
             if (!UCL_SessionStartGuard.TryStart(iPersona, aSession,
                     SCP.Core.Session.SCP_ActivitySessionKind.Coding,
-                    out string aBlockReason, out string aBlockExit))
+                    out string aBlockReason, out string aBlockExit, aScope))
             {
                 ioR.AppendLine("## ⛔ 進場被擋 —— 沒有開場");
                 ioR.AppendLine();
@@ -261,6 +282,14 @@ namespace UCL.Core.EditorLib.AgentCommands
             ioR.AppendLine($"- session_id: `{aSession.session_id}`");
             ioR.AppendLine($"- 在改什麼: **{aStatus}**");
             ioR.AppendLine($"- 開場: {aSession.start_ts}　**租期至 {aSession.until_local}**（{aHours} 小時）");
+            // ⚠ 沒宣告範圍要**明說它的後果**，不要安靜 —— 安靜的話「我沒宣告」會被讀成「我宣告了全部」，
+            //   而那兩句話在擋人的結果上一樣、在使用者的預期上相反。
+            ioR.AppendLine(aScope.Length > 0
+                ? $"- 施工範圍: `{aScope}` ⇒ **範圍不重疊的人可以同時開場**"
+                : "- ⚠ **沒宣告施工範圍** ⇒ 本場退化成**整個 kind 全域獨佔**（誰都進不來）。"
+                  + $"要宣告：`senate ucmd run Coding --persona {iPersona} --arg step=start "
+                  + "--arg status=<一句> --arg scope=<絕對路徑>`");
+            UCL_AgentCommandRunner.ReportOutputValue(args, "scope", aScope);
             ioR.AppendLine("- ⚠ 到期**不會自動釋放** —— 只是落回「殘留」，別人要搶場仍得顯式跑 "
                            + $"`senate cmd sessions --arg op=close --arg persona={iPersona} --arg confirm=1`（寫別人的檔、留痕跡）。");
             ioR.AppendLine($"- ⭐ 續期走 `step=status`（那一步本來就要跑）：每次更新 status 就順手續 {aHours} 小時。");

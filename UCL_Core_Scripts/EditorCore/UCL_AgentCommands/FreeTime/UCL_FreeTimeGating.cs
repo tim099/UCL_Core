@@ -71,15 +71,24 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
 
                 case UCL_FreeTimeActivityKind.Chess:
                     {
-                        // 有未完成棋局、且對手也在自由時間 → 最優先。
-                        // **不隱藏**：沒對手時仍可開新局徵人，下棋隨時做得成。
+                        // 有未完成棋局、對手也在自由時間、**而且輪到我走** → 最優先。
+                        // ⭐ 「輪到我」那一格是 2026-09-11 Tim 加的判準。理由：不輪到我的時候
+                        //   我能做的只有等，而把「等」頂到最優先會佔掉一個真的做得成的位置。
+                        //   ⇒ 置頂的理由必須是「現在做得動」，不是「這件事存在」。
+                        // **不隱藏、也不移除定語**：不輪到我時它仍留在骰面上、仍印出「等對方走」
+                        //   —— 那是**資訊**（有一局在跑），不是推薦。nameSuffix 與 priority 是兩件事，
+                        //   套用處（Cmd_FreeTime 的 name ＝ a.name ＋ nameSuffix）不看 priority。
+                        // 📌 而「很久沒下過棋」**不在這裡處理** —— 那條是**通用**的飢餓置頂
+                        //   （住 Cmd_FreeTime，判準不看活動是什麼；Chess 沒有 case 可言，同 Default）。
+                        //   ⇒ 不輪到我又很久沒下 ⇒ 照樣會被那條頂起來。⛔ 不在本 case 重做一份，
+                        //     那會變成兩份飢餓判準，而它們遲早各說各話且兩邊都不報錯。
                         if (TryFindWaitingChess(iPersona, out string aOpponent, out int aGameIdx, out bool aMyTurn))
                         {
-                            aRes.priority = true;
+                            aRes.priority = aMyTurn;
                             // 用「對方」不用「他」—— 骰面不該替沒說明稱謂的人做假設。
                             aRes.nameSuffix += aMyTurn
                                 ? $" ♟ 第 {aGameIdx} 局輪到你，@{aOpponent} 也在自由時間"
-                                : $" ♟ 第 {aGameIdx} 局進行中，@{aOpponent} 也在自由時間（等對方走）";
+                                : $" ♟ 第 {aGameIdx} 局進行中，@{aOpponent} 也在自由時間（**等對方走，不急**）";
                         }
                         return aRes;
                     }

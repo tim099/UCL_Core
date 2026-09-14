@@ -53,6 +53,39 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         const string LegacySearchLimitKey = "UCL.ChatTavern.Render.SearchLimit";
         const string LegacySinceLimitKey = "UCL.ChatTavern.Render.SinceLimit";
 
+        // ===========================================================
+        // 區塊職責：legacy PlayerPrefs 種子的**主緒快取** —— 讓背景緒完全碰不到 PlayerPrefs
+        // 物理意義：本類別的真相源是 JSON（執行緒中立的 File IO），**唯一**主緒限定的呼叫就是
+        //          下面 Get() 那條 legacy 種子路徑（`PlayerPrefs.HasKey` / `GetInt`）。
+        //          而那條路徑只有在「JSON 缺該欄」時才會被求值 ——
+        //          於是它在背景緒上的失效條件是**呼叫端少給一個參數**（C# 三元短路）。
+        // 🩸 TASK-0175：`senate ucmd run Tavern --arg op=read --arg room=tavern`（不帶 tail）
+        //          一律丟 `HasKey can only be called from the main thread.`，
+        //          而帶 `--arg tail=3` 就成功 —— 對照組 A/B、C/D 各只差一個參數。
+        //          ⇒ 三週沒有人撞到，因為壞的是**預設路徑**：習慣帶參數的人永遠遇不到，
+        //          第一次照文件打的人一定遇到。
+        // 數值影響：domain reload 時做一次（4 個 key 的 HasKey/GetInt，微秒級）；之後純讀 Dictionary。
+        //          ⛔ 不把它掛進 `UCL_AgentCmdOffload.PrewarmMainThreadCaches()` ——
+        //          那是「通用 → 具體」的反向相依，而 `InitializeOnLoadMethod` 已經涵蓋同一個時機。
+        // ===========================================================
+        static System.Collections.Generic.Dictionary<string, int> s_LegacySeeds;
+        static bool s_WarnedUnprimed;
+
+        /// <summary>在主緒把 legacy PlayerPrefs 種子讀成快取。冪等；domain reload 自動跑一次。</summary>
+        [UnityEditor.InitializeOnLoadMethod]
+        public static void PrimeLegacySeeds()
+        {
+            if (s_LegacySeeds != null) return;
+            var aSeeds = new System.Collections.Generic.Dictionary<string, int>();
+            // 逐個 try —— 某一個讀不到不該讓其餘幾個也沒暖到（同 UCL_AgentCmdOffload 的逐個 try）
+            foreach (var aKey in new[] { LegacyReadTailKey, LegacyLastViewKey, LegacySearchLimitKey, LegacySinceLimitKey })
+            {
+                try { if (PlayerPrefs.HasKey(aKey)) aSeeds[aKey] = PlayerPrefs.GetInt(aKey, 0); }
+                catch (System.Exception) { }
+            }
+            s_LegacySeeds = aSeeds;
+        }
+
         /// <summary>op=read 未帶 tail / from / to / search / since_seq 時，_last_op.md 串幾筆。</summary>
         public static int ReadTailCount
         {
@@ -173,9 +206,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var aClamp = iClamp ?? Clamp;
             var jd = Load();
             if (jd != null && jd.Contains(key)) return aClamp(jd.GetInt(key, defaultValue));
-            // JSON 沒這欄 → 讀 legacy PlayerPrefs 當種子（Tim 上午在舊版調過的值不該無聲消失）
-            if (!string.IsNullOrEmpty(legacyPrefKey) && PlayerPrefs.HasKey(legacyPrefKey))
-                return aClamp(PlayerPrefs.GetInt(legacyPrefKey, defaultValue));
+            // JSON 沒這欄 → 讀 legacy 種子（Tim 上午在舊版調過的值不該無聲消失）。
+            // ⚠ 讀的是**主緒預先快取好的 Dictionary**，不是 PlayerPrefs ——
+            //   本函式會在背景緒上被呼叫（`Cmd_Tavern op=read` 已 offload），而 PlayerPrefs 主緒限定。
+            if (!string.IsNullOrEmpty(legacyPrefKey))
+            {
+                if (s_LegacySeeds == null && !s_WarnedUnprimed)
+                {
+                    // ⛔ 這裡**必須出聲**：沒暖到的失效樣子是「靜靜地落回預設值」，
+                    //   而它跟「這個 legacy key 本來就不存在」逐字同形 —— 那正是本檔要治的那隻病。
+                    s_WarnedUnprimed = true;
+                    Debug.LogWarning("[TavernSettings] legacy 種子快取未預熱 ⇒ 本輪一律落回預設值"
+                        + "（本警告只出一次）。成因：PrimeLegacySeeds() 還沒在主緒跑過。"
+                        + " 修法：確認 [InitializeOnLoadMethod] 有觸發，或在主緒顯式呼叫 PrimeLegacySeeds()。");
+                }
+                if (s_LegacySeeds != null && s_LegacySeeds.TryGetValue(legacyPrefKey, out var aSeed))
+                    return aClamp(aSeed);
+            }
             return defaultValue;
         }
 

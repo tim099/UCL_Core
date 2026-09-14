@@ -232,11 +232,19 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             //   🩸 而這一行本身就是那隻病的載體：**skill 的 CAUTION 早就更正了它，而回傳檔還在教**
             //     ⇒ 兩份說法擺在一起，而人讀的是眼前那一個（回傳檔是自由時間唯一必經的那一份）。
             //   ⛔ 本行只改提示，**不替 TASK-0160 決定引擎要不要做** —— 那張單今天仍 `todo`、零參與者。
-            aR.AppendLine("2. ⚠ **這條路上目前沒有引擎** —— Cmd 管時鐘，**不管 turn 存續**。");
-            aR.AppendLine("   ⛔ 別打 `--wait-reply`／`--arg wait_reply=`：旗標會被 senate **靜默吃掉**，"
+            // ⭐ 2026-09-14 更新（summit，TASK-0160 拍板並落盤）：**引擎現在有了** ——
+            //   `senate cmd tavern-wait`（CLI 端輪詢，本地跑，不需要 Editor）。
+            //   ⚠ 而上面那段「沒有引擎」不刪、改寫：它擋下的那個死旗標**今天仍然是死的**，
+            //     只是現在有一條活的路可以指。⛔ 兩件事分開講，別讓「旗標死了」被讀成「功能沒了」。
+            aR.AppendLine("2. ⭐ **要維持對話流就發動引擎**：`senate cmd tavern-wait --arg persona=" + iPersona
+                          + " --arg timeout=<秒> --arg mention=1`");
+            aR.AppendLine("   ⚠ 它是**唯一擋得住 turn 的那一層**；`timeout` **預設 0 ＝ 一秒都不等**，"
+                          + "不給秒數等於沒有引擎。等到人回話會**提早返回**，逾時回 exit 4（那是答案不是失敗）。");
+            aR.AppendLine("   ⛔ 別打 `--wait-reply`／`--arg wait_reply=`：**那個旗標仍然是死的**，"
+                          + "在 ucmd 這條路上會被 senate **靜默吃掉**，"
                           + "「✓ Success、exit 0」一應俱全而**一秒都沒等到**（實測 180 → 45 秒）。");
-            aR.AppendLine("   ⇒ 正解是**明講「我需要引擎才能持續，而這條路上沒有」**，然後掛著等時鐘；"
-                          + "⛔ 不要假裝在持續。引擎的去留在 **TASK-0160** 拍板前沒有答案。");
+            aR.AppendLine("   ⛔ 而**沒有人在線就別等** —— `timeout=180` 只是把 turn 燒掉三分鐘；"
+                          + "先看骰面與 catchup 有沒有人，再決定要不要發動。");
             aR.AppendLine($"3. **活動事件自然結束時**（棋局終局／繪圖收筆／聊天告一段落）→ senate ucmd run FreeTime --arg step=next --arg persona={iPersona}");
             aR.AppendLine("   收工由這裡自動判定 —— **截止是軟的**：時間到不打斷進行中的活動，最後一件做完跑 next 才通知收工。");
             aR.AppendLine($"4. step=end（提前收工）**除非 Tim 明確指示，不要用** —— 正常結束一律交給 step=next 對時鐘判定。");
@@ -438,8 +446,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             AppendDiceSection(aR, aList, aSource, aIsLive);
             aR.AppendLine("## next");
             // ⛔ 同 step=start：不再教已死的 `--wait-reply`（理由與血證見那一處的註解）。
-            aR.AppendLine("1. 從骰面挑下一件活動（跟骰規則同 start）。⚠ **這條路上沒有引擎** ——"
-                          + " ⛔ 別打 `--wait-reply`（會被靜默吃掉）；引擎的去留見 **TASK-0160**。");
+            // ⭐ 2026-09-14：引擎已落盤（`senate cmd tavern-wait`，TASK-0160）—— 這一行跟著改。
+            aR.AppendLine("1. 從骰面挑下一件活動（跟骰規則同 start）。⭐ 要維持對話流就發動引擎："
+                          + "`senate cmd tavern-wait --arg persona=" + iPersona + " --arg timeout=<秒>`"
+                          + "（⛔ `timeout` 預設 0 ＝ 不等）；⛔ 舊的 `--wait-reply` 仍然是死的，會被靜默吃掉。");
             aR.AppendLine("2. step=end（提前收工）除非 Tim 明確指示，不要用。");
             // ⚠ 這一句是量出來的，不是禮貌提醒（basecamp 2026-09-10 現場）：
             //   我連跑三輪 next 而只做了一件活動 —— 當時在做的事叫「等時鐘」，

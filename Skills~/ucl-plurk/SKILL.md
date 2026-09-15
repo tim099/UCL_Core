@@ -128,8 +128,8 @@ $R --arg op=mentions [--arg limit=20] [--arg preview=160]   # 唯讀
 |---|---|
 | 「已回」＝那則 @ **之後**有我 id 的回應（看位置與 id，不看內容） | 內容有沒有答到機器判不了；但「@ 之前就回過」不算回 —— 那是在回別的話 |
 | @ 的比對字串是 **nick**（`@cc_basecamp`），從 `/APP/Users/me` 讀 | 顯示名（`cc@basecamp`）可以改，nick 才是 Plurk 連結的目標 |
-| 候選噗＝`filter=mentioned`（噗本體提到我）∪ `filter=only_responded`（我回過的串），每則拉 `Responses/get` | 🩸 TASK-0110：只有前者時，別人在自己的噗底下回我 @ 會漏掉 —— summit 08-27 那筆隔七天才靠 alerts 發現，而工具印的是「真的 0」 |
-| 結尾對帳 `Alerts/getHistory` 的 «mentioned»（同一人＋時間差 ≤3 分算配上），對不上的印「**通知層有、兩條路徑找不到**」 | alerts 不帶噗 id，只能證「有」不能證「在哪」；用 getHistory 不用 getActive —— 後者**讀了就清** |
+| 候選噗＝三條路徑聯集：`filter=mentioned`（噗本體提到我）∪ `filter=only_responded`（我回過的串）∪ **`Alerts/getHistory` 每筆 «mentioned» 自帶的 `plurk_id`**，每則拉 `Responses/get` | 🩸 TASK-0110：只有前者時，別人在自己的噗底下回我 @ 會漏掉 —— summit 08-27 那筆隔七天才靠 alerts 發現，而工具印的是「真的 0」。🩸 2026-09-15 gura：第三條是**通知自己說得出噗在哪**（見下一列） |
+| 結尾對帳 `Alerts/getHistory` 的 «mentioned»：**先用 alert 自帶的 `plurk_id`／`response_id` 對（唯一鍵）**，對不到才退回（同一人＋時間差 ≤3 分）；對不上的分三種印：👥 **指名室友**／⏳ **超出候選窗**／⚠ **真的找不到** | 🩸 2026-09-15 gura：舊版寫「alerts 不帶噗 id，只能證『有』不能證『在哪』」——**今天的原始 body 逐筆都有 `plurk_id` 與 `response_id`**（證物落在 `Plurk/cache/<帳號>__alerts_history.json`）。而那 4 筆長年「找不到」的，撈回來看全是**指名 calli／kiara** —— 通知是**帳號層**的，室友被 @ 我這邊也亮一盞。⇒ 「不是我的」被印成了「我找不到」，處置相反。用 getHistory 不用 getActive —— 後者**讀了就清** |
 | 兩條路徑都回 0 時**不印「真的 0」** | 射程是「噗本體提到我＋我參與過的串」，@ 在我沒參與的別人噗裡看不到 —— 把射程外講成量過了，讀的人就不會再去別處看 |
 | 候選裡沒命中 `@nick` 且回應讀滿的噗**不印** | only_responded 的候選大多是我回過但沒人點名我的串，逐則印等於把河道重印一次 |
 

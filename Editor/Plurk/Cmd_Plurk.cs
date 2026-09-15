@@ -864,7 +864,31 @@ namespace UCL.Core.EditorLib.Plurk
                         + "而那可能包含指名你的。要正確路由請顯式帶 persona。");
             }
 
-            // 候選集：兩條路徑各拉一次，依 plurk_id 去重（同一則兩邊都有時只拉一次回應）
+            // ── ②-0 通知層先讀（**第三條路徑的入口**，2026-09-15 gura）────────────────
+            // 🩸 量出來的：`Alerts/getHistory` 的 «mentioned» **每一筆都帶 `plurk_id` 與 `response_id`**
+            //   （證物：`Plurk/cache/<帳號>__alerts_history.json`，30 筆通知逐筆有這兩欄）。
+            //   ⛔ 在這之前本檔註解寫著「alerts 不帶噗 id，只能證『有』證不了『在哪』」——
+            //   那是一句**從來沒有被量過的斷言**，而它正是「通知層有、兩條路徑找不到」那幾筆
+            //   停在原地三週的唯一理由：工具沒去問，因為註解說問不到。
+            // ⇒ 通知自己說得出那則噗是哪一則 ⇒ 照 alert 的 `plurk_id` 直接把那則噗撈進候選。
+            // ⚠ 這條路徑補的正是前兩條的射程外：**@ 發生在我沒參與、也沒提到我的噗底下**。
+            var (aAlSt, aAlBody) = await CallAsync("/APP/Alerts/getHistory", aCred, null, token);
+            var aAlertPids = new List<string>();
+            if (aAlSt == 200)
+            {
+                TryWriteCache(CacheFile(iRes.SecretId ?? "_", "alerts_history"),
+                              iRes.SecretId ?? "_", "/APP/Alerts/getHistory", aAlBody, ioR);
+                var aAlPre = SafeParse(aAlBody);
+                if (aAlPre != null && aAlPre.IsArray)
+                    for (int i = 0; i < aAlPre.Count; i++)
+                    {
+                        if (JsonScalar(aAlPre[i], "type") != "mentioned") continue;
+                        string aAPid = JsonScalar(aAlPre[i], "plurk_id");
+                        if (aAPid.Length > 0 && !aAlertPids.Contains(aAPid)) aAlertPids.Add(aAPid);
+                    }
+            }
+
+            // 候選集：三條路徑各拉一次，依 plurk_id 去重（同一則多邊都有時只拉一次回應）
             var aCandidates = new List<UCL.Core.JsonLib.JsonData>();
             var aUsersAll = new UCL.Core.JsonLib.JsonData();
             var aSeenPid = new HashSet<string>();
@@ -896,7 +920,37 @@ namespace UCL.Core.EditorLib.Plurk
                 if (aPathUsers != null) foreach (string k in aPathUsers.Keys) aUsersAll[k] = aPathUsers[k];
                 aPathCounts.Add($"`{aFilter}` {aPlurks.Count} 則（新增 {aNew}）");
             }
-            ioR.AppendLine($"- 候選噗 **{aCandidates.Count}** 則（limit={aLimit}／路徑）：{string.Join("、", aPathCounts)}");
+            // ── ②-c 第三條路徑：alert 自帶的 plurk_id ──────────────────────────
+            // ⚠ 逐則打一次 `Timeline/getPlurk` ⇒ 只補**前兩條沒撈到**的那幾則（多半 0-3 則）。
+            //   拿不到就照實印，⛔ 不靜默當作沒有這筆通知。
+            int aAlertNew = 0, aAlertFail = 0;
+            for (int i = 0; i < aAlertPids.Count; i++)
+            {
+                if (aSeenPid.Contains(aAlertPids[i])) continue;
+                var (aGpSt, aGpBody) = await CallAsync("/APP/Timeline/getPlurk", aCred,
+                    new Dictionary<string, string> { { "plurk_id", aAlertPids[i] } }, token);
+                if (aGpSt != 200)
+                {
+                    aAlertFail++;
+                    ioR.AppendLine($"- ⚠ 通知指到的噗 `{aAlertPids[i]}` 讀不到（http={aGpSt}）"
+                        + " ⇒ 這一則**沒有讀數**（可能被刪、或是私噗我看不到），不是「沒有 @」");
+                    continue;
+                }
+                var aGpRoot = SafeParse(aGpBody);
+                var aGpPlurk = (aGpRoot != null && aGpRoot.Contains("plurk")) ? aGpRoot["plurk"] : null;
+                if (aGpPlurk == null) { aAlertFail++; continue; }
+                if (!aSeenPid.Add(aAlertPids[i])) continue;
+                aCandidates.Add(aGpPlurk); aAlertNew++;
+                // 作者資料：getPlurk 回的是單顆 `user`，塞進同一張表（後面 UserName 照舊查得到）
+                if (aGpRoot.Contains("user"))
+                {
+                    string aGpOwner = JsonScalar(aGpPlurk, "owner_id");
+                    if (aGpOwner.Length > 0) aUsersAll[aGpOwner] = aGpRoot["user"];
+                }
+            }
+            aPathCounts.Add($"`alerts→getPlurk` {aAlertPids.Count} 筆通知（新增 {aAlertNew}"
+                + (aAlertFail > 0 ? $"、讀不到 {aAlertFail}" : "") + "）");
+            ioR.AppendLine($"- 候選噗 **{aCandidates.Count}** 則（limit={aLimit}／前兩條路徑）：{string.Join("、", aPathCounts)}");
             // 候選窗的**左端**（最舊那則的時刻）—— 通知層對帳要靠它分辨「找不到」與「沒撈到那麼舊」。
             // 🩸 2026-09-05 的讀數：海苔 08-27 那筆 @ 在 limit=20 下永遠印「兩條路徑找不到」，
             //   而真正的原因是它在候選窗之外 ⇒ 讀的人會以為 TASK-0110 的修法沒生效。
@@ -914,7 +968,12 @@ namespace UCL.Core.EditorLib.Plurk
 
             int aPending = 0, aAnswered = 0;
             var aEmoCtx = EmoBegin(iRes);
-            var aHitLog = new List<(string uid, string when)>();      // 給通知層對帳用
+            // 給通知層對帳用 —— ⭐ 帶 `pid`/`rid`：alert 自己帶這兩個 id，
+            // 用 id 對是**唯一鍵**，而（誰、時間差 ≤3 分）只是近似（同一人同分鐘發兩則就分不開）。
+            var aHitLog = new List<(string uid, string when, string pid, string rid)>();
+            // 指名室友的那些也要留檔：它們在通知層**照樣會亮**（alert 是帳號層的），
+            // ⛔ 而舊版把它們算進「找不到」—— 那是把「不是我的」講成「我找不到」，處置完全不同。
+            var aRoomLog = new List<(string uid, string when, string pid, string rid, string tags)>();
             var aUsers = aUsersAll;
             for (int i = 0; i < aCandidates.Count; i++)
             {
@@ -923,12 +982,15 @@ namespace UCL.Core.EditorLib.Plurk
                 string aOwner = JsonScalar(aP, "owner_id");
                 string aPRaw = UnescapeJson(JsonScalar(aP, "content_raw"));
                 // 噗本體 @ 我 ＝ 第 0 則
-                var aHits = new List<(int idx, string who, string uid, string when, string text)>();
+                var aHits = new List<(int idx, string who, string uid, string when, string text, string rid)>();
                 var aBodyHit = UCL_PlurkAccounts.ClassifyMention(aPRaw, aNick, aMyPersona);
                 if (aBodyHit.HitsMe)
-                    aHits.Add((0, UserName(aUsers, aOwner), aOwner, JsonScalar(aP, "posted"), aPRaw));
+                    aHits.Add((0, UserName(aUsers, aOwner), aOwner, JsonScalar(aP, "posted"), aPRaw, ""));
                 else if (aBodyHit.Found)
+                {
                     aOtherTagged.Add($"[{aPid}] 噗本體 @ 了帳號但指名 {string.Join(" / ", aBodyHit.Tags)}");
+                    aRoomLog.Add((aOwner, JsonScalar(aP, "posted"), aPid, "", string.Join(" / ", aBodyHit.Tags)));
+                }
                 var aHeader = new StringBuilder();
                 aHeader.AppendLine();
                 aHeader.AppendLine($"### [{aPid}] {ShortTime(JsonScalar(aP, "posted"))} **{UserName(aUsers, aOwner)}** «{JsonScalar(aP, "qualifier")}»"
@@ -975,11 +1037,16 @@ namespace UCL.Core.EditorLib.Plurk
                     {
                         // 有 @ 帳號但指名別人 ⇒ 不算我未回，但**要看得見**（否則它會從所有人的視野消失）
                         if (aRHit.Found)
+                        {
                             aOtherTagged.Add($"[{aPid}] 第 {r + 1} 則 @ 了帳號但指名 {string.Join(" / ", aRHit.Tags)}");
+                            aRoomLog.Add((aUid, JsonScalar(aRp, "posted"), aPid, JsonScalar(aRp, "id"),
+                                string.Join(" / ", aRHit.Tags)));
+                        }
                         continue;
                     }
                     aHits.Add((r + 1, UserName(aFriends, aUid), aUid, JsonScalar(aRp, "posted"),
-                        EmoAnnotatePaired(aRaw, UnescapeJson(JsonScalar(aRp, "content")), aEmoCtx, aUid)));
+                        EmoAnnotatePaired(aRaw, UnescapeJson(JsonScalar(aRp, "content")), aEmoCtx, aUid),
+                        JsonScalar(aRp, "id")));
                 }
                 string aDeclared = aRRoot != null && aRRoot.Contains("response_count") ? JsonScalar(aRRoot, "response_count") : "";
                 bool aPartial = aDeclared.Length > 0 && aDeclared != aSeen.Count.ToString(CultureInfo.InvariantCulture);
@@ -998,7 +1065,7 @@ namespace UCL.Core.EditorLib.Plurk
                     // 多人帳號下「我的回應」＝本帳號回的**且署名是我**（見上面 kiara 那格）。
                     bool aReplied = aLastMineIdx >= 0 && (h.idx == 0 || aLastMineIdx > h.idx - 1);
                     if (aReplied) aAnswered++; else aPending++;
-                    aHitLog.Add((h.uid, h.when));
+                    aHitLog.Add((h.uid, h.when, aPid, h.rid));
                     ioR.AppendLine($"    - {(aReplied ? "✅ 已回" : "🔔 **未回**")}　@ 在{(h.idx == 0 ? "噗本體" : $"第 {h.idx} 則回應")}"
                         + $"　**{h.who}**　{ShortTime(h.when)}");
                     ioR.AppendLine("        " + Trunc(OneLine(h.text), aPreview));
@@ -1008,7 +1075,8 @@ namespace UCL.Core.EditorLib.Plurk
             // ④ 通知層對帳 —— getHistory 不清通知（getActive 會）。alerts 沒有噗 id，只能用（誰、何時）配。
             ioR.AppendLine();
             ioR.AppendLine("## 通知層對帳（`Alerts/getHistory` 的 «mentioned»，唯讀）");
-            var (aAlSt, aAlBody) = await CallAsync("/APP/Alerts/getHistory", aCred, null, token);
+            // ⚠ 這裡**不再打一次** API —— 同一趟的 body 在 ②-0 就讀過並落了快取。
+            //   打兩次的代價不是流量，是**兩份可能不同的通知層讀數**同時存在於一份報告裡。
             if (aAlSt != 200)
             {
                 ioR.AppendLine($"- ⚠ 讀不到通知歷史（http={aAlSt}）⇒ 這一格**沒有讀數**，上面的清單只代表兩條時間軸路徑");
@@ -1018,6 +1086,7 @@ namespace UCL.Core.EditorLib.Plurk
                 var aAl = SafeParse(aAlBody);
                 int aMentionAlerts = 0, aUnmatched = 0;
                 int aOutRange = 0;      // 對不上的當中，「只是比候選窗更早」的那幾筆（⛔ 不與「找不到」同號）
+                int aRoomMates = 0;     // 對不上的當中，**那則其實是指名室友的**（⛔ 也不與「找不到」同號）
                 if (aAl != null && aAl.IsArray)
                 {
                     for (int i = 0; i < aAl.Count; i++)
@@ -1029,8 +1098,20 @@ namespace UCL.Core.EditorLib.Plurk
                         string aFid = aFrom != null ? JsonScalar(aFrom, "id") : "";
                         string aFname = aFrom != null ? UnescapeJson(JsonScalar(aFrom, "display_name")) : "(查無名稱)";
                         string aWhen = JsonScalar(aIt, "posted");
+                        string aAlPid0 = JsonScalar(aIt, "plurk_id");
+                        string aAlRid0 = JsonScalar(aIt, "response_id");
                         bool aMatched = false;
-                        if (TryPlurkUtc(aWhen, out DateTime aT))
+                        // ⭐ 先用**唯一鍵**（alert 自帶的 plurk_id/response_id）對；對不到才退回近似鍵。
+                        //   ⚠ 退回那一格要說得出自己退回了 —— 近似鍵在「同一人同一分鐘兩則」上會誤配，
+                        //     而誤配的樣子是一筆通知被算成已涵蓋，然後從報告上消失。
+                        foreach (var h in aHitLog)
+                        {
+                            if (aAlRid0.Length > 0 && h.rid.Length > 0)
+                            { if (h.rid == aAlRid0) { aMatched = true; break; } continue; }
+                            if (aAlPid0.Length > 0 && h.pid == aAlPid0 && aAlRid0.Length == 0)
+                            { aMatched = true; break; }
+                        }
+                        if (!aMatched && TryPlurkUtc(aWhen, out DateTime aT))
                         {
                             foreach (var h in aHitLog)
                             {
@@ -1039,7 +1120,28 @@ namespace UCL.Core.EditorLib.Plurk
                                     && Math.Abs((aHt - aT).TotalMinutes) <= 3) { aMatched = true; break; }
                             }
                         }
+                        // 🩸 2026-09-15 gura：舊版到這裡就印「找不到」了，而 5 筆裡有 4 筆
+                        //   **那則其實指名 calli／kiara** —— alert 是**帳號層**的，室友被 @ 我這邊照樣亮一盞。
+                        //   ⇒ 「不是我的」與「我找不到」在舊字面上同形，而處置相反（前者不必追）。
+                        string aRoomTags = "";
                         if (!aMatched)
+                            foreach (var m in aRoomLog)
+                            {
+                                bool aSame = (aAlRid0.Length > 0 && m.rid.Length > 0) ? m.rid == aAlRid0
+                                           : (aAlPid0.Length > 0 && m.pid == aAlPid0 && aAlRid0.Length == 0);
+                                if (!aSame && aAlPid0.Length == 0 && m.uid == aFid
+                                    && TryPlurkUtc(aWhen, out DateTime aT2) && TryPlurkUtc(m.when, out DateTime aMt))
+                                    aSame = Math.Abs((aMt - aT2).TotalMinutes) <= 3;
+                                if (aSame) { aRoomTags = m.tags; break; }
+                            }
+                        if (!aMatched && aRoomTags.Length > 0)
+                        {
+                            aUnmatched++; aRoomMates++;
+                            ioR.AppendLine($"- 👥 **通知層有，而那則指名室友 {aRoomTags}**：{ShortTime(aWhen)}　**{aFname}**（`{aFid}`）"
+                                + $"　`plurk_id={aAlPid0}`"
+                                + " ⇒ 通知是**帳號層**的，室友被 @ 我這邊也會亮一盞；**不算我未回**，也不必去追。");
+                        }
+                        else if (!aMatched)
                         {
                             aUnmatched++;
                             // ⛔ 先問「它在不在候選窗裡」再說「找不到」—— 兩者在舊字面上同形而處置相反。
@@ -1055,14 +1157,22 @@ namespace UCL.Core.EditorLib.Plurk
                             }
                             else
                             {
-                                ioR.AppendLine($"- ⚠ **通知層有、兩條路徑找不到**：{ShortTime(aWhen)}　**{aFname}**（`{aFid}`）"
-                                    + " ⇒ 多半在我沒參與的噗裡；alerts 不帶噗 id，去 `op=profile --arg user_id=" + aFid + "` 看他近期的噗再拉回應");
+                                string aAlPid = JsonScalar(aIt, "plurk_id");
+                                string aAlRid = JsonScalar(aIt, "response_id");
+                                ioR.AppendLine($"- ⚠ **三條路徑都沒對上**：{ShortTime(aWhen)}　**{aFname}**（`{aFid}`）"
+                                    + (aAlPid.Length > 0
+                                        ? $"　通知自帶 `plurk_id={aAlPid}`"
+                                          + (aAlRid.Length > 0 ? $" `response_id={aAlRid}`" : "")
+                                          + $" ⇒ 直接讀：`--arg op=responses --arg plurk_id={aAlPid}`"
+                                          + "（第三條路徑已撈過它，仍對不上多半是那則 @ 不含我的 nick、或回應讀不滿）"
+                                        : "　⚠ 這筆通知**沒有 `plurk_id`** ⇒ 回到 `op=profile --arg user_id=" + aFid + "`"));
                             }
                         }
                     }
                 }
                 ioR.AppendLine($"- 通知歷史裡 «mentioned» **{aMentionAlerts}** 筆，其中對不上路徑命中的 **{aUnmatched}** 筆"
-                    + $"（其中 **{aOutRange}** 筆只是**比候選窗更早**⏳、**{aUnmatched - aOutRange}** 筆是真的找不到⚠）"
+                    + $"（其中 **{aRoomMates}** 筆是**指名室友的**👥、**{aOutRange}** 筆只是**比候選窗更早**⏳、"
+                    + $"**{aUnmatched - aOutRange - aRoomMates}** 筆是真的找不到⚠）"
                     + "（配法：同一個人 ＋ 時間差 ≤3 分；歷史只有最近 30 筆通知，更舊的這裡也看不到）");
                 if (aOutRange > 0)
                     ioR.AppendLine($"  ⇒ 那 {aOutRange} 筆**不代表修法沒生效**，是射程：`--arg limit={aLimit * 5}` 再跑一次就進得來。");
@@ -2402,7 +2512,12 @@ namespace UCL.Core.EditorLib.Plurk
         static string JsonScalar(UCL.Core.JsonLib.JsonData iNode, string iKey)
         {
             if (iNode == null || !iNode.Contains(iKey)) return "";
-            string aRaw = (iNode[iKey].ToJson() ?? "").Trim();
+            // 🩸 2026-09-15 gura：`Contains` 為真**不代表值不是 null** —— Plurk 的 alert 在
+            //   「@ 在噗本體」那種通知上會給 `"response_id": null`，這裡就 NullRef。
+            //   ⚠ 守了「這個鍵在不在」，沒守「值是不是 null」：兩者在呼叫端長得一樣。
+            var aNode = iNode[iKey];
+            if (aNode == null) return "";
+            string aRaw = (aNode.ToJson() ?? "").Trim();
             if (aRaw.Length >= 2 && aRaw[0] == '"' && aRaw[aRaw.Length - 1] == '"')
                 aRaw = aRaw.Substring(1, aRaw.Length - 2);
             return aRaw == "null" ? "" : aRaw;

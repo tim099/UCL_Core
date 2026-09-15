@@ -1,7 +1,7 @@
 ---
 title: Plurk 串接維護指南
 description: Plurk 發文機制的維護面 —— 四個檔的分工、怎麼加一條 lint 規則、怎麼加心情詞、帳號與憑證安裝、OAuth 實作的三個坑、端點驗證狀態、audit 對帳。
-last_updated: 2026-09-04
+last_updated: 2026-09-15 (op=mentions 第三條路徑：alert 自帶 plurk_id／response_id；對不上的分「指名室友／超出窗／真的找不到」三種)
 target_audience: [AI_Agent, Tools_Maintainer]
 status: v1.0（2026-08-21 從 Plurk_Posting_Workflow 拆出 —— Tim：「維護部分單獨一份文件」）
 ---
@@ -242,7 +242,8 @@ Plurk 的 `@` 只認 **nick** ⇒ 文案裡的 persona 名由 `LoadSlip` 自動�
 ## 5.4 被 @ 的訊息（2026-09-03 新增）：`op=mentions`
 
 **問題**：河道摘要（`op=timeline`）只列噗、不列回應，而 @ 幾乎都發生在回應裡；
-`Alerts/getActive` 有 «mentioned» 型別但**讀了就清**（不可重跑）、且不帶噗 id。
+`Alerts/getActive` 有 «mentioned» 型別但**讀了就清**（不可重跑）。
+⚠ 2026-09-15 更正：本節原本還寫著「且不帶噗 id」并據此判定通知層只能證「有」——**`getHistory` 的 «mentioned» 每筆都帶 `plurk_id`／`response_id`**，那句話擋掉的是第三條路徑。
 ⇒ 海苔 09-01 在一則噗的第 3 則回應 @ 我問問題，兩天後 Tim 從截圖上看到 —— 工具沒有任何一格讓它浮上來。
 
 **做法**（三步全唯讀）：
@@ -252,7 +253,8 @@ Plurk 的 `@` 只認 **nick** ⇒ 文案裡的 persona 名由 `LoadSlip` 自動�
 | ① 我是誰 | `/APP/Users/me` → `id`、`nick_name` | @ 的目標是 **nick**（`@cc_basecamp`），不是顯示名（`cc@basecamp`）；顯示名可以改 |
 | ② 哪些噗跟我有關 | `Timeline/getPlurks` `filter=mentioned` ∪ `filter=only_responded`（依 plurk_id 去重） | 🩸 TASK-0110（summit 2026-09-03 量出來的）：`mentioned` 只涵蓋**噗本體**提到我的噗；別人在自己的噗底下回我 @，那則噗不進集合 ⇒ 首版印「真的 0」。`only_responded`（我回過的串）蓋住最大宗來源，且實測會列出那則 |
 | ③ 誰 @、我回了沒 | 每則 `Responses/get` | 挑內文含 `@<nick>` 的回應；「已回」＝那則之後有**我 id** 的回應（位置比較，不比內容） |
-| ④ 通知層對帳 | `Alerts/getHistory` 的 «mentioned» | alerts 不帶噗 id（history=1 也不帶，實測兩次）⇒ 只能證「有」；拿（誰、何時）跟 ③ 的命中配（同一人＋≤3 分），對不上的印「通知層有、兩條路徑找不到」。⛔ 不用 `getActive`：它讀了就清，一支叫 mentions 的唯讀 op 不該順手消耗通知 |
+| ④ 通知層對帳 | `Alerts/getHistory` 的 «mentioned» | ⭐ **每筆 alert 自帶 `plurk_id` 與 `response_id`**（2026-09-15 gura 量的；原始 body 落在 `Plurk/cache/<帳號>__alerts_history.json`，30 筆通知逐筆都有） ⇒ 對帳**先用這兩個唯一鍵**，對不到才退回（誰、何時 ≤3 分）那把近似尺。⛔ 本列舊版寫「不帶噗 id（history=1 也不帶，實測兩次）」—— 當初量到的是什麼我不追認，**今天的讀數在磁碟上**。對不上的分三種印：👥 指名室友／⏳ 超出候選窗／⚠ 真的找不到 |
+| ⑤ 第三條候選路徑 | `Alerts/getHistory` → 逐筆 `Timeline/getPlurk` | 補前兩條的射程外（@ 發生在我**沒參與也沒提到我**的噗底下）。⚠ 只撈前兩條沒撈到的那幾則；讀不到就照實印，⛔ 不當作沒有那筆通知 |
 
 **讀數形狀**：每則 `🔔 未回` / `✅ 已回` ＋ 「@ 在噗本體／第 N 則回應」＋ 對方那段話；通知層對帳一段；結尾一行總計。
 

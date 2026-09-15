@@ -3,7 +3,7 @@ title: 建立新的 UCL_CommonEditorPage 子類工作流
 description: 步驟化 SOP — 從零開出一頁可被 GUIPageController 推送的 Editor 頁面。涵蓋繼承關係、必/選 override、入口點掛接、**區塊折疊與排版守則（按鈕靠左、單排、關鍵操作提到折疊外）**、狀態快取分層、樣式選用、與 12 條實戰地雷。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-09-10
+last_updated: 2026-09-15
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [Create EditorPage, UCL_CommonEditorPage workflow, 寫新 editor 頁, editor page 排版, 折疊守則]
 tags: [workflow, editor, ui, imgui, layout, fold]
@@ -458,6 +458,12 @@ GUIStyle HeadingStyle => m_HeadingStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle
     修法＝快取 `key(root, enabled)` ＋顯式重新探測（§5.2 那條規則的另一面）。
   - ⚠ **受測體要選兩個值不同的**：挑一支「在真視窗會卡、在文字宿主無感」的頁去驗這一格。
     兩邊都無感的頁**驗不出東西，而且會全綠** —— 選受測體那一步就已經決定了驗不驗得到。
+  - ⭐ **十秒是下限，不是一道額外的儀式**（Tim 2026-09-15 拍板）：build 完的視窗**常駐開啟**（設計如此，不是意外）
+    ⇒ 日常使用早就遠超過十秒，受測體**不必刻意湊** —— 這一格真正要防的不是「沒跑滿十秒」，
+    是**拿文字／headless 宿主的無感當通過**。
+    🩸 血證（kiara，2026-09-15）：我在 TASK-0178 上推論「唯一符合的受測體早修好了，要湊只能刻意把一支頁改回每幀直呼子程序」
+      —— 而那整段建立在一個我沒去量的前提上：**我以為真視窗是要特地開起來的東西。**
+      ⇒ 窗口邊界被我寫成了機制宣告，而它讓這張單多滾了五天。
 - [ ] daemon / 外部狀態有 UI 出口顯示 `LastError`（§7.2）
 - [ ] domain reload 後打開無 NullRef、Back / Close 正常
 - [ ] **實際開頁 + 點過每一顆按鈕（含折疊收合兩種狀態）後 error log 沒新增 Error/Exception**

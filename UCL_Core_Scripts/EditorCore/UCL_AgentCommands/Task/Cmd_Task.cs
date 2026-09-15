@@ -1592,6 +1592,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine();
             ioR.AppendLine($"## ✅ {e.Id} 已結單");
             ioR.AppendLine($"- {aFrom} → **{aStatus}**　closed_at: {e.closed_at}");
+            // ⚠ 只有 `done` 印 —— `cancelled` 的單本來就不必驗完，對它說「還有幾格沒勾」是噪音。
+            if (aStatus == UCL_TaskStatus.done) AppendUncheckedCriteria(ioR, aIndex);
             if (e.blocks.Count > 0)
             {
                 ioR.AppendLine($"- ▶ 它本來卡著 {Ids(e.blocks)} —— 那幾張現在可能可以動了（去看一眼）：");
@@ -1606,6 +1608,53 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             bool aNotified = await UCL_TaskNotify.PostAsync(e, UCL_TaskNotify.Kind.Status, iActor,
                 $"{aFrom} → **{aStatus}**" + (aNote.Length == 0 ? "" : $"：{aNote}"), iCallerArgs: iArgs);
             AppendNotifyLine(ioR, e, iActor, aNotified);
+        }
+
+        // ===========================================================
+        // 區塊職責：關單的那一刻，把「驗收標準還有幾格沒勾」連原文印進回傳檔。
+        // 物理意義：**警示不是擋**（沿用本檔同一族的既有拍板 —— 擋會讓真正不需要驗收的小單無法自動結，
+        //          而那是設計要的）。機器分不出「刻意留空的互斥分支」與「還沒做」⇒ 那一格由人判；
+        //          ⛔ 但分不出來不是不說的理由 —— 不說的話，那兩者在關單的那一刻長得一模一樣。
+        // 數值影響：一次讀檔（`ReadCriteria`）＋純字串。⛔ **刻意在鎖外、落檔之後讀**：
+        //          `commit`／`resolve` 都不寫 criteria ⇒ 鎖內外讀到的是同一份，
+        //          沒有理由把一次 IO 搬進 `Mutate` 的臨界區。
+        // ⚠ 讀取走 `UCL_TaskIO.ReadCriteria` / `ListUncheckedCriteria`（**與 `op=check` 同一支**）——
+        //   ⛔ 不在這裡重造第二套解析：兩份讀法會漂，而序號一漂它指的就是別條標準，**而那是簽名**。
+        // 🩸 血證（TASK-0199，開單人 @basecamp）：現況 `done` 139 張裡 **68 張**驗收區仍有 `- [ ]`；
+        //   而 2026-09-11 有兩筆 commit 帶 `Fixes` 把驗收格全空的單推成 `done`，
+        //   **兩次都不是守衛抓到的**，是人自己去讀單檔的 `status:` 欄才發現。
+        // ===========================================================
+        static void AppendUncheckedCriteria(StringBuilder ioR, int iIndex)
+        {
+            string aCriteria = UCL_TaskIO.ReadCriteria(iIndex);
+            var aOpen = UCL_TaskIO.ListUncheckedCriteria(aCriteria);
+            int aDone = UCL_TaskIO.ListCheckedCriteria(aCriteria).Count;
+            if (aOpen.Count == 0)
+            {
+                // ⚠ 「全部勾完」與「這張單根本沒有勾選格」**不同形**，而它們在這裡都會走到 0 ——
+                //   後者結構上簽不掉（`op=check` 沒有東西可以勾），而看板只看得到「這張單有驗收標準」。
+                if (aDone == 0)
+                    ioR.AppendLine("- ⚠ **這張單沒有任何勾選格** ⇒ 這不是「驗收過了」，"
+                        + "是**結構上沒有東西可以驗**（看板分不出這兩件事）");
+                return;
+            }
+            ioR.AppendLine($"- ⚠ **驗收標準還有 {aOpen.Count} 格沒勾**（已勾 {aDone} / 共 {aDone + aOpen.Count}）"
+                + " —— 關單的這一刻，沒有人簽過它們：");
+            int aShow = Math.Min(aOpen.Count, 6);
+            for (int i = 0; i < aShow; ++i) ioR.AppendLine("    · " + OneLine(aOpen[i], 110));
+            if (aOpen.Count > aShow)
+                ioR.AppendLine($"    · …還有 {aOpen.Count - aShow} 格"
+                    + $"（全部：`run Task --arg op=check --arg index={iIndex}`）");
+            ioR.AppendLine("  ⛔ 這不是擋 —— 有些格是**互斥分支**，本來就該留空。");
+            ioR.AppendLine("  ⚠ 而「刻意留空」與「還沒做」機器分不出來 ⇒ **那一格由你判**；要補簽："
+                + $"`run Task --arg op=check --arg index={iIndex} --arg criteria_index=<n[,n...]>`");
+        }
+
+        /// <summary>把一條驗收標準壓成單行摘要 —— 換行會把回傳檔那份清單的排版撐破。</summary>
+        static string OneLine(string iText, int iMax)
+        {
+            string aText = (iText ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
+            return aText.Length <= iMax ? aText : aText.Substring(0, iMax) + "…";
         }
 
         // ===========================================================
@@ -1704,6 +1753,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 ioR.AppendLine($"- ♻ **這顆 sha 本來就在單上，這次呼叫沒有改變 `commit_shas`**（重複掛載，不是新進度）");
             ioR.AppendLine($"- 狀態: `{aFrom}` {(aFrom == e.status ? "（不變）" : $"→ `{e.status}`")}");
             ioR.AppendLine($"- 判定: {aVerdict}");
+            // ⚠ 只有**這一趟真的推進了狀態**才印 —— `refs`／已關／被 blocker 擋下的那幾條路
+            //   沒有「關單的那一刻」，對它們印未勾格是把警示變成背景雜訊（而雜訊會訓練人略過它）。
+            if (aFrom != e.status) AppendUncheckedCriteria(ioR, aIndex);
             ioR.AppendLine($"- commit_shas 回讀: {string.Join(" ", e.commit_shas)}"
                 + (aShaNew ? "" : $"（{e.commit_shas.Count} 顆，本次 0 新增）"));
             if (e.status == UCL_TaskStatus.in_review)

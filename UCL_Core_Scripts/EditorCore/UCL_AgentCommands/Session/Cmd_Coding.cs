@@ -24,7 +24,15 @@ using UCL.Core.JsonLib;
 namespace UCL.Core.EditorLib.AgentCommands
 {
     /// <summary>
-    /// Coding session —— 改 C# 前進場、改完退出。**全域同時至多一人**。
+    /// Coding session —— 改 C# 前進場、改完退出。**同一個施工範圍同時至多一人**（TASK-0201）。
+    ///
+    /// <para>⚠ 不是「整個 kind 至多一人」：範圍不重疊的人可以同時開場，重疊才擋
+    /// （重疊＝路徑包含）。⛔ 而**不宣告 `scope` ＝ 退化成整個 kind 全域獨佔**，那是安全側，
+    /// 不是「可以先不填」—— 判定收在 <c>SCP_ActivitySessionStore.TryStart</c>。</para>
+    /// <para>🩸 為什麼這一行要寫準（TASK-0210）：舊字面是「全域同時至多一人」，
+    /// 而它在 TASK-0201 之後就不為真了。2026-09-15 有人讀到它、配上管理頁的
+    /// <c>running=2 / problems=0</c>，判定「互斥守衛壞了」，差點去修一個沒壞的東西 ——
+    /// **兩份都活、都對，只有描述是上一個版本的**，而那不會有任何一層報錯。</para>
     ///
     /// <para>典型用法：</para>
     /// <code>
@@ -43,7 +51,10 @@ namespace UCL.Core.EditorLib.AgentCommands
         public override string CommandType => "Coding";
 
         public override string ShortDescription =>
-            "Coding session：改 C# 前進場（全域至多一人）／場中改狀態／退出前過編譯閘。";
+            // ⚠ 這一行會印在 `senate cmd`／`ucmd` 的指令清單上 ＝ **使用者讀到的那一行**。
+            //   ⛔ 別寫「全域至多一人」：那是 TASK-0201 之前的行為，而讀到它的人會拿它去解釋
+            //   管理頁上的兩列「進行中」，然後得到「守衛壞了」這個錯結論（血證見型別註解）。
+            "Coding session：改 C# 前進場（**同一範圍**至多一人；不宣告 scope ＝ 全域獨佔）／場中改狀態／退出前過編譯閘。";
 
         public override string ArgsSchema =>
             "step=start|status|end（必填） | persona=<名字>（必填，不猜身分） | " +
@@ -156,7 +167,7 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         // ===========================================================
         // 區塊職責：進場 —— 兩條互斥軸都過才寫檔。
-        // 物理意義：判斷收在 `SCP_ActivitySessionStore.TryStart`（軸1 每人一場／軸2 全域至多一人），
+        // 物理意義：判斷收在 `SCP_ActivitySessionStore.TryStart`（軸1 每人一場／軸2 **同一範圍**至多一人），
         //          而**被擋下要說什麼**收在 `UCL_SessionStartGuard`。本函式兩者都不自己做 ——
         //          自己判＝第三份判準，自己組措辭＝第二份措辭，而兩者都不會在漂掉時報錯。
         // 數值影響：成功寫一筆 sessions/<persona>.json；被擋則一個位元組都不寫。

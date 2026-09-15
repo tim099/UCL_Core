@@ -87,6 +87,9 @@ namespace UCL.Core.EditorLib.Page
                 new ToolEntry("ToolBox.ScreenStream", () => UCL_ScreenStreamPage.Create()),
                 new ToolEntry("ToolBox.ProcessAdmin", () => UCL_ProcessAdminPage.Create())),
 
+            new ToolGroup("Fold.Diagnostics", "ToolBox.Group.Diagnostics",
+                new ToolEntry("ToolBox.MissingReference", () => UCL_MissingReferencePage.Create())),
+
             new ToolGroup("Fold.Docs", "ToolBox.Group.Docs",
                 new ToolEntry("ToolBox.DocSearch", () => UCL_DocSearchPage.Create()),
                 new ToolEntry("ToolBox.LocalizeEdit", () => UCL_EditorPage.Create<UCL_LocalizeEditPage>())),

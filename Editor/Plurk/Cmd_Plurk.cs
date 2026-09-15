@@ -967,6 +967,12 @@ namespace UCL.Core.EditorLib.Plurk
                     + "@ 若在我沒參與的別人噗裡，這裡看不到。下面的通知層對帳會說有沒有那種。");
 
             int aPending = 0, aAnswered = 0;
+            // ⭐ 歸桶守衛（TASK-0153）：**含 @ 本帳號的回應必須恰好落一個桶**。
+            //   🩸 這張單的失效樣子是「一則正常的輸出」—— 總數對、格式對、每一桶都有內容，
+            //   而漏掉的那一筆在兩份清單上都不存在。⇒ 光修成因不夠：**要讓它下次漏的時候會叫。**
+            //   ⚠ 只數「含 @」的：不含 @ 的回應本來就不該進任何一桶，把它們算進來會天天誤報。
+            int aMentionRows = 0;   // 含 @ 本帳號的回應總數（判定前先數）
+            int aBucketed = 0;      // 其中真的被歸進某一桶的
             var aEmoCtx = EmoBegin(iRes);
             // 給通知層對帳用 —— ⭐ 帶 `pid`/`rid`：alert 自己帶這兩個 id，
             // 用 id 對是**唯一鍵**，而（誰、時間差 ≤3 分）只是近似（同一人同分鐘發兩則就分不開）。
@@ -1019,20 +1025,47 @@ namespace UCL.Core.EditorLib.Plurk
                     if (!aSeen.Add(JsonScalar(aRp, "id"))) continue;    // Plurk 會重複回同一則
                     string aUid = JsonScalar(aRp, "user_id");
                     string aRaw = UnescapeJson(JsonScalar(aRp, "content_raw"));
+                    // ⭐ 分類**先算一次**，兩條路共用（TASK-0153）——
+                    //   之前「本帳號回的」那條路自己 continue 掉，根本沒問過這一則有沒有指名誰。
+                    var aRHit = UCL_PlurkAccounts.ClassifyMention(aRaw, aNick, aMyPersona);
+                    if (aRHit.Found) aMentionRows++;
                     if (aUid == aMeId)
                     {
                         // 🩸 kiara 2026-09-03：路由是 person-level（`→kiara` 才算她的），而「已回」原本是 account-level
                         //   （本帳號 id 回過就算）⇒ 共用帳號三個人，gura 一回 kiara 的 🔔 就消失，印的是 ✅。
                         //   ⇒ 多人帳號下「我回了」＝這則回應的**署名**是我（共用帳號末行署名是 lint 硬規則）。
                         //   沒署名的回應**不算我回**（判不了是誰，寧可讓 🔔 多亮一次，不讓它被別人的回應熄掉）。
-                        if (!aMulti) { aLastMineIdx = r; continue; }
-                        if (aMyPersona.Length == 0) continue;            // 沒帶 persona ⇒ 沒有「我」可比，全不算
-                        if (SignedBy(aRaw, aMyPersona)) aLastMineIdx = r;
-                        else if (!UCL_PlurkAccounts.ClassifyMention(aRaw, aNick, aMyPersona).Found
-                                 && SignedByAnyone(aRaw) == false) aUnsignedMine++;
+                        bool aSignedMine = aMulti && aMyPersona.Length > 0 && SignedBy(aRaw, aMyPersona);
+                        if (!aMulti) { aLastMineIdx = r; if (aRHit.Found) aBucketed++; continue; }
+                        if (aSignedMine) aLastMineIdx = r;
+                        else if (aMyPersona.Length > 0 && !aRHit.Found && SignedByAnyone(aRaw) == false) aUnsignedMine++;
+
+                        // ⭐⭐ TASK-0153 的本體：**「這則是本帳號發的」與「這則指名我」不互斥。**
+                        //   共用帳號底下室友跟我同一個 user_id ⇒ 她指名我的那一則，
+                        //   舊版在上面就 `continue` 掉了 ⇒ 它**兩個桶都沒進**，而 💬N 知道它在。
+                        //   🩸 血證：`640105635045271`（09-06 20:32，內文開頭 `@<nick>→kiara`）
+                        //   在整份回傳檔零命中，而同一輪 `op=responses` 印得出它。
+                        //   ⚠ 署名是我的那一則不算「有人 @ 我」—— 那是我自己在講話。
+                        if (aMyPersona.Length > 0 && !aSignedMine)
+                        {
+                            if (aRHit.HitsMe)
+                            {
+                                aHits.Add((r + 1, UserName(aFriends, aUid), aUid, JsonScalar(aRp, "posted"),
+                                    EmoAnnotatePaired(aRaw, UnescapeJson(JsonScalar(aRp, "content")), aEmoCtx, aUid),
+                                    JsonScalar(aRp, "id")));
+                                aBucketed++;
+                            }
+                            else if (aRHit.Found)
+                            {
+                                aOtherTagged.Add($"[{aPid}] 第 {r + 1} 則（同帳號室友發的）@ 了帳號但指名 {string.Join(" / ", aRHit.Tags)}");
+                                aRoomLog.Add((aUid, JsonScalar(aRp, "posted"), aPid, JsonScalar(aRp, "id"),
+                                    string.Join(" / ", aRHit.Tags)));
+                                aBucketed++;
+                            }
+                        }
+                        else if (aRHit.Found) aBucketed++;   // 署名是我的：那是我自己的話，歸「我的回應」這一桶
                         continue;
                     }
-                    var aRHit = UCL_PlurkAccounts.ClassifyMention(aRaw, aNick, aMyPersona);
                     if (!aRHit.HitsMe)
                     {
                         // 有 @ 帳號但指名別人 ⇒ 不算我未回，但**要看得見**（否則它會從所有人的視野消失）
@@ -1041,12 +1074,14 @@ namespace UCL.Core.EditorLib.Plurk
                             aOtherTagged.Add($"[{aPid}] 第 {r + 1} 則 @ 了帳號但指名 {string.Join(" / ", aRHit.Tags)}");
                             aRoomLog.Add((aUid, JsonScalar(aRp, "posted"), aPid, JsonScalar(aRp, "id"),
                                 string.Join(" / ", aRHit.Tags)));
+                            aBucketed++;
                         }
                         continue;
                     }
                     aHits.Add((r + 1, UserName(aFriends, aUid), aUid, JsonScalar(aRp, "posted"),
                         EmoAnnotatePaired(aRaw, UnescapeJson(JsonScalar(aRp, "content")), aEmoCtx, aUid),
                         JsonScalar(aRp, "id")));
+                    aBucketed++;
                 }
                 string aDeclared = aRRoot != null && aRRoot.Contains("response_count") ? JsonScalar(aRRoot, "response_count") : "";
                 bool aPartial = aDeclared.Length > 0 && aDeclared != aSeen.Count.ToString(CultureInfo.InvariantCulture);
@@ -1189,6 +1224,19 @@ namespace UCL.Core.EditorLib.Plurk
                 foreach (var s in aOtherTagged) ioR.AppendLine($"    · {s}");
                 ioR.AppendLine("  ⇒ 那幾位跑自己的 `op=mentions` 時會看到它們是自己的 🔔。");
             }
+            // ⭐ 歸桶守衛的讀數（TASK-0153）—— **每次都印，包括全中的時候**。
+            //   🩸 只在出事時印的話，「這次沒漏」與「這個守衛根本沒跑」在回傳檔上同形，
+            //   而那正是本單那一隻的形狀（總數知道、位置不知道）換一張臉。
+            if (aMentionRows == aBucketed)
+                ioR.AppendLine($"- ✅ 歸桶對帳：候選窗內含 @ 本帳號的回應 **{aMentionRows}** 則，全部歸桶（未回／已回／指名別人／我自己的話）");
+            else
+            {
+                ioR.AppendLine($"- 🔴 **歸桶對帳不平：含 @ 的回應 {aMentionRows} 則，只歸了 {aBucketed} 則 ⇒ 有 {aMentionRows - aBucketed} 則不在任何一份清單上。**");
+                ioR.AppendLine("  ⛔ 這不是「沒人 @ 我」——是**這支工具知道它在，卻說不出它在哪**（TASK-0153 那一隻）。");
+                ioR.AppendLine("  ⇒ 拿噗 id 走 `--arg op=responses --arg plurk_id=<id>` 逐則對，對得出來的請回報。");
+            }
+            ioR.AppendLine($"  ⚠ 本對帳的射程：**只涵蓋回應層**（噗本體那一層走另一條路），"
+                + "且只數「內文含 @ 本帳號」的那些 —— 不含 @ 的回應本來就不該進任何一桶。");
             ioR.AppendLine("### ▶ 回（走既有發文路，@ 的先回）");
             ioR.AppendLine("```bash");
             ioR.AppendLine("--arg op=get       --arg plurk_id=<id>                    # 先讀全文與脈絡");

@@ -13,7 +13,7 @@
 //     - LibGit2Sharp 要佈署 native dll（多平台 libgit2）、submodule 支援殘缺、
 //       push 認證要自己寫 callback —— 等於把「git 行為」變成第二套實作，跟系統 git 漂移。
 //     - 不走 Python：本頁是互動操作台（看狀態、按按鈕），agent 端已有自己的 git 流程
-//       （git_commit.py / ucl-commit skill），沒有「同一套邏輯要在無 Editor 環境跑」的需求 ——
+//       （senate cmd commit / ucl-commit skill），沒有「同一套邏輯要在無 Editor 環境跑」的需求 ——
 //       這正是與 FlattenSync 相反的取捨，那邊的事實來源必須是腳本，這邊不必。
 //   · 預設 branch 三層解析：本頁逐項覆寫 > .gitmodules 的 branch 欄 > 本頁全域預設。
 //     .gitmodules 是 git 原生的「這個 submodule 該追哪條 branch」欄位，已填的直接尊重。

@@ -7,10 +7,10 @@
 //   · **`op=scan` 是預設**（純讀）。要真的 commit 得顯式 `op=commit` ——
 //     批次提交的預設值必須是「不提交」，它的破壞面是整個 repo 的 index。
 //   · **不 push、不 bump 父層 pointer**（同後台頁；那兩件是人的決定）。
-//   · **走純 git commit，不走 `git_commit.py`**（Tim 2026-08-07 拍板）——
+//   · **走純 git commit，不走 `senate cmd commit`**（Tim 2026-08-07 拍板）——
 //     那支工具的 trailer／酒館公告／領薪是給「有作者的工作產出」用的；
 //     這裡收的是機器生成的狀態殘渣，掛誰的名字領誰的薪都是假帳。
-//     ⇒ **兩條路不混**：agent 自己的 code／文件 commit 照舊走 `git_commit.py`。
+//     ⇒ **兩條路不混**：agent 自己的 code／文件 commit 照舊走 `senate cmd commit`。
 // ⚠ 三個硬擋（都是「不會當場叫」的那種錯，所以擋在必經路上）：
 //   ① `__other`（未分類）與 `__subptr`（巢狀 submodule pointer）**永遠不自動收** ——
 //      前者是規則沒認出來的檔（可能是別人正在寫的產出），後者 bump 了別人會 pull 不到 hash。

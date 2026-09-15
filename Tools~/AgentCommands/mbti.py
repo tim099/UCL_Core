@@ -426,7 +426,7 @@ def cmd_eval(args):
     print(f"✉️ 已同步存檔至 {args.persona} 個人信箱紀錄：\n   {letter_file}")
 
     # 區塊職責: 酒館分享 — 帶 --persona 時預設開啟, --no-share 關閉
-    # 物理意義: 對齊 git_commit.py 的既有慣例「提交後自動公告」——
+    # 物理意義: 對齊 `senate cmd commit` 的既有慣例「提交後自動公告」——
     #          做完了卻倒在門外(結果只有自己看得到)是這套系統踩過的坑, 不是新設計。
     # 數值影響: best-effort; 失敗不改 exit code, 但會印出「未分享」讓人看得見要補。
     if args.no_share:

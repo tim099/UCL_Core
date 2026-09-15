@@ -20,7 +20,7 @@
 
 邊界 / 已知代價（別事後才發現）：
   - **完全繞過 hooks**：這不是 `git commit`，pre-commit / commit-msg 都不會跑。
-  - **沒有領薪公告**：`git_commit.py` 走 `git commit`，這支不相容。密封信是私事，不是工作 commit。
+  - **沒有領薪公告**：`senate cmd commit` 走 `git commit`，這支不相容。密封信是私事，不是工作 commit。
   - `private` 與 `master` 是平行歷史，長期會分岔。**刻意如此** —— 它們本來就不該合。
   - 密封信的工作區檔案靠 master 的 `.gitignore` 擋住。**那行 ignore 是唯一一道自動防線**，
     所以寫入類 op 開頭會先驗它存在；不存在就拒跑，不是印警告。

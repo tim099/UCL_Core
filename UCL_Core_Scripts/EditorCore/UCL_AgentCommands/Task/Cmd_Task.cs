@@ -73,7 +73,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "confirm=1（resolve 必帶）";
 
         public override string ExampleArgs =>
-            "op=create;title=Cmd_Task 接上 Fixes TASK-n 閉環;criteria=- [ ] git_commit.py 實跑一次並讀回狀態;priority=high";
+            "op=create;title=Cmd_Task 接上 Fixes TASK-n 閉環;criteria=- [ ] senate cmd commit 實跑一次並讀回狀態;priority=high";
 
         public override string HelpURL => "ucl_core:Docs~/{lang}/Workflows/Task_Management_Workflow.md";
 
@@ -1609,8 +1609,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         }
 
         // ===========================================================
-        // 區塊職責：commit 訊息的 `Fixes TASK-n` / `Refs TASK-n` 落地端（由 git_commit.py 呼叫）。
-        // 物理意義：**狀態機只有一份**，住在這裡。python 端只負責 regex 抓單號與轉接 ——
+        // 區塊職責：commit 訊息的 `Fixes TASK-n` / `Refs TASK-n` 落地端（由 `senate cmd commit` 呼叫）。
+        // 物理意義：**狀態機只有一份**，住在這裡。呼叫端只負責 regex 抓單號與轉接 ——
         //          把「有 QA 就推 in_review、沒 QA 才 done」複製到另一個語言，
         //          就是兩份產線：兩邊都不報錯，而它們遲早各說各話（🩸 2026-08-21 一天五次同族）。
         // 數值影響：
@@ -1632,7 +1632,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
             string aNow = UCL_TaskIO.NowUtc();
             // ⭐ TASK-0163：整段判定＋落檔進 `Mutate`。這一支的判定**全部**吃 entry 的狀態
-            //   （已關？有 blocker？有 QA？）⇒ 鎖外讀的話，`git_commit.py` 打進來的那一刻
+            //   （已關？有 blocker？有 QA？）⇒ 鎖外讀的話，`senate cmd commit` 打進來的那一刻
             //   單子可能剛被別人關掉或剛被掛上 blocker，而這裡會照舊讀數推狀態 ——
             //   失效樣子是「commit 把一張已經有 blocker 的單推成 done」，時間線還留一行有出處的判定。
             bool aShaNew = false;

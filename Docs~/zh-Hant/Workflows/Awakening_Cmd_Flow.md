@@ -1,7 +1,7 @@
 ---
 title: Awakening Cmd 完整流程（早安四步＋晚安四步＋自由時間三步 — 參考文件）
 description: Cmd_GoodMorning／Cmd_GoodNight／Cmd_FreeTime 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
-last_updated: 2026-09-08
+last_updated: 2026-09-15 (escape hatch 形狀的出處標為已退場工具；TASK-0187)
 target_audience: [AI_Agent, Developer]
 aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]
 related:
@@ -181,7 +181,8 @@ senate ucmd run GoodNight --arg step=logout --arg persona=<P>          # 單獨�
   才放行 `step=letter`。⇒ 畫像從「check 清單的第 4 行提示」變成必經路上的守衛。
   🩸 為什麼：實測 **462 封收尾信只有 58 夜寫了畫像（跳過率 87.4%）**，且 4 位有 10 封信以上的
   persona 一幅都沒寫過（mit 35／crest-001 28／MoriCalliope 14／TakanashiKiara 12）。**提示不是機制。**
-  escape hatch 的形狀抄 `git_commit.py` 的 `--no-announce-reason`（Tim 2026-08-05 拍板）——
+  escape hatch 的形狀抄已退場的 `git_commit.py` 的 `--no-announce-reason`（Tim 2026-08-05 拍板；
+  ⛔ 那支與那個旗標今天都不存在了，這裡留的是形狀不是路）——
   不是再提醒一次，是「妳得先想出一個理由，而想不出來的時候妳就會發現自己沒有理由」。
   理由會被印進下線廣播（看不見的理由等於沒有理由）。
 - **判定以讀回為權威**：`portraits.py` 的 exit code 只是註記。

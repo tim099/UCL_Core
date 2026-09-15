@@ -12,7 +12,7 @@
 //          掃描唯讀。ephemeral 檔（log / wait 旗標 / 臨時渲染）永遠不進候選。
 //
 // 設計決策（2026-08-07）：
-//   · **走純 git commit，不走 git_commit.py** —— 那支工具的 trailer / 酒館公告 / 領薪
+//   · **走純 git commit，不走 `senate cmd commit`** —— 那支入口的 trailer / 酒館公告 / 領薪
 //     是給「有作者的工作產出」用的；本頁提交的是機器生成的狀態殘渣，掛誰的名字領誰的薪
 //     都是假帳。agent 自己的工作 commit 照舊走 ucl-commit skill，兩條路不混。
 //   · 分群規則**已抽到 `UCL_AutoCommitRules`**（2026-08-20，Tim 要求 /ucl-commit 也能用自動 commit

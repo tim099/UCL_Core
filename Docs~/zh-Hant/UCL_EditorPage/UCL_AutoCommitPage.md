@@ -1,6 +1,6 @@
 ---
 title: UCL_AutoCommitPage — 自動 Commit 頁
-last_updated: 2026-08-22
+last_updated: 2026-09-15 (與 agent commit 入口的分工改指 `senate cmd commit`；TASK-0187)
 ---
 
 # UCL_AutoCommitPage
@@ -17,9 +17,9 @@ last_updated: 2026-08-22
 > **按鈕觸發，不是背景全自動**（Tim 2026-08-07 拍板）。按下去之前，
 > 分群結果與完整檔案清單全部攤在畫面上（每群可展開逐檔看）。
 
-## 與 git_commit.py / ucl-commit 的分工
+## 與 senate cmd commit / ucl-commit 的分工
 
-本頁走**純 `git commit`**（本機 git 身分），**不走** `git_commit.py` ——
+本頁走**純 `git commit`**（本機 git 身分），**不走** `senate cmd commit` ——
 那支工具的 trailer / 酒館公告 / 領薪是給「有作者的工作產出」用的；
 本頁提交的是機器生成的狀態殘渣，掛誰的名字領誰的薪都是假帳。
 **agent 自己的工作 commit 照舊走 ucl-commit skill**，兩條路不混。

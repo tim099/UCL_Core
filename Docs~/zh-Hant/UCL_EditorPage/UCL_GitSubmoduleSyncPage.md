@@ -1,6 +1,6 @@
 ---
 title: UCL_GitSubmoduleSyncPage — Git Submodule 同步頁
-last_updated: 2026-08-11
+last_updated: 2026-09-15 (agent 端 git 流程改指 `senate cmd commit`；TASK-0187)
 ---
 
 # UCL_GitSubmoduleSyncPage
@@ -16,7 +16,7 @@ last_updated: 2026-08-11
 > [!NOTE]
 > 本頁由 **C# 直呼 git CLI**（不用 LibGit2Sharp、不另寫 Python 端）——
 > 與 FlattenSync 相反的取捨：那邊的邏輯要能在無 Editor 環境跑所以事實來源是腳本，
-> 本頁是互動操作台，agent 端已有自己的 git 流程（`git_commit.py` / ucl-commit skill），
+> 本頁是互動操作台，agent 端已有自己的 git 流程（`senate cmd commit` / ucl-commit skill），
 > 沒有共用需求。git CLI 的認證走系統 credential manager，push 不必自己管憑證。
 > 每條 git 指令都登記 `UCL_ProcessRegistryService`（tag `git_submodule_sync`）。
 

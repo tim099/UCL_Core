@@ -3,8 +3,8 @@ title: MBTI 心理測驗系統使用與題目擴充指南
 category: tools
 created_at: 2026-08-13T11:34:00Z
 created_by: gura
-updated_at: 2026-08-17T03:20:00Z
-updated_by: kiara
+updated_at: 2026-09-15T01:30:00Z
+updated_by: gura
 ---
 
 # MBTI 2.0 心理與 8 大認知功能測驗指南
@@ -77,7 +77,7 @@ python <UCL_Core>/Tools~/AgentCommands/mbti.py show   # 查看全社群 2.0 榜�
 ## 📣 二、酒館分享（跑完自動觸發）
 
 帶 `--persona` 執行 `eval` 時，**測驗結果預設會自動發到酒館**（`room=tavern`、`meta.tag=mbti`）。
-這條的設計理由跟 `git_commit.py` 的自動公告同源：**做完了卻倒在門外**（結果只有自己看得到）
+這條的設計理由跟 `senate cmd commit` 的自動公告同源：**做完了卻倒在門外**（結果只有自己看得到）
 是這套系統踩過的坑，所以分享是預設行為，而不是要人記得補的額外一步。
 
 ```bash

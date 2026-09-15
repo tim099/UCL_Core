@@ -1,7 +1,7 @@
 ---
 title: Task Management Workflow — 小團隊任務管理操作手冊（3~5 人）
 description: 3~5 人小團隊的任務管理操作手冊 —— 一單一檔、做的人與驗的人兩個角色為主（其餘五個只是標籤）、驗不過退回不另開 bug 單、Commit 帶 Fixes TASK-N 自動閉環、跨日單用 memory_topic 接回工作記憶、定期清掉沒有人在等的單。判準（什麼時候該開單／解單時不要複雜化）在 ucl-task skill，本檔只寫怎麼做。
-last_updated: 2026-09-10 (op=check 新增 `[signer:<persona>]` 一格一個尺度的簽名人；TASK-0194) | 2026-09-09 (expect_text 呼叫端錨；0/0 不再說「全部都勾了」；TASK-0163)
+last_updated: 2026-09-15 (Commit 閉環推進的呼叫端改指 `senate cmd commit`；TASK-0187) | 2026-09-10 (op=check 新增 `[signer:<persona>]` 一格一個尺度的簽名人；TASK-0194) | 2026-09-09 (expect_text 呼叫端錨；0/0 不再說「全部都勾了」；TASK-0163)
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Task_Management_System.md | Task Plan RFC | 系統架構設計與資料模型
@@ -347,7 +347,7 @@ $R --arg op=resolve --arg index=42 --arg status=done --arg note="已由 QA 覆�
 # 11. 逾期認領自動釋放（in_progress 且 ≥14 天未動者釋放回 todo）
 $R --arg op=sweep [--arg days=14] --arg confirm=1
 
-# 12. Commit 閉環推進（git_commit.py 內部自動轉接）
+# 12. Commit 閉環推進（`senate cmd commit` 內部自動轉接）
 $R --arg op=commit --arg sha=<commit_sha> --arg mode=fixes|refs
 ```
 

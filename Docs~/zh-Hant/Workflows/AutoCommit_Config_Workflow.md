@@ -1,7 +1,7 @@
 ---
 title: 自動提交設定 — 把 repo 加入管理與設定分群規則
 description: 把一個 submodule（或任何 repo）加入 AutoCommit 管理的步驟、`.ucl_autocommit.json` 的欄位與判準、設定檔掀不動的地板、以及「怎麼確認真的照設定分群」的驗收法。
-last_updated: 2026-08-31
+last_updated: 2026-09-15 (有作者的產出走 `senate cmd commit`；TASK-0187)
 target_audience: [AI_Agent, Tools_User]
 status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔宣告)
 ---
@@ -28,7 +28,7 @@ status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔
 1. 這個 repo 裡有**機器生成、會天天長**的檔（狀態、帳本、訊息、對局…）
 2. 那些檔**沒有作者** —— 沒有人會為它們寫 commit 訊息
 
-⛔ 不該加入的：有作者的產出（code / 文件 / 她寫的信）。那些走 `git_commit.py`，要掛 trailer、要領薪。
+⛔ 不該加入的：有作者的產出（code / 文件 / 她寫的信）。那些走 `senate cmd commit`，要掛 trailer、要領薪。
 **掛誰的名字領誰的薪都是假帳。**
 
 > 💡 同一個 repo 可以兩者都有 —— 沒有被任何群命中的檔會落 `__other`，而 `__other` **永不自動收**。
@@ -131,7 +131,7 @@ senate ucmd run AutoCommit --persona <me> --arg op=commit --arg mode=submodules
 
 ### Step 5 — 設定檔本身要 commit
 
-設定檔是有作者的產出 ⇒ 走 `git_commit.py`，不要讓它被自動 commit 收走
+設定檔是有作者的產出 ⇒ 走 `senate cmd commit`，不要讓它被自動 commit 收走
 （它未被任何群命中時會落 `__other`，本來就不會被自動收）。
 
 ## 3. 欄位與判準

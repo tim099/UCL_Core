@@ -1,7 +1,7 @@
 ---
 title: Task Management Workflow — 小團隊任務管理操作手冊（3~5 人）
 description: 3~5 人小團隊的任務管理操作手冊 —— 一單一檔、做的人與驗的人兩個角色為主（其餘五個只是標籤）、驗不過退回不另開 bug 單、Commit 帶 Fixes TASK-N 自動閉環、跨日單用 memory_topic 接回工作記憶、定期清掉沒有人在等的單。判準（什麼時候該開單／解單時不要複雜化）在 ucl-task skill，本檔只寫怎麼做。
-last_updated: 2026-09-15 (Commit 閉環推進的呼叫端改指 `senate cmd commit`；TASK-0187) | 2026-09-10 (op=check 新增 `[signer:<persona>]` 一格一個尺度的簽名人；TASK-0194) | 2026-09-09 (expect_text 呼叫端錨；0/0 不再說「全部都勾了」；TASK-0163)
+last_updated: 2026-09-16 (op=update 覆寫 criteria／description 前加秤：散文歸零／腰斬擋下，allow_shrink=1 放行；坑二回讀後更正為已修；TASK-0188) | 2026-09-15 (Commit 閉環推進的呼叫端改指 `senate cmd commit`；TASK-0187) | 2026-09-10 (op=check 新增 `[signer:<persona>]` 一格一個尺度的簽名人；TASK-0194) | 2026-09-09 (expect_text 呼叫端錨；0/0 不再說「全部都勾了」；TASK-0163)
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Task_Management_System.md | Task Plan RFC | 系統架構設計與資料模型
@@ -473,25 +473,41 @@ sequenceDiagram
 ```bash
 $R --arg op=show --arg index=<N>          # ① 讀「## 驗收標準」整段
 # ② 本地把新的 - [ ] 接在**原文完整內容**後面
-$R --arg op=update --arg index=<N>    --arg title="<原本的標題，原封不動>"    --arg-file criteria=<合併後的整段>      # ③ 整份寫回（title 是必要的，見坑二）
+$R --arg op=update --arg index=<N>    --arg title="<原本的標題，原封不動>"    --arg-file criteria=<合併後的整段>      # ③ 整份寫回（title 現在可省，見坑二）
 $R --arg op=comment --arg index=<N> --arg-file body=<為什麼加這幾格>   # ④ 留言記來由
 ```
 
 #### 🩸 坑一：`criteria` 是**整份覆蓋**，而且它常常不只有勾選項
 
-`UCL_TaskIO.cs:185` —— 給空值才保留原文，給了就整段換掉。
+`UCL_TaskIO.cs` —— 給空值才保留原文，給了就整段換掉。
 ⚠ 而 `## 驗收標準` 那一段裡**常常還有散文與 `##` 小標**（開單時寫的拍板脈絡）。
 ⇒ **不要用 regex 去截「到下一個 `##` 為止」** —— 它會停在散文裡的小標，
 然後妳會把原本的勾選項整批丟掉。**整段原封不動讀出來，接在後面。**
 
-#### 🩸 坑二：**只給 `criteria` 是靜默 no-op**
+##### 🛡 2026-09-16 起這一格上了秤（TASK-0188）
 
-`OpUpdate` 沒有把 `criteria` 放進 `aChanges` ⇒ 只給它的話會走到
-「沒有任何變更 ⇒ **什麼都沒寫**」那條路，**單子一個字都不會變**。
+`op=update` 覆寫 `criteria` / `description` **之前**先量舊段與新內容，命中任一條就**擋下且零寫入**：
 
-⇒ 現行解法：**同時帶一個會計入變更的欄位**，最無害的是 `--arg title="<原標題>"`
-（`title` 只要非空就計入，不比對是否相同）。實測 `updated_at` 會推進、勾選項真的變多。
-📎 已併入 **TASK-0033** 當驗收細項（同一族：行為對／不對，而讀的人看不出來）。
+| 判準 | 觸發條件 |
+|---|---|
+| **散文歸零** | 舊段有非勾選格的內容行，而新內容**一行都沒有**（＝只送了勾選格） |
+| **腰斬** | 舊段非空行 ≥ 10 且新內容非空行 **不到一半** |
+
+擋下時會印出 `舊 → 新（勾選格 a→b／非勾選行 c→d）` 與**將被刪掉的非勾選行**（前 5 行）。
+真的要縮 ⇒ 顯式帶 `--arg allow_shrink=1`（放行時那行讀數照印，並標「已由 allow_shrink 放行」）。
+
+⚠ **正常的「整段讀出來、只改一格字面」不會被擋** —— 行數幾乎不動。
+這是刻意的：守衛若連正常改字都擋，人會養成一律加旗標的習慣，那等於沒有守衛。
+📌 而秤擋不住的時候，那行讀數仍然會印 —— **看得見掉了多少**比「擋得住」便宜太多。
+
+#### 坑二：只給 `criteria` 曾經是靜默 no-op —— **已修，這裡記它的現況**
+
+舊行為：`OpUpdate` 沒把 `criteria` 放進 `aChanges` ⇒ 只給它會走到
+「沒有任何變更 ⇒ 什麼都沒寫」那條路，而回傳檔看起來像判斷。
+
+✅ **現況（2026-09-16 實測）**：只帶 `--arg-file criteria=<整段>`（不帶 `title`）
+就會落檔並印 `## ✅ TASK-N 已更新` ＋ `criteria 整段改寫`。
+⇒ 上面 ③ 那行的 `--arg title=` **不再是必要的**，留著也無害（`title` 非空就計入變更）。
 
 ⚠ 而這兩坑我是**這樣**踩到的，值得抄走：
 我沒讀 `op=update` 的回傳檔（它誠實印了「什麼都沒寫」），

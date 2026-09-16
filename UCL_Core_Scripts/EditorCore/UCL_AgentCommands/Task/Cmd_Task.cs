@@ -70,7 +70,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             "　—— 給 `--arg <欄位>=` 空值是「這次不動這欄」，清欄位一律走這裡（TASK-0079）> | " +
             "progress=<收工進度，op=wrapup 必填，走 --arg-file> | why=<為什麼卡住／試過什麼不行，選填 ⇒ 寫進工作記憶> | " +
             "memory_type=pitfall|decision|knowhow（op=wrapup 的 why 用，預設 pitfall） | " +
-            "confirm=1（resolve 必帶）";
+            "confirm=1（resolve 必帶）" +
+            "　| allow_shrink=1（update：criteria／description **整段縮水**時的顯式放行 —— 不帶時守衛會擋下並印出將被刪掉的行數與前幾行，TASK-0188）";
 
         public override string ExampleArgs =>
             "op=create;title=Cmd_Task 接上 Fixes TASK-n 閉環;criteria=- [ ] senate cmd commit 實跑一次並讀回狀態;priority=high";
@@ -1038,8 +1039,27 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 //   它沒進 aChanges ⇒ 走「沒有任何變更」那條路 ⇒ 單子一個字都不變，而回傳檔看起來像判斷。
                 //   而「擴充當前 Task 的驗收細項」是收斂機制的主要出口，等於主要出口需要 workaround（多帶 title）才會開。
                 string aCriteria = GetArg(iArgs, "criteria", "");
-                if (aCriteria.Trim().Length > 0) aChanges.Add("criteria 整段改寫");
                 string aDescription = GetArg(iArgs, "description", "");
+                // ===========================================================
+                // 區塊職責：`criteria` / `description` 是**整段覆寫**，所以覆寫前先量會掉多少。
+                // 🩸 血證（TASK-0188，@summit 2026-09-10 對 TASK-0155）：只想改一格已經變假的字面，
+                //   餵回 34 行勾選格 ⇒ 該單 851 → 200 行，**約 90 行說明靜默消失**，
+                //   而 `✓ Success`、寫入發生、回傳檔漂亮，沒有任何一層出聲。
+                //   救回靠的是那個檔剛好 tracked ⇒ **那是運氣不是機制**。
+                // 📌 成因不在呼叫端不小心：參數名叫 `criteria`（單數、清單語感），
+                //   它**長得像增量**而吃的是整個區段 ⇒ 命名本身在邀請那個錯誤（@kaguya 留言 #1）。
+                // 邊界：⛔ 不動儲存結構、不動 `op=check`、不改任何既有單的內容 —— 只在這道門上加一把秤。
+                bool aAllowShrink = GetArg(iArgs, "allow_shrink", "").Trim() == "1";
+                var aShrinkNotes = new List<string>();
+                if (aCriteria.Trim().Length > 0)
+                    GuardSectionOverwrite("驗收標準", UCL_TaskIO.ReadCriteria(aIndex),
+                                          aCriteria, aAllowShrink, aShrinkNotes);
+                if (aDescription.Trim().Length > 0)
+                    GuardSectionOverwrite("任務描述", UCL_TaskIO.ReadDescription(aIndex),
+                                          aDescription, aAllowShrink, aShrinkNotes);
+                foreach (string aNote in aShrinkNotes) aChanges.Add(aNote);
+                // ===========================================================
+                if (aCriteria.Trim().Length > 0) aChanges.Add("criteria 整段改寫");
                 if (aDescription.Trim().Length > 0) aChanges.Add("description 整段改寫");
 
                 if (aChanges.Count == 0) return UCL_TaskWrite.Skip;
@@ -1065,6 +1085,76 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine($"## ✅ {e.Id} 已更新");
             foreach (var c in aChanges) ioR.AppendLine($"- {c}");
             foreach (var n in aUnsetNotes) ioR.AppendLine($"- ✓ {n}");
+        }
+
+        // ===========================================================
+        // 區塊職責：整段覆寫前的秤 —— 量舊段與新內容，縮太多就擋下並印出**將被刪掉的**行。
+        // 物理意義：兩條判準，命中任一條就擋（`allow_shrink=1` 顯式放行）：
+        //   ① **散文歸零**：舊段有非勾選格的內容行，而新內容一行都沒有
+        //      ⇒ 那正是 851→200 那一刀的形狀（呼叫端只送了勾選格）。
+        //   ② **腰斬**：舊段非空行 >= ShrinkFloor 且新內容非空行 < 舊的一半。
+        // ⚠ 反向對照（TASK-0188 ③）：「只改一格字面、其餘照抄」行數幾乎不動 ⇒ **不會被擋**。
+        //   這一格是刻意的 —— 守衛若連正常改字都擋，人會養成一律加旗標的習慣，那等於沒有守衛。
+        // 數值影響：擋下 ⇒ 丟例外（在 `Mutate` 的 lambda 內，**寫入不發生**）；
+        //   放行 ⇒ 往 oNotes 追一行讀數，讓回傳檔印出 `舊 → 新（勾選格 a→b／非勾選行 c→d）`
+        //   —— 那是 @kaguya 建議的便宜前哨：擋不住時至少讓人看得見掉了多少。
+        // ===========================================================
+        const int ShrinkFloor = 10;
+
+        static void CountSection(string iText, out int oNonEmpty, out int oBoxes, out int oProse,
+                                 out List<string> oProseLines)
+        {
+            oNonEmpty = 0; oBoxes = 0; oProse = 0; oProseLines = new List<string>();
+            foreach (string aRaw in (iText ?? "").Replace("\r", "").Split('\n'))
+            {
+                string aLine = aRaw.Trim();
+                if (aLine.Length == 0) continue;
+                oNonEmpty++;
+                if (aLine.StartsWith("- [")) { oBoxes++; continue; }
+                oProse++;
+                oProseLines.Add(aLine);
+            }
+        }
+
+        static void GuardSectionOverwrite(string iSectionName, string iOld, string iNew,
+                                          bool iAllowShrink, List<string> oNotes)
+        {
+            CountSection(iOld, out int aOldLines, out int aOldBoxes, out int aOldProse,
+                         out List<string> aOldProseLines);
+            CountSection(iNew, out int aNewLines, out int aNewBoxes, out int aNewProse, out _);
+
+            bool aProseWiped = aOldProse > 0 && aNewProse == 0;
+            bool aHalved = aOldLines >= ShrinkFloor && aNewLines * 2 < aOldLines;
+            string aReading = $"{iSectionName}區段：{aOldLines} → {aNewLines} 行"
+                + $"（勾選格 {aOldBoxes}→{aNewBoxes}／非勾選行 {aOldProse}→{aNewProse}）";
+
+            if ((aProseWiped || aHalved) && !iAllowShrink)
+            {
+                var aMsg = new StringBuilder();
+                aMsg.AppendLine($"[Task] op=update 擋下：`{iSectionName}` 是**整段覆寫**，這次會縮水。");
+                aMsg.AppendLine($"  {aReading}");
+                if (aProseWiped)
+                    aMsg.AppendLine($"  ⛔ 舊段有 {aOldProse} 行**不是勾選格**的內容，而新內容一行都沒有"
+                        + " —— 那是「只送勾選格」的形狀（TASK-0188 血證：851 → 200 行）。");
+                else
+                    aMsg.AppendLine($"  ⛔ 非空行少於舊段的一半（{aOldLines} → {aNewLines}）。");
+                int aShow = Math.Min(5, aOldProseLines.Count);
+                if (aShow > 0)
+                {
+                    aMsg.AppendLine($"  ── 將被刪掉的非勾選行（共 {aOldProse} 行，前 {aShow} 行）──");
+                    for (int i = 0; i < aShow; i++)
+                    {
+                        string aOne = aOldProseLines[i];
+                        if (aOne.Length > 100) aOne = aOne.Substring(0, 100) + "…";
+                        aMsg.AppendLine("  │ " + aOne);
+                    }
+                }
+                aMsg.AppendLine("  ⇒ 想保留就把**整段**讀出來改（`op=show` 或直接讀單檔）再整段送回；");
+                aMsg.Append("  ⇒ 真的要縮，顯式帶 `--arg allow_shrink=1`。");
+                throw new Exception(aMsg.ToString());
+            }
+            oNotes.Add(aReading + (iAllowShrink && (aProseWiped || aHalved)
+                                   ? "　⚠ 縮水已由 `allow_shrink=1` 放行" : ""));
         }
 
         async UniTask OpComment(Dictionary<string, string> iArgs, string iActor, StringBuilder ioR)

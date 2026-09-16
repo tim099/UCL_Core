@@ -831,6 +831,9 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         /// <summary>驗收標準整段（給呼叫端讀原文用；空的 / `_(未填)_` 回空字串）。</summary>
         public static string ReadCriteria(int iIndex) => ReadSection(TaskPath(iIndex), "## 驗收標準");
 
+        /// <summary>任務描述整段（給呼叫端讀原文用；空的 / `_(未填)_` 回空字串）。</summary>
+        public static string ReadDescription(int iIndex) => ReadSection(TaskPath(iIndex), "## 任務描述");
+
         /// <summary>行首是勾選格嗎？回傳它的標記寬度（`- [ ] ` ／ `- [x] `），不是就回 0。</summary>
         static int CriteriaBoxWidth(string iLine, out bool oChecked)
         {

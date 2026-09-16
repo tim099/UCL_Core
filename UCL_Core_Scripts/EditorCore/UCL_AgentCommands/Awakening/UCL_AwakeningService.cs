@@ -1000,9 +1000,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
 
             // 回傳 payload：verify 給可讀回的事實（路徑/值），不給 ✓
             var aReadback = UCL_PersonaProfile.GetRaw(iPersona);
-            int aGap = 0;
+            // 見林 gap：**沒有書籤就是「量不到」，⛔ 不是 0。**
+            // 🩸 舊寫法 `int aGap = 0; if (aBookmark > 0) aGap = …;` 在讀不到書籤時
+            //    直接把初始值 0 印出去 —— 而 0 在這一行的語意是「完全沒落後」，
+            //    於是「沒有書籤」跟「剛濃縮完」在畫面上**同形**，且連 ⚠ 都沒有。
+            //    ⇒ 同期 SCP_WakeBrief 對同一個量印的是 -2018，兩端各自錯、錯得不一樣、兩端都不叫。
+            // ⚠ 書籤比本次 wake 還大時同樣算量不到（檔名解析被年份之類的數字騙到）。
             int aBookmark = aReadback.GetInt("last_consolidated_wake", 0);
-            if (aBookmark > 0) aGap = aDerived - aBookmark;
+            bool aGapMeasured = aBookmark > 0 && aDerived - aBookmark >= 0;
+            int aGap = aGapMeasured ? aDerived - aBookmark : 0;
             aR.AppendLine();
             aR.AppendLine("## identity");
             aR.AppendLine($"- persona: {iPersona} / wake_count: **{aDerived}** / agent: {aAgent} / actual: {aActual}");
@@ -1027,7 +1033,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aR.AppendLine($"- lock: `{LockPath(iPersona)}`（exists={File.Exists(LockPath(iPersona))}）");
             aR.AppendLine($"- memo: `{aMemoPath}`（exists={File.Exists(aMemoPath)}）");
             aR.AppendLine("## state");
-            aR.AppendLine($"- 見林 gap: {aGap}/{CONSOLIDATE_GAP_THRESHOLD}{(aGap >= CONSOLIDATE_GAP_THRESHOLD ? "（**OVERDUE — 排進今日**）" : "")}");
+            aR.AppendLine(aGapMeasured
+                ? $"- 見林 gap: {aGap}/{CONSOLIDATE_GAP_THRESHOLD}{(aGap >= CONSOLIDATE_GAP_THRESHOLD ? "（**OVERDUE — 排進今日**）" : "")}"
+                : $"- ⚠ 見林 gap: **量不到**（`last_consolidated_wake`"
+                  + (aBookmark > 0 ? $"={aBookmark} 比本次 wake {aDerived} 還大" : " 讀不到")
+                  + "）—— ⛔ 不是 0；詳情見 brief §6");
             aR.AppendLine($"- 見叢 open: {KeysOpenCount(iPersona)} 筆");
             aR.AppendLine($"- 在線 persona: {string.Join(", ", OnlinePersonas())}");
             aR.AppendLine("## next");

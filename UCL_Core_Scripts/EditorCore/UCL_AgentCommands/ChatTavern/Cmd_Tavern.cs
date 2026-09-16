@@ -567,6 +567,66 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return string.IsNullOrWhiteSpace(aAgent) ? iPersona : aAgent.Trim();
         }
 
+        // ===========================================================
+        // 區塊職責：顯式 `sender` 值的**第二讀數**（TASK-0218；⛔ 不是守衛，不擋任何一則）
+        // 物理意義：`sender` 是 ArgSpec 上的必填欄，而它的**值**此前沒有任何一層看過一眼 ——
+        //          缺席會擋（必填），給一個錯的身分不會。@summit 2026-09-16 手打
+        //          `--arg sender=summit`（那是 persona，這欄要的是 agent id `zeta`）⇒
+        //          Success ＋ post_seq ＋ 正文完整落檔，沒有 exit code、沒有 stderr、沒有一行警告，
+        //          而它跟 Cmd 自己組的那兩則在時間線上長得一模一樣。
+        // 判準（只認一種形狀，⛔ 不認「這個名字沒見過」）：
+        //          給的值**是 persona pool 裡的名字**，而它綁定的 agent ≠ 它自己，
+        //          且它自己**不是**任何一個合法身分（identities.json 的 id ／ 任何 persona 綁定的 agent）。
+        //   ⚠ 最後那一關是本判準的命脈，不是防禦性贅碼：`claude-da-xiaojie` 與 `Sirius`
+        //     **同時是** persona 目錄名與合法 agent id ⇒ 少了它，本檢查會對
+        //     7089＋358 則完全正確的訊息叫（實測，見下）。
+        // 數值影響：純讀 ＋ 一行 `sender_warning` 讀數。**不改 body、不改 sender_id、不擋發言、不動任何檔**。
+        //          ⇒ 寫入端省略不可逆、讀取端過濾可逆：這裡只補一個讀數，要不要擋是另一個決定。
+        // 🔬 對照組（2026-09-16 實測，`rooms/*/messages/` 全 21449 則）：
+        //          · 只看「是 persona 名且 agent 不同」⇒ 命中 **7652**（35.7%）—— 幾乎全是誤報。
+        //          · 加上「自己不是合法身分」那一關 ⇒ 命中 **205**（0.96%），
+        //            分布 basecamp 95／gura 30／kiara 27／summit 22／apex-one 15／meadow 11／apex-two 3／kaguya 2，
+        //            日期零散（05-13 ~ 09-08）⇒ 形狀符合手打失誤，不符合任何一條例行流程。
+        //   ⛔ 射程：那 21449 則全在 **BTC 區**。@summit 踩的那則（seq 18438）在 Florin 區、不在本次語料裡 ——
+        //      機制同一支，⛔ 而「我量過它」這句對那一則不成立。
+        // 邊界：系統 sender（`_` 開頭）跳過；推導不出 agent（跨區／letters 沒 init）時**不叫**
+        //      —— 那是「我不知道」，跟「我知道你錯了」不可以在畫面上同形。
+        // ===========================================================
+        static string ExplicitSenderWarning(string iSenderId, string iSenderPersona)
+        {
+            if (string.IsNullOrEmpty(iSenderId) || iSenderId.StartsWith("_")) return null;
+            HashSet<string> aPool;
+            try { aPool = UCL_PersonaProfile.PoolNames(); }
+            catch (Exception ex) { Debug.LogWarning($"[Tavern] sender 第二讀數取 pool 失敗（post 不受影響）：{ex.Message}"); return null; }
+            if (aPool == null || !aPool.Contains(iSenderId)) return null;
+
+            string aBoundAgent = UCL_PersonaProfile.GetString(iSenderId, "agent", "");
+            if (string.IsNullOrWhiteSpace(aBoundAgent)) return null;   // 推導不出 ⇒ 不叫（見邊界）
+            aBoundAgent = aBoundAgent.Trim();
+            if (aBoundAgent == iSenderId) return null;                 // 自綁（Template）⇒ 不是混淆
+
+            // 「它自己也是一個合法身分」⇒ 不叫。兩個來源都算：identities.json 的 id、任何 persona 綁的 agent。
+            try
+            {
+                var aIdents = UCL_ChatTavernIO.LoadIdentities();
+                if (aIdents != null && aIdents.identities != null
+                    && aIdents.identities.Exists(x => x != null && x.id == iSenderId)) return null;
+            }
+            catch (Exception ex) { Debug.LogWarning($"[Tavern] sender 第二讀數取 identities 失敗（post 不受影響）：{ex.Message}"); }
+            foreach (var aP in aPool)
+            {
+                if (aP == iSenderId) continue;
+                if (UCL_PersonaProfile.GetString(aP, "agent", "").Trim() == iSenderId) return null;
+            }
+
+            string aPersonaNote = string.IsNullOrEmpty(iSenderPersona)
+                ? "（本則沒帶 persona ⇒ 歸屬身分是匿名，而顯示身分掛的是一個 persona 名）"
+                : (iSenderPersona == iSenderId ? "" : $"（本則 persona={iSenderPersona}）");
+            return $"sender='{iSenderId}' 是 persona 名，不是 agent id —— 它綁的 agent 是 '{aBoundAgent}'。"
+                 + $"訊息已照給的值落檔（沒有擋），要的若是 agent id 請改帶 sender={aBoundAgent}，"
+                 + $"或**不要帶 sender**、只帶 persona（顯示身分會自己推導）。{aPersonaNote}";
+        }
+
         async UniTask Op_Post(Dictionary<string, string> args, CancellationToken token)
         {
             string roomId = GetArg(args, "room", "");
@@ -601,6 +661,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             //   而不是等到對帳才發現自己少領了一整天。
             // ===========================================================
             bool anonymousPost = string.IsNullOrEmpty(senderPersona);
+            // 呼叫端**顯式**給的那個值 —— 推導出來的不算（推導的那條沒人手打得錯）。見 ExplicitSenderWarning。
+            string explicitSenderId = senderId;
             if (string.IsNullOrEmpty(senderId))
             {
                 // 顯示身分＝persona 綁定的 agent（見 ResolveDisplaySenderId 的血證）。
@@ -610,6 +672,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (string.IsNullOrEmpty(body)) { RejectLastOp(args, "post 缺少 body"); return; }
             var room = UCL_ChatTavernIO.GetRoom(roomId);
             if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}"); return; }
+
+            // TASK-0218 — 顯式 sender 的第二讀數（⛔ 不擋、不改 body；判準與對照組見 ExplicitSenderWarning）
+            string senderWarning = ExplicitSenderWarning(explicitSenderId, senderPersona);
+            if (!string.IsNullOrEmpty(senderWarning))
+            {
+                Debug.LogWarning($"[Tavern][TASK-0218] {senderWarning}");
+                UCL_AgentCommandRunner.ReportOutputValue(args, "sender_warning", senderWarning);
+            }
 
             // ===========================================================
             // T07 (2026-05-15 apex-two) — Session Token Enforcement

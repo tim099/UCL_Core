@@ -332,7 +332,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string mirrorLine = (room.mirror_kinds == null || room.mirror_kinds.Count == 0)
                 ? "" : $"\n- mirror_kinds: [{string.Join(", ", room.mirror_kinds)}]";
             string md = $"# ✅ Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}{ownerLine}{mirrorLine}{mirrorRegLine}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Tavern] createroom → {room.id}{(string.IsNullOrEmpty(room.owner_agent) ? "" : $" owner={room.owner_agent}")}{(room.mirror_kinds != null && room.mirror_kinds.Count > 0 ? $" mirror_kinds=[{string.Join(",", room.mirror_kinds)}]" : "")}");
         }
 
@@ -370,7 +370,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             string ownerLine = string.IsNullOrEmpty(room.owner_agent) ? "" : $"\n- gm/owner: `{room.owner_agent}`";
             string md = $"# ✅ TRPG Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}{ownerLine}\n- mirror_kinds: [{string.Join(", ", room.mirror_kinds ?? new List<string>())}]\n- mirror: 註冊 → {reg}\n\n下一步：`op=read room={room.id}` 驗證房建成後即可開場。";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Tavern] create_trpg_room → {room.id}（mirror_kinds=[{string.Join(",", room.mirror_kinds ?? new List<string>())}]，{reg}）");
         }
 
@@ -459,7 +459,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     sb.Append($"- `{r.id}` — {r.name} (seq={seq}) — {r.description}\n");
                 }
             }
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
             Debug.Log($"[Tavern] listrooms → {list.rooms.Count} rooms");
         }
 
@@ -494,7 +494,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 注意：_last_view.md 是房間共用快照，可能被任何 agent 讀到；header 用中性措辭避免誤導讀者把上一位當成自己
             string header = $"> 上一筆事件 (seq={seq})：「{ident.display_name}」（id=`{ident.id}`）加入房間「{room.name}」";
             string md = UCL_ChatTavernRender.WriteLastView(roomId, room.name, tail, seq, header);
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Tavern] join {roomId} ← {ident.display_name} (seq={seq})");
         }
 
@@ -1032,7 +1032,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     + "> 若是忘了帶，補上 `--arg persona=<你的 persona>` 重發一次才會計酬"
                     + "（已發出的這則不會補發）。" + System.Environment.NewLine;
             }
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Tavern] post → {roomId} seq={seq} by {senderName}");
 
             // T45 — Op_Post 結尾統一 auto-credit / auto-debit hook（重構自 T43 work_post 單一規則）
@@ -1675,7 +1675,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 因為「檔案在哪」是下一步要 Read 的東西，猜錯就是讀到別人的或讀到舊的。
             if (string.IsNullOrEmpty(persona))
             {
-                UCL_ChatTavernRender.WriteLastOp(md, args);
+                UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
                 Debug.Log($"[Tavern] query kind={kind} → _last_op.md（未帶 persona；帶了就落 letters/<persona>/cmd/）");
                 return;
             }
@@ -1741,7 +1741,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         + (tail <= 0 && limit > 0 ? $"（`limit={limit}` 已當成 tail 用）" : "");
             }
             string md = UCL_ChatTavernRender.RenderMessages(title, messages);
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Tavern] read {roomId} → {messages.Count} messages");
         }
 
@@ -1762,7 +1762,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 if (ident == null) sb.Append($"- `{mid}` _(no identity record)_\n");
                 else sb.Append($"- `{ident.id}` — **{ident.display_name}** ({ident.kind})\n");
             }
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
             Debug.Log($"[Tavern] members {roomId} → {members.member_ids.Count}");
         }
 
@@ -1786,7 +1786,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 kind = "leave",
                 body = $"{name} 離開了酒館",
             });
-            UCL_ChatTavernRender.WriteLastOp($"# 👋 {name} left `{roomId}` (seq={seq})\n", args);
+            UCL_ChatTavernRender.WriteLastOp($"# 👋 {name} left `{roomId}` (seq={seq})\n", args, "tavern");
             Debug.Log($"[Tavern] leave {roomId} ← {name}");
         }
 
@@ -1839,7 +1839,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 $"- **timeout**: {timeoutSec}s\n\n" +
                 $"Handler returned immediately, queue runner is free for other cmds.\n" +
                 $"Poll status with `op=wait_check wait_id={waitId}`，或讀 `_wait_{waitId}.md`。\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Tavern] wait fire-and-forget → wait_id={waitId} room={roomId} since={sinceSeq} timeout={timeoutSec}s");
         }
 
@@ -1896,7 +1896,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 sb.Append("\n_(仍在等待中，過陣子再 wait_check 一次)_\n");
             }
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
             Debug.Log($"[Tavern] wait_check {waitId} → status={w.status}");
         }
 
@@ -1924,7 +1924,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
             string md = $"# 📝 Note Written\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n- mode: write (整個覆寫)\n- bytes: {(body?.Length ?? 0)}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Tavern] note_write {roomId}/{key} ({body?.Length ?? 0} bytes)");
         }
 
@@ -1956,7 +1956,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
             string md = $"# 📝 Note Appended\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n- mode: append (OS 原子；不動 frontmatter)\n- sender: `{sender ?? "(none)"}`\n- bytes: {body.Length}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Tavern] note_append {roomId}/{key} by {sender ?? "?"} ({body.Length} bytes)");
         }
 
@@ -1986,7 +1986,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             sb.Append($"- path: `{ToRepoRelative(path)}`\n\n");
             sb.Append("---\n\n");
             sb.Append(content);
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
             Debug.Log($"[Tavern] note_read {roomId}/{key} ({content.Length} bytes)");
         }
 
@@ -2011,7 +2011,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     sb.Append($"- `{k}` — `{ToRepoRelative(path)}`\n");
                 }
             }
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
             Debug.Log($"[Tavern] note_list {roomId} → {keys.Count} notes");
         }
 
@@ -2038,7 +2038,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = removed
                 ? $"# 🗑 Note Deleted\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n"
                 : $"# ⚠ Note Not Found\n\n- room: `{roomId}`\n- key: `{key}`\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Tavern] note_delete {roomId}/{key} → {(removed ? "removed" : "not found")}");
         }
 
@@ -2342,7 +2342,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_create idempotent skip\n\n- task_id: `{taskId}`\n- key: `{idempotencyKey}`\n"
                 : $"# ✅ task_create\n\n- task_id: `{taskId}`\n- title: {title}\n- role: {role}\n- priority: {priority}\n- depends_on: {string.Join(", ", deps)}\n- suggested_owner: {suggestedOwner}\n- event_seq: {seq}\n- spec: tasks/{taskId}.md\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Quest] task_create {roomId}/{taskId} priority={priority} (seq={seq})");
         }
 
@@ -2413,7 +2413,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_claim idempotent skip\n\n- task_id: `{taskId}`\n- key: `{idempotencyKey}`\n"
                 : $"# ✅ task_claim\n\n- task_id: `{taskId}`\n- claimer: {claimer}\n- lease_until: {leaseUntil}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Quest] task_claim {roomId}/{taskId} ← {claimer} (seq={seq})");
         }
 
@@ -2451,7 +2451,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_progress idempotent skip\n\n- task_id: `{taskId}`\n"
                 : $"# ✅ task_progress\n\n- task_id: `{taskId}`\n- summary: {summary}\n- artifacts: {artifacts}\n- lease_until (展期): {leaseUntil}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Quest] task_progress {roomId}/{taskId} (seq={seq})");
         }
 
@@ -2642,7 +2642,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_done idempotent skip\n\n- task_id: `{taskId}`\n" + (shareSeq >= 0 ? $"- share posted: {shareRoom}/seq={shareSeq}\n" : "")
                 : $"# ✅ task_done\n\n- task_id: `{taskId}`\n- event_seq: {seq}\n- 下游 unblock 通知數: {notifications}\n" + (shareSeq >= 0 ? $"- share posted: {shareRoom}/seq={shareSeq}\n" : "");
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Quest] task_done {roomId}/{taskId} (seq={seq}, notify={notifications}{(shareSeq >= 0 ? $", share=" + shareSeq : "")})");
         }
 
@@ -2690,7 +2690,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_release idempotent skip\n\n- task_id: `{taskId}`\n"
                 : $"# ✅ task_release\n\n- task_id: `{taskId}`\n- released_by: {actor}\n- reason: {reason}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Quest] task_release {roomId}/{taskId} by {actor} reason={reason} (seq={seq})");
         }
 
@@ -2781,7 +2781,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_force_reclaim idempotent skip\n\n- task_id: `{taskId}`\n- key: `{idempotencyKey}`\n"
                 : $"# ✅ task_force_reclaim\n\n- task_id: `{taskId}`\n- new_owner: {claimer}\n- previous_owner: {previousOwner ?? "-"}\n- reason: {reason}\n- new_lease_until: {leaseUntil}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Quest] task_force_reclaim {roomId}/{taskId}: {previousOwner} → {claimer} (reason={reason}, seq={seq})");
         }
 
@@ -2831,7 +2831,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_review_request idempotent skip\n\n- task_id: `{taskId}`\n"
                 : $"# ✅ task_review_request\n\n- task_id: `{taskId}`\n- by: {actor}\n- reviewer: {reviewer ?? "(未指定)"}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Quest] task_review_request {roomId}/{taskId} → reviewer={reviewer} (seq={seq})");
         }
 
@@ -2878,7 +2878,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_reject idempotent skip\n\n- task_id: `{taskId}`\n"
                 : $"# ✅ task_reject\n\n- task_id: `{taskId}`\n- by: {actor}\n- reason: {reason}\n- reject_count → {st.reject_count + 1}\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Quest] task_reject {roomId}/{taskId} reason={reason} (seq={seq})");
         }
 
@@ -2925,7 +2925,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string md = seq < 0
                 ? $"# ℹ task_reopen idempotent skip\n\n- task_id: `{taskId}`\n"
                 : $"# ✅ task_reopen\n\n- task_id: `{taskId}`\n- by: {actor}\n- reason: {reason}\n- owner: {st.owner ?? "-"} (沿用)\n- inbox 通知: {notifications}\n- event_seq: {seq}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Quest] task_reopen {roomId}/{taskId} reason={reason} (seq={seq})");
         }
 
@@ -2993,7 +2993,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 sb2.AppendLine();
                 sb2.AppendLine($"建議下一步：`task_claim task_id={candidates[0].id} claimer={agentId}`");
             }
-            UCL_ChatTavernRender.WriteLastOp(sb2.ToString(), args);
+            UCL_ChatTavernRender.WriteLastOp(sb2.ToString(), args, "tavern");
             Debug.Log($"[Quest] task_next {roomId}/{agentId} → {candidates.Count} candidate(s)");
         }
 
@@ -3043,7 +3043,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             sb.AppendLine();
             sb.AppendLine($"_spec: tasks/{taskId}.md_");
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
             Debug.Log($"[Quest] task_state {roomId}/{taskId} → {st.lifecycle.Count} events");
         }
 
@@ -3105,7 +3105,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             sb.AppendLine();
             sb.AppendLine($"_filter: owner={ownerFilter}, role={roleFilter}, status={statusFilterCsv}_");
 
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
             Debug.Log($"[Quest] task_list {roomId} → matched={matched}/{states.Count}");
         }
 
@@ -3118,7 +3118,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             string inbox = UCL_ChatTavernQuestIO.ReadInbox(roomId, agentId);
             string md = $"# 📬 Inbox — {agentId}\n\nroom: `{roomId}`\n\n{inbox}";
-            UCL_ChatTavernRender.WriteLastOp(md, args);
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
             Debug.Log($"[Quest] inbox_read {roomId}/{agentId}");
         }
 
@@ -3215,7 +3215,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 sb.AppendLine($"_提示：下次 re-enter 用 `since_seq={latestSeq}` 看新增 delta；單 task 完整 timeline 走 `task_state task_id=...`_");
             }
 
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
             Debug.Log($"[Quest] events_since {roomId} since={sinceSeq} → {totalAfter} events" + (truncated ? $" (truncated to {limit})" : ""));
         }
 
@@ -3355,14 +3355,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 sb.AppendLine("_( --arg next=true 但沒帶 --arg room — 不知道從哪個 quest 房挑 task)_");
             }
 
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
+            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
             Debug.Log($"[Tavern] session_enter {agentId}" + (string.IsNullOrEmpty(roomId) ? "" : $" room={roomId}") + (wantNext ? " +next" : ""));
         }
 
         // 真錯誤：寫盤失敗 / null ref / unhandled exception → 紅 ❗ + LogError
         static void FailLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string msg)
         {
-            UCL_ChatTavernRender.WriteLastOp($"# ❌ Tavern Cmd Failed\n\n{msg}\n", iArgs);
+            UCL_ChatTavernRender.WriteLastOp($"# ❌ Tavern Cmd Failed\n\n{msg}\n", iArgs, "tavern");
             Debug.LogError($"[Tavern] {msg}");
             throw new InvalidOperationException(msg);
         }
@@ -3372,7 +3372,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 詳見 docs/Snapshots/ErrorLog_Analysis_2026-05-09.md (T11 報告)
         static void RejectLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string msg)
         {
-            UCL_ChatTavernRender.WriteLastOp($"# ⚠ Tavern Cmd Rejected\n\n{msg}\n", iArgs);
+            UCL_ChatTavernRender.WriteLastOp($"# ⚠ Tavern Cmd Rejected\n\n{msg}\n", iArgs, "tavern");
             Debug.LogWarning($"[Tavern] {msg}");
             throw new InvalidOperationException(msg);
         }

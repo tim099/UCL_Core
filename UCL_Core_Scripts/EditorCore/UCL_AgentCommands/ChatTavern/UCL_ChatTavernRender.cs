@@ -98,16 +98,34 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// 併發下會把妳的報告鏡寫進別人的 lane（TASK-0116）。</para></summary>
         public static void WriteLastOp(string md) => WriteLastOp(md, (string)null);
 
-        /// <summary>同上，但**由呼叫端交出自己的 args**（取其中的 `_cmd_id`）—— 併發安全的那條路。</summary>
-        public static void WriteLastOp(string md, System.Collections.Generic.IDictionary<string, string> iArgs)
+        /// <summary>同上，但**由呼叫端交出自己的 args**（取其中的 `_cmd_id`）—— 併發安全的那條路。
+        /// <para><paramref name="iSlug"/> ＝ **產出這份內容的 op 是誰**（TASK-0168）。
+        /// 不給＝沿用「從 cmd_id 尾段取」的舊行為。</para></summary>
+        public static void WriteLastOp(string md, System.Collections.Generic.IDictionary<string, string> iArgs,
+                                       string iSlug = null)
         {
             string aId = null;
             if (iArgs != null && iArgs.TryGetValue("_cmd_id", out var aV) && !string.IsNullOrEmpty(aV)) aId = aV;
-            WriteLastOp(md, aId);
+            WriteLastOp(md, aId, iSlug);
         }
 
-        /// <summary>同上，但直接給 cmd id（呼叫端手上沒有整包 args 時用）。</summary>
-        public static void WriteLastOp(string md, string iCmdId)
+        // ===========================================================
+        // 區塊職責：lane 檔名的來源（TASK-0168）。
+        // 🩸 病灶：檔名段本來**只**取自 cmd_id 尾段 ＝「正在跑的那支 cmd」，
+        //   而不是「產出這份內容的 op」。於是一支 cmd 只要內部觸發了會呼叫本函式的副作用
+        //   （最常見：廣播到酒館），那份**別支的視圖**就以本次 cmd_id 落進本支的 lane。
+        //   活體（2026-09-16）：`Task op=resolve` 之後 `task_last_op.md` 是 50KB 的
+        //   `# 🍺 酒館主廳 (Tavern) — 最新 20 筆`，而 `<!-- cmd_id -->` 指著那支 Task。
+        // ⚠ 為什麼這格特別難抓：借位的 cmd_id **完全正確** ⇒ stub（0116）／cmd_id 章／mtime
+        //   三道現有防線**全數放行**。前兩種失效（汙染＝別人的最新／陳舊＝別人的三天前）
+        //   都靠「cmd_id 對不上本次」被擋，而借位對得上。
+        // ⇒ 修法：`iSlug` 讓**內容的作者**說自己是誰。不給就維持舊行為，
+        //   所以既有 138 處呼叫端**一處都不用改**（⛔ 原單「動 16 個點」是我把「16 支 Cmd」
+        //   當成呼叫點數的低報，2026-09-16 量掉）。
+        // ===========================================================
+        /// <summary>同上，但直接給 cmd id（呼叫端手上沒有整包 args 時用）。
+        /// <para><paramref name="iSlug"/> ＝ 產出這份內容的 op；不給＝從 cmd_id 尾段取（舊行為）。</para></summary>
+        public static void WriteLastOp(string md, string iCmdId, string iSlug = null)
         {
             UCL_ChatTavernIO.EnsureTavernDir();
             // 區塊職責：cmd_id stamp 注入（T-LastOp-CmdId 2026-06-12）
@@ -157,8 +175,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     int aSep = aPersona.IndexOfAny(new[] { '/', '\\' });
                     if (aSep >= 0) aPersona = aPersona.Substring(0, aSep);
                     if (aPersona.Length == 0) return;
-                    int aCut = cmdId.LastIndexOf('-');
-                    string aSlug = aCut >= 0 && aCut < cmdId.Length - 1 ? cmdId.Substring(aCut + 1) : "cmd";
+                    // ⭐ 顯式優先（TASK-0168）：內容的作者說了自己是誰就用它；
+                    //   沒說才退回「從 cmd_id 尾段猜正在跑的那支」＝ 舊行為，逐字不變。
+                    string aSlug = iSlug;
+                    if (string.IsNullOrEmpty(aSlug))
+                    {
+                        int aCut = cmdId.LastIndexOf('-');
+                        aSlug = aCut >= 0 && aCut < cmdId.Length - 1 ? cmdId.Substring(aCut + 1) : "cmd";
+                    }
                     string aPayload = UCL_LettersPath.CmdPayload(aPersona, aSlug, "last_op");
                     Directory.CreateDirectory(Path.GetDirectoryName(aPayload));
                     File.WriteAllText(aPayload, md, new System.Text.UTF8Encoding(false));

@@ -33,6 +33,16 @@ ROUTES = [
      "senate ucmd run Library --arg op=bookmark|add_character|revise_view|paths|recall"),
     ("shelf / shelf-update / list（書架與清單）",
      "閱讀卡：letters/<persona>/bookshelf/<media-id>.md（由 run Library 同步）"),
+    # ⚠ 下面兩支**不是**「沒有資料」那一族，所以不能併進最後那一列（TASK-0166 ④ 逐支比對時量到，
+    #   2026-09-16）：它們各有落檔、也各有一條現行的路，只是**沒有同名的 op**。
+    #   🩸 併進去的後果是一句已知為假的話：「沒有資料」會讓讀的人不去找那 25 份 arc 檔。
+    ("arcs（列出某本書的 arc）",
+     "⛔ 沒有同名 op —— arc 檔就在 `BookNotes/<書>/arcs/*.md`，直接讀目錄"
+     "（2026-09-16 實測 25 份，全在 Archive 底下）。**寫**新的走 "
+     "senate cmd book --arg op=arc"),
+    ("show-character（看某角色的 facts 與看法版本史）",
+     "senate ucmd run Library --arg op=recall —— 追回檔的人物段含 facts ＋ vN 版本史並列。"
+     "⚠ 它是**整份**追回檔，沒有「只印一個角色」的入口"),
     ("terms / add-term / review / reviews / volumes / add-volume / tag / "
      "recommend / recommendations / branches / search / prepare / stt-prompt / set-name-original",
      "⛔ 沒有平替，也**沒有資料**（2026-09-10 實測：舊 store 6 份 book.json 只有 13 個鍵，"

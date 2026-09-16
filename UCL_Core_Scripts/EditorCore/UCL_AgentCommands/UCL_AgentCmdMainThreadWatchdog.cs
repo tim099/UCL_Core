@@ -90,6 +90,21 @@ namespace UCL.Core.EditorLib.AgentCommands
         static void WatchdogLoop()
         {
             double aReportedAtMs = -1;   // 本次凍結已在第幾毫秒報過（-1 ＝ 目前沒在凍結）
+            // ===========================================================
+            // TASK-0196：同一個主緒 tick 被報過第幾次 —— 這是「停住」與「變慢」的分辨鍵。
+            // 🩸 病灶：`frozen_ms` 對兩者**完全分不出**（2026-09-16 量 1470 行：
+            //   running_cmds 空的 p50=3164ms、有 cmd 在跑的 p50=3142ms）。
+            //   而真正分得出的那件事跨行才看得到：
+            //     · 主緒**仍在前進**（每次報的 tick 都不同）⇒ 它沒被卡住，只是幀距 > 門檻（閒置節流）
+            //     · 主緒**停住**（同一個 tick 被連報）⇒ 真的被工作占住
+            //   讀數：1470 行裡 **1203 行（82%）主緒仍在前進**；真停住的 266 行只集中在 67 次事件
+            //   （最長一次同一 tick 連報 55 行 ＝ 548846ms）。
+            // ⛔ 而 `running_cmds` **不是**分辨鍵（開單時的隱含假設，當天量掉）：
+            //   「有 cmd 在跑」那批**也有 748 行是前進的**。
+            // ⇒ 所以把「第幾次」直接寫進每一行，讓讀的人不必自己跨行比對。
+            // ===========================================================
+            long aLastReportedTick = 0;
+            int aSameTickReports = 0;
             while (!s_WatchdogStop)
             {
                 try
@@ -109,7 +124,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                     if (aReportedAtMs >= 0 && aFrozenMs - aReportedAtMs < FREEZE_REPEAT_MS) continue;
 
                     aReportedAtMs = aFrozenMs;
-                    AppendFreezeLine(aTicks, aFrozenMs);
+                    if (aTicks == aLastReportedTick) aSameTickReports++;
+                    else { aLastReportedTick = aTicks; aSameTickReports = 1; }
+                    AppendFreezeLine(aTicks, aFrozenMs, aSameTickReports);
                 }
                 catch (Exception e)
                 {
@@ -119,10 +136,13 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
         }
 
-        static void AppendFreezeLine(long iLastTickTicks, double iFrozenMs)
+        static void AppendFreezeLine(long iLastTickTicks, double iFrozenMs, int iSameTickReports)
         {
             DateTime aNow = DateTime.UtcNow;
             DateTime aLastTick = new DateTime(iLastTickTicks, DateTimeKind.Utc);
+            // 主緒在停下來之前跑得多快（TASK-0196）—— 0 ＝ 還沒量到過一次完整幀距。
+            long aGapTicks = Interlocked.Read(ref s_LastTickGapTicks);
+            double aPrevGapMs = aGapTicks > 0 ? new TimeSpan(aGapTicks).TotalMilliseconds : -1.0;
 
             // 凍結當下的鎖持有者 —— 這一格才是甲乙的分辨鍵（見檔頭）。
             string aLockJson = null;
@@ -135,6 +155,15 @@ namespace UCL.Core.EditorLib.AgentCommands
                .Append(",\"last_main_tick_at\":\"").Append(Iso(aLastTick)).Append('"')
                .Append(",\"frozen_ms\":").Append(F1(iFrozenMs))
                .Append(",\"threshold_ms\":").Append(F0(FREEZE_MS))
+               // ⭐ TASK-0196 的兩個分辨欄位。⛔ 它們**不替讀者下結論**，只把原本要跨行比對
+               //   才拿得到的那件事放進同一行：
+               //     · same_tick_reports > 1 ⇒ 主緒**停住**（同一個 tick 被連報）＝ 真的被工作占住
+               //     · same_tick_reports = 1 ＋ prev_tick_gap_ms 已經很大 ⇒ 主緒**仍在前進**、只是幀距超過門檻
+               //   ⚠ 已知限制：**一次凍結的第一行本來就分不出**（要等它會不會再報一次）——
+               //   那時 prev_tick_gap_ms 是唯一的線索（16ms 突然停 vs 本來就 3 秒一幀）。
+               //   ⛔ 照實留著這個限制，不用一個猜出來的 cause 欄位把它蓋掉。
+               .Append(",\"same_tick_reports\":").Append(iSameTickReports.ToString(System.Globalization.CultureInfo.InvariantCulture))
+               .Append(",\"prev_tick_gap_ms\":").Append(aPrevGapMs >= 0 ? F1(aPrevGapMs) : "null")
                .Append(",\"observed_from_tid\":")
                .Append(Thread.CurrentThread.ManagedThreadId.ToString(System.Globalization.CultureInfo.InvariantCulture))
                .Append(",\"tavern_cache_lock\":").Append(aLockJson ?? "null")

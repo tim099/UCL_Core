@@ -105,6 +105,11 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 同一個讀數的原子副本，**只給背景 watchdog 讀**（見 OnEditorUpdateProbe 的區塊註解）。
         static long s_LastTickTicks;
 
+        // 主緒最近一次**完成**的幀間隔（ticks），同樣只給背景 watchdog 讀（TASK-0196）。
+        // ⚠ 它回答的是「主緒在停下來之前，跑得多快」——那是「被工作卡住」與「閒置被節流」
+        //   唯一在**單獨一行**上分得開的欄位（16ms 突然停 vs 本來就 3 秒一幀）。
+        internal static long s_LastTickGapTicks;
+
         // 已結束 / 進行中的 cmd 區間 ring —— stall 行靠它回答「那段時間誰在跑」。
         // ⚠ 上鎖：Begin/End 可能在背景緒，探針在主緒。
         static readonly List<Entry> s_Ring = new List<Entry>();
@@ -195,6 +200,12 @@ namespace UCL.Core.EditorLib.AgentCommands
             if (aPrev == DateTime.MinValue) return;
 
             double aGapMs = (aNow - aPrev).TotalMilliseconds;
+            // ⭐ TASK-0196：把「主緒最近一次**完成**的幀間隔」也原子存一份給 watchdog。
+            //   為什麼是存**間隔**而不是存 prev 時刻：兩個 long 各自 Interlocked，
+            //   背景緒有機會讀到**不配對**的一組（新的 last ＋ 舊的 prev）⇒ 算出一個假的間隔。
+            //   存成單一個量就沒有配對問題 —— 讓那個競態**不存在**，而不是把它管好。
+            // ⚠ 射程：這是「上一次跑完的那一幀」，⛔ 不是「現在這次凍結」的長度（那是 frozen_ms）。
+            System.Threading.Interlocked.Exchange(ref s_LastTickGapTicks, (aNow - aPrev).Ticks);
             if (aGapMs < STALL_MS) return;
 
             try

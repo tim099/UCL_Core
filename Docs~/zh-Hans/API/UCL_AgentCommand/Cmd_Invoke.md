@@ -3,7 +3,7 @@ title: Cmd_Invoke API
 description: 通用反射 Cmd — 把字符串描述（type / member / args）喂给 UCL_ReflectionInvoker，动态触发 Unity 内建任意 public static method / property / field，免为每支 API 写专用 Cmd。
 source_file: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/CMD/Cmd_Invoke.cs
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-05-07
+last_updated: 2026-09-16
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [reflection invoke cmd, dynamic api call, generic unity invoker]
 tags: [api, agent-command, reflection, editor]
@@ -193,14 +193,44 @@ senate ucmd run Invoke \
 
 | 情境 | Unity Console | Cmd 结果 |
 |---|---|---|
-| void method 成功 | `OK (void / null)` | Success |
-| method 回传值 | `OK (TypeName) = value.ToString()` | Success（值在 Console；要结构化请写专用 Cmd） |
+| void method 成功 | `OK (void)` | Success |
+| 回传 null | `OK (null)` | Success |
+| method 回传值 | `OK (TypeName) = value.ToString()` | Success |
 | 解析失败（type / member 找不到 / args 转型失败） | `LogError + throw` | Failed |
 | 内部异常 | `target threw {ExceptionType}: ...` | Failed |
 
-> [!CAUTION]
-> **回传值目前只进 Unity Console**（`Debug.Log`），不写进磁盘也不丢回 Python。
-> 需要结构化拿值请：(a) 写专用 Cmd，或 (b) 等本 Cmd 之后加 `outputPath` 参数。
+### 回传值怎么拿（TASK-0172 起）
+
+**值会进 result 的 `values`**，调用端直接读得到，⛔ 不必去 grep `Editor.log`：
+
+| 字段 | 值 |
+|---|---|
+| `value_kind` | `void`（没有回传值）／`null`（有回传值而它是 null）／`value`（有值） |
+| `value_type` | 回传类型的 `FullName`（void 时是 `System.Void`） |
+| `is_null` | `1` / `0` |
+| `value` | `ValueAsString` —— **只在 `value_kind=value` 时出现** |
+
+```
+$ senate ucmd run Invoke --persona <me> --arg type=UnityEngine.Application       --arg member=unityVersion --arg kind=property
+  🔢 value_kind = value
+  🔢 value_type = System.String
+  🔢 is_null = 0
+  🔢 value = 6000.0.60f1
+```
+
+⚠ **四种情形两两可分**（实测读数，判准是 `value_kind` 而不是「`value` 这一行在不在」）：
+
+| | `value_kind` | `value_type` | `is_null` | `value` |
+|---|---|---|---|---|
+| 有值 | `value` | `System.String` | 0 | 值 |
+| **空字符串** | `value` | `System.String` | 0 | 空，**而那一行在** |
+| **null** | `null` | `System.String` | 1 | 无此行 |
+| **void** | `void` | `System.Void` | 0 | 无此行 |
+
+> [!NOTE]
+> 🩸 空字符串与 null 特别要分得开：本 Cmd 读得到的字段**本来就常常是空字符串**。
+> 旧版两者都只印一行 `OK (void / null)` 到 Console，而调用端**一格都拿不到** ——
+> 「这支 API 回 null」与「值没被送回来」当时完全同形（TASK-0172）。
 
 ---
 

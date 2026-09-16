@@ -89,9 +89,30 @@ namespace UCL.Core.EditorLib.AgentCommands
                 throw new Exception(result.Error); // 標記 Cmd 為 Failed，外部 Python wrapper 才知道
             }
 
-            if (result.ValueType == typeof(void) || result.Value == null)
+            // ===========================================================
+            // 區塊職責：把回傳值送回**呼叫端**（TASK-0172）。
+            // 🩸 病灶：本支的整個用途就是取讀數（`storeAs` / `getter` / `kind=property|field`
+            //   那些參數存在的理由就是「我要那個值」），而值原本**只進 `Debug.Log`** ——
+            //   呼叫端拿到的是 `✓ Success` ＋ 一片空白，值躺在 14MB、會輪替、路徑依平台的 Editor.log 裡。
+            //   ⇒ 「這支 API 回 null」與「值沒被送回來」在呼叫端**完全同形**。
+            // ⚠ 三態必須兩兩可分，所以判準是 `value_kind` 不是 `value` 有沒有出現：
+            //   `void`（沒有回傳值）／`null`（有回傳值而它是 null）／`value`（有值，**可能是空字串**）。
+            //   ⛔ 空字串與 null 不可同形 —— 這支讀得到的欄位本來就常常是空字串，
+            //   所以 `value` 只在 kind=value 時出現，空字串照出（那是一個真的值）。
+            // ⛔ 用既有的 `ReportOutputValue`（push，值產生的當下就交出去），⛔ 不另造出口。
+            // ===========================================================
+            bool aIsVoid = result.ValueType == typeof(void);
+            bool aIsNull = !aIsVoid && result.Value == null;
+            string aKind = aIsVoid ? "void" : aIsNull ? "null" : "value";
+            UCL_AgentCommandRunner.ReportOutputValue(args, "value_kind", aKind);
+            UCL_AgentCommandRunner.ReportOutputValue(args, "value_type", result.ValueType?.FullName ?? "(unknown)");
+            UCL_AgentCommandRunner.ReportOutputValue(args, "is_null", aIsNull ? "1" : "0");
+            if (!aIsVoid && !aIsNull)
+                UCL_AgentCommandRunner.ReportOutputValue(args, "value", result.ValueAsString ?? "");
+
+            if (aIsVoid || aIsNull)
             {
-                Debug.Log("[AgentCmd:Invoke] OK (void / null)");
+                Debug.Log($"[AgentCmd:Invoke] OK ({aKind})");
             }
             else
             {

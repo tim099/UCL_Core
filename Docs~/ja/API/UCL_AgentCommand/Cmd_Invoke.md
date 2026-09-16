@@ -3,7 +3,7 @@ title: Cmd_Invoke API
 description: 汎用リフレクション Cmd — 文字列での記述（type / member / args）を UCL_ReflectionInvoker に渡し、Unity 組み込みの任意の public static method / property / field を動的に呼び出します。API ごとに専用 Cmd を書く必要がありません。
 source_file: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/CMD/Cmd_Invoke.cs
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-05-07
+last_updated: 2026-09-16
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [reflection invoke cmd, dynamic api call, generic unity invoker]
 tags: [api, agent-command, reflection, editor]
@@ -193,14 +193,44 @@ senate ucmd run Invoke \
 
 | 状況 | Unity Console | Cmd 結果 |
 |---|---|---|
-| void method 成功 | `OK (void / null)` | Success |
-| 戻り値あり method | `OK (TypeName) = value.ToString()` | Success（値は Console。構造化が必要なら専用 Cmd を作成）|
+| void method 成功 | `OK (void)` | Success |
+| null を返す | `OK (null)` | Success |
+| 戻り値あり method | `OK (TypeName) = value.ToString()` | Success |
 | 解決失敗（type / member 未検出 / 引数変換失敗）| `LogError + throw` | Failed |
 | 内部例外 | `target threw {ExceptionType}: ...` | Failed |
 
-> [!CAUTION]
-> **戻り値は現在 Unity Console（`Debug.Log`）にのみ出力**され、ディスクへの書き込みも Python への返却もありません。
-> 構造化された値が必要な場合は、(a) 専用 Cmd を作成するか、(b) 本 Cmd に将来追加される `outputPath` 引数をお待ちください。
+### 戻り値の受け取り方（TASK-0172 以降）
+
+**値は result の `values` に入り**、呼び出し側から直接読めます。⛔ `Editor.log` を grep する必要はありません：
+
+| フィールド | 値 |
+|---|---|
+| `value_kind` | `void`（戻り値なし）／`null`（戻り値があり、それが null）／`value`（値あり） |
+| `value_type` | 戻り値型の `FullName`（void のときは `System.Void`） |
+| `is_null` | `1` / `0` |
+| `value` | `ValueAsString` —— **`value_kind=value` のときだけ出力** |
+
+```
+$ senate ucmd run Invoke --persona <me> --arg type=UnityEngine.Application       --arg member=unityVersion --arg kind=property
+  🔢 value_kind = value
+  🔢 value_type = System.String
+  🔢 is_null = 0
+  🔢 value = 6000.0.60f1
+```
+
+⚠ **4 つのケースは両々識別可能**（実測。判定基準は `value_kind` であり、「`value` 行があるかどうか」ではない）：
+
+| | `value_kind` | `value_type` | `is_null` | `value` |
+|---|---|---|---|---|
+| 値あり | `value` | `System.String` | 0 | 値 |
+| **空文字列** | `value` | `System.String` | 0 | 空、**ただし行は存在する** |
+| **null** | `null` | `System.String` | 1 | 行なし |
+| **void** | `void` | `System.Void` | 0 | 行なし |
+
+> [!NOTE]
+> 🩸 空文字列と null は必ず区別できる必要があります —— この Cmd が読む項目は**もともと空文字列であることが多い**ためです。
+> 旧版は両方とも Console に `OK (void / null)` の 1 行を出すだけで、呼び出し側は**何も受け取れませんでした** ——
+> 「この API が null を返した」と「値が返ってこなかった」が完全に同形でした（TASK-0172）。
 
 ---
 

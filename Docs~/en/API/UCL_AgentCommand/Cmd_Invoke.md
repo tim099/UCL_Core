@@ -3,7 +3,7 @@ title: Cmd_Invoke API
 description: Generic reflection Cmd — feeds a string description (type / member / args) to UCL_ReflectionInvoker to dynamically invoke any built-in Unity public static method / property / field, removing the need for a dedicated Cmd per API.
 source_file: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/CMD/Cmd_Invoke.cs
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-05-07
+last_updated: 2026-09-16
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [reflection invoke cmd, dynamic api call, generic unity invoker]
 tags: [api, agent-command, reflection, editor]
@@ -193,14 +193,44 @@ senate ucmd run Invoke \
 
 | Situation | Unity Console | Cmd result |
 |---|---|---|
-| void method success | `OK (void / null)` | Success |
-| Method with return value | `OK (TypeName) = value.ToString()` | Success (value is in the Console; for structured output, write a dedicated Cmd) |
+| void method success | `OK (void)` | Success |
+| Returns null | `OK (null)` | Success |
+| Method with return value | `OK (TypeName) = value.ToString()` | Success |
 | Resolution failure (type / member missing / argument coercion failed) | `LogError + throw` | Failed |
 | Internal exception | `target threw {ExceptionType}: ...` | Failed |
 
-> [!CAUTION]
-> **Return values currently only land in the Unity Console** (`Debug.Log`); they are not written to disk and not returned to Python.
-> If you need a structured value, either (a) write a dedicated Cmd, or (b) wait for a future `outputPath` argument on this Cmd.
+### How to read the return value (since TASK-0172)
+
+**The value lands in the result's `values`**, readable straight from the caller — no need to grep `Editor.log`:
+
+| Field | Value |
+|---|---|
+| `value_kind` | `void` (no return value) / `null` (returned, and it is null) / `value` (has a value) |
+| `value_type` | `FullName` of the return type (`System.Void` for void) |
+| `is_null` | `1` / `0` |
+| `value` | `ValueAsString` — **present only when `value_kind=value`** |
+
+```
+$ senate ucmd run Invoke --persona <me> --arg type=UnityEngine.Application       --arg member=unityVersion --arg kind=property
+  🔢 value_kind = value
+  🔢 value_type = System.String
+  🔢 is_null = 0
+  🔢 value = 6000.0.60f1
+```
+
+⚠ **The four cases are pairwise distinguishable** (measured; the discriminator is `value_kind`, not whether the `value` line exists):
+
+| | `value_kind` | `value_type` | `is_null` | `value` |
+|---|---|---|---|---|
+| Has a value | `value` | `System.String` | 0 | the value |
+| **Empty string** | `value` | `System.String` | 0 | empty, **but the line is there** |
+| **null** | `null` | `System.String` | 1 | no such line |
+| **void** | `void` | `System.Void` | 0 | no such line |
+
+> [!NOTE]
+> 🩸 Empty string and null must stay distinguishable: fields this Cmd reads **are often empty strings**.
+> The old version printed one `OK (void / null)` line to the Console for both, and the caller got **nothing at all** —
+> "this API returns null" and "the value was never sent back" were indistinguishable (TASK-0172).
 
 ---
 

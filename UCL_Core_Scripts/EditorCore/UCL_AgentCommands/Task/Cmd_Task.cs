@@ -1170,9 +1170,13 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             //   ⇒ 配號必須在鎖內對重讀的 `e` 算，這才是把它變成原子的那一步。
             // ⛔ 舊的 `[RMW-END]` 前哨在此退場 —— 跨度現在由型別決定，不由註解宣告。
             int aCommentId = 0;
+            // ⚠ 門牌守衛（TASK-0177）要的是**落檔前**的留言數，而它只有在鎖內重讀的 `e` 上才可信
+            //   —— 鎖外那份跟 `NextCommentId` 撞號是同一個前提破掉的形狀。
+            int aPrevComments = 0;
             bool aWrote = UCL_TaskIO.Mutate(aIndex, e =>
             {
                 aCommentId = UCL_TaskIO.NextCommentId(e);
+                aPrevComments = e.comments.Count;
                 e.comments.Add(new UCL_TaskComment
                 {
                     id = aCommentId,
@@ -1196,6 +1200,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine(aBody);
             ioR.AppendLine("```");
             ioR.AppendLine();
+            AppendRefWarnings(ioR, aBody, aPrevComments, UCL_TaskIO.ReadCriteria(aIndex));
             // ⚠ 通知要用**落檔之後**的那一份：`e` 是鎖前讀的提示，而公告要 @ 的參與者清單
             //   可能在鎖內那一刻已經不同（別人剛 assign）。⇒ 重讀一次；讀不到就退回用提示，
             //   ⛔ 不因為讀不到就不發公告（那會讓「發不出去」與「沒有人該被通知」同形）。
@@ -1508,6 +1513,25 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //   ⚠ 沒有這一行的話，「我以為他知道了」會變成一個**沒有人發現**的錯 ——
         //     主動作成功、附帶效果靜默失敗，那正是這個 repo 最貴的形狀。
         // ===========================================================
+        // ===========================================================
+        // 區塊職責：把門牌引用守衛（`UCL_TaskRefCheck`）的警語印進回傳檔。
+        // 物理意義：一則打錯 `index` 的留言在每一個機械欄位上都合法（TASK-0177），
+        //   唯一露出來的縫是正文裡的門牌指向了一個本單不存在的座標。
+        // 數值影響：**純輸出** —— 不擋下、不改磁碟、不影響退出碼。
+        //   ⛔ 刻意不拋例外：引用一個還沒出現的格號可以是合法意圖，
+        //   硬擋會製造一種新的「正確的話寫不進去」。本病的殺傷力全部來自它**完全安靜**。
+        // ===========================================================
+        static void AppendRefWarnings(StringBuilder ioR, string iBody, int iPrevComments, string iCriteria)
+        {
+            var aWarn = UCL_TaskRefCheck.Scan(iBody, iPrevComments, iCriteria);
+            if (aWarn.Count == 0) return;
+            ioR.AppendLine($"- ⚠ **門牌引用對不上（{aWarn.Count} 筆）** —— 內容**已經落檔**，這只是讀數：");
+            foreach (var aLine in aWarn) ioR.AppendLine($"    · {aLine}");
+            ioR.AppendLine("  ⇒ 最常見的成因是 **`index` 打錯**（收工時一口氣 wrapup 好幾張）。");
+            ioR.AppendLine("  ⛔ 而修復的動作本身會消除偵測它的證據（補一則留言就把那個引用餵飽了），");
+            ioR.AppendLine("    所以這句話只在**現在**這一刻說得出口 —— 事後掃全庫會系統性低報。");
+        }
+
         static void AppendNotifyLine(StringBuilder ioR, UCL_TaskEntry e, string iActor, bool iOk)
         {
             // ⚠ 名單邏輯必須與 UCL_TaskNotify.BuildBody 一致（參與者 ＋ 開單人 − 動手的人）——
@@ -1928,6 +1952,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             //   而那個組合它會判成「收工後又改了」，也就是**它會誤擋一個剛收完工的人**。
             // ⛔ 舊的 `[RMW-END]` 前哨在此退場 —— 跨度現在由型別決定（`m` 只活在 lambda 裡），不由註解宣告。
             int aCommentId = 0;
+            int aPrevComments = 0;
             var aFrom = e.status;
             string aTopicAtWrite = aTopic;
             bool aTopicLostInLock = false;
@@ -1942,6 +1967,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
                 aFrom = m.status;
                 aCommentId = UCL_TaskIO.NextCommentId(m);
+                aPrevComments = m.comments.Count;   // 門牌守衛（TASK-0177）：鎖內重讀的才是落檔前的真值
                 m.comments.Add(new UCL_TaskComment
                 {
                     id = aCommentId,
@@ -1978,6 +2004,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             ioR.AppendLine("```markdown");
             ioR.AppendLine(aProgress);
             ioR.AppendLine("```");
+            AppendRefWarnings(ioR, aProgress, aPrevComments, UCL_TaskIO.ReadCriteria(aIndex));
 
             // ② why → 代跑 work_memory.py（契約①：記憶側唯一寫入端是 python）
             if (aWhy.Length > 0)

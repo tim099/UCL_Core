@@ -1,7 +1,7 @@
 ---
 title: Claude Code 自動更新卡住排查（「其他程式正在用這個檔案」）
 description: Claude Code 是 MSIX 套件，自動更新要求舊版行程**全部消失**才註冊得了新版；卡住時的症狀是「Claude Code 自己關閉且無法重啟」＋一個指著 `C:\Program Files\WindowsApps\Claude_<版本>_...` 的「其他程式正在用這個檔案」對話框。含事件日誌查法（事後可查）／resmon 抓持有者（要現場）／為什麼「關掉 Unity Editor」有效而它不是答案／本專案已修掉的一個 process handle 洩漏
-last_updated: 2026-09-11
+last_updated: 2026-09-16
 target_audience: [AI_Agent, Tools_Maintainer, Backend_Programmer]
 aliases: [其他程式正在用這個檔案, 0x80073D02, WindowsApps, MSIX, Claude Code 無法重啟, Claude Code 被關閉, AppXDeploymentServer, 延後註冊, resmon, 關聯的控制代碼]
 tags: [claude_code, windows, msix, diagnose, workflow, process_handle]
@@ -144,10 +144,37 @@ try { return Process.GetProcessById((int)processId).ProcessName ?? ""; }   // �
 > · 如果是 `Unity.exe` ⇒ 這個洞的修法方向對，可以把這條線收掉；
 > · 如果是別的行程 ⇒ **這份文件的 §5 就要改寫**，⛔ 別讓它變成一個沒人回頭驗的故事。
 
+### ⭐ 2026-09-16：上面那句兌現了 —— 是**別的行程**，所以這一節改寫
+
+使用者 2026-09-16 回報（累計第 3+ 次）：**「關掉 senate 之後才能重啟 Claude Code」**，
+並補一格關鍵現場：**`senate.exe` 在執行、但視窗沒有開啟**。
+
+| | 讀數 |
+|---|---|
+| ✅ 同一天又發生一次 | `08:12 id=658 延後註冊` → `09:10 id=419/404 0x80073D02` → `09:48 id=400 註冊成功`（最後那格在使用者關掉 senate 之後） |
+| ✅ 不是偶發 | `id=658` 在 9/4、9/7、9/9、9/11、9/16 各一次 ⇒ **每次 Claude 更新都會走到這一格** |
+| ✅ 親代鏈（agent 這側實測） | `Claude.exe`（`WindowsApps\Claude_*`，MSIX 封裝）→ `claude-code` → `bash` → **agent 起的任何東西** |
+| ✅ 常駐 Server 沒有視窗 | 使用者看得到的只有「Claude Code 起不來」⇒ **「有東西壓著」與「Claude 壞了」在他那側同形** |
+| ⛔ **仍然沒拿到** | §3 那格 —— **現場的 `resmon` 持有者讀數**。使用者的觀察是「關掉它就好了」，那是**相關**不是持有證據 |
+
+⇒ **§5 上面那個 `GetProcessName` handle 洩漏的線，到此收掉**：它跟這次的現場對不上
+（Unity 那條在 2026-09-11 就被親代鏈與時間軸各否證一次）。修它仍然是對的，但**它不是這隻的成因**。
+
+⇒ **已落的修法**（`Senate 8a8d7dc`）：`ServerAutoStart` 改走 WMI `Win32_Process.Create` ⇒
+常駐 Server 的親代是 `WmiPrvSE`，**不在任何人的行程樹底下**（實測可重現）。
+⭐ 它對「handle 繼承」與「套件身分繼承」**兩種機制都有效**，所以不必等上面那格 ⛔ 補上才成立。
+
+> ⚠ **下一個讀數在哪**：Claude 的下一次更新。
+> 那時如果**有一顆 senate Server 在跑、而更新照樣註冊成功**，⛔ 那格就填上了。
+> 反之若仍然失敗 ⇒ 持有者另有其人，回 §3 抓一次 —— 而這一次**不要先關掉任何東西**。
+
 ---
 
 ## 6. 撞到時的處置順序（照抄）
 
+0. ⚠ **先看有沒有 `senate.exe` 在跑**（2026-09-16 新增）—— 常駐 Server **沒有視窗**，
+   所以除了工作管理員以外看不到它，而它是目前最可疑的那一顆。
+   ⛔ 但**別急著關**：先做第 1 步抓讀數，不然又只會留下「關掉它就好了」這個沒有射程的結論。
 1. ⛔ **先別關 Editor。** 跑 §3 抓持有者（一分鐘）。
 2. 抓完之後，**只結束那一顆**（不是關整個 Editor）—— 然後試著啟動 Claude Code。
    ⇒ 成功 ＝ 你剛剛證明了它就是持有者；失敗 ＝ 還有第二顆，回 §3 再看一次。

@@ -1,6 +1,6 @@
 ﻿// 區塊職責：T40 Cmd_Treasury — agent CMD wrapper for Treasury Ledger
 // 物理意義：thin wrapper 委派 UCL_TreasuryLedger Static API；agent 透過 run_cmd.py 觸發
-// 數值影響：op-dispatch（12 個 op：餘額 / 進出帳 / 守恆轉帳 / 請款單 / 轉帳單 / 每日結帳）
+// 數值影響：op-dispatch（13 個 op：餘額 / 整批餘額 / 進出帳 / 守恆轉帳 / 請款單 / 轉帳單 / 每日結帳）
 // 安全：debit 帳戶隔離鐵律由 Static API 處理；本層只 parse args + 寫 _last_op.md
 // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Treasury.md（§2 op 一覽 / §4 kind 不驗值）
 
@@ -52,7 +52,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             {
                 // 錯誤訊息列全部 op —— 舊版只列 5 個，漏掉的 7 個對讀錯誤訊息的人等於不存在。
                 Cmd_Tavern_Helpers.RejectLastOp(args, 
-                    "缺少 op 參數（balance / credit / debit / transfer / audit / verify / "
+                    "缺少 op 參數（balance / balances / credit / debit / transfer / audit / verify / "
                     + "request / request_list / request_cancel / transfer_request / "
                     + "closing_generate / closing_list）");
                 return;
@@ -63,6 +63,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 switch (op)
                 {
                     case "balance":  Op_Balance(args); break;
+                    case "balances": Op_Balances(args); break;   // 整批唯讀（遷移／畫表用）
                     case "credit":   Op_Credit(args); break;
                     case "debit":    Op_Debit(args); break;
                     case "transfer": Op_Transfer(args); break;   // T55 closed economy v2
@@ -247,6 +248,87 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             sb.AppendLine($"- uuid: `{creditEntry.uuid}`");
             Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
             Debug.Log($"[Treasury] transfer {fromAccount} → {toAccount} = {amount} (tx={txId})");
+        }
+
+        // ==========================================================
+        // 區塊職責：整批餘額唯讀出口 —— 遷移（TASK-0216／0223）與「畫一整張表」的那條路。
+        // 物理意義：⛔ 呼叫端**不准**自己重放 ledger、也不准 parse `accounts/_balances.snapshot.txt`
+        //          （本檔案頂端 Tim 2026-08-20 的硬規則）。那條禁令留下一個缺口：
+        //          單帳戶有 `op=balance`，整批**沒有出口** ⇒ 想畫表的人只剩「自己重放」這條被禁的路。
+        //          本 op 就是補那個缺口 —— 它只是 `UCL_TreasuryLedger.GetAllBalances()` 的薄殼。
+        // 數值影響：**純讀**，不動任何帳。寫的只有可選的報表檔（呼叫端指定路徑）。
+        // ⚠ 報表檔是**某一刻的快照**：它一落盤就開始過期，所以每一份都自帶 `generated_at`
+        //   與帳戶數 —— 沒有那兩行的話，「剛才的餘額」與「三天前的餘額」在檔案上同形。
+        // ⚠ 格式是 TSV（`id` + tab + `currency` + tab + `balance`）而不是 JSON：id 裡可能有空白
+        //   （實測有一個帳戶叫 `Federal Reserve System`），但**不可能有 tab**；
+        //   ⇒ 這個分隔字元不需要跳脫，而不需要跳脫的格式沒有「跳脫寫錯」那一族失效。
+        // ==========================================================
+        void Op_Balances(Dictionary<string, string> args)
+        {
+            string currency = GetArg(args, "currency", "tavern_token");
+            string outPath = GetArg(args, "out_path", "");
+
+            var balances = UCL_TreasuryLedger.GetAllBalances(currency);
+
+            // 排序：讓兩次輸出可逐行對拍。⛔ 不排序的話 diff 會滿江紅而其實沒有任何數字變。
+            var ids = new List<string>(balances.Keys);
+            ids.Sort(System.StringComparer.Ordinal);
+
+            int nonZero = 0;
+            long total = 0;
+            foreach (var id in ids) { if (balances[id] != 0) ++nonZero; total += balances[id]; }
+
+            string stamp = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            string wrote = "";
+            if (!string.IsNullOrEmpty(outPath))
+            {
+                // ⚠ 分隔字元與行尾都用具名常數，⛔ 不在字串裡寫字面跳脫 ——
+                //   這一段 2026-09-16 被寫壞過一次：原始碼穿過 shell 那一層時 `\t` 被展開成真的 tab、
+                //   `'\n'` 斷成兩行 ⇒ **它連編都編不過**。而「跳脫被吃掉」與「我打錯字」在 diff 上同形。
+                const char TAB = '\t';
+                const char LF = '\n';
+                var tsv = new StringBuilder();
+                tsv.Append("# generated_at").Append(TAB).Append(stamp).Append(LF);
+                tsv.Append("# currency").Append(TAB).Append(currency).Append(LF);
+                tsv.Append("# accounts").Append(TAB).Append(ids.Count).Append(LF);
+                foreach (var id in ids)
+                    tsv.Append(id).Append(TAB).Append(currency).Append(TAB).Append(balances[id]).Append(LF);
+                try
+                {
+                    string dir = System.IO.Path.GetDirectoryName(outPath);
+                    if (!string.IsNullOrEmpty(dir)) System.IO.Directory.CreateDirectory(dir);
+                    System.IO.File.WriteAllText(outPath, tsv.ToString(), new UTF8Encoding(false));
+                    wrote = outPath;
+                }
+                catch (System.Exception e)
+                {
+                    // ⚠ 寫不出去要**出聲**：報表檔缺席與「這次沒有要報表」在呼叫端那側同形。
+                    Cmd_Tavern_Helpers.FailLastOp(args, $"balances 讀到了，但報表寫不出去：{e.GetType().Name}: {e.Message}");
+                    return;
+                }
+            }
+
+            UCL_AgentCommandRunner.ReportOutputValue(args, "currency", currency);
+            UCL_AgentCommandRunner.ReportOutputValue(args, "account_count", ids.Count.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "nonzero_count", nonZero.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "total", total.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "generated_at", stamp);
+            UCL_AgentCommandRunner.ReportOutputValue(args, "out_path", wrote);
+
+            var md = new StringBuilder();
+            md.AppendLine("# 💰 Treasury balances（整批，唯讀）");
+            md.AppendLine();
+            md.AppendLine($"- currency: `{currency}`　generated_at: `{stamp}`");
+            md.AppendLine($"- 帳戶 **{ids.Count}** 戶／其中有餘額的 **{nonZero}** 戶／合計 **{total}**");
+            md.AppendLine(wrote.Length > 0 ? $"- 報表檔：`{wrote}`（TSV）" : "- 報表檔：**沒有要**（沒給 `out_path`）");
+            md.AppendLine();
+            md.AppendLine("| 帳戶 | 餘額 |");
+            md.AppendLine("|---|---:|");
+            foreach (var id in ids) md.AppendLine($"| `{id}` | {balances[id]} |");
+            md.AppendLine();
+            md.AppendLine("> ⚠ 這是**某一刻的快照**，它一印出來就開始過期。要現況請重跑。");
+            Cmd_Tavern_Helpers.WriteLastOp(args, md.ToString());
+            Debug.Log($"[Treasury] balances → {ids.Count} accounts / nonzero {nonZero} / total {total}");
         }
 
         void Op_Audit(Dictionary<string, string> args)

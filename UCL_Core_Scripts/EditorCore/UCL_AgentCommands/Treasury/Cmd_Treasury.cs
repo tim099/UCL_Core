@@ -348,9 +348,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             foreach (var k in aNew.Keys) if (!aIds.Contains(k)) aIds.Add(k);
             aIds.Sort(System.StringComparer.Ordinal);
 
-            int aSame = 0, aDiff = 0, aOldOnly = 0, aNewOnly = 0;
+            // ⚠ **具名放棄清單是資料**（`Treasury/bank_migration_waived.txt`），與 `UCL_BankMirror` 讀同一份。
+            //   🩸 少了它，「Tim 拍板不搬」與「鏡像漏了一戶」在這張表上完全同形 —— 而前者該安靜、後者該叫。
+            //   ⇒ 清單**不在**時回空集合：所有缺戶都變「非預期」而會叫。那個方向是安全的。
+            var aWaived = UCL_BankMirror.LoadWaived();
+
+            int aSame = 0, aDiff = 0, aWaivedHit = 0, aUnexpected = 0, aNewOnly = 0;
             var sb = new StringBuilder();
-            sb.AppendLine("| 帳號 | 舊 Treasury | 新銀行 | 差 |");
+            sb.AppendLine("| 帳號 | 舊 Treasury | 新銀行 | 判定 |");
             sb.AppendLine("|---|---:|---:|---|");
             foreach (var id in aIds)
             {
@@ -360,7 +365,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 if (hasOld && hasNew && o == n) { ++aSame; continue; }
 
                 string why;
-                if (!hasNew) { ++aOldOnly; why = "⛔ 新銀行沒有這一戶（遷移時具名放棄，或鏡像跳過）"; }
+                if (!hasNew && aWaived.Contains(id))
+                {
+                    // ⛔ **不計入閘**：這是拍板的終態，不是漂移。但照樣逐戶印出來 ——
+                    //    「不算差額」跟「看不見」是兩件事，而看不見的那天沒有人會發現它變多了。
+                    ++aWaivedHit;
+                    why = "・具名放棄（終態；錢仍在舊帳本）";
+                }
+                else if (!hasNew) { ++aUnexpected; why = "⚠ **未預期缺戶** —— 不在具名放棄清單裡"; }
                 else if (!hasOld) { ++aNewOnly; why = "⚠ 只有新銀行有 —— 有人多寫了一筆"; }
                 else { ++aDiff; why = (n - o).ToString("+#;-#;0") + "（鏡像還沒追上，或漏了一筆）"; }
                 sb.AppendLine($"| `{id}` | {(hasOld ? o.ToString() : "—")} | {(hasNew ? n.ToString() : "—")} | {why} |");
@@ -370,9 +382,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             var head = new StringBuilder();
             head.AppendLine($"## 舊 Treasury vs 新銀行 —— 逐戶對帳（{stamp}）");
             head.AppendLine($"- 新銀行根：`{aBankRoot}`");
-            head.AppendLine($"- **相符 {aSame} 戶**／金額不同 **{aDiff}** 戶／只有舊的有 **{aOldOnly}** 戶／只有新的有 **{aNewOnly}** 戶");
-            if (aDiff == 0 && aOldOnly == 0 && aNewOnly == 0)
-                head.AppendLine("- ✅ **逐戶零差額**（⛔ 這是此刻的讀數 —— 鏡像非同步，剛寫完帳的幾秒本來就會差）");
+            head.AppendLine($"- 具名放棄清單：`{UCL_BankMirror.WaivedListPath}`（{aWaived.Count} 戶）");
+            head.AppendLine($"- **相符 {aSame} 戶**／金額不同 **{aDiff}** 戶／⚠ 未預期缺戶 **{aUnexpected}** 戶"
+                            + $"／只有新的有 **{aNewOnly}** 戶／・具名放棄 {aWaivedHit} 戶（不計入閘）");
+            if (aDiff == 0 && aUnexpected == 0 && aNewOnly == 0)
+                head.AppendLine("- ✅ **逐戶零差額**（⛔ 這是此刻的讀數 —— 鏡像非同步，剛寫完帳的幾秒本來就會差；"
+                                + "⛔ 也**不含**具名放棄那批：它們是拍板的終態，不是被驗過的）");
             foreach (var p in aProblems) head.AppendLine($"- ⚠ 讀新銀行時：{p}");
             head.AppendLine();
 

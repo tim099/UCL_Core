@@ -69,6 +69,37 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             get { return Path.Combine(UCL_RepoPath.AgentCommandsDir, "Treasury", "ledger"); }
         }
 
+        // ===========================================================
+        // 區塊職責：具名放棄清單（`Treasury/bank_migration_waived.txt`）—— **拍板不遷**的那批帳戶。
+        // 物理意義：Tim 2026-09-17「都不搬，現狀就是終態」。清單是**資料**不是註解，
+        //          而且 `Cmd_Treasury op=bank_diff` 讀的是同一份 ⇒ 兩層不可能對「這戶該不該在」給出不同答案。
+        // 🩸 少了它，「我們決定不搬」與「鏡像漏了一戶」在畫面上完全同形 —— 而前者該安靜、後者該叫。
+        // 數值影響：純讀。檔不在 ⇒ 回空集合（⇒ 所有缺戶都變「非預期」而會叫，**那個方向是安全的**）。
+        // ===========================================================
+        public static string WaivedListPath
+        {
+            get { return Path.Combine(UCL_RepoPath.AgentCommandsDir, "Treasury", "bank_migration_waived.txt"); }
+        }
+
+        public static HashSet<string> LoadWaived()
+        {
+            var aOut = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (!File.Exists(WaivedListPath)) return aOut;
+                foreach (string aLine in File.ReadAllLines(WaivedListPath))
+                {
+                    string aTrim = aLine.Trim();
+                    if (aTrim.Length == 0 || aTrim[0] == '#') continue;
+                    int aTab = aTrim.IndexOf('\t');
+                    string aId = (aTab >= 0 ? aTrim.Substring(0, aTab) : aTrim).Trim();
+                    if (aId.Length > 0) aOut.Add(aId);
+                }
+            }
+            catch (Exception e) { Debug.LogWarning($"[BankMirror] 具名放棄清單讀不了：{e.Message}"); }
+            return aOut;
+        }
+
         static UCL.Core.JsonLib.JsonData LoadState()
         {
             try
@@ -187,9 +218,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 }
                 else if (IsNoSuchAccount(aRes))
                 {
-                    // 新銀行沒有這一戶 ＝ 遷移時**具名放棄**的那 18 戶（央行以外的機構戶／discord:*／幽靈戶）。
-                    // ⇒ 具名跳過並前進，⛔ 不卡住整條鏡像 —— 卡住的話後面每一筆真的帳都跟著停。
-                    RecordSkip(aRelKey, AccountOf(aRelKey), "新銀行沒有這一戶（遷移時具名放棄）");
+                    // 新銀行沒有這一戶 ⇒ 前進（⛔ 不卡住整條鏡像：卡住的話後面每一筆真的帳都跟著停），
+                    // 但**分兩種說法**：在具名放棄清單裡＝預期；不在＝⚠ 非預期，那是要有人來看的。
+                    string aAcc = AccountOf(aRelKey);
+                    bool aExpected = LoadWaived().Contains(aAcc);
+                    RecordSkip(aRelKey, aAcc, aExpected
+                        ? "新銀行沒有這一戶，而它**在具名放棄清單裡**（預期；Tim 2026-09-17 拍板不搬）"
+                        : "⚠ 新銀行沒有這一戶，而它**不在**具名放棄清單裡 —— 非預期，要有人來看");
                     SaveCursor(aRelKey);
                 }
                 else

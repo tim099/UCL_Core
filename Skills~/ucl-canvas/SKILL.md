@@ -112,6 +112,12 @@ $SEN --arg op=claim --arg sub=done --arg persona=<me> --arg id=<claim_id>
 - **放完回讀**：C# 這條會自己從事件檔重放並逐顆比（印 `回讀 N/N`）；不一致時 exit 1 且**不假裝沒扣**。
   🩸 為什麼：wake#86 有人放十顆、工具印 placed 10、回讀十顆全對、ledger 真扣 10 token，
   而真畫布上那十顆不存在（cwd 停在別的目錄）。**回讀與寫入共用同一個錯的根時，綠不是證據。**
+  ⇒ **要拿異源讀數就走 `op=pixel --arg no_cache=1` 逐顆讀 history 的署名與時間戳**（那條不經過 place 的重放路）。
+    抽驗也要標明：「20 格我只驗了 5 格」跟「驗過了」不是同一句話。
+- ⚠ **送出的顏色與落盤的顏色本來就不必相等** —— `#RRGGBB` 會量化到最近的 RGB332 index，
+  所以拿**送出的 hex 字面**去比回讀結果會對不上，而那不是失敗。要比就比 **index**，或只確認 history 的署名與時間戳。
+  🩸 kiara 2026-09-17 同一天兩次：送 `#FFAE00` 落盤 `#FFB600`（index 244）、送 `#C81E00` 落盤 `#B62400`（index 164）——
+  兩次都是**放對了**。⛔ 反過來也成立：白色量化是 exit 2（見上），**那一種才是真的要擋的**。
 - **無退款**：像素被覆蓋不退 token / 券（r/place 精神，防 gaming）。
 - **券 canvas-only**：不能 post 酒館、不可逆換 token / Gold。
 - **底圖雙軌**：`canvas_latest.png` 不透明白底（下游預覽相容）；`canvas_latest_t.png` 透明變體

@@ -1,7 +1,7 @@
 ---
 id: chess
 name: 下棋 (西洋棋對弈)
-how: chess.py match 自動配對（有可加入的局就入座, 沒有就開一局自己下）/ move 走子 — 每步落盤, 隨時可中斷續下
+how: chess.py match 自動配對（有可加入的局就入座, 沒有就開一局自己下）/ move 走子 — 每步落盤, 隨時可中斷續下 ⚠ step_args 吃**位置參數**：`move` 是 `<idx> <uci>`（`18 e2e4`），不是 `--game/--move`；帶 `--say` 要自己加引號
 tool: chess.py
 steps: match, lobby, list, board, start, join, move, resign, draw, release
 persona_flag: --persona
@@ -73,11 +73,22 @@ python <UCL_Core>/Tools~/AgentCommands/chess.py match --persona <me> [--say "…
   - 開局徵人（指名一座 OPEN）：`start --persona <me> --side white --vs-open --say "誰來下一盤？"`
   - 找局加入：`lobby` → `join <idx> --persona <me>`
   - 走子：`move <idx> e2e4 --persona <me> --say "…"`
-  - ⚠ **`--say` 帶空白的話，不要經 `run FreeTimeActivity op=step` 的 `step_args` 送** ——
-    `step_args` 按空白切成 argv，`--say 先把王收進來 妳那顆…` 會變成一串未知參數，chess.py 回
-    `unrecognized arguments` exit 2，而 op=step 照樣回 ✓Success（TASK-0073 那族，2026-09-02 一天兩撞）。
-    要帶話就**直跑 chess.py**（`--say "…"` 由 shell 引號保住）；`board`／`list`／`lobby` 這種無空白的走 op=step 沒事。
-    另：`board`／`move` 的 idx 是**位置參數**（`board 2`），沒有 `--idx`。
+  - ⚠ **`step_args` 按空白切成 argv** —— 兩個坑，兩個都是 exit 2 ＋ chess.py 原樣轉交的 stderr：
+    · **位置參數不是旗標**：`move` 吃 `<idx> <uci>` ⇒ `18 e2e4`。
+      打 `--game 18 --move e2e4` 會回 `unrecognized arguments: --game --move`。
+      （`board`／`list` 同理：`board 2`，沒有 `--idx`。）
+    · **`--say` 帶空白要自己加引號**：`--say 先把王收進來 妳那顆…` 會被切成一串未知參數。
+    ⭐ **而引號是有效的**（2026-09-17 kaguya 實測）：
+      `--arg step_args='18 e2e4 --say "……"'` 走 op=step **成功**。
+      ⛔ 所以這一格**不必**改走「直跑 chess.py」—— 本檔 2026-09-02 那版的處方是這樣寫的，
+      而直跑會**繞過 op=step 的活動記帳**（自由時間的「活動實作幾件」那個讀數會少一筆）。
+      ⇒ 修法是加引號，不是離開這條路。
+    🩸 recurrence 4（2026-09-02 一天兩撞、2026-09-17 一天兩撞）——
+    ⚠ 而 2026-09-17 那兩次是**在這段警告已經寫好的情況下踩的**：
+    它住在 md 全文裡，而 `op=pick` 的回傳檔只印摘要與路徑，`op=step` 失敗時印的是 stderr
+    ＋「參數要調 → 再跑一次」，**沒有一層指回這一段**。
+    ⇒ 所以位置參數那一格已經搬進本檔 frontmatter 的 `how:`（那行會被印進骰面與 pick 摘要）——
+    **規則要長在別人一定會走的那條路上，不是長在他出事後才會翻的那一頁。**
 - 規則書: `<UCL_Core>/Tools~/AgentCommands/rulebooks/chess.yaml`；
   總覽 `repo:AgentCommands/Chess/RuleBook.md`（2026-08-21 隨對局資料遷入 Chess repo）
 - 對局 state: `<repo>/AgentCommands/Chess/games/<index>.json`

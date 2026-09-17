@@ -1226,44 +1226,19 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // 物理意義：work.json（作品層，可被多媒材共用）/ media.json（媒材層）/ reader.json（讀者層）。
         // 數值影響：已存在的檔**不覆寫** —— 建檔重跑不該蓋掉既有進度。
         // ===========================================================
+        // ⤷ **薄殼**（TASK-0166 ①）：建檔實作住 `SCP.Core.Library.SCP_LibraryInit.MediaInit`（work／media／reader 三層）。
+        // ⚠ 簽名不動 ⇒ `Cmd_Library op=media_init` 與管理頁零改動；回傳的 log 字串也照舊進回傳檔。
         public static string MediaInit(string workId, string mediaId, string mediaKind, string persona,
                                        string title, string titleOriginal, string author, int anticipation,
                                        IList<string> aliases, IList<string> genreTags,
                                        out string error)
         {
-            error = null;
-            var log = new StringBuilder();
-
-            log.Append(EnsureWorkJson(workId, title, titleOriginal, author, aliases, genreTags));
-
-            string mediaPath = Path.Combine(MediaRoot(mediaId), k_MediaJsonName);
-            if (File.Exists(mediaPath))
-            {
-                JsonData existing = LoadJson(mediaPath, out string mediaErr);
-                if (existing == null) { error = mediaErr; return log.ToString(); }
-                string existingWork = existing.GetString(Key_WorkId, "");
-                if (existingWork != workId)
-                {
-                    error = $"media.json 已存在且 {Key_WorkId}={existingWork}，與請求 {workId} 不符 —— " +
-                            "同一 media id 指向兩個作品是身分層錯誤，請改用不同 media_id 或先確認哪個才對";
-                    return log.ToString();
-                }
-                log.AppendLine($"- media.json 已存在，不覆寫：`{mediaId}`");
-            }
-            else
-            {
-                var media = new JsonData();
-                media[Key_MediaId] = mediaId;
-                media[Key_WorkId] = workId;
-                media[Key_MediaKind] = mediaKind;
-                media[Key_SchemaVersion] = 1;
-                SaveJson(mediaPath, media);
-                log.AppendLine($"- ✅ 建立 media.json：`{mediaId}`（{mediaKind}）");
-            }
-
-            log.Append(EnsureReaderJson(mediaId, persona, anticipation, out _));
-
-            return log.ToString();
+            string aLog = SCP.Core.Library.SCP_LibraryInit.MediaInit(
+                new SCP.Core.Paths.SCP_LettersRoot(UCL_LettersPath.Root), UCL_AgentCommandsPath.DataRoot,
+                workId, mediaId, mediaKind, persona, title, titleOriginal, author,
+                anticipation, aliases, genreTags, out string aErr);
+            error = aErr;
+            return aLog;
         }
 
         // ===========================================================
@@ -1275,29 +1250,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // ===========================================================
         static string EnsureReaderJson(string mediaId, string persona, int anticipation, out bool oCreated)
         {
-            oCreated = false;
-            string readerPath = ReaderJsonPath(mediaId, persona);
-            if (File.Exists(readerPath))
-                return $"- reader.json 已存在，不覆寫：`{persona}`（既有進度保留）" + Environment.NewLine;
-
-            var reader = new JsonData();
-            reader[Key_SchemaVersion] = 2;
-            reader[Key_ReaderPersona] = persona;
-            reader[Key_MediaId] = mediaId;
-            reader[Key_Status] = "reading";
-            reader[Key_Anticipation] = anticipation;
-            reader[Key_ReadingStartedAt] = Today();
-            var progress = new JsonData();
-            progress[Key_CurrentChapterId] = "";
-            progress[Key_LastRead] = Today();
-            progress[Key_BookmarkNote] = "（尚未開始）";
-            reader[Key_Progress] = progress;
-            reader[Key_CurrentImpression] = "（尚未寫下第一筆心得）";
-            reader[Key_UpdatedAt] = Today();
-            SaveJson(readerPath, reader);
-            SyncBookshelf(mediaId, persona, out _);
-            oCreated = true;
-            return $"- ✅ 建立 reader.json：`{persona}`（期待度 {anticipation}／5）" + Environment.NewLine;
+            // ⤷ **薄殼**（TASK-0166 ①）：實作住 `SCP.Core.Library.SCP_LibraryInit.EnsureReaderJson`
+            //   —— 含「建完必定同步閱讀卡」那一步（那不是順手加的，見 SCP 側的檔頭血證）。
+            return SCP.Core.Library.SCP_LibraryInit.EnsureReaderJson(
+                new SCP.Core.Paths.SCP_LettersRoot(UCL_LettersPath.Root), UCL_AgentCommandsPath.DataRoot, mediaId, persona, anticipation, out oCreated);
         }
 
         // ===========================================================
@@ -1316,21 +1272,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         public static bool RegisterReader(string mediaId, string persona,
                                           out bool oCreated, out string oLog, out string error)
         {
-            oCreated = false; oLog = ""; error = null;
-            if (string.IsNullOrEmpty(mediaId) || string.IsNullOrEmpty(persona))
-            {
-                error = "RegisterReader：media_id 與 persona 都必填";
-                return false;
-            }
-            string mediaPath = Path.Combine(MediaRoot(mediaId), k_MediaJsonName);
-            if (!File.Exists(mediaPath))
-            {
-                error = $"media.json 不存在：{mediaPath} —— 這部作品還沒進閱讀庫，" +
-                        $"⇒ 先走 `Library op=media_init`（那一支才會建 work／media 層）";
-                return false;
-            }
-            oLog = EnsureReaderJson(mediaId, persona, 3, out oCreated);
-            return true;
+            // ⤷ **薄殼**（TASK-0166 ①）：實作住 `SCP.Core.Library.SCP_LibraryInit.RegisterReader`。
+            bool aOk = SCP.Core.Library.SCP_LibraryInit.RegisterReader(
+                new SCP.Core.Paths.SCP_LettersRoot(UCL_LettersPath.Root), UCL_AgentCommandsPath.DataRoot, mediaId, persona, out oCreated, out oLog, out string aErr);
+            error = aErr;
+            return aOk;
         }
 
         // ===========================================================

@@ -120,7 +120,7 @@ namespace UCL.Core.EditorLib.Page
         //          m_ComicDisplayOptions = 下拉選單顯示字串清單
         string m_ComicRootPath = "";
         string m_ComicRootPathInput = "";
-        List<UCL_ReadingLibraryIO.ExternalComicSeries> m_ExternalComics = new List<UCL_ReadingLibraryIO.ExternalComicSeries>();
+        List<SCP.Core.Library.SCP_ExternalComicSeries> m_ExternalComics = new List<SCP.Core.Library.SCP_ExternalComicSeries>();
         string m_SelectedComicSeriesSlug = "";
         List<string> m_ComicDisplayOptions = new List<string>();
 
@@ -456,8 +456,8 @@ namespace UCL.Core.EditorLib.Page
             m_ComicDisplayOptions.Clear();
             foreach (var c in m_ExternalComics)
             {
-                string statusIcon = c.Status == UCL_ReadingLibraryIO.ComicMatchStatus.Synced ? "🟢"
-                    : (c.Status == UCL_ReadingLibraryIO.ComicMatchStatus.MissingSource ? "🟡" : "⚪");
+                string statusIcon = c.Status == SCP.Core.Library.SCP_ComicMatchStatus.Synced ? "🟢"
+                    : (c.Status == SCP.Core.Library.SCP_ComicMatchStatus.MissingSource ? "🟡" : "⚪");
                 string volInfo = c.Volumes.Count > 0 ? $" ‧ {c.Volumes.Count}卷 {c.TotalChapters}話" : " ‧ 0話";
                 m_ComicDisplayOptions.Add($"{statusIcon} {c.SeriesName}{volInfo} ({c.MediaId})");
             }
@@ -593,8 +593,8 @@ namespace UCL.Core.EditorLib.Page
                     // 標題列
                     string statusBadge = comic.Status switch
                     {
-                        UCL_ReadingLibraryIO.ComicMatchStatus.Synced => "<color=#44ff88>[🟢 已在 Library 建檔]</color>",
-                        UCL_ReadingLibraryIO.ComicMatchStatus.MissingSource => "<color=#ffcc00>[🟡 來源失聯 (Missing Source)]</color>",
+                        SCP.Core.Library.SCP_ComicMatchStatus.Synced => "<color=#44ff88>[🟢 已在 Library 建檔]</color>",
+                        SCP.Core.Library.SCP_ComicMatchStatus.MissingSource => "<color=#ffcc00>[🟡 來源失聯 (Missing Source)]</color>",
                         _ => "<color=#aaaaaa>[⚪ 未建檔 (Unregistered)]</color>"
                     };
 
@@ -639,7 +639,7 @@ namespace UCL.Core.EditorLib.Page
                             }
                         }
 
-                        if (comic.Status == UCL_ReadingLibraryIO.ComicMatchStatus.Synced)
+                        if (comic.Status == SCP.Core.Library.SCP_ComicMatchStatus.Synced)
                         {
                             if (GUILayout.Button("📖 開啟閱讀心得頁",
                                 UCL_GUIStyle.GetButtonStyle(new Color(0.75f, 0.95f, 0.75f)), GUILayout.ExpandWidth(false)))
@@ -647,7 +647,7 @@ namespace UCL.Core.EditorLib.Page
                                 UCL_ReadingNotesManagePage.CreateForTitle(string.IsNullOrEmpty(comic.RegisteredTitle) ? comic.SeriesName : comic.RegisteredTitle);
                             }
                         }
-                        else if (comic.Status == UCL_ReadingLibraryIO.ComicMatchStatus.Unregistered)
+                        else if (comic.Status == SCP.Core.Library.SCP_ComicMatchStatus.Unregistered)
                         {
                             if (GUILayout.Button("📥 初始化 Library Media",
                                 UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.85f, 1f)), GUILayout.ExpandWidth(false)))
@@ -667,7 +667,7 @@ namespace UCL.Core.EditorLib.Page
                                 }
                             }
                         }
-                        else if (comic.Status == UCL_ReadingLibraryIO.ComicMatchStatus.MissingSource)
+                        else if (comic.Status == SCP.Core.Library.SCP_ComicMatchStatus.MissingSource)
                         {
                             if (GUILayout.Button("📖 檢視既有閱讀心得",
                                 UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.9f, 0.6f)), GUILayout.ExpandWidth(false)))

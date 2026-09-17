@@ -295,7 +295,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (File.Exists(aMediaJson))
                 {
                     var aMj = UCL_ReadingLibraryIO.LoadJson(aMediaJson, out string aErr);
-                    string aWid = (aMj != null && aMj.Contains("work_id")) ? aMj["work_id"].GetString() : "";
+                    string aWid = (aMj != null && aMj.Contains("work_id")) ? aMj.GetString("work_id", "") : "";
                     if (!string.IsNullOrEmpty(aWid))
                     {
                         oWorkId = aWid; oLibMediaId = iKey;
@@ -720,7 +720,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             {
                 var aMediaJson = UCL_ReadingLibraryIO.LoadJson(
                     Path.Combine(UCL_ReadingLibraryIO.MediaRoot(aMediaId), "media.json"), out string aMErr);
-                if (aMediaJson != null && aMediaJson.Contains("work_id")) aWorkId = aMediaJson["work_id"].GetString();
+                if (aMediaJson != null && aMediaJson.Contains("work_id")) aWorkId = aMediaJson.GetString("work_id", "");
             }
             catch { }
             aP.work_id = aWorkId;
@@ -854,10 +854,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 {
                     var aProg = aReader["progress"];
                     aR.AppendLine($"## 接續點（`{aRef}` 的書籤）");
-                    aR.AppendLine($"- 目前章：`{(aProg.Contains("current_chapter_id") ? aProg["current_chapter_id"].GetString() : "?")}`");
-                    aR.AppendLine($"- 書籤：{(aProg.Contains("bookmark_note") ? aProg["bookmark_note"].GetString() : "（無）")}");
+                    aR.AppendLine($"- 目前章：`{(aProg.Contains("current_chapter_id") ? aProg.GetString("current_chapter_id", "") : "?")}`");
+                    aR.AppendLine($"- 書籤：{(aProg.Contains("bookmark_note") ? aProg.GetString("bookmark_note", "") : "（無）")}");
                     if (aReader.Contains("current_impression"))
-                        aR.AppendLine($"- 當前看法：{aReader["current_impression"].GetString()}");
+                        aR.AppendLine($"- 當前看法：{aReader.GetString("current_impression", "")}");
                     aR.AppendLine();
                 }
             }

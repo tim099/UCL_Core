@@ -414,21 +414,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             string headline;
             switch (outcome)
             {
-                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.AllMatch:
+                case SCP.Core.Library.SCP_AuthoredDiffOutcome.AllMatch:
                     headline = "✓ **AllMatch** —— 四欄逐欄相同，且正文容器沒有遺漏"; break;
-                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.FieldsMatchProseMissing:
+                case SCP.Core.Library.SCP_AuthoredDiffOutcome.FieldsMatchProseMissing:
                     headline = "⛔ **FieldsMatchProseMissing** —— 四欄對得上，**而正文容器對不上** ⇒ " +
                                "搬下去會靜默丟掉正文（⛔ 這不是通過）"; break;
-                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.Mismatch:
+                case SCP.Core.Library.SCP_AuthoredDiffOutcome.Mismatch:
                     headline = $"⛔ **Mismatch** —— {mismatched.Count} 欄對不上：" +
                                string.Join("、", mismatched.ConvertAll(k => "`" + k + "`")); break;
-                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.NewStoreNoWritingLine:
+                case SCP.Core.Library.SCP_AuthoredDiffOutcome.NewStoreNoWritingLine:
                     headline = "⛔ **NewStoreNoWritingLine** —— 新 store 四欄全空 ⇒ 這本還沒搬（⛔ 不是「值不同」）"; break;
-                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.NeitherHasWritingLine:
+                case SCP.Core.Library.SCP_AuthoredDiffOutcome.NeitherHasWritingLine:
                     headline = "⚠ **NeitherHasWritingLine** —— 兩邊都沒有寫書線 ⇒ 無事可拍（⛔ 不是通過）"; break;
-                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.NewStoreMissing:
+                case SCP.Core.Library.SCP_AuthoredDiffOutcome.NewStoreMissing:
                     headline = "⛔ **NewStoreMissing** —— 新 store 還沒有這份 work.json"; break;
-                case UCL_ReadingLibraryIO.AuthoredDiffOutcome.OldStoreMissing:
+                case SCP.Core.Library.SCP_AuthoredDiffOutcome.OldStoreMissing:
                     headline = "⛔ **OldStoreMissing** —— 舊 store 沒有這本"; break;
                 default:
                     headline = "⛔ **ParseFailed** —— 有一邊解析不動（⛔ 不當成「值不同」）"; break;
@@ -460,13 +460,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             string headline;
             switch (outcome)
             {
-                case UCL_ReadingLibraryIO.AuthoredMigrateOutcome.Planned:
+                case SCP.Core.Library.SCP_AuthoredMigrateOutcome.Planned:
                     headline = "🧪 **Planned** —— dry-run，**零寫入**。確認計畫沒問題就加 `--arg confirm=1`"; break;
-                case UCL_ReadingLibraryIO.AuthoredMigrateOutcome.Migrated:
+                case SCP.Core.Library.SCP_AuthoredMigrateOutcome.Migrated:
                     headline = "✅ **Migrated** —— 已搬（⚠ 判定看底下那段**回讀對拍**，⛔ 不是看這一行）"; break;
-                case UCL_ReadingLibraryIO.AuthoredMigrateOutcome.NotAuthored:
+                case SCP.Core.Library.SCP_AuthoredMigrateOutcome.NotAuthored:
                     headline = "⛔ **NotAuthored** —— 舊 store 那本不是寫書線的書 ⇒ 這支不搬它"; break;
-                case UCL_ReadingLibraryIO.AuthoredMigrateOutcome.OldStoreMissing:
+                case SCP.Core.Library.SCP_AuthoredMigrateOutcome.OldStoreMissing:
                     headline = "⛔ **OldStoreMissing** —— 舊 store 沒有這本 ⇒ 沒有可搬的來源"; break;
                 default:
                     headline = "⛔ **ParseFailed** —— 有一步讀不動或寫不進去（⛔ 不當成「沒有內容」）"; break;

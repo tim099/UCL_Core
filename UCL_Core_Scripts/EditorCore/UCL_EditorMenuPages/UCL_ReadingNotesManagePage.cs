@@ -99,7 +99,7 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：純唯讀；清單在開頁載一次，「🔄」手動重整（Library 寫入頻率低，不每幀掃碟）。
         // ===========================================================
         const string FoldBrowse = "ReadingNotesBrowseFold";
-        List<AgentCommands.ReadingLibrary.UCL_ReadingLibraryIO.MediaEntry> m_MediaEntries;
+        List<SCP.Core.Library.SCP_MediaEntry> m_MediaEntries;
         int m_BrowseKindSel = 0;
         int m_BrowseMediaSel = 0;
         int m_BrowseReaderSel = 0;

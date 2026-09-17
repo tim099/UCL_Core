@@ -117,7 +117,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         /// 物理意義：兩個欄位互為對方的校驗；另造名字（movie）等於同一件事兩個名字。
         /// 數值影響：不在清單內即 reject，不做「清洗後照用」。
         /// </summary>
-        public static readonly string[] MediaKinds = { "comic", "anim", "film", "series", "stream", "book" };
+        public static string[] MediaKinds => SCP.Core.Library.SCP_LibraryIO.MediaKinds;   // ⤷ 薄殼（TASK-0166 ①）
 
         static readonly Regex k_IdPattern = new Regex(@"^[A-Za-z0-9][A-Za-z0-9_-]*$");
         static readonly Regex k_ChapterIdPattern = new Regex(@"^\d{4}$");
@@ -130,9 +130,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // 物理意義：一律由 UCL_RepoPath.AgentCommandsDir 推導，不寫死 UCL_Core 安裝路徑。
         // ===========================================================
         public static string BookNotesRoot => Path.Combine(UCL_RepoPath.AgentCommandsDir, k_BookNotesDirName);
-        public static string LibraryRoot => Path.Combine(BookNotesRoot, k_LibraryDirName);
-        public static string MediaRoot(string mediaId) => Path.Combine(LibraryRoot, k_MediaDirName, mediaId);
-        public static string WorkRoot(string workId) => Path.Combine(LibraryRoot, k_WorksDirName, workId);
+        public static string LibraryRoot => SCP.Core.Library.SCP_LibraryStore.LibraryRoot(UCL_AgentCommandsPath.DataRoot);
+        public static string MediaRoot(string mediaId) => SCP.Core.Library.SCP_LibraryStore.MediaRoot(UCL_AgentCommandsPath.DataRoot, mediaId);
+        public static string WorkRoot(string workId) => SCP.Core.Library.SCP_LibraryStore.WorkRoot(UCL_AgentCommandsPath.DataRoot, workId);
 
         // ===========================================================
         // 區塊職責：authored 正文的容器 —— TASK-0146 ②（設計決定寫在該單留言，⛔ 不只定在這裡）
@@ -151,10 +151,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         //   而 ④ 指定第一本搬的 @gura《深海對拍錄》**`chapters/` 真的 0 個、`arcs/arc_1-3.md` 有 1 個**
         //   （日期 2026-09-09，比那張單晚三天）⇒ 只做章的容器會**靜默丟掉她唯一的內容**。
         // ===========================================================
-        public static string WorkChaptersRoot(string workId)
-            => Path.Combine(WorkRoot(workId), k_WorkChaptersDirName);
-        public static string WorkArcsRoot(string workId)
-            => Path.Combine(WorkRoot(workId), k_WorkArcsDirName);
 
         /// <summary>
         /// 正文容器的**存在性讀數** —— ⚠ 回三態而不是回檔數（TASK-0146 ② 的反向對照）。
@@ -165,58 +161,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         /// ⇒ 所以這裡把「沒有這個目錄」與「有目錄但裡面 0 個」做成**兩個不同的值**，
         ///   ⛔ 不留一個 0 讓讀的人去猜是哪一種 —— 人往空格裡填的一定是成功。
         /// </summary>
-        public enum WorkProseState { NoDir, EmptyDir, HasFiles }
-
-        public static WorkProseState ProbeWorkProse(string dir, out int fileCount)
-        {
-            fileCount = 0;
-            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return WorkProseState.NoDir;
-            try { fileCount = Directory.GetFiles(dir).Length; }
-            catch (System.Exception) { return WorkProseState.NoDir; }
-            return fileCount > 0 ? WorkProseState.HasFiles : WorkProseState.EmptyDir;
-        }
-
-        // ===========================================================
-        // 區塊職責：寫書線四欄的寫入與讀回 —— TASK-0146 ①
-        // ⚠ 刻意**不動 `MediaInit` 的簽名**：那是閱讀線的建檔路徑，
-        //   而四欄只屬於 authored。混進去會讓每一本閱讀作品都多帶四個空欄
-        //   ⇒ 違反 ① 明文的「既有欄位與讀取端一個字不動」。
-        // 數值影響：**空值不落盤** ⇒ 沒帶寫書線的 work.json 逐位元組不變。
-        // ===========================================================
-        public sealed class WorkAuthored
-        {
-            public string AuthorPersona = "";
-            public string Status = "";
-            public string PublishStatus = "";
-            public string Origin = "";
-            /// <summary>四欄全空 ＝ 這份 work.json 上沒有寫書線（⛔ 不等於「它不是 authored」，只是這裡沒寫）。</summary>
-            public bool IsEmpty => AuthorPersona.Length == 0 && Status.Length == 0
-                                   && PublishStatus.Length == 0 && Origin.Length == 0;
-            /// <summary>對寫書線讀取端可見的唯一條件 —— `origin` 必須逐字是 `authored`（見 Key_Origin 的區塊註解）。</summary>
-            public bool VisibleToWritingLine => Origin == OriginAuthored;
-        }
 
         /// <summary>把寫書線四欄寫上既有的 work.json（**只寫非空的那幾欄**）。work.json 不存在 ⇒ 不建、回 false。</summary>
-        public static bool TrySetWorkAuthored(string workId, WorkAuthored fields, out string error)
-        {
-            error = null;
-            if (fields == null) { error = "fields 是 null"; return false; }
-            string path = Path.Combine(WorkRoot(workId), k_WorkJsonName);
-            if (!File.Exists(path))
-            {
-                // ⛔ 刻意不順手建一份：這裡若建檔，「作品本來就在」與「我剛剛替它生了一份」會同形。
-                error = $"work.json 不存在：`{path}` —— ⛔ 本函式不建檔（那是 media_init 的職責）";
-                return false;
-            }
-            JsonData work = LoadJson(path, out string loadErr);
-            if (work == null) { error = loadErr; return false; }
-            if (fields.AuthorPersona.Length > 0) work[Key_AuthorPersona] = fields.AuthorPersona;
-            if (fields.Status.Length > 0) work[Key_Status] = fields.Status;
-            if (fields.PublishStatus.Length > 0) work[Key_PublishStatus] = fields.PublishStatus;
-            if (fields.Origin.Length > 0) work[Key_Origin] = fields.Origin;
-            SaveJson(path, work);
-            return true;
-        }
 
         // ===========================================================
         // 區塊職責：建 work.json（不存在才建；已存在一律不覆寫）—— `MediaInit` 與 ④ 搬遷**共用這一份**
@@ -226,46 +172,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         //          於是「這本沒填」與「這條路徑沒寫這欄」同形。
         // 數值影響：檔案不存在 ⇒ 建一份；存在 ⇒ 一個位元組都不動（⛔ 不補欄、不升版）。
         // ===========================================================
-        static string EnsureWorkJson(string workId, string title, string titleOriginal, string author,
-                                     IList<string> aliases, IList<string> genreTags)
-        {
-            string workPath = Path.Combine(WorkRoot(workId), k_WorkJsonName);
-            if (File.Exists(workPath)) return $"- work.json 已存在，不覆寫：`{workId}`\n";
-
-            var work = new JsonData();
-            work[Key_WorkId] = workId;
-            work[Key_Title] = title;
-            work[Key_TitleOriginal] = titleOriginal ?? "";
-            work[Key_Author] = author ?? "";
-            // 區塊職責：aliases 是**日後搜尋的唯一入口**（中／日／英 + 常見異譯）。
-            // 物理意義：搜尋比對打的是 title / title_original / aliases 三欄；
-            //          漏建 alias 的後果不是「找不到」，是「找不到 → 有人再建一本」
-            //          （arakawa 雙 entry 的成因，2026-08-05 實測 101 本裡有四組重複）。
-            // 數值影響：純 metadata；不影響進度與章節。
-            work[Key_Aliases] = ToStringArray(aliases, title, titleOriginal);
-            work[Key_GenreTags] = ToStringArray(genreTags);
-            work[Key_SchemaVersion] = 1;
-            SaveJson(workPath, work);
-            return $"- ✅ 建立 work.json：`{workId}`《{title}》（aliases {work[Key_Aliases].Count} 筆）\n";
-        }
 
         /// <summary>讀回寫書線四欄（③ 逐欄對拍的讀取側）。work.json 不存在或解析不動 ⇒ 回 false，⛔ 不回一個空物件假裝讀到了。</summary>
-        public static bool TryReadWorkAuthored(string workId, out WorkAuthored fields, out string error)
-        {
-            fields = null; error = null;
-            string path = Path.Combine(WorkRoot(workId), k_WorkJsonName);
-            if (!File.Exists(path)) { error = $"work.json 不存在：`{path}`"; return false; }
-            JsonData work = LoadJson(path, out string loadErr);
-            if (work == null) { error = loadErr; return false; }
-            fields = new WorkAuthored
-            {
-                AuthorPersona = work.GetString(Key_AuthorPersona, ""),
-                Status = work.GetString(Key_Status, ""),
-                PublishStatus = work.GetString(Key_PublishStatus, ""),
-                Origin = work.GetString(Key_Origin, ""),
-            };
-            return true;
-        }
 
         // ===========================================================
         // 區塊職責：③ 逐欄對拍 —— 舊 store（`BookNotes/<slug>/book.json`）↔ 新 store（`works/<work_id>/work.json`）
@@ -283,150 +191,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         //     （@gura 舊 store 是 `book-gura-abyssal-verifications`，而新 store 那本還不存在）。
         //     推導會讓「id 對不上」與「這本沒搬」同形。
         // ===========================================================
-        public enum AuthoredDiffOutcome
-        {
-            /// <summary>舊 store 那本 `book.json` 不存在 ⇒ 沒有比較的左邊（⛔ 不是「值不同」）。</summary>
-            OldStoreMissing,
-            /// <summary>新 store 那份 `work.json` 不存在 ⇒ 還沒建（⛔ 不是「值不同」）。</summary>
-            NewStoreMissing,
-            /// <summary>任一邊解析不動 ⇒ ⛔ 不回報「不同」，那會把壞檔講成搬壞了。</summary>
-            ParseFailed,
-            /// <summary>兩邊都沒有寫書線四欄 ⇒ 這本不是 authored，⛔ 對拍沒有通過，只是無事可拍。</summary>
-            NeitherHasWritingLine,
-            /// <summary>舊 store 有寫書線而新 store 四欄全空 ⇒ **還沒搬**（⛔ 這格若掉進 AllMatch 就是綠得最假的一格）。</summary>
-            NewStoreNoWritingLine,
-            /// <summary>有欄位對不上 ⇒ `mismatchedFields` 逐欄指名。</summary>
-            Mismatch,
-            /// <summary>
-            /// 四欄逐欄相同，**而正文容器對不上**（舊 store 有檔、新 store 沒有）⇒ 搬下去會靜默丟掉正文。
-            /// 🩸 這個值是 2026-09-10 自己吃自己的狗糧吃出來的：第一版讓這種情況回 `AllMatch`，
-            ///   於是回傳檔標題印「✓ 四欄逐欄相同」而底下那張表同時印「⛔ 舊 store 有 2 個檔而新 store 沒有」。
-            ///   ⇒ 掃標題的人讀到「搬對了」，而真搬下去會丟掉兩章正文。
-            ///   ⛔ 修法不是把標題措辭寫好一點 —— 是讓「欄位全對」不再能獨自產生一個 ✓。
-            /// </summary>
-            FieldsMatchProseMissing,
-            /// <summary>四欄逐欄相同、新 store 真的有寫書線，**且正文容器沒有遺漏**。</summary>
-            AllMatch,
-        }
 
         /// <summary>舊 store 的草稿檔位置（`origin`／`author_persona`／`status`／`publish_status` 的事實源）。</summary>
-        public static string OldStoreBookJsonPath(string bookSlug)
-            => Books.UCL_BooksIO.BookNotesJsonPath(bookSlug);
 
         /// <summary>③ 逐欄對拍。⛔ 純讀；`report` 是給人看的逐欄表，`mismatchedFields` 是給程式判的欄位名。</summary>
-        public static AuthoredDiffOutcome DiffWorkAuthored(string bookSlug, string workId,
-            out List<string> mismatchedFields, out string report)
-        {
-            mismatchedFields = new List<string>();
-            var sb = new StringBuilder();
-
-            string oldPath = OldStoreBookJsonPath(bookSlug);
-            string newPath = Path.Combine(WorkRoot(workId), k_WorkJsonName);
-            sb.AppendLine($"- 舊 store：`{oldPath}`");
-            sb.AppendLine($"- 新 store：`{newPath}`");
-            sb.AppendLine();
-
-            if (!File.Exists(oldPath))
-            {
-                sb.AppendLine("⛔ **舊 store 那本不存在** ⇒ 沒有比較的左邊。" +
-                              "⛔ 這不是「值不同」，是 `book` 給錯或那本不在舊 store。");
-                report = sb.ToString();
-                return AuthoredDiffOutcome.OldStoreMissing;
-            }
-            if (!File.Exists(newPath))
-            {
-                sb.AppendLine("⛔ **新 store 還沒有這份 work.json** ⇒ 這本還沒建（④ 的前置）。⛔ 這不是「值不同」。");
-                report = sb.ToString();
-                return AuthoredDiffOutcome.NewStoreMissing;
-            }
-
-            JsonData oldData = LoadJson(oldPath, out string oldErr);
-            if (oldData == null)
-            {
-                sb.AppendLine($"⛔ 舊 store 解析失敗：{oldErr}　⇒ ⛔ 不回報「不同」—— 壞檔與搬壞了是兩件事。");
-                report = sb.ToString();
-                return AuthoredDiffOutcome.ParseFailed;
-            }
-            if (!TryReadWorkAuthored(workId, out WorkAuthored newFields, out string newErr))
-            {
-                sb.AppendLine($"⛔ 新 store 讀取失敗：{newErr}　⇒ ⛔ 不回報「不同」。");
-                report = sb.ToString();
-                return AuthoredDiffOutcome.ParseFailed;
-            }
-
-            var oldFields = new WorkAuthored
-            {
-                AuthorPersona = oldData.GetString(Key_AuthorPersona, ""),
-                Status = oldData.GetString(Key_Status, ""),
-                PublishStatus = oldData.GetString(Key_PublishStatus, ""),
-                Origin = oldData.GetString(Key_Origin, ""),
-            };
-
-            // 逐欄表 —— 順序固定，`origin` 放第一列：它是寫書線可見性的承重欄（見 Key_Origin 的區塊註解）。
-            var keys = new[] { Key_Origin, Key_AuthorPersona, Key_Status, Key_PublishStatus };
-            var oldVals = new[] { oldFields.Origin, oldFields.AuthorPersona, oldFields.Status, oldFields.PublishStatus };
-            var newVals = new[] { newFields.Origin, newFields.AuthorPersona, newFields.Status, newFields.PublishStatus };
-
-            sb.AppendLine("| 欄位 | 舊 store | 新 store | 判定 |");
-            sb.AppendLine("|---|---|---|---|");
-            for (int i = 0; i < keys.Length; i++)
-            {
-                bool same = oldVals[i] == newVals[i];
-                if (!same) mismatchedFields.Add(keys[i]);
-                sb.AppendLine($"| `{keys[i]}` | {ShowFieldValue(oldVals[i])} | {ShowFieldValue(newVals[i])} | " +
-                              (same ? "✓ 相同" : "**✗ 對不上**") + " |");
-            }
-            sb.AppendLine();
-            sb.Append(ProseSection(bookSlug, workId, out bool proseMissing));
-
-            // ⭐ 空對空不准算全對 —— 見本區塊註解第三條。
-            if (oldFields.IsEmpty && newFields.IsEmpty)
-            {
-                sb.AppendLine();
-                sb.AppendLine("⚠ **兩邊都沒有寫書線四欄** ⇒ 這本不是 authored。⛔ 這不是「對拍通過」，是無事可拍。");
-                report = sb.ToString();
-                return AuthoredDiffOutcome.NeitherHasWritingLine;
-            }
-            if (newFields.IsEmpty)
-            {
-                sb.AppendLine();
-                sb.AppendLine("⛔ **新 store 那份 work.json 上四欄全空 ⇒ 這本還沒搬。**");
-                sb.AppendLine("　⚠ 上表把四個空字串逐欄比出「對不上」是對的讀數，但**處置不同**：" +
-                              "這裡要跑的是 ④ 搬遷（而 ④ 的前置是本人的搬遷確認），不是去修欄位值。");
-                report = sb.ToString();
-                return AuthoredDiffOutcome.NewStoreNoWritingLine;
-            }
-            if (mismatchedFields.Count > 0)
-            {
-                sb.AppendLine();
-                sb.AppendLine($"⛔ **對不上的欄位（{mismatchedFields.Count} 欄）：** " +
-                              string.Join("、", mismatchedFields.ConvertAll(k => "`" + k + "`")));
-                report = sb.ToString();
-                return AuthoredDiffOutcome.Mismatch;
-            }
-
-            sb.AppendLine();
-            sb.AppendLine("✓ **四欄逐欄相同**，且新 store 真的有寫書線" +
-                          (newFields.VisibleToWritingLine
-                              ? "（`origin=authored` ⇒ 對寫書線讀取端可見）。"
-                              : "　⚠ 但 `origin` 不是 `authored` ⇒ **對寫書線讀取端仍然不可見**。"));
-
-            // ⭐ 欄位全對**不足以**產生一個 ✓ —— 正文容器對不上時，搬下去會靜默丟掉正文。
-            //   見 FieldsMatchProseMissing 的註解（那是本函式自己咬到自己的那一格）。
-            if (proseMissing)
-            {
-                sb.AppendLine();
-                sb.AppendLine("⛔ **但正文容器對不上**（上表已逐列指出）⇒ **這一趟還不能搬**：" +
-                              "欄位對得起來只證明 metadata，正文是另一本帳。");
-                report = sb.ToString();
-                return AuthoredDiffOutcome.FieldsMatchProseMissing;
-            }
-            report = sb.ToString();
-            return AuthoredDiffOutcome.AllMatch;
-        }
 
         /// <summary>空字串要看得出是空的 —— ⛔ 不印成空白格（空白格與「我沒讀那一欄」同形）。</summary>
-        static string ShowFieldValue(string v) => string.IsNullOrEmpty(v) ? "_(空)_" : "`" + v + "`";
 
         /// <summary>
         /// 正文容器對拍 —— ⭐ 這是 `ProbeWorkProse` 三態的**第一個讀取端**（在此之前它存在而未生效）。
@@ -435,19 +205,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         /// ⚠ 舊 store 的相對版面與新 store 相同（`&lt;book&gt;/chapters`、`&lt;book&gt;/arcs`），
         ///   所以這裡沿用同兩個目錄名常數 —— ⛔ 不另立一套舊版面的名字。
         /// </summary>
-        static string ProseSection(string bookSlug, string workId, out bool anyMissing)
-        {
-            string oldRoot = Path.Combine(BookNotesRoot, bookSlug);
-            var sb = new StringBuilder();
-            sb.AppendLine("| 正文容器 | 舊 store | 新 store | 判定 |");
-            sb.AppendLine("|---|---|---|---|");
-            sb.Append(ProseRow(k_WorkChaptersDirName,
-                Path.Combine(oldRoot, k_WorkChaptersDirName), WorkChaptersRoot(workId), out bool missA));
-            sb.Append(ProseRow(k_WorkArcsDirName,
-                Path.Combine(oldRoot, k_WorkArcsDirName), WorkArcsRoot(workId), out bool missB));
-            anyMissing = missA || missB;
-            return sb.ToString();
-        }
 
         // ===========================================================
         // 區塊職責：④ 把一本 authored 書從舊 store 搬進新 store（四欄 ＋ 正文容器）
@@ -463,180 +220,19 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // ⚠ 只搬 `origin=authored` 的書：閱讀線的書搬過來會多出四個空欄，而 ① 明文
         //   「既有欄位與讀取端一個字不動」。⇒ 不是 authored 就出聲拒絕，⛔ 不靜默跳過。
         // ===========================================================
-        public enum AuthoredMigrateOutcome
-        {
-            /// <summary>舊 store 沒有這本 ⇒ 沒有可搬的來源（⛔ 不是「搬完了」）。</summary>
-            OldStoreMissing,
-            /// <summary>舊 store 的 book.json 解析不動 ⇒ ⛔ 不當成「沒有內容」。</summary>
-            ParseFailed,
-            /// <summary>舊 store 那本 `origin` 不是 `authored` ⇒ 這支不搬它。</summary>
-            NotAuthored,
-            /// <summary>沒給 confirm ⇒ 只回計畫，**一個位元組都沒寫**。</summary>
-            Planned,
-            /// <summary>真的搬了（報告裡附回讀對拍的結果）。</summary>
-            Migrated,
-        }
 
-        public static AuthoredMigrateOutcome MigrateAuthoredWork(string bookSlug, string workId,
-            bool confirm, out string report, out string error)
-        {
-            error = null;
-            var sb = new StringBuilder();
-            string oldRoot = Path.Combine(BookNotesRoot, bookSlug);
-            string oldPath = OldStoreBookJsonPath(bookSlug);
-            sb.AppendLine($"- 舊 store：`{oldPath}`");
-            sb.AppendLine($"- 新 store：`{Path.Combine(WorkRoot(workId), k_WorkJsonName)}`");
-            sb.AppendLine($"- 模式：{(confirm ? "**confirm ⇒ 真的寫**" : "**dry-run ⇒ 零寫入**（要寫就加 `confirm=1`）")}");
-            sb.AppendLine();
-
-            if (!File.Exists(oldPath))
-            {
-                error = $"舊 store 沒有這本：`{oldPath}`";
-                report = sb.ToString();
-                return AuthoredMigrateOutcome.OldStoreMissing;
-            }
-            JsonData oldData = LoadJson(oldPath, out string loadErr);
-            if (oldData == null)
-            {
-                error = $"舊 store 解析失敗：{loadErr} —— ⛔ 這不是「沒有內容」";
-                report = sb.ToString();
-                return AuthoredMigrateOutcome.ParseFailed;
-            }
-
-            var fields = new WorkAuthored
-            {
-                AuthorPersona = oldData.GetString(Key_AuthorPersona, ""),
-                Status = oldData.GetString(Key_Status, ""),
-                PublishStatus = oldData.GetString(Key_PublishStatus, ""),
-                Origin = oldData.GetString(Key_Origin, ""),
-            };
-            if (!fields.VisibleToWritingLine)
-            {
-                error = $"舊 store 那本的 `{Key_Origin}` 是 `{fields.Origin}`，不是 `{OriginAuthored}` ⇒ " +
-                        "這支只搬寫書線的書。⛔ 不靜默跳過，也不替它補上 origin。";
-                report = sb.ToString();
-                return AuthoredMigrateOutcome.NotAuthored;
-            }
-
-            sb.AppendLine("## 要搬的四欄（照搬，⛔ 不轉換）");
-            sb.AppendLine();
-            sb.AppendLine("| 欄 | 值 |");
-            sb.AppendLine("|---|---|");
-            sb.AppendLine($"| `{Key_Origin}` | `{fields.Origin}` |");
-            sb.AppendLine($"| `{Key_AuthorPersona}` | `{fields.AuthorPersona}` |");
-            sb.AppendLine($"| `{Key_Status}` | `{fields.Status}` |");
-            sb.AppendLine($"| `{Key_PublishStatus}` | `{fields.PublishStatus}` |");
-            sb.AppendLine();
-
-            sb.AppendLine("## 正文容器（三態，⛔ 不是檔數）");
-            sb.AppendLine();
-            sb.AppendLine(ProseSection(bookSlug, workId, out _));
-
-            if (!confirm)
-            {
-                sb.AppendLine("⇒ **dry-run 到此為止** —— 上面每一格都是讀出來的，沒有任何寫入。");
-                report = sb.ToString();
-                return AuthoredMigrateOutcome.Planned;
-            }
-
-            // --- 這行以下才會動磁碟 ---
-            sb.AppendLine("## 寫入");
-            sb.AppendLine();
-            var aliases = new List<string>();
-            JsonData oldAliases = oldData.Contains(Key_Aliases) ? oldData[Key_Aliases] : null;
-            if (oldAliases != null && oldAliases.IsArray)
-                for (int i = 0; i < oldAliases.Count; i++)
-                {
-                    string a = AliasToString(oldAliases[i]);
-                    if (!string.IsNullOrEmpty(a) && !aliases.Contains(a)) aliases.Add(a);
-                }
-            sb.Append(EnsureWorkJson(workId,
-                oldData.GetString(Key_Title, bookSlug),
-                oldData.GetString(Key_TitleOriginal, ""),
-                oldData.GetString(Key_Author, ""),
-                aliases, null));
-
-            if (!TrySetWorkAuthored(workId, fields, out string setErr))
-            {
-                error = $"四欄寫入失敗：{setErr}";
-                report = sb.ToString();
-                return AuthoredMigrateOutcome.ParseFailed;
-            }
-            sb.AppendLine("- ✅ 四欄已寫上 work.json（空值不落盤）");
-
-            sb.Append(CopyProseDir(Path.Combine(oldRoot, k_WorkChaptersDirName), WorkChaptersRoot(workId),
-                                   k_WorkChaptersDirName));
-            sb.Append(CopyProseDir(Path.Combine(oldRoot, k_WorkArcsDirName), WorkArcsRoot(workId),
-                                   k_WorkArcsDirName));
-
-            // 回讀：⛔ 不印「寫入成功」當收據 —— 用同一支對拍器（③）重讀一次落地結果。
-            sb.AppendLine();
-            sb.AppendLine("## 回讀對拍（走 ③ 那支 `DiffWorkAuthored`，⛔ 不是本函式自己說了算）");
-            sb.AppendLine();
-            AuthoredDiffOutcome after = DiffWorkAuthored(bookSlug, workId, out List<string> mism, out string diffReport);
-            sb.AppendLine($"**{after}**" + (mism.Count > 0 ? $"　對不上：{string.Join("、", mism)}" : ""));
-            sb.AppendLine();
-            sb.Append(diffReport);
-
-            report = sb.ToString();
-            return AuthoredMigrateOutcome.Migrated;
-        }
 
         /// <summary>
         /// 複製一個正文容器（⛔ 不移動、⛔ 不覆寫既有同名檔）。
         /// <para>⚠ 來源目錄不存在 ⇒ 回一行「NoDir，無事可搬」而**不建空目錄** ——
         /// 建了的話新側會從 `NoDir` 變成 `EmptyDir`，而那正是 ② 要分開的兩個值。</para>
         /// </summary>
-        static string CopyProseDir(string srcDir, string dstDir, string label)
-        {
-            WorkProseState src = ProbeWorkProse(srcDir, out int srcCount);
-            if (src == WorkProseState.NoDir) return $"- `{label}/`：舊 store `NoDir` ⇒ 無事可搬（⛔ 不建空目錄）\n";
-            if (src == WorkProseState.EmptyDir) return $"- `{label}/`：舊 store `EmptyDir`（0 檔）⇒ 無事可搬\n";
-
-            Directory.CreateDirectory(dstDir);
-            int copied = 0, skipped = 0;
-            foreach (string f in Directory.GetFiles(srcDir))
-            {
-                string dst = Path.Combine(dstDir, Path.GetFileName(f));
-                if (File.Exists(dst)) { skipped++; continue; }
-                File.Copy(f, dst);
-                copied++;
-            }
-            string line = $"- `{label}/`：來源 {srcCount} 檔 ⇒ 複製 {copied}";
-            if (skipped > 0) line += $"、**跳過 {skipped}（目標已有同名檔，⛔ 不覆寫）**";
-            return line + "\n";
-        }
 
         /// <param name="missing">
         /// 只在「**舊 store 有檔而新 store 沒有**」時為 true —— 那是唯一會靜默丟內容的那一種。
         /// ⛔ 舊 store 是空目錄或沒有容器時**不算遺漏**（那兩種搬過去沒有東西會不見）。
         /// </param>
-        static string ProseRow(string name, string oldDir, string newDir, out bool missing)
-        {
-            WorkProseState o = ProbeWorkProse(oldDir, out int oldCount);
-            WorkProseState n = ProbeWorkProse(newDir, out int newCount);
-            missing = o == WorkProseState.HasFiles && n != WorkProseState.HasFiles;
-            string verdict;
-            if (missing)
-                verdict = $"⛔ **舊 store 有 {oldCount} 個檔而新 store 沒有** ⇒ 搬過去會靜默丟掉它";
-            else if (o == WorkProseState.HasFiles)
-                verdict = oldCount == newCount ? $"✓ 兩邊都 {oldCount} 個檔" : $"⚠ 檔數不同（{oldCount} → {newCount}）";
-            else if (o == WorkProseState.EmptyDir)
-                verdict = "⚠ 舊 store 是**空目錄** ⇒ ⛔ 不是「沒有這個容器」，也不是「有內容」";
-            else
-                verdict = "· 舊 store 沒有這個容器 ⇒ 無事可搬";
-            return $"| `{name}/` | {ShowProseState(o, oldCount)} | {ShowProseState(n, newCount)} | {verdict} |\n";
-        }
 
-        static string ShowProseState(WorkProseState state, int count)
-        {
-            switch (state)
-            {
-                case WorkProseState.NoDir: return "`NoDir`（沒有這個目錄）";
-                case WorkProseState.EmptyDir: return "`EmptyDir`（目錄在、0 個檔）";
-                default: return $"`HasFiles`（{count} 個檔）";
-            }
-        }
 
         public static string ReaderRoot(string mediaId, string persona)
             => Path.Combine(MediaRoot(mediaId), k_ReadersDirName, persona);
@@ -645,96 +241,20 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         public static string ChapterDir(string mediaId, string persona, string chapterId)
             => Path.Combine(ReaderRoot(mediaId, persona), k_ChaptersDirName, chapterId);
 
-        public static bool IsValidId(string value) => !string.IsNullOrEmpty(value) && k_IdPattern.IsMatch(value);
+        public static bool IsValidId(string value) => SCP.Core.Library.SCP_LibraryStore.IsValidId(value);
         public static bool IsValidChapterId(string value)
             => !string.IsNullOrEmpty(value) && k_ChapterIdPattern.IsMatch(value);
 
         /// <summary>列出目前所有 media id（供頁面下拉與 Cmd 驗證用）。</summary>
-        public static List<string> ListMediaIds()
-        {
-            var result = new List<string>();
-            string root = Path.Combine(LibraryRoot, k_MediaDirName);
-            if (!Directory.Exists(root)) return result;
-            foreach (string dir in Directory.GetDirectories(root)) result.Add(Path.GetFileName(dir));
-            result.Sort(StringComparer.Ordinal);
-            return result;
-        }
 
         /// <summary>
         /// 區塊職責：全 Library 的 media 總表（瀏覽下拉與 scan 共用）。
         /// 物理意義：一筆 = media.json + work.json title + readers 目錄名 —— 只讀 metadata，
         ///          不碰章節正文；title 缺檔退回 mediaId（瀏覽不因缺料斷掉，缺料是 scan 的事）。
         /// </summary>
-        public class MediaEntry
-        {
-            public string MediaId = "";
-            public string MediaKind = "";
-            public string WorkId = "";
-            public string Title = "";
-            /// <summary>作品層的搜尋用名稱（title_original ＋ aliases）——
-            /// ⚠ 這一欄住在 <c>works/&lt;work&gt;/work.json</c>，不在 media.json；
-            /// 查詢端只比 MediaId/WorkId/Title 的話，簡體、原文名、俗名一律 0 筆，
-            /// 而 0 筆的樣子跟「這部作品不存在」一模一樣。</summary>
-            public List<string> Aliases = new List<string>();
-            public List<string> Readers = new List<string>();
-        }
 
-        public static List<MediaEntry> ListMediaEntries()
-        {
-            var result = new List<MediaEntry>();
-            string root = Path.Combine(LibraryRoot, k_MediaDirName);
-            if (!Directory.Exists(root)) return result;
-            foreach (string dir in Directory.GetDirectories(root))
-            {
-                var e = new MediaEntry { MediaId = Path.GetFileName(dir) };
-                JsonData media = LoadJson(Path.Combine(dir, k_MediaJsonName), out _);
-                if (media != null)
-                {
-                    e.MediaKind = media.GetString(Key_MediaKind, "");
-                    e.WorkId = media.GetString(Key_WorkId, "");
-                }
-                e.Title = e.MediaId;
-                if (!string.IsNullOrEmpty(e.WorkId))
-                {
-                    JsonData work = LoadJson(Path.Combine(WorkRoot(e.WorkId), k_WorkJsonName), out _);
-                    if (work != null)
-                    {
-                        e.Title = work.GetString(Key_Title, e.MediaId);
-                        // 別名兩形狀（字串陣列／物件陣列）由 AliasToString 吸收 —— 見該函式的血證。
-                        string original = work.GetString(Key_TitleOriginal, "");
-                        if (!string.IsNullOrEmpty(original)) e.Aliases.Add(original);
-                        JsonData aliases = work.Contains(Key_Aliases) ? work[Key_Aliases] : null;
-                        if (aliases != null && aliases.IsArray)
-                            for (int i = 0; i < aliases.Count; i++)
-                            {
-                                string a = AliasToString(aliases[i]);
-                                if (!string.IsNullOrEmpty(a) && !e.Aliases.Contains(a)) e.Aliases.Add(a);
-                            }
-                    }
-                }
-                string readersRoot = Path.Combine(dir, k_ReadersDirName);
-                if (Directory.Exists(readersRoot))
-                {
-                    foreach (string readerDir in Directory.GetDirectories(readersRoot))
-                        e.Readers.Add(Path.GetFileName(readerDir));
-                    e.Readers.Sort(StringComparer.OrdinalIgnoreCase);
-                }
-                result.Add(e);
-            }
-            result.Sort((a, b) => string.Compare(a.MediaId, b.MediaId, StringComparison.Ordinal));
-            return result;
-        }
 
         /// <summary>列出某 media 底下的 reader persona（同一部作品可有多位讀者各自一份紀錄）。</summary>
-        public static List<string> ListReaders(string mediaId)
-        {
-            var result = new List<string>();
-            string root = Path.Combine(MediaRoot(mediaId), k_ReadersDirName);
-            if (!Directory.Exists(root)) return result;
-            foreach (string dir in Directory.GetDirectories(root)) result.Add(Path.GetFileName(dir));
-            result.Sort(StringComparer.Ordinal);
-            return result;
-        }
 
         // ===========================================================
         // 外部漫畫庫 (External Comics)
@@ -745,35 +265,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         public const string PrefKey_ComicRootPath = "UCL_Library.ComicRootPath";
         public const string ComicRootSnapshotFileName = ".comic_root.local";
 
-        public enum ComicMatchStatus
-        {
-            Synced,         // 🟢 已在 Library 建檔且本機實體資料夾存在
-            MissingSource,  // 🟡 已在 Library 建檔但本機實體資料夾失聯
-            Unregistered,   // ⚪ 本機實體資料夾存在但尚未在 Library 建檔
-        }
 
-        public class ExternalComicSeries
-        {
-            public string SeriesName = "";       // e.g. "Hunter x Hunter"
-            public string Slug = "";             // e.g. "hunter-x-hunter"
-            public string MediaId = "";          // e.g. "comic-hunter-x-hunter"
-            public List<ExternalComicVolume> Volumes = new List<ExternalComicVolume>();
-            public int TotalChapters = 0;
-            public int TotalPages = 0;
-            public ComicMatchStatus Status = ComicMatchStatus.Unregistered;
-            public bool HasWorkJson = false;
-            public bool HasMediaJson = false;
-            public string RegisteredTitle = "";
-        }
 
-        public class ExternalComicVolume
-        {
-            public string FolderName = "";       // e.g. "Hunter x Hunter 01"
-            public string FolderPath = "";       // e.g. "D:\commic\Hunter x Hunter 01"
-            public string VolumeLabel = "";      // e.g. "01"
-            public List<string> Chapters = new List<string>(); // e.g. "0001", "0002"...
-            public int PageCount = 0;
-        }
 
         /// <summary>取得本機外部漫畫庫根目錄路徑（預設空字串）。</summary>
         public static string GetComicRoot()
@@ -840,202 +333,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         };
 
         /// <summary>解析資料夾名稱為作品系列名與卷數（例 "Hunter x Hunter 01" -> "Hunter x Hunter", "01"）。</summary>
-        public static void ParseSeriesAndVolume(string folderName, out string seriesName, out string volumeLabel)
-        {
-            if (string.IsNullOrWhiteSpace(folderName))
-            {
-                seriesName = "";
-                volumeLabel = "01";
-                return;
-            }
-
-            folderName = folderName.Trim();
-            var match = s_VolumeRegex.Match(folderName);
-            if (match.Success && match.Groups.Count >= 3)
-            {
-                seriesName = match.Groups[1].Value.Trim();
-                volumeLabel = match.Groups[2].Value.Trim();
-                if (string.IsNullOrEmpty(seriesName)) seriesName = folderName;
-            }
-            else
-            {
-                seriesName = folderName;
-                volumeLabel = "01";
-            }
-        }
 
         /// <summary>將作品系列名轉換為標準 slug（例 "Hunter x Hunter" -> "hunter-x-hunter"）。</summary>
-        public static string NormalizeSeriesSlug(string raw)
-        {
-            if (string.IsNullOrWhiteSpace(raw)) return "";
-            var sb = new StringBuilder();
-            foreach (char c in raw.ToLowerInvariant())
-            {
-                if (char.IsLetterOrDigit(c)) sb.Append(c);
-                else if (c == ' ' || c == '_' || c == '-') sb.Append('-');
-            }
-            string s = sb.ToString();
-            // 收斂多個連續 '-'
-            while (s.Contains("--")) s = s.Replace("--", "-");
-            return s.Trim('-');
-        }
 
         /// <summary>
         /// 區塊職責：掃描外部漫畫庫目錄，將所有漫畫作品聚合為系列清單，並與 Library 既有 Media 進行三態匹配。
         /// 物理意義：不每幀走目錄樹；只在載入或使用者手動重新整理時呼叫。
         /// </summary>
-        public static List<ExternalComicSeries> ScanExternalComics(string iCustomRoot = null)
-        {
-            var results = new List<ExternalComicSeries>();
-            string root = !string.IsNullOrEmpty(iCustomRoot) ? iCustomRoot : GetComicRoot();
-            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-            {
-                return results;
-            }
-
-            var seriesMap = new Dictionary<string, ExternalComicSeries>(StringComparer.OrdinalIgnoreCase);
-
-            try
-            {
-                string[] subDirs = Directory.GetDirectories(root);
-                foreach (string dir in subDirs)
-                {
-                    string folderName = Path.GetFileName(dir);
-                    if (string.IsNullOrEmpty(folderName) || folderName.StartsWith(".")) continue;
-
-                    ParseSeriesAndVolume(folderName, out string seriesName, out string volumeLabel);
-                    if (string.IsNullOrEmpty(seriesName)) continue;
-
-                    if (!seriesMap.TryGetValue(seriesName, out var series))
-                    {
-                        string slug = NormalizeSeriesSlug(seriesName);
-                        series = new ExternalComicSeries
-                        {
-                            SeriesName = seriesName,
-                            Slug = slug,
-                            MediaId = $"comic-{slug}",
-                        };
-                        seriesMap[seriesName] = series;
-                    }
-
-                    var vol = new ExternalComicVolume
-                    {
-                        FolderName = folderName,
-                        FolderPath = dir,
-                        VolumeLabel = volumeLabel,
-                    };
-
-                    // 掃描章節子資料夾
-                    string[] chapterDirs = Directory.GetDirectories(dir);
-                    if (chapterDirs.Length > 0)
-                    {
-                        Array.Sort(chapterDirs, StringComparer.OrdinalIgnoreCase);
-                        foreach (string chDir in chapterDirs)
-                        {
-                            string chName = Path.GetFileName(chDir);
-                            vol.Chapters.Add(chName);
-                            // 統計圖片數
-                            try
-                            {
-                                foreach (string file in Directory.GetFiles(chDir))
-                                {
-                                    string ext = Path.GetExtension(file);
-                                    if (s_ImageExts.Contains(ext)) vol.PageCount++;
-                                }
-                            }
-                            catch { }
-                        }
-                    }
-                    else
-                    {
-                        // 根目錄直接放圖（單章）
-                        try
-                        {
-                            foreach (string file in Directory.GetFiles(dir))
-                            {
-                                string ext = Path.GetExtension(file);
-                                if (s_ImageExts.Contains(ext)) vol.PageCount++;
-                            }
-                            if (vol.PageCount > 0) vol.Chapters.Add("0001");
-                        }
-                        catch { }
-                    }
-
-                    series.Volumes.Add(vol);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[ReadingLibrary] ScanExternalComics failed for {root}: {ex.Message}");
-            }
-
-            // 讀取 Library 中的現有 media/ 與 works/ 做 Join
-            var allMedia = ListMediaEntries();
-            var matchedMediaIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var kvp in seriesMap)
-            {
-                var series = kvp.Value;
-                // 排序 volumes
-                series.Volumes.Sort((a, b) => string.Compare(a.VolumeLabel, b.VolumeLabel, StringComparison.OrdinalIgnoreCase));
-                
-                int totalCh = 0;
-                int totalPages = 0;
-                foreach (var v in series.Volumes)
-                {
-                    totalCh += v.Chapters.Count;
-                    totalPages += v.PageCount;
-                }
-                series.TotalChapters = totalCh;
-                series.TotalPages = totalPages;
-
-                // 比對 Library media
-                var matchedMedia = allMedia.Find(m => string.Equals(m.MediaId, series.MediaId, StringComparison.OrdinalIgnoreCase));
-                if (matchedMedia != null)
-                {
-                    series.HasMediaJson = true;
-                    series.RegisteredTitle = matchedMedia.Title;
-                    series.Status = ComicMatchStatus.Synced;
-                    matchedMediaIds.Add(matchedMedia.MediaId);
-                }
-                else
-                {
-                    // 嘗試從 work.json 比對
-                    string workJsonPath = Path.Combine(WorkRoot(series.Slug), k_WorkJsonName);
-                    series.HasWorkJson = File.Exists(workJsonPath);
-                    series.Status = ComicMatchStatus.Unregistered;
-                }
-
-                results.Add(series);
-            }
-
-            // 檢查已建檔但本機目錄失聯的 Media (MissingSource)
-            foreach (var media in allMedia)
-            {
-                if (media.MediaKind == "comic" && !matchedMediaIds.Contains(media.MediaId))
-                {
-                    // 排除同事創作的內部漫畫 (ArtGallery/Comic/)
-                    string internalComicPath = Path.Combine(UCL_RepoPath.AgentCommandsDir, "ArtGallery", "Comic", media.MediaId.Replace("comic-", ""));
-                    if (!Directory.Exists(internalComicPath))
-                    {
-                        string slug = media.MediaId.StartsWith("comic-") ? media.MediaId.Substring("comic-".Length) : media.MediaId;
-                        results.Add(new ExternalComicSeries
-                        {
-                            SeriesName = media.Title,
-                            RegisteredTitle = media.Title,
-                            Slug = slug,
-                            MediaId = media.MediaId,
-                            HasMediaJson = true,
-                            HasWorkJson = true,
-                            Status = ComicMatchStatus.MissingSource,
-                        });
-                    }
-                }
-            }
-
-            results.Sort((a, b) => string.Compare(a.SeriesName, b.SeriesName, StringComparison.OrdinalIgnoreCase));
-            return results;
-        }
 
 
         // ===========================================================
@@ -1043,29 +347,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // 物理意義：讀壞掉的檔不靜默回空物件 —— 那會讓下一次寫入把壞檔覆蓋成「乾淨」，
         //          原始資料連救都救不回來。壞檔一律讓 caller 收到 error。
         // ===========================================================
-        public static JsonData LoadJson(string path, out string error)
-        {
-            error = null;
-            if (!File.Exists(path)) { error = $"檔案不存在：{path}"; return null; }
-            try
-            {
-                JsonData data = JsonData.ParseJson(File.ReadAllText(path, Encoding.UTF8));
-                if (data == null || !data.IsObject) { error = $"不是 JSON object：{path}"; return null; }
-                return data;
-            }
-            catch (Exception e)
-            {
-                error = $"JSON 解析失敗（{path}）：{e.Message}";
-                return null;
-            }
-        }
 
         /// <summary>寫 JSON（UTF-8 無 BOM，beautify，非 ASCII 還原成原生字元）。父目錄自動建立。</summary>
-        public static void SaveJson(string path, JsonData data)
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            File.WriteAllText(path, UnescapeNonAscii(data.ToJsonBeautify()) + "\n", new UTF8Encoding(false));
-        }
 
         // ===========================================================
         // 區塊職責：把 ToJsonBeautify 產生的 \uXXXX 逃脫還原成原生字元（僅非 ASCII）。
@@ -1077,20 +360,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // ===========================================================
         static readonly Regex k_UnicodeEscape = new Regex(@"\\u([0-9a-fA-F]{4})");
 
-        static string UnescapeNonAscii(string json)
-        {
-            return k_UnicodeEscape.Replace(json, match =>
-            {
-                int code = Convert.ToInt32(match.Groups[1].Value, 16);
-                return code > 0x7F ? ((char)code).ToString() : match.Value;
-            });
-        }
 
-        public static void SaveText(string path, string text)
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            File.WriteAllText(path, text, new UTF8Encoding(false));
-        }
 
         public static string Today() => DateTime.Now.ToString("yyyy-MM-dd");
 
@@ -1099,65 +369,14 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         /// 物理意義：aliases 一定要含 title / title_original 自己 —— 否則「用正式名搜尋卻搜不到」。
         /// 數值影響：純資料整理；大小寫不做正規化（搜尋端不分大小寫比對，這裡保留原字面）。
         /// </summary>
-        public static JsonData ToStringArray(IList<string> values, params string[] alsoInclude)
-        {
-            JsonData array = JsonData.ParseJson("[]");
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            void Push(string v)
-            {
-                if (string.IsNullOrWhiteSpace(v)) return;
-                string trimmed = v.Trim();
-                if (!seen.Add(trimmed)) return;
-                array.Add(trimmed);
-            }
-            if (alsoInclude != null) foreach (string v in alsoInclude) Push(v);
-            if (values != null) foreach (string v in values) Push(v);
-            return array;
-        }
 
         /// <summary>把 `a|b|c` 或 `a,b,c` 切成清單（別名含逗號的情況用 `|`）。</summary>
-        public static List<string> SplitList(string raw)
-        {
-            var result = new List<string>();
-            if (string.IsNullOrWhiteSpace(raw)) return result;
-            char separator = raw.Contains("|") ? '|' : ',';
-            foreach (string part in raw.Split(separator))
-                if (!string.IsNullOrWhiteSpace(part)) result.Add(part.Trim());
-            return result;
-        }
 
         // ===========================================================
         // reader.json 讀取 + 身分校驗
         // 物理意義：路徑上的 <persona> 與檔內 reader_persona 不符 = 資料放錯讀者根目錄，
         //          那是「替別人代筆閱讀史」的前一步，必須擋。
         // ===========================================================
-        public static JsonData LoadReader(string mediaId, string persona, out string error)
-        {
-            // ⚠ 「還不是這部的 reader」與「檔壞了」是兩件事，而 LoadJson 只會說「檔案不存在」——
-            //   那是一句**死路**：它描述現況，不指出出口。所以這一格在進 LoadJson 之前先攔。
-            string readerPath = ReaderJsonPath(mediaId, persona);
-            if (!File.Exists(readerPath))
-            {
-                error = NotAReaderYetMessage(mediaId, persona, readerPath);
-                return null;
-            }
-            JsonData reader = LoadJson(readerPath, out error);
-            if (reader == null) return null;
-
-            string declaredPersona = reader.GetString(Key_ReaderPersona, "");
-            if (declaredPersona != persona)
-            {
-                error = $"reader.json.{Key_ReaderPersona}={declaredPersona}，與路徑 persona={persona} 不一致";
-                return null;
-            }
-            string declaredMedia = reader.GetString(Key_MediaId, "");
-            if (declaredMedia != mediaId)
-            {
-                error = $"reader.json.{Key_MediaId}={declaredMedia}，與請求 media_id={mediaId} 不一致";
-                return null;
-            }
-            return reader;
-        }
 
         // ===========================================================
         // 區塊職責：「你還不是這部的 reader」時，把**出口**印出來（不是只描述現況）。
@@ -1173,28 +392,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // 數值影響：純訊息，不寫任何檔。讀 media.json / work.json 只為把指令填成**可複製**的；
         //          讀不到就退回佔位符，**不猜**。
         // ===========================================================
-        static string NotAReaderYetMessage(string mediaId, string persona, string readerPath)
-        {
-            string workId = "<work_id>";
-            string mediaKind = "<media_kind>";
-            string title = "<作品中文名>";
-            JsonData media = LoadJson(Path.Combine(MediaRoot(mediaId), k_MediaJsonName), out _);
-            if (media != null)
-            {
-                workId = media.GetString(Key_WorkId, workId);
-                mediaKind = media.GetString(Key_MediaKind, mediaKind);
-                JsonData work = LoadJson(Path.Combine(WorkRoot(workId), k_WorkJsonName), out _);
-                if (work != null) title = work.GetString(Key_Title, title);
-            }
-            return
-                $"你還不是 `{mediaId}` 的 reader —— `reader.json` 不存在：{readerPath}\n" +
-                $"⇒ 出口（**這一支就是登記入口**，不是只給新作品用的）：\n" +
-                $"   Library op=media_init --arg persona={persona} --arg media_id={mediaId} " +
-                $"--arg work_id={workId} --arg media_kind={mediaKind} --arg title={title} " +
-                $"--arg anticipation=<1-5 期待度>\n" +
-                $"⚠ 它的名字只說了一半：media 已存在時 **work.json / media.json 一律不覆寫**，" +
-                $"只補建你自己的 reader.json（既有讀者的進度不受影響）。";
-        }
 
         // ===========================================================
         // 章節連續性分類（Tim 2026-08-06 拍板後的語意：分類，不是閘門）
@@ -1202,42 +399,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         //          讓「跳章」不會靜默變成一份看起來連續的閱讀史。
         // 數值影響：不擋任何寫入；0000 序章不參與連續性判定（它非必有）。
         // ===========================================================
-        public enum ChapterRelation { FirstEver, Reread, Next, Gap, Prologue }
-
-        public static ChapterRelation ClassifyChapter(JsonData reader, string chapterId)
-        {
-            if (chapterId == PrologueChapterId) return ChapterRelation.Prologue;
-            if (reader == null) return ChapterRelation.FirstEver;
-
-            string current = reader.IsObject && reader.Contains(Key_Progress)
-                ? reader[Key_Progress].GetString(Key_CurrentChapterId, "")
-                : "";
-            if (string.IsNullOrEmpty(current) || current == PrologueChapterId) return ChapterRelation.Next;
-            if (current == chapterId) return ChapterRelation.Reread;
-            if (int.TryParse(current, out int cur) && int.TryParse(chapterId, out int req) && req == cur + 1)
-                return ChapterRelation.Next;
-            return ChapterRelation.Gap;
-        }
-
-        // ===========================================================
-        // 建檔（op=media_init）
-        // 物理意義：work.json（作品層，可被多媒材共用）/ media.json（媒材層）/ reader.json（讀者層）。
-        // 數值影響：已存在的檔**不覆寫** —— 建檔重跑不該蓋掉既有進度。
-        // ===========================================================
-        // ⤷ **薄殼**（TASK-0166 ①）：建檔實作住 `SCP.Core.Library.SCP_LibraryInit.MediaInit`（work／media／reader 三層）。
-        // ⚠ 簽名不動 ⇒ `Cmd_Library op=media_init` 與管理頁零改動；回傳的 log 字串也照舊進回傳檔。
-        public static string MediaInit(string workId, string mediaId, string mediaKind, string persona,
-                                       string title, string titleOriginal, string author, int anticipation,
-                                       IList<string> aliases, IList<string> genreTags,
-                                       out string error)
-        {
-            string aLog = SCP.Core.Library.SCP_LibraryInit.MediaInit(
-                new SCP.Core.Paths.SCP_LettersRoot(UCL_LettersPath.Root), UCL_AgentCommandsPath.DataRoot,
-                workId, mediaId, mediaKind, persona, title, titleOriginal, author,
-                anticipation, aliases, genreTags, out string aErr);
-            error = aErr;
-            return aLog;
-        }
 
         // ===========================================================
         // 區塊職責：**建 reader.json（不存在才建）** —— `MediaInit` 與 `RegisterReader` 共用這一份。
@@ -1308,18 +469,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             return aLog;
         }
 
-        public static string RelationLabel(ChapterRelation relation)
-        {
-            switch (relation)
-            {
-                case ChapterRelation.FirstEver: return "首筆紀錄";
-                case ChapterRelation.Reread: return "重讀同章 → 開新 round，舊 round 保留";
-                case ChapterRelation.Next: return "續讀（+1）";
-                case ChapterRelation.Gap: return "⚠ 跳章（已在 chapter.json 記 gap，未靜默）";
-                case ChapterRelation.Prologue: return "序章（不參與連續性判定）";
-            }
-            return relation.ToString();
-        }
 
         // ===========================================================
         // 人物：facts（客觀，profile.json）與 view（主觀，vN_<date>.md）分離
@@ -1440,366 +589,180 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             SCP.Core.Library.SCP_LibraryIO.SaveText(path, text);
             return path;
         }
+        // ===========================================================
+        // ⤷ **薄殼區**（TASK-0166 ①，Tim 2026-09-17 拍板「Editor-only 那批全部搬進 SCP_Core」）
+        // 區塊職責：把 Editor 這一側的**舊簽名**接到 SCP_Core 的實作上 —— 呼叫端零改動（型別除外）。
+        // ⚠ 這裡**不留任何判斷**：多一行 if 就是第二把尺，而兩把尺分岔時兩邊都不會報錯。
+        //   唯一留在本層的是那些**只有 Unity 知道**的東西（EditorPrefs 的漫畫庫根、letters 版面）。
+        // ===========================================================
+        static string DataRoot => UCL_AgentCommandsPath.DataRoot;
+        static SCP.Core.Paths.SCP_LettersRoot LettersRootOf() => new SCP.Core.Paths.SCP_LettersRoot(UCL_LettersPath.Root);
 
-        /// <summary>把某筆 round 的酒館 seq 寫回索引 —— 「已發文」的可驗證 receipt。</summary>
-        // ===========================================================
-        // 區塊職責：讀「已遷移 Archive」集合 —— _migration/registry.json 是唯一標記處。
-        // 物理意義：**Archive 不可修改**（Tim 鐵律），所以「已遷移」不寫進 Archive 本身，
-        //          寫在 registry（state=migrated 的 record）。讀取端（管理頁 / op=scan）
-        //          預設隱藏這個集合裡的 slug —— 已裁決過的東西不該每次都端回檯面。
-        // 數值影響：唯讀；registry 缺檔 / 壞檔 → 空集合（fail-open：寧可多列不可少列）。
-        // ===========================================================
-        public static HashSet<string> LoadMigratedArchiveSlugs()
+        // ── 讀取／JSON 層也收進 SCP（TASK-0166 ① 第二刀）────────────────────
+        // ⚠ 型別跟著換：這幾支回的是 `SCP_JsonData` 而不是 Unity 的 `JsonData`。
+        //   ⛔ 不在這裡做型別轉換 —— 轉一次就是「同一份資料的第二個物件」，
+        //   而兩個物件在畫面上長得一樣，寫回去的時候才會發現誰是誰。
+        public static SCP.Core.Json.SCP_JsonData LoadJson(string path, out string error)
         {
-            var o = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            string path = Path.Combine(BookNotesRoot, "_migration", "registry.json");
-            JsonData reg = LoadJson(path, out _);
-            if (reg == null || !reg.Contains("records")) return o;
-            JsonData records = reg["records"];
-            if (records == null || !records.IsArray) return o;
-            const string prefix = "BookNotes/Archive/";
-            for (int i = 0; i < records.Count; i++)
-            {
-                JsonData r = records[i];
-                if (r == null || !r.IsObject) continue;
-                if (r.GetString("state", "") != "migrated") continue;
-                string src = r.GetString("source_id", "");
-                if (src.StartsWith(prefix, StringComparison.Ordinal))
-                {
-                    o.Add(src.Substring(prefix.Length).Trim().TrimEnd('/'));
-                }
-            }
-            return o;
+            var aData = SCP.Core.Library.SCP_LibraryIO.LoadJson(path, out string aErr);
+            error = aErr;
+            return aData;
         }
 
-        // ===========================================================
-        // 區塊職責：op=scan —— Library / Archive 的重複與異常候選審計（唯讀）。
-        // 物理意義：Q4 定案「scan 先印候選、人工核對」—— 本方法**不合併不搬移不改任何檔**，
-        //          只產一份給人裁決的清單。判準沿 Plan_Library_Media_Migration 的實測教訓：
-        //          前綴法誤報 60%、title 法漏一半 → 用 normalize 撒網、人工收網。
-        // 數值影響：唯一的寫入是報告檔 BookNotes/_migration/scan_report.md（機械產物，
-        //          每次覆寫）；資料層一個位元組都不動。
-        // 掃四類：
-        //   A. Archive ↔ Library 疑似同作品（slug / title / title_original / aliases normalize 命中）
-        //   B. Library 內部疑似重複（同 normalize title 但**不同 work_id** —— 同 work 多 media 是
-        //      設計上的合法形狀，不列）
-        //   C. reader 異常：資料夾名 unknown / 缺 reader.json / reader_persona 與資料夾名不一致
-        //      （含大小寫不一致 —— NTFS 遮著它，Linux 上會把追回檔寫到版控外）
-        //   D. Archive 讀不到 metadata 的 entry（book.json 缺或壞 —— 連被比對的資格都沒有，要人看）
-        // ===========================================================
+        public static void SaveJson(string path, SCP.Core.Json.SCP_JsonData data)
+            => SCP.Core.Library.SCP_LibraryIO.SaveJson(path, data);
+
+        public static void SaveText(string path, string text)
+            => SCP.Core.Library.SCP_LibraryIO.SaveText(path, text);
+
+        public static SCP.Core.Json.SCP_JsonData ToStringArray(IList<string> values, params string[] alsoInclude)
+            => SCP.Core.Library.SCP_LibraryIO.ToStringArray(values, alsoInclude);
+
+        public static List<string> SplitList(string raw)
+            => SCP.Core.Library.SCP_LibraryIO.SplitList(raw);
+
+        /// <summary>讀 reader.json（含「你還不是這部的 reader」那條**指出出口**的訊息）。</summary>
+        public static SCP.Core.Json.SCP_JsonData LoadReader(string mediaId, string persona, out string error)
+        {
+            var aReader = SCP.Core.Library.SCP_LibraryIO.LoadReader(DataRoot, mediaId, persona, out string aErr);
+            error = aErr;
+            return aReader;
+        }
+
+        /// <summary>章節連續性分類（**分類，不是閘門**）。</summary>
+        public static SCP.Core.Library.SCP_ChapterRelation ClassifyChapter(SCP.Core.Json.SCP_JsonData reader,
+                                                                           string chapterId)
+            => SCP.Core.Library.SCP_LibraryIO.ClassifyChapter(reader, chapterId);
+
+        public static string RelationLabel(SCP.Core.Library.SCP_ChapterRelation relation)
+            => SCP.Core.Library.SCP_LibraryInit.RelationLabel(relation);
+
+        public static List<string> ListMediaIds()
+            => SCP.Core.Library.SCP_LibraryStore.ListMediaIds(DataRoot);
+
+        /// <summary>建檔（work／media／reader 三層一次到位；已存在的檔**不覆寫**）。</summary>
+        public static string MediaInit(string workId, string mediaId, string mediaKind, string persona,
+                                       string title, string titleOriginal, string author, int anticipation,
+                                       IList<string> aliases, IList<string> genreTags,
+                                       out string error)
+        {
+            string aLog = SCP.Core.Library.SCP_LibraryInit.MediaInit(
+                LettersRootOf(), DataRoot,
+                workId, mediaId, mediaKind, persona, title, titleOriginal, author,
+                anticipation, aliases, genreTags, out string aErr);
+            error = aErr;
+            return aLog;
+        }
+
+
+
+
+        /// <summary>authored 正文容器：`works/&lt;work_id&gt;/chapters/`。</summary>
+        public static string WorkChaptersRoot(string workId)
+            => SCP.Core.Library.SCP_LibraryAuthored.WorkChaptersRoot(DataRoot, workId);
+        /// <summary>authored 卷／弧容器：`works/&lt;work_id&gt;/arcs/`。</summary>
+        public static string WorkArcsRoot(string workId)
+            => SCP.Core.Library.SCP_LibraryAuthored.WorkArcsRoot(DataRoot, workId);
+
+        /// <summary>正文容器三態讀數（⛔ 不是檔數 —— 「沒有目錄」與「目錄在而 0 檔」是兩個值）。</summary>
+        public static SCP.Core.Library.SCP_WorkProseState ProbeWorkProse(string dir, out int fileCount)
+            => SCP.Core.Library.SCP_LibraryAuthored.ProbeWorkProse(dir, out fileCount);
+
+        public static bool TrySetWorkAuthored(string workId, SCP.Core.Library.SCP_WorkAuthored fields, out string error)
+        {
+            bool aOk = SCP.Core.Library.SCP_LibraryAuthored.TrySetWorkAuthored(DataRoot, workId, fields, out string aErr);
+            error = aErr;
+            return aOk;
+        }
+
+        public static bool TryReadWorkAuthored(string workId, out SCP.Core.Library.SCP_WorkAuthored fields, out string error)
+        {
+            bool aOk = SCP.Core.Library.SCP_LibraryAuthored.TryReadWorkAuthored(DataRoot, workId,
+                out SCP.Core.Library.SCP_WorkAuthored aFields, out string aErr);
+            fields = aFields; error = aErr;
+            return aOk;
+        }
+
+        /// <summary>舊 store 的草稿檔位置（寫書線四欄的事實源）。</summary>
+        public static string OldStoreBookJsonPath(string bookSlug)
+            => SCP.Core.Library.SCP_LibraryAuthored.OldStoreBookJsonPath(DataRoot, bookSlug);
+
+        /// <summary>③ 逐欄對拍（⛔ 純讀）。</summary>
+        public static SCP.Core.Library.SCP_AuthoredDiffOutcome DiffWorkAuthored(string bookSlug, string workId,
+            out List<string> mismatchedFields, out string report)
+            => SCP.Core.Library.SCP_LibraryAuthored.DiffWorkAuthored(DataRoot, bookSlug, workId,
+                                                                     out mismatchedFields, out report);
+
+        /// <summary>④ 搬遷（不給 confirm ⇒ 零寫入）。</summary>
+        public static SCP.Core.Library.SCP_AuthoredMigrateOutcome MigrateAuthoredWork(string bookSlug, string workId,
+            bool confirm, out string report, out string error)
+        {
+            var aOutcome = SCP.Core.Library.SCP_LibraryAuthored.MigrateAuthoredWork(
+                DataRoot, bookSlug, workId, confirm, out report, out string aErr);
+            error = aErr;
+            return aOutcome;
+        }
+
+        /// <summary>全 Library 的 media 總表（瀏覽下拉／scan／漫畫比對共用）。</summary>
+        public static List<SCP.Core.Library.SCP_MediaEntry> ListMediaEntries()
+            => SCP.Core.Library.SCP_LibraryCatalog.ListMediaEntries(DataRoot);
+
+        /// <summary>列出某 media 底下的 reader persona。</summary>
+        public static List<string> ListReaders(string mediaId)
+            => SCP.Core.Library.SCP_LibraryStore.ListReaderPersonas(DataRoot, mediaId);
+
+        /// <summary>解析資料夾名為系列名與卷數。</summary>
+        public static void ParseSeriesAndVolume(string folderName, out string seriesName, out string volumeLabel)
+            => SCP.Core.Library.SCP_LibraryComics.ParseSeriesAndVolume(folderName, out seriesName, out volumeLabel);
+
+        /// <summary>系列名 → slug。</summary>
+        public static string NormalizeSeriesSlug(string raw)
+            => SCP.Core.Library.SCP_LibraryComics.NormalizeSeriesSlug(raw);
+
+        /// <summary>掃外部實體漫畫庫並與 Library 三態比對。</summary>
+        /// <remarks>⚠ **根在這一層解析**（`GetComicRoot` 讀的是 Unity 的 EditorPrefs）——
+        /// SCP 那側刻意吃參數：同一個量若兩層各讀各的，分岔時兩邊都讀得出一條看起來正常的路徑。</remarks>
+        public static List<SCP.Core.Library.SCP_ExternalComicSeries> ScanExternalComics(string iCustomRoot = null)
+        {
+            string aRoot = !string.IsNullOrEmpty(iCustomRoot) ? iCustomRoot : GetComicRoot();
+            var aList = SCP.Core.Library.SCP_LibraryComics.ScanExternalComics(DataRoot, aRoot, out string aWarn);
+            // ⚠ 警告由 SCP 交回來（那一層叫不到 Unity 的 Debug）—— ⛔ 不吞：掃到一半炸掉與「庫是空的」同形。
+            if (!string.IsNullOrEmpty(aWarn)) Debug.LogWarning($"[ReadingLibrary] {aWarn}");
+            return aList;
+        }
+
+        /// <summary>已遷移的 Archive slug 集合（`_migration/registry.json` 是唯一標記處）。</summary>
+        public static HashSet<string> LoadMigratedArchiveSlugs()
+            => SCP.Core.Library.SCP_LibraryScan.LoadMigratedArchiveSlugs(DataRoot);
+
+        /// <summary>op=scan 四類審計（唯一寫入是報告檔）。</summary>
         public static string ScanLibrary(out string reportPath, out string error, bool showMigrated = false)
         {
-            error = null;
-            reportPath = null;
-            var sb = new StringBuilder();
-            var mediaEntries = ListMediaEntries();
-            // 已遷移的 Archive 預設不進候選（Tim 2026-08-07：已裁決過的不重複端上檯面；
-            // 要查帶 --arg show_migrated=true）。隱藏數量必須印出來 —— 靜默隱藏＝下一隻閘門讀快取。
-            var migrated = LoadMigratedArchiveSlugs();
-            int hiddenMigrated = 0;
-
-            // media 的 normalize 鍵集合（title / mediaId 去前綴 / work_id / aliases）
-            var mediaKeys = new List<(MediaEntry entry, HashSet<string> keys)>();
-            foreach (var m in mediaEntries)
-            {
-                var keys = new HashSet<string>();
-                AddKey(keys, m.Title);
-                AddKey(keys, m.WorkId);
-                int dash = m.MediaId.IndexOf('-');
-                AddKey(keys, dash > 0 ? m.MediaId.Substring(dash + 1) : m.MediaId);
-                JsonData work = string.IsNullOrEmpty(m.WorkId) ? null
-                    : LoadJson(Path.Combine(WorkRoot(m.WorkId), k_WorkJsonName), out _);
-                if (work != null)
-                {
-                    AddKey(keys, work.GetString(Key_TitleOriginal, ""));
-                    JsonData aliases = work.Contains(Key_Aliases) ? work[Key_Aliases] : null;
-                    if (aliases != null && aliases.IsArray)
-                    {
-                        for (int i = 0; i < aliases.Count; i++) AddKey(keys, AliasToString(aliases[i]));
-                    }
-                }
-                mediaKeys.Add((m, keys));
-            }
-
-            sb.AppendLine("---");
-            sb.AppendLine("type: library_scan_report");
-            sb.AppendLine($"generated_at: {DateTime.Now:yyyy-MM-ddTHH:mm:sszzz}");
-            sb.AppendLine("generated: mechanical   # 每次 op=scan 覆寫；本工具唯讀，遷移一律人工");
-            sb.AppendLine("---");
-            sb.AppendLine();
-            sb.AppendLine("# 🔍 Library 審計報告（op=scan）");
-            sb.AppendLine();
-            sb.AppendLine($"- Library media：{mediaEntries.Count} 個");
-
-            // ── A + D：Archive 比對 ──
-            string archiveRoot = Path.Combine(BookNotesRoot, "Archive");
-            int archiveCount = 0, hitCount = 0;
-            var sectionA = new StringBuilder();
-            var sectionD = new StringBuilder();
-            if (Directory.Exists(archiveRoot))
-            {
-                foreach (string dir in Directory.GetDirectories(archiveRoot))
-                {
-                    string slug = Path.GetFileName(dir);
-                    // `_` 開頭是系統目錄（_recommended / _search_reports…），不是書 —— 不進統計也不進 D 節
-                    if (slug.StartsWith("_", StringComparison.Ordinal)) continue;
-                    if (!showMigrated && migrated.Contains(slug)) { hiddenMigrated++; continue; }
-                    archiveCount++;
-                    JsonData book = LoadJson(Path.Combine(dir, "book.json"), out string bookErr);
-                    if (book == null)
-                    {
-                        sectionD.AppendLine($"- `{slug}`：{bookErr}");
-                        continue;
-                    }
-                    string title = book.GetString(Key_Title, "");
-                    string titleOriginal = book.GetString(Key_TitleOriginal, "");
-                    var archiveKeys = new HashSet<string>();
-                    AddKey(archiveKeys, slug);
-                    AddKey(archiveKeys, title);
-                    AddKey(archiveKeys, titleOriginal);
-                    foreach (var (m, keys) in mediaKeys)
-                    {
-                        bool hit = false;
-                        foreach (var k in archiveKeys)
-                        {
-                            if (keys.Contains(k)) { hit = true; break; }
-                        }
-                        if (!hit) continue;
-                        hitCount++;
-                        sectionA.AppendLine($"- Archive `{slug}`（{title}） ↔ Library `{m.MediaId}`（{m.Title}）" +
-                                            $"　readers: {string.Join(", ", m.Readers)}");
-                    }
-                }
-            }
-            sb.AppendLine($"- Archive entry：{archiveCount} 個"
-                          + (hiddenMigrated > 0
-                              ? $"（另 {hiddenMigrated} 筆已遷移預設隱藏 —— `--arg show_migrated=true` 顯示）"
-                              : ""));
-            sb.AppendLine();
-            sb.AppendLine($"## A. Archive ↔ Library 疑似同作品（{hitCount} 組 —— 逐組人工裁決，不自動遷移）");
-            sb.AppendLine();
-            sb.Append(sectionA.Length > 0 ? sectionA.ToString() : "（無命中）\n");
-            sb.AppendLine();
-
-            // ── B：Library 內部疑似重複（同 normalize title、不同 work_id）──
-            sb.AppendLine("## B. Library 內部疑似重複（同名但不同 work_id —— arakawa 型爛帳的形狀）");
-            sb.AppendLine();
-            var byTitle = new Dictionary<string, List<MediaEntry>>();
-            foreach (var m in mediaEntries)
-            {
-                string k = Normalize(m.Title);
-                if (k.Length == 0) continue;
-                if (!byTitle.TryGetValue(k, out var list)) byTitle[k] = list = new List<MediaEntry>();
-                list.Add(m);
-            }
-            int dupGroups = 0;
-            foreach (var kv in byTitle)
-            {
-                var workIds = new HashSet<string>();
-                foreach (var m in kv.Value) workIds.Add(m.WorkId);
-                if (kv.Value.Count < 2 || workIds.Count < 2) continue;   // 同 work 多 media 合法
-                dupGroups++;
-                sb.AppendLine($"- 「{kv.Value[0].Title}」：" +
-                              string.Join(" / ", kv.Value.ConvertAll(m => $"`{m.MediaId}`(work={m.WorkId})")));
-            }
-            if (dupGroups == 0) sb.AppendLine("（無命中）");
-            sb.AppendLine();
-
-            // ── C：reader 異常 ──
-            sb.AppendLine("## C. reader 異常（unknown / 缺 reader.json / persona 與資料夾名不一致）");
-            sb.AppendLine();
-            int anomalies = 0;
-            foreach (var m in mediaEntries)
-            {
-                foreach (string reader in m.Readers)
-                {
-                    string readerJson = ReaderJsonPath(m.MediaId, reader);
-                    if (reader == "unknown")
-                    {
-                        anomalies++;
-                        sb.AppendLine($"- `{m.MediaId}/readers/unknown`：persona 解析失敗的 fallback 產物 —— " +
-                                      "逐檔認領或併入正主，不可當真讀者");
-                        continue;
-                    }
-                    if (!File.Exists(readerJson))
-                    {
-                        anomalies++;
-                        sb.AppendLine($"- `{m.MediaId}/readers/{reader}`：缺 reader.json");
-                        continue;
-                    }
-                    JsonData reader0 = LoadJson(readerJson, out _);
-                    string declared = reader0 != null ? reader0.GetString(Key_ReaderPersona, "") : "";
-                    if (declared != reader)
-                    {
-                        anomalies++;
-                        bool caseOnly = string.Equals(declared, reader, StringComparison.OrdinalIgnoreCase);
-                        sb.AppendLine($"- `{m.MediaId}/readers/{reader}`：reader.json 宣告 `{declared}`" +
-                                      (caseOnly ? "（**大小寫不一致** —— NTFS 遮著，Linux 上追回檔會寫進版控外的 letters/）"
-                                          : "（宣告與路徑不同人）"));
-                    }
-                }
-            }
-            if (anomalies == 0) sb.AppendLine("（無異常）");
-            sb.AppendLine();
-            if (sectionD.Length > 0)
-            {
-                sb.AppendLine("## D. Archive metadata 讀不到（連被比對的資格都沒有 —— 要人看）");
-                sb.AppendLine();
-                sb.Append(sectionD);
-                sb.AppendLine();
-            }
-            sb.AppendLine("> 本報告唯讀生成；**任何合併 / 搬移 / 改名都不由工具代辦**（Q3 定案：偵測自動、遷移人工）。");
-
-            string report = sb.ToString();
-            try
-            {
-                string dir = Path.Combine(BookNotesRoot, "_migration");
-                Directory.CreateDirectory(dir);
-                reportPath = Path.Combine(dir, "scan_report.md");
-                File.WriteAllText(reportPath, report, new UTF8Encoding(false));
-            }
-            catch (Exception ex)
-            {
-                // 報告落檔失敗不吞掉輸出 —— 印出來的那份還在
-                error = $"報告檔寫出失敗（內容仍在輸出中）：{ex.Message}";
-                reportPath = null;
-            }
-            return report;
+            string aReport = SCP.Core.Library.SCP_LibraryScan.ScanLibrary(DataRoot, out string aPath, out string aErr,
+                                                                          showMigrated);
+            reportPath = aPath; error = aErr;
+            return aReport;
         }
 
-        static void AddKey(HashSet<string> keys, string raw)
-        {
-            string k = Normalize(raw);
-            if (k.Length > 0) keys.Add(k);
-        }
-
-        // 區塊職責：alias 條目轉字串 —— aliases 也有兩形狀（facts 同族病，2026-08-07 scan 實測抓到）：
-        // mononoke 是字串陣列、arakawa 是物件陣列（{slug,source,note} / {title,note}）。
-        // GetString 對物件回空字串 → 物件形狀的 alias 被靜默跳過。
-        static string AliasToString(JsonData alias)
-        {
-            if (alias == null) return "";
-            if (alias.IsObject)
-            {
-                string t = alias.GetString(Key_Title, "");
-                if (string.IsNullOrEmpty(t)) t = alias.GetString("slug", "");
-                return t;
-            }
-            return alias.GetString();
-        }
-
-        // normalize：小寫 + 只留字母數字（含 CJK）—— 標點、空白、連字號全掃掉。
-        // 用途是撒網不是判定：normalize 相等 = 候選，不 = 同作品（人工收網）。
-        static string Normalize(string raw)
-        {
-            if (string.IsNullOrEmpty(raw)) return "";
-            var sb = new StringBuilder();
-            foreach (char c in raw.ToLowerInvariant())
-            {
-                if (char.IsLetterOrDigit(c)) sb.Append(c);
-            }
-            return sb.ToString();
-        }
-
-        // ===========================================================
-        // 區塊職責：組一則「章節心得 → 酒館」的發文內文（op=share 用）。
-        // 物理意義：round 檔是事實源，酒館貼文是投影 —— 本方法只讀不寫；
-        //          發文成敗都不回滾心得檔（檔優先於投影，basecamp 2026-08-06 定案）。
-        // 數值影響：roundNumber<=0 → 取該章最大 round 並回填；已有 shared_seq 的 round
-        //          直接拒絕（同一則心得重發會重複計酬，與 commit 同 SHA 重貼同型）。
-        // ===========================================================
+        /// <summary>組一則「章節心得 → 酒館」的發文內文（⛔ 本函式不發文）。</summary>
         public static string BuildShareBody(string mediaId, string persona, string chapterId,
                                             ref int roundNumber, out string error)
         {
-            error = null;
-            if (LoadReader(mediaId, persona, out error) == null) return null;
-            string chapterDir = ChapterDir(mediaId, persona, chapterId);
-            JsonData chapter = LoadJson(Path.Combine(chapterDir, k_ChapterJsonName), out error);
-            if (chapter == null) return null;
-            JsonData rounds = chapter.Contains(Key_Rounds) ? chapter[Key_Rounds] : null;
-            if (rounds == null || !rounds.IsArray || rounds.Count == 0)
-            {
-                error = "chapter.json 缺 rounds —— 先 note_chapter 再 share";
-                return null;
-            }
-            JsonData hit = null;
-            JsonData maxEntry = null;
-            int maxRound = 0;
-            for (int i = 0; i < rounds.Count; i++)
-            {
-                JsonData entry = rounds[i];
-                if (entry == null || entry.IsString) continue;   // legacy 字串條目沒有 round 號可對
-                int rn = entry.GetInt(Key_Round, 0);
-                if (rn > maxRound) { maxRound = rn; maxEntry = entry; }
-                if (roundNumber > 0 && rn == roundNumber) hit = entry;
-            }
-            if (roundNumber <= 0) { hit = maxEntry; roundNumber = maxRound; }
-            if (hit == null)
-            {
-                error = $"找不到 round {roundNumber}（該章最大 round = {maxRound}）";
-                return null;
-            }
-            if (hit.Contains(Key_SharedSeq))
-            {
-                error = $"round {roundNumber} 已發過（seq={hit.GetInt(Key_SharedSeq, 0)}）—— " +
-                        "重發會重複領發文計酬；真要重發請先人工清掉該 round 的 shared_seq";
-                return null;
-            }
-            string file = hit.GetString(Key_File, "");
-            string roundPath = Path.Combine(chapterDir, file);
-            if (!File.Exists(roundPath))
-            {
-                error = $"索引指向的 round 檔不存在：{file}";
-                return null;
-            }
-            string content = StripFrontmatter(File.ReadAllText(roundPath, Encoding.UTF8)).Trim();
-
-            // 標頭：作品名（media → work 兩跳，缺檔就退回 mediaId，不因標頭缺料擋分享）
-            string workTitle = mediaId;
-            JsonData media = LoadJson(Path.Combine(MediaRoot(mediaId), k_MediaJsonName), out _);
-            if (media != null)
-            {
-                string workId = media.GetString(Key_WorkId, "");
-                JsonData work = string.IsNullOrEmpty(workId) ? null
-                    : LoadJson(Path.Combine(WorkRoot(workId), k_WorkJsonName), out _);
-                if (work != null) workTitle = work.GetString(Key_Title, mediaId);
-            }
-            string display = chapter.GetString(Key_DisplayNumber, "");
-            if (string.IsNullOrEmpty(display)) display = chapterId;
-            string chapterTitle = chapter.GetString(Key_Title, "");
-
-            return $"📖 **閱讀心得｜{workTitle}** {display}" +
-                   (string.IsNullOrEmpty(chapterTitle) ? "" : $"｜{chapterTitle}") +
-                   $"　(r{roundNumber} by {persona})\n\n{content}";
+            string aBody = SCP.Core.Library.SCP_LibraryShare.BuildShareBody(DataRoot, mediaId, persona, chapterId,
+                                                                            ref roundNumber, out string aErr);
+            error = aErr;
+            return aBody;
         }
 
-        // frontmatter 只認「檔案開頭」的 --- 區塊 —— 內文中的 hr 不受影響。
-        static string StripFrontmatter(string text)
-        {
-            if (string.IsNullOrEmpty(text) || !text.StartsWith("---")) return text;
-            int end = text.IndexOf("\n---", 3, StringComparison.Ordinal);
-            if (end < 0) return text;
-            int lineEnd = text.IndexOf('\n', end + 1);
-            return lineEnd < 0 ? "" : text.Substring(lineEnd + 1);
-        }
-
+        /// <summary>把發文回來的 seq 寫回該 round —— 「已發文」的可驗證 receipt。</summary>
         public static void RecordSharedSeq(string mediaId, string persona, string chapterId,
                                            int roundNumber, int seq, out string error)
         {
-            string chapterJsonPath = Path.Combine(ChapterDir(mediaId, persona, chapterId), k_ChapterJsonName);
-            JsonData chapter = LoadJson(chapterJsonPath, out error);
-            if (chapter == null) return;
-            JsonData rounds = chapter.Contains(Key_Rounds) ? chapter[Key_Rounds] : null;
-            if (rounds == null || !rounds.IsArray) { error = "chapter.json 缺 rounds"; return; }
-            for (int i = 0; i < rounds.Count; i++)
-            {
-                if (rounds[i].GetInt(Key_Round, 0) != roundNumber) continue;
-                rounds[i][Key_SharedSeq] = seq;
-                SaveJson(chapterJsonPath, chapter);
-                return;
-            }
-            error = $"chapter.json 找不到 round {roundNumber}，seq={seq} 未落 receipt";
+            SCP.Core.Library.SCP_LibraryShare.RecordSharedSeq(DataRoot, mediaId, persona, chapterId,
+                                                              roundNumber, seq, out string aErr);
+            error = aErr;
         }
+
     }
 }
 #endif

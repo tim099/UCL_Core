@@ -245,7 +245,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
                     string rp = UCL_ReadingLibraryIO.ReaderJsonPath(media.MediaId, persona);
                     if (!File.Exists(rp)) continue;
 
-                    JsonData reader = UCL_ReadingLibraryIO.LoadJson(rp, out _);
+                    var reader = UCL_ReadingLibraryIO.LoadJson(rp, out _);   // ⤷ SCP_JsonData（TASK-0166 薄殼後的型別）
                     if (reader == null) continue;   // LoadJson 已驗過 IsObject
 
                     string updated = reader.GetString(UCL_ReadingLibraryIO.Key_UpdatedAt, "");

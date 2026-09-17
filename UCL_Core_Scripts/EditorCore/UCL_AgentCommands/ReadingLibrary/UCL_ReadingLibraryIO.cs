@@ -1760,291 +1760,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // 物理意義：把一位 persona 在一個 media 的累積紀錄組成單一可讀視圖。
         // 數值影響：純讀；缺檔 / 壞檔一律在輸出裡留 WARNING，不靜默略過。
         // ===========================================================
+        // ⤷ **薄殼**（TASK-0166 ①）：渲染實作住 `SCP_LibraryRecall.RenderRecall`，本函式只解析根。
+        // 物理意義：這裡原本有一份 174 行的渲染（AppendCharacters／ReadFactsList 一起）——
+        //   跟 SCP_Core 那份**並存**。兩份都活著時「它們輸出一樣嗎」每天都要重問一次，
+        //   而它們分岔的樣子是**兩邊各自跑得動、輸出差一點點**（2026-09-16 A/B：231 行逐行相同、行尾不同）。
+        // ⇒ 薄殼之後那個問題消失，不是變好答 —— 只剩一份實作。
+        // ⚠ 射程：本函式的**簽名不動**（Cmd_Library 與管理頁都吃它）⇒ 呼叫端零改動。
         public static string RenderRecall(string mediaId, string persona, bool fullRounds, out string error)
         {
-            JsonData reader = LoadReader(mediaId, persona, out error);
-            if (reader == null) return null;
-
-            JsonData media = LoadJson(Path.Combine(MediaRoot(mediaId), k_MediaJsonName), out _);
-            string workId = media != null ? media.GetString(Key_WorkId, "") : "";
-            JsonData work = string.IsNullOrEmpty(workId)
-                ? null : LoadJson(Path.Combine(WorkRoot(workId), k_WorkJsonName), out _);
-            JsonData progress = reader.Contains(Key_Progress) ? reader[Key_Progress] : null;
-
-            var sb = new StringBuilder();
-            // 區塊職責：frontmatter —— 與 cmd/wake_brief.md 同慣例，明寫「機械產物、手改會被覆寫」。
-            // 物理意義：這份是視圖不是筆記；事實源永遠是 reader.json / chapter round / character view。
-            // 數值影響：純輸出；generated_at 用本機時間（跨機比對時以檔內 media/persona 為準）。
-            sb.AppendLine("---");
-            sb.AppendLine("type: reading_recall");
-            sb.AppendLine($"persona: {persona}");
-            sb.AppendLine($"media_id: {mediaId}");
-            sb.AppendLine($"work_id: {(string.IsNullOrEmpty(workId) ? "unknown" : workId)}");
-            sb.AppendLine($"generated_at: {DateTime.Now:yyyy-MM-ddTHH:mm:sszzz}");
-            sb.AppendLine("generated: mechanical   # 每次 recall / 寫入後重新生成 —— 手改會被覆寫");
-            sb.AppendLine("source_of_truth: AgentCommands/BookNotes/Library");
-            sb.AppendLine("---");
-            sb.AppendLine();
-            sb.AppendLine($"# 📖 閱讀追回｜{(work != null ? work.GetString(Key_Title, mediaId) : mediaId)}");
-            sb.AppendLine();
-            sb.AppendLine($"- reader：`{persona}`　media：`{mediaId}`" +
-                          $"（{(media != null ? media.GetString(Key_MediaKind, "unknown") : "unknown")}）");
-            if (work != null)
-            {
-                sb.AppendLine($"- 原文名：{work.GetString(Key_TitleOriginal, "（未登錄）")}　" +
-                              $"作者／監督：{work.GetString(Key_Author, "（未登錄）")}");
-                JsonData aliases = work.Contains(Key_Aliases) ? work[Key_Aliases] : null;
-                if (aliases != null && aliases.IsArray && aliases.Count > 0)
-                {
-                    var names = new List<string>();
-                    for (int i = 0; i < aliases.Count; i++)
-                    {
-                        string a = AliasToString(aliases[i]);   // 物件形狀 alias 也要印，別靜默跳過
-                        if (!string.IsNullOrEmpty(a)) names.Add(a);
-                    }
-                    if (names.Count > 0) sb.AppendLine($"- 別名（搜尋用）：{string.Join(" / ", names)}");
-                }
-            }
-            sb.AppendLine($"- status：`{reader.GetString(Key_Status, "unknown")}`　" +
-                          $"期待度 {reader.GetInt(Key_Anticipation, 0)}／5");
-            sb.AppendLine($"- 讀到：`{(progress != null ? progress.GetString(Key_CurrentChapterId, "未設定") : "未設定")}`　" +
-                          $"最後閱讀：{(progress != null ? progress.GetString(Key_LastRead, "未設定") : "未設定")}");
-            sb.AppendLine();
-            sb.AppendLine("## 🔖 書籤（上次寫到哪）");
-            sb.AppendLine();
-            sb.AppendLine(progress != null ? progress.GetString(Key_BookmarkNote, "（無）") : "（無）");
-            sb.AppendLine();
-            sb.AppendLine("## 💭 目前看法");
-            sb.AppendLine();
-            sb.AppendLine(reader.GetString(Key_CurrentImpression, "（尚無）"));
-            sb.AppendLine();
-            // 「作品與媒材」「書架投影」兩節 —— Python 版有、C# 初版漏（Sirius diff 抓到）。
-            // 收斂規則是逐節點名補齊，不是整段照抄任一邊（兩版互有對方沒有的節）。
-            sb.AppendLine("## 🗂 作品與媒材");
-            sb.AppendLine();
-            sb.AppendLine($"- work_id: `{(string.IsNullOrEmpty(workId) ? "unknown" : workId)}`");
-            if (work != null)
-            {
-                sb.AppendLine($"- title: {work.GetString(Key_Title, "（未登錄）")}");
-                sb.AppendLine($"- title_original: {work.GetString(Key_TitleOriginal, "（未登錄）")}");
-                sb.AppendLine($"- author: {work.GetString(Key_Author, "（未登錄）")}");
-                JsonData tags = work.Contains(Key_GenreTags) ? work[Key_GenreTags] : null;
-                if (tags != null && tags.IsArray && tags.Count > 0)
-                {
-                    var tagList = new List<string>();
-                    for (int i = 0; i < tags.Count; i++) tagList.Add(tags[i].GetString());
-                    sb.AppendLine($"- genre_tags: {string.Join(", ", tagList)}");
-                }
-                else
-                {
-                    sb.AppendLine("- genre_tags: （未登錄）");
-                }
-            }
-            else
-            {
-                sb.AppendLine("- （work.json 未登錄或讀取失敗 —— 只列 media 層資訊）");
-            }
-            sb.AppendLine();
-            sb.AppendLine("## 🗄 書架投影");
-            sb.AppendLine();
-            string shelfPath = Path.Combine(ReaderRoot(mediaId, persona), k_BookshelfName);
-            sb.AppendLine(File.Exists(shelfPath)
-                ? File.ReadAllText(shelfPath, Encoding.UTF8).TrimEnd()
-                : "（無 bookshelf 投影）");
-            sb.AppendLine();
-            sb.AppendLine("## 📚 章節與 round");
-            sb.AppendLine();
-
-            string chaptersRoot = Path.Combine(ReaderRoot(mediaId, persona), k_ChaptersDirName);
-            // 沒有章節不能提早 return —— 人物觀點也要出現在追回檔裡（2026-08-06 Tim QA 指出的缺口）。
-            if (!Directory.Exists(chaptersRoot))
-            {
-                sb.AppendLine("（尚無章節紀錄）");
-                sb.AppendLine();
-                AppendCharacters(sb, mediaId, persona);
-                return sb.ToString();
-            }
-
-            var chapterDirs = new List<string>(Directory.GetDirectories(chaptersRoot));
-            chapterDirs.Sort(StringComparer.Ordinal);
-            foreach (string dir in chapterDirs)
-            {
-                string id = Path.GetFileName(dir);
-                JsonData chapter = LoadJson(Path.Combine(dir, k_ChapterJsonName), out string chapterErr);
-                if (chapter == null)
-                {
-                    sb.AppendLine($"### `{id}`");
-                    sb.AppendLine($"> [!WARNING]");
-                    sb.AppendLine($"> {chapterErr}");
-                    sb.AppendLine();
-                    continue;
-                }
-                string display = chapter.GetString(Key_DisplayNumber, "");
-                if (string.IsNullOrEmpty(display)) display = id;   // display_number 缺 → 由 id 派生
-                string timeRange = chapter.GetString(Key_TimeRange, "");
-                sb.AppendLine($"### {display}｜{chapter.GetString(Key_Title, "（未命名）")}" +
-                              (string.IsNullOrEmpty(timeRange) ? "" : $"　`{timeRange}`"));
-                JsonData rounds = chapter.Contains(Key_Rounds) ? chapter[Key_Rounds] : null;
-                if (rounds == null || !rounds.IsArray || rounds.Count == 0)
-                {
-                    sb.AppendLine("（尚無 round）");
-                    sb.AppendLine();
-                    continue;
-                }
-                for (int i = 0; i < rounds.Count; i++)
-                {
-                    JsonData entry = rounds[i];
-                    // legacy round 條目可能是純字串檔名（Python 舊格式；library.py 端也容忍）——
-                    // 用物件 API 讀字串節點會拿到預設值，round 心得就靜默消失。
-                    if (entry != null && entry.IsString)
-                    {
-                        string legacyFile = entry.GetString();
-                        sb.AppendLine($"- **r?**（—）`{legacyFile}`　⚠ legacy 字串條目（無 round/日期欄）");
-                        if (fullRounds)
-                        {
-                            string legacyPath = Path.Combine(dir, legacyFile);
-                            sb.AppendLine();
-                            sb.AppendLine(File.Exists(legacyPath)
-                                ? File.ReadAllText(legacyPath, Encoding.UTF8).TrimEnd()
-                                : $"> [!WARNING]\n> 索引指向的 round 檔不存在：`{legacyFile}`");
-                            sb.AppendLine();
-                        }
-                        continue;
-                    }
-                    string file = entry.GetString(Key_File, "");
-                    // ⚠ 場數一定要露出來（TASK-0121 ③）：讀的人要分得出「一話兩場」與「看了兩遍」——
-                    //   不印的話，這兩件事在讀回視圖上長得一模一樣，而誤讀不會有任何一層報錯。
-                    int segs = entry.GetInt(Key_Segments, 1);
-                    sb.AppendLine($"- **r{entry.GetInt(Key_Round, 0)}**（{entry.GetString(Key_ReadingDate, "")}）" +
-                                  $"`{file}`" +
-                                  (segs > 1 ? $"　▸ 這一輪分 **{segs} 場**寫完（續寫，不是重看）" : "") +
-                                  (entry.GetBool(Key_Gap, false) ? "　⚠ gap" : "") +
-                                  (entry.Contains(Key_SharedSeq) ? $"　酒館 seq={entry.GetInt(Key_SharedSeq, 0)}" : ""));
-                    if (!fullRounds) continue;
-                    string roundPath = Path.Combine(dir, file);
-                    sb.AppendLine();
-                    sb.AppendLine(File.Exists(roundPath)
-                        ? File.ReadAllText(roundPath, Encoding.UTF8).TrimEnd()
-                        : $"> [!WARNING]\n> 索引指向的 round 檔不存在：`{file}`");
-                    sb.AppendLine();
-                }
-                sb.AppendLine();
-            }
-
-            AppendCharacters(sb, mediaId, persona);
-            return sb.ToString();
-        }
-
-        // ===========================================================
-        // 區塊職責：人物段 —— 已確認 facts（profile.json）與主觀 view 的版本史（vN_<date>.md）分開列。
-        // 物理意義：續讀時最需要的兩件事是「這人是誰」與「我上次怎麼看他」；**看法要按版本並列**，
-        //          因為改觀的演變本身就是閱讀體驗（不覆寫是本 schema 的核心不變量）。
-        // 數值影響：純讀；缺 profile / 版本檔一律留 WARNING，不靜默略過。
-        // ===========================================================
-        static void AppendCharacters(StringBuilder sb, string mediaId, string persona)
-        {
-            sb.AppendLine("## 🧑 人物（facts ＋ 我的看法版本史）");
-            sb.AppendLine();
-
-            string charactersRoot = Path.Combine(ReaderRoot(mediaId, persona), k_CharactersDirName);
-            if (!Directory.Exists(charactersRoot))
-            {
-                sb.AppendLine("（尚無人物紀錄）");
-                sb.AppendLine();
-                return;
-            }
-
-            var characterDirs = new List<string>(Directory.GetDirectories(charactersRoot));
-            characterDirs.Sort(StringComparer.Ordinal);
-            if (characterDirs.Count == 0)
-            {
-                sb.AppendLine("（尚無人物紀錄）");
-                sb.AppendLine();
-                return;
-            }
-
-            foreach (string dir in characterDirs)
-            {
-                string id = Path.GetFileName(dir);
-                JsonData profile = LoadJson(Path.Combine(dir, k_ProfileJsonName), out string profileErr);
-                string name = profile != null ? profile.GetString(Key_Name, id) : id;
-                sb.AppendLine($"### {name}　`{id}`");
-
-                if (profile == null)
-                {
-                    sb.AppendLine("> [!WARNING]");
-                    sb.AppendLine($"> {profileErr}");
-                }
-                else
-                {
-                    string nameOriginal = profile.GetString(Key_NameOriginal, "");
-                    if (!string.IsNullOrEmpty(nameOriginal)) sb.AppendLine($"- 原文讀音：{nameOriginal}");
-                    // facts 有兩種形狀：陣列（Python 時代寫的 legacy corpus）與字串（C# 初版寫的）。
-                    // 舊碼用 GetString 讀 —— 對陣列節點回傳預設值 "" → 印「（未登錄）」且無 warning。
-                    // 那是一個滿的、寫得很篤定的錯值：讀的人會以為自己真的沒登錄過
-                    //（Sirius 2026-08-07 用 dungeon 測資抓到，三個角色全中）。
-                    var facts = ReadFactsList(profile);
-                    if (facts.Count == 0)
-                    {
-                        sb.AppendLine("- **已確認 facts**：（未登錄）");
-                    }
-                    else
-                    {
-                        sb.AppendLine("- **已確認 facts**：");
-                        foreach (var f in facts) sb.AppendLine($"  - {f}");
-                    }
-                }
-
-                // view 版本史：v1 → vN 依檔名排序並列，**不只印最新版**
-                var views = new List<string>(Directory.GetFiles(dir, "v*.md"));
-                views.Sort(StringComparer.Ordinal);
-                if (views.Count == 0)
-                {
-                    sb.AppendLine("- （尚無主觀 view 版本）");
-                    sb.AppendLine();
-                    continue;
-                }
-                sb.AppendLine();
-                foreach (string viewPath in views)
-                {
-                    sb.AppendLine($"#### {Path.GetFileName(viewPath)}");
-                    sb.AppendLine(File.ReadAllText(viewPath, Encoding.UTF8).TrimEnd());
-                    sb.AppendLine();
-                }
-            }
-        }
-
-        // 區塊職責：讀 profile.json 的 facts —— 同時吃陣列與字串兩種形狀。
-        // 物理意義：legacy corpus（Python 寫的）是 JSON 陣列；C# 初版寫成單一字串。
-        //          schema 收斂方向是**陣列**（沿 corpus 多數），字串形狀讀入時按行拆開，
-        //          兩種來源在視圖層長一樣 —— 讀端相容、寫端從此只寫陣列（見 AddCharacter）。
-        static List<string> ReadFactsList(JsonData profile)
-        {
-            var o = new List<string>();
-            if (profile == null || !profile.Contains(Key_Facts)) return o;
-            JsonData f = profile[Key_Facts];
-            if (f == null) return o;
-            if (f.IsArray)
-            {
-                for (int i = 0; i < f.Count; i++)
-                {
-                    string s = f[i]?.GetString() ?? "";
-                    if (!string.IsNullOrEmpty(s)) o.Add(s);
-                }
-            }
-            else
-            {
-                string s = f.GetString();
-                if (!string.IsNullOrEmpty(s))
-                {
-                    foreach (var line in s.Split('\n'))
-                    {
-                        string t = line.Trim();
-                        if (t.Length > 0) o.Add(t);
-                    }
-                }
-            }
-            return o;
+            string aText = SCP.Core.Library.SCP_LibraryRecall.RenderRecall(
+                UCL_AgentCommandsPath.DataRoot, mediaId, persona, fullRounds, out string aErr);
+            error = aErr;
+            return aText;
         }
 
         // facts 寫入端的唯一出口：一律寫**陣列**（多行輸入按行拆）。
@@ -2075,8 +1802,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             string text = RenderRecall(mediaId, persona, fullRounds, out error);
             if (text == null) return null;
             string path = UCL_LettersPath.CmdPayload(persona, "reading_recall", mediaId);
-            UCL_LettersPath.EnsurePayloadDir(path);   // 建目錄＋補 cmd/.gitignore（唯一入口）
-            SaveText(path, text);
+            UCL_LettersPath.EnsurePayloadDir(path);   // 建目錄＋補 cmd/.gitignore（唯一入口；SCP 側沒有這一格）
+            // ⤷ 寫入改走 SCP 側（`WriteCrLf`）—— TASK-0166 ①。
+            // ⚠ 這**會改變落盤的行尾**：本端原本用 `SaveText` 原樣寫出（正文帶 LF ⇒ 混合行尾），
+            //   Senate 入口一直是全 CRLF。2026-09-16 A/B 量到的 14206 vs 14306（差 100 bytes）就是這一格。
+            //   ⇒ 收斂成一種是**刻意的**：③ 要求的「同輸入兩邊輸出逐位元組對拍」在兩個寫入端各寫各的時不可能成立。
+            SCP.Core.Library.SCP_LibraryIO.SaveText(path, text);
             return path;
         }
 

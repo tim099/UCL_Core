@@ -35,7 +35,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             "request_cancel: request_id=<id> [note=原因] — 撤回自己開的請款單\n" +
             "transfer_request: from_bank=出款bank to_bank=收款bank amount=N reason=為什麼該搬 [kind=manual_transfer] [agent=] [persona=] — 開轉帳單（不動錢，總量守恆；請款單消耗公庫，兩者刻意分開）\n" +
             "closing_generate: （無參數）— 補算所有「已完結但未結帳」的 UTC 日；只寫 closing/*.json，不動餘額\n" +
-            "closing_list: （無參數）— 列已結帳日期與當前讀取基準";
+            "closing_list: （無參數）— 列已結帳日期與當前讀取基準\n" +
+            "bank_diff: [currency=tavern_token] [out_path=報表路徑] — 舊 Treasury vs 新銀行**逐戶**對帳（純讀，TASK-0235 ④）\n" +
+            "bank_mirror: （無參數＝只看現況）[enabled=1|0] [senate_path=絕對路徑|clear] — 鏡像的開關與 senate 執行檔（TASK-0235）";
 
         public override string ExampleArgs =>
             "op=balance;account=claude-da-xiaojie";
@@ -64,6 +66,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 {
                     case "balance":  Op_Balance(args); break;
                     case "balances": Op_Balances(args); break;   // 整批唯讀（遷移／畫表用）
+                    case "bank_diff": Op_BankDiff(args); break;  // 舊帳本 vs 新銀行 逐戶對帳（TASK-0235 ④）
+                    case "bank_mirror": Op_BankMirror(args); break;  // 鏡像的開關／senate 路徑／游標（TASK-0235）
                     case "credit":   Op_Credit(args); break;
                     case "debit":    Op_Debit(args); break;
                     case "transfer": Op_Transfer(args); break;   // T55 closed economy v2
@@ -263,6 +267,130 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         //   （實測有一個帳戶叫 `Federal Reserve System`），但**不可能有 tab**；
         //   ⇒ 這個分隔字元不需要跳脫，而不需要跳脫的格式沒有「跳脫寫錯」那一族失效。
         // ==========================================================
+        // ==========================================================
+        // 區塊職責：`op=bank_mirror` —— 鏡像（`UCL_BankMirror`）的現況與兩個旋鈕。
+        // 物理意義：那兩個值住在 `EditorPrefs`，而 EditorPrefs **只有開著 Editor 的人點得到** ——
+        //          一個沒有入口的開關，對 agent 來說等於不存在。
+        // 數值影響：不動任何帳。改的是「要不要鏡」與「用哪顆 senate」。
+        // ⚠ `senate_path` 指到一個不存在的檔 ＝ TASK-0235 ② 的**反向對照**（鏡像會失敗，舊帳本不受影響）。
+        // ==========================================================
+        void Op_BankMirror(Dictionary<string, string> args)
+        {
+            string aEnabled = GetArg(args, "enabled", "");
+            string aPath = GetArg(args, "senate_path", "");
+
+            var sb = new StringBuilder();
+            sb.AppendLine("## 新銀行鏡像（UCL_BankMirror）");
+
+            if (aEnabled.Length > 0)
+            {
+                bool aOn = aEnabled == "1" || aEnabled.ToLowerInvariant() == "true";
+                UCL_BankMirror.Enabled = aOn;
+                sb.AppendLine($"- 開關改為：**{(aOn ? "開" : "關")}**");
+            }
+            if (aPath.Length > 0)
+            {
+                string aSet = aPath == "clear" ? "" : aPath;
+                UCL_BankMirror.SenatePath = aSet;
+                sb.AppendLine($"- senate 路徑改為：`{(aSet.Length == 0 ? "（空 ⇒ 走 PATH）" : aSet)}`");
+                if (aSet.Length > 0 && !System.IO.File.Exists(aSet))
+                    sb.AppendLine("  - ⚠ **那個檔不存在** —— 鏡像會逐筆失敗（cursor 保留、舊帳本不受影響）。"
+                                  + "這正是反向對照要的狀態；驗完記得 `senate_path=clear`。");
+            }
+
+            sb.AppendLine($"- 現況：開關 **{(UCL_BankMirror.Enabled ? "開" : "關")}**"
+                          + $"／senate `{(UCL_BankMirror.SenatePath.Length == 0 ? "（走 PATH）" : UCL_BankMirror.SenatePath)}`");
+            sb.AppendLine($"- 游標檔：`{UCL_BankMirror.StatePathPublic}`");
+            sb.AppendLine("- ⚠ 鏡像是**非同步**的：剛寫完帳的那幾秒兩邊本來就會差。"
+                          + "判準是「靜置之後還差不差」（`op=bank_diff`）。");
+            Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
+        }
+
+        // ==========================================================
+        // 區塊職責：`op=bank_diff` —— 舊 `Treasury/` 與**新銀行**（`SCP_Bank*`）**逐戶**並排。
+        // 物理意義：雙寫並存期（TASK-0235）的那個讀數：它回答「兩邊會不會同步」，
+        //          而那是權威切換（TASK-0216 ⑧）唯一的前提。
+        // 數值影響：**純讀兩本帳**，一毛都不動。
+        // ⛔ **不印總差額** —— 兩個方向相反的錯會互相抵消，而抵消之後畫面上是一個漂亮的 0。
+        //    ⇒ 一律逐戶點名，並且把「只有舊的有」「只有新的有」分成兩類（它們的成因不同：
+        //      前者是鏡像還沒追上或具名跳過，後者是新銀行被人多寫了一筆）。
+        // ⚠ 鏡像是**非同步**的 ⇒ 剛寫完帳的那幾秒本來就會差。判準是「靜置之後還差不差」。
+        // ==========================================================
+        void Op_BankDiff(Dictionary<string, string> args)
+        {
+            string currency = GetArg(args, "currency", "tavern_token");
+            string outPath = GetArg(args, "out_path", "");
+
+            var aOld = UCL_TreasuryLedger.GetAllBalances(currency);
+
+            // 新銀行的根：**沿用描述表那一格的算式**（`<資料根>/Bank`），⛔ 不在這裡再拼一次字面 ——
+            // 同一個路徑第二處拼字，兩邊漂掉時兩邊都讀得出一個「看起來正常」的目錄。
+            string aSuffix = SCP.Core.Paths.SCP_PathRegistry.Get(SCP.Core.Paths.SCP_PathId.BankRoot).DeriveSuffix;
+            string aBankRoot = System.IO.Path.Combine(UCL_RepoPath.AgentCommandsDir, aSuffix);
+
+            // ⚠ 第二參數是**幣別**不是問題清單（我第一版把它當 oProblems 傳，編譯器擋下來了）。
+            //   ⇒ 兩本帳要問同一個幣別，否則「零差額」可能只是在比兩個不同的東西。
+            var aProblems = new List<string>();
+            var aNew = SCP.Core.Bank.SCP_BankLedger.GetAllBalances(aBankRoot, currency);
+
+            // 新銀行的帳號 id 一律小寫 ⇒ 舊帳本那側也要正規化才對得起來（`Zeta` vs `zeta`）。
+            var aOldNorm = new Dictionary<string, int>();
+            foreach (var kv in aOld)
+            {
+                string k = (kv.Key ?? "").Trim().ToLowerInvariant();
+                if (k.Length == 0) continue;
+                aOldNorm.TryGetValue(k, out int prev);
+                aOldNorm[k] = prev + kv.Value;
+            }
+
+            var aIds = new List<string>();
+            foreach (var k in aOldNorm.Keys) if (!aIds.Contains(k)) aIds.Add(k);
+            foreach (var k in aNew.Keys) if (!aIds.Contains(k)) aIds.Add(k);
+            aIds.Sort(System.StringComparer.Ordinal);
+
+            int aSame = 0, aDiff = 0, aOldOnly = 0, aNewOnly = 0;
+            var sb = new StringBuilder();
+            sb.AppendLine("| 帳號 | 舊 Treasury | 新銀行 | 差 |");
+            sb.AppendLine("|---|---:|---:|---|");
+            foreach (var id in aIds)
+            {
+                bool hasOld = aOldNorm.TryGetValue(id, out int o);
+                bool hasNew = aNew.TryGetValue(id, out int n);
+                if (!hasNew && o == 0) continue;            // 兩邊都沒有錢的戶不佔版面
+                if (hasOld && hasNew && o == n) { ++aSame; continue; }
+
+                string why;
+                if (!hasNew) { ++aOldOnly; why = "⛔ 新銀行沒有這一戶（遷移時具名放棄，或鏡像跳過）"; }
+                else if (!hasOld) { ++aNewOnly; why = "⚠ 只有新銀行有 —— 有人多寫了一筆"; }
+                else { ++aDiff; why = (n - o).ToString("+#;-#;0") + "（鏡像還沒追上，或漏了一筆）"; }
+                sb.AppendLine($"| `{id}` | {(hasOld ? o.ToString() : "—")} | {(hasNew ? n.ToString() : "—")} | {why} |");
+            }
+
+            string stamp = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            var head = new StringBuilder();
+            head.AppendLine($"## 舊 Treasury vs 新銀行 —— 逐戶對帳（{stamp}）");
+            head.AppendLine($"- 新銀行根：`{aBankRoot}`");
+            head.AppendLine($"- **相符 {aSame} 戶**／金額不同 **{aDiff}** 戶／只有舊的有 **{aOldOnly}** 戶／只有新的有 **{aNewOnly}** 戶");
+            if (aDiff == 0 && aOldOnly == 0 && aNewOnly == 0)
+                head.AppendLine("- ✅ **逐戶零差額**（⛔ 這是此刻的讀數 —— 鏡像非同步，剛寫完帳的幾秒本來就會差）");
+            foreach (var p in aProblems) head.AppendLine($"- ⚠ 讀新銀行時：{p}");
+            head.AppendLine();
+
+            string body = head.ToString() + sb.ToString();
+            Cmd_Tavern_Helpers.WriteLastOp(args, body);
+
+            if (!string.IsNullOrEmpty(outPath))
+            {
+                try
+                {
+                    string dir = System.IO.Path.GetDirectoryName(outPath);
+                    if (!string.IsNullOrEmpty(dir)) System.IO.Directory.CreateDirectory(dir);
+                    System.IO.File.WriteAllText(outPath, body, new UTF8Encoding(false));
+                }
+                catch (System.Exception e) { Debug.LogWarning($"[Treasury] bank_diff 報表寫不出來：{e.Message}"); }
+            }
+        }
+
         void Op_Balances(Dictionary<string, string> args)
         {
             string currency = GetArg(args, "currency", "tavern_token");

@@ -74,6 +74,18 @@ namespace UCL.Core.EditorLib.AgentCommands
                 Message = "chore(treasury): sync ledger & account state (auto)",
                 DefaultOn = true,
             },
+            // ⚠ 新銀行（TASK-0216，2026-09-17 起住 `<資料根>/Bank`）**跟舊帳本分群**：
+            //   同一筆錢在兩本帳上是兩個事件，合成一群的話 commit 訊息說不出動的是哪一本。
+            // 🩸 加這一條的理由：遷移當天它不在任何一群裡 ⇒ 落進 `__other_untracked` ＝ **永遠不會被自動收**。
+            //   而那個症狀是「錢寫進去了、git status 有東西、每晚的自動收帳一個字都不提它」。
+            new GroupDef
+            {
+                Key = "bank",
+                Label = "Bank（新銀行：帳戶 / 分錄）",
+                Match = p => p.StartsWith("Bank/"),
+                Message = "chore(bank): sync new-bank accounts & ledger (auto)",
+                DefaultOn = true,
+            },
             new GroupDef
             {
                 Key = "runtime",

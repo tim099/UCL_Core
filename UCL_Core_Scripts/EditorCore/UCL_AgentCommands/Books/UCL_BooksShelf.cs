@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using SCP.Core.Books;
 using UCL.Core.JsonLib;
 
 namespace UCL.Core.EditorLib.AgentCommands.Books
@@ -28,8 +29,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
         public string persona;       // 作者或捐贈者
         public int chapters;
         public string date;
-        public UCL_BookOrigin origin;
-        public UCL_BookKind kind;
+        public SCP_BookOrigin origin;
+        public SCP_BookKind kind;
         public string series;        // 空＝沒有系列（自成一系列）
         public int volume;           // 0＝未指定，排序退回 slug
     }

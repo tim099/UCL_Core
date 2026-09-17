@@ -24,6 +24,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using SCP.Core.Books;
 using UCL.Core.JsonLib;
 using UnityEngine;
 
@@ -152,7 +153,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             entry["base_price"] = DonationBasePrice;
             entry[Key_DonatedAt] = Today();
             entry[Key_Note] = note ?? "";
-            UCL_BooksClassification.Stamp(entry, book, UCL_BookOrigin.Donated, UCL_BookKind.External, "", 0);
+            UCL_BooksClassification.Stamp(entry, book, SCP_BookOrigin.Donated, SCP_BookKind.External, "", 0);
             SaveJson(dpath, entry);
 
             string who = string.IsNullOrEmpty(donorPersona) ? donorBank : donorPersona;
@@ -196,7 +197,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
                 // 🩸 舊版這裡看的是 `source != "authored"` —— 於是 source=watch-log 的觀影實錄
                 //   被判成「捐贈調入」而永遠無法再版（實測 watch-apocalypse-hotel）。
                 //   權限只該問一件事：這本是不是館內自產的 ⇒ 改看 origin。
-                if (UCL_BooksClassification.DeriveOrigin(existing, book) == UCL_BookOrigin.Donated)
+                if (UCL_BooksClassification.DeriveOrigin(existing, book) == SCP_BookOrigin.Donated)
                 {
                     error = $"《{book}》已以捐贈調入登記（捐贈者 {existing.GetString(Key_DonorPersona, "?")}）" +
                             "—— publish 只發布館內自產的書";
@@ -231,7 +232,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             // 舊檔留著的 source 照讀不動（DeriveOrigin 仍認它），只是不再新增。
             // 分類三軸：沿用既有登記（classify 設過就不覆蓋），沒有才由 slug 前綴推導。
             UCL_BooksClassification.Stamp(
-                entry, book, UCL_BookOrigin.Authored,
+                entry, book, SCP_BookOrigin.Authored,
                 existing != null ? UCL_BooksClassification.DeriveKind(existing, book)
                                  : UCL_BooksClassification.DeriveKind(new JsonData(), book),
                 existing != null ? UCL_BooksClassification.DeriveSeries(existing, book)
@@ -330,7 +331,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             string benBank = ben.GetString(Key_Donor, "");
             string benPersona = ben.GetString(Key_DonorPersona, "");
             string title = ben.GetString(Key_Title, book);
-            string benKind = UCL_BooksClassification.DeriveOrigin(ben, book) == UCL_BookOrigin.Authored
+            string benKind = UCL_BooksClassification.DeriveOrigin(ben, book) == SCP_BookOrigin.Authored
                 ? "作者" : "捐贈者";
             if (string.IsNullOrEmpty(benPersona))
             {
@@ -486,8 +487,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             {
                 // 走 DeriveOrigin 而不是原始 source：新檔只有 origin，舊檔只有 source，
                 // 讀原始欄位會讓新發表的書全部掉進「捐贈調入」那一組。
-                var authored = ds.FindAll(d => UCL_BooksClassification.DeriveOrigin(d, d.GetString(Key_Book, "")) == UCL_BookOrigin.Authored);
-                var donated = ds.FindAll(d => UCL_BooksClassification.DeriveOrigin(d, d.GetString(Key_Book, "")) != UCL_BookOrigin.Authored);
+                var authored = ds.FindAll(d => UCL_BooksClassification.DeriveOrigin(d, d.GetString(Key_Book, "")) == SCP_BookOrigin.Authored);
+                var donated = ds.FindAll(d => UCL_BooksClassification.DeriveOrigin(d, d.GetString(Key_Book, "")) != SCP_BookOrigin.Authored);
                 // 壞檔數要出現在**數字旁邊**，不是只在文末 WARNING（Sirius 協測 2026-08-07）：
                 // 「共 21 本」沒有標記時，只讀標頭的人會以為圖書館真的只有 21 本 ——
                 // 計數靜默吸收被丟掉的列，跟「讀空目錄不報錯」同族。

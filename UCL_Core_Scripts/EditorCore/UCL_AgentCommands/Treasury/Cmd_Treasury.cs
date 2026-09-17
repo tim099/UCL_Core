@@ -348,10 +348,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             foreach (var k in aNew.Keys) if (!aIds.Contains(k)) aIds.Add(k);
             aIds.Sort(System.StringComparer.Ordinal);
 
-            // ⚠ **具名放棄清單是資料**（`Treasury/bank_migration_waived.txt`），與 `UCL_BankMirror` 讀同一份。
-            //   🩸 少了它，「Tim 拍板不搬」與「鏡像漏了一戶」在這張表上完全同形 —— 而前者該安靜、後者該叫。
-            //   ⇒ 清單**不在**時回空集合：所有缺戶都變「非預期」而會叫。那個方向是安全的。
-            var aWaived = UCL_BankMirror.LoadWaived();
+            // ⚠ **本區射程是推導出來的**（`UCL_BankMirror.ScopedAccounts`），⛔ 不是一份手維護的清單。
+            //   規則：本區有 persona resolve 得到這個帳號（**含借用別區綁定** —— 那在本區是真的開戶、真的能用）＋ 央行。
+            //   🩸 清單版寫過一版又拆掉：清單是當下那批 id 的快照，有人改綁定它不會跟上，
+            //     而它過期時讀它的兩層會**一致地錯**（兩份答案相同 ⇒ 沒有人會發現）。
+            var aScope = UCL_BankMirror.ScopedAccounts(out string aRegionId);
 
             int aSame = 0, aDiff = 0, aWaivedHit = 0, aUnexpected = 0, aNewOnly = 0;
             var sb = new StringBuilder();
@@ -362,17 +363,21 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 bool hasOld = aOldNorm.TryGetValue(id, out int o);
                 bool hasNew = aNew.TryGetValue(id, out int n);
                 if (!hasNew && o == 0) continue;            // 兩邊都沒有錢的戶不佔版面
+
+                // ⚠ **射程優先判**，⛔ 不是只在「新銀行沒有這一戶」時才判：
+                //   一個本區不該記的帳號如果曾經被開過，它會是「存在而餘額 0」而落進「金額不同」⇒ 把閘打紅。
+                if (!aScope.Contains(id))
+                {
+                    ++aWaivedHit;
+                    sb.AppendLine($"| `{id}` | {(hasOld ? o.ToString() : "—")} | {(hasNew ? n.ToString() : "—")} "
+                                  + $"| ・不在本區射程（{aRegionId} 沒有人用這個帳號；錢仍在舊帳本） |");
+                    continue;
+                }
                 if (hasOld && hasNew && o == n) { ++aSame; continue; }
 
+                // ⛔ 走到這裡的一定**不在**具名放棄清單裡（上面已經 continue 掉了）⇒ 以下三格全部計入閘。
                 string why;
-                if (!hasNew && aWaived.Contains(id))
-                {
-                    // ⛔ **不計入閘**：這是拍板的終態，不是漂移。但照樣逐戶印出來 ——
-                    //    「不算差額」跟「看不見」是兩件事，而看不見的那天沒有人會發現它變多了。
-                    ++aWaivedHit;
-                    why = "・具名放棄（終態；錢仍在舊帳本）";
-                }
-                else if (!hasNew) { ++aUnexpected; why = "⚠ **未預期缺戶** —— 不在具名放棄清單裡"; }
+                if (!hasNew) { ++aUnexpected; why = "⚠ **未預期缺戶** —— 本區有人用它，而新銀行沒有這一戶"; }
                 else if (!hasOld) { ++aNewOnly; why = "⚠ 只有新銀行有 —— 有人多寫了一筆"; }
                 else { ++aDiff; why = (n - o).ToString("+#;-#;0") + "（鏡像還沒追上，或漏了一筆）"; }
                 sb.AppendLine($"| `{id}` | {(hasOld ? o.ToString() : "—")} | {(hasNew ? n.ToString() : "—")} | {why} |");
@@ -382,12 +387,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             var head = new StringBuilder();
             head.AppendLine($"## 舊 Treasury vs 新銀行 —— 逐戶對帳（{stamp}）");
             head.AppendLine($"- 新銀行根：`{aBankRoot}`");
-            head.AppendLine($"- 具名放棄清單：`{UCL_BankMirror.WaivedListPath}`（{aWaived.Count} 戶）");
+            head.AppendLine($"- 本區 `{aRegionId}` 射程：**{aScope.Count} 個帳號**"
+                            + "（由 `letters/<persona>/bank/<區>.md` ＋ 央行**推導**，⛔ 不是清單）");
             head.AppendLine($"- **相符 {aSame} 戶**／金額不同 **{aDiff}** 戶／⚠ 未預期缺戶 **{aUnexpected}** 戶"
-                            + $"／只有新的有 **{aNewOnly}** 戶／・具名放棄 {aWaivedHit} 戶（不計入閘）");
+                            + $"／只有新的有 **{aNewOnly}** 戶／・不在本區射程 {aWaivedHit} 戶（不計入閘）");
             if (aDiff == 0 && aUnexpected == 0 && aNewOnly == 0)
                 head.AppendLine("- ✅ **逐戶零差額**（⛔ 這是此刻的讀數 —— 鏡像非同步，剛寫完帳的幾秒本來就會差；"
-                                + "⛔ 也**不含**具名放棄那批：它們是拍板的終態，不是被驗過的）");
+                                + "⛔ 也**不含**射程外那批：它們本來就不該在這本帳上）");
             foreach (var p in aProblems) head.AppendLine($"- ⚠ 讀新銀行時：{p}");
             head.AppendLine();
 

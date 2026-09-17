@@ -70,33 +70,33 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
 
         // ===========================================================
-        // 區塊職責：具名放棄清單（`Treasury/bank_migration_waived.txt`）—— **拍板不遷**的那批帳戶。
-        // 物理意義：Tim 2026-09-17「都不搬，現狀就是終態」。清單是**資料**不是註解，
-        //          而且 `Cmd_Treasury op=bank_diff` 讀的是同一份 ⇒ 兩層不可能對「這戶該不該在」給出不同答案。
-        // 🩸 少了它，「我們決定不搬」與「鏡像漏了一戶」在畫面上完全同形 —— 而前者該安靜、後者該叫。
-        // 數值影響：純讀。檔不在 ⇒ 回空集合（⇒ 所有缺戶都變「非預期」而會叫，**那個方向是安全的**）。
+        // 區塊職責：**本區射程** —— 這一區的新銀行該不該記這個帳號。
+        // 物理意義：判準是**推導**出來的，⛔ 不是一份手維護的清單
+        //          （Tim 2026-09-17：「請不要在 code 中硬擋，按照正常規則讓沒綁 persona 的帳戶不跑遷移」）。
+        //   規則：某個 persona 在**本區**（`UCL_CentralBankSettings.CurrencyId`）resolve 得到這個帳號 ⇒ 在射程內。
+        //   ⭐ **借用別區綁定也算**（Tim 2026-09-17 更正）：借用的意思是「依他在別區的帳號 id，
+        //     在本區真的開戶並綁定」⇒ 那是一個**在本區可以正常運作的帳戶**，不是別區的東西。
+        //     🩸 我原本把它讀成「不屬於本區」，於是把 @kaguya 在用的 `Luna` 關掉了。
+        //   ＋ 央行（沒有人綁它，但它是本區的機構帳）。
+        // 🩸 為什麼不用清單：清單是**當下那批 id 的快照**。多一個人綁帳號、有人改綁定、有人搬區，
+        //    清單不會自己跟上 —— 而它過期的時候，讀它的兩層會**一致地錯**（兩份答案相同，所以沒有人會發現）。
+        // 數值影響：純讀綁定檔（`letters/<persona>/bank/<區>.md`）與設定，⛔ 不碰帳。
         // ===========================================================
-        public static string WaivedListPath
+        public static HashSet<string> ScopedAccounts(out string oRegion)
         {
-            get { return Path.Combine(UCL_RepoPath.AgentCommandsDir, "Treasury", "bank_migration_waived.txt"); }
-        }
-
-        public static HashSet<string> LoadWaived()
-        {
+            oRegion = UCL_CentralBankSettings.CurrencyId;
             var aOut = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                if (!File.Exists(WaivedListPath)) return aOut;
-                foreach (string aLine in File.ReadAllLines(WaivedListPath))
+                foreach (string aName in UCL_PersonaProfile.PoolNames())
                 {
-                    string aTrim = aLine.Trim();
-                    if (aTrim.Length == 0 || aTrim[0] == '#') continue;
-                    int aTab = aTrim.IndexOf('\t');
-                    string aId = (aTab >= 0 ? aTrim.Substring(0, aTab) : aTrim).Trim();
-                    if (aId.Length > 0) aOut.Add(aId);
+                    string aAcc = UCL_PersonaProfile.GetBankAccount(aName, oRegion, out string _, out string _);
+                    if (!string.IsNullOrWhiteSpace(aAcc)) aOut.Add(aAcc.Trim());
                 }
+                string aCentral = UCL_CentralBankSettings.CentralBankAccount;
+                if (!string.IsNullOrWhiteSpace(aCentral)) aOut.Add(aCentral.Trim());
             }
-            catch (Exception e) { Debug.LogWarning($"[BankMirror] 具名放棄清單讀不了：{e.Message}"); }
+            catch (Exception e) { Debug.LogWarning($"[BankMirror] 算本區射程時出事：{e.Message}"); }
             return aOut;
         }
 
@@ -148,7 +148,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             aState["skipped"].Add(aRow);
             SaveState(aState);
             Debug.LogWarning($"[BankMirror] ⛔ 具名跳過 {iRelKey}（account={iAccount}）：{iWhy}"
-                             + " —— 這一筆**新銀行沒有收到**，對帳時它會是一個差額。");
+                             + " —— 這一筆**新銀行沒有收到**。");
         }
 
         // ===========================================================
@@ -221,10 +221,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     // 新銀行沒有這一戶 ⇒ 前進（⛔ 不卡住整條鏡像：卡住的話後面每一筆真的帳都跟著停），
                     // 但**分兩種說法**：在具名放棄清單裡＝預期；不在＝⚠ 非預期，那是要有人來看的。
                     string aAcc = AccountOf(aRelKey);
-                    bool aExpected = LoadWaived().Contains(aAcc);
+                    bool aExpected = !ScopedAccounts(out string _).Contains(aAcc);
                     RecordSkip(aRelKey, aAcc, aExpected
-                        ? "新銀行沒有這一戶，而它**在具名放棄清單裡**（預期；Tim 2026-09-17 拍板不搬）"
-                        : "⚠ 新銀行沒有這一戶，而它**不在**具名放棄清單裡 —— 非預期，要有人來看");
+                        ? "新銀行沒有這一戶，而**本區也沒有人用這個帳號**（規則推導 ⇒ 預期）"
+                        : "⚠ 新銀行沒有這一戶，而**本區有人用它** —— 非預期，要有人來看");
                     SaveCursor(aRelKey);
                 }
                 else
@@ -271,6 +271,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             if (aEntry.IsAudit)
             {
                 SaveCursor(aNext);   // `__audit` 不是錢的移動 —— 靜默前進（同 Discord 那支）
+                return;
+            }
+
+            // ⚠ **送出之前**先問射程 —— ⛔ 不是等 `cmd bank` 回「沒有這一戶」才處理。
+            // 🩸 那個事後判別擋不住既有帳戶：帳本 append-only ⇒ 一個「本區不該記」的帳號如果曾經被開過，
+            //   它會是「存在而餘額 0」，於是「沒有這一戶」永遠不會回 ⇒ 鏡像把它再養起來。
+            // ⭐ 判準是**規則不是清單**：本區有沒有人 resolve 得到這個帳號（含借用）。
+            var aScope = ScopedAccounts(out string aRegion);
+            if (!aScope.Contains(aEntry.AccountId))
+            {
+                RecordSkip(aNext, aEntry.AccountId,
+                           $"本區（{aRegion}）沒有任何 persona 用這個帳號 ⇒ **不鏡它**"
+                           + "（錢仍在舊帳本；哪天有人綁了它，這個判斷自己就會變）");
+                SaveCursor(aNext);
                 return;
             }
 

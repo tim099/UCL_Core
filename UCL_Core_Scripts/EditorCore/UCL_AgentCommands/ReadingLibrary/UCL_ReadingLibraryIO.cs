@@ -102,7 +102,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         const string k_WorkChaptersDirName = "chapters";
         const string k_WorkArcsDirName = "arcs";
         const string k_ChapterJsonName = "chapter.json";
-        const string k_BookshelfName = "bookshelf.md";
         const string k_CharactersDirName = "characters";
         const string k_ProfileJsonName = "profile.json";
         // 追回檔輸出路徑（與 wake brief 同住 persona 的 letters/cmd/）
@@ -1675,85 +1674,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         // bookshelf.md 同步
         // 物理意義：**投影，不是第二真相源** —— 一律由 reader.json 重新生成，人不手改。
         // ===========================================================
+        // ⤷ **薄殼**（TASK-0166 ①）：閱讀卡的渲染與落檔住 `SCP_LibraryBookshelf.SyncBookshelf`。
+        // ⚠ 兩層唯一的行為差異是**轉發失敗那句警告從哪裡出來**：SCP_Core 叫不到 Unity ⇒ 它把警告
+        //   交回呼叫端（`oForwardWarning`），由這裡印 —— 產物本身逐位元組不變，方向也沒變
+        //   （正本先寫、副本後寫、轉發失敗不連累正本）。
         public static void SyncBookshelf(string mediaId, string persona, out string error)
         {
-            JsonData reader = LoadReader(mediaId, persona, out error);
-            if (reader == null) return;
-
-            JsonData media = LoadJson(Path.Combine(MediaRoot(mediaId), k_MediaJsonName), out _);
-            string workId = media != null ? media.GetString(Key_WorkId, "") : "";
-            string mediaKind = media != null ? media.GetString(Key_MediaKind, "unknown") : "unknown";
-            JsonData work = string.IsNullOrEmpty(workId)
-                ? null : LoadJson(Path.Combine(WorkRoot(workId), k_WorkJsonName), out _);
-            string title = work != null ? work.GetString(Key_Title, workId) : workId;
-
-            JsonData progress = reader.Contains(Key_Progress) ? reader[Key_Progress] : null;
-            string chapterId = progress != null ? progress.GetString(Key_CurrentChapterId, "") : "";
-            string lastRead = progress != null ? progress.GetString(Key_LastRead, "") : "";
-            string bookmark = progress != null ? progress.GetString(Key_BookmarkNote, "") : "";
-
-            var sb = new StringBuilder();
-            sb.AppendLine("---");
-            sb.AppendLine($"{Key_WorkId}: {workId}");
-            sb.AppendLine($"{Key_MediaId}: {mediaId}");
-            sb.AppendLine($"{Key_MediaKind}: {mediaKind}");
-            sb.AppendLine($"{Key_ReaderPersona}: {persona}");
-            sb.AppendLine($"{Key_Status}: {reader.GetString(Key_Status, "reading")}");
-            sb.AppendLine($"{Key_Anticipation}: {reader.GetInt(Key_Anticipation, 0)}");
-            sb.AppendLine($"progress_snapshot_chapter: \"{chapterId}\"");
-            sb.AppendLine($"progress_snapshot_last_read: {lastRead}");
-            sb.AppendLine($"{Key_UpdatedAt}: {reader.GetString(Key_UpdatedAt, Today())}");
-            sb.AppendLine("generated: mechanical   # 由 UCL_ReadingLibraryIO 由 reader.json 生成；手改會被覆寫");
-            sb.AppendLine("---");
-            sb.AppendLine();
-            sb.AppendLine($"# {persona} 的《{title}》閱讀卡");
-            sb.AppendLine();
-            sb.AppendLine("> `reader.json` 是本卡片的資料真相源；此檔是人可讀投影，每次寫入後重新生成。");
-            sb.AppendLine();
-            sb.AppendLine($"**期待度：{reader.GetInt(Key_Anticipation, 0)}／5**");
-            sb.AppendLine();
-            sb.AppendLine("## 目前進度");
-            sb.AppendLine();
-            sb.AppendLine(string.IsNullOrEmpty(bookmark) ? "（尚無書籤）" : bookmark);
-            sb.AppendLine();
-            sb.AppendLine("## 目前看法");
-            sb.AppendLine();
-            sb.AppendLine(reader.GetString(Key_CurrentImpression, "（尚無）"));
-
-            string aText = sb.ToString();
-            SaveText(Path.Combine(ReaderRoot(mediaId, persona), k_BookshelfName), aText);
-            ForwardBookshelfToLetters(mediaId, persona, aText);
+            SCP.Core.Library.SCP_LibraryBookshelf.SyncBookshelf(
+                new SCP.Core.Paths.SCP_LettersRoot(UCL_LettersPath.Root), UCL_AgentCommandsPath.DataRoot,
+                mediaId, persona, out string aErr, out string aForwardWarning);
+            error = aErr;
+            if (!string.IsNullOrEmpty(aForwardWarning))
+                Debug.LogWarning($"[ReadingLibrary] bookshelf 轉發至 letters 失敗（正本已寫入，不影響資料）：{aForwardWarning}");
         }
 
-        // ===========================================================
-        // bookshelf 轉發到 letters/<persona>/bookshelf/
-        // 區塊職責：把閱讀卡多送一份到該 persona 自己的信件目錄，讓「我跟這本書的關係」
-        //          跟 sketchbook（我對**人**的看法）並排 —— 一個看書、一個看人。
-        // 物理意義：**投影的投影，不是第三個真相源。** 真相源永遠是 reader.json；
-        //          Library 內那份是投影，這份是給 persona 隨身帶的副本。
-        //          任何流程都**只准讀它、不准回寫**；要改內容去改 reader.json 再 Sync。
-        // 數值影響：每次 SyncBookshelf 都整份覆寫一個檔。
-        // ⚠ letters/<persona>/ 每一個都是獨立 git submodule —— 這裡每寫一次就弄髒該 persona 的 repo。
-        //   目前觸發點是「該 persona 自己寫心得」，弄髒的是自己的 repo，代價收斂在當事人身上；
-        //   若日後有「一次同步全部 persona」的批次入口，請先想清楚那會一次弄髒 N 個 repo。
-        // 邊界：寫檔失敗只印 warning，不讓轉發失敗連累已經落盤的正本（正本先寫、副本後寫）。
-        // ===========================================================
-        static void ForwardBookshelfToLetters(string mediaId, string persona, string text)
-        {
-            try
-            {
-                string path = Path.Combine(UCL_LettersPath.PersonaDir(persona),
-                                           k_LettersBookshelfDirName, $"{mediaId}.md");
-                SaveText(path, text);
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[ReadingLibrary] bookshelf 轉發至 letters 失敗（正本已寫入，不影響資料）：{e.Message}");
-            }
-        }
 
-        /// <summary>letters 下的書架目錄名 —— 與 sketchbook（看人）成對，本目錄是看書。</summary>
-        const string k_LettersBookshelfDirName = "bookshelf";
 
         // ===========================================================
         // 讀回（recall）—— 頁面與 Cmd 共用同一段

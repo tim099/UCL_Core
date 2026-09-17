@@ -102,8 +102,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         const string k_WorkChaptersDirName = "chapters";
         const string k_WorkArcsDirName = "arcs";
         const string k_ChapterJsonName = "chapter.json";
-        const string k_CharactersDirName = "characters";
-        const string k_ProfileJsonName = "profile.json";
         // 追回檔輸出路徑（與 wake brief 同住 persona 的 letters/cmd/）
         // ⛔ 原本這裡有 k_ChatTavernDirName / k_BatonDirName / k_LettersDirName 三個常數
         //    自己拼出 letters 路徑 —— 那是把佈局知識複製了一份（BUG-2）。
@@ -1292,179 +1290,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         //   chapter.json 也長得完全正常。⇒ 收斂成一份，收斂點放在 code
         //   （改 skill 的字要把「r2＝重看」這個既有語意永久放棄掉，那筆帳更貴）。
         // ===========================================================
+        // ⤷ **薄殼**（TASK-0166 ①）：實作住 `SCP.Core.Library.SCP_LibraryNote.NoteChapter`
+        //   —— round md 是事實源、chapter.json 是索引、reader.json 是當前狀態，三者的順序與
+        //   「既有 round 絕不覆寫」那條不變量都在那一層，⛔ 這裡不重述也不補判斷（第二把尺會分岔）。
         public static string NoteChapter(string mediaId, string persona, string chapterId,
                                          string displayNumber, string chapterTitle, string timeRange,
                                          string body, string impression, string bookmarkNote,
                                          bool append, int appendRound,
                                          out string roundFilePath, out int roundNumber, out string error)
         {
-            roundFilePath = null;
-            roundNumber = 0;
-            error = null;
-
-            JsonData reader = LoadReader(mediaId, persona, out error);
-            if (reader == null)
-            {
-                // 前置階梯（Tim 2026-08-06）：沒有自己的紀錄 → 停下來，不自作主張建檔。
-                error = $"{error}\n" +
-                        $"→ 這位 persona 在此 media 尚無新架構紀錄。依定案流程：" +
-                        $"① 若 Archive 有舊心得 → 先跑 migration 手動搬到新架構；" +
-                        $"② 若查無舊心得 → 先跑 op=media_init 建檔；" +
-                        $"③ 若要接力別人的心得 → 由 Tim 指定來源 persona（讀可跨 persona，寫只寫自己）。";
-                return null;
-            }
-
-            ChapterRelation relation = ClassifyChapter(reader, chapterId);
-            string chapterDir = ChapterDir(mediaId, persona, chapterId);
-            string chapterJsonPath = Path.Combine(chapterDir, k_ChapterJsonName);
-
-            JsonData chapter = File.Exists(chapterJsonPath) ? LoadJson(chapterJsonPath, out error) : null;
-            if (File.Exists(chapterJsonPath) && chapter == null) return null;   // 壞檔不覆蓋
-
-            if (chapter == null)
-            {
-                chapter = new JsonData();
-                chapter[Key_ChapterId] = chapterId;
-                // display_number 是投影：沒給人話字面就留空，由顯示端派生 —— 不再手填成 id 複寫
-                // （basecamp 2026-08-06 量到既有樣本已退化成 display_number == chapter_id）。
-                chapter[Key_DisplayNumber] = displayNumber ?? "";
-                chapter[Key_Title] = chapterTitle ?? "";
-                if (!string.IsNullOrEmpty(timeRange)) chapter[Key_TimeRange] = timeRange;
-                chapter[Key_Rounds] = JsonData.ParseJson("[]");
-                chapter[Key_SchemaVersion] = 2;
-            }
-            else
-            {
-                if (!string.IsNullOrEmpty(displayNumber)) chapter[Key_DisplayNumber] = displayNumber;
-                if (!string.IsNullOrEmpty(chapterTitle)) chapter[Key_Title] = chapterTitle;
-                // ⚠ 續寫時章層的 time_range 是**接上去**不是蓋掉，也不是留著第一段就算了：
-                //   那一格是「這一話」的時間段，而續寫帶進來的是「這一場」的。
-                //   蓋掉 ⇒ 第一場的區間消失，而消失的樣子跟「本來就只有這一段」一模一樣；
-                //   留著不動 ⇒ 一話跑到 52:00 而章層寫著 00:00-30:00，那是一個**看起來完整**的錯讀數。
-                //   🩸 這一格是我自己 2026-09-05 讀探針落盤的檔才看到的 —— 工具的回讀沒有講它。
-                //   ⇒ 逐場列出來，兩段都在：`00:00-30:00, 30:00-52:00`。
-                if (!string.IsNullOrEmpty(timeRange))
-                {
-                    string existingRange = chapter.GetString(Key_TimeRange, "");
-                    chapter[Key_TimeRange] =
-                        append && existingRange.Length > 0 && !existingRange.Contains(timeRange)
-                            ? $"{existingRange}, {timeRange}"
-                            : timeRange;
-                }
-            }
-
-            JsonData rounds = chapter.Contains(Key_Rounds) ? chapter[Key_Rounds] : null;
-            if (rounds == null || !rounds.IsArray)
-            {
-                rounds = JsonData.ParseJson("[]");
-                chapter[Key_Rounds] = rounds;
-            }
-
-            // round 編號 = 既有最大值 + 1（不看檔案數 —— 檔可能被人另外加，索引才是真相源）
-            int maxRound = 0;
-            for (int i = 0; i < rounds.Count; i++)
-            {
-                int n = rounds[i].GetInt(Key_Round, 0);
-                if (n > maxRound) maxRound = n;
-            }
-            roundNumber = maxRound + 1;
-
-            // ── 續寫（TASK-0121）：追加進既有 round，不開下一個 r{N} ──────────────
-            // ⚠ 這一段是**唯一**會動到既有 round 檔的路，所以三件事都要說出來而不是靜默處理：
-            //   ① 指定的 round 不在索引裡　② 索引指的檔在磁碟上不見了　③ 這一章根本還沒有第一場。
-            //   前兩者拒絕寫入（磁碟與索引不一致要人先看一眼）；③ 不是錯，它就是第一場 ⇒ 照常開 r1。
-            bool appended = false;
-            int segmentCount = 1;
-            string fileName;
-            if (append && maxRound > 0)
-            {
-                int target = appendRound > 0 ? appendRound : maxRound;
-                JsonData targetEntry = null;
-                for (int i = 0; i < rounds.Count; i++)
-                    if (!rounds[i].IsString && rounds[i].GetInt(Key_Round, 0) == target) targetEntry = rounds[i];
-
-                if (targetEntry == null)
-                {
-                    error = $"要續寫的 r{target} 不在 chapter.json 索引裡（現有最大 r{maxRound}）—— " +
-                            "拒絕寫入，索引說沒有的東西不該由工具生出來";
-                    return null;
-                }
-
-                string targetFile = targetEntry.GetString(Key_File, "");
-                string targetPath = Path.Combine(chapterDir, targetFile);
-                if (string.IsNullOrEmpty(targetFile) || !File.Exists(targetPath))
-                {
-                    error = $"r{target} 的索引指向 `{targetFile}`，而磁碟上沒有這個檔 —— " +
-                            "拒絕續寫（索引與磁碟不一致要人先看一眼，不該由工具猜）";
-                    return null;
-                }
-
-                segmentCount = targetEntry.GetInt(Key_Segments, 1) + 1;
-                string head = $"## 續寫・第 {segmentCount} 場（{Today()}"
-                              + (string.IsNullOrEmpty(timeRange) ? "" : $"　{timeRange}") + "）";
-                // 追加**不覆寫**：先讀既有內容再整份寫回（SaveText 是全檔寫入）。
-                string existing = File.ReadAllText(targetPath, Encoding.UTF8).TrimEnd();
-                SaveText(targetPath, $"{existing}\n\n---\n\n{head}\n\n{body.TrimEnd()}\n");
-
-                targetEntry[Key_Segments] = segmentCount;
-                roundNumber = target;
-                fileName = targetFile;
-                roundFilePath = targetPath;
-                appended = true;
-                SaveJson(chapterJsonPath, chapter);
-            }
-            else
-            {
-                fileName = $"r{roundNumber}_{Today()}.md";
-                roundFilePath = Path.Combine(chapterDir, fileName);
-                if (File.Exists(roundFilePath))
-                {
-                    error = $"round 檔已存在但不在 chapter.json 索引內：{fileName} —— " +
-                            "拒絕覆寫（索引與磁碟不一致要人先看一眼，不該由工具猜）";
-                    return null;
-                }
-
-                SaveText(roundFilePath, body.TrimEnd() + "\n");
-
-                var entry = new JsonData();
-                entry[Key_Round] = roundNumber;
-                entry[Key_ReadingDate] = Today();
-                entry[Key_File] = fileName;
-                if (relation == ChapterRelation.Gap) entry[Key_Gap] = true;   // 跳章不擋，但留痕
-                rounds.Add(entry);
-                SaveJson(chapterJsonPath, chapter);
-            }
-
-            // reader.json 當前狀態
-            JsonData progress = reader.Contains(Key_Progress) ? reader[Key_Progress] : null;
-            if (progress == null || !progress.IsObject)
-            {
-                progress = new JsonData();
-                reader[Key_Progress] = progress;
-            }
-            progress[Key_CurrentChapterId] = chapterId;
-            progress[Key_LastRead] = Today();
-            if (!string.IsNullOrEmpty(bookmarkNote)) progress[Key_BookmarkNote] = bookmarkNote;
-            if (!string.IsNullOrEmpty(impression)) reader[Key_CurrentImpression] = impression;
-            reader[Key_UpdatedAt] = Today();
-            SaveJson(ReaderJsonPath(mediaId, persona), reader);
-
-            SyncBookshelf(mediaId, persona, out _);
-            // 每次寫入後重生成追回檔 —— 否則下次續讀撈到的是上一次的視圖（stale 投影比沒有投影更糟）。
-            WriteRecallBrief(mediaId, persona, true, out _);
-
-            var log = new StringBuilder();
-            log.AppendLine($"- 章節：`{chapterId}`" +
-                           (string.IsNullOrEmpty(chapterTitle) ? "" : $"　{chapterTitle}") +
-                           (string.IsNullOrEmpty(timeRange) ? "" : $"　（{timeRange}）"));
-            // ⚠ 續寫時**不印** RelationLabel：那句話回答的是「這一章跟上次讀到哪的關係」，
-            //   而續寫的答案永遠是「同一章」—— 印出來會變成一句永遠成立、因此不帶資訊的話。
-            log.AppendLine(appended
-                ? $"- round：**r{roundNumber}**（續寫・第 {segmentCount} 場 —— **沒有開新的 round**；" +
-                  "`r{N}` 是第 N 次讀這一話，不是第 N 次寫入）"
-                : $"- round：**r{roundNumber}**（{RelationLabel(relation)}）");
-            log.AppendLine($"- 心得檔：`{fileName}`" + (appended ? "（追加在尾端，既有內容未動）" : ""));
-            return log.ToString();
+            string aLog = SCP.Core.Library.SCP_LibraryNote.NoteChapter(
+                new SCP.Core.Paths.SCP_LettersRoot(UCL_LettersPath.Root), UCL_AgentCommandsPath.DataRoot, mediaId, persona, chapterId,
+                displayNumber, chapterTitle, timeRange, body, impression, bookmarkNote,
+                append, appendRound, out string aRoundPath, out roundNumber, out string aErr);
+            roundFilePath = aRoundPath;
+            error = aErr;
+            return aLog;
         }
 
         public static string RelationLabel(ChapterRelation relation)
@@ -1490,32 +1331,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                                           string name, string nameOriginal, string facts, string view,
                                           out string error)
         {
-            error = null;
-            if (LoadReader(mediaId, persona, out error) == null) return null;
-
-            string dir = Path.Combine(ReaderRoot(mediaId, persona), k_CharactersDirName, characterId);
-            string profilePath = Path.Combine(dir, k_ProfileJsonName);
-            if (File.Exists(profilePath))
-            {
-                error = $"人物已存在：{characterId} —— **看法有變請走 op=revise_view（fork 新版本）**，" +
-                        "不要用 add_character 覆寫既有 v1（那會抹掉當時的「還不知道」）。" +
-                        "只想補客觀 facts 也走 revise_view --facts。";
-                return null;
-            }
-
-            var profile = new JsonData();
-            profile[Key_CharacterId] = characterId;
-            profile[Key_Name] = name;
-            profile[Key_NameOriginal] = nameOriginal ?? "";
-            profile[Key_Facts] = FactsToJson(facts);   // 一律陣列 —— 寫端收斂，見 FactsToJson
-            profile[Key_SchemaVersion] = 1;
-            SaveJson(profilePath, profile);
-
-            string fileName = $"v1_{Today()}.md";
-            SaveText(Path.Combine(dir, fileName), RenderViewFile(characterId, 1, persona, null, view));
-
-            WriteRecallBrief(mediaId, persona, true, out _);
-            return $"- ✅ 新增人物 `{characterId}`（{name}）＋ 初版看法 `{fileName}`";
+            // ⤷ **薄殼**（TASK-0166 ①）：實作住 `SCP_LibraryCharacter.AddCharacter`
+            //   （含「人物已存在就拒絕、指去 revise_view」那道閘 —— 覆寫 v1 會抹掉當時的「還不知道」）。
+            string aLog = SCP.Core.Library.SCP_LibraryCharacter.AddCharacter(
+                new SCP.Core.Paths.SCP_LettersRoot(UCL_LettersPath.Root), UCL_AgentCommandsPath.DataRoot, mediaId, persona, characterId, name, nameOriginal, facts, view, out string aErr);
+            error = aErr;
+            return aLog;
         }
 
         /// <summary>
@@ -1525,95 +1346,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                                         string view, string changeReason, string facts,
                                         out string error)
         {
-            error = null;
-            if (LoadReader(mediaId, persona, out error) == null) return null;
-
-            string dir = Path.Combine(ReaderRoot(mediaId, persona), k_CharactersDirName, characterId);
-            string profilePath = Path.Combine(dir, k_ProfileJsonName);
-            JsonData profile = LoadJson(profilePath, out error);
-            if (profile == null)
-            {
-                error = $"{error}\n→ 人物不存在，第一次記請走 op=add_character。";
-                return null;
-            }
-
-            // 版本號取既有檔案最大值 + 1（掃磁碟而非猜，缺號也不會覆蓋既有版本）
-            int maxVersion = 0;
-            foreach (string existing in Directory.GetFiles(dir, "v*.md"))
-            {
-                Match m = k_ViewFilePattern.Match(Path.GetFileName(existing));
-                if (m.Success && int.TryParse(m.Groups[1].Value, out int n) && n > maxVersion) maxVersion = n;
-            }
-            int version = maxVersion + 1;
-
-            string fileName = $"v{version}_{Today()}.md";
-            string path = Path.Combine(dir, fileName);
-            if (File.Exists(path))
-            {
-                error = $"同日已有 {fileName} 但不在版本掃描結果內 —— 拒絕覆寫，請人先看一眼";
-                return null;
-            }
-            SaveText(path, RenderViewFile(characterId, version, persona, changeReason, view));
-
-            if (!string.IsNullOrEmpty(facts))
-            {
-                profile[Key_Facts] = FactsToJson(facts);   // 一律陣列 —— 寫端收斂，見 FactsToJson
-                SaveJson(profilePath, profile);
-            }
-
-            WriteRecallBrief(mediaId, persona, true, out _);
-            return $"- ✅ `{characterId}` 看法已 fork 為 **v{version}**（`{fileName}`）；" +
-                   $"v1–v{maxVersion} 保留不動" + (string.IsNullOrEmpty(facts) ? "" : "；facts 同步更新");
+            // ⤷ **薄殼**（TASK-0166 ①）：實作住 `SCP_LibraryCharacter.ReviseView`（fork 新版本，**永不覆寫**）。
+            string aLog = SCP.Core.Library.SCP_LibraryCharacter.ReviseView(
+                new SCP.Core.Paths.SCP_LettersRoot(UCL_LettersPath.Root), UCL_AgentCommandsPath.DataRoot, mediaId, persona, characterId, view, changeReason, facts, out string aErr);
+            error = aErr;
+            return aLog;
         }
 
-        static readonly Regex k_ViewFilePattern = new Regex(@"^v(\d+)_");
-
-        /// <summary>view 檔內容 —— frontmatter 與既有樣本同構（character_id / version / date / reader_persona）。</summary>
-        static string RenderViewFile(string characterId, int version, string persona,
-                                     string changeReason, string view)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("---");
-            sb.AppendLine($"{Key_CharacterId}: {characterId}");
-            sb.AppendLine($"version: {version}");
-            sb.AppendLine($"date: {Today()}");
-            sb.AppendLine($"{Key_ReaderPersona}: {persona}");
-            sb.AppendLine("---");
-            sb.AppendLine();
-            sb.AppendLine($"## {persona} 的看法（v{version}）");
-            sb.AppendLine();
-            if (!string.IsNullOrEmpty(changeReason))
-            {
-                // 改觀理由單獨成段：**為什麼變**比**變成什麼**更難事後重建
-                sb.AppendLine($"> **改觀觸發**：{changeReason}");
-                sb.AppendLine();
-            }
-            sb.AppendLine(view.TrimEnd());
-            return sb.ToString();
-        }
 
         /// <summary>只更新書籤與當前看法（op=bookmark）。</summary>
         public static string Bookmark(string mediaId, string persona, string note, string impression,
                                       string status, out string error)
         {
-            JsonData reader = LoadReader(mediaId, persona, out error);
-            if (reader == null) return null;
-
-            JsonData progress = reader.Contains(Key_Progress) ? reader[Key_Progress] : null;
-            if (progress == null || !progress.IsObject)
-            {
-                progress = new JsonData();
-                reader[Key_Progress] = progress;
-            }
-            if (!string.IsNullOrEmpty(note)) progress[Key_BookmarkNote] = note;
-            progress[Key_LastRead] = Today();
-            if (!string.IsNullOrEmpty(impression)) reader[Key_CurrentImpression] = impression;
-            if (!string.IsNullOrEmpty(status)) reader[Key_Status] = status;
-            reader[Key_UpdatedAt] = Today();
-            SaveJson(ReaderJsonPath(mediaId, persona), reader);
-            SyncBookshelf(mediaId, persona, out _);
-            WriteRecallBrief(mediaId, persona, true, out _);   // 同上：書籤變了追回檔就得重生成
-            return $"- 書籤已更新（`{mediaId}` / `{persona}`）";
+            // ⤷ **薄殼**（TASK-0166 ①）：實作住 `SCP_LibraryCharacter.Bookmark`。
+            string aLog = SCP.Core.Library.SCP_LibraryCharacter.Bookmark(
+                new SCP.Core.Paths.SCP_LettersRoot(UCL_LettersPath.Root), UCL_AgentCommandsPath.DataRoot, mediaId, persona, note, impression, status, out string aErr);
+            error = aErr;
+            return aLog;
         }
 
         // ===========================================================

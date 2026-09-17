@@ -263,14 +263,43 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         ///           不開新 round —— 同一話分兩場看完時走它，`r{N}` 的語意才守得住
         ///           「第 N 次讀這一話」。要續寫指定的某一輪就再帶 `round=<N>`（預設是最新那一輪）。
         /// </summary>
+        /// <summary>章名 —— 兩個入口的名字不同（Editor `title` ／ CLI `chapter_title`），兩個都收。</summary>
+        /// <remarks>⛔ 不在這裡宣布誰是正典：改名的代價落在既有呼叫端身上，而它們壞掉時不會有人喊。</remarks>
+        static string ChapterTitleOf(Dictionary<string, string> args)
+        {
+            string a = GetArg(args, "title", "").Trim();
+            return a.Length > 0 ? a : GetArg(args, "chapter_title", "").Trim();
+        }
+
+        /// <summary>人物 id —— Editor `character` ／ CLI `character_id`，兩個都收（缺兩者才擋）。</summary>
+        static string CharacterIdOf(Dictionary<string, string> args)
+        {
+            string a = GetArg(args, "character", "").Trim();
+            if (a.Length == 0) a = GetArg(args, "character_id", "").Trim();
+            if (a.Length == 0)
+                throw new ArgumentException("[Library] character 必填且無預設值（多讀者環境不可靠預設身分）"
+                                            + "　※ 也收 `character_id`（Senate CLI 那側的名字）");
+            if (!UCL_ReadingLibraryIO.IsValidId(a))
+                throw new ArgumentException($"[Library] character 不合法（只准英數與 - _）：{a}");
+            return a;
+        }
+
         void Op_NoteChapter(Dictionary<string, string> args)
         {
             string persona = RequireId(args, "persona");
             string mediaId = RequireId(args, "media_id");
+            // 🩸 TASK-0166 ③ 逐支對拍當場抓到：**同一支 op 的兩個入口參數名不同** ——
+            //   Editor 這側叫 `chapter`／`title`，Senate CLI 那側叫 `chapter_id`／`chapter_title`。
+            //   而 Editor 端**沒有 ArgsSpec 白名單**（TASK-0109）⇒ 給錯名字是**靜默取預設值**：
+            //   我 2026-09-17 用 `--arg chapter_title=第一章` 跑 Editor 入口，章名落成空字串，
+            //   而回傳檔、chapter.json、閱讀卡三處全綠 —— 兩棵樹逐位元組對拍才看見那一欄差一個字。
+            //   ⇒ 兩個名字**都收**（⛔ 不改舊名：既有 skill／文件／呼叫端寫的是舊名，改名會靜默壞在別人手上）。
             string chapterId = GetArg(args, "chapter", "").Trim();
+            if (chapterId.Length == 0) chapterId = GetArg(args, "chapter_id", "").Trim();
             if (!UCL_ReadingLibraryIO.IsValidChapterId(chapterId))
                 throw new ArgumentException(
-                    $"[{CommandType}] chapter 須為四位數字（0001 起算，0000 保留給序章）：{chapterId}");
+                    $"[{CommandType}] chapter 須為四位數字（0001 起算，0000 保留給序章）：{chapterId}"
+                    + "　※ 也收 `chapter_id`（Senate CLI 那側的名字）");
 
             string body = GetArg(args, "body", "");
             if (string.IsNullOrWhiteSpace(body))
@@ -290,7 +319,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             string log = UCL_ReadingLibraryIO.NoteChapter(
                 mediaId, persona, chapterId,
                 GetArg(args, "display_number", "").Trim(),
-                GetArg(args, "title", "").Trim(),
+                ChapterTitleOf(args),                       // `title`／`chapter_title` 兩個名字都收（見上方血證）
                 GetArg(args, "time_range", "").Trim(),
                 body,
                 GetArg(args, "impression", "").Trim(),
@@ -487,7 +516,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         {
             string persona = RequireId(args, "persona");
             string mediaId = RequireId(args, "media_id");
-            string characterId = RequireId(args, "character");
+            string characterId = CharacterIdOf(args);   // `character`／`character_id` 兩個名字都收
             string name = GetArg(args, "name", "").Trim();
             string view = GetArg(args, "view", "");
 
@@ -516,7 +545,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         {
             string persona = RequireId(args, "persona");
             string mediaId = RequireId(args, "media_id");
-            string characterId = RequireId(args, "character");
+            string characterId = CharacterIdOf(args);   // `character`／`character_id` 兩個名字都收
             string view = GetArg(args, "view", "");
             string changeReason = GetArg(args, "change_reason", "").Trim();
 

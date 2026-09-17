@@ -100,6 +100,86 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             return aOut;
         }
 
+        // ===========================================================
+        // 區塊職責：**開帳水位線** —— 每一戶的新銀行帳是從哪一刻的舊餘額起算的。
+        // 物理意義：遷移寫的開帳分錄自己帶著出處（`ref = "treasury-balances@<ISO 時刻>"`），
+        //          那個時刻之前的舊分錄**已經含在 opening 金額裡** ⇒ 再鏡一次就是把同一塊錢算兩次。
+        // 數值影響：純唯讀新銀行帳本；擋下的那幾筆會被具名跳過（⛔ 不靜默前進）。
+        //
+        // 🩸 血證（basecamp 2026-09-17，Bar/BTC 實測 2 筆）：
+        //   本檔原有的守衛是「cursor 空 ⇒ 錨到最新、不回放歷史」——
+        //   而它只保護**〔先遷移 → 後開鏡像〕**那個順序。
+        //   Bar 這次是反過來的：鏡像先在跑（cursor 停在 10:22:5x），遷移才在 10:25:10 取快照
+        //   ⇒ 區間 `(cursor, 快照]` 的兩筆（`ba16c3` / `01af1c`）被鏡像又推了一次，
+        //     `claude-code` 4317→4318、`zeta` 3040→3041。
+        //   ⛔ 而**沒有任何一層會喊**：兩邊的分錄都合法、都有出處，`idem_key` 也不重複
+        //     （它們本來就是不同的兩筆）。今天只有 2 筆是運氣 ——
+        //     區間大小等於「遷移那一刻鏡像落後多少」。
+        // ⇒ 所以判準改成問**帳本自己**（每一戶的 opening 從哪一刻起算），
+        //   而不是問 cursor 在哪 —— cursor 是一個會被順序影響的狀態，水位線不是。
+        // ===========================================================
+        const string c_OpeningKind = "opening_balance";
+        const string c_OpeningRefPrefix = "treasury-balances@";
+
+        static Dictionary<string, string> s_OpeningWatermarks = null;
+        static double s_WatermarkRebuiltAt = -999;
+
+        /// <summary>丟掉快取 —— 補搬一戶之後要重取，否則新開的那一戶在本輪沒有水位線。</summary>
+        public static void InvalidateOpeningWatermarks() { s_OpeningWatermarks = null; }
+
+        /// <summary>
+        /// 這一戶的開帳水位線；查不到回 null。
+        /// 🩸 **查不到要重建一次快取再回答**（節流 5 秒）—— 快取是一次性建的，
+        ///   而補搬一戶（例如央行）之後它**不會自己更新** ⇒ 新開那一戶在快取裡永遠缺席，
+        ///   於是守衛對它整個失效，而失效的樣子跟「這一戶沒有開帳」一模一樣。
+        ///   ⛔ 這個洞是我裝守衛時自己留的，不是原本就有的。
+        /// </summary>
+        static string TryGetWatermark(string iAccountId)
+        {
+            var aMap = OpeningWatermarks();
+            if (aMap.TryGetValue(iAccountId, out string aTs)) return aTs;
+            if (EditorApplication.timeSinceStartup - s_WatermarkRebuiltAt < 5.0) return null;
+            InvalidateOpeningWatermarks();
+            aMap = OpeningWatermarks();
+            return aMap.TryGetValue(iAccountId, out string aTs2) ? aTs2 : null;
+        }
+
+        static Dictionary<string, string> OpeningWatermarks()
+        {
+            if (s_OpeningWatermarks != null) return s_OpeningWatermarks;
+            s_WatermarkRebuiltAt = EditorApplication.timeSinceStartup;
+            var aOut = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                string aSuffix = SCP.Core.Paths.SCP_PathRegistry
+                    .Get(SCP.Core.Paths.SCP_PathId.BankRoot).DeriveSuffix;
+                string aBankRoot = Path.Combine(UCL_RepoPath.AgentCommandsDir, aSuffix);
+                foreach (var aEntry in SCP.Core.Bank.SCP_BankLedger.EnumerateEntries(aBankRoot))
+                {
+                    if (aEntry == null) continue;
+                    if (!string.Equals(aEntry.Kind, c_OpeningKind, StringComparison.Ordinal)) continue;
+                    string aRef = aEntry.Ref ?? "";
+                    if (!aRef.StartsWith(c_OpeningRefPrefix, StringComparison.Ordinal)) continue;
+                    string aTs = aRef.Substring(c_OpeningRefPrefix.Length).Trim();
+                    if (aTs.Length == 0) continue;
+                    // 同一戶有兩筆開帳（重跑／補搬）⇒ 取**最晚**的那一刻，⛔ 不是第一筆
+                    if (!aOut.TryGetValue(aEntry.AccountId, out string aPrev)
+                        || string.CompareOrdinal(aTs, aPrev) > 0)
+                        aOut[aEntry.AccountId] = aTs;
+                }
+            }
+            catch (Exception e)
+            {
+                // ⛔ fail-soft **不是**回空表就算了：空表的意思是「每一戶都沒有水位線」⇒ 守衛整個失效，
+                //   而那跟「真的沒有開帳」長得一模一樣。⇒ 出聲，並讓下一輪重試（不寫進快取）。
+                Debug.LogWarning($"[BankMirror] ⚠ 讀不到開帳水位線：{e.Message}"
+                                 + " —— **本輪不套用重複防護**，下一輪重試。");
+                return aOut;
+            }
+            s_OpeningWatermarks = aOut;
+            return aOut;
+        }
+
         static UCL.Core.JsonLib.JsonData LoadState()
         {
             try
@@ -288,6 +368,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 return;
             }
 
+            // ⚠ **開帳水位線**：比這一戶的 opening 快照還舊的分錄，已經含在 opening 金額裡 ⇒ 不再鏡。
+            //   ⛔ 判準是 `<=` 不是 `<`：快照是「那一刻的餘額」，**含**那一刻已落盤的分錄。
+            string aWatermark = TryGetWatermark(aEntry.AccountId);
+            if (aWatermark != null
+                && aEntry.Ts.Length > 0
+                && string.CompareOrdinal(aEntry.Ts, aWatermark) <= 0)
+            {
+                RecordSkip(aNext, aEntry.AccountId,
+                           $"早於開帳快照（entry ts={aEntry.Ts} <= opening@{aWatermark}）"
+                           + " ⇒ **這一筆已經含在 opening 金額裡**，再鏡一次就是算兩次");
+                SaveCursor(aNext);
+                return;
+            }
+
             s_InFlightRelKey = aNext;
             // ⚠ `EditorPrefs` **只能在主執行緒讀** —— 所以路徑在這裡（tick ＝ 主執行緒）先取出來，
             //   再連同 entry 一起交給背景 task。
@@ -385,6 +479,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             public string Caller = "";
             public string Description = "";
             public string Uuid = "";
+            /// <summary>舊分錄的 `ts`（ISO8601 Z）。⚠ 開帳水位線靠它比，⛔ 別拿檔名的時分秒代替。</summary>
+            public string Ts = "";
             public bool IsAudit;
         }
 
@@ -409,6 +505,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     AccountId = aJd.GetString("account_id", ""),
                     Amount = aJd.GetInt("amount", 0),
                     Uuid = string.IsNullOrEmpty(aUuid) ? iRelKey : aUuid,
+                    Ts = aJd.GetString("ts", ""),
                 };
                 if (aEntry.AccountId.Length == 0 || aEntry.Amount <= 0) return null;
 

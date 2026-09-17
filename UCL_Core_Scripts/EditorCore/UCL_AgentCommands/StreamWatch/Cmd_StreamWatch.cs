@@ -611,6 +611,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aTitleNote = UCL.Core.EditorLib.Page.UCL_ScreenStreamPage.SetStreamTitle(aShow, aSttPrompt, iPersona);
             aR.AppendLine($"- {aTitleNote}");
             bool aOpenedRecording = false;   // 收工關錄影的唯一依據（見 UCL_StreamWatchPrepared 該欄位）
+            string aOpenedBy = "", aOpenedAt = "";
+            // 🩸 TASK-0231（@summit 2026-09-16 單變因對照抓到）：這一格本來只由**本次**呼叫決定，
+            //    而 prepare 是文件明寫可重入的 ⇒ 第二次跑（補 reference_reader／改 auto_export）時
+            //    走的是「已在錄 ⇒ 未動作」那條路，`aOpenedRecording` 留在 false 並**原樣覆寫**準備檔
+            //    ⇒ 首次 prepare 開的錄影被記成「不是本場開的」，收工因此不關，而**錄影不會自己停**。
+            //    ⚠ 失效樣子是一句看起來很謹慎的話（「不替別人關」）—— 沒有任何一層會說這格是重入改的。
+            var aPrevPrepared = LoadPrepared(aMediaId, out _);   // 重入時的前一份事實（沒有＝首次）
             bool aRecOn = IsRecordingEnabled(out string aCfgNote);
             if (aRecOn) aR.AppendLine($"- 錄影：**已在錄** —— 未動作（{aCfgNote}）");
             else if (!aStartRec) aR.AppendLine($"- 錄影：未開，且 `start_recording=false` ⇒ 不代開（{aCfgNote}）");
@@ -624,6 +631,29 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 // ⚠ 記的是**回讀值**不是「我呼叫過 SetRecordingEnabled」：沒開成卻記 true，
                 //    收工就會去關一個不是本場開的錄影（或關一個根本沒開的），而兩者都不會報錯。
                 aOpenedRecording = aRecBack;
+                if (aRecBack) { aOpenedBy = iPersona; aOpenedAt = UCL_AwakeningService.NowIso(); }
+            }
+            // 重入的處置：**沿用首次的事實，並且說出來** —— ⛔ 不靜默覆寫（那正是本 bug 的形狀）。
+            // ⚠ 條件帶 `aRecOn`：前一次開的那卷若**現在已經不在錄**（Tim 手動停／capture on=0），
+            //    「本場開的」這個所有權主張已經沒有標的，再沿用下去會變成替**下一卷**（可能是別人開的）簽名。
+            //    ⇒ 那種情況本欄落 false，並印出它為什麼從 true 掉下來。
+            if (aPrevPrepared != null && aPrevPrepared.recording_opened_by_prepare && !aOpenedRecording)
+            {
+                string aPrevBy = string.IsNullOrEmpty(aPrevPrepared.recording_opened_by)
+                    ? aPrevPrepared.prepared_by : aPrevPrepared.recording_opened_by;
+                string aPrevAt = string.IsNullOrEmpty(aPrevPrepared.recording_opened_at)
+                    ? aPrevPrepared.prepared_at : aPrevPrepared.recording_opened_at;
+                if (aRecOn)
+                {
+                    aOpenedRecording = true; aOpenedBy = aPrevBy; aOpenedAt = aPrevAt;
+                    aR.AppendLine($"- 🔁 **重入：沿用首次的事實** —— 這卷錄影是 `{aPrevBy}` 於 `{aPrevAt}` 由 prepare 開的"
+                                + "（本次未重開，也**不覆寫**這一格）⇒ 收工照舊會關它。");
+                }
+                else
+                {
+                    aR.AppendLine($"- 🔁 **重入：這一格從 true 降為 false** —— 前一次（`{aPrevBy}` @ `{aPrevAt}`）開的那卷"
+                                + "**現在已經不在錄** ⇒ 所有權主張沒有標的，不沿用；之後若再開，那是另一卷的事。");
+                }
             }
 
             // ── ⑥ 落檔（陪同者的 join / catchup 都讀這份） ────────────────
@@ -643,6 +673,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 export_work_title = aExportWorkTitle,
                 auto_export = aAutoExport,
                 recording_opened_by_prepare = aOpenedRecording,
+                recording_opened_by = aOpenedBy,
+                recording_opened_at = aOpenedAt,
             };
             SavePrepared(aP);
             aR.AppendLine();
@@ -2558,6 +2590,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 else if (!IsRecordingEnabled(out string aRecNow))
                 {
                     ioR.AppendLine($"- ⏸ **已經沒在錄** —— 未動作（{aRecNow}）");
+                    ioR.AppendLine($"- 所有權主張：{(ClearRecordingOwned(ioS.library_media_id) ? "已結清（這一卷沒了，準備檔那一格歸零）" : "準備檔無可結清的一格")}");
                 }
                 else
                 {
@@ -2565,6 +2598,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     ioR.AppendLine($"- {aOffNote}");
                     ioR.AppendLine($"- 回讀：{(IsRecordingEnabled(out string aCfgOff) ? "**仍在錄**" : "已停止")}（{aCfgOff}）"
                                  + "　←　寫完再讀，不採信回傳值");
+                    // TASK-0231：這一卷收掉了 ⇒ 所有權主張結清，別讓下一次 prepare 沿用它去關別人的錄影。
+                    ioR.AppendLine($"- 所有權主張：{(ClearRecordingOwned(ioS.library_media_id) ? "已結清（準備檔那一格歸零）" : "準備檔無可結清的一格")}");
                 }
             }
 
@@ -3724,12 +3759,41 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 //   而 `false` 有**兩種成因**（① 開場時已在錄 ② 本場 `start_recording=false` 沒開），
                 //   我卻只宣告了其中一種，於是它在第二種情況下**是一句假話**。
                 //   ⇒ 沒量到的成因不寫死；只陳述「不是本場開的」這個真的讀得到的事實。
+                // TASK-0231 ③：兩個方向都要說得出**依據哪一格、那格是什麼時候寫的**。
+                // ⚠ 這句話原本只有結論沒有定語 ⇒ 讀的人分不出「這格是首次 prepare 寫的」
+                //   與「這格被一次重入洗過」——而後者正是 @summit 2026-09-16 踩到的那一格。
+                string aStamp = string.IsNullOrEmpty(aP.recording_opened_at) && string.IsNullOrEmpty(aP.recording_opened_by)
+                    ? $"依據 `prepared/{iLibraryMediaId}.json` 的 `recording_opened_by_prepare`"
+                      + $"（⚠ **舊檔未記誰／何時**；該檔最後一次 prepare：`{aP.prepared_by}` @ `{aP.prepared_at}`）"
+                    : $"依據 `prepared/{iLibraryMediaId}.json` 的 `recording_opened_by_prepare`"
+                      + $"（`{aP.recording_opened_by}` @ `{aP.recording_opened_at}` 寫的）";
                 return aP.recording_opened_by_prepare
-                    ? (true, "本場 prepare 開的")
+                    ? (true, $"本場 prepare 開的 —— {aStamp}")
                     : (false, "**不是本場 prepare 開的**（開場時就已在錄／本場 `start_recording=false` 都會落在這裡"
-                            + " —— 準備檔沒有記成因，我不猜）⇒ 那不是本場的狀態，不替它關");
+                            + $" —— 準備檔沒有記成因，我不猜）⇒ 那不是本場的狀態，不替它關。{aStamp}");
             }
             catch (Exception e) { return (false, $"準備檔解析失敗：{e.Message} ⇒ 保守不動"); }
+        }
+
+        /// <summary>收工處理完錄影之後，把「本場 prepare 開的」這一格結清（TASK-0231）。</summary>
+        /// <remarks>物理意義：那一格是**一卷錄影的所有權主張**，不是一個永久屬性。
+        /// 這一卷收掉之後主張就沒有標的了 —— 留著它，下一次 prepare 在「已在錄」那條路上會沿用它，
+        /// 而那時在錄的可能是 Tim 為了別的用途開的**另一卷** ⇒ 變成替別人的錄影簽名。
+        /// ⚠ 回傳 false ＝ 沒改到（查無準備檔／壞檔／本來就是 false）—— 呼叫端照實印，不當成失敗。</remarks>
+        static bool ClearRecordingOwned(string iLibraryMediaId)
+        {
+            if (string.IsNullOrEmpty(iLibraryMediaId)) return false;
+            try
+            {
+                var aP = LoadPrepared(iLibraryMediaId);
+                if (aP == null || !aP.recording_opened_by_prepare) return false;
+                aP.recording_opened_by_prepare = false;
+                aP.recording_opened_by = "";
+                aP.recording_opened_at = "";
+                SavePrepared(aP);
+                return true;
+            }
+            catch { return false; }
         }
 
         static (bool On, string Why) ReadAutoExportSetting(string iLibraryMediaId)
@@ -4779,12 +4843,28 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         /// ⚠ **原生 bool**，理由同下方 `auto_export` 那條血證。</summary>
         public bool recording_opened_by_prepare = false;
 
+        /// <summary>上一格那個事實是**誰**寫的（開錄影的那次 prepare 的 persona）。TASK-0231。</summary>
+        /// <remarks>🩸 為什麼要這兩欄：收工判「不關」時只印一句「不是本場 prepare 開的」，
+        /// 而那句話**依據的是一格可能被重入洗掉的值** —— 讀的人看不出它是什麼時候寫的。
+        /// ⇒ 讀數要帶定語：誰寫的、何時寫的。空字串＝這一格是舊檔（本欄之前不存在），
+        /// 與「有人寫了但寫空」在這裡同形 —— ⛔ 不猜，回傳檔照實印「舊檔未記」。</remarks>
+        public string recording_opened_by = "";
+        /// <summary>上一格那個事實是**何時**寫的（ISO）。TASK-0231，理由同上。</summary>
+        public string recording_opened_at = "";
+
         /// <summary>⚠ `auto_export` 必須是**原生 bool**：python 端讀到字串 `"False"` 在 Python 裡是 truthy
         /// ⇒ 「刻意關掉自動匯出」會被讀成「開著」。同族血證見 SCP_ActivitySession。</summary>
         public override JsonData SerializeToJson()
         {
             var aData = base.SerializeToJson();
             aData["auto_export"] = new JsonData(auto_export);
+            // 🩸 TASK-0231 順手（**不是本單的成因**，是量本單時磁碟上看到的）：
+            //    `recording_opened_by_prepare` 上面那行註解寫著「⚠ **原生 bool**」——
+            //    而它**不在這個覆寫裡** ⇒ 2026-09-17 實跑後落盤的是字串 `"True"`。
+            //    ⇒ 註解宣告的東西比實作大，而兩者不一致**沒有任何一層會喊**（C# 這側解得回來，所以它一直是綠的）。
+            //    現況**全樹** `.py`/`.cs`/`.md` 只有本檔提到它（2026-09-17 掃過，1 個檔命中；零個 python 讀取端）
+            //    ⇒ 還沒有人被咬到，而那正是最便宜的修法時機（同 calli 2026-09-11 `SaveJson` 那一格的理由）。
+            aData["recording_opened_by_prepare"] = new JsonData(recording_opened_by_prepare);
             return aData;
         }
     }

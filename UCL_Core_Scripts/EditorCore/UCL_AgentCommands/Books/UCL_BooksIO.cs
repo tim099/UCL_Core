@@ -70,13 +70,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
         public static List<JsonData> LoadDonations(List<string> warnings = null)
         {
             var o = new List<JsonData>();
-            if (!Directory.Exists(BooksRoot)) return o;
-            var dirs = new List<string>(Directory.GetDirectories(BooksRoot));
-            dirs.Sort(StringComparer.Ordinal);
-            foreach (string dir in dirs)
+            // ⤷ **清單規則走 SCP**（TASK-0234 ①）：「掃哪個目錄、收哪些檔、依什麼排序」只住一份。
+            //   ⛔ parse 沒有跟著搬 —— 本層回傳的 `JsonData` 還要被 Donate/Publish/Tip 拿去**改欄位**，
+            //   那是 Editor 方言的東西；跨接縫傳 JSON 物件會逼下一個人二選一。
+            foreach (string dir in SCP.Core.Books.SCP_BooksDonations.DonationDirs(UCL_RepoPath.AgentCommandsDir))
             {
                 string p = Path.Combine(dir, "_donation.json");
-                if (!File.Exists(p)) continue;
                 JsonData d = LoadJson(p, out string err);
                 if (d == null)
                 {
@@ -93,10 +92,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
         public static List<JsonData> LoadTips(List<string> warnings = null)
         {
             var o = new List<JsonData>();
-            if (!Directory.Exists(TipsDir)) return o;
-            var files = new List<string>(Directory.GetFiles(TipsDir, "*.json"));
-            files.Sort(StringComparer.Ordinal);
-            foreach (string f in files)
+            // ⤷ 清單規則走 SCP（同 LoadDonations）
+            foreach (string f in SCP.Core.Books.SCP_BooksDonations.TipFiles(UCL_RepoPath.AgentCommandsDir))
             {
                 JsonData d = LoadJson(f, out string err);
                 if (d == null) { warnings?.Add($"`tips/{Path.GetFileName(f)}` 讀取失敗：{err}"); continue; }
@@ -474,119 +471,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
         // ===========================================================
         // 報表（donations / tips 的人讀輸出 —— 與 Python 版同構：原創/捐贈分組 + 打賞累計）
         // ===========================================================
+        // ⤷ **薄殼**（TASK-0234 ①）：版面與聚合邏輯整段住
+        //   `SCP.Core.Books.SCP_BooksDonations` —— Editor 與 Senate CLI **共用同一份實作**。
+        //   ⇒ 驗收量的是「兩個入口讀到的是同一份」（0166 ②），⛔ 不是「兩個實作碰巧一致」。
+        //   ⚠ 版面逐字不可改：改措辭要連對拍一起搬走，不然下一個人會以為是資料變了。
         public static string RenderDonations()
-        {
-            var warnings = new List<string>();
-            var ds = LoadDonations(warnings);
-            var sb = new StringBuilder();
-            if (ds.Count == 0)
-            {
-                sb.AppendLine("（圖書館尚無捐贈書）");
-            }
-            else
-            {
-                // 走 DeriveOrigin 而不是原始 source：新檔只有 origin，舊檔只有 source，
-                // 讀原始欄位會讓新發表的書全部掉進「捐贈調入」那一組。
-                var authored = ds.FindAll(d => UCL_BooksClassification.DeriveOrigin(d, d.GetString(Key_Book, "")) == SCP_BookOrigin.Authored);
-                var donated = ds.FindAll(d => UCL_BooksClassification.DeriveOrigin(d, d.GetString(Key_Book, "")) != SCP_BookOrigin.Authored);
-                // 壞檔數要出現在**數字旁邊**，不是只在文末 WARNING（Sirius 協測 2026-08-07）：
-                // 「共 21 本」沒有標記時，只讀標頭的人會以為圖書館真的只有 21 本 ——
-                // 計數靜默吸收被丟掉的列，跟「讀空目錄不報錯」同族。
-                string failNote = warnings.Count > 0 ? $"，另有 {warnings.Count} 筆讀取失敗 ⚠ 見文末" : "";
-                sb.AppendLine($"📚 共享圖書館（共 {ds.Count} 本 — ✍ 原創 {authored.Count} / 📖 捐贈調入 {donated.Count}{failNote}）");
-                sb.AppendLine();
-                if (authored.Count > 0)
-                {
-                    sb.AppendLine("✍ 原創著作（作者署名，免費入庫）:");
-                    foreach (var d in authored)
-                    {
-                        sb.AppendLine($"- 《{d.GetString(Key_Title, d.GetString(Key_Book, "?"))}》 — 作者: " +
-                                      $"{d.GetString(Key_DonorPersona, d.GetString(Key_Donor, "?"))} " +
-                                      $"({d.GetInt(Key_Chapters, 0)} 章, {d.GetString(Key_PublishedAt, d.GetString(Key_DonatedAt, "?"))})");
-                        string n = d.GetString(Key_Note, "");
-                        if (!string.IsNullOrEmpty(n)) sb.AppendLine($"    note: {n}");
-                    }
-                    sb.AppendLine();
-                }
-                if (donated.Count > 0)
-                {
-                    sb.AppendLine("📖 捐贈調入（出資者付 token）:");
-                    foreach (var d in donated)
-                    {
-                        sb.AppendLine($"- 《{d.GetString(Key_Title, d.GetString(Key_Book, "?"))}》 — 捐贈者: " +
-                                      $"{d.GetString(Key_DonorPersona, d.GetString(Key_Donor, "?"))} " +
-                                      $"({d.GetInt(Key_Tokens, 0)} token, {d.GetString(Key_DonatedAt, "?")})");
-                        string n = d.GetString(Key_Note, "");
-                        if (!string.IsNullOrEmpty(n)) sb.AppendLine($"    note: {n}");
-                    }
-                }
-                // 打賞累計
-                var totals = new Dictionary<string, (int total, int cnt)>();
-                foreach (var t in LoadTips())
-                {
-                    string slug = t.GetString(Key_Book, "?");
-                    totals.TryGetValue(slug, out var cur);
-                    totals[slug] = (cur.total + t.GetInt("tokens_spent", 0), cur.cnt + 1);
-                }
-                if (totals.Count > 0)
-                {
-                    sb.AppendLine();
-                    sb.AppendLine("💰 打賞累計:");
-                    foreach (var kv in totals)
-                    {
-                        var hit = ds.Find(d => d.GetString(Key_Book, "") == kv.Key);
-                        string title = hit != null ? hit.GetString(Key_Title, kv.Key) : kv.Key;
-                        sb.AppendLine($"- 《{title}》: {kv.Value.total} token ({kv.Value.cnt} 筆)");
-                    }
-                }
-            }
-            AppendWarnings(sb, warnings);
-            return sb.ToString();
-        }
+            => SCP.Core.Books.SCP_BooksDonations.RenderDonations(UCL_RepoPath.AgentCommandsDir);
 
         public static string RenderTips(string bookFilter)
-        {
-            var warnings = new List<string>();
-            var tips = LoadTips(warnings);
-            if (!string.IsNullOrEmpty(bookFilter)) tips = tips.FindAll(t => t.GetString(Key_Book, "") == bookFilter);
-            var sb = new StringBuilder();
-            if (tips.Count == 0)
-            {
-                sb.AppendLine("（尚無打賞紀錄；用 op=tip 打賞喜歡的書）");
-            }
-            else
-            {
-                int total = 0;
-                foreach (var t in tips) total += t.GetInt("tokens_spent", 0);
-                // 同 RenderDonations：壞檔數標在數字旁邊
-                string failNote = warnings.Count > 0 ? $"，另有 {warnings.Count} 筆讀取失敗 ⚠ 見文末" : "";
-                sb.AppendLine($"💰 打賞簿（{tips.Count} 筆, 累計 {total} token{failNote}）");
-                sb.AppendLine();
-                foreach (var t in tips)
-                {
-                    string status = t.GetString("voucher_status", "") == "issued"
-                        ? "" : $"　⚠{t.GetString("voucher_status", "?")}";
-                    JsonData v = t.Contains("vouchers") ? t["vouchers"] : null;   // 索引器對缺鍵會 LogError
-                    sb.AppendLine($"- {t.GetString("tipped_at", "?")}  {t.GetString("tipper_persona", "?")} → " +
-                                  $"《{t.GetString(Key_Title, t.GetString(Key_Book, "?"))}》 {t.GetInt("tokens_spent", 0)} token → " +
-                                  $"{t.GetString("beneficiary_persona", "?")}" +
-                                  $"（繪圖券×{(v != null ? v.GetInt("canvas", 0) : 0)} + 酒館券×{(v != null ? v.GetInt("tavern", 0) : 0)}）{status}");
-                    string n = t.GetString(Key_Note, "");
-                    if (!string.IsNullOrEmpty(n)) sb.AppendLine($"    note: {n}");
-                }
-            }
-            AppendWarnings(sb, warnings);
-            return sb.ToString();
-        }
-
-        static void AppendWarnings(StringBuilder sb, List<string> warnings)
-        {
-            // 壞檔不靜默吞掉 —— 略過是韌性，不報是隱瞞
-            if (warnings == null || warnings.Count == 0) return;
-            sb.AppendLine();
-            sb.AppendLine("> [!WARNING]");
-            foreach (var w in warnings) sb.AppendLine($"> {w}");
-        }
+            => SCP.Core.Books.SCP_BooksDonations.RenderTips(UCL_RepoPath.AgentCommandsDir, bookFilter);
 
         // ===========================================================
         // 共用小工具（與 UCL_ReadingLibraryIO 同慣例）

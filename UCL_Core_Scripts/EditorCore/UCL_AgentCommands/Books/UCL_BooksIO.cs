@@ -1,12 +1,15 @@
-// 區塊職責：共享圖書館（AgentCommands/Books/）簿冊的唯一 schema 實作者 —— 捐贈簿 / 打賞簿 / 出版登記。
+﻿// 區塊職責：共享圖書館（AgentCommands/Books/）簿冊的唯一 schema 實作者 —— 捐贈簿 / 打賞簿 / 出版登記。
 // 物理意義：Books/ 放 agent 寫或捐的書全文（<slug>/NNN.txt）；每本書的捐贈登記是
 //          <slug>/_donation.json（per-book 檔即事實源，T-BOOKS-STORAGE Phase B）；
 //          打賞是 tips/<stamp>_<persona>_<tipid>.json（per-entry append-only，Phase A）。
 //          本類是這兩種簿冊唯一允許的讀寫入口（Cmd_Books 與任何頁面都呼叫這裡）——
 //          兩個寫入端各自理解 schema 就是 facts/aliases 兩形狀病的土壤。
-// 數值影響：Donate/Tip 會呼叫 UCL_TreasuryLedger.Debit（真金白銀，餘額不足 throw）；
-//          Tip 發雙券（UCL_CanvasVoucherLedger / UCL_TavernVoucherLedger）。
+// 數值影響：⤷ **三個動錢的動作已於 2026-09-18 整段搬進 `SCP.Core.Books.SCP_BooksOps`**（TASK-0166 ①）——
+//          本層只剩薄殼與讀取層。錢走 `UCL_BooksGateway` → `UCL_TreasuryLedger.Pay`
+//          （主動消費**自動先扣酒館券**，不足的才扣 token）；券走 `UCL_VoucherAuthority`。
 //          Publish 不動錢（寫作是勞動產出非消費，tokens=0）。
+//          ⚠ 舊註解寫「直呼 Ledger」「Tip 發雙券（UCL_CanvasVoucherLedger / UCL_TavernVoucherLedger）」——
+//          那兩句現在都不成立了（兩個 ledger 自己也是薄殼）。
 //
 // 設計決策（2026-08-07 Tim 拍板「實作全在 C#，Python 只透過 Cmd 操作」）：
 //   · 取代 library.py 經濟六件 —— 那邊的 debit 本來就 spawn run_cmd 回到 C#，
@@ -103,404 +106,37 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
         }
 
         // ===========================================================
-        // 區塊職責：捐贈 —— 付 token 把一本書調入共享圖書館，全員可讀、標註捐贈者。
-        // 物理意義：一本書只能被捐一次（_donation.json 存在即拒絕）；
-        //          Debit 走 use_kind=book_donation、idempotencyKey=book_donation_<slug>
-        //          —— 同書重試不重扣（Python 版靠事後掃 ledger 驗證，這裡冪等鍵在源頭解決）。
-        // 數值影響：donorBank 餘額 -= tokens（不足 throw，登記不會寫入）。
+        // 區塊職責：三個**會動錢的動作** —— ⤷ **薄殼**（TASK-0166 ①，2026-09-18）。
+        // 物理意義：本體整段住 `SCP.Core.Books.SCP_BooksOps`，Editor 與 Senate CLI
+        //          **共用同一份實作**；本層只負責把宿主能力（錢／券／log／續寫包）遞過去。
+        //          ⇒ 驗收量的是「兩個入口讀到的是同一份」，⛔ 不是「兩邊都跑得動」。
+        // 🩸 **今天才搬得動**：這三支原本綁死在 Editor 的 `UCL_TreasuryLedger` 上 ——
+        //   搬出 Unity 就沒有錢可動。而 `senate cmd bank --arg op=pay` 今天上線
+        //   （Tim 2026-09-18「金流可以全面改串新銀行了」）⇒ 錢有了跨宿主的入口。
+        // ⚠ 簽名逐字不動 —— 呼叫端（`Cmd_Books`）不必跟著改，
+        //   ⇒ 對拍時「輸入一樣」這件事在結構上成立，不必靠比對參數表。
         // ===========================================================
+        static readonly SCP_IBooksGateway k_Gate = new UCL_BooksGateway();
+
+        static string DataRoot => UCL_RepoPath.AgentCommandsDir;
+
         public static string Donate(string book, string donorBank, string donorPersona, string donorAgent,
                                     int tokens, string note, out string broadcastBody, out string error)
-        {
-            broadcastBody = null;
-            error = null;
-            if (!Directory.Exists(BookDir(book)))
-            {
-                error = $"Books/{book}/ 不存在 —— 先把書放進 AgentCommands/Books/{book}/";
-                return null;
-            }
-            string dpath = DonationPath(book);
-            if (File.Exists(dpath))
-            {
-                JsonData ex = LoadJson(dpath, out _);
-                string exDonor = ex != null ? ex.GetString(Key_DonorPersona, ex.GetString(Key_Donor, "?")) : "?";
-                error = $"《{book}》已被捐贈 —— 捐贈者 {exDonor}。同書不重捐；要打賞走 op=tip。";
-                return null;
-            }
-            string title = book;   // Books/ 沒有 metadata 檔，標題以 slug 為底、可由 note 補充人話
+            => SCP_BooksOps.Donate(DataRoot, k_Gate, book, donorBank, donorPersona, donorAgent,
+                                   tokens, note, out broadcastBody, out error);
 
-            // 真金白銀：餘額不足 / 帳戶隔離違規會 throw —— 讓 Cmd 框架記 Failed，不寫任何登記
-            // ⚠ 走 `Pay` 不是 `Debit`：捐贈是**主動消費** ⇒ 自動先扣酒館券（個人錢包），
-            //   不足的才扣 token（Tim 2026-09-18）。名單在 Server 的 `SCP_SpendPolicy`，⛔ 不在這裡判。
-            var (aDonorPaidVoucher, aDonorPaidToken) = PayOrDebit(
-                bank: donorBank,
-                persona: donorPersona,
-                tokens: tokens,
-                kind: "book_donation",
-                useRef: book,
-                description: $"捐贈圖書: {title} (donor={(string.IsNullOrEmpty(donorPersona) ? donorBank : donorPersona)})",
-                idemKey: $"book_donation_{book}");
-
-            var entry = new JsonData();
-            entry[Key_Book] = book;
-            entry[Key_Title] = title;
-            entry[Key_Donor] = donorBank;
-            entry[Key_DonorPersona] = donorPersona ?? "";
-            entry[Key_DonorAgent] = donorAgent ?? "";
-            entry[Key_Tokens] = tokens;
-            // ⚠ 同打賞那處：`tokens` 是消費額，⛔ 不是「從帳戶扣了多少」。
-            entry["paid_voucher"] = aDonorPaidVoucher;
-            entry["paid_token"] = aDonorPaidToken;
-            entry["base_price"] = DonationBasePrice;
-            entry[Key_DonatedAt] = Today();
-            entry[Key_Note] = note ?? "";
-            UCL_BooksClassification.Stamp(entry, book, SCP_BookOrigin.Donated, SCP_BookKind.External, "", 0);
-            SaveJson(dpath, entry);
-
-            string who = string.IsNullOrEmpty(donorPersona) ? donorBank : donorPersona;
-            broadcastBody = $"📚 新書入庫!\n\n《{title}》由 **{who}** 捐贈進共享圖書館（{tokens} token），全員都能讀了。\n"
-                            + $"全文在 AgentCommands/Books/{book}/。";
-            return $"✅ 捐贈完成:《{title}》→ 捐贈者 {who}（{tokens} token）。全員可讀。";
-        }
-
-        // ===========================================================
-        // 區塊職責：發表原創書（Author-as-Donor）—— 免費入庫、作者署名、連載可重複發表。
-        // 物理意義：**不讀舊 BookNotes/<slug>/book.json 判 origin=authored**（身分由呼叫端顯式宣告）。
-        //          ⚠ 但發表成功後**會回寫**那份檔的 status/publish_status —— 見 SyncAuthoredDraftState。
-        //          首次發表 = 顯式宣告（title + 作者 persona 必填）；再版 = 沿用既有登記
-        //          （authorPersona 必須與登記相符 —— 不同人不得以 publish 改寫作者署名）。
-        //          已存在且 source != authored → 拒絕（那本是捐贈調入，不是你的著作）。
-        // 數值影響：不動錢（tokens=0）；寫/更新 _donation.json 的 source=authored 登記。
-        // ===========================================================
         public static string Publish(string book, string donorBank, string authorPersona, string donorAgent,
                                      string title, string note, out string broadcastBody, out string error)
-        {
-            broadcastBody = null;
-            error = null;
-            string bdir = BookDir(book);
-            if (!Directory.Exists(bdir))
-            {
-                error = $"Books/{book}/ 不存在 —— 先用 UCL_BookEditPage 寫至少一章全文再 publish";
-                return null;
-            }
-            int chapterCnt = Directory.GetFiles(bdir, "*.txt").Length;
-            if (chapterCnt == 0)
-            {
-                error = $"Books/{book}/ 沒有任何章節（*.txt）—— 空書不入庫";
-                return null;
-            }
+            => SCP_BooksOps.Publish(DataRoot, k_Gate, book, donorBank, authorPersona, donorAgent,
+                                    title, note, out broadcastBody, out error);
 
-            string dpath = DonationPath(book);
-            JsonData existing = File.Exists(dpath) ? LoadJson(dpath, out _) : null;
-            bool wasPublished = existing != null;
-            if (existing != null)
-            {
-                // 🩸 舊版這裡看的是 `source != "authored"` —— 於是 source=watch-log 的觀影實錄
-                //   被判成「捐贈調入」而永遠無法再版（實測 watch-apocalypse-hotel）。
-                //   權限只該問一件事：這本是不是館內自產的 ⇒ 改看 origin。
-                if (UCL_BooksClassification.DeriveOrigin(existing, book) == SCP_BookOrigin.Donated)
-                {
-                    error = $"《{book}》已以捐贈調入登記（捐贈者 {existing.GetString(Key_DonorPersona, "?")}）" +
-                            "—— publish 只發布館內自產的書";
-                    return null;
-                }
-                string registeredAuthor = existing.GetString(Key_DonorPersona, "");
-                if (!string.IsNullOrEmpty(registeredAuthor) && registeredAuthor != authorPersona)
-                {
-                    error = $"《{book}》登記作者是 {registeredAuthor}，與本次 persona={authorPersona} 不符 " +
-                            "—— 不得以 publish 改寫作者署名";
-                    return null;
-                }
-                if (string.IsNullOrEmpty(title)) title = existing.GetString(Key_Title, book);
-                if (string.IsNullOrEmpty(note)) note = existing.GetString(Key_Note, "");
-            }
-            if (string.IsNullOrEmpty(title))
-            {
-                error = "首次發表需要 --arg title=<書名>（Books/ 沒有 metadata 檔可推導 —— 名字要作者自己給）";
-                return null;
-            }
-
-            var entry = new JsonData();
-            entry[Key_Book] = book;
-            entry[Key_Title] = title;
-            entry[Key_Donor] = donorBank;
-            entry[Key_DonorPersona] = authorPersona;
-            entry[Key_DonorAgent] = donorAgent ?? "";
-            entry[Key_Tokens] = 0;
-            entry["base_price"] = 0;
-            // legacy `source` 不再寫出（2026-09-04）—— python 端已改讀 origin（_derive_origin，
-            // 與 DeriveOrigin 同規則、對舊檔仍認 source）。entry 是全新的 JsonData ⇒ 不寫即不存在；
-            // 舊檔留著的 source 照讀不動（DeriveOrigin 仍認它），只是不再新增。
-            // 分類三軸：沿用既有登記（classify 設過就不覆蓋），沒有才由 slug 前綴推導。
-            UCL_BooksClassification.Stamp(
-                entry, book, SCP_BookOrigin.Authored,
-                existing != null ? UCL_BooksClassification.DeriveKind(existing, book)
-                                 : UCL_BooksClassification.DeriveKind(new JsonData(), book),
-                existing != null ? UCL_BooksClassification.DeriveSeries(existing, book)
-                                 : UCL_BooksClassification.DeriveSeries(new JsonData(), book),
-                existing != null ? UCL_BooksClassification.DeriveVolume(existing) : 0);
-            entry[Key_Chapters] = chapterCnt;
-            entry[Key_DonatedAt] = existing != null ? existing.GetString(Key_DonatedAt, Today()) : Today();
-            entry[Key_PublishedAt] = Today();
-            entry[Key_Note] = string.IsNullOrEmpty(note) ? $"{authorPersona} 原創著作" : note;
-            SaveJson(dpath, entry);
-
-            // 🩸 回寫草稿 store 的兩個狀態欄（TASK-0148，2026-09-06）——
-            //    退場前的 python `cmd_publish` 有這一步，搬到 C# 時**跟著 python 一起消失了**，
-            //    而消失的樣子是：書上了藏書架，卻同時還列在「寫到一半」清單裡，兩邊都不報錯。
-            string draftNote = SyncAuthoredDraftState(book);
-
-            string verb = wasPublished ? "連載更新" : "發表";
-            broadcastBody = $"✍📖 新書{verb}!\n\n《{title}》由 **{authorPersona}** 原創著作（{chapterCnt} 章，免費入庫），全員可讀。\n"
-                            + $"全文在 AgentCommands/Books/{book}/。";
-            // 📮 續寫包投遞（Tim 2026-08-23）—— 掛在 publish 上，因為那是作者**一定會走**的路。
-            //    ⚠ 非致命：書已經登記了，投遞失敗只在回報裡多一行
-            //    （跟廣播同語意 —— 帳都落了才做的事，失敗不該讓整筆看起來失敗）。
-            string dossier = UCL_BookDossier.Deliver(book, authorPersona, entry, out string dossierErr);
-            string dossierLine = dossier ?? $"⚠ 續寫包投遞失敗（書已入庫，不影響發表）：{dossierErr}";
-
-            return $"✅ {(wasPublished ? "更新連載" : "首度發表")}原創書:《{title}》 by {authorPersona}（{chapterCnt} 章，免費入庫）"
-                   + $"\n{draftNote}\n{dossierLine}";
-        }
-
-        // ===========================================================
-        // 區塊職責：發表之後，把舊草稿 store `BookNotes/<slug>/book.json` 的
-        //          `publish_status` / `status` 推到已發布狀態。
-        // 物理意義：這兩欄是「寫到一半的書」那條查詢（`senate cmd book --arg op=writing`／
-        //          早安 brief §6.7 見筆）的**唯一真相源**。不推的話，
-        //          「已經在藏書架上」與「還在寫」會同時為真，而**兩邊都不報錯**。
-        // 數值影響：檔不存在 ⇒ 什麼都不做（觀影實錄那類書本來就沒有草稿檔，那不是錯誤）。
-        //          已經是 published ⇒ 不寫（**冪等** —— 連載可以重複 publish）。
-        // ⚠ 這裡刻意**不建檔**：草稿 store 的擁有權在寫書流程那側，
-        //   publish 只同步既有狀態，不替人開一份它沒有的東西。
-        // 🩸 為什麼這一格會不見：`UCL_BooksIO` 的檔頭曾兩處宣稱「舊 BookNotes store 已空」——
-        //   那句話是錯的（2026-09-06 實測：157 份 book.json、活的 6 份、5 天內寫過 2 次），
-        //   而它讓「不必回寫」看起來像一個已經想清楚的決定。
-        // ===========================================================
-        static string SyncAuthoredDraftState(string book)
-        {
-            string path = BookNotesJsonPath(book);
-            if (!File.Exists(path))
-                return $"· 草稿狀態：略過（`BookNotes/{book}/book.json` 不存在 —— 這本沒有草稿檔）";
-
-            JsonData data = LoadJson(path, out string error);
-            if (data == null)
-                return $"⚠ 草稿狀態未同步（書已入庫，不影響發表）：{error}";
-
-            string beforePublish = data.GetString("publish_status", "");
-            string beforeStatus = data.GetString("status", "");
-            if (beforePublish == "published" && beforeStatus == "reading")
-                return "· 草稿狀態：本來就是 `published`/`reading` ⇒ 沒有寫入（冪等）";
-
-            data["publish_status"] = "published";
-            data["status"] = "reading";     // 已發布 ＝ 可讀狀態（對齊退場前的 python 語意）
-            try { SaveJson(path, data); }
-            catch (Exception e)
-            {
-                return $"⚠ 草稿狀態寫入失敗（書已入庫，不影響發表）：{e.Message}";
-            }
-            return $"· 草稿狀態已同步：`publish_status` {Show(beforePublish)} → `published`、"
-                   + $"`status` {Show(beforeStatus)} → `reading`";
-
-            string Show(string v) => string.IsNullOrEmpty(v) ? "(空)" : "`" + v + "`";
-        }
-
-        // ===========================================================
-        // 區塊職責：打賞 —— 讀者燒 token，受益 persona 收雙券（繪圖券＋酒館券，1+1 匯率）。
-        // 物理意義：受益人從捐贈登記解析（原創書→作者／捐贈書→捐贈者）；自賞禁止（同 persona）。
-        //          Debit use_kind=book_tip、useRef=tip:<book>:<tip_id>、idempotencyKey=tip_id。
-        //          **帳與券刻意分開報告**：debit 落帳後任一券發放失敗 → 不回滾帳（帳不可造假），
-        //          voucher_status 記 pending，op=tip --arg retry=true 補發。
-        // 數值影響：tipperBank 餘額 -= tokens；受益 persona 繪圖券 +tokens、酒館券 +tokens。
-        // ===========================================================
         public static string Tip(string book, string tipperBank, string tipperPersona, string tipperAgent,
                                  int tokens, string note, out string broadcastBody, out string error)
-        {
-            broadcastBody = null;
-            error = null;
-            if (tokens < 1 || tokens > TipMax)
-            {
-                error = $"tokens 須為 1~{TipMax}（傳入 {tokens}）";
-                return null;
-            }
-            var ben = ResolveBeneficiary(book);
-            if (ben == null)
-            {
-                error = $"《{book}》不在捐贈登記簿 —— 未入庫的書不可打賞（先 donate / publish）";
-                return null;
-            }
-            string benBank = ben.GetString(Key_Donor, "");
-            string benPersona = ben.GetString(Key_DonorPersona, "");
-            string title = ben.GetString(Key_Title, book);
-            string benKind = UCL_BooksClassification.DeriveOrigin(ben, book) == SCP_BookOrigin.Authored
-                ? "作者" : "捐贈者";
-            if (string.IsNullOrEmpty(benPersona))
-            {
-                error = $"《{title}》登記簿缺 donor_persona —— 無法定位受益 persona";
-                return null;
-            }
-            if (tipperPersona == benPersona)
-            {
-                error = $"自賞禁止 —— 《{title}》的{benKind}就是 {benPersona} 本人";
-                return null;
-            }
+            => SCP_BooksOps.Tip(DataRoot, k_Gate, book, tipperBank, tipperPersona, tipperAgent,
+                                tokens, note, out broadcastBody, out error);
 
-            string tipId = Guid.NewGuid().ToString("N").Substring(0, 8);
-            string useRef = $"tip:{book}:{tipId}";
-            // ⚠ 打賞是**主動消費** ⇒ 自動先扣打賞者的酒館券（見 PayOrDebit）。
-            var (aPaidVoucher, aPaidToken) = PayOrDebit(
-                bank: tipperBank,
-                persona: tipperPersona,
-                tokens: tokens,
-                kind: "book_tip",
-                useRef: useRef,
-                description: $"打賞圖書: {title} ({tipperPersona} → {benPersona})",
-                idemKey: $"book_tip_{tipId}");
-
-            var entry = new JsonData();
-            entry[Key_Book] = book;
-            entry[Key_Title] = title;
-            entry["tipper"] = tipperBank;
-            entry["tipper_persona"] = tipperPersona;
-            entry["tipper_agent"] = tipperAgent ?? "";
-            entry["beneficiary"] = benBank;
-            entry["beneficiary_persona"] = benPersona;
-            entry["tokens_spent"] = tokens;
-            // ⚠ `tokens_spent` 是**消費額**，⛔ 不是「從帳戶扣了多少」——
-            //   2026-09-18 起有一部分可能是酒館券付的。兩個數字不寫出來的話，
-            //   「花了 6」與「帳戶扣了 6」在單據上同形，而對帳的人會去找那 4 個不見的 token。
-            entry["paid_voucher"] = aPaidVoucher;
-            entry["paid_token"] = aPaidToken;
-            var vouchers = new JsonData();
-            vouchers["canvas"] = tokens * TipCanvasRate;
-            vouchers["tavern"] = tokens * TipTavernRate;
-            entry["vouchers"] = vouchers;
-            entry["tip_id"] = tipId;
-            entry["voucher_status"] = "pending_all";
-            entry[Key_Note] = note ?? "";
-            entry["tipped_at"] = Today();
-
-            entry["voucher_status"] = IssueTipVouchers(entry);
-            WriteTip(entry);
-
-            string status = entry["voucher_status"].GetString();
-            string notePart = string.IsNullOrEmpty(note) ? "" : $"「{note}」";
-            broadcastBody = $"💰 打賞! **{tipperPersona}** 打賞《{title}》 {tokens} token → @{benPersona}（{benKind}）"
-                            + $"收 繪圖券×{tokens * TipCanvasRate} + 酒館券×{tokens * TipTavernRate} {notePart}";
-            return status == "issued"
-                ? $"✅ 打賞完成: {benPersona} 已收 繪圖券×{tokens * TipCanvasRate} + 酒館券×{tokens * TipTavernRate}"
-                : $"⚠ 帳已落但券發放未完成（{status}）—— 不回滾帳，跑 op=tip --arg retry=true 補發";
-        }
-
-        /// <summary>補發打賞簿內 pending 的券（不動帳）。回傳報告文字。</summary>
         public static string RetryPendingTips()
-        {
-            var tips = LoadTips();
-            var sb = new StringBuilder();
-            int pendingCnt = 0, fixedCnt = 0;
-            foreach (var t in tips)
-            {
-                if (t.GetString("voucher_status", "") == "issued") continue;
-                pendingCnt++;
-                string next = IssueTipVouchers(t);
-                t["voucher_status"] = next;
-                WriteTip(t);   // 同 tip_id 覆寫同一檔
-                if (next == "issued") fixedCnt++;
-                sb.AppendLine($"- 《{t.GetString(Key_Title, t.GetString(Key_Book, "?"))}》 tip {t.GetString("tip_id", "?")} → {next}");
-            }
-            if (pendingCnt == 0) return "（沒有 pending 的打賞券要補發）";
-            sb.AppendLine($"\n補發 {fixedCnt}/{pendingCnt} 筆完成");
-            return sb.ToString();
-        }
-
-        // ===========================================================
-        // 區塊職責：付一筆書店的錢 —— **主動消費走 `Pay`（自動先扣酒館券）**。
-        // 物理意義：錢包綁 **persona**，而捐贈這一支的 persona **可以是空的**
-        //          （舊呼叫端只給 bank）。⇒ 沒有 persona 就**沒有錢包可以扣**。
-        // 🩸 那時走純 `Debit`，⛔ 但**要出聲**：
-        //   「沒有錢包所以沒扣券」與「有錢包而這條路沒生效」在帳面上一模一樣，
-        //   而後者是 bug。⇒ 讓前者留下一行字，兩者才分得開。
-        // ===========================================================
-        static (int paidVoucher, int paidToken) PayOrDebit(string bank, string persona, int tokens, string kind,
-                                                          string useRef, string description, string idemKey)
-        {
-            if (string.IsNullOrEmpty(persona))
-            {
-                Debug.LogWarning($"[BooksIO] {kind}：沒有 persona ⇒ **定位不到錢包**，本筆走純 token"
-                                 + $"（{bank} -{tokens}）。⛔ 這不是「他沒有券」，是我不知道去問誰的券。");
-                Treasury.UCL_TreasuryLedger.Debit(
-                    accountId: bank, amount: tokens, useKind: kind, useRef: useRef,
-                    description: description, callerAgentId: bank, cmdId: idemKey, idempotencyKey: idemKey);
-                return (0, tokens);
-            }
-            return Treasury.UCL_TreasuryLedger.Pay(
-                accountId: bank, walletPersona: persona, amount: tokens, useKind: kind, useRef: useRef,
-                description: description, callerAgentId: bank, cmdId: idemKey, idempotencyKey: idemKey);
-        }
-
-        // 券發放：任一路失敗記 pending（帳不可造假 —— debit 已落就不回滾）。
-        // 兩個 Ledger 的 Grant 內建冪等（同 ref 已發過視為成功），retry 不重發。
-        static string IssueTipVouchers(JsonData entry)
-        {
-            string persona = entry.GetString("beneficiary_persona", "");
-            string bank = entry.GetString("beneficiary", "");
-            string tipId = entry.GetString("tip_id", "");
-            string refText = $"tip:{entry.GetString(Key_Book, "?")}:{tipId}";
-            string status = entry.GetString("voucher_status", "pending_all");
-            bool canvasOk = status == "pending_tavern" || status == "issued";
-            bool tavernOk = status == "pending_canvas" || status == "issued";
-            // 索引器對缺鍵會 LogError —— 先 Contains 再取（legacy 檔可能缺欄）
-            JsonData v = entry.Contains("vouchers") ? entry["vouchers"] : null;
-            int canvasAmt = v != null ? v.GetInt("canvas", 0) : 0;
-            int tavernAmt = v != null ? v.GetInt("tavern", 0) : 0;
-            if (canvasAmt <= 0 && tavernAmt <= 0)
-            {
-                Debug.LogWarning($"[BooksIO] tip {tipId} 缺 vouchers 欄 —— 無券可發，維持原 status");
-                return status;
-            }
-            if (!canvasOk)
-            {
-                try { CanvasVoucher.UCL_CanvasVoucherLedger.Grant(persona, canvasAmt, "book_tip", refText); canvasOk = true; }
-                catch (Exception e) { Debug.LogWarning($"[BooksIO] 繪圖券發放失敗（記 pending 可 retry）：{e.Message}"); }
-            }
-            if (!tavernOk)
-            {
-                try { Voucher.UCL_TavernVoucherLedger.Grant(bank, persona, tavernAmt, "book_tip", refText); tavernOk = true; }
-                catch (Exception e) { Debug.LogWarning($"[BooksIO] 酒館券發放失敗（記 pending 可 retry）：{e.Message}"); }
-            }
-            if (canvasOk && tavernOk) return "issued";
-            if (canvasOk) return "pending_tavern";
-            if (tavernOk) return "pending_canvas";
-            return "pending_all";
-        }
-
-        // 打賞檔：tips/<UTC stamp>_<tipper_persona>_<tip_id>.json；同 tip_id 已有檔 → 覆寫同一檔（retry 更新 status）
-        static void WriteTip(JsonData entry)
-        {
-            Directory.CreateDirectory(TipsDir);
-            string tipId = entry.GetString("tip_id", "");
-            string path = null;
-            if (!string.IsNullOrEmpty(tipId))
-            {
-                var hits = Directory.GetFiles(TipsDir, $"*_{tipId}.json");
-                if (hits.Length > 0) path = hits[0];
-            }
-            if (path == null)
-            {
-                string stamp = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffff") + "Z";
-                path = Path.Combine(TipsDir, $"{stamp}_{SafeSlug(entry.GetString("tipper_persona", "unknown"))}_{tipId}.json");
-            }
-            SaveJson(path, entry);
-        }
-
-        static JsonData ResolveBeneficiary(string book)
-        {
-            foreach (var d in LoadDonations())
-            {
-                if (d.GetString(Key_Book, "") == book) return d;
-            }
-            return null;
-        }
+            => SCP_BooksOps.RetryPendingTips(DataRoot, k_Gate);
 
         // ===========================================================
         // 報表（donations / tips 的人讀輸出 —— 與 Python 版同構：原創/捐贈分組 + 打賞累計）

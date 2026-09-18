@@ -387,8 +387,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             var head = new StringBuilder();
             head.AppendLine($"## 舊 Treasury vs 新銀行 —— 逐戶對帳（{stamp}）");
             head.AppendLine($"- 新銀行根：`{aBankRoot}`");
+            // ⚠ 射程的輸入是 **persona pool ✕ 該人在本區 resolve 到的帳號**（`UCL_BankMirror.ScopedAccounts`
+            //   ⇒ `UCL_PersonaProfile.PoolNames()`），⛔ **不只是** `bank/<區>.md` 那幾個檔 ——
+            //   pool 少一個人、或某人在本區 resolve 不到帳號，射程就會少一戶。
+            // 🩸 血證（basecamp 2026-09-18）：09-17 閘內 11 戶（相符 8／不同 2／缺 1），
+            //   09-18 閘內 10 戶全部相符，而 `bank/Florin.md` 那 21 個檔**自 08-20 一個字沒動**。
+            //   ⇒ 戶數變了而輸入檔沒變 ⇒ 變的是 pool 那一側，**而它不會出現在任何一格**。
+            // ⇒ 所以射程要**逐 id 點名**：TASK-0216 ⑧ 要的是「連續 N 天逐戶零差額」，
+            //   而只印計數的話，N 天可以由 **N 批不同的受測體**湊成 —— 那種失效跟真的通過同形。
+            var aScopeIds = new List<string>(aScope);
+            aScopeIds.Sort(System.StringComparer.Ordinal);
             head.AppendLine($"- 本區 `{aRegionId}` 射程：**{aScope.Count} 個帳號**"
-                            + "（由 `letters/<persona>/bank/<區>.md` ＋ 央行**推導**，⛔ 不是清單）");
+                            + "（由 **persona pool** ✕ 各人在本區 resolve 到的帳號 ＋ 央行**推導**，⛔ 不是清單）");
+            head.AppendLine($"  - 射程逐 id（⛔ 跨日要比這一行，不是比戶數）：{string.Join("、", aScopeIds.ConvertAll(x => $"`{x}`"))}");
             head.AppendLine($"- **相符 {aSame} 戶**／金額不同 **{aDiff}** 戶／⚠ 未預期缺戶 **{aUnexpected}** 戶"
                             + $"／只有新的有 **{aNewOnly}** 戶／・不在本區射程 {aWaivedHit} 戶（不計入閘）");
             if (aDiff == 0 && aUnexpected == 0 && aNewOnly == 0)

@@ -45,6 +45,9 @@ namespace UCL.Core.EditorLib.Page
         static string DataRoot => UCL_AgentCommandsPath.DataRoot;
         static string RegistryMetaPath => Path.Combine(DataRoot, "AwakenInit", "_registry_meta.json");
         // ⛔ 本頁不再需要 persona 目錄：persona→帳號改讀 letters 綁定檔（2026-08-21）。
+        // ⛔ **這兩個路徑指的檔案已經不存在了**（2026-09-18 券系統遷到新銀行後整批刪除，歷史在 git）。
+        //   兩者目前**零呼叫端**，留著只是因為本頁整體排隊退場（TASK-0242）。
+        //   ⚠ 誰要是拿它們去寫東西，會**憑空長出一個沒有人在讀的孤兒檔**而不報錯 —— 別用。
         static string CanvasVouchersDir => Path.Combine(DataRoot, "Canvas", "vouchers");
         static string TavernQuotaPath => Path.Combine(DataRoot, "ChatTavern", "agent_bonus_quota.json");
 
@@ -2207,10 +2210,11 @@ namespace UCL.Core.EditorLib.Page
             catch (Exception ex) { SetResult($"❌ 發繪圖券失敗（C# ledger）：{ex.Message}"); }
         }
 
-        // 發酒館券（Tim 2026-07-24 canonical，比照繪圖券走 C# ledger）：UCL_TavernVoucherLedger 是正規 owner，
-        // 以 DataRoot 錨定寫 agent_bonus_quota.json（與 work_session accrual 同源、含 history 審計）——這是有審計、
-        // 正規路徑的 canonical 寫入者，非「繞 owner 直寫」。原本『缺 grant CLI 故暫停』的禁令，已被繪圖券
-        // 改走 C# canonical ledger 的先例推翻（C# static owner 本身就是 canonical，非直寫繞審計）。
+        // 發酒館券：走 `UCL_TavernVoucherLedger`，而它 2026-09-18 起是**薄殼** ——
+        // 實際寫入落在 Senate Server（`senate cmd voucher --arg voucher=tavern`）。
+        // ⚠ 這一段原本寫「以 DataRoot 錨定寫 agent_bonus_quota.json」——
+        //   那個檔**已經不存在了**（券系統遷移後整批刪除，歷史在 git）。
+        //   🩸 留這句話當記號：註解會比它描述的檔案活得更久，而過期的註解讀起來跟真的一樣。
         void DoGrantTavernVoucher()
         {
             string persona = SelectedPersona;

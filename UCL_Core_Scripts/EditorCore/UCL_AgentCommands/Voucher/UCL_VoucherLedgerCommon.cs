@@ -1,4 +1,10 @@
-﻿// 區塊職責：券系統（繪圖券 / 酒館券）的 C# 端共用底層 — ISO 時戳 / 短 uuid / 原子讀改寫。
+﻿// ⛔ **2026-09-18 起：本檔零呼叫端。** 券系統整批遷到 Senate 新銀行，
+//   兩個 ledger（繪圖券／酒館券）都變成薄殼、不再自己寫檔，
+//   而它們寫的那兩個檔（`Canvas/vouchers/`、`ChatTavern/agent_bonus_quota.json`）**已經刪除**（歷史在 git）。
+//   ⇒ 留著只因為舊系統的程式碼暫時保留（Tim 2026-09-18 拍板：功能遷移、檔案暫留）。
+//   ⚠ 誰要是拿它去寫東西，會憑空長出一個沒有人在讀的孤兒檔而不報錯。
+//
+// 區塊職責（歷史）：券系統（繪圖券 / 酒館券）的 C# 端共用底層 — ISO 時戳 / 短 uuid / 原子讀改寫。
 // 物理意義：兩種券的 schema 與儲存布局不同（繪圖券 = per-persona 檔 balance+history；
 //          酒館券 = agent_bonus_quota.json 巢狀 agents.<bank>.personas.<persona>.total_remaining+history），
 //          但「產生審計時戳/uuid、原子 tmp+replace 寫檔、讀檔或 init 空檔後 mutate 再寫回」這層機制完全一致。

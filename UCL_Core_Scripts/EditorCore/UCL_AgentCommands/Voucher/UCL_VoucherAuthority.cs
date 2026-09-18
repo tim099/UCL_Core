@@ -248,7 +248,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Voucher
         //   `🔢 delegate_host = server` ⇒ 「券不足」被一個路由讀數蓋掉，
         //   例外訊息長得像壞在傳輸層，而它其實是一個正常的拒絕。
         //   ⇒ 先找帶 `✗` 的那行（Cmd 的拒絕都帶它），找不到才退回第一行。
-        // 📌 同族：`UCL_TreasuryAuthority` 的錯誤訊息也是 `FirstLine`，會有同一個症狀。
+        // 📌 同族的 `UCL_TreasuryAuthority` **同日稍晚也修好了**（原本這裡只留一句
+        //   「它會有同一個症狀」——⚠ 而那句註解沒有修好任何東西，它只是讓我知道它壞著，
+        //   然後它在幾小時後咬到書店捐贈那條真實路徑）。
         // ===========================================================
         static string PickReason(string iOut, string iErr)
         {

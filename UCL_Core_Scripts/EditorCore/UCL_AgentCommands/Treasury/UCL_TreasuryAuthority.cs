@@ -144,7 +144,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
             if (aExit != 0)
                 throw new InvalidOperationException(
-                    $"[Treasury] 新銀行拒絕這一筆（exit {aExit}）：{FirstLine(aOut)} / {FirstLine(aErr)}"
+                    $"[Treasury] 新銀行拒絕這一筆（exit {aExit}）：{PickReason(aOut, aErr)}"
                     + " —— 這筆錢**沒有動**。");
 
             // `🔢 k = v` 收成表（`pay` 靠 paid_voucher／paid_token 分辨這筆是怎麼付的）
@@ -207,6 +207,34 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
         static string Fallback(string iValue, string iFallback)
             => string.IsNullOrWhiteSpace(iValue) ? iFallback : iValue;
+
+        // ===========================================================
+        // 區塊職責：從 CLI 輸出裡挑出**真正的理由**那一行。
+        // 🩸 2026-09-18 實測（書店捐贈餘額不足那次）：挑「第一行非空白」挑到的是
+        //   `🔢 delegate_host = server` ⇒ 「餘額不足」被一個路由讀數蓋掉，
+        //   例外訊息長得像壞在傳輸層，而它其實是一個正常的拒絕。
+        //   ⚠ 這一格我當天稍早在券那側修過（`UCL_VoucherAuthority.PickReason`）
+        //   並且留了一句「同族：Treasury 也會有同一個症狀」——
+        //   **而那句註解沒有修好任何東西**，它只是讓我知道它壞著。⇒ 這次真的修。
+        // ===========================================================
+        static string PickReason(string iOut, string iErr)
+        {
+            string aHit = FindMarked(iOut);
+            if (aHit.Length == 0) aHit = FindMarked(iErr);
+            if (aHit.Length > 0) return aHit;
+            return FirstLine(iOut) + " / " + FirstLine(iErr);
+        }
+
+        static string FindMarked(string iText)
+        {
+            if (string.IsNullOrEmpty(iText)) return "";
+            foreach (var aLine in iText.Split('\n'))
+            {
+                string aTrim = aLine.Trim();
+                if (aTrim.IndexOf('✗') >= 0) return aTrim;
+            }
+            return "";
+        }
 
         static string FirstLine(string iText)
         {

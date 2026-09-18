@@ -301,22 +301,16 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 // 🩸 TASK-0198：而「明說查無」當場退化成另一個問題 —— 批次在**花完**或
                 //    **過期後的下一次寫入**就被清掉 ⇒ 一場把 10 張全用完的自由時間，
                 //    收工只答得出「無法判定」，而修法前那條錯公式在這個 case 剛好印對。
-                //    ⇒ 回退到 history 結算（`grant` − `expire`，`exhaust` ⇒ 全用完）。
-                //    ⛔ 兩條路的答案**不同形**：fallback 那則明寫來源，否則
-                //    「讀得到批次」與「批次已結清」會印出一模一樣的字。
+                //    ⛔ 而 2026-09-18 券搬到新銀行之後，**那條 history 回退路沒有了** ——
+                //    新系統不記歷史（Tim 拍板）⇒ 批次被清掉之後這裡只答得出「查無」。
+                //    ⇒ 那是「不留歷史」的**已知代價**：查無就印查無，
+                //      ⛔ 不准用「發放量 − 0」把它補成「全數用畢」（那正是 0195 那隻病）。
                 bool aLedgerKnows = UCL_CanvasVoucherLedger.TryGetUsageByRef(
                     iPersona, aSession.session_id, out int aGrantedBatch, out int aLeftover, out int aUsed);
-                int aForfeited = aLeftover;   // 沒用完的 ＝ 到期作廢（ledger 下次寫入時清並記 history）
-                bool aHistoryKnows = false;
-                if (!aLedgerKnows)
-                {
-                    aHistoryKnows = UCL_CanvasVoucherLedger.TryGetUsageFromHistoryByRef(
-                        iPersona, aSession.session_id, out aGrantedBatch, out aForfeited, out aUsed);
-                }
+                int aForfeited = aLeftover;   // 沒用完的 ＝ 到期作廢（Server 下次寫入時清掉）
                 string aVoucherSuffix = aForfeited > 0 ? $"、{aForfeited} 張到期作廢" : "、全數用畢";
-                string aVoucherBrief =
-                      aLedgerKnows  ? $"🎟 限時券用 {aUsed}/{aGrantedBatch} 張{aVoucherSuffix}"
-                    : aHistoryKnows ? $"🎟 限時券用 {aUsed}/{aGrantedBatch} 張{aVoucherSuffix}（自券帳 history 結算 —— 本場批次已結清）"
+                string aVoucherBrief = aLedgerKnows
+                    ? $"🎟 限時券用 {aUsed}/{aGrantedBatch} 張{aVoucherSuffix}"
                     : "🎟 限時券用量：**帳本查無本場批次**（不猜 —— 見 TASK-0195 / TASK-0198）";
 
                 var aBody = new StringBuilder();
@@ -331,9 +325,10 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 aR.AppendLine($"- end_reason: {aEndReason}");
                 aR.AppendLine($"- 本場輪次: {aRounds}");
                 aR.AppendLine(
-                      aLedgerKnows  ? $"- 🎟 限時券: 用 {aUsed}/{aGrantedBatch} 張{(aForfeited > 0 ? $"、**{aForfeited} 張到期作廢**（券帳本會在下次寫入時清掉並記一筆 expire）" : "（全數用畢）")}　← 讀數源: `batches`"
-                    : aHistoryKnows ? $"- 🎟 限時券: 用 {aUsed}/{aGrantedBatch} 張{(aForfeited > 0 ? $"、**{aForfeited} 張到期作廢**" : "（全數用畢）")}　← 讀數源: `history`（本場批次已結清，ref=`{aSession.session_id}`）"
-                    : $"- 🎟 限時券: **帳本查無本場批次**（ref=`{aSession.session_id}`，batches 與 history 兩邊都查無）⇒ 用量無法判定，⛔ 不以發放量推導（TASK-0195 / TASK-0198）");
+                    aLedgerKnows
+                    ? $"- 🎟 限時券: 用 {aUsed}/{aGrantedBatch} 張{(aForfeited > 0 ? $"、**{aForfeited} 張到期作廢**（Server 會在下次寫入時清掉那一批）" : "（全數用畢）")}　← 讀數源: `batches`"
+                    : $"- 🎟 限時券: **帳本查無本場批次**（ref=`{aSession.session_id}`）⇒ 用量無法判定，⛔ 不以發放量推導（TASK-0195 / TASK-0198）"
+                    + "　⚠ 券**不記歷史**（2026-09-18 起）⇒ 批次過期被清掉之後這裡永久只答得出查無");
                 aR.AppendLine($"- 收工宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
                 aR.AppendLine("## ⏹ 已收工 —— 自由時間結束，**不要再跑 step=next**");
                 aR.AppendLine("- 回工作；或走晚安流程：senate ucmd run GoodNight --arg step=check --arg persona=" + iPersona);

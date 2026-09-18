@@ -97,23 +97,19 @@ namespace UCL.Core.EditorLib.AgentCommands.CanvasVoucher
             bool aFromBatches = UCL_CanvasVoucherLedger.TryGetUsageByRef(
                 persona, refText, out int aGranted, out int aRemain, out int aUsed);
             int aForfeited = aRemain;
-            bool aFromHistory = false;
-            if (!aFromBatches)
-            {
-                aFromHistory = UCL_CanvasVoucherLedger.TryGetUsageFromHistoryByRef(
-                    persona, refText, out aGranted, out aForfeited, out aUsed);
-            }
-            string aSource = aFromBatches ? "batches" : aFromHistory ? "history" : "none";
+            // ⚠ 2026-09-18 券搬到新銀行之後**只剩這一條讀數源** —— 新系統不記歷史（Tim 拍板）
+            //   ⇒ 批次被清掉之後只答得出「查無」。⛔ 那是「我不知道」不是「一張都沒用」。
+            string aSource = aFromBatches ? "batches" : "none";
 
             WriteLastOp(args, aSource == "none"
                 ? $"# 🔍 繪圖券 usage\n\n- persona: `{persona}`\n- ref: `{refText}`\n"
-                + "- **查無這一批**（`batches` 與 `history` 兩邊都沒有）⇒ 用量無法判定。\n"
-                + "\n> ⛔ 不以發放量推導（TASK-0195）。2026-09-11 之前被清掉的批次沒有可歸戶的清理列，"
-                + "那些**永久只能答查無** —— 那是舊資料的事實，不是本 op 壞了（TASK-0198）。\n"
+                + "- **查無這一批**（券帳上沒有這個 ref 的批次）⇒ 用量無法判定。\n"
+                + "\n> ⛔ 不以發放量推導（TASK-0195）。券**不記歷史**（2026-09-18 拍板）⇒ 批次過期被清掉之後"
+                + "**永久只能答查無** —— 那是設計的已知代價，不是本 op 壞了（TASK-0198／0243）。\n"
                 : $"# 🔍 繪圖券 usage\n\n- persona: `{persona}`\n- ref: `{refText}`\n"
                 + $"- 發放: **{aGranted}**／用掉: **{aUsed}**／作廢: **{aForfeited}**\n"
                 + $"- 讀數源: `{aSource}`"
-                + (aSource == "batches" ? "（批次還在帳上，作廢數＝此刻剩餘）\n" : "（批次已結清，自 history 的 grant − expire 結算）\n"));
+                + "（批次還在帳上，作廢數＝此刻剩餘）\n");
 
             UCL_AgentCommandRunner.ReportOutputValue(args, "found", aSource == "none" ? "0" : "1");
             UCL_AgentCommandRunner.ReportOutputValue(args, "source", aSource);

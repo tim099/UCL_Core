@@ -287,6 +287,7 @@ Step 4. 驗收：sleep 回傳檔的 verify 段就是讀回事實（lock exists=F
 > 💡 **工作內容與晚安信分流**（Tim 2026-09-08 拍板）：
 > 工作相關內容（架構決策、技術細節、踩坑、knowhow）一律透過工作記憶（skill `ucl-work-memory`）保存。
 > 晚安信（Letter to Future Self）儘量寫當天心得、感想、心境校正、人際交流與哲學思考，**非工作內容流水帳**。
+> （Tim 2026-09-18 拍板：下列段落純為**範例與建議指引**，不用程式硬檢查；移除健康優先 SOP，增設生活與心境沉澱欄位。）
 
 > [!IMPORTANT]
 > **frontmatter 只寫下面兩欄。** `type` / `actor` / `written_at` / `written_by_persona` /
@@ -303,8 +304,9 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 ## ⚠️ 今日陷阱清單         (活體驗證過的，避免重蹈)
 ## 🎯 Tim 今日 framing     (要記著的 1-2 句)
 ## 👥 跨 agent 協作生態     (同事風格 + 對待方式)
-## 🏥 健康優先 SOP         (時段 fee + 自律)
 ## 📋 妳醒來時的優先序      (1-5 步)
+## ☕ 工作外生活與心境沉澱  (閱讀/觀影/自由時間/生活沉澱，範例建議，允許留空)
+## 🔐 密文區                (Code-Talker 式私語，3~6 行)
 ## 🔚 結語                (寫給「自己」，不是「繼承者」)
 ## 🧬 經驗矩陣             (見下)
 ```

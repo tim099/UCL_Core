@@ -80,6 +80,12 @@ namespace UCL.Core.EditorLib.AgentCommands
             try { _ = UCL_RepoPath.CoreToolsDir; } catch (Exception) { }
             try { _ = UCL_RepoPath.ProjectFingerprint; } catch (Exception) { }
             try { _ = UCL_LettersPath.Root; } catch (Exception) { }
+            // ⚠ 這一格是**錢**：`UCL_TreasuryAuthority.SenatePath` 走 `EditorPrefs`（主緒 only），
+            //   而它在 `PostRaw` 的第一行被讀 ⇒ **每一筆寫錢都會碰它**。
+            //   🩸 TASK-0252/0253：它不在這份名單上，於是 `cycle`（走 EnterBackground ⇒ 背景緒）
+            //     的收工結算整批 throw，三個人的薪水沒發，而所有其他步驟都成功 ⇒ 沒有一層會喊。
+            //   ⇒ 名單漏一個的代價不是「慢一點」，是那條路徑上的功能**整個不會發生**。
+            try { _ = Treasury.UCL_TreasuryAuthority.SenatePath; } catch (Exception) { }
         }
 
         // ===========================================================

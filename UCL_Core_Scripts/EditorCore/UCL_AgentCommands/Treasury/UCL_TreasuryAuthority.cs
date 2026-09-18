@@ -44,10 +44,48 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         // ===========================================================
         const string SenatePathPrefKey = "UCL_Treasury.SenatePath";
 
+        // ⚠ **`EditorPrefs` 是主執行緒 only** —— 而本 getter 在 `PostRaw` 的第一行被呼叫，
+        //   也就是說：**每一筆寫錢都會碰它**。而寫錢的呼叫端不保證在主緒
+        //   （`Cmd_StreamWatch` 的 `cycle` 走 `UCL_AgentCmdOffload.EnterBackground` ⇒ 整個 step 在 thread pool 上）。
+        // 🩸 TASK-0252/0253（2026-09-18 實測，五人同場對照組）：背景緒讀它 ⇒
+        //   `GetString can only be called from the main thread` ⇒ `Credit` 整筆 throw ⇒ **薪水沒發**，
+        //   而 session 照樣關閉、收播公告照樣發、台帳照樣 append ⇒ 三人被吃掉。
+        //   同場走 `step=start/join` 殘留補結算那兩位（仍在主緒）**發薪成功** —— 單一變因就是執行緒。
+        // ⇒ 照本 repo 既有形狀修：**主緒讀一次寫進 static 快取，背景緒讀快取**
+        //   （與 `UCL_RepoPath` 那族同構，而 `UCL_AgentCmdOffload.PrewarmMainThreadCaches()` 負責在切背景前暖它）。
+        // ⚠ 快取未暖時背景緒回 `""`（＝走 PATH，正是預設值）—— 那是安全的方向，
+        //   ⛔ 但它跟「使用者真的設成空」同形 ⇒ 所以**出一次聲**，不要靜默退化。
+        static string s_SenatePathCache;
+        static bool s_SenatePathWarmed;
+        static bool s_WarnedColdOffMain;
+
         public static string SenatePath
         {
-            get { return EditorPrefs.GetString(SenatePathPrefKey, ""); }
-            set { EditorPrefs.SetString(SenatePathPrefKey, value); }
+            get
+            {
+                bool aIsMain = UCL_AgentCmdSlowLog.MainThreadId < 0
+                               || System.Threading.Thread.CurrentThread.ManagedThreadId == UCL_AgentCmdSlowLog.MainThreadId;
+                if (aIsMain)
+                {
+                    s_SenatePathCache = EditorPrefs.GetString(SenatePathPrefKey, "");
+                    s_SenatePathWarmed = true;
+                    return s_SenatePathCache;
+                }
+                if (!s_SenatePathWarmed && !s_WarnedColdOffMain)
+                {
+                    s_WarnedColdOffMain = true;
+                    Debug.LogWarning("[Treasury] SenatePath 在**背景緒**被讀，而快取還沒暖過"
+                        + " ⇒ 這一筆用預設值（空＝走 PATH）。若這台機器指著特製的 senate，這筆會派錯執行檔。"
+                        + " 修法：handler 第一行呼叫 UCL_AgentCmdOffload.EnterBackground()（它會先 prewarm 再切背景）。本警告只出一次。");
+                }
+                return s_SenatePathCache ?? "";
+            }
+            set
+            {
+                EditorPrefs.SetString(SenatePathPrefKey, value);
+                s_SenatePathCache = value;     // ⚠ 寫入端同步更新快取 —— 否則背景緒會一直拿到舊值，
+                s_SenatePathWarmed = true;     //    而「旋鈕轉了沒生效」跟「旋鈕設定本身沒用」同形。
+            }
         }
 
         /// <summary>新銀行帳本根 —— **沿用描述表那一格的算式**，⛔ 不在這裡再拼一次字面。</summary>

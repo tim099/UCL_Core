@@ -2395,10 +2395,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             int aTotal = aBasePay + aObsPay;
 
             string aPayNote;
+            // ⭐ TASK-0252/0253：這兩格跟著 aPayNote 一起走，最後落進台帳 ——
+            //   回傳檔那句話下一場就被覆寫，台帳才是 append-only 的那一層。
+            string aPayStatus = "paid", aPayError = "";
             if (aPhantom)
             {
                 aPayNote = "**未發薪** —— 本場 0 筆 observation（phantom 守衛：在場費也不發）";
                 aTotal = 0;
+                aPayStatus = "phantom";
             }
             else
             {
@@ -2407,6 +2411,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 {
                     aPayNote = $"**未發薪** —— persona `{iPersona}` 解析不到正式帳號（{aRes.Trace}）";
                     aTotal = 0;
+                    aPayStatus = "unresolved-account";
                 }
                 else
                 {
@@ -2431,6 +2436,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     {
                         aPayNote = $"**發薪失敗** —— {e.Message}（session 仍關閉，帳待補）";
                         aTotal = 0;
+                        aPayStatus = "failed";
+                        aPayError = e.Message;
+                        // ⚠ 發薪失敗**必須在 Editor console 也出聲** —— 之前它只活在回傳檔中段一行字裡，
+                        //   而 session 關閉／公告發出／台帳 append 三件事都成功 ⇒ 沒有任何一層會喊。
+                        Debug.LogError($"[StreamWatch] 發薪失敗（{iPersona}／{aSessionId}／應付 {aBasePay + aObsPay}）：{e.Message}");
                     }
                     finally { Phase(iArgs, "settle.ledger_credit", aCreditWatch.Elapsed.TotalMilliseconds); }
                 }
@@ -2459,7 +2469,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             SCP.Core.Session.SCP_ActivitySessionStore.Close(UCL_AgentCommandsPath.ScpDataRoot, iPersona, ioS,
                 !string.IsNullOrEmpty(iReasonOverride) ? iReasonOverride
                 : (iByInterrupt ? "recording-stopped" : "expired"));
-            AppendSessionLog(ioS, iPersona, aSeq, aPaidMin, aTotal);
+            AppendSessionLog(ioS, iPersona, aSeq, aPaidMin, aTotal, aPayStatus, aPayError);
 
             ioR.AppendLine($"- 本場統計: cycles={ioS.cycles}｜observations={aObs}｜在場 {aPaidMin} 分鐘");
             if (!string.IsNullOrEmpty(aStopNote))
@@ -4063,7 +4073,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         }
 
 
-        static void AppendSessionLog(UCL_StreamWatchSession iS, string iPersona, int iEndSeq, int iPaidMin, int iPaidTotal)
+        /// <summary>把換行壓成空白 —— 台帳是 **jsonl**，一行一場，例外訊息帶換行會把一筆拆成多筆。</summary>
+        /// <remarks>🩸 Unity 的主執行緒守衛訊息本身就是三行（TASK-0252 那一筆），⇒ 這不是假想的風險。</remarks>
+        static string OneLine(string iText)
+            => string.IsNullOrEmpty(iText) ? "" : iText.Replace((char)13, ' ').Replace((char)10, ' ');
+
+        static void AppendSessionLog(UCL_StreamWatchSession iS, string iPersona, int iEndSeq, int iPaidMin, int iPaidTotal,
+                                     string iPayStatus, string iPayError)
         {
             try
             {
@@ -4090,6 +4106,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     observations = iS.observations,
                     paid_minutes = iPaidMin,
                     paid_total = iPaidTotal,
+                    // ⚠ 這兩欄是 TASK-0252 的本體：`paid_total: 0` 是一個**合法的值**
+                    //   （phantom 守衛、解析不到帳號），所以 0 本身講不出「錢有沒有發生過」。
+                    pay_status = iPayStatus ?? "",
+                    pay_error = OneLine(Truncate(iPayError ?? "", 300)),
                     exported_chapter = "",   // ⛔ 永遠是空的：台帳 append-only，匯出時 append 另一筆
                                              //    record_type=export，**不回頭改這一行**。查章號要掃 export 紀錄。
                 };
@@ -4925,6 +4945,18 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         public int observations = 0;
         public int paid_minutes = 0;
         public int paid_total = 0;
+        /// <summary>發薪這一步**發生了什麼** —— `paid` / `failed` / `phantom` / `unresolved-account`。</summary>
+        /// <remarks>
+        /// 🩸 TASK-0252/0253（2026-09-18）：本欄位之前不存在，於是台帳上
+        /// **「發薪 throw 了」與「本來就沒錢可發」都是 `paid_total: 0`** ——
+        /// 錢沒發這件事 24 小時後只剩一個 0，沒有任何一層說得出那個 0 是怎麼來的
+        /// （唯一寫了原因的是 per-persona 回傳檔，而它下一場就被覆寫）。
+        /// ⇒ 台帳是 append-only 的那一層，**失敗與零元必須分得開**。
+        /// ⚠ 舊紀錄沒有這一欄 ⇒ 讀到空字串代表「這筆早於本欄位」，⛔ 不等於 `paid`。
+        /// </remarks>
+        public string pay_status = "";
+        /// <summary>`pay_status=failed` 時的例外訊息（單行截斷）；其餘狀態為空。</summary>
+        public string pay_error = "";
         /// <summary>⛔ **這個欄位不會被就地填回去 —— 它從建立到永遠都是 `""`。**</summary>
         /// <remarks>
         /// 匯出時 append 的是**另一筆**紀錄（`record_type=export`，帶 `session_id` / `exported_chapter` / `book`）——

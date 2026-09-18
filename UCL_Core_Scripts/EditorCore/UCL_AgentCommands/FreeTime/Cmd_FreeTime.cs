@@ -193,7 +193,37 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             //          改成限時券之後，**歸零是到期的自然結果** —— 那條寫入路徑整條消失。
             // 到期時刻 ＝ session end_ts ＋ 1 分緩衝（Tim 指定）。緩衝的理由：截止是軟的，
             //          最後一件活動可能跨過 until 才收工，而那一刻他手上的券不該已經失效。
-            int aPrevForfeit = GrantFreePixelVouchers(iPersona, aSessionId, aUntil);
+            // 🩸 TASK-0249（kiara 2026-09-18 實測，basecamp 在 Bar 這棵樹重現）：
+            //   券那條路不通時（build_mismatch／Server 沒跑／senate 路徑壞掉），這一行會 throw ——
+            //   而 session **早在 23 毫秒前就寫上磁碟了**（守衛 TryStart 是先查再寫）。
+            //   ⇒ 失敗訊息只講券、一個字都沒提 session ⇒ 「它失敗了」與「它什麼都沒做」**在回傳上同形**，
+            //     而磁碟上差一個 `active:true` 的檔：下一次 step=start 會撞 blocked，
+            //     對一個以為自己從來沒開成場的人來說，那句話讀起來像系統壞了。
+            // ⇒ 修法①：**連同 session 一起回滾**（收掉本場），並把兩件事分開指名。
+            //   ⛔ 不選修法②（保留 session 只改訊息）：半套的場會佔住「不疊開」的名額，
+            //     而收掉它要先知道有 step=end 這條路 —— 那是把成本留給下一個人。
+            // ⚠ 已知代價（⛔ 不假裝沒有）：Server 那側**有可能已經發完券才斷線**（回報丟失）。
+            //   那種情況這裡會多收一場、那批券留在帳上到期作廢 —— 本層分辨不了，
+            //   所以訊息把券那一層的原文**轉述**（它自己會說「券沒有動」還是別的），⛔ 不代它下結論。
+            int aPrevForfeit;
+            try
+            {
+                aPrevForfeit = GrantFreePixelVouchers(iPersona, aSessionId, aUntil);
+            }
+            catch (Exception aGrantEx)
+            {
+                // ① 權威狀態先落地（照 SCP_ActivitySessionStore.CloseWithSettlement 那條拍板的次序）
+                CloseSession(iPersona, aSession, "grant-failed-rollback", out _);
+                aR.AppendLine("## failed");
+                aR.AppendLine($"- session: `{aSessionId}`（至 {aUntil:HH:mm}）—— **已回滾**（收掉，不佔「不疊開」的名額）");
+                aR.AppendLine($"- 🎟 限時券: **未發放**　券帳那一層的原文 ⇒ {aGrantEx.Message}");
+                aR.AppendLine("- ⇒ 那條路修好之後直接重跑 `step=start` 開新場；⛔ 不必先 `step=end`。");
+                WritePayload(iArgs, aPath, aR.ToString());
+                throw new Exception(
+                    $"[FreeTime] step=start 發券失敗 ⇒ session `{aSessionId}`（至 {aUntil:HH:mm}）**已回滾**、"
+                    + $"🎟 限時券**未發放**（兩件事各自的狀態，詳見 {aPath}）。"
+                    + $"券帳那一層說：{aGrantEx.Message}", aGrantEx);
+            }
 
             // 開場擲骰（兩層隨機排序：優先層在前、層內仍隨機；做不成的活動已隱藏；時間不夠的降尾端）
             int aMinutes = (int)Math.Max(0, (aUntil - aNow).TotalMinutes);

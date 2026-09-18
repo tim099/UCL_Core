@@ -83,6 +83,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         // ===========================================================
         public static void Post(string iType, string iAccount, int iAmount, string iKind, string iRef,
                                 string iDescription, string iCaller, string iCmdId, string iIdemKey)
+            => PostRaw(iType, iAccount, iAmount, iKind, iRef, iDescription, iCaller, iCmdId, iIdemKey, null);
+
+        /// <summary>同 <see cref="Post"/>，但回 Server 印的 `🔢` 值表（`pay` 要靠它分辨券付了幾張）。</summary>
+        static System.Collections.Generic.Dictionary<string, string> PostRaw(
+            string iType, string iAccount, int iAmount, string iKind, string iRef,
+            string iDescription, string iCaller, string iCmdId, string iIdemKey,
+            System.Collections.Generic.List<string> iExtraArgs)
         {
             string aExe = UCL_BankMirror.SenatePath;
             if (string.IsNullOrWhiteSpace(aExe)) aExe = "senate";
@@ -116,6 +123,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 { aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("cmd_id=" + iCmdId); }
                 if (!string.IsNullOrEmpty(iIdemKey))
                 { aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("idem_key=" + iIdemKey); }
+                if (iExtraArgs != null)
+                    foreach (string aArg in iExtraArgs)
+                    { aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add(aArg); }
 
                 var aProc = System.Diagnostics.Process.Start(aPsi);
                 if (aProc == null) throw new InvalidOperationException("Process.Start 回 null");
@@ -136,6 +146,63 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 throw new InvalidOperationException(
                     $"[Treasury] 新銀行拒絕這一筆（exit {aExit}）：{FirstLine(aOut)} / {FirstLine(aErr)}"
                     + " —— 這筆錢**沒有動**。");
+
+            // `🔢 k = v` 收成表（`pay` 靠 paid_voucher／paid_token 分辨這筆是怎麼付的）
+            var aValues = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (string aRaw in (aOut ?? "").Split('\n'))
+            {
+                string aLine = aRaw.Trim();
+                int aMark = aLine.IndexOf("🔢", StringComparison.Ordinal);
+                if (aMark < 0) continue;
+                aLine = aLine.Substring(aMark + "🔢".Length).Trim();
+                int aEq = aLine.IndexOf('=');
+                if (aEq <= 0) continue;
+                aValues[aLine.Substring(0, aEq).Trim()] = aLine.Substring(aEq + 1).Trim();
+            }
+            return aValues;
+        }
+
+        // ===========================================================
+        // 區塊職責：**一筆消費** —— 自動先扣酒館券（個人錢包），不足的才扣 token。
+        // 物理意義：規則（哪些 kind 算主動消費、怎麼拆）住在 **Server 那一側**
+        //          （`SCP_SpendPolicy`），本層只是把參數送過去。
+        //   🩸 ⛔ **不要在 Unity 這側複製那份白名單**：兩份名單漂掉時，
+        //     「這裡算消費、那裡不算」會長出第二套政策，而兩邊各自都讀得出合法答案。
+        // 數值影響：最多動兩本帳（券帳與 token 帳）。失敗 throw ⇒ 呼叫端不會以為付過了。
+        // ⚠ 回傳 (券付了幾張, token 付了幾個)，⛔ 不回總額 ——
+        //   「3 券 ＋ 7 token」與「10 token」只差一個總數，付款方式看不出來的話，
+        //   券被吃掉就不會有人知道。
+        // ===========================================================
+        public static (int voucher, int token) Pay(string iAccount, string iWalletPersona, int iAmount,
+                                                   string iKind, string iRef, string iDescription,
+                                                   string iCaller, string iCmdId, string iIdemKey)
+        {
+            if (string.IsNullOrWhiteSpace(iWalletPersona))
+                throw new ArgumentException("[Treasury] pay 需要 wallet_persona —— ⛔ 不從帳號反查（反查錯就是花掉別人的券）");
+
+            var aExtra = new System.Collections.Generic.List<string>
+            {
+                "wallet_persona=" + iWalletPersona,
+                "letters_root=" + UCL_LettersPath.Root,
+            };
+            System.Collections.Generic.Dictionary<string, string> aValues =
+                PostRaw("pay", iAccount, iAmount, iKind, iRef, iDescription, iCaller, iCmdId, iIdemKey, aExtra);
+
+            int aVoucher = ReadInt(aValues, "paid_voucher");
+            int aToken = ReadInt(aValues, "paid_token");
+            Debug.Log($"[Treasury] pay {iAmount}（{iKind}）← {iAccount}／錢包 {iWalletPersona}"
+                    + $" ＝ 酒館券 {aVoucher} ＋ token {aToken}");
+            return (aVoucher, aToken);
+        }
+
+        // ⛔ 缺這一欄**不回 0** —— 「Server 沒印這個數字」與「真的是 0」不是同一件事，
+        //   而後者會讓呼叫端把一次沒發生的扣款當成發生過。
+        static int ReadInt(System.Collections.Generic.Dictionary<string, string> iValues, string iKey)
+        {
+            if (!iValues.TryGetValue(iKey, out string aRaw) || !int.TryParse(aRaw, out int aValue))
+                throw new InvalidOperationException(
+                    $"[Treasury] pay 成功而讀不到 `{iKey}` ⇒ **我不知道這筆是怎麼付的**，⛔ 不當作 0");
+            return aValue;
         }
 
         static string Fallback(string iValue, string iFallback)

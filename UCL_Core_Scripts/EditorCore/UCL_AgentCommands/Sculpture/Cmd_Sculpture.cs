@@ -145,18 +145,21 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             // 2026-08-18 券改批次制後這三種讀法分成三個 API，呼叫端必須選；選錯不會報錯。
             int aVoucherAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetPermanent(aPersona);
             int aTokenAvail = string.IsNullOrEmpty(aBank) ? 0 : Treasury.UCL_TreasuryLedger.GetBalance(aBank);
+            // 酒館券（個人錢包）—— 雕刻是主動消費，`pay=auto` 的 token 那一段會自動先吃它。
+            // ⚠ 只算進 `auto`：顯式 `pay=token` 不動錢包（自動行為蓋過顯式參數 ＝ 那個參數沒意義）。
+            int aWalletAvail = Voucher.UCL_TavernVoucherLedger.GetBalance(aBank, aPersona);
             int aAuthorized = aPay switch
             {
                 "freetime" => aFreeAvail,
                 "voucher" => aVoucherAvail,
                 "token" => aTokenAvail,
-                _ => aFreeAvail + aVoucherAvail + aTokenAvail,
+                _ => aFreeAvail + aVoucherAvail + aWalletAvail + aTokenAvail,
             };
             if (aAuthorized < aMaxUnits)
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: 預授權不足 —— 本刀最壞費用 {aMaxUnits} 單位（體積 {aVolume:N0}/⌈{VOXELS_PER_UNIT}⌉），" +
-                              $"pay={aPay} 可用 {aAuthorized}（限時券 {aFreeAvail}＋永久券 {aVoucherAvail}＋token {aTokenAvail} 依模式取用）");
+                              $"pay={aPay} 可用 {aAuthorized}（限時券 {aFreeAvail}＋永久券 {aVoucherAvail}＋酒館券 {aWalletAvail}＋token {aTokenAvail} 依模式取用）");
                 aR.AppendLine("- how: 縮小範圍、換 pay 模式、或先賺錢 —— 引擎未執行，未扣任何費用");
                 WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[Sculpture] op={iOp} 預授權不足（詳見 {aPath}）");
@@ -189,13 +192,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             int aSkipped = aResult.skipped_count;
             string aEventFile = aResult.event_file;
             int aCharge = aActual > 0 ? CeilDiv(aActual, VOXELS_PER_UNIT) : 0;
-            var (aUsedFree, aUsedVoucher, aUsedToken) = ConsumePayment(aPersona, aBank, aCharge, aPay, aEventFile,
+            var (aUsedFree, aUsedVoucher, aUsedWallet, aUsedToken) = ConsumePayment(aPersona, aBank, aCharge, aPay, aEventFile,
                 UCL_AgentCmdContexts.FromArgs(iArgs)?.CmdId);
 
             aR.AppendLine("## result（引擎回報＝結算依據）");
             aR.AppendLine($"- {(iOp == "box" ? "placed" : "carved")}: **{aActual}**{(aSkipped > 0 ? $"（skip {aSkipped} —— 禁覆蓋，不收費）" : "")} / 體積 {aVolume:N0}");
             aR.AppendLine($"- charged: **{aCharge} 單位**（⌈{aActual}/{VOXELS_PER_UNIT}⌉；帳單跟著事實走，不跟著意圖走）");
-            aR.AppendLine($"- pay_breakdown: freetime(限時券)={aUsedFree} voucher(永久券)={aUsedVoucher} token={aUsedToken}（pay={aPay}）");
+            aR.AppendLine($"- pay_breakdown: freetime(限時券)={aUsedFree} voucher(永久券)={aUsedVoucher} tavern(酒館券)={aUsedWallet} token={aUsedToken}（pay={aPay}）");
             aR.AppendLine($"- event: `{aEventFile}`");
             aR.AppendLine("## next");
             aR.AppendLine($"- 看成品：senate ucmd run Sculpture --arg op=view [--arg region=…] [--arg exclude_color=…]（免費）");
@@ -309,18 +312,21 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             int aFreeAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetExpiring(aPersona);
             int aVoucherAvail = CanvasVoucher.UCL_CanvasVoucherLedger.GetPermanent(aPersona);   // 永久券（限時的算在 aFreeAvail，見 op=box 那處）
             int aTokenAvail = string.IsNullOrEmpty(aBank) ? 0 : Treasury.UCL_TreasuryLedger.GetBalance(aBank);
+            // 酒館券（個人錢包）—— 雕刻是主動消費，`pay=auto` 的 token 那一段會自動先吃它。
+            // ⚠ 只算進 `auto`：顯式 `pay=token` 不動錢包（自動行為蓋過顯式參數 ＝ 那個參數沒意義）。
+            int aWalletAvail = Voucher.UCL_TavernVoucherLedger.GetBalance(aBank, aPersona);
             int aAuthorized = aPay switch
             {
                 "freetime" => aFreeAvail,
                 "voucher" => aVoucherAvail,
                 "token" => aTokenAvail,
-                _ => aFreeAvail + aVoucherAvail + aTokenAvail,
+                _ => aFreeAvail + aVoucherAvail + aWalletAvail + aTokenAvail,
             };
             if (aAuthorized < aMaxUnits)
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: 預授權不足 —— 本刀最壞費用 {aMaxUnits} 單位（{aSrcDesc} × thickness {aThickness} = {aWorstVolume:N0}/⌈{VOXELS_PER_UNIT}⌉），" +
-                              $"pay={aPay} 可用 {aAuthorized}（限時券 {aFreeAvail}＋永久券 {aVoucherAvail}＋token {aTokenAvail} 依模式取用）");
+                              $"pay={aPay} 可用 {aAuthorized}（限時券 {aFreeAvail}＋永久券 {aVoucherAvail}＋酒館券 {aWalletAvail}＋token {aTokenAvail} 依模式取用）");
                 aR.AppendLine("- how: 縮小來源、降 thickness、換 pay 模式、或先賺錢 —— 引擎未執行，未扣任何費用");
                 aR.AppendLine("- 註：透明像素不落地，實際帳單通常遠低於此上限；預授權擋的是**最壞情況**。");
                 WritePayload(iArgs, aPath, aR.ToString());
@@ -382,7 +388,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             int aBlack = aResult.remapped_black;
             string aEventFile = aResult.event_file;
             int aCharge = aActual > 0 ? CeilDiv(aActual, VOXELS_PER_UNIT) : 0;
-            var (aUsedFree, aUsedVoucher, aUsedToken) = ConsumePayment(aPersona, aBank, aCharge, aPay, aEventFile,
+            var (aUsedFree, aUsedVoucher, aUsedWallet, aUsedToken) = ConsumePayment(aPersona, aBank, aCharge, aPay, aEventFile,
                 UCL_AgentCmdContexts.FromArgs(iArgs)?.CmdId);
 
             aR.AppendLine("## result（引擎回報＝結算依據）");
@@ -391,7 +397,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
                           $"{(aSkipped > 0 ? $"；skip {aSkipped}（禁覆蓋，不收費）" : "")}{(aOob > 0 ? $"；越界裁掉 {aOob}" : "")}");
             if (aBlack > 0) aR.AppendLine($"- remapped_black: {aBlack}（純黑 index 0 在 3D 代表「空」，重映到最近非零暗色 index 4 —— 不靜默改色）");
             aR.AppendLine($"- charged: **{aCharge} 單位**（⌈{aActual}/{VOXELS_PER_UNIT}⌉；預授權上限曾為 {aMaxUnits}）");
-            aR.AppendLine($"- pay_breakdown: freetime(限時券)={aUsedFree} voucher(永久券)={aUsedVoucher} token={aUsedToken}（pay={aPay}）");
+            aR.AppendLine($"- pay_breakdown: freetime(限時券)={aUsedFree} voucher(永久券)={aUsedVoucher} tavern(酒館券)={aUsedWallet} token={aUsedToken}（pay={aPay}）");
             aR.AppendLine($"- event: `{aEventFile}`");
             // 展品登錄結果（引擎回報＝事實；沒給 exhibit_id 時這段不存在）
             var aEx = aResult.exhibit;          // 引擎沒回 exhibit ⇒ null（缺席與空物件在此不必分辨）
@@ -539,12 +545,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
         // ⚠ iCmdId：2026-08-17 加 —— 記帳的 env_marker 依它查 per-cmd context。
         //   原本走 UCL_AgentCommandRunner.CurrentCmdId（全域單例），
         //   Cmd 併行時會拿到別人的 id ⇒ **這筆帳的來源記成別人**（不會報錯）。
-        (int usedFree, int usedVoucher, int usedToken) ConsumePayment(
+        (int usedFree, int usedVoucher, int usedWallet, int usedToken) ConsumePayment(
             string iPersona, string iBank, int iCharge, string iPay, string iEventRef, string iCmdId)
         {
-            if (iCharge <= 0) return (0, 0, 0);
+            if (iCharge <= 0) return (0, 0, 0, 0);
             int aRemain = iCharge;
-            int aFree = 0, aVoucher = 0, aToken = 0;
+            int aFree = 0, aVoucher = 0, aWallet = 0, aToken = 0;
             string aRef = $"sculpture:{Path.GetFileName(iEventRef ?? "")}";
 
             bool aUseFree = iPay == "auto" || iPay == "freetime";
@@ -577,14 +583,29 @@ namespace UCL.Core.EditorLib.AgentCommands.Sculpture
             }
             if (aUseToken && aRemain > 0)
             {
-                Treasury.UCL_TreasuryLedger.Debit(iBank, aRemain, "sculpture_place", aRef,
-                    $"3D sculpture {iCharge} unit(s) by {iPersona}", "system", iCmdId);
-                aToken = aRemain;
+                // ⚠ `auto` 走 `Pay`（自動先扣酒館券，不足的才扣 token）；
+                //   顯式 `pay=token` 走純 `Debit` —— ⛔ 自動行為蓋過顯式參數的話，那個參數就沒意義了。
+                if (iPay == "token")
+                {
+                    Treasury.UCL_TreasuryLedger.Debit(iBank, aRemain, "sculpture_place", aRef,
+                        $"3D sculpture {iCharge} unit(s) by {iPersona}", "system", iCmdId);
+                    aToken = aRemain;
+                }
+                else
+                {
+                    var (aPaidVoucher, aPaidToken) = Treasury.UCL_TreasuryLedger.Pay(
+                        accountId: iBank, walletPersona: iPersona, amount: aRemain,
+                        useKind: "sculpture_place", useRef: aRef,
+                        description: $"3D sculpture {iCharge} unit(s) by {iPersona}",
+                        callerAgentId: "system", cmdId: iCmdId);
+                    aWallet = aPaidVoucher;
+                    aToken = aPaidToken;
+                }
                 aRemain = 0;
             }
             if (aRemain > 0)   // 預授權有驗過，走到這裡＝通道間狀態被外力改了 —— 顯式炸，不靜默欠帳
-                throw new Exception($"[Sculpture] 結算短付 {aRemain} 單位（預授權後餘額被變動？）—— 已扣 f{aFree}/v{aVoucher}/t{aToken}，請對帳 {aRef}");
-            return (aFree, aVoucher, aToken);
+                throw new Exception($"[Sculpture] 結算短付 {aRemain} 單位（預授權後餘額被變動？）—— 已扣 f{aFree}/v{aVoucher}/w{aWallet}/t{aToken}，請對帳 {aRef}");
+            return (aFree, aVoucher, aWallet, aToken);
         }
 
         // ⚠ 免費像素的額度檔（`Canvas/freetime/<P>.json`）2026-08-18 廢除 ——

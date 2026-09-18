@@ -130,15 +130,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             string title = book;   // Books/ 沒有 metadata 檔，標題以 slug 為底、可由 note 補充人話
 
             // 真金白銀：餘額不足 / 帳戶隔離違規會 throw —— 讓 Cmd 框架記 Failed，不寫任何登記
-            Treasury.UCL_TreasuryLedger.Debit(
-                accountId: donorBank,
-                amount: tokens,
-                useKind: "book_donation",
+            // ⚠ 走 `Pay` 不是 `Debit`：捐贈是**主動消費** ⇒ 自動先扣酒館券（個人錢包），
+            //   不足的才扣 token（Tim 2026-09-18）。名單在 Server 的 `SCP_SpendPolicy`，⛔ 不在這裡判。
+            PayOrDebit(
+                bank: donorBank,
+                persona: donorPersona,
+                tokens: tokens,
+                kind: "book_donation",
                 useRef: book,
                 description: $"捐贈圖書: {title} (donor={(string.IsNullOrEmpty(donorPersona) ? donorBank : donorPersona)})",
-                callerAgentId: donorBank,
-                cmdId: $"book_donation_{book}",
-                idempotencyKey: $"book_donation_{book}");
+                idemKey: $"book_donation_{book}");
 
             var entry = new JsonData();
             entry[Key_Book] = book;
@@ -343,15 +344,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
 
             string tipId = Guid.NewGuid().ToString("N").Substring(0, 8);
             string useRef = $"tip:{book}:{tipId}";
-            Treasury.UCL_TreasuryLedger.Debit(
-                accountId: tipperBank,
-                amount: tokens,
-                useKind: "book_tip",
+            // ⚠ 打賞是**主動消費** ⇒ 自動先扣打賞者的酒館券（見 PayOrDebit）。
+            PayOrDebit(
+                bank: tipperBank,
+                persona: tipperPersona,
+                tokens: tokens,
+                kind: "book_tip",
                 useRef: useRef,
                 description: $"打賞圖書: {title} ({tipperPersona} → {benPersona})",
-                callerAgentId: tipperBank,
-                cmdId: $"book_tip_{tipId}",
-                idempotencyKey: $"book_tip_{tipId}");
+                idemKey: $"book_tip_{tipId}");
 
             var entry = new JsonData();
             entry[Key_Book] = book;
@@ -402,6 +403,31 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             if (pendingCnt == 0) return "（沒有 pending 的打賞券要補發）";
             sb.AppendLine($"\n補發 {fixedCnt}/{pendingCnt} 筆完成");
             return sb.ToString();
+        }
+
+        // ===========================================================
+        // 區塊職責：付一筆書店的錢 —— **主動消費走 `Pay`（自動先扣酒館券）**。
+        // 物理意義：錢包綁 **persona**，而捐贈這一支的 persona **可以是空的**
+        //          （舊呼叫端只給 bank）。⇒ 沒有 persona 就**沒有錢包可以扣**。
+        // 🩸 那時走純 `Debit`，⛔ 但**要出聲**：
+        //   「沒有錢包所以沒扣券」與「有錢包而這條路沒生效」在帳面上一模一樣，
+        //   而後者是 bug。⇒ 讓前者留下一行字，兩者才分得開。
+        // ===========================================================
+        static void PayOrDebit(string bank, string persona, int tokens, string kind,
+                               string useRef, string description, string idemKey)
+        {
+            if (string.IsNullOrEmpty(persona))
+            {
+                Debug.LogWarning($"[BooksIO] {kind}：沒有 persona ⇒ **定位不到錢包**，本筆走純 token"
+                                 + $"（{bank} -{tokens}）。⛔ 這不是「他沒有券」，是我不知道去問誰的券。");
+                Treasury.UCL_TreasuryLedger.Debit(
+                    accountId: bank, amount: tokens, useKind: kind, useRef: useRef,
+                    description: description, callerAgentId: bank, cmdId: idemKey, idempotencyKey: idemKey);
+                return;
+            }
+            Treasury.UCL_TreasuryLedger.Pay(
+                accountId: bank, walletPersona: persona, amount: tokens, useKind: kind, useRef: useRef,
+                description: description, callerAgentId: bank, cmdId: idemKey, idempotencyKey: idemKey);
         }
 
         // 券發放：任一路失敗記 pending（帳不可造假 —— debit 已落就不回滾）。

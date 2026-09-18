@@ -248,6 +248,44 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
 
         // ==========================================================
+        // 區塊職責：Pay — **一筆消費**（自動先扣酒館券，不足的才扣 token）
+        // 物理意義：Tim 2026-09-18 拍板。哪些 `useKind` 算主動消費、怎麼拆，
+        //          規則**只住在 Server 那一側**（`SCP_SpendPolicy` 的白名單）——
+        //          ⛔ 這裡不判斷，也不在 Unity 複製一份名單（兩份會漂，而兩邊都讀得出合法答案）。
+        // 數值影響：最多動兩本帳（`letters/<p>/vouchers/tavern.json` 與 token 帳）。
+        // ⚠ **只有權威是新銀行時才有這條路** —— 舊帳本沒有錢包的概念。
+        //   ⇒ 舊權威下直接 throw，⛔ 不默默退化成純 debit：
+        //     那會讓「券沒被吃」看起來像正常付款，而它其實是這一格根本沒生效。
+        // ⚠ 回 (券付幾張, token 付幾個)，⛔ 不回總額。
+        // ==========================================================
+        public static (int voucher, int token) Pay(
+            string accountId,
+            string walletPersona,
+            int amount,
+            string useKind,
+            string useRef = null,
+            string description = null,
+            string callerAgentId = null,
+            string cmdId = null,
+            string idempotencyKey = null,
+            bool resolveAccount = true)
+        {
+            if (string.IsNullOrEmpty(accountId)) throw new ArgumentException("accountId 必填");
+            if (string.IsNullOrEmpty(walletPersona)) throw new ArgumentException("walletPersona 必填 —— ⛔ 不從帳號反查（反查錯就是花掉別人的券）");
+            if (amount <= 0) throw new ArgumentException($"amount 必 > 0（傳入 {amount}）");
+            if (string.IsNullOrEmpty(useKind)) throw new ArgumentException("useKind 必填 —— 它同時決定署名**與這筆算不算主動消費**");
+
+            if (!UCL_TreasuryAuthority.IsSenateBank)
+                throw new InvalidOperationException(
+                    "[Treasury] Pay（先扣券再扣 token）只在新銀行成立，而這棵樹的權威是 legacy"
+                    + " —— ⛔ 不默默改走純 debit（那會讓「券沒被吃」看起來像正常付款）");
+
+            accountId = ResolveAccountOrThrow(accountId, resolveAccount, $"pay {amount} ({useKind})");
+            return UCL_TreasuryAuthority.Pay(accountId, walletPersona, amount, useKind, useRef,
+                                             description, callerAgentId, cmdId, idempotencyKey);
+        }
+
+        // ==========================================================
         // 區塊職責：寫 entry 共用底層
         // 物理意義：建 TreasuryLedgerEntry + 寫 .json 檔（沿用 T38 atomic per-file）
         // 數值影響：自動填 ts / uuid / sig_*；append entry 到 ledger/<date>/

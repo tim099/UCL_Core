@@ -132,7 +132,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             // 真金白銀：餘額不足 / 帳戶隔離違規會 throw —— 讓 Cmd 框架記 Failed，不寫任何登記
             // ⚠ 走 `Pay` 不是 `Debit`：捐贈是**主動消費** ⇒ 自動先扣酒館券（個人錢包），
             //   不足的才扣 token（Tim 2026-09-18）。名單在 Server 的 `SCP_SpendPolicy`，⛔ 不在這裡判。
-            PayOrDebit(
+            var (aDonorPaidVoucher, aDonorPaidToken) = PayOrDebit(
                 bank: donorBank,
                 persona: donorPersona,
                 tokens: tokens,
@@ -148,6 +148,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             entry[Key_DonorPersona] = donorPersona ?? "";
             entry[Key_DonorAgent] = donorAgent ?? "";
             entry[Key_Tokens] = tokens;
+            // ⚠ 同打賞那處：`tokens` 是消費額，⛔ 不是「從帳戶扣了多少」。
+            entry["paid_voucher"] = aDonorPaidVoucher;
+            entry["paid_token"] = aDonorPaidToken;
             entry["base_price"] = DonationBasePrice;
             entry[Key_DonatedAt] = Today();
             entry[Key_Note] = note ?? "";
@@ -345,7 +348,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             string tipId = Guid.NewGuid().ToString("N").Substring(0, 8);
             string useRef = $"tip:{book}:{tipId}";
             // ⚠ 打賞是**主動消費** ⇒ 自動先扣打賞者的酒館券（見 PayOrDebit）。
-            PayOrDebit(
+            var (aPaidVoucher, aPaidToken) = PayOrDebit(
                 bank: tipperBank,
                 persona: tipperPersona,
                 tokens: tokens,
@@ -363,6 +366,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
             entry["beneficiary"] = benBank;
             entry["beneficiary_persona"] = benPersona;
             entry["tokens_spent"] = tokens;
+            // ⚠ `tokens_spent` 是**消費額**，⛔ 不是「從帳戶扣了多少」——
+            //   2026-09-18 起有一部分可能是酒館券付的。兩個數字不寫出來的話，
+            //   「花了 6」與「帳戶扣了 6」在單據上同形，而對帳的人會去找那 4 個不見的 token。
+            entry["paid_voucher"] = aPaidVoucher;
+            entry["paid_token"] = aPaidToken;
             var vouchers = new JsonData();
             vouchers["canvas"] = tokens * TipCanvasRate;
             vouchers["tavern"] = tokens * TipTavernRate;
@@ -413,8 +421,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
         //   「沒有錢包所以沒扣券」與「有錢包而這條路沒生效」在帳面上一模一樣，
         //   而後者是 bug。⇒ 讓前者留下一行字，兩者才分得開。
         // ===========================================================
-        static void PayOrDebit(string bank, string persona, int tokens, string kind,
-                               string useRef, string description, string idemKey)
+        static (int paidVoucher, int paidToken) PayOrDebit(string bank, string persona, int tokens, string kind,
+                                                          string useRef, string description, string idemKey)
         {
             if (string.IsNullOrEmpty(persona))
             {
@@ -423,9 +431,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
                 Treasury.UCL_TreasuryLedger.Debit(
                     accountId: bank, amount: tokens, useKind: kind, useRef: useRef,
                     description: description, callerAgentId: bank, cmdId: idemKey, idempotencyKey: idemKey);
-                return;
+                return (0, tokens);
             }
-            Treasury.UCL_TreasuryLedger.Pay(
+            return Treasury.UCL_TreasuryLedger.Pay(
                 accountId: bank, walletPersona: persona, amount: tokens, useKind: kind, useRef: useRef,
                 description: description, callerAgentId: bank, cmdId: idemKey, idempotencyKey: idemKey);
         }

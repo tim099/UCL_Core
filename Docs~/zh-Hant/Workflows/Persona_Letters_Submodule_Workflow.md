@@ -109,7 +109,6 @@ senate cmd commit \
     --arg personas=<操刀者>,<信件著作 persona> \
     --arg letters_root=<AgentCommands>/ChatTavern/baton/letters/<信件著作 persona> \
     --arg data_root=<AgentCommands> \
-    --arg region=<現地區域 ID> \
     --arg expect_files=<N> \
     --arg-file message=<訊息檔>
 ```

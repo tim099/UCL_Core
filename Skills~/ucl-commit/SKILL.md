@@ -208,7 +208,6 @@ senate cmd commit \
     --arg repo=<該層 repo 路徑> \
     --arg personas=<你>[,<協作者>…] \
     --arg letters_root=<letters 根> --arg data_root=<AgentCommands 根> \
-    --arg region=<現地區域 ID> \
     --arg expect_files=<N> \
     --arg-file message=<訊息檔> \
     [--arg-file announce_body=<開場白檔>]

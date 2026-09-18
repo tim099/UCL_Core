@@ -38,9 +38,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         /// <summary>`senate` 執行檔（空 ＝ 走 PATH）。⚠ 反向對照就是把它指到一個不存在的檔。</summary>
         const string SenatePathPrefKey = "UCL_BankMirror.SenatePath";
 
+        // ⭐ TASK-0216 ⑨（2026-09-18）：**權威切到新銀行之後，鏡像必須停** ——
+        //   那時候錢是「直接寫進新銀行」，鏡像再把舊帳本的分錄推一次
+        //   ⇒ 同一筆錢記兩次。⛔ 而那族的失效**沒有任何一層會喊**
+        //   （兩邊分錄都合法、都有出處、`idem_key` 也不重複 —— TASK-0238 的血證）。
+        // 📌 做成**推導**而不是「記得去關」：權威是旗標，關不關由它決定，
+        //   ⇒ 「切了權威但忘記關鏡像」這個狀態在結構上不存在。
+        //   ⚠ 也因此切回 `legacy` 時鏡像會自己回來，不必再記得開一次。
         public static bool Enabled
         {
-            get { return EditorPrefs.GetBool(EnabledPrefKey, true); }
+            get { return !UCL_TreasuryAuthority.IsSenateBank && EditorPrefs.GetBool(EnabledPrefKey, true); }
             set { EditorPrefs.SetBool(EnabledPrefKey, value); }
         }
 

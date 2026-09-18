@@ -321,7 +321,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string currency = GetArg(args, "currency", "tavern_token");
             string outPath = GetArg(args, "out_path", "");
 
-            var aOld = UCL_TreasuryLedger.GetAllBalances(currency);
+            // ⛔ **一定要走 `…Legacy`**：`GetAllBalances` 會跟著權威旗標走，
+            //   切到新銀行之後它回的是新銀行 ⇒ 本表會變成**拿新銀行跟新銀行比**，
+            //   而「逐戶零差額」就成了恆真（2026-09-18 我真的這樣做過一次，見該函式的血證）。
+            var aOld = UCL_TreasuryLedger.GetAllBalancesLegacy(currency);
 
             // 新銀行的根：**沿用描述表那一格的算式**（`<資料根>/Bank`），⛔ 不在這裡再拼一次字面 ——
             // 同一個路徑第二處拼字，兩邊漂掉時兩邊都讀得出一個「看起來正常」的目錄。
@@ -402,6 +405,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             head.AppendLine($"  - 射程逐 id（⛔ 跨日要比這一行，不是比戶數）：{string.Join("、", aScopeIds.ConvertAll(x => $"`{x}`"))}");
             head.AppendLine($"- **相符 {aSame} 戶**／金額不同 **{aDiff}** 戶／⚠ 未預期缺戶 **{aUnexpected}** 戶"
                             + $"／只有新的有 **{aNewOnly}** 戶／・不在本區射程 {aWaivedHit} 戶（不計入閘）");
+            // ⚠ 權威切換之後本表的**語意就變了**（TASK-0216 ⑨，2026-09-18）：
+            //   雙寫並存期它是一道**閘**（兩本帳該相等）；切換之後舊帳本**凍結**、新銀行繼續走
+            //   ⇒ 兩邊本來就會分岔，差額是**切換後的流水**，不是錯。
+            // 🩸 不印這一行的話，明天讀到滿江紅的人會去修一個不存在的 bug ——
+            //   **過期的指路牌比沒有指路牌貴，因為它看起來是對的。**
+            if (UCL_TreasuryAuthority.IsSenateBank)
+                head.AppendLine($"- 🔁 **權威＝新銀行**（`{UCL_TreasuryAuthority.SettingsKey}="
+                                + $"{UCL_TreasuryAuthority.ValueSenateBank}`）⇒ 舊 `Treasury/` 已**凍結**、不再長新分錄。"
+                                + "⛔ 本表此後**不是閘**，是「切換之後兩邊差了多少」的流水讀數 —— 差額會隨時間變大，那是預期。");
             if (aDiff == 0 && aUnexpected == 0 && aNewOnly == 0)
                 head.AppendLine("- ✅ **逐戶零差額**（⛔ 這是此刻的讀數 —— 鏡像非同步，剛寫完帳的幾秒本來就會差；"
                                 + "⛔ 也**不含**射程外那批：它們本來就不該在這本帳上）");

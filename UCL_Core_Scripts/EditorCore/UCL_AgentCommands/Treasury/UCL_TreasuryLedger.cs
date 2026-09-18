@@ -287,6 +287,56 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             return null;
         }
 
+        // ==========================================================
+        // 區塊職責：權威＝新銀行時的寫入路徑 —— 派給 Senate Server，回傳一筆**等價的** entry。
+        // 物理意義：呼叫端的 14 個地方全部拿 `TreasuryLedgerEntry`，所以這裡要把 Server 的結果
+        //          翻回同一個型別；⛔ 而它**不落任何檔到舊 `Treasury/`**。
+        // 🩸 `balance_before/after` 這兩欄新銀行**刻意不存**（`SCP_BankLedger` 檔頭②：
+        //   去正規化的冗餘，併發時會說謊而沒有一層會喊）。這裡填的是**問新銀行問到的當下值**，
+        //   ⚠ 它是給人讀的診斷欄，⛔ 不是權威 —— 餘額的真相永遠是重放求和。
+        // ==========================================================
+        static TreasuryLedgerEntry WriteEntryViaSenateBank(
+            TreasuryEntryType type,
+            string accountId,
+            int amount,
+            string sourceKind,
+            string sourceRef,
+            string description,
+            string callerAgentId,
+            string cmdId,
+            string idempotencyKey)
+        {
+            string typeStr = type == TreasuryEntryType.Credit ? "credit" : "debit";
+
+            // ⛔ 派出去之前不自己判餘額 —— 新銀行的 debit 臨界區才是那個判準；
+            //   在這裡多判一次只會製造「我這邊算過了」的錯覺（而它讀的是另一個時刻）。
+            UCL_TreasuryAuthority.Post(typeStr, accountId, amount, sourceKind, sourceRef,
+                                       description, callerAgentId, cmdId, idempotencyKey);
+
+            int balanceAfter = GetBalance(accountId);      // 已切權威 ⇒ 問的就是新銀行
+            var entry = new TreasuryLedgerEntry
+            {
+                ts = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                uuid = GenerateUUID6(),
+                type = typeStr,
+                amount = amount,
+                currency = "tavern_token",
+                account_id = accountId,
+                source_kind = sourceKind,
+                source_ref = sourceRef ?? "",
+                source_description = description ?? "",
+                balance_before = type == TreasuryEntryType.Credit ? balanceAfter - amount : balanceAfter + amount,
+                balance_after = balanceAfter,
+                sig_agent_id_claimed = string.IsNullOrEmpty(callerAgentId) ? accountId : callerAgentId,
+                sig_process_id = "",
+                sig_env_marker = DetectEnvMarker(cmdId),
+                sig_cmd_id = cmdId ?? "",
+                signature_mismatch = false,
+                idempotency_key = idempotencyKey,
+            };
+            return entry;
+        }
+
         static TreasuryLedgerEntry WriteEntry(
             TreasuryEntryType type,
             string accountId,
@@ -298,6 +348,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string cmdId,
             string idempotencyKey = null)
         {
+            // ⭐ TASK-0216 ⑨（Tim 2026-09-18）：權威＝新銀行時，這一層**整個改成派給 Senate Server**，
+            //   ⛔ 舊 `Treasury/ledger/` 一個新檔都不長 —— 那正是本單的判準
+            //   （「**舊寫入端長不出新分錄**」，⛔ 不是「我改了 N 處」）。
+            // 📌 切換點放在 WriteEntry 而不是 14 個呼叫端：Credit/Debit 都經過這裡，
+            //   ⇒ 呼叫端一行不用改，而「繞過去」在結構上不存在（未來新 caller 也一樣）。
+            if (UCL_TreasuryAuthority.IsSenateBank)
+                return WriteEntryViaSenateBank(type, accountId, amount, sourceKind, sourceRef,
+                                               description, callerAgentId, cmdId, idempotencyKey);
+
             UCL_TreasuryPaths.EnsureTreasuryDir();
 
             // 冪等判重（credit 路徑；debit 已在 Debit() 內先判 — 兩處都判是刻意的：
@@ -766,7 +825,30 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         // 數值影響：純讀。回傳是**快照複本**，呼叫端拿去畫表不會被後續變動影響；
         //   要拿最新值就重新叫一次（同步成本只有增量部分）。
         // ==========================================================
+        // ⚠ 權威＝新銀行時，這兩支**改問新銀行**（TASK-0216 ⑨）。
+        //   ⛔ 不是「兩邊都讀再挑一個」—— 那會讓「我有多少錢」有兩個答案，
+        //     而它們漂掉時兩邊都自圓其說（⑦ 要防的正是這個）。
+        //   📌 讀取端直接 in-process 讀新銀行是安全的（純讀、無臨界區）；
+        //     只有**寫入**要繞 Server，理由見 `UCL_TreasuryAuthority` 檔頭。
         public static Dictionary<string, int> GetAllBalances(string currency = "tavern_token")
+        {
+            if (UCL_TreasuryAuthority.IsSenateBank)
+                return SCP.Core.Bank.SCP_BankLedger.GetAllBalances(UCL_TreasuryAuthority.BankRoot, currency);
+
+            return GetAllBalancesLegacy(currency);
+        }
+
+        // ==========================================================
+        // 區塊職責：**只讀舊 `Treasury/`** 的整批餘額，⛔ 不看權威旗標。
+        // 物理意義：對帳器（`op=bank_diff`）要的是「**舊**帳本說多少、**新**銀行說多少」——
+        //          它是唯一一個必須繞過權威路由的呼叫端。
+        // 🩸 2026-09-18 我把 `GetAllBalances` 接上權威之後，對帳器當場變成
+        //   **拿新銀行跟新銀行比** ⇒ 「逐戶零差額」成為**恆真**。
+        //   ⚠ 而它印出來的畫面跟真的通過**一模一樣** —— 抓到它的不是守衛，
+        //     是「不在本區射程」那格從 **19 戶掉到 2 戶**，一個我剛好認得的數字。
+        //   ⇒ 判準：**路由一個被閘用到的讀取端時，先問那道閘的兩邊會不會變成同一邊。**
+        // ==========================================================
+        public static Dictionary<string, int> GetAllBalancesLegacy(string currency = "tavern_token")
         {
             var result = new Dictionary<string, int>(StringComparer.Ordinal);
             // 分隔字元與 BalanceKey 一致（'\n' 不可能出現在 id / currency 內）
@@ -785,6 +867,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
         public static int GetBalance(string accountId, string currency = "tavern_token")
         {
+            if (UCL_TreasuryAuthority.IsSenateBank)
+                return SCP.Core.Bank.SCP_BankLedger.GetBalance(UCL_TreasuryAuthority.BankRoot, accountId, currency);
+
             lock (s_BalanceCacheLock)
             {
                 SyncBalanceCache_NoLock();

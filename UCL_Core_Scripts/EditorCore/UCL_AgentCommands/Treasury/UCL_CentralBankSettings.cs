@@ -278,6 +278,24 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             return true;
         }
 
+        // 區塊職責：**金流權威**旗標的落盤位置（TASK-0216 ⑨，Tim 2026-09-18 拍板切換）。
+        // 物理意義：`legacy` ＝ 錢記在舊 `Treasury/`；`senate_bank` ＝ 記在新銀行、寫入派給 Senate Server。
+        // 🩸 為什麼放這一份 JSON：它是 Editor（UCL）與 Senate（SCP）**都讀得到**的那一份
+        //   ⇒ 權威只有一個答案。存 EditorPrefs 的話失效樣子是「這台切了、那台沒切」，
+        //     而兩邊都會讀出一個看起來正常的權威。
+        // ⛔ 語意與判斷在 `UCL_TreasuryAuthority`，這裡只負責**存取字串**（不在兩處各判一次合法值）。
+        public static string MoneyAuthorityRaw
+        {
+            get
+            {
+                var jd = Load();
+                return (jd != null && jd.Contains(UCL_TreasuryAuthority.SettingsKey))
+                    ? jd.GetString(UCL_TreasuryAuthority.SettingsKey, UCL_TreasuryAuthority.ValueLegacy)
+                    : UCL_TreasuryAuthority.ValueLegacy;
+            }
+            set => SetString(UCL_TreasuryAuthority.SettingsKey, (value ?? "").Trim());
+        }
+
         public static int ClampPermille(int v)
             => v < MinFeePermille ? MinFeePermille : (v > MaxFeePermille ? MaxFeePermille : v);
 

@@ -677,7 +677,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 // python 相依、以及「同一個餘額有兩套算法」。
                 // UCL_TreasuryLedger 是餘額的唯一擁有者（增量快取 + snapshot），也比全掃快。
                 int bal = Treasury.UCL_TreasuryLedger.GetBalance(account);
-                var entries = Treasury.UCL_TreasuryLedger.Audit(account);
+                // ⚠ 餘額問的是**新銀行（現在）**，而下面這份明細來自**舊帳本（凍結於 2026-09-18）**。
+                //   ⇒ 兩者的時代不同，所以「累計 +credit/-debit」**推不出**上面那個餘額。
+                //   ⛔ 不要把它們相減當成對帳 —— 那個差額只是「切換之後的帳不在這本上」。
+                var entries = Treasury.UCL_TreasuryHistory.Audit(account);
 
                 int credit = 0, debit = 0;
                 foreach (var e in entries)
@@ -687,7 +690,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
                 var sb = new StringBuilder();
                 sb.AppendLine($"💰 **{account} 帳戶餘額**: `{bal}` tavern_token");
-                sb.AppendLine($"📊 累計: +{credit} / -{debit} (共 {entries.Count} 筆 ledger entry)");
+                sb.AppendLine($"📊 **歷史**累計: +{credit} / -{debit}（共 {entries.Count} 筆，資料源＝舊 `Treasury/`，"
+                              + "凍結於 2026-09-18 權威切換；⛔ 切換後的帳不在這裡，所以它加不回上面那個餘額）");
 
                 if (limit > 0 && entries.Count > 0)
                 {
@@ -931,7 +935,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                     sourceKind: "overnight_storage_fee_deposit",
                     sourceRef: $"{creditRefPrefix}{payerAccount}",
                     description: $"跨日 {today} 存款保管費入庫（繳費者 @{payerAccount}）",
-                    callerAgentId: "system");
+                    callerAgentId: "system",
+                    // ⭐ TASK-0242 ⑭：判重交給 Server 的 `idem_key`（同一把鑰匙重送＝回既有那一筆，不會入兩次）。
+                    //   ⇒ 「已扣未存」的補償不再需要掃帳本：下一輪原樣再送一次就好，
+                    //     成功過就是 no-op，沒成功過才真的補上。
+                    idempotencyKey: $"{creditRefPrefix}{payerAccount}");
                 return true;
             }
             catch (Exception ex)
@@ -1025,95 +1033,41 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
             // 跨日了 — 跑一輪檢查
             // ===========================================================
-            // 1. 取得本輪需要的帳（**不是全部歷史**）
+// 1. 取得本輪要檢查的帳戶與餘額 —— **一次問新銀行**（TASK-0242 ④⑭）
             //
-            // 2026-08-15 修：原本這裡呼叫 `LoadAllEntries()`，read+parse ledger 底下**每一個**
-            //   entry 檔（本專案已 14,700+ 檔 / 20MB）。冷啟動時 OS 檔案快取是空的、逐檔開檔又各吃
-            //   一次防毒即時掃描 —— 這就是 Tim 回報「初開 Editor 卡三分鐘」的那一段
-            //   （08-14 / 08-15 兩個獨立樣本，結帳寫完到廣播落地各 111s / 166s）。
+            // 🩸 2026-09-18 之前這裡掃的是舊 `Treasury/` 的 entry 檔，用來做三件事：
+            //   ① 列出所有帳戶 ② 今日保管費 debit 判重 ③「已扣未存」的補償金額。
+            //   而權威切到新銀行那一刻，**那三件事同時變成假的** —— 掃描看的是一本凍結的帳：
+            //   ①新開的帳戶永遠不在裡面 ②今天的扣款寫在新銀行 ⇒ 判重永遠回「沒扣過」
+            //   ③補償金額永遠查無。⛔ 而三格的失效樣子都不會叫（空集合跟「今天還沒扣」同形）。
             //
-            // 為什麼不是「加快取」而是「不要讀」：快取是**記憶體**的，而 domain reload 會清光 static ——
-            //   「初次啟動 Editor」定義上就是冷 domain，快取在那一刻必然是空的，該讀的一檔都少不掉。
-            //   要跨啟動存活就得落盤，而把 14,700 筆 entry 落成一個檔＝重新發明一次 ledger。
-            //   （餘額快取能救是因為它存的是 41 個 int，不是 14,700 個物件。）
+            // ⇒ 現在的做法，三件事各自換一個**當下就成立**的來源：
+            //   ① 帳戶與餘額 → `GetAllBalances()` 一次拿全部（新銀行；它本來就是這一輪要的東西）
+            //   ② 判重 → 交給 Server 的 `idem_key`（唯一有資格判的那一層）
+            //   ③ 補償 → 央行那一腳也帶 idem_key ⇒ 每輪原樣再送一次，成功過就是 no-op
             //
-            // 本函式其實只需要三樣東西，全都拿得到便宜貨：
-            //   ① 全部 unique account   → 最近一份**結帳檔**已列出每個帳戶（含餘額 0 的）
-            //   ② 今日保管費 debit 判重 → useRef 內嵌 today、ledger 按 UTC 日分桶 ⇒ 只在未關帳的夾裡
-            //   ③ 已扣未存的補償金額     → 同 ②
-            //
-            // ⚠ 範圍必須是「**結帳日之後全部**」而不是「今天前後幾夾」——
-            //   紅隊實測：結帳落後 3 天時，固定三夾會漏掉 08-12 才誕生的 `Template` 帳戶，
-            //   而結帳落後正是 `GenerateMissing` 失敗時的常態（它刻意不擋保管費）。
-            //   漏掉帳戶＝那個帳戶今天不會被收保管費，**而它不會叫**。
-            // ⚠ 沒有任何結帳檔（初次上線 / 結帳檔被刪）→ 退回全量重放。慢，但正確。
-            //   壞要往安全的方向壞：少收一天保管費可以補，收錯 / 漏收而無聲不行。
+            // ⚠ 「扣了多少」不再用算的，改成**扣完回讀餘額**（before/after 相減）——
+            //   冪等命中時兩者相等，於是「這次沒有動錢」是量出來的，⛔ 不是我推的。
             // ===========================================================
-            List<TreasuryLedgerEntry> allEntries;
+            Dictionary<string, int> balancesBefore;
             var allAccounts = new HashSet<string>();
-            string scanNote;
             try
             {
-                var closingBase = UCL_TreasuryClosing.LoadLatestBefore(today);
-                if (closingBase != null)
-                {
-                    // 結帳檔的 key 是 accountId + "\n" + currency（見 TreasuryClosingRecord）——
-                    // 這裡只要帳戶名，幣別不參與「誰要被檢查」的判斷。
-                    foreach (var key in closingBase.Balances.Keys)
-                    {
-                        int sep = key.IndexOf('\n');
-                        string acc = sep < 0 ? key : key.Substring(0, sep);
-                        if (!string.IsNullOrEmpty(acc)) allAccounts.Add(acc);
-                    }
-                    allEntries = UCL_TreasuryLedger.LoadEntriesAfterDate(closingBase.DateKey);
-                    scanNote = $"base={closingBase.DateKey} seeded={allAccounts.Count} entries={allEntries.Count}";
-                }
-                else
-                {
-                    // 沒有結帳基準 —— 只能重放全部。記一筆 warning，否則這條降級路徑會靜默地慢下去，
-                    // 而「慢」跟「壞」在使用者眼裡長得一樣（都是 Editor 卡住）。
-                    Debug.LogWarning("[Bartender] 找不到任何結帳檔 —— 跨日結算退回全量重放（正確但慢）。"
-                                     + " 若這行反覆出現，去看 UCL_TreasuryClosing.GenerateMissing 為何沒產出。");
-                    allEntries = UCL_TreasuryLedger.LoadAllEntries();
-                    scanNote = $"base=NONE(fallback-full) entries={allEntries.Count}";
-                }
+                balancesBefore = UCL_TreasuryLedger.GetAllBalances();
+                foreach (var kv in balancesBefore) allAccounts.Add(kv.Key);
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[Bartender] overnight check load ledger fail: {ex.Message}");
+                Debug.LogWarning($"[Bartender] overnight check 讀不到新銀行餘額: {ex.Message}");
                 MarkPhase("overnight.load_entries", "FAILED");
                 return;  // 不更新 state, 隔下個 tick 再試
             }
+            MarkPhase("overnight.load_entries", $"accounts={allAccounts.Count}（來源＝新銀行）");
 
-            // 2. 補上「結帳之後才出現」的新帳戶（今天才開的帳戶不在昨天的結帳檔裡，
-            //    而它一樣可能被一筆大額轉入推過門檻）
-            foreach (var e in allEntries)
-            {
-                if (!string.IsNullOrEmpty(e.account_id)) allAccounts.Add(e.account_id);
-            }
-            MarkPhase("overnight.load_entries", $"{scanNote} accounts={allAccounts.Count}");
-
-            // 3. Pre-build useRef set (idempotency check, 防 state crash mid-loop 後重跑重複扣)
-            // 注意: Debit caller 用 useRef 參數名, 但 TreasuryLedgerEntry 內部欄位是 source_ref
             string useRefPrefix = $"overnight-fee-{today}-";
             string creditRefPrefix = $"overnight-fee-credit-{today}-";
-            var alreadyChargedToday = new HashSet<string>();
-            // 已存進央行的（account → 該帳戶那筆已 credit）。與 debit 分開記的理由見區塊註解：
-            // 共用旗標時，「debit 成功但 credit 前 crash」會讓那筆錢永久消失且無聲。
-            var alreadyDepositedToday = new HashSet<string>();
-            foreach (var e in allEntries)
-            {
-                if (e.type == "debit" && !string.IsNullOrEmpty(e.source_ref) && e.source_ref.StartsWith(useRefPrefix))
-                {
-                    alreadyChargedToday.Add(e.account_id);
-                }
-                else if (e.type == "credit" && !string.IsNullOrEmpty(e.source_ref) && e.source_ref.StartsWith(creditRefPrefix))
-                {
-                    // source_ref 尾段即繳費者 account（credit 落在央行帳上，account_id 是央行）
-                    alreadyDepositedToday.Add(e.source_ref.Substring(creditRefPrefix.Length));
-                }
-            }
 
+            
             // 本輪參數（後台可調；每輪重讀，Tim 改完不必等重編）
             int overnightThreshold = UCL_CentralBankSettings.OvernightThreshold;
             double overnightFeeRate = UCL_CentralBankSettings.OvernightFeeRate;
@@ -1160,34 +1114,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             int totalFee = 0;
             foreach (var account in allAccounts.Where(a => !exemptAccounts.Contains(a)).OrderBy(a => a))
             {
-                int balance;
-                try { balance = UCL_TreasuryLedger.GetBalance(account); }
-                catch { continue; }
+                if (!balancesBefore.TryGetValue(account, out int balance)) continue;
                 if (balance <= 0) continue;  // 0 或負數 account 不列 (純 noise)
 
-                // 已扣過 (state 失效但 ledger 正確) → 視為 safe；但仍要確認那筆錢**進了央行**。
-                // 「已扣未存」是 debit 成功後 crash 在 credit 之前留下的漏水，這裡補上。
-                if (alreadyChargedToday.Contains(account))
-                {
-                    if (!alreadyDepositedToday.Contains(account))
-                    {
-                        int owed = 0;
-                        foreach (var e in allEntries)
-                        {
-                            if (e.type == "debit" && e.account_id == account
-                                && !string.IsNullOrEmpty(e.source_ref) && e.source_ref == $"{useRefPrefix}{account}")
-                            { owed = e.amount; break; }
-                        }
-                        if (owed > 0 && TryDepositToCentralBank(centralBank, owed, today, account, creditRefPrefix))
-                        {
-                            centralBankIncome += owed;
-                            safeReports.Add($"- @{account}: balance {balance} (今日已扣過；**補存央行 {owed}** — 前次扣款後未入庫)");
-                            continue;
-                        }
-                    }
-                    safeReports.Add($"- @{account}: balance {balance} (今日已扣過, idempotent skip)");
-                    continue;
-                }
+                // ⚠ 「今天扣過了嗎」**不在這一層判**了（TASK-0242 ⑭）——
+                //   唯一有資格判的是 Server（`idem_key`），而它判完的結果我們用**回讀餘額**看得出來。
+                //   ⇒ 所以這裡照常送，冪等命中時 before==after，下面那行會如實印「這次沒有動錢」。
                 if (balance <= overnightThreshold)
                 {
                     safeReports.Add($"- @{account}: balance {balance} (≤ {overnightThreshold}, 安全)");
@@ -1211,13 +1143,26 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                         useKind: "overnight_storage_fee",
                         useRef: useRef,
                         description: $"跨日 {today} 存款保管費 {rateDisplay}% (超過 {overnightThreshold} 的 {excess} × {rateDisplay}% = {fee}) → 存入 {centralBank}",
-                        callerAgentId: "system");
-                    feeReports.Add($"- @{account}: balance {balance} → **-{fee} token** (excess {excess} × {rateDisplay}%)");
-                    totalFee += fee;
-                    // 扣完立刻入庫。失敗只警告不回滾 —— 使用者的錢已經扣了，
-                    // 這裡再拋會讓整輪中斷、其他帳戶連扣都沒扣。下一輪的「已扣未存」偵測會補。
-                    if (TryDepositToCentralBank(centralBank, fee, today, account, creditRefPrefix))
-                        centralBankIncome += fee;
+                        callerAgentId: "system",
+                        idempotencyKey: useRef);   // ⭐ 判重的唯一權威（Server 端；同 key 重送回既有那一筆）
+
+                    // ⭐ **扣了多少用回讀的，⛔ 不用算的**：冪等命中時 Server 不動錢，
+                    //   而「我算出來的 fee」跟「真的扣掉的數」在那一刻會差一整筆。
+                    int aAfter = UCL_TreasuryLedger.GetBalance(account);
+                    int aMoved = balance - aAfter;
+                    if (aMoved <= 0)
+                    {
+                        safeReports.Add($"- @{account}: balance {balance} (今日已扣過 — 冪等命中，**這次沒有動錢**)");
+                    }
+                    else
+                    {
+                        feeReports.Add($"- @{account}: balance {balance} → **-{aMoved} token** (excess {excess} × {rateDisplay}%)");
+                        totalFee += aMoved;
+                    }
+                    // 入庫那一腳照送（它自己也有 idem_key）—— 送過就是 no-op，沒送過才真的補上。
+                    // ⇒ 「已扣未存」的漏水由這條路收拾，⛔ 不再需要掃帳本找那筆錢是多少。
+                    if (aMoved > 0 && TryDepositToCentralBank(centralBank, aMoved, today, account, creditRefPrefix))
+                        centralBankIncome += aMoved;
                 }
                 catch (Exception ex)
                 {

@@ -2408,11 +2408,6 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     aPayNote = $"**未發薪** —— persona `{iPersona}` 解析不到正式帳號（{aRes.Trace}）";
                     aTotal = 0;
                 }
-                else if (AlreadyCreditedTimed(iArgs, $"streamwatch-{aSessionId}"))
-                {
-                    aPayNote = $"**未重複發薪** —— ledger 已有 `streamwatch-{aSessionId}`（寫入閘判重，事實源）";
-                    aTotal = 0;
-                }
                 else
                 {
                     var aCreditWatch = System.Diagnostics.Stopwatch.StartNew();
@@ -2423,7 +2418,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                             sourceKind: "stream_watch",
                             sourceRef: $"streamwatch-{aSessionId}",
                             description: $"觀影結算 {aMedia}：在場 {aPaidMin} 分→{aBasePay} ＋ observation {aObs}→{aObsPay}",
-                            callerAgentId: "system", cmdId: $"streamwatch-{aSessionId}");
+                            callerAgentId: "system", cmdId: $"streamwatch-{aSessionId}",
+                            // ⭐ TASK-0242 ⑭：判重**改由 Server 的 `idem_key` 擋**（同一把鑰匙重送回既有那一筆）。
+                            //   🩸 本來這裡先跑一次 `AlreadyCredited`（掃舊 ledger 找同 source_ref）——
+                            //     權威切到新銀行之後，那個掃描看的是一本**凍結**的帳 ⇒ 它永遠回 false，
+                            //     而「沒發過」與「我看錯帳本」在回傳上同形 ⇒ 重複發薪不會有任何一層喊。
+                            //   ⇒ 拿掉那個假判重，把 key 交給唯一有資格判的那一層。
+                            idempotencyKey: $"streamwatch-{aSessionId}");
                         aPayNote = $"**+{aTotal} token** → `{aRes.AccountId}`（在場 {aPaidMin} 分＝{aBasePay}／observation {aObs} 筆＝{aObsPay}）";
                     }
                     catch (Exception e)
@@ -2644,30 +2645,6 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         //   而 2026-09-09 我們量到的主緒凍結是 **144.9 秒**，同一個量級。
         //   ⇒ 它現在是有界掃描（最近結帳日之後），⚠ 而「最近結帳日」查不到時那個界是 null
         //   ⇒ **界有沒有生效這件事，在讀數上跟「界很小」同形。** 所以埋一格相位讓它自己講。
-        static bool AlreadyCreditedTimed(IDictionary<string, string> iArgs, string iUseRef)
-        {
-            var aWatch = System.Diagnostics.Stopwatch.StartNew();
-            try { return AlreadyCredited(iUseRef); }
-            finally { Phase(iArgs, "settle.ledger_dupcheck", aWatch.Elapsed.TotalMilliseconds); }
-        }
-
-        static bool AlreadyCredited(string iUseRef)
-        {
-            try
-            {
-                string aToday = DateTime.UtcNow.ToString("yyyy-MM-dd");
-                var aRec = UCL_TreasuryClosing.LoadLatestBefore(aToday);
-                var aEntries = UCL_TreasuryLedger.LoadEntriesAfterDate(aRec?.DateKey);
-                foreach (var e in aEntries)
-                    if (e != null && e.type == "credit" && e.source_ref == iUseRef) return true;
-                return false;
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[StreamWatch] ledger 判重失敗，保守視為已發（不重複發薪）：{e.Message}");
-                return true;
-            }
-        }
 
         // ===========================================================
         // 區塊：step=observe — 發評論 ＋ 記帳

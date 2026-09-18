@@ -281,11 +281,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             DrainInFlight();
 
-            // TASK-0235：舊 Treasury ledger → 新銀行的鏡像（雙寫並存期）。
-            // ⚠ **不吃本 daemon 的 Enabled**（它是 Discord 的開關）—— 自己判自己的，形狀同 DrainInFlight：
-            //   把錢的鏡像掛在別人的開關上，關掉 Discord 就會安靜地停掉一本帳。
-            Treasury.UCL_BankMirror.Tick();
-
             // Phase C：treasury（bank）通知 native 模組 — 在途 drain 永遠跑；掃描僅 native owner 時啟用
             //（2026-07-28 python notify_treasury_entries 已移除 → native 為 treasury 唯一傳送者）
             UCL_DiscordTreasuryMirror.Tick(Enabled);

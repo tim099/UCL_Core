@@ -1,9 +1,9 @@
 ---
 title: Cmd_Treasury — Agent Token 帳本（使用層：op 與欄位怎麼填）
-description: 經濟體的單一財務入口 — 13 個 op 涵蓋餘額查詢（單筆／整批）/ 進出帳 / 守恆轉帳 / 請款單 / 轉帳單 / 每日結帳。本檔講「呼叫時要填什麼」與「哪些欄位其實沒人驗」。
+description: 經濟體的單一財務入口 — 14 個 op 涵蓋餘額查詢（單筆／整批）/ 進出帳 / 守恆轉帳 / 請款單 / 轉帳單 / 每日結帳。本檔講「呼叫時要填什麼」與「哪些欄位其實沒人驗」。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/Treasury/
 namespace: UCL.Core.EditorLib.AgentCommands.Treasury
-last_updated: 2026-09-16
+last_updated: 2026-09-18
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | 姊妹 Cmd | 身分層（agent vs persona）的正名拍板在那邊
@@ -68,7 +68,7 @@ senate ucmd run Treasury \
 
 ---
 
-## 2. op 一覽（13 個）
+## 2. op 一覽（14 個）
 
 | op | 動錢? | 必填 | 一句話 |
 |---|---|---|---|
@@ -77,14 +77,15 @@ senate ucmd run Treasury \
 | `credit` | **✓ 進帳** | `account` `amount` `source_kind` | 加錢 |
 | `debit` | **✓ 出帳** | `account` `amount` `use_kind` | 扣錢（有帳戶隔離鐵律，見 §3） |
 | `transfer` | **✓ 守恆搬錢** | `from_account` `to_account` `amount` `use_kind` `source_kind` | A→B 原子雙分錄 |
-| `audit` | ✗ | `account` | 列 entries（可帶 `since_ts`） |
-| `verify` | ✗ | `account` | 重放全量驗 `balance_before/after` 一致性 |
+| `audit` | ✗ | `account` | 列**歷史** entries（舊 `Treasury/`，凍結於 2026-09-18；可帶 `since_ts`） |
+| `verify` | ✗ | `account` | 重放**歷史**全量驗 `balance_before/after` 一致性（同上，只驗凍結那一段） |
 | `request` | ✗ | `target_bank` `amount` `reason` | 開**請款單**（消耗公庫），等 Tim 批 |
 | `request_list` | ✗ | — | 列請款單（預設只列 pending） |
 | `request_cancel` | ✗ | `request_id` | 撤回自己開的請款單 |
 | `transfer_request` | ✗ | `from_bank` `to_bank` `amount` `reason` | 開**轉帳單**（總量守恆），等 Tim 批 |
 | `closing_generate` | ✗ | — | 補算所有「已完結但未結帳」的 UTC 日 |
 | `closing_list` | ✗ | — | 列已結帳日期 + 當前讀取基準 |
+| `senate_cli` | ✗ | — | 查／設派給 Server 的 `senate` 執行檔；**指到不存在的檔＝寫錢那條路的反向對照** |
 
 > **`balances` 為什麼要存在**（2026-09-16，TASK-0223）：本檔頂端的硬規則禁止呼叫端自己重放 ledger、
 > 也禁止 parse `accounts/_balances.snapshot.txt`。那條禁令原本留了一個缺口 —— 單一帳戶有出口（`balance`），
@@ -92,6 +93,12 @@ senate ucmd run Treasury \
 > `balances` 就是補這個缺口，它只是 `UCL_TreasuryLedger.GetAllBalances()` 的薄殼。
 > ⚠ `out_path` 落的報表是**某一刻的快照**（自帶 `generated_at` 與帳戶數）；⛔ 它不是第二份真相源，
 > 而且它跟 `balance`、跟舊快照檔**共用同一份快取** —— 三者一致**不是**三個證人。
+
+> **⚠ `audit` / `verify` 問的是「哪個時代」**（2026-09-18，TASK-0242）：
+> 權威切到 Senate 新銀行之後，舊 `Treasury/` **凍結為唯讀歷史**（Tim 拍板：不刪、轉唯讀）。
+> 這兩支讀的是**那本凍結的帳**（`UCL_TreasuryHistory`），⛔ 它們答不出切換之後的任何一筆。
+> ⇒ 表格為空**不代表沒有交易**，只代表那一段不在這本帳上 —— 回傳檔會自己印這句定語。
+> 📌 而 `balance` / `balances` 問的是**現在**（新銀行）⇒ 「歷史累計」加不回「現在餘額」，那不是 bug。
 
 > **請款單 vs 轉帳單刻意分開**：請款**消耗公庫**（無中生有一筆錢），轉帳**總量守恆**（只換位置）。
 > 審批者要能一眼分辨自己在批哪一種 —— 混成一種單據，公庫就會在沒人注意時被搬空。

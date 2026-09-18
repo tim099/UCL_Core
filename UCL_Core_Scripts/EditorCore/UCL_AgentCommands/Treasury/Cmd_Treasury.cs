@@ -36,8 +36,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             "transfer_request: from_bank=出款bank to_bank=收款bank amount=N reason=為什麼該搬 [kind=manual_transfer] [agent=] [persona=] — 開轉帳單（不動錢，總量守恆；請款單消耗公庫，兩者刻意分開）\n" +
             "closing_generate: （無參數）— 補算所有「已完結但未結帳」的 UTC 日；只寫 closing/*.json，不動餘額\n" +
             "closing_list: （無參數）— 列已結帳日期與當前讀取基準\n" +
-            "bank_diff: [currency=tavern_token] [out_path=報表路徑] — 舊 Treasury vs 新銀行**逐戶**對帳（純讀，TASK-0235 ④）\n" +
-            "bank_mirror: （無參數＝只看現況）[enabled=1|0] [senate_path=絕對路徑|clear] — 鏡像的開關與 senate 執行檔（TASK-0235）";
+            "senate_cli: （無參數＝只看現況）[senate_path=絕對路徑|clear] — 派給 Server 用的 `senate` 執行檔；指到不存在的檔＝**寫錢那條路的反向對照**";
 
         public override string ExampleArgs =>
             "op=balance;account=claude-da-xiaojie";
@@ -66,8 +65,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 {
                     case "balance":  Op_Balance(args); break;
                     case "balances": Op_Balances(args); break;   // 整批唯讀（遷移／畫表用）
-                    case "bank_diff": Op_BankDiff(args); break;  // 舊帳本 vs 新銀行 逐戶對帳（TASK-0235 ④）
-                    case "bank_mirror": Op_BankMirror(args); break;  // 鏡像的開關／senate 路徑／游標（TASK-0235）
+                    case "senate_cli": Op_SenateCli(args); break;  // 派給 Server 用的 senate 執行檔（反向對照那顆旋鈕）
                     case "credit":   Op_Credit(args); break;
                     case "debit":    Op_Debit(args); break;
                     case "transfer": Op_Transfer(args); break;   // T55 closed economy v2
@@ -268,171 +266,35 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         //   ⇒ 這個分隔字元不需要跳脫，而不需要跳脫的格式沒有「跳脫寫錯」那一族失效。
         // ==========================================================
         // ==========================================================
-        // 區塊職責：`op=bank_mirror` —— 鏡像（`UCL_BankMirror`）的現況與兩個旋鈕。
-        // 物理意義：那兩個值住在 `EditorPrefs`，而 EditorPrefs **只有開著 Editor 的人點得到** ——
+        // 區塊職責：`op=senate_cli` —— 派給 Server 用的 `senate` 執行檔（唯一的旋鈕）。
+        // 物理意義：那個值住在 `EditorPrefs`，而 EditorPrefs **只有開著 Editor 的人點得到** ——
         //          一個沒有入口的開關，對 agent 來說等於不存在。
-        // 數值影響：不動任何帳。改的是「要不要鏡」與「用哪顆 senate」。
-        // ⚠ `senate_path` 指到一個不存在的檔 ＝ TASK-0235 ② 的**反向對照**（鏡像會失敗，舊帳本不受影響）。
+        // 數值影響：不動任何帳。改的是「用哪顆 senate 去派那筆錢」。
+        // ⭐ 指到一個不存在的檔 ＝ **寫錢那條路的反向對照**：整筆失敗、⛔ 不降級。
+        //   TASK-0241 ⑥ 與 TASK-0249 的紅燈都是用它弄出來的。
+        // 🩸 它本來是 `op=bank_mirror` 的第二顆旋鈕（第一顆是鏡像開關）。
+        //   鏡像在 TASK-0242 ④ 整支退場 —— 而**這顆旋鈕量的是另一件事**，所以留下來獨立成 op。
         // ==========================================================
-        void Op_BankMirror(Dictionary<string, string> args)
+        void Op_SenateCli(Dictionary<string, string> args)
         {
-            string aEnabled = GetArg(args, "enabled", "");
             string aPath = GetArg(args, "senate_path", "");
 
             var sb = new StringBuilder();
-            sb.AppendLine("## 新銀行鏡像（UCL_BankMirror）");
+            sb.AppendLine("## 派給 Server 用的 `senate` 執行檔");
 
-            if (aEnabled.Length > 0)
-            {
-                bool aOn = aEnabled == "1" || aEnabled.ToLowerInvariant() == "true";
-                UCL_BankMirror.Enabled = aOn;
-                sb.AppendLine($"- 開關改為：**{(aOn ? "開" : "關")}**");
-            }
             if (aPath.Length > 0)
             {
                 string aSet = aPath == "clear" ? "" : aPath;
-                UCL_BankMirror.SenatePath = aSet;
-                sb.AppendLine($"- senate 路徑改為：`{(aSet.Length == 0 ? "（空 ⇒ 走 PATH）" : aSet)}`");
+                UCL_TreasuryAuthority.SenatePath = aSet;
+                sb.AppendLine($"- 路徑改為：`{(aSet.Length == 0 ? "（空 ⇒ 走 PATH）" : aSet)}`");
                 if (aSet.Length > 0 && !System.IO.File.Exists(aSet))
-                    sb.AppendLine("  - ⚠ **那個檔不存在** —— 鏡像會逐筆失敗（cursor 保留、舊帳本不受影響）。"
+                    sb.AppendLine("  - ⚠ **那個檔不存在** —— 每一筆寫錢都會**整筆失敗且不降級**。"
                                   + "這正是反向對照要的狀態；驗完記得 `senate_path=clear`。");
             }
 
-            sb.AppendLine($"- 現況：開關 **{(UCL_BankMirror.Enabled ? "開" : "關")}**"
-                          + $"／senate `{(UCL_BankMirror.SenatePath.Length == 0 ? "（走 PATH）" : UCL_BankMirror.SenatePath)}`");
-            sb.AppendLine($"- 游標檔：`{UCL_BankMirror.StatePathPublic}`");
-            sb.AppendLine("- ⚠ 鏡像是**非同步**的：剛寫完帳的那幾秒兩邊本來就會差。"
-                          + "判準是「靜置之後還差不差」（`op=bank_diff`）。");
+            sb.AppendLine($"- 現況：`{(UCL_TreasuryAuthority.SenatePath.Length == 0 ? "（走 PATH）" : UCL_TreasuryAuthority.SenatePath)}`");
+            sb.AppendLine("- ⚠ 這是**本機**設定（EditorPrefs）⇒ 換一台機器不會跟著走。");
             Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
-        }
-
-        // ==========================================================
-        // 區塊職責：`op=bank_diff` —— 舊 `Treasury/` 與**新銀行**（`SCP_Bank*`）**逐戶**並排。
-        // 物理意義：雙寫並存期（TASK-0235）的那個讀數：它回答「兩邊會不會同步」，
-        //          而那是權威切換（TASK-0216 ⑧）唯一的前提。
-        // 數值影響：**純讀兩本帳**，一毛都不動。
-        // ⛔ **不印總差額** —— 兩個方向相反的錯會互相抵消，而抵消之後畫面上是一個漂亮的 0。
-        //    ⇒ 一律逐戶點名，並且把「只有舊的有」「只有新的有」分成兩類（它們的成因不同：
-        //      前者是鏡像還沒追上或具名跳過，後者是新銀行被人多寫了一筆）。
-        // ⚠ 鏡像是**非同步**的 ⇒ 剛寫完帳的那幾秒本來就會差。判準是「靜置之後還差不差」。
-        // ==========================================================
-        void Op_BankDiff(Dictionary<string, string> args)
-        {
-            string currency = GetArg(args, "currency", "tavern_token");
-            string outPath = GetArg(args, "out_path", "");
-
-            // ⛔ **一定要走 `…Legacy`**：`GetAllBalances` 會跟著權威旗標走，
-            //   切到新銀行之後它回的是新銀行 ⇒ 本表會變成**拿新銀行跟新銀行比**，
-            //   而「逐戶零差額」就成了恆真（2026-09-18 我真的這樣做過一次，見該函式的血證）。
-            var aOld = UCL_TreasuryLedger.GetAllBalancesLegacy(currency);
-
-            // 新銀行的根：**沿用描述表那一格的算式**（`<資料根>/Bank`），⛔ 不在這裡再拼一次字面 ——
-            // 同一個路徑第二處拼字，兩邊漂掉時兩邊都讀得出一個「看起來正常」的目錄。
-            string aSuffix = SCP.Core.Paths.SCP_PathRegistry.Get(SCP.Core.Paths.SCP_PathId.BankRoot).DeriveSuffix;
-            string aBankRoot = System.IO.Path.Combine(UCL_RepoPath.AgentCommandsDir, aSuffix);
-
-            // ⚠ 第二參數是**幣別**不是問題清單（我第一版把它當 oProblems 傳，編譯器擋下來了）。
-            //   ⇒ 兩本帳要問同一個幣別，否則「零差額」可能只是在比兩個不同的東西。
-            var aProblems = new List<string>();
-            var aNew = SCP.Core.Bank.SCP_BankLedger.GetAllBalances(aBankRoot, currency);
-
-            // 新銀行的帳號 id 一律小寫 ⇒ 舊帳本那側也要正規化才對得起來（`Zeta` vs `zeta`）。
-            var aOldNorm = new Dictionary<string, int>();
-            foreach (var kv in aOld)
-            {
-                string k = (kv.Key ?? "").Trim().ToLowerInvariant();
-                if (k.Length == 0) continue;
-                aOldNorm.TryGetValue(k, out int prev);
-                aOldNorm[k] = prev + kv.Value;
-            }
-
-            var aIds = new List<string>();
-            foreach (var k in aOldNorm.Keys) if (!aIds.Contains(k)) aIds.Add(k);
-            foreach (var k in aNew.Keys) if (!aIds.Contains(k)) aIds.Add(k);
-            aIds.Sort(System.StringComparer.Ordinal);
-
-            // ⚠ **本區射程是推導出來的**（`UCL_BankMirror.ScopedAccounts`），⛔ 不是一份手維護的清單。
-            //   規則：本區有 persona resolve 得到這個帳號（**含借用別區綁定** —— 那在本區是真的開戶、真的能用）＋ 央行。
-            //   🩸 清單版寫過一版又拆掉：清單是當下那批 id 的快照，有人改綁定它不會跟上，
-            //     而它過期時讀它的兩層會**一致地錯**（兩份答案相同 ⇒ 沒有人會發現）。
-            var aScope = UCL_BankMirror.ScopedAccounts(out string aRegionId);
-
-            int aSame = 0, aDiff = 0, aWaivedHit = 0, aUnexpected = 0, aNewOnly = 0;
-            var sb = new StringBuilder();
-            sb.AppendLine("| 帳號 | 舊 Treasury | 新銀行 | 判定 |");
-            sb.AppendLine("|---|---:|---:|---|");
-            foreach (var id in aIds)
-            {
-                bool hasOld = aOldNorm.TryGetValue(id, out int o);
-                bool hasNew = aNew.TryGetValue(id, out int n);
-                if (!hasNew && o == 0) continue;            // 兩邊都沒有錢的戶不佔版面
-
-                // ⚠ **射程優先判**，⛔ 不是只在「新銀行沒有這一戶」時才判：
-                //   一個本區不該記的帳號如果曾經被開過，它會是「存在而餘額 0」而落進「金額不同」⇒ 把閘打紅。
-                if (!aScope.Contains(id))
-                {
-                    ++aWaivedHit;
-                    sb.AppendLine($"| `{id}` | {(hasOld ? o.ToString() : "—")} | {(hasNew ? n.ToString() : "—")} "
-                                  + $"| ・不在本區射程（{aRegionId} 沒有人用這個帳號；錢仍在舊帳本） |");
-                    continue;
-                }
-                if (hasOld && hasNew && o == n) { ++aSame; continue; }
-
-                // ⛔ 走到這裡的一定**不在**具名放棄清單裡（上面已經 continue 掉了）⇒ 以下三格全部計入閘。
-                string why;
-                if (!hasNew) { ++aUnexpected; why = "⚠ **未預期缺戶** —— 本區有人用它，而新銀行沒有這一戶"; }
-                else if (!hasOld) { ++aNewOnly; why = "⚠ 只有新銀行有 —— 有人多寫了一筆"; }
-                else { ++aDiff; why = (n - o).ToString("+#;-#;0") + "（鏡像還沒追上，或漏了一筆）"; }
-                sb.AppendLine($"| `{id}` | {(hasOld ? o.ToString() : "—")} | {(hasNew ? n.ToString() : "—")} | {why} |");
-            }
-
-            string stamp = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-            var head = new StringBuilder();
-            head.AppendLine($"## 舊 Treasury vs 新銀行 —— 逐戶對帳（{stamp}）");
-            head.AppendLine($"- 新銀行根：`{aBankRoot}`");
-            // ⚠ 射程的輸入是 **persona pool ✕ 該人在本區 resolve 到的帳號**（`UCL_BankMirror.ScopedAccounts`
-            //   ⇒ `UCL_PersonaProfile.PoolNames()`），⛔ **不只是** `bank/<區>.md` 那幾個檔 ——
-            //   pool 少一個人、或某人在本區 resolve 不到帳號，射程就會少一戶。
-            // 🩸 血證（basecamp 2026-09-18）：09-17 閘內 11 戶（相符 8／不同 2／缺 1），
-            //   09-18 閘內 10 戶全部相符，而 `bank/Florin.md` 那 21 個檔**自 08-20 一個字沒動**。
-            //   ⇒ 戶數變了而輸入檔沒變 ⇒ 變的是 pool 那一側，**而它不會出現在任何一格**。
-            // ⇒ 所以射程要**逐 id 點名**：TASK-0216 ⑧ 要的是「連續 N 天逐戶零差額」，
-            //   而只印計數的話，N 天可以由 **N 批不同的受測體**湊成 —— 那種失效跟真的通過同形。
-            var aScopeIds = new List<string>(aScope);
-            aScopeIds.Sort(System.StringComparer.Ordinal);
-            head.AppendLine($"- 本區 `{aRegionId}` 射程：**{aScope.Count} 個帳號**"
-                            + "（由 **persona pool** ✕ 各人在本區 resolve 到的帳號 ＋ 央行**推導**，⛔ 不是清單）");
-            head.AppendLine($"  - 射程逐 id（⛔ 跨日要比這一行，不是比戶數）：{string.Join("、", aScopeIds.ConvertAll(x => $"`{x}`"))}");
-            head.AppendLine($"- **相符 {aSame} 戶**／金額不同 **{aDiff}** 戶／⚠ 未預期缺戶 **{aUnexpected}** 戶"
-                            + $"／只有新的有 **{aNewOnly}** 戶／・不在本區射程 {aWaivedHit} 戶（不計入閘）");
-            // ⚠ 權威切換之後本表的**語意就變了**（TASK-0216 ⑨，2026-09-18）：
-            //   雙寫並存期它是一道**閘**（兩本帳該相等）；切換之後舊帳本**凍結**、新銀行繼續走
-            //   ⇒ 兩邊本來就會分岔，差額是**切換後的流水**，不是錯。
-            // 🩸 不印這一行的話，明天讀到滿江紅的人會去修一個不存在的 bug ——
-            //   **過期的指路牌比沒有指路牌貴，因為它看起來是對的。**
-            if (UCL_TreasuryAuthority.IsSenateBank)
-                head.AppendLine($"- 🔁 **權威＝新銀行**（`{UCL_TreasuryAuthority.SettingsKey}="
-                                + $"{UCL_TreasuryAuthority.ValueSenateBank}`）⇒ 舊 `Treasury/` 已**凍結**、不再長新分錄。"
-                                + "⛔ 本表此後**不是閘**，是「切換之後兩邊差了多少」的流水讀數 —— 差額會隨時間變大，那是預期。");
-            if (aDiff == 0 && aUnexpected == 0 && aNewOnly == 0)
-                head.AppendLine("- ✅ **逐戶零差額**（⛔ 這是此刻的讀數 —— 鏡像非同步，剛寫完帳的幾秒本來就會差；"
-                                + "⛔ 也**不含**射程外那批：它們本來就不該在這本帳上）");
-            foreach (var p in aProblems) head.AppendLine($"- ⚠ 讀新銀行時：{p}");
-            head.AppendLine();
-
-            string body = head.ToString() + sb.ToString();
-            Cmd_Tavern_Helpers.WriteLastOp(args, body);
-
-            if (!string.IsNullOrEmpty(outPath))
-            {
-                try
-                {
-                    string dir = System.IO.Path.GetDirectoryName(outPath);
-                    if (!string.IsNullOrEmpty(dir)) System.IO.Directory.CreateDirectory(dir);
-                    System.IO.File.WriteAllText(outPath, body, new UTF8Encoding(false));
-                }
-                catch (System.Exception e) { Debug.LogWarning($"[Treasury] bank_diff 報表寫不出來：{e.Message}"); }
-            }
         }
 
         void Op_Balances(Dictionary<string, string> args)
@@ -509,11 +371,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string sinceTs = GetArg(args, "since_ts", "");
             if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp(args, "audit 缺少 account"); return; }
 
-            var entries = UCL_TreasuryLedger.Audit(account, sinceTs);
+            // ⚠ 這一支問的是**歷史**（舊 `Treasury/`，凍結於 2026-09-18 權威切換）——
+            //   ⛔ 它答不出切換之後的任何一筆。定語印在回傳檔裡，⛔ 不靠使用者記得。
+            var entries = UCL_TreasuryHistory.Audit(account, sinceTs);
             var sb = new StringBuilder();
-            sb.Append($"# 📒 Treasury audit — `{account}`");
+            sb.Append($"# 📒 Treasury audit（**歷史**）— `{account}`");
             if (!string.IsNullOrEmpty(sinceTs)) sb.Append($" (since `{sinceTs}`)");
             sb.AppendLine($"\n\n共 {entries.Count} 筆 entries\n");
+            sb.AppendLine("> ⚠ **資料源是舊 `Treasury/`，它凍結於 2026-09-18 權威切換那一刻**"
+                          + "（Tim 拍板：不刪、轉唯讀）。⛔ 切換之後的帳**不在這裡** —— 那些在新銀行"
+                          + "（`senate cmd bank`）。⇒ 這張表為空**不代表沒有交易**，只代表那一段不在這本帳上。\n");
             foreach (var e in entries)
             {
                 string flag = e.signature_mismatch ? " ⚠ sig_mismatch" : "";
@@ -528,7 +395,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string account = GetArg(args, "account", "");
             if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp(args, "verify 缺少 account"); return; }
 
-            var entries = UCL_TreasuryLedger.Audit(account, null);
+            // ⚠ 同 `op=audit`：verify 驗的是**舊帳本自己的內部一致性**（凍結的那一段），
+            //   ⛔ 它不驗新銀行 —— 那一側的餘額由 `SCP_BankLedger` 自己算，沒有 balance_after 欄位可對。
+            var entries = UCL_TreasuryHistory.Audit(account, null);
             int expectedBalance = 0;
             int driftCount = 0;
             var sb = new StringBuilder();

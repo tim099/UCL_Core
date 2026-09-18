@@ -265,10 +265,8 @@ namespace UCL.Core.EditorLib.Page
         void LoadData()
         {
             m_Loaded = true;
-            // Treasury 餘額快取自 2026-08-01 起「初始化掃一遍之後純記憶體」（Tim 拍板）——
-            // 外部改動（git pull / 手動改檔 / 另一個 Editor）不會自動被看到。
-            // Refresh 是使用者唯一能表達「重新認識磁碟」的入口，所以在這裡強制重掃。
-            UCL_TreasuryLedger.InvalidateBalanceCache();
+            // ⭐ TASK-0242 ④：餘額快取整組退場 —— 餘額現在**每次都問新銀行**（`SCP_BankLedger`，純讀），
+            //   沒有 Unity 這側的快取可以失效，所以 Refresh 這一格不必再做任何事。
             m_BalancesDirty = true;
             LoadCentralBankDrafts();   // 央行政策草稿一併回讀（Refresh 也要跟著更新，不留舊值）
             m_RegistryMeta = null;
@@ -335,7 +333,9 @@ namespace UCL.Core.EditorLib.Page
                     //   不在這裡濾掉的話，銷完戶按 Refresh 它照樣在，而且會同時出現在「孤兒」與
                     //   「已銷戶」兩處。症狀看起來像「刷新沒作用」，實際是掃描沒把銷戶算進去。
                     var closedSet = UCL_TreasuryAccountResolver.GetClosedAccounts();
-                    foreach (var e in UCL_TreasuryLedger.LoadAllEntries())
+                    // ⚠ 孤兒帳號是從**歷史**撈的（舊 `Treasury/`，凍結於 2026-09-18）——
+                    //   切換後新開的帳戶不會出現在這裡。⛔ 這張名單「沒有新成員」不代表沒有新孤兒。
+                    foreach (var e in UCL_TreasuryHistory.LoadAllEntries())
                     {
                         if (e == null || string.IsNullOrEmpty(e.account_id)) continue;
                         if (bankSet.Contains(e.account_id)) continue;

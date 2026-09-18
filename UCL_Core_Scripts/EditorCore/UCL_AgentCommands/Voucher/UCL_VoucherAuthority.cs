@@ -157,12 +157,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Voucher
         // ===========================================================
         // 區塊職責：派一趟 `senate cmd voucher`，把 `🔢 k = v` 收成表。
         // ⚠ 用 `ArgumentList` 不拼字串 —— 引號在拼字串時同時扮演「綁詞」與「內容」兩個角色，
-        //   而 CreateProcess 只認前者（`UCL_BankMirror` 那條血證）。
+        //   而 CreateProcess 只認前者（雙寫鏡像那條血證，該支已退場）。
         // ⛔ 非零退出一律 throw：把「這一趟沒成功」變成呼叫端躲不掉的事。
         // ===========================================================
         static Dictionary<string, string> Run(string iWhat, params string[] iArgs)
         {
-            string aExe = UCL_BankMirror.SenatePath;
+            string aExe = UCL_TreasuryAuthority.SenatePath;
             if (string.IsNullOrWhiteSpace(aExe)) aExe = "senate";
 
             string aOut = "", aErr = "";

@@ -934,6 +934,73 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// Discord 鏡像 (2026-07-28 起)：寫檔後不再做任何觸發 — UCL_DiscordMirrorDaemon 自己 poll
         /// 訊息檔並依 per-webhook 游標送出，寫入端與傳送端徹底解耦（舊版每筆 post spawn 一隻
         /// python notify_discord.py，是 2026-07-28 併發失控事故的結構性根因）。</summary>
+        // ===========================================================
+        // 區塊職責：把一則訊息**委派給 Senate Server** 寫（`tavern.writer=server` 那條路）。
+        // 物理意義：TASK-0106 第 5 步。Editor 不直接碰磁碟 —— 它寫一筆 queue 進 Server 的執行器根，
+        //          等 `_cmd_results/<id>.json` 的判定，從 `values.seq` 拿回號碼。
+        // ⛔ 三種失敗**都丟例外**，而且訊息各自不同（它們的下一步不同）：
+        //   · 沒有 Server／Server 死了 ⇒ 去啟動它（⛔ 不是「發文壞了」）
+        //   · Server 回報失敗 ⇒ 看它說什麼（那一則**確定沒寫**）
+        //   · 等不到判定 ⇒ ⛔ **不要重送**：那一筆可能已經寫了，而 seq 全域遞增 ⇒ 重送 ＝ 多一則
+        // ⚠ 本函式**同步阻塞**。實測讀數見 TASK-0106；24 個呼叫端裡只有 4 個在用回傳的 seq，
+        //   其餘 18 個是 fire-and-forget（酒保 daemon／UI 頁）—— 那些現在也要付這段等待。
+        //   ⇒ 這是已知代價，不是沒想到；要改成非同步得先決定「失敗要通知誰」。
+        // ===========================================================
+        const double SERVER_DELEGATE_TIMEOUT_SEC = 15.0;
+
+        static int DelegateAppendToServer(string roomId, UCL_ChatMessage msg)
+        {
+            string aDataRoot = UCL_AgentCommandsPath.DataRoot;
+            SCP.Core.Proc.SCP_ServerProbe aProbe =
+                SCP.Core.Proc.SCP_ServerEndpoint.Probe(aDataRoot, "tavern");
+            if (!aProbe.Alive)
+                throw new InvalidOperationException(
+                    "[Tavern] 開關是 server，而 " + aProbe.Detail
+                    + "　⇒ **這一則沒有寫出去**（⛔ 不降級寫本地）。"
+                    + "　啟動：`senate server start --id tavern`"
+                    + "　／切回 Editor：`senate cmd tavern-writer --arg data_root=" + aDataRoot
+                    + " --arg set=editor`");
+
+            string aServerRoot = aProbe.Info.ServerRoot;
+            // lane ＝ **一層目錄名**（`tavern-<room>`），與 Senate 那側 `Cmd_TavernWrite.Lane()` 同字面。
+            // 🩸 ⛔ 不可以用 `tavern/<room>`（協議的子分道寫法）：檔案會落在
+            //   `queues/tavern/queue-<room>.json`，而 `ServerExecutor.Tick` 掃的是 `queues/*` 那一層目錄、
+            //   只認 `pending.trigger` ⇒ **它永遠讀不到那一筆，而且沒有任何一層會說不認得**
+            //   （2026-09-21 端到端實測：等 15 秒逾時，queue 檔好好躺在磁碟上）。
+            string aLane = "tavern-" + roomId;
+            var aArgs = new Dictionary<string, string>
+            {
+                ["data_root"] = aDataRoot,
+                ["room"] = roomId,
+                // ⭐ 直接送**落盤同形**的 JSON（Editor 這側既有的序列化器）——
+                //   ⛔ 不逐欄拆成 --arg：漏掉的那一欄不會報錯，只會在落盤檔裡安靜少一格。
+                ["msg_json"] = UCL_ChatTavernIO_PerMsgFile.SerializeMessageNoSeq(msg),
+            };
+
+            // ⚠ `Type` 是 **Cmd 的 `Name`**（`SCP_CmdRegistry.Find` 查的那一個），⛔ 不是類別名。
+            //   🩸 2026-09-21 端到端實測：送 `TavernWrite` ⇒ Server 回
+            //   「認不得的指令 'TavernWrite'」—— 這一格**有出聲**，是今天少數自己會叫的。
+            string aCmdId = SCP.Core.Proc.SCP_ServerCmdClient.Submit(
+                aServerRoot, aLane, "tavern-write", aArgs);
+            SCP.Core.Proc.SCP_ServerCmdWait aWait = SCP.Core.Proc.SCP_ServerCmdClient.Wait(
+                aServerRoot, aCmdId, SERVER_DELEGATE_TIMEOUT_SEC);
+
+            if (aWait.Outcome == SCP.Core.Proc.SCP_ServerCmdOutcome.Timeout)
+                throw new InvalidOperationException(
+                    "[Tavern] " + aWait.Detail + "　回讀："
+                    + SCP.Core.Proc.SCP_ServerCmdClient.ResultPath(aServerRoot, aCmdId));
+            if (!aWait.Ok)
+                throw new InvalidOperationException("[Tavern] " + aWait.Detail + "（cmd " + aCmdId + "）");
+
+            string aSeqText = aWait.Value("seq");
+            if (!int.TryParse(aSeqText, out int aSeq) || aSeq <= 0)
+                throw new InvalidOperationException(
+                    "[Tavern] Server 回報成功而**沒有給得出 seq**（`values.seq` = '" + aSeqText + "'）"
+                    + " ⇒ 那一則多半寫了，但這裡拿不到號碼。⛔ 不猜一個號碼回去："
+                    + "下游會拿它去組回覆鏈與引用。回讀：" + aWait.Detail);
+            return aSeq;
+        }
+
         public static int AppendMessage(string roomId, UCL_ChatMessage msg)
         {
             // ── 寫入端開關（TASK-0106 / D10 丙，Tim 2026-09-20 拍板）────────────────
@@ -954,12 +1021,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     + "　⛔ 不猜哪一邊：猜錯的那一邊會造出第二個寫入端。");
 
             if (aMode.Host == SCP.Core.Tavern.SCP_TavernWriteHost.Server)
-                throw new InvalidOperationException(
-                    "[Tavern] " + aMode.Describe() + " ⇒ 這一則該由 Senate Server 寫，"
-                    + "而 **Editor 這側的委派還沒接上**（TASK-0106 第 3 步）。"
-                    + "　⛔ 這不是『Server 沒跑』—— 是這條路還沒做完，兩者的處置不同。"
-                    + "　切回來：`senate cmd tavern-writer --arg data_root="
-                    + UCL_AgentCommandsPath.DataRoot + " --arg set=editor`");
+            {
+                int aRemoteSeq = DelegateAppendToServer(roomId, msg);
+                // 寫入不變量照走：mention 通知跟「誰寫的」無關 —— 它掛在「訊息進到房間」這件事上。
+                // ⚠ 而它讀的是**磁碟上那一則**，所以要在 Server 回報成功之後才跑（順序已經對）。
+                NotifyMentions(roomId, msg, aRemoteSeq, "");
+                return aRemoteSeq;
+            }
 
             // 寫入臨界區 (2026-07-27, Tim 拍板抽離成 Service + lock)：
             // 「寫檔 (WriteMessageFile) + derive seq (CountMessageFiles) + 寫 _seq.txt」這段本來散在這裡，

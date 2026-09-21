@@ -1077,7 +1077,16 @@ namespace UCL.Core.EditorLib.Page
                 return;
             }
 
-            var aData = UCL_AgentCommandQueue.Load() ?? new UCL_AgentCommandQueueData();
+            // 🔴 同 TASK-0264：讀改寫整段包在鎖裡，且「讀不到」⛔ 不准寫回（寫回＝洗掉整條 queue）。
+            using var aQueueLock = UCL_AgentCommandQueue.LockQueue();
+            var aData = UCL_AgentCommandQueue.Load(null, out var aReadState)
+                        ?? new UCL_AgentCommandQueueData();
+            if (aReadState == UCL_AgentCommandQueue.QueueReadState.Unreadable)
+            {
+                Debug.LogError("[UCL_LibraryManagePage] ⛔ 預設 queue **讀不到**（檔在、解析失敗）"
+                               + " ⇒ 拒絕派遣，一個位元組都不寫。");
+                return;
+            }
             aData.Commands ??= new List<UCL_AgentCommand>();
             var aCmd = new UCL_AgentCommand
             {

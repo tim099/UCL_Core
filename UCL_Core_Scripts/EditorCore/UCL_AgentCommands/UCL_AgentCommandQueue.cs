@@ -200,28 +200,78 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static bool IsReservedQueueId(string folder)
             => folder == AnonymousQueueId || folder == SystemQueueId;
 
+        /// <summary>
+        /// 一次 queue 讀取的**結局**。⛔ 三態，不得壓成「有沒有內容」。
+        /// <para>🩸 TASK-0264：舊版把 <see cref="QueueReadState.Unreadable"/> 與「檔裡沒東西」
+        /// 都回成空 queue ⇒ Runner 對一顆**裝著三筆指令的截斷檔**印出「queue is empty」
+        /// （2026-09-21 實測：probe0264，75 bytes 的半截 JSON）。
+        /// ⚠ Console 那側其實有紅字，而**回傳值裡沒有** ⇒ 每個程式化消費端都只看得到「空」。</para>
+        /// </summary>
+        public enum QueueReadState
+        {
+            /// <summary>檔案不存在 —— 那是合法的「還沒有人送過東西」。</summary>
+            Missing = 0,
+
+            /// <summary>讀到了，內容有效（可能是 0 筆，而那是真的 0 筆）。</summary>
+            Ok = 1,
+
+            /// <summary>
+            /// **讀不到**：檔在、而解析炸了（截斷／壞碼／寫到一半）。
+            /// <para>⛔ 呼叫端**不得**把它當成空 queue 然後寫回去 —— 那會把別人的整條 queue 洗掉，
+            /// 而「我剛加的那筆在不在」這種回讀驗證**照樣會通過**。</para>
+            /// </summary>
+            Unreadable = 2,
+        }
+
         /// <summary>讀取 queue.json — 不存在或解析失敗時回傳空 queue。</summary>
+        /// <remarks>⚠ 這個多載**分不出**「沒有檔」與「讀不到」。
+        /// 會回頭寫入的呼叫端請改用 <see cref="Load(string, out QueueReadState)"/>（TASK-0264）。</remarks>
         public static UCL_AgentCommandQueueData Load(string agentId = null)
+            => Load(agentId, out _);
+
+        /// <summary>讀取 queue.json，並回報**這一次讀取的結局**（三態）。</summary>
+        public static UCL_AgentCommandQueueData Load(string agentId, out QueueReadState oState)
         {
             string path = GetQueuePath(agentId);
             if (!File.Exists(path))
             {
+                oState = QueueReadState.Missing;
                 return new UCL_AgentCommandQueueData();
             }
             try
             {
                 string json = File.ReadAllText(path, Encoding.UTF8);
                 // Unity JsonUtility 不支援 Dictionary，因此採手寫 JSON parse（極簡）
-                return ParseJson(json);
+                var aData = ParseJson(json);
+                oState = QueueReadState.Ok;
+                return aData;
             }
             catch (Exception e)
             {
                 Debug.LogError($"[UCL_AgentCommandQueue] Failed to load queue: {e}");
+                oState = QueueReadState.Unreadable;
                 return new UCL_AgentCommandQueueData();
             }
         }
 
+        /// <summary>
+        /// 取這顆 queue 的**跨 process 互斥鎖**（與 TASK-0263 同一支 <c>SCP_FileLock</c>）。
+        /// <para>⚠ 「讀 → 改 → 寫回」要**整段**包在裡面；只鎖寫的那一下等於沒鎖。</para>
+        /// </summary>
+        public static IDisposable LockQueue(string agentId = null)
+        {
+            EnsureDir(agentId);
+            return SCP.Core.Io.SCP_FileLock.Acquire(GetQueuePath(agentId));
+        }
+
         /// <summary>寫入 queue.json（會覆寫整個檔案）。</summary>
+        /// <remarks>
+        /// ⚠ 落盤是 **temp → 換檔**（原子替換），⛔ 不是就地 <c>WriteAllText</c>。
+        /// <para>🩸 TASK-0264：就地覆寫在中途斷電／行程被砍時會留下**半截 JSON**，
+        /// 而那顆半截檔會被 <see cref="Load(string)"/> 讀成「空 queue」
+        /// ⇒ 下一個「讀 → 加一筆 → 寫回」的呼叫端就把整條 queue 洗掉，
+        /// 而它的回讀驗證（只問「我這筆在不在」）**照樣通過**。</para>
+        /// </remarks>
         public static void Save(UCL_AgentCommandQueueData data, string agentId = null)
         {
             EnsureDir(agentId);
@@ -229,12 +279,69 @@ namespace UCL.Core.EditorLib.AgentCommands
             try
             {
                 string json = SerializeJson(data);
-                File.WriteAllText(path, json, new UTF8Encoding(false)); // no BOM
-                Debug.Log($"[UCL_AgentCommandQueue] Saved queue → {path}");
+                string tmp = path + ".tmp" + System.Diagnostics.Process.GetCurrentProcess().Id;
+                File.WriteAllText(tmp, json, new UTF8Encoding(false)); // no BOM
+                if (File.Exists(path)) File.Delete(path);
+                File.Move(tmp, path);
+                Debug.Log($"[UCL_AgentCommandQueue] Saved queue -> {path}");
             }
             catch (Exception e)
             {
                 Debug.LogError($"[UCL_AgentCommandQueue] Failed to save queue: {e}");
+            }
+        }
+
+        /// <summary>
+        /// 收尾寫回 —— 🔴 **重讀磁碟**，只動這一批載入時就在的那些 id（與 TASK-0263 的執行器同構）。
+        /// <para>🩸 舊版把「批次開始時載入的那份副本」整個寫回去 ⇒ 批次期間任何人 append 的那一筆
+        /// 會被**整個蓋掉**，而下游看不見（它不在 queue、也沒有判定檔）。</para>
+        /// <para>⚠ 這裡**不在整批期間握著鎖** —— 一批可能跑好幾十秒，握著它會把送指令的人擋到逾時。
+        /// 要的只是「寫回的那一瞬間，依據的是磁碟現況」。</para>
+        /// <para>⛔ 磁碟讀不到時**不寫**（回 false）—— 那正是本單重現到的那一格：
+        /// 拿一份「讀不到 ⇒ 空」的結果去覆寫，等於刪掉全部。</para>
+        /// </summary>
+        /// <param name="iOriginalIds">這一批**載入當下**就在 queue 裡的 id。
+        /// 磁碟上不在這個集合裡的 ＝ 批次期間新進的 ⇒ 一律保留。</param>
+        /// <returns><c>true</c> ＝ 真的寫回去了。</returns>
+        public static bool SaveMerged(UCL_AgentCommandQueueData data, ICollection<string> iOriginalIds,
+                                      string agentId = null)
+        {
+            using (LockQueue(agentId))
+            {
+                var aDisk = Load(agentId, out QueueReadState aState);
+                if (aState == QueueReadState.Unreadable)
+                {
+                    Debug.LogError($"[UCL_AgentCommandQueue] 收尾放棄寫回：{GetQueuePath(agentId)} 讀不到"
+                                   + "（截斷／壞碼）。這一批的出隊結果**沒有落盤**，"
+                                   + "而那好過拿一份空的覆蓋掉整條 queue。");
+                    return false;
+                }
+
+                var aMine = new Dictionary<string, UCL_AgentCommand>(StringComparer.Ordinal);
+                foreach (var c in data?.Commands ?? new List<UCL_AgentCommand>())
+                {
+                    if (c != null && !string.IsNullOrEmpty(c.Id)) aMine[c.Id] = c;
+                }
+
+                var aOut = new List<UCL_AgentCommand>();
+                int aKeptNew = 0;
+                foreach (var c in aDisk?.Commands ?? new List<UCL_AgentCommand>())
+                {
+                    if (c == null || string.IsNullOrEmpty(c.Id)) continue;
+                    if (aMine.TryGetValue(c.Id, out var aUpdated)) { aOut.Add(aUpdated); continue; }
+                    if (iOriginalIds != null && iOriginalIds.Contains(c.Id)) continue;   // 這一批跑完出隊的
+                    aOut.Add(c);                                                          // 批次期間新進 => 保留
+                    ++aKeptNew;
+                }
+
+                var aWrite = data ?? new UCL_AgentCommandQueueData();
+                aWrite.Commands = aOut;
+                Save(aWrite, agentId);
+                if (aKeptNew > 0)
+                {
+                    Debug.Log($"[UCL_AgentCommandQueue] 保留了這一批期間新進的 {aKeptNew} 筆（下一輪跑）");
+                }
+                return true;
             }
         }
 

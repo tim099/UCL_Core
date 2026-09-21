@@ -830,7 +830,24 @@ namespace UCL.Core.EditorLib.Page
                 return;
             }
 
-            var aData = UCL_AgentCommandQueue.Load(aQueueId) ?? new UCL_AgentCommandQueueData();
+            // 🔴 讀改寫整段包在鎖裡（TASK-0264）—— 只鎖寫的那一下等於沒鎖。
+            using var aQueueLock = UCL_AgentCommandQueue.LockQueue(aQueueId);
+
+            var aData = UCL_AgentCommandQueue.Load(aQueueId, out var aReadState)
+                        ?? new UCL_AgentCommandQueueData();
+
+            // 🔴 ⛔ 讀不到就**不准寫回**（TASK-0264）。
+            // 🩸 舊版把「檔在而解析失敗」讀成空 queue ⇒ 這一段會寫回一份**只有新指令那一筆**的 queue，
+            //   把所有人待跑的都洗掉。而下面那段回讀驗證只問「我這筆在不在」⇒ **它照樣會通過**。
+            //   （2026-09-21 實測：一顆 75 bytes 的截斷檔被 Runner 印成 "queue is empty"。）
+            if (aReadState == UCL_AgentCommandQueue.QueueReadState.Unreadable)
+            {
+                Debug.LogError($"[UCL_AgentCmd UI] ⛔ queue '{aQueueId ?? "default"}' **讀不到**"
+                               + "（檔在、解析失敗）⇒ 拒絕補跑，一個位元組都不寫。"
+                               + " 寫下去會把整條 queue 換成這一筆。"
+                               + " ⇒ 先看 Console 上一行的 parse 例外，修好檔再來。");
+                return;
+            }
             aData.Commands ??= new List<UCL_AgentCommand>();
             var aCmd = new UCL_AgentCommand
             {

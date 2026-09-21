@@ -290,13 +290,36 @@ namespace UCL.Core.EditorLib.AgentCommands
                 //   而 2026-09-07 的讀數說 AutoCommit offload 之後仍有 1.3s 斷拍落在 handler **之前**。
                 //   ⇒ 這一格是那個嫌疑犯，先量再改。
                 var batchWatch = System.Diagnostics.Stopwatch.StartNew();
-                var data = UCL_AgentCommandQueue.Load(agentId);
+                var data = UCL_AgentCommandQueue.Load(agentId, out var queueReadState);
                 double queueLoadMs = batchWatch.Elapsed.TotalMilliseconds;
                 int total = data.Commands?.Count ?? 0;
+
+                // 🔴 「讀不到」與「裡面沒東西」**不是同一件事**（TASK-0264）。
+                // 🩸 舊版兩者都印 "queue is empty" —— 2026-09-21 實測：一顆裝著三筆指令的截斷檔
+                //   （probe0264，75 bytes）就讓它印出「queue is empty」。Console 有紅字，
+                //   而**這一行沒有**，⇒ 讀日誌的人（與所有程式化消費端）看到的是「空」。
+                // ⛔ 這條路上我們只報不修：修 queue 是別人的動作，而**猜它本來有什麼**比不修更危險。
+                if (queueReadState == UCL_AgentCommandQueue.QueueReadState.Unreadable)
+                {
+                    Debug.LogError($"[UCL_AgentCmd:{labelTag}] ⛔ queue **讀不到**（不是空的）："
+                                   + $"{UCL_AgentCommandQueue.GetQueuePath(agentId)}"
+                                   + " —— 檔在而解析失敗（截斷／壞碼／寫到一半）。"
+                                   + " 本輪不執行任何指令、也**不寫回 queue**（寫回等於刪光）。"
+                                   + " ⇒ 修它：看上一行的 parse 例外，並比對檔尾是否被截斷。");
+                    return;
+                }
                 if (total == 0)
                 {
                     Debug.Log($"[UCL_AgentCmd:{labelTag}] queue is empty (path: {UCL_AgentCommandQueue.GetQueuePath(agentId)})");
                     return;
+                }
+
+                // 🔴 這一批**載入當下**就在 queue 裡的 id —— 收尾寫回時只准動這些（TASK-0264）。
+                //   ⛔ 沒有它的話，收尾那一下會把批次期間別人 append 的整個蓋掉。
+                var originalIds = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var oc in data.Commands ?? new List<UCL_AgentCommand>())
+                {
+                    if (oc != null && !string.IsNullOrEmpty(oc.Id)) originalIds.Add(oc.Id);
                 }
 
                 Debug.Log($"[UCL_AgentCmd:{labelTag}] Loaded {total} command(s). Waiting for UCL_ModuleService...");
@@ -380,7 +403,10 @@ namespace UCL.Core.EditorLib.AgentCommands
                     // 數值影響：重置 c.LastRunResult = null, c.LastRunError = null，並 Save 磁碟。
                     c.LastRunResult = null;
                     c.LastRunError = null;
-                    UCL_AgentCommandQueue.Save(data, agentId);
+                    // TASK-0264：合併寫回（重讀磁碟、只動 originalIds）。
+                    //   這一下發生在**每一筆指令開跑前**，而批次可能很長 ⇒ 舊版的整份覆寫
+                    //   會把這期間別人 append 的那幾筆寫沒。
+                    UCL_AgentCommandQueue.SaveMerged(data, originalIds, agentId);
 
                     // 區塊職責: caller env_marker thread-through (Tim 2026-05-11 QA bug fix TreasuryEnvMarker)
                     // 物理意義: Python caller-side detect 寫進 args._caller_env_marker → runner 設 static slot →
@@ -614,7 +640,8 @@ namespace UCL.Core.EditorLib.AgentCommands
                 }
 
                 data.Commands = commands;
-                UCL_AgentCommandQueue.Save(data, agentId);
+                // TASK-0264：收尾同樣合併寫回 —— ⛔ 不把跑了幾十秒的舊副本整個蓋上去。
+                UCL_AgentCommandQueue.SaveMerged(data, originalIds, agentId);
                 Debug.Log($"[UCL_AgentCmd:{labelTag}] Done. {succeeded} succeeded / {failed} failed / {removed} OneShot removed (success or auto-dequeued failure).");
                 PurgeOldCmdResults();
             }

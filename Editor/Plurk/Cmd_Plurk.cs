@@ -475,8 +475,124 @@ namespace UCL.Core.EditorLib.Plurk
             // ⚠ 這一行印的是**台帳在哪**，不是「寫成功了」—— 失敗的話上一句已經在 ioR 裡喊過。
             //   台帳按 data_root 分裂（TASK-0184）⇒ 路徑本身就是那筆帳的定語，要印全的。
             ioR.AppendLine($"- audit: `{AuditPath()}`（append-only）");
+            await VerifyNotDuplicated(aPayload, aReplyTo, aCred, ioR, token);
         }
 
+
+
+        // ===========================================================
+        // 區塊職責：發文之後**回讀對面** —— 問「我這一則在那邊出現了幾次」。
+        // 物理意義：TASK-0259。2026-09-21 量到的形狀是 **一次 OpPost、一次 WriteAudit、兩則回應**
+        //          （噗 `358787423748926`：同一份內容 sha16 `4dc35118208721de` 在 Plurk 上有兩個
+        //            response id、相隔 12 秒，而 `post_audit.jsonl` 同一個雜湊只有一行）
+        //          ⇒ 重送發生在 `OpPost` **以下**（連線重用時的透明重試／對方基礎設施），
+        //            ⛔ 不在這支控制得到的那一層 —— 所以這裡不做「不再送第二次」，做「送完去問」。
+        // 📐 修法等級（「讓失敗不可能」＞「當場喊」＞「記得注意」）：
+        //          Plurk 的 API **沒有冪等鍵** ⇒ 做不到第一級；取第二級。
+        // ⚠ 去重一律**先用 id**：Plurk 自己會在同一個陣列裡回同一則兩次（2026-08-24 實測，
+        //   見 `OpResponses` 那一段血證）⇒ 不先去重的話，每一則正常發文都會被誤報成重複。
+        // ⚠ 分母也要印（我的則數／陣列筆數／相異 id 數）—— 只印一個「重複 0 則」的話，
+        //   「真的沒重複」與「我根本沒數到自己那一則」同形。
+        // ⛔ 而回讀失敗一律說成**判不了**，不說「沒有重複」—— 兩者的處置相反。
+        // ===========================================================
+        async UniTask VerifyNotDuplicated(Dictionary<string, string> iPayload, string iReplyTo,
+            Dictionary<string, string> iCred, StringBuilder ioR, CancellationToken token)
+        {
+            ioR.AppendLine();
+            ioR.AppendLine("## 回讀：這一則在對面出現了幾次（TASK-0259）");
+            string aContent = (iPayload != null && iPayload.TryGetValue("content", out string aC) ? aC : "").Trim();
+            if (aContent.Length == 0)
+            {
+                ioR.AppendLine("- ⚠ 送出的 `content` 是空的 ⇒ **這一格判不了**（⛔ 不是「沒有重複」）");
+                return;
+            }
+
+            // 「哪一則是我發的」問一次就好 —— 不猜、不寫死 id（同 OpTimeline 那一格）
+            var (aMeSt, aMeBody) = await CallAsync("/APP/Users/me", iCred, null, token);
+            string aMeId = aMeSt == 200 ? (PickJsonValue(aMeBody, "id") ?? "") : "";
+            if (aMeId.Length == 0)
+            {
+                ioR.AppendLine($"- ⚠ 問不到自己的 user id（http={aMeSt}）⇒ **這一格判不了**（⛔ 不是「沒有重複」）");
+                return;
+            }
+
+            bool aIsResponse = iReplyTo.Length > 0;
+            string aEndpoint = aIsResponse ? "/APP/Responses/get" : "/APP/Timeline/getPlurks";
+            var aParams = aIsResponse
+                ? new Dictionary<string, string> { { "plurk_id", iReplyTo }, { "from_response", "0" } }
+                : new Dictionary<string, string> { { "limit", "20" }, { "filter", "only_user" } };
+            var (aSt, aBody) = await CallAsync(aEndpoint, iCred, aParams, token);
+            if (aSt != 200)
+            {
+                ioR.AppendLine($"- ⚠ 回讀失敗（http={aSt}　`{aEndpoint}`）⇒ **這一格判不了**（⛔ 不是「沒有重複」）");
+                return;
+            }
+            var aRoot = SafeParse(aBody);
+            string aKey = aIsResponse ? "responses" : "plurks";
+            var aList = (aRoot != null && aRoot.Contains(aKey)) ? aRoot[aKey] : null;
+            if (aList == null || !aList.IsArray)
+            {
+                ioR.AppendLine($"- ⚠ 回讀的 body 裡沒有 `{aKey}` 陣列 ⇒ **這一格判不了**（格式跟我預期的不一樣）");
+                return;
+            }
+
+            var aSeenId = new HashSet<string>();
+            var aMine = new List<string>();
+            var aSame = new List<string>();
+            var aByContent = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            for (int i = 0; i < aList.Count; i++)
+            {
+                var aIt = aList[i];
+                if (!aSeenId.Add(JsonScalar(aIt, "id"))) continue;   // ⚠ Plurk 會回重複的同一則
+                if (JsonScalar(aIt, "user_id") != aMeId) continue;
+                string aId = JsonScalar(aIt, "id");
+                aMine.Add(aId);
+                string aRaw = UnescapeJson(JsonScalar(aIt, "content_raw")).Trim();
+                if (aRaw == aContent) aSame.Add(aId);
+                // 同一份內容底下掛著哪幾個 id —— 之後用來數「我先前留下的重複組」
+                if (!aByContent.TryGetValue(aRaw, out var aIds)) aByContent[aRaw] = aIds = new List<string>();
+                aIds.Add(aId);
+            }
+
+            string aWhere = aIsResponse ? $"噗 `{iReplyTo}` 這一串" : "自己的時間軸前 20 則";
+            ioR.AppendLine($"- 範圍: {aWhere}　（陣列 **{aList.Count}** 筆／相異 id **{aSeenId.Count}** 個）");
+            ioR.AppendLine($"- 其中**我發的**: **{aMine.Count}** 則");
+            ioR.AppendLine($"- 其中與這次內容**逐字相同**的: **{aSame.Count}** 則");
+
+            // ⚠ 先前留下的重複（⛔ 不是這一次造成的）—— 同一份回讀就數得出來，
+            //   而它回答的是「還有哪幾則躺在那裡要手動刪」。0 組時整段不印，不佔版面。
+            var aOldDup = new List<string>();
+            foreach (var aKv in aByContent)
+            {
+                if (aKv.Value.Count < 2) continue;
+                if (aKv.Key == aContent) continue;          // 這一次那一組在上面已經講過了
+                aOldDup.Add($"{aKv.Value.Count} 則 `" + string.Join("` / `", aKv.Value) + "`");
+            }
+            if (aOldDup.Count > 0)
+            {
+                ioR.AppendLine($"- ⚠ 而這個範圍內另有 **{aOldDup.Count}** 組**先前留下的**重複"
+                    + "（⛔ 不是這一次造成的，但它們還在對外顯示）:");
+                foreach (string aLine in aOldDup) ioR.AppendLine("　　· " + aLine);
+            }
+
+            if (aSame.Count == 1)
+            {
+                ioR.AppendLine("- ✅ 沒有重複（1 ＝ 只有剛剛那一則）");
+                return;
+            }
+            if (aSame.Count == 0)
+            {
+                ioR.AppendLine("- ⚠ **一則都沒對上** ⇒ **這一格判不了**（⛔ 不是「沒有重複」）——"
+                    + "剛發出去的那一則本來就該在裡面。可能是對面還沒讀到、或送出的 content 與回讀的"
+                    + " `content_raw` 不逐字相同（例如被對方改寫）。");
+                return;
+            }
+            ioR.AppendLine($"- 🔴 **重複了：同一份內容有 {aSame.Count} 則** —— id: `"
+                + string.Join("` / `", aSame) + "`");
+            ioR.AppendLine("　　⚠ ⛔ 這**不是**你多按了一次：TASK-0259 量到重送發生在 `OpPost` **以下**"
+                + "（一次送出、台帳只有一行、對面兩則）。");
+            ioR.AppendLine("　　⛔ 本 build 的 `Cmd_Plurk` **沒有刪除 op** ⇒ 只能上 Plurk 網頁 UI 手動刪掉多的那幾則。");
+        }
 
         // ===========================================================
         // 區塊職責：圖片上傳（兩段式的第一段）—— multipart/form-data

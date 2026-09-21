@@ -1,4 +1,4 @@
-// UCL Chat Tavern — IO 層（prototype v1）
+﻿// UCL Chat Tavern — IO 層（prototype v1）
 // 路徑配置 / 身分持久化 / 房間管理 / messages.jsonl 讀寫 / 序號管理。
 // 設計取捨：
 //   - 訊息採 jsonl append-only，每行一個自包含 JSON object，永不重寫
@@ -936,6 +936,31 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// python notify_discord.py，是 2026-07-28 併發失控事故的結構性根因）。</summary>
         public static int AppendMessage(string roomId, UCL_ChatMessage msg)
         {
+            // ── 寫入端開關（TASK-0106 / D10 丙，Tim 2026-09-20 拍板）────────────────
+            // 🔴 **這一個函式就是切換點**，⛔ 不是 `Cmd_Tavern op=post`：全樹 24 個 AppendMessage
+            //    呼叫端都匯流到這裡，開關放這裡呼叫端一行都不用改；反過來（每個呼叫端插判斷）
+            //    是 24 個各自可能漏的地方，而漏掉的那一個**不會叫**。
+            // ⚠ 開關住資料根的 `agent_settings.json`（`tavern.writer`），與 Senate 那側**同一份解析**
+            //    （`SCP_TavernWriteMode`）—— Tim 2026-09-21 拍「甲」：⛔ 不讓 Editor 自己再解析一次，
+            //    兩份解析遲早分岔，而分岔的失效樣子是「兩邊都說自己是 editor」。
+            // ⛔ **沒有自動降級**：讀不出來就丟例外，不當成 editor 繼續寫。
+            SCP.Core.Tavern.SCP_TavernWriteModeRead aMode =
+                SCP.Core.Tavern.SCP_TavernWriteMode.Read(UCL_AgentCommandsPath.DataRoot);
+            if (!aMode.Ok)
+                throw new InvalidOperationException(
+                    "[Tavern] 寫入端開關讀不出來 ⇒ **這一則沒有寫出去**。" + aMode.Describe()
+                    + "　設定檔："
+                    + SCP.Core.Tavern.SCP_TavernWriteMode.SettingsPath(UCL_AgentCommandsPath.DataRoot)
+                    + "　⛔ 不猜哪一邊：猜錯的那一邊會造出第二個寫入端。");
+
+            if (aMode.Host == SCP.Core.Tavern.SCP_TavernWriteHost.Server)
+                throw new InvalidOperationException(
+                    "[Tavern] " + aMode.Describe() + " ⇒ 這一則該由 Senate Server 寫，"
+                    + "而 **Editor 這側的委派還沒接上**（TASK-0106 第 3 步）。"
+                    + "　⛔ 這不是『Server 沒跑』—— 是這條路還沒做完，兩者的處置不同。"
+                    + "　切回來：`senate cmd tavern-writer --arg data_root="
+                    + UCL_AgentCommandsPath.DataRoot + " --arg set=editor`");
+
             // 寫入臨界區 (2026-07-27, Tim 拍板抽離成 Service + lock)：
             // 「寫檔 (WriteMessageFile) + derive seq (CountMessageFiles) + 寫 _seq.txt」這段本來散在這裡，
             // 現在抽到 UCL_ChatTavernWriteService.WriteMessageWithSeq，用 per-room lock 包起來 —

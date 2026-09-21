@@ -92,13 +92,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         // ===========================================================
         // 區塊職責：寫一筆訊息為獨立 .json 檔，檔名直接用呼叫端已算好的 seq (取代舊版 WriteMessageFile)。
-        // 物理意義：no atomic counter (仍然)、no jsonl append；單檔 atomic create-or-overwrite。
+        // 物理意義：no atomic counter (仍然)、no jsonl append；單檔 **atomic create-new**（撞檔不覆蓋）。
         // 數值影響：自動填 ts (含 ms) + uuid (仍寫進訊息內容, 給 reply_to_uuid 等功能用；只是不再
         //          出現在檔名裡) + _writer / _pid 簽章 + ensure date dir。
         // 回傳：(record, fullPath, wrote) — wrote=false 代表該 seq 對應的檔名已存在 (理論上不該發生,
         //       代表呼叫端快取跟磁碟真實檔案數不同步)。本函式不自己重試亂猜新號碼——正確作法是讓
         //       呼叫端 (UCL_ChatTavernWriteService) 重新問磁碟真相 (CountMessageFiles) 拿到正確 seq
         //       再呼叫一次本函式, 而不是在這裡隨便換個檔名蒙混過去。
+        //       ⭐ 而「檔名已存在」這件事是由 FileMode.CreateNew 建檔失敗量到的 (TASK-0256)，
+        //       ⛔ 不是先 File.Exists 問一次 —— 後者在兩個寫入端同時存在時會靜默覆蓋掉別人的訊息。
         // 邊界：msg.ts 已填的話沿用（給 migrate 工具用）；否則 DateTime.UtcNow。
         //       msg.uuid 已填的話沿用；否則 GenerateUUID6（僅供內容識別 / reply 用，跟檔名無關）。
         // ===========================================================
@@ -141,15 +143,29 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string filename = BuildMessageFileNameFromSeq(seq);
             string fullPath = Path.Combine(dateDir, filename);
 
-            if (File.Exists(fullPath))
+            // serialize（不寫 seq 進 JSON 內容；seq 只活在檔名裡，reader 仍可從檔名或 position 兩種方式得到）
+            string json = SerializeMessageNoSeq(msg);
+
+            // 撞檔偵測＝原子建檔本身（FileMode.CreateNew），⛔ 不是先 File.Exists 再寫 (TASK-0256)。
+            // 舊版是 check-then-write：兩個 process 同時走到「檔案不存在」那一格 ⇒ 兩邊都寫同一個路徑 ⇒
+            // 後寫的覆蓋先寫的。而 seq 沒有重號、wrote 兩邊都是 true ⇒ **沒有任何一層會叫，訊息就是消失**。
+            // CreateNew 把那個判斷交給 OS：檔案已存在時建檔直接失敗 ⇒ 撞檔重新變成呼叫端看得到的 wrote=false，
+            // 走 UCL_ChatTavernWriteService 既有的 self-heal（問磁碟真相重算 seq）。
+            // ⚠ catch 只吃「因為檔案已存在」那一種 IOException——磁碟滿 / 路徑失效那類要原樣往上炸，
+            //   ⛔ 不可以被降級成「撞檔」（那會讓 self-heal 白重試三次，然後報一個錯的成因）。
+            try
+            {
+                using (var aStream = new FileStream(fullPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (var aWriter = new StreamWriter(aStream, new UTF8Encoding(false)))
+                {
+                    aWriter.Write(json);
+                }
+            }
+            catch (IOException) when (File.Exists(fullPath))
             {
                 // 不在這裡亂猜新號碼——回報 wrote=false，讓呼叫端回頭問磁碟真相重新算 seq 後再試一次。
                 return (msg, fullPath, false);
             }
-
-            // serialize（不寫 seq 進 JSON 內容；seq 只活在檔名裡，reader 仍可從檔名或 position 兩種方式得到）
-            string json = SerializeMessageNoSeq(msg);
-            File.WriteAllText(fullPath, json, new UTF8Encoding(false));
             return (msg, fullPath, true);
         }
 

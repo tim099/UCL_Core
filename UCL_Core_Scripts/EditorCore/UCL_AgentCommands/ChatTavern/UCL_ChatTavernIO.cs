@@ -974,12 +974,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     + " --arg set=editor`");
 
             string aServerRoot = aProbe.Info.ServerRoot;
-            // lane ＝ **一層目錄名**（`tavern-<room>`），與 Senate 那側 `Cmd_TavernWrite.Lane()` 同字面。
-            // 🩸 ⛔ 不可以用 `tavern/<room>`（協議的子分道寫法）：檔案會落在
+            // lane ＝ **固定一條**（TASK-0106 驗收 ③，PM 2026-09-21 拍板候選 A：近 7 日 100% 的
+            //   寫入落在同一個房 ⇒ per-room lane 的並行收益是 0，而它多依賴一個前提）。
+            // ⭐ 常數住在 SCP_Core，**與 Senate 那側 `Cmd_TavernWrite.Lane()` 是同一顆**
+            //   ⇒ ⛔ 不是各寫一個字面再靠註解維持一致（lane 對不上的失效樣子是
+            //   **15 秒逾時、沒有任何一層說不認得**，那種不一致不會有人來報）。
+            // 🩸 而它必須是**一層目錄名**：`tavern/<room>` 是協議的子分道寫法，檔案會落在
             //   `queues/tavern/queue-<room>.json`，而 `ServerExecutor.Tick` 掃的是 `queues/*` 那一層目錄、
-            //   只認 `pending.trigger` ⇒ **它永遠讀不到那一筆，而且沒有任何一層會說不認得**
-            //   （2026-09-21 端到端實測：等 15 秒逾時，queue 檔好好躺在磁碟上）。
-            string aLane = "tavern-" + roomId;
+            //   只認 `pending.trigger` ⇒ **它永遠讀不到那一筆**（2026-09-21 端到端實測）。
+            string aLane = SCP.Core.Tavern.SCP_TavernWriter.LaneName;
             var aArgs = new Dictionary<string, string>
             {
                 ["data_root"] = aDataRoot,

@@ -529,6 +529,12 @@ namespace UCL.Core.EditorLib.Plurk
             }
             var aRoot = SafeParse(aBody);
             string aKey = aIsResponse ? "responses" : "plurks";
+            // 🩸 兩個端點的**唯一鍵欄位名不同**（2026-09-21 活體量到）：
+            //   `/APP/Responses/get` 的每一筆是 `id`；`/APP/Timeline/getPlurks` 是 `plurk_id`，**沒有 `id`**。
+            //   ⛔ 兩條路共用 `"id"` 的後果不是報錯，是**去重 key 全成空字串** ⇒ 只留得下第一筆
+            //   ⇒ 時間軸那條**結構上永遠看不到第二筆**，於是它永遠偵測不到重複，而畫面上印的是 ✅。
+            //   📌 抓到它的是本段刻意印出來的分母（陣列筆數 vs 相異 id 數），不是任何一層警告。
+            string aIdKey = aIsResponse ? "id" : "plurk_id";
             var aList = (aRoot != null && aRoot.Contains(aKey)) ? aRoot[aKey] : null;
             if (aList == null || !aList.IsArray)
             {
@@ -543,9 +549,10 @@ namespace UCL.Core.EditorLib.Plurk
             for (int i = 0; i < aList.Count; i++)
             {
                 var aIt = aList[i];
-                if (!aSeenId.Add(JsonScalar(aIt, "id"))) continue;   // ⚠ Plurk 會回重複的同一則
+                string aId = JsonScalar(aIt, aIdKey);
+                if (aId.Length == 0) continue;                       // ⛔ 沒有唯一鍵就不數，不拿空字串當一筆
+                if (!aSeenId.Add(aId)) continue;                     // ⚠ Plurk 會回重複的同一則
                 if (JsonScalar(aIt, "user_id") != aMeId) continue;
-                string aId = JsonScalar(aIt, "id");
                 aMine.Add(aId);
                 string aRaw = UnescapeJson(JsonScalar(aIt, "content_raw")).Trim();
                 if (aRaw == aContent) aSame.Add(aId);

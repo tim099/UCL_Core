@@ -90,31 +90,114 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //   （`evidence`／`criteria` 是**依 type 而定**的條件必填，留在 handler 判，宣告層表達不了）。
         // ⛔ **`op` 刻意不宣告 Required** —— 它有預設值 `"list"`，不帶 op ＝ 列清單，那是合法呼叫。
         //   把有預設值的參數列進 Required，等於把一條既有的路砍掉。
+        //
+        // ⭐ 2026-09-21（calli）補上每個 op 的 `Known`（TASK-0258 引進的白名單，TASK-0109 的第二個消費端）。
+        //   `Known` ＝ 該 op **實際會去讀的每一個鍵**，逐格對照三種讀法掃出來的：
+        //   `GetArg(iArgs,…)`／`ParseEnumArg(iArgs,…)`／`Require(iArgs,…)`（後者讀的是 `index`）。
+        // ⚠ **兩欄的保守方向相反，這不是筆誤**：
+        //   `Required` 少列沒有代價（handler 自己照樣 throw），多列會砍掉今天走得通的路；
+        //   `Known`    多列沒有代價（只是少擋一個），**少列會擋掉今天合法的呼叫**。
+        //   ⇒ 所以 `Required` 從嚴、`Known` 從寬，而 `Known` 必須跟著 handler 的讀取一起改。
+        //
+        // ⛔ **`op=list` 不吃 `type`** —— Editor 這側只篩 status／assignee／epic／tag／milestone／memory_topic，
+        //   而 `senate cmd tasks` **吃** `type`。⇒ 補上白名單之後
+        //   `ucmd run Task --arg op=list --arg type=bug` 會**被擋下**。
+        //   📌 那是刻意的：在本次改動之前，它回的是一份**沒有篩過、卻看起來像篩過**的清單。
+        //   「被擋下」與「拿到一份錯的清單」之中，前者是能當場修好的那一種。
         public override UCL_CmdArgsSpec ArgsSpec => new UCL_CmdArgsSpec
         {
             Ops = new Dictionary<string, UCL_CmdOpSpec>
             {
                 // 無必填：list / sweep / kanban（handler 內零 reject ⇒ 不宣告，比照 Cmd_Tavern 的 leave）
-                ["list"] = new UCL_CmdOpSpec(),
-                ["sweep"] = new UCL_CmdOpSpec(),
-                ["kanban"] = new UCL_CmdOpSpec(),
+                // ⚠ 但 `Known` 照宣告 —— **「沒有必填」與「什麼都收」是兩件事**，
+                //   而在本次改動之前它們在這裡共用同一個空殼。
+                ["list"] = new UCL_CmdOpSpec
+                {
+                    Known = new[] { "status", "assignee", "epic", "tag", "milestone", "memory_topic" },
+                },
+                ["sweep"] = new UCL_CmdOpSpec { Known = new[] { "assignee", "confirm" } },
+                ["kanban"] = new UCL_CmdOpSpec { Known = new[] { "index" } },
 
                 // create：`title` 是無條件必填（:190 那個 throw 的成員之一）。
-                ["create"] = new UCL_CmdOpSpec { Required = new[] { "title" } },
+                ["create"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "title" },
+                    Known = new[]
+                    {
+                        "title", "type", "description", "evidence", "criteria",
+                        "severity", "priority", "status", "epic_id", "milestone",
+                        "tags", "memory_topic",
+                    },
+                },
 
                 // 以下十個都走 `Require(iArgs, out int aIndex)`（:1291）⇒ 無 index 必 throw。
-                ["show"] = new UCL_CmdOpSpec { Required = new[] { "index" } },
-                ["claim"] = new UCL_CmdOpSpec { Required = new[] { "index" } },
-                ["update"] = new UCL_CmdOpSpec { Required = new[] { "index" } },
-                ["resolve"] = new UCL_CmdOpSpec { Required = new[] { "index" } },
-                ["assign"] = new UCL_CmdOpSpec { Required = new[] { "index", "target_persona" } },
-                ["unassign"] = new UCL_CmdOpSpec { Required = new[] { "index", "target_persona" } },
-                ["comment"] = new UCL_CmdOpSpec { Required = new[] { "index", "body" } },
+                ["show"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "index" },
+                    Known = new[] { "index" },
+                },
+                ["claim"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "index" },
+                    Known = new[] { "index", "role", "scope" },
+                },
+                ["update"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "index" },
+                    Known = new[]
+                    {
+                        "index", "title", "description", "criteria", "status",
+                        "priority", "severity", "milestone", "memory_topic",
+                        "memory_archived_commit", "allow_shrink", "unset",
+                    },
+                },
+                ["resolve"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "index" },
+                    Known = new[] { "index", "status", "confirm", "note", "qa_note" },
+                },
+                ["assign"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "index", "target_persona" },
+                    Known = new[] { "index", "target_persona", "role", "replace" },
+                },
+                ["unassign"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "index", "target_persona" },
+                    Known = new[] { "index", "target_persona", "role" },
+                },
+                ["comment"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "index", "body" },
+                    Known = new[] { "index", "body" },
+                },
                 // ⛔ `criteria_index` 刻意**不**列 Required —— 不帶它是合法呼叫（dry-run 印未勾清單）。
-                ["check"] = new UCL_CmdOpSpec { Required = new[] { "index" } },
-                ["link"] = new UCL_CmdOpSpec { Required = new[] { "index", "target" } },
-                ["commit"] = new UCL_CmdOpSpec { Required = new[] { "index", "sha" } },
-                ["wrapup"] = new UCL_CmdOpSpec { Required = new[] { "index", "progress" } },
+                ["check"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "index" },
+                    Known = new[] { "index", "criteria_index", "expect_text" },
+                },
+                // 🩸 本次補 `Known` 的起點就是這一支（2026-09-21 calli）：
+                //   我想建「關聯」，打了 `--arg kind=related_to` —— 真正的參數叫 **`op_link`**，
+                //   而 `kind` 被**靜默吃掉** ⇒ `op_link` 取預設值 `blocked_by`，
+                //   於是兩張單被標成阻塞，而回傳是 ✓Success、時間線上也只寫「標記被 … 阻塞」。
+                //   ⇒ 我要到 `Fixes TASK-0258` 推不動狀態（blocker 閘擋下，而它**擋得對**）才發現。
+                //   📌 **打錯參數名的代價不落在打錯的那一刻，落在下一個讀這份資料的機制上。**
+                ["link"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "index", "target" },
+                    Known = new[] { "index", "target", "op_link", "remove" },
+                },
+                ["commit"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "index", "sha" },
+                    Known = new[] { "index", "sha", "mode" },
+                },
+                ["wrapup"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "index", "progress" },
+                    Known = new[] { "index", "progress", "why", "memory_type" },
+                },
             },
         };
 

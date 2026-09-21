@@ -158,13 +158,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             //   ⇒ `when (File.Exists(...))` 在**任何**建構之後的 IOException 上都成立。
             //   她實測把「磁碟空間不足」丟進去：被吃掉、降級成撞檔、**留下 0-byte 孤兒檔永久佔住那個 seq**，
             //   而最後報出來的成因是「資料層可能損壞，去檢查 messages/」——**那句話會把人送去翻一個沒壞的目錄**。
-            //   ⇒ 判準換成 win32 error code（80 `ERROR_FILE_EXISTS`／183 `ERROR_ALREADY_EXISTS`）。
-            // ⚠ **這一支跟 Senate 那側的 `SCP.Core.Io.SCP_AtomicFile` 是同一段邏輯的兩份實作** ——
-            //   本來要共用那一份，而今天 LY 這棵樹的 `SCP_Core` 指標與 origin 分叉中（別人有一筆未 push
-            //   的 commit），⛔ 我不動別人的 commit ⇒ 暫時各留一份。
-            //   📌 兩份合一的條件：LY 的 `Assets/Plugins/SCP_Core` 同步到含 `SCP_AtomicFile` 的版本之後，
-            //   把本檔這一支刪掉改呼叫那邊。**在那之前，改一邊就要改兩邊。**
-            if (!TryCreateNewFile(fullPath, json))
+            //   ⇒ 判準換成 win32 error code（80 `ERROR_FILE_EXISTS`／183 `ERROR_ALREADY_EXISTS`），
+            //   而且**跟 Senate 那側共用同一支**（`SCP.Core.Io.SCP_AtomicFile`）——
+            //   ⭐ 2026-09-21 稍早這裡曾經各留一份（那時 SCP_Core 指標分叉、我不動別人的 commit），
+            //   分叉一解掉就合回來了。⛔ 別再複製第二份：兩份的失效樣子是「改一邊、另一邊安靜地不同意」。
+            if (!SCP.Core.Io.SCP_AtomicFile.TryCreateNew(fullPath, json))
             {
                 // 不在這裡亂猜新號碼——回報 wrote=false，讓呼叫端回頭問磁碟真相重新算 seq 後再試一次。
                 return (msg, fullPath, false);
@@ -210,7 +208,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             string json = SerializeEventNoSeq(ev);
             while (retry < 10)
             {
-                if (TryCreateNewFile(fullPath, json)) return (ev, fullPath);
+                if (SCP.Core.Io.SCP_AtomicFile.TryCreateNew(fullPath, json)) return (ev, fullPath);
                 uuid6 = GenerateUUID6();
                 filename = BuildEventFileName(utcTime, uuid6, ev.type);
                 fullPath = Path.Combine(dateDir, filename);
@@ -804,44 +802,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 數值影響：呼叫 UCL_ChatTavernIO.SerializeMessage 後手動把 "seq":N 拿掉
         //          （簡化：直接複製 SerializeMessage 邏輯但跳過 seq）
         // ===========================================================
-        // ===========================================================
-        // 區塊職責：原子建檔 ＋「這個 IOException 是不是『檔名已經有人了』」（TASK-0256）
-        // 🩸 判準**不是** `File.Exists`（@kiara 2026-09-21 QA 量的）：
-        //    `FileStream(CreateNew)` 一建構，那顆檔就已經存在了（0 bytes，內容還沒寫）
-        //    ⇒ `when (File.Exists(...))` 在**任何**建構之後的 IOException 上都成立。
-        //    實測把「磁碟空間不足」丟進去：被吃掉、降級成撞檔、留下 0-byte 孤兒檔**永久佔住那個 seq**，
-        //    而最後報出來的成因是「資料層可能損壞，去檢查 messages/」——**它會把人送去翻一個沒壞的目錄**。
-        // ⚠ 與 `SCP.Core.Io.SCP_AtomicFile` 是同一段邏輯的兩份實作（理由見 WriteMessageFileWithSeq 內註解）。
-        // ⚠ 非 Windows 上 HResult 帶的是 errno 對映，本判準**只在 Windows 上量過**（2026-09-21）。
-        // ===========================================================
-        public const int ErrorFileExists = 80;
-        public const int ErrorAlreadyExists = 183;
-
-        public static bool IsAlreadyExistsIoError(IOException iEx)
-        {
-            if (iEx == null) return false;
-            int aCode = iEx.HResult & 0xFFFF;
-            return aCode == ErrorFileExists || aCode == ErrorAlreadyExists;
-        }
-
-        /// <summary>原子建檔。<c>false</c> ＝ 那個檔名已經有人了；⛔ 其餘 IO 失敗原樣往上炸。</summary>
-        public static bool TryCreateNewFile(string iPath, string iText)
-        {
-            try
-            {
-                using (var aStream = new FileStream(iPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                using (var aWriter = new StreamWriter(aStream, new UTF8Encoding(false)))
-                {
-                    aWriter.Write(iText);
-                }
-                return true;
-            }
-            catch (IOException e) when (IsAlreadyExistsIoError(e))
-            {
-                return false;
-            }
-        }
-
         public static string SerializeMessageNoSeq(UCL_ChatMessage m)
         {
             var sb = new StringBuilder();

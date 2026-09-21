@@ -2,8 +2,13 @@
 // 路徑配置 / 身分持久化 / 房間管理 / messages.jsonl 讀寫 / 序號管理。
 // 設計取捨：
 //   - 訊息採 jsonl append-only，每行一個自包含 JSON object，永不重寫
-//   - 序號 _seq.txt 單調遞增（讀 → +1 → 寫 → 用），prototype 階段不做跨 process lock
-//     （Editor handler 跑在 main thread，單一 Editor 內天然序列化）
+//   - ⚠ **上面那句的受詞已經不對了**（TASK-0106／0256，2026-09-21 改寫，⛔ 不是加注記）：
+//     `_seq.txt` **不再是配號來源**，它只是給 wait 機制讀的「最大 seq」快取；
+//     配號的權威是**訊息檔數**，而檔名就是 seq ⇒ 撞號 ＝ 撞檔名。
+//     而建檔已改成原子建檔（`FileMode.CreateNew`）⇒ 撞檔**會出聲**（回 wrote=false 走自我校正），
+//     ⛔ 不再是「靜默覆蓋」。
+//   - 「單一 Editor 內天然序列化」這個前提**現在是可切換的**：`tavern.writer=server` 時
+//     寫入端是 Senate 常駐 Server（單一 process），Editor 改走委派。
 //   - JSON 使用手寫 minimal serializer/parser，與 UCL_AgentCommandQueue 風格對齊
 #if UNITY_EDITOR
 using System;
@@ -822,7 +827,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         // ===========================================================
         // 區塊職責：序號（_seq.txt）— 單調遞增
-        // 物理意義：每 append 一筆訊息前 ReadAndIncrement 拿到 seq；prototype 不做跨 process lock
+        // 物理意義：⚠ **這一段是死代碼**（`IncrementAndGetSeq` 零呼叫點）——「每 append 前 ReadAndIncrement」
+        //          那個流程早就不存在了。現行配號在 `UCL_ChatTavernWriteService`（訊息檔數＋1），
+        //          `_seq.txt` 只剩下「給 wait 機制讀的最大 seq 快取」這一個用途。
+        //          ⛔ 別照這一行去理解配號，它描述的是一個已經退場的機制。
         // ===========================================================
 
         public static int ReadCurrentSeq(string roomId)
@@ -942,9 +950,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //   · 沒有 Server／Server 死了 ⇒ 去啟動它（⛔ 不是「發文壞了」）
         //   · Server 回報失敗 ⇒ 看它說什麼（那一則**確定沒寫**）
         //   · 等不到判定 ⇒ ⛔ **不要重送**：那一筆可能已經寫了，而 seq 全域遞增 ⇒ 重送 ＝ 多一則
-        // ⚠ 本函式**同步阻塞**。實測讀數見 TASK-0106；24 個呼叫端裡只有 4 個在用回傳的 seq，
-        //   其餘 18 個是 fire-and-forget（酒保 daemon／UI 頁）—— 那些現在也要付這段等待。
-        //   ⇒ 這是已知代價，不是沒想到；要改成非同步得先決定「失敗要通知誰」。
+        // ⚠ 本函式**同步阻塞** —— Tim 2026-09-21 拍板「①全部都等」，理由是**過渡期取最穩的那條**
+        //   （之後其他系統也會陸續搬到 Senate Server，這條路的形狀會被抄很多次）。
+        //   實測：24 個呼叫端裡**只有 4 個在用回傳的 seq**（3 個在 `Cmd_Tavern`、1 個在本檔），
+        //   其餘 18 個是 fire-and-forget（酒保 daemon／UI 頁）—— 它們現在也要付這段等待（粗估 0–2 秒／則）。
+        //   ⛔ 而「只讓那 4 個等、其餘丟出去就走」被否掉了：那 18 處的失敗會變成**靜默**，
+        //   正是 D10 要根治的病。要改非同步，得先有一個「發文失敗」的通知落點，⛔ 不是先拿掉等待。
+        //   📌 什麼時候該回來看這一格：**有人拿得出「被拖到」的讀數**時，⛔ 不是覺得慢的時候。
         // ===========================================================
         const double SERVER_DELEGATE_TIMEOUT_SEC = 15.0;
 

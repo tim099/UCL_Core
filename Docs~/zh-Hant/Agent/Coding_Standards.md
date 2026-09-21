@@ -1,7 +1,7 @@
 ---
 title: C# Coding Standards
-description: UCL_Core C# 設定資料、字串 key 與外部 Process 的共用撰寫規範。
-last_updated: 2026-08-30
+description: UCL_Core C# 設定資料、字串 key、外部 Process 與 struct/IDisposable scope 的共用撰寫規範。
+last_updated: 2026-09-21
 target_audience: [AI_Agent, Gameplay_Programmer, Tools_Maintainer]
 related:
   - Json_Coding_Standards.md | JSON 讀寫規範 | JsonData / typed model / round-trip 驗收
@@ -248,3 +248,60 @@ Task.Run(() =>                                  // ① 不在主執行緒跑
 > `UCL_ChatTavernIO.GetRoomsRoot()`），否則換一個專案就找不到檔 ——
 > 而 `File.Exists` 失敗後若 fail-soft return，那是**連 warning 都沒有的靜默失效**。
 > 解析失敗時要把**解析結果印出來**，讓人看得到它找去了哪裡。
+
+---
+
+## `IDisposable` scope（RAII 包裝）不要寫成 struct（硬規則）
+
+**判準：一個型別的建構子有副作用（開錄、上鎖、進場、計數 +1），它就不可以是 struct。**
+
+```csharp
+// ⛔ 這樣寫，建構子永遠不會被呼叫到
+public struct FooScope : IDisposable
+{
+    public FooScope(bool iUnused = true) { Begin(); }   // ← 沒有人走得到這裡
+    public void Dispose() { End(); }
+}
+var aScope = new FooScope();     // ← 走的是 struct 的隱含 default ctor（欄位歸零）
+```
+
+⚠ **struct 的 `new T()` 一律走隱含的 default constructor，不會去挑「所有參數都有預設值」的那個多載。**
+（C# 9 之前 struct 根本不能自訂無參數建構子；即使之後版本可以，沒定義就仍是欄位歸零那條。）
+
+⇒ 失效樣子：**建構子的副作用沒發生，而每一層都回報成功** ——
+編譯乾淨、沒有例外、`Dispose` 照樣被呼叫、功能靜靜地不生效。
+
+### 🩸 血證（2026-09-21，LY 專案 `CustomCommandRecorder`）
+
+AVG 播放期間的 Custom 指令記錄器，錄製區間用 `struct RecordScope` 包：
+`BeginRecord` 從未被呼叫 ⇒ 錄製沒開 ⇒ 記錄全是 no-op ⇒ 播完的回捲（Undo）整段被跳過。
+AVG 照播、指令照跑、`SelfTest` 全綠。**唯一喊出來的**是 `EndRecord` 那側的
+「depth 已是 0 — Begin/End 沒有成對呼叫」守衛，`Editor.log` 實測 **5 筆** ——
+而它喊在 Console 裡，沒有人在看。最後是使用者自己埋 log 才發現。
+
+**修法優先序照本規範第一條**：
+1. **讓它不可能發生** —— scope 改 `sealed class` ⇒ `new T()` 找不到無參數建構子會**編譯錯**。
+2. **讓它當場喊** —— 收尾動作真的做了事就印一行讀數（做了 0 件不印）。
+
+### 連帶的一格：自我驗證要走「使用者真的會走的那條路」
+
+那次的 `SelfTest` 直接呼叫 `BeginRecord()` / `EndRecord()`，而呼叫端走的是 `RecordScope`
+⇒ **綠燈是真的，只是它照的不是使用者走的那條路。**
+
+⇒ 寫 `SelfTest` 時問一句：**我測的入口，跟正式程式碼呼叫的入口是同一個嗎？**
+並且**讓它紅過一次** —— 把修法回退、確認 `SelfTest` 真的 FAILED 且訊息指得出成因，
+否則你不知道那個守衛在不在擋（該次回退實測印出
+「RecordScope 建好之後沒有進入錄製狀態（BeginRecord 沒被呼叫到？）」）。
+
+### 順帶：回捲／收尾的責任放進 scope，不要放在呼叫端的 `finally`
+
+```csharp
+// ✅ 呼叫端一行，離開區間一定收（正常返回／例外／token 取消都走 Dispose）
+using (Recorder.BeginScope(iUndoOnEnd: true, () => Engine))
+{
+    await DoSomethingAsync(token);
+}
+```
+
+⛔ 寫在呼叫端的 `finally` 會依賴「被呼叫方有沒有把 `OperationCanceledException` 吃掉」——
+而那個保證不在呼叫端這一側；被呼叫方哪天改成外拋，收尾就靜默不執行了。

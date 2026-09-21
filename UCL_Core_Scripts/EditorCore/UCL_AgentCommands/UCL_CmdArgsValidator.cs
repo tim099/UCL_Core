@@ -114,7 +114,17 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
 
             // ── 第二層：子 op ──
-            if (aSpec.Ops == null || aSpec.Ops.Count == 0) return true;
+            if (aSpec.Ops == null || aSpec.Ops.Count == 0)
+            {
+                // 扁平 Cmd：沒有第二層可查，白名單就在這裡收尾。
+                var aFlatUnknown = UnknownOf(iArgs, aSpec.Known, aSpec, null);
+                if (aFlatUnknown.Count > 0)
+                {
+                    oError = DescribeUnknown(iHandler, null, aFlatUnknown, aSpec.Known, null);
+                    return false;
+                }
+                return true;
+            }
             if (!aView.TryGetValue("op", out var aOp) || string.IsNullOrEmpty(aOp)) return true;  // 沒帶 op → 交給 handler 自己報
             if (!aSpec.Ops.TryGetValue(aOp.ToLowerInvariant(), out var aOpSpec) || aOpSpec == null) return true;
 
@@ -126,7 +136,88 @@ namespace UCL.Core.EditorLib.AgentCommands
                 oError = Describe(iHandler, aOp, aOpMissing, aOpAbsent, aOpView, aOpSpec.Aliases);
                 return false;
             }
+
+            // ⚠ 白名單**排在必填之後**：兩種都不對時先講缺什麼 ——
+            //   缺必填是「這一趟不會成立」，認不得的參數是「有一格不會生效」，
+            //   前者的處置涵蓋後者，先報它可以少一個來回。
+            // ⛔ 判準用**原始 args**（`iArgs`）不是歸一後的檢視：`ResolveAlias` 會把別名的值
+            //   搬到 canonical 鍵上，⇒ 拿 view 去比對會讓「我打的是別名」看起來像「我打的是正名」，
+            //   而那正好把本欄要抓的那一格藏起來。
+            var aUnknown = UnknownOf(iArgs, aOpSpec.Known, aSpec, aOpSpec);
+            if (aUnknown.Count > 0)
+            {
+                oError = DescribeUnknown(iHandler, aOp, aUnknown, aOpSpec.Known, aSpec.Known);
+                return false;
+            }
             return true;
+        }
+
+        // ===========================================================
+        // 區塊職責：白名單 —— 找出「這支 op 認不得」的參數名（TASK-0258）。
+        // 物理意義：`MissingOf` 問「該有的有沒有」，本函式問「給的它認不認得」。
+        //          兩個問題都不問的時候，打錯參數名的失效樣子是 **✓Success ＋ 一件沒發生的事**。
+        // 數值影響：純檢查。⭐ **`Known` 為空 ⇒ 立刻回空清單**（opt-in）——
+        //          這一行就是「其餘沒宣告的 Cmd 行為逐字不變」那句話的全部實作。
+        // ⚠ 合法集合刻意取得比 `Known` 寬：Required／RequiredPresent／別名的兩端都算認得，
+        //   否則宣告者要把同一個名字抄進兩個欄位，而**漏抄的那次會擋掉合法呼叫**。
+        // ===========================================================
+        static List<string> UnknownOf(IReadOnlyDictionary<string, string> iArgs, string[] iKnown,
+                                      UCL_CmdArgsSpec iSpec, UCL_CmdOpSpec iOpSpec)
+        {
+            var aUnknown = new List<string>();
+            if (iArgs == null) return aUnknown;
+            if (iKnown == null || iKnown.Length == 0) return aUnknown;   // ⭐ opt-in：沒宣告就不驗
+
+            var aOk = new HashSet<string>(System.StringComparer.Ordinal);
+            void Add(string[] iNames) { if (iNames != null) foreach (var n in iNames) if (!string.IsNullOrEmpty(n)) aOk.Add(n); }
+            void AddAliases(IReadOnlyDictionary<string, string> iAliases)
+            {
+                if (iAliases == null) return;
+                foreach (var kv in iAliases) { aOk.Add(kv.Key); aOk.Add(kv.Value); }
+            }
+
+            Add(iKnown);
+            if (iSpec != null)
+            {
+                Add(iSpec.Known); Add(iSpec.Required); Add(iSpec.RequiredPresent); AddAliases(iSpec.Aliases);
+            }
+            if (iOpSpec != null)
+            {
+                Add(iOpSpec.Required); Add(iOpSpec.RequiredPresent); AddAliases(iOpSpec.Aliases);
+            }
+            // 框架層保留：`op` 選哪一支；`persona` 是每一支都吃的派遣身分。
+            aOk.Add("op"); aOk.Add("persona");
+
+            foreach (var kv in iArgs)
+            {
+                string aKey = kv.Key;
+                if (string.IsNullOrEmpty(aKey)) continue;
+                // `_` 開頭是**框架自己戳進來的**（`_caller_client` / `_caller_env_marker` …）——
+                // 呼叫端沒打過它們，擋下來只會讓人去查一個他沒寫的東西。
+                if (aKey[0] == '_') continue;
+                if (!aOk.Contains(aKey)) aUnknown.Add(aKey);
+            }
+            aUnknown.Sort(System.StringComparer.Ordinal);
+            return aUnknown;
+        }
+
+        // 訊息要能直接動手修，判準同 Describe：講清楚**是哪幾個名字**、**這支認得哪些**。
+        // ⚠ 不猜「你是不是想打 X」—— 猜錯時它會把人推去改一個本來就對的地方，
+        //   而把合法清單整份印出來的成本只有幾十個字元。
+        static string DescribeUnknown(UCL_AgentCommandHandlerBase iHandler, string iOp,
+                                      List<string> iUnknown, string[] iOpKnown, string[] iCmdKnown)
+        {
+            string aWhere = string.IsNullOrEmpty(iOp) ? iHandler.CommandType : $"{iHandler.CommandType} op={iOp}";
+            var aAll = new SortedSet<string>(System.StringComparer.Ordinal);
+            if (iOpKnown != null) foreach (var n in iOpKnown) if (!string.IsNullOrEmpty(n)) aAll.Add(n);
+            if (iCmdKnown != null) foreach (var n in iCmdKnown) if (!string.IsNullOrEmpty(n)) aAll.Add(n);
+
+            return $"[{aWhere}] 參數檢查未過｜**認不得的參數**：[{string.Join(", ", iUnknown)}]"
+                 + $"（這支 op 認得的是：[{string.Join(", ", aAll)}]）"
+                 + "\n  ↳ ⛔ **這一趟沒有執行** —— 以前這種情況是靜默取預設值，"
+                 + "於是回傳 ✓Success 而那個參數想做的事沒有發生。"
+                 + "\n  ↳ 若這個名字**應該**被接受（例如它是另一個入口的既有叫法），"
+                 + "請在該 op 的 ArgsSpec 補進 `Known` 或 `Aliases`，⛔ 不要在 handler 裡多讀一個沒宣告的鍵。";
         }
 
         // 區塊職責：三態診斷 —— 只在**有人已經在查這個 Cmd** 的時候才出現的一行提示。

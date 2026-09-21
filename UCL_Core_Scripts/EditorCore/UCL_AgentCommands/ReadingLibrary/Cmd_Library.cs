@@ -103,6 +103,118 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         public override string HelpURL =>
             "ucl_core:Docs~/{lang}/Workflows/Reading_Library_Workflow.md";
 
+        // ===========================================================
+        // 區塊職責：機器可讀參數規格（TASK-0258，2026-09-21 calli）。
+        // 物理意義：`UCL_CmdArgsValidator.Validate` 對 `ArgsSpec == null` 的 handler 直接 return true
+        //          ⇒ 本檔補上這份宣告之前，走 ucmd 這條路是**完全沒有執行前參數閘**的。
+        //
+        // 🩸 為什麼是這一支先做：2026-09-21 我讀完一章書要更新書籤，打了
+        //      `--arg bookmark=<新書籤> --arg anticipation=5 --arg impression=<新看法>`
+        //    ⇒ ✓Success／exit 0，而 `op=bookmark` 逐字只讀 `note`／`impression`／`status`。
+        //    結果：`current_chapter_id`／`last_read`／`current_impression` **三格全對**，
+        //    只有 `bookmark_note` 停在上一章 —— 而那一格不會有人當場去看。
+        //    ⚠ 那支 op **有**守衛（三格全空就 throw），它沒叫是因為 `impression` 的名字碰巧對。
+        //    ⇒ **「至少要有一格」擋得住『什麼都沒帶』，擋不住『帶了但名字錯』。**
+        //
+        // 📐 `Known` ＝ **該 op 實際會去讀的每一個鍵**（含必填），逐格對照實作抄下來的，⛔ 不憑印象。
+        //    宣告它是一個承諾：漏列一格 ⇒ 擋掉一個今天合法的呼叫。所以它跟實作要一起改。
+        // ⚠ `Required` 則**只列 handler 自己已經會 throw 的**（比照 Cmd_Task 的判準）——
+        //    少列沒有代價（handler 照樣擋），多列會砍掉一條今天走得通的路。
+        //    ⇒ 兩欄的保守方向相反，這不是筆誤。
+        //
+        // 📌 已知的**刻意不收**（⛔ 不猜語意，讓它當場喊比讓它靜默好）：
+        //    · `op=note_chapter` 的 `append_round`（Senate CLI 那側的名字；Editor 這側叫 `round`）
+        //      —— 兩者語意我沒有逐格驗過，所以不併成別名。現在它會被擋下並印出認得的清單，
+        //      而在本次改動之前它是**靜默取預設值**。
+        //    · `op=bookmark` 的 `anticipation` —— 這支 op 真的不吃它（期待度目前只有
+        //      `op=media_init` 設得了，而 `reading-library` skill 卻寫著「每次閱讀完成後」要更新它
+        //      ⇒ 那是一條條文遺孀）。補上入口要動 `SCP_LibraryCharacter.Bookmark`，不在本次射程。
+        // ===========================================================
+        public override UCL_CmdArgsSpec ArgsSpec => new UCL_CmdArgsSpec
+        {
+            Ops = new Dictionary<string, UCL_CmdOpSpec>
+            {
+                ["paths"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "media_id" },
+                    Known = new[] { "persona", "media_id" },
+                },
+                ["recall"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "media_id" },
+                    Known = new[] { "persona", "media_id", "full" },
+                },
+                ["sync_shelf"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "media_id" },
+                    Known = new[] { "persona", "media_id" },
+                },
+                ["media_init"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "media_id", "work_id" },
+                    Known = new[]
+                    {
+                        "persona", "media_id", "work_id", "media_kind", "title", "title_original",
+                        "author", "anticipation", "aliases", "genre_tags",
+                    },
+                },
+                // `title`／`chapter_title` 與 `chapter`／`chapter_id` 是**兩個入口的兩個名字，兩個都收**
+                // （TASK-0166 ③ 的既有處置，見 Op_NoteChapter 的血證註解）⇒ 兩邊都列進 Known。
+                ["note_chapter"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "media_id" },
+                    Known = new[]
+                    {
+                        "persona", "media_id", "chapter", "chapter_id", "title", "chapter_title",
+                        "body", "append", "round", "display_number", "time_range",
+                        "impression", "bookmark_note",
+                    },
+                },
+                ["bookmark"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "media_id" },
+                    Known = new[] { "persona", "media_id", "note", "impression", "status" },
+                },
+                // `character`／`character_id` 同上：兩個入口兩個名字，兩個都收（見 CharacterIdOf）。
+                ["add_character"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "media_id" },
+                    Known = new[]
+                    {
+                        "persona", "media_id", "character", "character_id",
+                        "name", "name_original", "view", "facts",
+                    },
+                },
+                ["revise_view"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "media_id" },
+                    Known = new[]
+                    {
+                        "persona", "media_id", "character", "character_id",
+                        "view", "change_reason", "facts",
+                    },
+                },
+                // `agent` 與 `chapter` 在 handler 內無條件 throw ⇒ 進 Required。
+                // `session_token` 是發文那一段要的，⛔ 不是本 op 自己用的，但它確實會被讀到。
+                ["share"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "persona", "media_id", "agent", "chapter" },
+                    Known = new[] { "persona", "media_id", "agent", "chapter", "round", "room", "session_token" },
+                },
+                ["scan"] = new UCL_CmdOpSpec { Known = new[] { "show_migrated" } },
+                ["authored_diff"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "book", "work_id" },
+                    Known = new[] { "book", "work_id" },
+                },
+                ["authored_migrate"] = new UCL_CmdOpSpec
+                {
+                    Required = new[] { "book", "work_id" },
+                    Known = new[] { "book", "work_id", "confirm" },
+                },
+            },
+        };
+
         // 區塊職責：id 形狀守門 —— 任何會被接到路徑上的值都必須先驗形狀。
         // 物理意義：擋掉路徑分隔符與 ..，避免 persona / media_id 逃出 Library 根。
         // 數值影響：純驗證；不符即 throw，不做「清洗後照用」（清洗會讓錯誤靜默）。

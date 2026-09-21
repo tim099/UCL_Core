@@ -68,6 +68,33 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// —— 外層先取的那個要排在前面。順序錯不會報錯，會**安靜地選錯值**。</para>
         /// </summary>
         public Dictionary<string, string> Aliases = new Dictionary<string, string>();
+
+        // ===========================================================
+        // 區塊職責：**這個 op 認得的全部參數名**（TASK-0258，2026-09-21 calli）。
+        //          宣告了它，驗證器就會把「認不得的參數」當場擋下；**空 ⇒ 不驗**（opt-in）。
+        // 物理意義：`Required` 回答「該有的有沒有」，本欄回答「給的它認不認得」——
+        //          那是兩個不同的問題，而以前只有前一個有人問。
+        // 數值影響：預設空陣列 ⇒ 沒宣告的 op 行為與本次改動前**逐字相同**。
+        //
+        // 🩸 血證（本欄的來源）：`Library op=bookmark` 逐字只讀 `note`／`impression`／`status`，
+        //   而我傳的是 `--arg bookmark=…`（名字錯）＋ `--arg anticipation=5`（這支 op 根本不吃）。
+        //   回傳檔 ✓Success、exit 0、`current_chapter_id`／`last_read`／`current_impression`
+        //   **三格全對**，只有 `bookmark_note` 停在上一章 —— 而那一格沒有人會當場去看。
+        //   ⚠ 那支 op **有**守衛（`note`/`impression`/`status` 三格全空就 throw），
+        //   它沒叫是因為 `impression` 的名字碰巧對 ⇒
+        //   **「三格至少要有一格」擋得住『什麼都沒帶』，擋不住『帶了但名字錯』。**
+        //
+        // ⚠ 為什麼這不違反本檔開頭那條「刻意不收 optional」：
+        //   那條的理由逐字是「Python 端從來沒讀過它，而**沒人用的欄位一定會爛**」——
+        //   ⇒ 它反對的是**沒有消費端的宣告**，不是「列出參數」這件事本身。
+        //   本欄的消費端就是 `UCL_CmdArgsValidator`，而且是 enforce 型的消費端：
+        //   漏列一個真的合法的參數，**下一次呼叫它就會當場被擋**（不是靜默爛掉）。
+        //   ⭐ 也就是說，本欄把那條血證的前提**倒過來了**：optional 會爛是因為沒人 enforce，
+        //   而一個被 enforce 的清單漏一格時，是**它自己**尖叫，不是使用者三個月後才發現。
+        // ⛔ 但也因此，宣告它是一個**承諾**：漏列 ⇒ 擋掉今天合法的呼叫。
+        //   ⇒ 只在「逐格對照過 handler 實作」之後才宣告，⛔ 不要憑印象列。
+        // ===========================================================
+        public string[] Known = System.Array.Empty<string>();
     }
 
     /// <summary>
@@ -122,5 +149,15 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// null / 空 = 本 Cmd 沒有子 op。
         /// </summary>
         public Dictionary<string, UCL_CmdOpSpec> Ops;
+
+        /// <summary>
+        /// **不分 op 都認得**的參數名（TASK-0258）。語意與 <see cref="UCL_CmdOpSpec.Known"/> 相同，
+        /// 差別只在層級：有子 op 的 Cmd 把共用的那幾格寫在這裡，各 op 只寫自己獨有的。
+        ///
+        /// <para>⚠ 判準是**兩層聯集**：某個參數只要出現在本層或該 op 那一層，就算認得。
+        /// ⛔ 反過來說，**本層宣告了、而某個 op 的 <c>Known</c> 是空的**，那個 op 仍然不驗
+        /// —— 「這一層有清單」推不出「每個 op 都有清單」，而把它推出來會擋掉今天合法的呼叫。</para>
+        /// </summary>
+        public string[] Known = System.Array.Empty<string>();
     }
 }

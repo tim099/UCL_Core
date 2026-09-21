@@ -8,7 +8,7 @@
 // 物理意義：兩種券的 schema 與儲存布局不同（繪圖券 = per-persona 檔 balance+history；
 //          酒館券 = agent_bonus_quota.json 巢狀 agents.<bank>.personas.<persona>.total_remaining+history），
 //          但「產生審計時戳/uuid、原子 tmp+replace 寫檔、讀檔或 init 空檔後 mutate 再寫回」這層機制完全一致。
-//          抽出共用，消除原本在 UCL_CanvasVoucherLedger / UCL_TavernVoucherLedger / UCL_BankAdminPage
+//          抽出共用，消除原本在 UCL_CanvasVoucherLedger / UCL_TavernVoucherLedger
 //          三處各自複製的 IsoNow/ShortUuid/AtomicWrite（Tim 2026-07-24：券通用邏輯抽離共用）。
 // 設計取捨：schema 差異（balance 欄名 / 巢狀路徑 / history entry 格式）刻意「不」強行統一 —
 //          由各 ledger 在 MutateFile 的 mutate 委派內自行處理；共用層只管「機制」不管「結構」。

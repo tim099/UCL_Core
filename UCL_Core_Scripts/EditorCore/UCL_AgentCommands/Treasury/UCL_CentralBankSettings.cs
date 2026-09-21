@@ -36,7 +36,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 {
     /// <summary>
     /// 央行帳號與保管費參數。UCL_BartenderDaemon 跨日結算時取用；
-    /// UCL_BankAdminPage「🏦 央行 / 保管費」面板可調；Python 端讀同一份 JSON。
+    /// 設定檔直接改；Python 端讀同一份 JSON。
     /// </summary>
     public static class UCL_CentralBankSettings
     {
@@ -49,7 +49,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         // 區塊職責：央行的顯示名。
         // 物理意義：真相源是**帳戶資料**（`Treasury/accounts/<id>.json` 的 display_name，
         //          與酒館／Discord 的署名同一個來源）。
-        // 🩸 為什麼不能是常數：央行帳戶可被設定（見 SetCentralBankAccount）——
+        // 🩸 為什麼不能是常數：央行帳戶住在設定檔裡（⚠ 寫入端已於 TASK-0242 ⑫ 退場，本類現在唯讀）——
         //   常數會在換了央行之後繼續顯示舊名字，而那是一個**看起來完全正常的錯誤**
         //   （判準⑤：別造一個名字比事實大的東西）。
         public static string CentralBankDisplayName
@@ -105,28 +105,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             }
         }
 
-        // 區塊職責：改設央行帳戶（Tim 2026-08-20：要能選，不要寫死一個帳號）。
-        // 物理意義：**這個值決定錢從哪裡撥出來** —— 後台打款、請款核准、跨日保管費的去處全看它。
-        // 數值影響：改完之後所有撥款來源立刻換帳戶；不搬任何一分錢（舊央行的餘額原地不動）。
-        // 為什麼寫成帶 out err 的方法而不是 setter：它會**拒絕**不合法的值，
-        //   而 property setter 沒有地方講「為什麼沒寫進去」—— 靜默不寫比寫錯更難查。
-        public static bool SetCentralBankAccount(string iAccount, out string oError)
-        {
-            oError = null;
-            string acc = (iAccount ?? "").Trim();
-            if (string.IsNullOrEmpty(acc)) { oError = "央行帳戶不可為空"; return false; }
-            if (!UCL_BankAccountProfileIO.IsValidAccountId(acc))
-            { oError = $"`{acc}` 含不能當檔名的字元（帳戶 id 要能當一帳一檔的檔名）"; return false; }
-            if (acc == CentralBankAccount) { oError = $"`{acc}` 已經是央行，未變更"; return false; }
-            SetString("central_bank_account", acc);
-            // 印 ✓ 不算數，讀回來才算。
-            string back = CentralBankAccount;
-            if (back != acc) { oError = $"寫入後讀回不符：期望 `{acc}`、實際 `{back}`"; return false; }
-            // 央行依定義是 canonical 帳戶 ⇒ 換人之後解析器要重新認識它，否則新央行會被當孤兒。
-            UCL_TreasuryAccountResolver.Invalidate();
-            return true;
-        }
-
         /// <summary>超過這個餘額的部分才收保管費。</summary>
         public static int OvernightThreshold
         {
@@ -137,7 +115,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     ? jd.GetInt("overnight_threshold", DefaultThreshold) : DefaultThreshold;
                 return v < MinThreshold ? MinThreshold : v;
             }
-            set => SetInt("overnight_threshold", value < MinThreshold ? MinThreshold : value);
         }
 
         /// <summary>超額部分的費率，千分比整數（50 = 5.0%）。</summary>
@@ -150,7 +127,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     ? jd.GetInt("overnight_fee_permille", DefaultFeePermille) : DefaultFeePermille;
                 return ClampPermille(v);
             }
-            set => SetInt("overnight_fee_permille", ClampPermille(value));
         }
 
         /// <summary>費率的小數形式（供計算用）：50‰ → 0.05。</summary>
@@ -184,7 +160,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     ? jd.GetInt("exempt_central_bank", 1) : 1;
                 return v != 0;
             }
-            set => SetInt("exempt_central_bank", value ? 1 : 0);
         }
 
         /// <summary>付費掛號信件每封費用（Tim 2026-08-01；預設 5 token，後台可調）。</summary>
@@ -207,7 +182,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     ? jd.GetInt("registered_mail_fee", DefaultRegisteredMailFee) : DefaultRegisteredMailFee;
                 return v < 0 ? 0 : v;
             }
-            set => SetInt("registered_mail_fee", value < 0 ? 0 : value);
         }
 
         // ===========================================================
@@ -247,18 +221,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     // 落盤值壞掉要出聲：靜默回預設會讓兩個專案都變成 Ducat，
                     // 而那正是一區一檔要防的對撞（且症狀是「另一個專案的帳號」）。
                     Debug.LogError($"[CentralBankSettings] currency_id 落盤值不合法（'{v}'），本次改用預設 " +
-                                   $"'{DefaultCurrencyId}' —— 請到 UCL_BankAdminPage 修正。");
+                                   $"'{DefaultCurrencyId}' —— 請直接修設定檔。");
                 }
                 return DefaultCurrencyId;
-            }
-            set
-            {
-                if (!IsValidCurrencyId(value))
-                {
-                    Debug.LogError($"[CentralBankSettings] 區域（貨幣）ID 不合法，**未寫入**：'{value}'");
-                    return;
-                }
-                SetString("currency_id", value.Trim());
             }
         }
 
@@ -294,29 +259,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             return JsonData.ParseJson("{}");
         }
 
-        static void SetInt(string key, int value) => Write(jd => jd[key] = new JsonData(value));
 
-        static void SetString(string key, string value) => Write(jd => jd[key] = new JsonData(value));
 
-        static void Write(System.Action<JsonData> mutate)
-        {
-            var jd = Load();
-            mutate(jd);
-            try
-            {
-                string dir = Path.GetDirectoryName(SettingsPath);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                // 原子寫：tmp + replace，避免 Python 端剛好讀到寫一半的檔
-                string tmp = SettingsPath + ".tmp";
-                File.WriteAllText(tmp, jd.ToJsonBeautify());
-                if (File.Exists(SettingsPath)) File.Delete(SettingsPath);
-                File.Move(tmp, SettingsPath);
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogWarning($"[CentralBankSettings] 寫入失敗: {e.Message}");
-            }
-        }
     }
 }
 #endif

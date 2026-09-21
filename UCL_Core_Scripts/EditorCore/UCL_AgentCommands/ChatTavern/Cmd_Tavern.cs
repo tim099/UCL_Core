@@ -1373,7 +1373,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 物理意義：酒館訊息是**流**——它會被後來的訊息推走、被 catchup 讀掉、被壓縮。
         //          創作型發言（詩／散文／ASCII art）跟工作訊息不同：它的價值不在被讀到一次，
         //          在**還留著**。掛號信投進該 persona 自己的收件匣，那份就跟著他走。
-        //          機制沿用 UCL_BankAdminPage 的免費系統掛號信（fee 固定 0，不碰 Treasury）。
+        //          機制：免費系統掛號信（fee 固定 0，不碰 Treasury）。
         //
         // 數值影響：寫兩份信件檔（收件匣＋寄件備份），不動帳、不動任何 token。
         // 邊界（三個都刻意）：

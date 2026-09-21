@@ -584,7 +584,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         //   合一前是 persona → agent → `agent_banks` → 帳戶（兩跳），
         //   合一後是 persona → agent（＝帳戶，一跳）——
         //   **兩者的差別在本函式內部處理完，外部一律拿到同一種答案。**
-        // 🩸 為什麼要立這個入口：在此之前 `UCL_BankAdminPage` 自己寫了一份
+        // 🩸 為什麼要立這個入口：在此之前後台頁自己寫了一份
         //   「persona → agent → 查 agent_banks」，合一之後那份就壞了 ⇒ 後台顯示
         //   「⚠ agent 未註冊於 agent_banks」，而 `UCL_PersonaAgentAdminPage` 同時顯示正確答案。
         //   **同一個事實兩頁各說各話，而兩邊都不報錯。**

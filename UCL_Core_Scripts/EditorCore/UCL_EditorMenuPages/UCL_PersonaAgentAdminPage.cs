@@ -1,6 +1,6 @@
 // 區塊職責：Persona & Agent 後台管理頁 — agent 開帳（含對應 bank）/ persona 建立（可選 fork 來源）/
-//            persona 換綁 agent / persona 角色卡（PersonaCard）檢視與補建
-//            （Tim 2026-07-29 拍板，參考 UCL_ChatTavernAdminPage 與 UCL_BankAdminPage）。
+//            persona 角色卡（PersonaCard）檢視與補建
+//            （Tim 2026-07-29 拍板，參考 UCL_ChatTavernAdminPage）。
 // 物理意義：agent 與 persona 是兩層身分 —
 //          (1) agent = 帳號層（claude-code / Zeta / Altair…），對應一個 bank（token 帳戶）；
 //              權威表 = AgentCommands/AwakenInit/_registry_meta.json 的 agent_banks。
@@ -11,7 +11,7 @@
 //          會讓 UCL_ChatTavernAdminPage 的頭像 Override 下拉選不到它（gura 之前正是此狀態）。
 //          以前這些只能手改 JSON 或走 awakening.py CLI；本頁把四個高頻操作搬進 Editor。
 // 數值影響：寫三處 —
-//          _registry_meta.json 的 agent_banks（開 agent）、personas/<name>.json（建 persona / 換綁）、
+//          _registry_meta.json 的 agent_banks（開 agent）、personas/<name>.json（建 persona）、
 //          <當前編輯模組>/UCL_Assets/UCL_ChatTavernPersonaCardAsset/<persona>.json（一鍵建卡）；
 //          可選種子額度走 UCL_TreasuryLedger.Credit（append-only，與 BankAdminPage 開戶同一路徑）。
 // 設計取捨：
@@ -39,7 +39,7 @@ using UnityEngine;
 namespace UCL.Core.EditorLib.Page
 {
     /// <summary>
-    /// Persona & Agent 後台管理頁 — 開 agent（含 bank）/ 建 persona（可 fork）/ persona 換綁 agent。
+    /// Persona & Agent 後台管理頁 — 開 agent（含 bank）/ 建 persona（可 fork）。⚠ 換綁面板已於 TASK-0242 ⑫ 退場。
     /// 入口：控制台 (UCL_ControlPanelPage) 的「🧬 Persona & Agent 管理」按鈕。
     /// </summary>
     [HelpURL("ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md")]
@@ -132,12 +132,6 @@ namespace UCL.Core.EditorLib.Page
         string m_NewPersonaRoleDraft = "";
         int m_ForkSourceIdx = 0;          // 0 = 不 fork
 
-        // ==== 換綁 draft ====
-        int m_RebindPersonaIdx = 0;
-        int m_RebindAgentIdx = 0;
-        string m_RebindArmedPersona = null;   // 二段確認：第一次點 arm，第二次才執行
-        double m_RebindArmedAt = 0;
-        const double REBIND_ARM_WINDOW_SEC = 5.0;
 
         string m_LastResultMsg = "";
 
@@ -205,7 +199,7 @@ namespace UCL.Core.EditorLib.Page
                         m_AgentPersonaCount[row.agent]++;
                 }
 
-                // session lock = persona 目前是否被某 session 持有（換綁前要警告）
+                // session lock = persona 目前是否被某 session 持有（列表上標示用）
                 // —— 走 UCL_ActivePersonaLocks 唯一掃描實作（有 lock ＝ 在線；過期機制已於 2026-08-19 移除）
                 m_LockedPersonas.UnionWith(UCL_ActivePersonaLocks.LockedNames());
 
@@ -270,8 +264,6 @@ namespace UCL.Core.EditorLib.Page
             DrawCreateAgentPanel();
             GUILayout.Space(8);
             DrawCreatePersonaPanel();
-            GUILayout.Space(8);
-            DrawRebindPanel();
             GUILayout.Space(8);
             DrawMaintenancePanel();
             GUILayout.Space(8);
@@ -1169,71 +1161,6 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // ===========================================================
-        // 區塊：persona 換綁 agent
-        // 物理意義：只改 persona 檔的 agent 欄 — vector / wake_count / 血統全部保留（換的是歸屬不是身分）。
-        // 數值影響：換綁後該 persona 的 token 收付會走新 agent 的 bank；舊帳不追溯（append-only ledger 不改歷史）。
-        // 邊界：persona 有 session lock（線上）時警告 + 二段確認 —— 線上換綁會讓該 session 的 bank 認知與檔案不一致。
-        // ===========================================================
-        void DrawRebindPanel()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                bool aShow;
-                using (new GUILayout.HorizontalScope())
-                {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "RebindFold", 21);
-                    GUILayout.Label("<b>🔗 Persona 換綁 Agent</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    string armLabel = IsRebindArmed(SelectedRebindPersona) ? "確認換綁（再按一次）" : "換綁";
-                    var armColor = IsRebindArmed(SelectedRebindPersona)
-                        ? new Color(1f, 0.5f, 0.4f) : new Color(1f, 0.85f, 0.3f);
-                    if (GUILayout.Button(armLabel, UCL_GUIStyle.GetButtonStyle(armColor), GUILayout.ExpandWidth(false)))
-                        DoRebindClicked();
-                    GUILayout.FlexibleSpace();
-                }
-                if (!aShow) return;
-
-                if (m_Personas.Count == 0)
-                {
-                    GUILayout.Label("尚無 persona 可換綁。", WrapLabelStyle);
-                    return;
-                }
-
-                var personaNames = m_Personas.Select(p => p.name).ToList();
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label("persona", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(70)));
-                    int pidx = UCL_GUILayout.Popup(m_RebindPersonaIdx, personaNames, m_Dic, "RebindPersona",
-                        GUILayout.Width(UCL_GUIStyle.GetScaledSize(200)));
-                    if (pidx >= 0 && pidx < personaNames.Count && pidx != m_RebindPersonaIdx)
-                    {
-                        m_RebindPersonaIdx = pidx;
-                        m_RebindArmedPersona = null;   // 換選擇即解除 arm，避免誤按確認到別人
-                    }
-                    var cur = SelectedRebindRow();
-                    GUILayout.Label($"目前 → <b>{(cur != null && !string.IsNullOrEmpty(cur.agent) ? cur.agent : "(未綁)")}</b>",
-                        WrapLabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(180)));
-                    GUILayout.Label("換成", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(40)));
-                    if (m_AgentKeys.Count > 0)
-                    {
-                        int aidx = UCL_GUILayout.Popup(m_RebindAgentIdx, m_AgentKeys, m_Dic, "RebindAgent",
-                            GUILayout.Width(UCL_GUIStyle.GetScaledSize(160)));
-                        if (aidx >= 0 && aidx < m_AgentKeys.Count) m_RebindAgentIdx = aidx;
-                    }
-                    GUILayout.FlexibleSpace();
-                }
-
-                if (SelectedRebindPersona != null && m_LockedPersonas.Contains(SelectedRebindPersona))
-                {
-                    GUILayout.Label($"⚠ <b>{SelectedRebindPersona}</b> 目前有 session lock（線上）—— "
-                        + "換綁會讓那個 session 記憶中的 bank 與檔案不一致（薪資可能記到舊 bank）。"
-                        + "建議等它下線（走晚安協議）再換。", UCL_GUIStyle.GetLabelStyle(Color.yellow));
-                }
-                GUILayout.Label("換綁只改 agent 歸屬；identity_vector / wake_count / 血統鏈全部保留。"
-                    + "既有 ledger 帳目不追溯（append-only 不改歷史），換綁後的收付才走新 bank。", WrapLabelStyle);
-            }
-        }
-
         void DrawResultPanel()
         {
             if (string.IsNullOrEmpty(m_LastResultMsg)) return;
@@ -1417,49 +1344,6 @@ namespace UCL.Core.EditorLib.Page
             catch (Exception ex) { SetResult($"❌ 建立 persona 失敗：{ex.Message}"); }
         }
 
-        void DoRebindClicked()
-        {
-            string persona = SelectedRebindPersona;
-            if (string.IsNullOrEmpty(persona)) { SetResult("❌ 換綁失敗：未選 persona"); return; }
-            if (m_AgentKeys.Count == 0) { SetResult("❌ 換綁失敗：尚無 agent 可選"); return; }
-            string newAgent = m_AgentKeys[Mathf.Clamp(m_RebindAgentIdx, 0, m_AgentKeys.Count - 1)];
-            var row = SelectedRebindRow();
-            if (row != null && row.agent == newAgent)
-            { SetResult($"ℹ `{persona}` 已經綁在 `{newAgent}`，不需換綁"); return; }
-
-            // 二段確認：第一次點 arm（5 秒內再按才執行）—— 換綁會影響薪資歸屬，不該一鍵誤觸
-            if (!IsRebindArmed(persona))
-            {
-                m_RebindArmedPersona = persona;
-                m_RebindArmedAt = EditorApplication.timeSinceStartup;
-                SetResult($"⏳ 已待確認：`{persona}` → `{newAgent}`（5 秒內再按一次「確認換綁」生效）");
-                return;
-            }
-
-            m_RebindArmedPersona = null;
-            try
-            {
-                string oldAgent = UCL_PersonaProfile.GetString(persona, "agent", "");
-                // 寫入走 §8.6 接縫（actor+reason 必填＋審計＋快照刷新）
-                if (!UCL_PersonaProfile.SetField(persona, "agent", newAgent,
-                        "Tim@PersonaAgentAdminPage", $"換綁 {(string.IsNullOrEmpty(oldAgent) ? "(未綁)" : oldAgent)} → {newAgent}",
-                        out string aRebindErr))
-                { SetResult($"❌ 換綁失敗：{aRebindErr}"); return; }
-
-                string lockWarn = m_LockedPersonas.Contains(persona)
-                    ? "（⚠ 該 persona 目前線上，建議請它重新登入以同步 bank 認知）" : "";
-                SetResult($"✅ 換綁：`{persona}` {(string.IsNullOrEmpty(oldAgent) ? "(未綁)" : oldAgent)} → `{newAgent}`{lockWarn}");
-                Debug.Log($"[PersonaAgentAdmin] rebind {persona}: {oldAgent} → {newAgent}");
-                NotifyTavern(
-                    $"🔗 **身分後台｜Persona 換綁**\n" +
-                    $"persona **{persona}** 的歸屬 agent：{(string.IsNullOrEmpty(oldAgent) ? "(未綁)" : oldAgent)} → **{newAgent}**{lockWarn}\n" +
-                    $"📝 說明：只改歸屬，identity_vector / wake_count / 血統全部保留；換綁後的 token 收付走新 agent 的 bank，既有帳目不追溯。",
-                    "persona-agent-rebind");
-                LoadData();
-            }
-            catch (Exception ex) { SetResult($"❌ 換綁失敗：{ex.Message}"); }
-        }
-
         // ===========================================================
         // 區塊：角色卡操作實作
         // 物理意義：建卡 = 對這個 persona 宣告「它要有臉」；卡與 persona 檔以同 ID 對齊，此處不改 persona 檔。
@@ -1559,18 +1443,6 @@ namespace UCL.Core.EditorLib.Page
             string s = iText.Replace('<', '＜').Replace('\n', ' ');
             return s.Length <= iMax ? s : s.Substring(0, iMax) + "…";
         }
-
-        string SelectedRebindPersona =>
-            (m_Personas.Count > 0 && m_RebindPersonaIdx >= 0 && m_RebindPersonaIdx < m_Personas.Count)
-                ? m_Personas[m_RebindPersonaIdx].name : null;
-
-        PersonaRow SelectedRebindRow() =>
-            (m_Personas.Count > 0 && m_RebindPersonaIdx >= 0 && m_RebindPersonaIdx < m_Personas.Count)
-                ? m_Personas[m_RebindPersonaIdx] : null;
-
-        bool IsRebindArmed(string persona) =>
-            !string.IsNullOrEmpty(persona) && m_RebindArmedPersona == persona
-            && (EditorApplication.timeSinceStartup - m_RebindArmedAt) <= REBIND_ARM_WINDOW_SEC;
 
         // fork 下拉選項：第 0 項固定是「不 fork」，其餘為既有 persona
         List<string> ForkOptions()

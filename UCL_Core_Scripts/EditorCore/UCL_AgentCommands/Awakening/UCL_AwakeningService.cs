@@ -38,7 +38,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         // 物理意義：目前實體位置 = <DataRoot>/AwakenInit/personas/<persona>.json。
         //          本方法出現之前，這條路徑被 10 處 C# 各自 Path.Combine 拼出來
         //          （Cmd_LoginStatus / UCL_LoginStatusPage / UCL_PersonaInspectorPage /
-        //           UCL_PersonaAgentAdminPage / UCL_BankAdminPage / UCL_TreasuryAccountResolver /
+        //           UCL_PersonaAgentAdminPage / UCL_TreasuryAccountResolver /
         //           UCL_ChatTavernIO / UCL_AgentEmailRegistry / UCL_AgentModelRegistry），
         //          Python 端另有 9 處。**多一條路徑的代價不是重複，是遷移時改不完的那幾處
         //          會靜默讀到舊檔** —— 舊檔還在、讀得到，兩邊各自成功、各自綠燈，沒有一格會紅。

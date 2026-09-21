@@ -1,7 +1,7 @@
 // 區塊職責：請款單（TreasuryPayoutRequest）的唯一讀寫入口 —— 建立 / 列出 / 審批。
 // 物理意義：請款流程有**兩個端點**在碰同一批檔案：
 //            ① Cmd_Treasury 的 op=request / request_list / request_cancel（agent 側，走 queue）
-//            ② UCL_BankAdminPage 的請款審批面板（Tim 側，Editor GUI）
+//            ② `senate cmd bank --arg op=approve`（CLI 審批，TASK-0261）
 //          兩端各寫一份檔案 IO = 雙實作，schema 一漂就對不上（2026-07-31 已經吃過
 //          「同一語意三處實作」的教訓，見 docs/Glossary/same-code-mute.md 一族）。故收攏於此。
 // 數值影響：本類別只在 Approve() 內動錢，且 2026-08-01 起**不再憑空產生** —— 改為

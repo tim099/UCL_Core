@@ -26,14 +26,14 @@ using UnityEngine;
 namespace UCL.Core.EditorLib.Page
 {
     /// <summary>
-    /// agent id ↔ 帳號 id 合一遷移頁。入口：銀行後台（UCL_BankAdminPage）。
+    /// agent id ↔ 帳號 id 合一遷移頁。入口：ToolBox 的頁面清單（⚠ 舊的「銀行後台」入口已隨 TASK-0242 ⑫ 退場）。
     /// </summary>
     [HelpURL("ucl_core:Docs~/{lang}/Workflows/Agent_Bank_Unification_Migration_Workflow.md")]
     public class UCL_BankMigrationPage : UCL_CommonEditorPage
     {
         public override string WindowName => "UCL_BankMigration";
         // 非衍生頁（不需參數就有意義）⇒ 依建頁守則 §6.1 掛進 Page Picker，
-        // 使用者才有「再次打開」的途徑；高頻入口另由 UCL_BankAdminPage 的按鈕提供。
+        // 使用者才有「再次打開」的途徑。⚠ 舊的高頻入口（銀行後台那顆按鈕）已隨 TASK-0242 ⑫ 一起退場 ⇒ 現在只剩這一條。
         public override bool ShowInPageMenu => true;
 
         public static UCL_BankMigrationPage Create() => UCL_EditorPage.Create<UCL_BankMigrationPage>();
@@ -316,7 +316,7 @@ namespace UCL.Core.EditorLib.Page
 
         static Dictionary<string, string> ReadAgentBanks(JsonData iMeta)
         {
-            // 走跟 UCL_BankAdminPage 完全相同的讀法（`Dic.Keys` + `GetString`，過濾 `_` 開頭的註解鍵）——
+            // 讀法：`Dic.Keys` + `GetString`，過濾 `_` 開頭的註解鍵 ——
             // 同一份資料兩種讀法會在某個邊界值上分岔，而那種分岔不會報錯。
             var d = new Dictionary<string, string>(StringComparer.Ordinal);
             if (iMeta == null || !iMeta.Contains("agent_banks")) return d;
@@ -469,9 +469,6 @@ namespace UCL.Core.EditorLib.Page
                     if (GUILayout.Button("🔄 重新試跑", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)),
                             GUILayout.ExpandWidth(false)))
                         RefreshPlan();
-                    if (GUILayout.Button("🏦 回銀行後台", UCL_GUIStyle.GetButtonStyle(Color.cyan),
-                            GUILayout.ExpandWidth(false)))
-                        UCL_BankAdminPage.Create();
                     GUILayout.FlexibleSpace();
                 }
             }
@@ -710,7 +707,7 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 動錢：照 UCL_BankAdminPage.DoTransfer 的既有形狀（debit → credit，同 tx_id，credit 失敗退回）。
+        // 動錢：debit → credit，同一個 tx_id，credit 失敗就把 debit 退回。
         // ⚠ resolveAccount:false —— from/to 都是**帳號字面**（從計畫算出來的），不可讓身分歸一介入，
         //   否則會扣到「解析後的那個帳號」而畫面顯示成功。
         void DoTransfers(List<MigrationRow> iRows)

@@ -30,7 +30,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             "transfer (T55): from_account to_account amount use_kind source_kind [reason_ref] [description] [tx_id] [caller=system] — 跨帳戶守恆轉移；atomic dual entry 共用 tx_id；mid-fail rollback\n" +
             "audit: account=帳戶ID [since_ts=ISO8601] — 列 entries\n" +
             "verify: account=帳戶ID — 跑 replay 驗 balance_after consistency\n" +
-            "request: target_bank=收款bank amount=N reason=為什麼該付 [source_kind=commit|tim_grant|...] [source_ref=SHA/task_id] [agent=請款者agent] [persona=請款者persona] — 開請款單（不動錢，等 Tim 從 UCL_BankAdminPage 批款）\n" +
+            "request: target_bank=收款bank amount=N reason=為什麼該付 [source_kind=commit|tim_grant|...] [source_ref=SHA/task_id] [agent=請款者agent] [persona=請款者persona] — 開請款單（不動錢，等 Tim 從 `senate cmd bank op=approve` 批款）\n" +
             "request_list: [pending_only=true|false] [max=200] — 列請款單\n" +
             "request_cancel: request_id=<id> [note=原因] — 撤回自己開的請款單\n" +
             "transfer_request: from_bank=出款bank to_bank=收款bank amount=N reason=為什麼該搬 [kind=manual_transfer] [agent=] [persona=] — 開轉帳單（不動錢，總量守恆；請款單消耗公庫，兩者刻意分開）\n" +
@@ -71,7 +71,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     case "transfer": Op_Transfer(args); break;   // T55 closed economy v2
                     case "audit":    Op_Audit(args); break;
                     case "verify":   Op_Verify(args); break;
-                    // 請款流程（Tim 2026-07-31 拍板）—— agent 開單，Tim 從 UCL_BankAdminPage 批款
+                    // 請款流程（Tim 2026-07-31 拍板）—— agent 開單，審批走 `senate cmd bank --arg op=approve`
                     case "request":        Op_Request(args); break;
                     case "request_list":   Op_RequestList(args); break;
                     case "request_cancel": Op_RequestCancel(args); break;
@@ -424,7 +424,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         }
 
         // ===========================================================
-        // 區塊：請款流程（Tim 2026-07-31 拍板）— agent 開單 → Tim 在 UCL_BankAdminPage 批款
+        // 區塊：請款流程（Tim 2026-07-31 拍板）— agent 開單 → 審批走 `senate cmd bank --arg op=approve`
         // 物理意義：補上「agent 主張該收錢」這條正規管道。在此之前只有兩種極端：
         //          ① 自動 hook（work_post / commit 公告）—— 規則寫死，超出規則的勞動無處可請
         //          ② 請 Tim 手動 credit —— 沒有單據、沒有稽核痕跡、講過就忘
@@ -465,7 +465,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 sb.AppendLine($"- 理由：{req.reason}");
                 sb.AppendLine($"- source_kind / ref：{req.source_kind} / {(string.IsNullOrEmpty(req.source_ref) ? "(無)" : req.source_ref)}");
                 sb.AppendLine($"- 請款者：{req.requester_agent}@{req.requester_persona}");
-                sb.AppendLine($"- 狀態：**{req.status}** —— 錢還沒動，等 Tim 從 UCL_BankAdminPage 的「📨 請款審批」批款");
+                sb.AppendLine($"- 狀態：**{req.status}** —— 錢還沒動，等審批 —— `senate cmd bank --arg op=requests` 看待審、`--arg op=approve --arg request_id=<單號> --arg confirm=1` 核准");
                 Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
             }
             catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp(args, $"request 參數不合法：{ex.Message}"); }
@@ -511,7 +511,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 sb.AppendLine($"- 分類：{req.kind}");
                 sb.AppendLine($"- 理由：{req.reason}");
                 sb.AppendLine($"- 提案者：{req.requester_agent}@{req.requester_persona}");
-                sb.AppendLine($"- 狀態：**{req.status}** —— 錢還沒動，等 Tim 從 UCL_BankAdminPage 的「💸 轉帳審批」核准");
+                sb.AppendLine($"- 狀態：**{req.status}** —— 錢還沒動，等審批 —— `senate cmd bank --arg op=requests` 看待審、`--arg op=approve --arg request_id=<單號> --arg confirm=1` 核准");
                 Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
             }
             catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp(args, $"transfer_request 參數不合法：{ex.Message}"); }

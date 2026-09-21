@@ -174,7 +174,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          persona 是通知主 key，與 identities.json（agent 層）union 後，@persona 精準命中
         //          inbox/persona.md、@agent 命中 inbox/agent.md（共用信箱），由 AppendInbox(targetId) 天然分流。
         // 數值影響：只回檔名集合（不 parse 內容），供白名單 Contains 判定；dir mtime cache 避免每筆 post 重列目錄。
-        // SOT 對齊：沿用 Cmd_LoginStatus / UCL_BankAdminPage 既有「讀 AwakenInit/personas」慣例，不新增漂移路徑。
+        // SOT 對齊：沿用 Cmd_LoginStatus 既有「讀 AwakenInit/personas」慣例，不新增漂移路徑。
         // ===========================================================
         /// <summary>
         /// 回傳 persona pool 的 id 集合 —— 走 UCL_PersonaProfile.PoolNames 唯一讀取入口

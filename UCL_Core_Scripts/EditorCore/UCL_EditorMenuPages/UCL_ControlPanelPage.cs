@@ -78,8 +78,6 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawBartenderAdminSection();
             GUILayout.Space(8);
-            DrawBankAdminSection();
-            GUILayout.Space(8);
             DrawPersonaAgentAdminSection();
             GUILayout.Space(8);
             DrawKnowledgeBaseAdminSection();
@@ -276,31 +274,6 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("身分兩層管理：建立 agent（帳號層，同時登記對應 bank／可帶種子額度）、建立 persona（人格層，"
                     + "可選 fork 來源複製 identity_vector 與血統）、persona 換綁 agent（只改歸屬，vector／wake_count 保留）。",
                     UCL_GUIStyle.LabelStyle);
-            }
-        }
-
-        // ===========================================================
-        // 區塊：銀行後台管理入口（Tim 2026-07-21 拍板）
-        // 物理意義：push UCL_BankAdminPage — Treasury token 帳戶 / 繪圖券 / 酒館券 的查詢與管理
-        //          （開戶 / 打款 / 轉帳 / 券發放）。
-        // ===========================================================
-        void DrawBankAdminSection()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                bool aShow;
-                using (new GUILayout.HorizontalScope())
-                {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "BankAdminFold", 21, iDefaultValue: false);
-                    GUILayout.Label("<b>🏦 銀行後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    if (GUILayout.Button("開啟銀行後台管理頁", UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.3f)), GUILayout.ExpandWidth(false)))
-                    {
-                        UCL_BankAdminPage.Create();
-                    }
-                    GUILayout.FlexibleSpace();
-                }
-                if (!aShow) return;
-                GUILayout.Label("Treasury token 帳戶餘額 / 開戶 / 打款（薪酬入戶）/ 跨 bank 轉帳；繪圖券 & 酒館券 查詢與發放。", UCL_GUIStyle.LabelStyle);
             }
         }
 

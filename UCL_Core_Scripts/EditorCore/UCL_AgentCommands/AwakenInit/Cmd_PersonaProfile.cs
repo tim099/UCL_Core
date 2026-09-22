@@ -310,12 +310,12 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                         throw new Exception($"[PersonaProfile] rename_agent：from 與 to 相同（'{from}'）—— 沒有要改的東西");
 
                     // 守衛①：銷戶帳號無條件擋（allow_new 也放寬不了）。
-                    if (Treasury.UCL_TreasuryAccountResolver.IsClosed(to, out string closedReason))
+                    if (Treasury.UCL_BankResolve.IsClosed(to, out string closedReason))
                         throw new Exception($"[PersonaProfile] rename_agent 拒絕：to='{to}' 是**已銷戶帳號** —— {closedReason}"
                             + "。改名指向銷戶帳號不會報錯，只會讓解析靜默命中一個禁止金流的合法帳號。");
 
                     // 守衛②：非 canonical 要顯式放行。
-                    bool canonical = Treasury.UCL_TreasuryAccountResolver.IsCanonicalAccount(to);
+                    bool canonical = Treasury.UCL_BankResolve.IsCanonicalAccount(to);
                     if (!canonical && !allowNew)
                         throw new Exception($"[PersonaProfile] rename_agent 拒絕：to='{to}' 不是 canonical 帳號"
                             + "（不在 agent_banks／system_accounts）—— 確定要建新帳號請顯式帶 allow_new=1");
@@ -325,7 +325,7 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                     UCL_PersonaProfile.RenameAgent(from, to, currency, actor, reason, dryRun,
                         out int hit, out int renamed, out int failed, out string report);
                     UnityEngine.Debug.Log($"[PersonaProfile] {report}");
-                    Treasury.UCL_TreasuryAccountResolver.Invalidate();
+                    Treasury.UCL_BankResolve.Invalidate();
                     UCL_AgentCommandRunner.ReportOutputValue(args, "from", from);
                     UCL_AgentCommandRunner.ReportOutputValue(args, "to", to);
                     UCL_AgentCommandRunner.ReportOutputValue(args, "currency", currency);

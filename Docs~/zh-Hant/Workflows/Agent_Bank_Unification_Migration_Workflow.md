@@ -34,7 +34,7 @@ related:
 | **已合一** | persona → agent（**就是**帳號，一跳） | 遷移完成後 |
 
 由 `Treasury/bank_settings.json` 的 **`account_resolve_unified`**（0/1）決定，**預設 0**。
-兩端都讀它：C# `UCL_TreasuryAccountResolver` 與 python `_lib/bank_resolver.py`。
+兩端都讀它：C# 直呼 `SCP_BankAccountResolver`，python 走 `senate cmd bank-resolve`（**同一份**）。
 
 > [!CAUTION]
 > **「已改名但還沒切開關」是一段兩邊都不對的狀態。**

@@ -49,7 +49,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          「資料夾名 = 身分」，而且 queues/anonymous/ 的流量自己就是
         //          「還有多少未署名派遣」的儀表 —— 不需要有人記得去統計。
         // ⚠ 這是**保留字，不是 persona**：身分解析讀到它必須回「本層沒有答案」，
-        //   不可回字串 "anonymous"。否則它會流進記帳層，而 bank_resolver 的命名慣例
+        //   不可回字串 "anonymous"。否則它會流進記帳層，而解析端的命名慣例
         //   fallback（{canonical}-da-xiaojie）會為一個不存在的人隱含開帳戶。
         public const string AnonymousQueueId = "anonymous";
 
@@ -194,7 +194,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 區塊職責：判斷一個 queue 資料夾名是不是保留字（狀態，不是人）。
         // 物理意義：保留字有兩個且會再長 —— 逐處寫 `== AnonymousQueueId` 的話，
         //          新增第二個保留字就得去找出所有比對點，而**漏掉的那一處不會報錯**：
-        //          它會把 "system" 當成 persona 回出去，下游 bank_resolver 的
+        //          它會把 "system" 當成 persona 回出去，下游解析端的
         //          fallback 命名就替一個不存在的人開了帳戶。收成一處＝只有一種讀法。
         // 數值影響：純比對，無 IO。
         public static bool IsReservedQueueId(string folder)

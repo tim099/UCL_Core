@@ -305,7 +305,7 @@ def get_identity(persona: str) -> dict | None:
 
 
 def load_personas_into(reg: dict) -> dict:
-    """把 pool 全量塞進 reg["personas"]（bank_resolver 要的 reg 形狀）。含標記語意。"""
+    """把 pool 全量塞進 reg["personas"]（下游要的 reg 形狀）。含標記語意。"""
     reg.setdefault("personas", {})
     for name, d in iter_raw():
         reg["personas"][name] = d

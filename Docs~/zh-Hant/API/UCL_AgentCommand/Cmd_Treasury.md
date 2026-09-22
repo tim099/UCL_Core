@@ -51,7 +51,7 @@ senate ucmd run Treasury \
 > 口訣：**錢認 agent／bank，說話認 persona。**
 
 > [!NOTE]
-> **2026-08-14 起 `Credit` / `Debit` 會先做帳號解析**（`UCL_TreasuryAccountResolver`）——
+> **2026-08-14 起 `Credit` / `Debit` 會先做帳號解析**（`SCP_BankAccountResolver`）——
 > agent 名（含大小寫）、persona 名、別名都會被歸一成註冊在案的帳號，所以上面那顆槍的
 > **殺傷力降低了，但沒有消失**：解析不出來的名字仍會原樣寫入並產生孤兒帳戶（刻意如此 ——
 > 拒絕會讓一筆真實勞動的薪水直接消失）。填對仍然是呼叫端的責任。
@@ -62,9 +62,9 @@ senate ucmd run Treasury \
 > 解析規則怎麼看怎麼改、跑掉的錢怎麼歸戶、空帳號怎麼銷 →
 > [`Treasury_Account_Consolidation_Workflow.md`](../../Workflows/Treasury_Account_Consolidation_Workflow.md)
 >
-> ⚠ C# 端的 canonical 解析實作是 `UCL_TreasuryAccountResolver`（`UCL_BankAdminPage` 內的
+> ⚠ C# 端的 canonical 解析實作是 `SCP_BankAccountResolver`（`UCL_BankAdminPage` 內的
 > `ResolveAgentToBank` 是 admin 代操作用的更嚴版本：未知一律拒絕、不 derive）。
-> Python 端仍是 `Tools~/AgentCommands/_lib/bank_resolver.py`。**別造第四份。**
+> Python 端走 `senate cmd bank-resolve`（同一份的 CLI 入口）。**解析只有一份，⛔ 別造第二份。**
 
 ---
 

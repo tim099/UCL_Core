@@ -138,7 +138,7 @@ namespace UCL.Core.EditorLib.Page
                 g.Members.Sort(StringComparer.Ordinal);
                 g.Keeper = g.Members
                     .OrderByDescending(m => g.BoundCounts[m])
-                    .ThenByDescending(m => UCL_TreasuryAccountResolver.IsCanonicalAccount(m) ? 1 : 0)
+                    .ThenByDescending(m => UCL_BankResolve.IsCanonicalAccount(m) ? 1 : 0)
                     .ThenByDescending(m => g.Balances[m])
                     .ThenByDescending(m => LedgerEntryCount(m))
                     .ThenBy(m => m, StringComparer.Ordinal)
@@ -220,7 +220,7 @@ namespace UCL.Core.EditorLib.Page
                 foreach (var pa in personaAgent) if (pa.Value == row.Agent) row.Personas.Add(pa.Key);
 
                 // 阻擋條件 —— 寧可整列不可執行，也不要跑到一半才發現。
-                if (UCL_TreasuryAccountResolver.IsClosed(row.FinalBank, out string closedWhy))
+                if (UCL_BankResolve.IsClosed(row.FinalBank, out string closedWhy))
                     row.Blocker = $"目標帳號 `{row.FinalBank}` 已銷戶（{closedWhy}）—— 銷戶帳號禁止金流";
                 else if (row.FinalBank.IndexOfAny(new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' }) >= 0)
                     row.Blocker = $"目標帳號 `{row.FinalBank}` 含不能當檔名的字元（綁定檔以它為內容、審計以它為 key）";
@@ -605,7 +605,7 @@ namespace UCL.Core.EditorLib.Page
                         catch (Exception ex)
                         { failed++; sb.AppendLine($"  ✗ {m} 搬錢失敗，**未銷戶**：{ex.Message}"); continue; }
                     }
-                    if (!UCL_TreasuryAccountResolver.CloseAccount(m,
+                    if (!UCL_BankResolve.CloseAccount(m,
                             $"大小寫同名合併，併入 {g.Keeper}", g.Keeper, "BankMigrationPage", out string cErr))
                     { failed++; sb.AppendLine($"  ✗ {m} 銷戶失敗：{cErr}"); continue; }
                     closed++;
@@ -624,7 +624,7 @@ namespace UCL.Core.EditorLib.Page
                     sb.AppendLine($"  ✓ {m} 已併入 {g.Keeper} 並銷戶（renamed_to={g.Keeper}）");
                 }
             }
-            UCL_TreasuryAccountResolver.Invalidate();
+            UCL_BankResolve.Invalidate();
             m_LastResult = $"🔠 同名合併：搬錢 {moved} 筆／銷戶 {closed} 個／失敗 {failed}"
                 + System.Environment.NewLine + sb;
             Debug.Log("[BankMigration] " + m_LastResult);
@@ -748,7 +748,7 @@ namespace UCL.Core.EditorLib.Page
             }
             m_LastResult = $"💰 搬錢完成 {ok} 組、失敗 {fail} 組\n{sb}";
             Debug.Log("[BankMigration] " + m_LastResult);
-            UCL_TreasuryAccountResolver.Invalidate();
+            UCL_BankResolve.Invalidate();
             RefreshPlan();
         }
 
@@ -802,7 +802,7 @@ namespace UCL.Core.EditorLib.Page
                       + "需要人工收尾（用本頁 rename 欄位或 Cmd `op=rename_agent` 改回去）。");
                 m_LastResult = $"❌ 合一遷移失敗並已回滾\n{sb}";
                 Debug.LogError("[BankMigration] " + m_LastResult);
-                UCL_TreasuryAccountResolver.Invalidate();
+                UCL_BankResolve.Invalidate();
                 RefreshPlan();
                 return;
             }
@@ -810,14 +810,14 @@ namespace UCL.Core.EditorLib.Page
             // ── 全數成功 ⇒ 讓解析器重新認識磁碟 ──
             // ⚠ 這裡以前還會把 `account_resolve_unified` 切成 1；那個開關已於 2026-08-20 移除
             //   （合一是唯一模式）⇒ 改名成功之後不必再切什麼，只要讓快取失效。
-            UCL_TreasuryAccountResolver.Invalidate();
+            UCL_BankResolve.Invalidate();
             sb.AppendLine("✅ 改名全數成功（解析一律一跳；`agent_banks` 不參與）。");
             // 切換後逐人複驗：這才是「遷移成功」的讀數，不是「改了幾個檔」。
             int bad = 0;
             foreach (var r in iRows)
                 foreach (var p in r.Personas)
                 {
-                    string got = UCL_TreasuryAccountResolver.Resolve(p).AccountId;
+                    string got = UCL_BankResolve.Resolve(p).AccountId;
                     if (got != r.FinalBank) { bad++; sb.AppendLine($"  ⚠ {p}：解析成 `{got}`，期望 `{r.FinalBank}`"); }
                 }
             sb.AppendLine(bad == 0

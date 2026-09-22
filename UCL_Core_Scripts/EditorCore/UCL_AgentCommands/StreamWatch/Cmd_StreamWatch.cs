@@ -2406,7 +2406,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             }
             else
             {
-                var aRes = UCL_TreasuryAccountResolver.Resolve(iPersona);
+                var aRes = UCL_BankResolve.Resolve(iPersona);
                 if (aRes.IsUnresolved || string.IsNullOrEmpty(aRes.AccountId))
                 {
                     aPayNote = $"**未發薪** —— persona `{iPersona}` 解析不到正式帳號（{aRes.Trace}）";

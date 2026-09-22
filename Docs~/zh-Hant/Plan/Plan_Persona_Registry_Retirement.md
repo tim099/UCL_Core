@@ -50,14 +50,14 @@ related:
 
 | 檔 | 用途 | 讀哪欄 |
 |---|---|---|
-| `_lib/bank_resolver.py` | persona→agent→bank（薪資／扣款的唯一解析） | `agent` |
+| `SCP_BankAccountResolver` | persona→agent→bank（薪資／扣款的唯一解析） | `agent` |
 | `canvas.py` / `mbti.py` / `freetime.py` / `dice.py` | 扣款、寄信、發薪前反查 bank | `agent` |
 | commit 入口 / `agent_email.py` / `agent_model.py` | commit trailer（`agent@persona(model) <email>`） | `agent` `model` `actual_agent` `email` |
 | `registered_mail.py` / `_lib/session_common.py` | 收件人解析 / session 共用 | `agent` |
 | `Tools/tavern_catchup.py` | 顯示發言者所屬 agent | `agent` |
-| `UCL_TreasuryAccountResolver.cs` / `UCL_BankAdminPage.cs` | C# 端同一套 bank 解析 | `agent` |
+| `SCP_BankAccountResolver.cs` / `UCL_BankAdminPage.cs` | C# 端同一套 bank 解析 | `agent` |
 
-🩸 `bank_resolver.py` 檔頭已經寫著 footgun：用只載 meta 的 loader 會讓**每個 persona 都拋
+🩸 `SCP_BankAccountResolver` 檔頭已經寫著 footgun：用只載 meta 的 loader 會讓**每個 persona 都拋
 `PersonaResolutionError`**（summit + kaguya 2026-07-21 撞出）。⇒ 路由欄一旦散進 21 個 letters 目錄，
 「某人的 letters 沒 clone」就等於這條錯誤重演，而且是在扣款路徑上。
 
@@ -226,7 +226,7 @@ letters/<persona>/
 | python `check_letters_layout` / `sync_letters_gitignore` | ✅ 走 `pool_names()` | kiara `705b6ae`。只讀名單不讀 identity，改的理由是**判準漂移不會有人喊痛** |
 | python `_lib/session_common` | ✅ **整支刪除** | kiara 2026-08-20。**不是收進接縫，是它已經沒有存在理由**：這支是「上班模式全面退役」（`4f48884`）時為了不讓 `stream_watch_session.py` 壞掉才抽出來的工具層，而那支唯一消費端已於 `842801e` 退場（陪看改走 C# `Cmd_StreamWatch`）。全樹 grep：**零 .py／.cs 呼叫端**，其 state 檔 `work_sessions.json` 連檔都不存在。<br>⇒ session 相關的狀態擁有者是 C#／Cmd（Tim 2026-08-20 重申：session 只有 Editor 開著才能跑）—— 這支是遷移前的殘影。**它的正向鏈 bank 解析（`_resolve_bank(agent)`）也隨之消失**，那條與 §8.1 反向登記今日實測 0/21 分岔（初值由現況導出），但它會在「銀行端改了誰屬於誰」時開始說謊 |
 | python `tavern_catchup.resolve_owning_agent` | ✅ 走接縫 | kiara 2026-08-20。改走 `persona_profile.get_field(p,"agent")`，並**移除 `PERSONAS_DIR`**（留著就是邀請下一個人再走直讀；同 `agent_email.persona_path()` 的移除理由）。<br>**呼叫時機兩種都實測**：① CLI 直跑 ⇒ `source=live`（走 Cmd 拿現場值）② 模擬被 wake_brief 載進 Cmd 內部（`UCL_PP_SKIP_CMD=1`）⇒ `source=snapshot`，**不再排第二個 Cmd**。21 人 agent 值與 legacy **0 不一致**；不存在的 persona 回空字串不拋；接縫模組**只載一份**（刻意快取，不重演 BUG-17 的每次 exec）|
-| C# `UCL_TreasuryAccountResolver` | ⬜ **必須等正向鏈退場** | 它讀 legacy 的**唯一理由就是正向鏈**：`s_PersonaToAgentLower` 只有 `Resolve()` ⑤-b 一個消費者。<br>⚠ 而且**快取失效戳章本身就是那個 legacy 目錄**（`persona 檔數 + 最新 mtime`）⇒ 走接縫要另外發明一個失效訊號，而這是金流路徑上的解析器。先改＝為將要刪掉的東西付遷移成本，還多留一個新機制要維護。詳見 §8.1 補節 |
+| C# `SCP_BankAccountResolver` | ⬜ **必須等正向鏈退場** | 它讀 legacy 的**唯一理由就是正向鏈**：`s_PersonaToAgentLower` 只有 `Resolve()` ⑤-b 一個消費者。<br>⚠ 而且**快取失效戳章本身就是那個 legacy 目錄**（`persona 檔數 + 最新 mtime`）⇒ 走接縫要另外發明一個失效訊號，而這是金流路徑上的解析器。先改＝為將要刪掉的東西付遷移成本，還多留一個新機制要維護。詳見 §8.1 補節 |
 | C# `UCL_BankAdminPage` | ⬜ **可以先走，不必等** | kiara 2026-08-20 讀完 code 的拆法修正：它讀 persona 只為了**顯示**與**開戶 draft 命名**（`SyncNewBankDraftFromAgent`），**不碰金流**；而且它是 Editor 頁 —— Cmd 往返在那裡無所謂。<br>⇒ 舊文把兩支寫成一列，讀起來像綁在一起的一件事，**不是** |
 
 清單單號：`repo:AgentCommands/BugReports/reports/0018.md`（BUG-18，doc 類，附每項「為什麼今天不痛」）。
@@ -277,7 +277,7 @@ letters/<persona>/
 
 ```csharp
 if (Directory.Exists(PersonasDir))          // UCL_LoginStatusPage / UCL_BankAdminPage /
-    foreach (var pf in Directory.GetFiles(...))   // UCL_TreasuryAccountResolver / UCL_ChatTavernIO …
+    foreach (var pf in Directory.GetFiles(...))   // SCP_BankAccountResolver / UCL_ChatTavernIO …
 ```
 ```python
 if not d.is_dir(): return out                # agent_model.py / registered_mail.py / affinity_manager.py
@@ -322,8 +322,8 @@ letters 慣例用來標「機械產物／不要當人寫的檔」，這裡要更
 
 > 狀態（kiara 2026-08-20 逐條對）：①✅ ②✅ ③✅ ④➖判死改判準 ⑤✅
 
-1. `bank_resolver` 對全 21 位都解得出 bank，**且在故意把某人 letters 移走的情況下仍然解得出**（證明路由不依賴 letters）。
-   ⚠ 兩端（python `bank_resolver` 與 C# `UCL_TreasuryAccountResolver`）**各驗一次** —— 同一條路由兩份實作，
+1. `SCP_BankAccountResolver` 對全 21 位都解得出 bank，**且在故意把某人 letters 移走的情況下仍然解得出**（證明路由不依賴 letters）。
+   ⚠ 兩端（python 與 C#）**各驗一次** —— 同一條路由兩份實作，
    只驗一端＝驗了安全的那半（summit 2026-08-19 補）。
 2. `wake_brief` 的 §0 血統、§6.5 關係、§6 見林三段**都有實際讀數**，不是空狀態文案。
 3. 登入回傳檔的 `wake_count` / 見林 gap 與磁碟推導一致（BUG-4 的兩條對帳仍在）。
@@ -388,8 +388,8 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
   把規矩寫在資料旁邊。初值**從現況逐位導出** ⇒ day-1 不改變任何人的錢（commit `5394fae1e`）。
   空清單六個（Codex／央行／tavern-keeper／三個舊世代 `-da-xiaojie`）正是本節說的「允許空清單」；
   **已銷戶帳號刻意不列** —— 不接受金流的帳戶不該有人掛在下面。
-- **解析**：python `bank_resolver.resolve_persona_bank_reverse` ＋
-  C# `UCL_TreasuryAccountResolver` 的 `bank_personas` 載入（commit `f4d823f`）。
+- **解析**：python `SCP_BankAccountResolver.GetBoundPersonas` ＋
+  C# `SCP_BankAccountResolver` 的 `bank_personas` 載入（commit `f4d823f`）。
   ⚠ **兩端刻意同一筆 commit** —— 這是 two-end contract，只上一端的後果是
   同一個 persona 在兩邊解到不同 bank，而**兩邊都不會報錯**。
 - **撞名＝拒絕解析，不挑一個**：python `raise PersonaResolutionError`；
@@ -404,7 +404,7 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 | 端 | 讀數 |
 |---|---|
 | python（21 位逐位） | parity（反向 vs 改動前正向）**0 格不一致**；覆蓋率 **0 位需退正向鏈**；故意雙掛 kiara ⇒ raise 並列出 `['Myth','cc']`；`resolve('KIARA')` → `Myth` |
-| C#（`UCL_TreasuryAccountResolver.SelfTest`） | **✅ 全數通過 62 ／ ✗ 0**；③ 段每位 trace 為 `persona X → bank Y（§8.1 反向登記）`—— **沒有 agent 那一跳**，證明走的是新路；⑥ 唯一 ⚠ 是既有的 `claude-da-xiaojie` 撞名（正式帳號優先，行為未改） |
+| C#（`SCP_BankAccountResolver.SelfTest`） | **✅ 全數通過 62 ／ ✗ 0**；③ 段每位 trace 為 `persona X → bank Y（§8.1 反向登記）`—— **沒有 agent 那一跳**，證明走的是新路；⑥ 唯一 ⚠ 是既有的 `claude-da-xiaojie` 撞名（正式帳號優先，行為未改） |
 
 > 📌 撈 C# SelfTest 報告的方法留給後人：`Cmd_Invoke` **不會印回傳值** ——
 > 用它自己的 `storeAs=st` 存起來，再 `Invoke System.IO.File.WriteAllText`
@@ -455,7 +455,7 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
    python `resolve_persona_bank` ② 段、`agent_banks` 角色降級。
    ⚠ 刪掉 ⑤-b 之後，未登記者的落點是 ⑥ `Unresolved`
    ——「查無對應，將產生／沿用孤兒帳戶」：錢還是入帳，但入孤兒戶。
-4. 那一刻 `UCL_TreasuryAccountResolver` 才不再需要 `PersonasDir`（連快取戳章一起換）。
+4. 那一刻 `SCP_BankAccountResolver` 才不再需要 `PersonasDir`（連快取戳章一起換）。
 
 單號：`repo:AgentCommands/BugReports/reports/0021.md`（BUG-21）。詳解：`tavern:2026-08-20#12671`。
 
@@ -470,7 +470,7 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 同步維護（或乾脆由它導出）** —— 手抄的表沒有維護者，那正是它會衰減的原因。
 
 ⇒ 順帶收掉一隻同族的：`Cmd_Tavern` 的**顯示身分**（`sender_id`）此前取
-`UCL_TreasuryAccountResolver.Resolve(persona).AccountId`（＝bank）⇒ §8.1 反轉之後顯示身分
+`SCP_BankAccountResolver.Resolve(persona).AccountId`（＝bank）⇒ §8.1 反轉之後顯示身分
 變成 bank 粒度，同一家 bank 的 persona 全顯示成同一個名字（BUG-22，`725e92c` 已修：
 改取綁定的 agent）。**這條拍板正是那個修法的判準來源。**
 
@@ -488,14 +488,14 @@ Phase 3 動手前需要 Tim 把這一格講定。
 |---|---|---|
 | brief §0／自介／晚安廣播印的帳號 | `claude-da-xiaojie` | 登入寫進 lock 的 `bank_account`（**正向鏈** `ResolveBankAccount`） |
 | `Treasury/accounts/claude-da-xiaojie.json` | **不存在** | —— |
-| 錢實際進的帳戶 | `claude-code`（餘額 5650） | 公告領薪走 `UCL_TreasuryAccountResolver`（合一模式，一跳） |
+| 錢實際進的帳戶 | `claude-code`（餘額 5650） | 公告領薪走 `SCP_BankAccountResolver`（合一模式，一跳） |
 
 ⇒ 每天早上那行「餘額 0 tavern_token」不是窮，是**在一個不存在的帳戶上查餘額**。
 沒有一格會紅，因為兩個解析器各自都「照著自己的真相源做了」。
 
 **修法（都在 C# 端，唯一入口不新增第三條鏈）**：
 - 新增 `UCL_AwakeningService.ResolvePersonaAccountId(persona, meta, agent, out source)`
-  —— 委派 `UCL_TreasuryAccountResolver.ResolvePersonaAccount`（Tim 2026-08-20 拍板的唯一入口），
+  —— 委派 `SCP_BankAccountResolver.ResolvePersonaAccount`（Tim 2026-08-20 拍板的唯一入口），
   解不到才退舊正向鏈**並把來源印出來**；登入寫 lock／token、晚安廣播、wake 回傳檔全部改走它。
 - `DescribeAccountBalance(id)`：帳戶沒開戶時**印警語不印 0**。
   ⚠ 判準踩了兩次才對：① `IsCanonicalAccount` 答的是「registry 宣告過嗎」——

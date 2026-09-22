@@ -287,7 +287,7 @@ senate ucmd run ExportCommandCatalog
 
 - **最外層共用 `AgentCommands/queue.json` 已廢除**（連同根層 `pending.trigger`）。每筆派遣都住在某個資料夾底下，掃描規則因此是一條**沒有例外**的「資料夾名 = 身分」。
 - **`anonymous` 是保留字，不是 persona** —— 身分解析讀到它必須回「本層沒有答案」，**不可回字串 `"anonymous"`**。
-  這不是潔癖：`bank_resolver` 對認不出的身分有命名慣例 fallback（`{name}-da-xiaojie`，隱含開新 bank），
+  這不是潔癖：`SCP_BankAccountResolver` 對認不出的身分有命名慣例 fallback（`{name}-da-xiaojie`，隱含開新 bank），
   讓 `anonymous` 流進記帳層等於替一個不存在的人開戶。C# 端取值走 `UCL_AgentCommandQueue.GetDeclaredPersona()`，它對匿名回 `null`。
 - `queues/anonymous/` 的流量**自己就是「還有多少未署名派遣」的儀表** —— 不需要有人記得去統計。
 

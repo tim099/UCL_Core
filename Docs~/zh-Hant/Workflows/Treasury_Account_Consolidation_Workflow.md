@@ -32,7 +32,7 @@ related:
 | `<DataRoot>/AwakenInit/_registry_meta.json` | `agent_banks` / `agent_aliases` / `system_accounts` / `closed_accounts` | 銀行後台管理頁 + Persona & Agent 管理頁 |
 | `<DataRoot>/AwakenInit/personas/<persona>.json` 的 `agent` 欄 | persona 歸屬哪個 agent | Persona & Agent 管理頁 |
 
-解析實作只有一份：`UCL_TreasuryAccountResolver`。**不要在別處再寫一套 agent→bank 的判斷** ——
+解析實作只有一份：`SCP_BankAccountResolver`。**不要在別處再寫一套 agent→bank 的判斷** ——
 平行索引跟事實不一致時，兩邊都能各自運作、都不報錯。
 
 ### 解析順序（六段，先精確後模糊）
@@ -168,7 +168,7 @@ related:
 ```bash
 # 解析器自我檢查（純讀、零金流）
 senate ucmd run Invoke \
-    --arg type=UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryAccountResolver \
+    --arg type=SCP.Core.Bank.SCP_BankAccountResolver \
     --arg member=SelfTest
 # 報告印在 Unity Editor log；grep "帳號解析 SelfTest"
 ```

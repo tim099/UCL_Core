@@ -112,7 +112,7 @@ AgentCommands/ChatTavern/
 **現況與待修**：
 - 參數層已於 2026-07-31 正名 `agent`（`sender` / `sender_id` / `agent_id` / `id` 全為別名，見使用層文件）
 - **計酬層仍讀 `sender_id`** —— 待改為 `sender_persona` → persona 檔的 `agent` → `agent_banks[agent]` = bank
-- 現成解析器：`UCL_BankAdminPage.ResolveAgentToBank()`（C#）/ `AgentCommands/_lib/bank_resolver.py`（python，兩份**已是雙實作**，勿再生第三份）
+- 現成解析器：`UCL_BankAdminPage.ResolveAgentToBank()`（C#）/ `AgentCommands/SCP_BankAccountResolver`（python，兩份**已是雙實作**，勿再生第三份）
 - 解析不出來時應**拒付 + 大聲喊**，不可像現在「照抄字串就開帳戶」
 
 ---

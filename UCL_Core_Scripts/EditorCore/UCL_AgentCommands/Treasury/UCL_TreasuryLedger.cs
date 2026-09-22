@@ -114,7 +114,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         // 區塊職責：帳號歸一 —— 寫任何一筆帳之前，把呼叫端給的字串換成註冊在案的正式帳號
         // 物理意義：此前 account_id 是純字串直寫，於是 agent 名大小寫（`Zeta` vs bank `zeta`）、
         //          persona 名（`summit`）、舊命名（`zeta-bank`）各自生出一個有錢沒主人的孤兒帳戶。
-        //          解析規則的唯一實作在 UCL_TreasuryAccountResolver（不在這裡再寫一套）。
+        //          解析規則的唯一實作在 UCL_BankResolve（不在這裡再寫一套）。
         // 數值影響：**決定錢落進哪個帳戶**。歸一命中 → 寫正式帳號；查不到 → 原樣寫入並警告
         //          （不丟棄：丟棄會讓一筆真實勞動的薪水無聲消失，比記在錯帳戶更難查）。
         // 邊界：已銷戶帳號一律拒收 —— 銷戶的前提是餘額 0 且無人綁定，還有錢進來就是有路徑沒清乾淨，
@@ -126,7 +126,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string resolved = accountId;
             if (resolveAccount)
             {
-                var r = UCL_TreasuryAccountResolver.Resolve(accountId);
+                var r = UCL_BankResolve.Resolve(accountId);
                 if (r.Changed)
                 {
                     Debug.Log($"[Treasury] 帳號歸一（{opLabel}）：{r.Trace}");
@@ -141,7 +141,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 }
             }
 
-            if (UCL_TreasuryAccountResolver.IsClosed(resolved, out string closeReason))
+            if (UCL_BankResolve.IsClosed(resolved, out string closeReason))
             {
                 throw new InvalidOperationException(
                     $"[Treasury] 帳號 `{resolved}` 已銷戶，拒絕 {opLabel}（銷戶理由：{closeReason}）。" +
@@ -218,7 +218,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             //   例外訊息長得像資安事件，會把人帶去查一個不存在的攻擊。
             string callerResolved = callerAgentId;
             if (resolveAccount && !string.IsNullOrEmpty(callerAgentId) && callerAgentId != "system")
-                callerResolved = UCL_TreasuryAccountResolver.Resolve(callerAgentId).AccountId;
+                callerResolved = UCL_BankResolve.Resolve(callerAgentId).AccountId;
 
             if (!string.IsNullOrEmpty(callerResolved) && callerResolved != "system" && callerResolved != accountId)
             {

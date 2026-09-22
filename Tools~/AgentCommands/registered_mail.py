@@ -106,19 +106,48 @@ def mail_fee() -> int:
 
 
 def resolve_bank(persona: str) -> str | None:
-    """persona → bank（走既有 _lib/bank_resolver，不自維護第二張對照表）。"""
+    """
+    persona → bank。
+
+    區塊職責：問**唯一的那份解析**（`senate cmd bank-resolve`），⛔ 不在 python 這側自己算。
+    物理意義：規則本體在 `SCP_BankAccountResolver`（C#）。這裡只是把問題送出去、把答案接回來。
+    數值影響：純讀。解析不到回 None —— ⛔ **不 derive、不 mint** 一個看起來合理的帳號名。
+
+    🩸 為什麼不留 python 版（TASK-0269）：此前這條在 python 這側自己算（292 行），
+      而同一條規則同時有三份實作。三份讀同一個權威 ⇒ 差異不會在當下報錯，
+      只在其中一份先過期的那天現形 —— 2026-08-20 `Sirius` 改名那次就錯了 18 天沒有人喊。
+    ⚠ 代價寫在這裡：多一次 process 往返，而且 `senate` 解不到就**整個失敗**，不降級。
+      那是好的失效（大聲），⛔ 但它讓本工具多一個前提。
+    """
     try:
-        sys.path.insert(0, str(_HERE))
-        from _lib import bank_resolver                     # noqa: E402
-        reg_path = _ucl_paths_mod().registry_meta_path()
-        reg = json.loads(reg_path.read_text(encoding="utf-8")) if reg_path.exists() else {}
-        # personas 資料走 persona_profile 接縫（Phase 0）—— 不自己 glob＋parse
-        import importlib.util as _ilu2
-        _sp = _ilu2.spec_from_file_location(
-            "_ucl_persona_profile_regmail", _HERE / "_lib" / "persona_profile.py")
-        _pp = _ilu2.module_from_spec(_sp); _sp.loader.exec_module(_pp)
-        _pp.load_personas_into(reg)
-        return bank_resolver.resolve_persona_bank(reg, persona)
+        up = _ucl_paths_mod()
+        exe = up.senate_exe()
+        data_root = up.data_root()
+        letters_root = Path(data_root) / "ChatTavern" / "baton" / "letters"
+        region = json.loads(BANK_SETTINGS.read_text(encoding="utf-8")).get("currency_id", "")
+        if not region:
+            print("⚠ bank_settings 沒有 currency_id ⇒ 沒有區域定語，解析停手", file=sys.stderr)
+            return None
+        r = subprocess.run(
+            [str(exe), "cmd", "bank-resolve",
+             "--arg", f"letters_root={letters_root}",
+             "--arg", f"data_root={data_root}",
+             "--arg", f"region={region}",
+             "--arg", f"input={persona}"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90)
+        # ⚠ exit 4 ＝ 查無（它有自己的出口，⛔ 不與成功同形）
+        if r.returncode == 4:
+            print(f"⚠ `{persona}` 解析不到帳號（bank-resolve exit 4）", file=sys.stderr)
+            return None
+        if r.returncode != 0:
+            print(f"⚠ bank-resolve 失敗（exit {r.returncode}）：{(r.stderr or r.stdout)[-300:]}", file=sys.stderr)
+            return None
+        for line in (r.stdout or "").splitlines():
+            if line.startswith("🔢 account = "):
+                acc = line.split("=", 1)[1].strip()
+                return acc or None
+        print("⚠ bank-resolve 回了 0 但沒有 `account` 欄 —— 不猜，停手", file=sys.stderr)
+        return None
     except Exception as e:
         print(f"⚠ persona → bank 解析失敗（{type(e).__name__}: {e}）", file=sys.stderr)
         return None

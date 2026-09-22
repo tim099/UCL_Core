@@ -1,6 +1,6 @@
 // 區塊職責：GoodMorning 流程的 static 邏輯層（Plan_Awakening_Flow_Simplification §8.8 R14）——
 //          Cmd_GoodMorning 與 UCL_PersonaAgentAdminPage 測試區共用同一份實作，兩入口零複製。
-// 物理意義：P1 先落「唯讀半套」：身分解析（persona→agent→bank，port 自 _lib/bank_resolver.py）、
+// 物理意義：P1 先落「唯讀半套」：身分解析（persona→agent→bank）、
 //          在線守衛判定（lock 檔為真相源）、wake_count 推導（wakes/ 信件數 = 真相源）、
 //          全 persona 對帳、brief 生成觸發鏈（就地呼叫 SCP_WakeBrief，不 spawn 任何 process）。
 //          P2 才加寫入半套（registry patch-write / lock / token / memo）。
@@ -38,7 +38,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         // 物理意義：目前實體位置 = <DataRoot>/AwakenInit/personas/<persona>.json。
         //          本方法出現之前，這條路徑被 10 處 C# 各自 Path.Combine 拼出來
         //          （Cmd_LoginStatus / UCL_LoginStatusPage / UCL_PersonaInspectorPage /
-        //           UCL_PersonaAgentAdminPage / UCL_TreasuryAccountResolver /
+        //           UCL_PersonaAgentAdminPage / UCL_BankResolve /
         //           UCL_ChatTavernIO / UCL_AgentEmailRegistry / UCL_AgentModelRegistry），
         //          Python 端另有 9 處。**多一條路徑的代價不是重複，是遷移時改不完的那幾處
         //          會靜默讀到舊檔** —— 舊檔還在、讀得到，兩邊各自成功、各自綠燈，沒有一格會紅。
@@ -88,9 +88,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         }
 
         // ===========================================================
-        // 區塊：agent / bank 解析 — port 自 _lib/bank_resolver.py（規則逐字對齊，改一端同步改另一端）
+        // 區塊：agent / bank 解析
+        // ⛔ 規則本體在 `SCP_BankAccountResolver`（TASK-0269 起唯一一份）——
+        //   這裡只剩 alias fallback；⚠ 想在這裡加解析邏輯之前，先問它是不是該加在那一份上。
         // ===========================================================
-        /// <summary>內建 alias fallback（bank_resolver.DEFAULT_AGENT_ALIASES）。key 一律小寫。</summary>
+        /// <summary>內建 alias fallback。key 一律小寫。</summary>
         static readonly Dictionary<string, string> s_DefaultAgentAliases = new Dictionary<string, string>
         {
             { "claude", "claude-code" },
@@ -121,7 +123,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
 
         // ===========================================================
         // 區塊職責：agent → 帳號。**合一模式：agent id 就是帳號 id，一跳到底。**
-        // 物理意義：python 端（`_lib/bank_resolver.resolve_bank_account`）2026-08-20 就改成這樣了，
+        // 物理意義：解析端 2026-08-20 就改成這樣了，
         //          而這支 C# 對偶**沒跟上** —— 它還在走 `agent_banks` 兩跳。
         // 🩸 那個落差今天被量到（basecamp 2026-08-21）：它把 `claude-code` 解成
         //   `claude-da-xiaojie`，而該帳戶在 08-20 13:12 就已經改名歸併成 `claude-code`
@@ -147,7 +149,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
 
         // ===========================================================
         // 區塊職責：persona → **帳號**（帳號 id ＝ agent id，合一後的講法）。
-        // 物理意義：唯一入口是 `UCL_TreasuryAccountResolver.ResolvePersonaAccount`
+        // 物理意義：唯一入口是 `UCL_BankResolve.ResolvePersonaAccount`
         //          （Tim 2026-08-20 拍板：「呼叫端只想知道這個人的錢在哪個帳戶，
         //          不該知道系統目前走哪條鏈」）。本函式只是把它接到喚醒流程上，
         //          **不在這裡接第三條鏈**。
@@ -169,7 +171,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             {
                 try
                 {
-                    string aAcc = Treasury.UCL_TreasuryAccountResolver.ResolvePersonaAccount(
+                    string aAcc = Treasury.UCL_BankResolve.ResolvePersonaAccount(
                         iPersona, out string aTrace);
                     if (!string.IsNullOrEmpty(aAcc))
                     {

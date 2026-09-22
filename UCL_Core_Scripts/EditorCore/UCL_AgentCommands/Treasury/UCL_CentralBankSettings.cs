@@ -189,7 +189,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         //   兩個專案都跑完合一遷移 ⇒ 合一是**唯一**模式，解析一律 persona → agent（一跳）。
         //   留著一條可切回去的舊鏈，會讓「已合一」與「還在過渡」在讀數上長得一模一樣。
         //   資料檔裡殘留的 `account_resolve_unified` 鍵不再被任何人讀取（無害，下次改設定自然掉）。
-        //   舊行為的實作與血證見 git：`UCL_TreasuryAccountResolver` 的 ⓪ 段。
+        //   舊行為的實作與血證見 git：`UCL_BankResolve` 的 ⓪ 段。
 
         // 區塊職責：本專案的**區域（貨幣）ID** —— 即 `letters/<persona>/bank/<CurrencyId>.md` 的檔名。
         // 物理意義：Tim 2026-08-20 拍板 —— 銀行（酒館系統）**每個專案有自己的 ID**（可理解為貨幣名），

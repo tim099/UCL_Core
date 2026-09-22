@@ -710,27 +710,6 @@ def list_persona_names() -> list:
     return names
 
 
-# 區塊職責：agent → bank 解析改走 UCL_Core 代碼側 _lib/bank_resolver.py 單一 source-of-truth。
-# 物理意義：normalize_agent / resolve_bank_account / DEFAULT_AGENT_ALIASES 不再在本檔重複定義，
-#           統一由共用模組提供 — 杜絕「awakening 與 canvas 各自維護平行對照表漂移」的
-#           identity-layer bug (2026-06-04 canvas 把 Zeta 麾下 persona token 誤扣 claude bank 案)。
-# 載入手法：本檔在 module 載入時 sys.path.insert(0, <repo>/AgentCommands)，使裸 `_lib` package
-#           名綁到「專案狀態側」repo-root/AgentCommands/_lib (有 __init__.py，含 tavern_client 等)。
-#           bank_resolver 住在「代碼側」Tools~/AgentCommands/_lib (本腳本 sibling)，名稱相撞拿不到，
-#           故用 importlib 依絕對檔案路徑顯式載入，繞開 `_lib` 名稱遮蔽。
-import importlib.util as _ilu  # 顯式檔案路徑載入共用 resolver，避開 _lib package 名稱相撞
-
-# 從本腳本同目錄的 _lib/bank_resolver.py 載入（_HERE 已於檔首解析為本檔所在目錄）
-_BANK_RESOLVER_PATH = _HERE / "_lib" / "bank_resolver.py"
-_br_spec = _ilu.spec_from_file_location("_ucl_bank_resolver", _BANK_RESOLVER_PATH)
-_br_mod = _ilu.module_from_spec(_br_spec)
-_br_spec.loader.exec_module(_br_mod)
-
-# 對外維持與舊版相同的模組級名稱，下游 caller (normalize_agent(reg,..) / resolve_bank_account(reg,..)) 不需改
-_DEFAULT_AGENT_ALIASES = _br_mod.DEFAULT_AGENT_ALIASES   # backward-compat alias（舊名留著供既有引用）
-normalize_agent = _br_mod.normalize_agent               # canonical agent key 正規化
-resolve_bank_account = _br_mod.resolve_bank_account      # agent → Treasury bank account
-
 # 區塊職責：把晨間 CLI 輸入的實際桌面 agent 強制收斂到 C# enum 的三個 canonical 值。
 # 物理意義：人類常輸入 "Claude Code"、大小寫差異或夾空格；lock routing 只能有一種拼法才能對應視窗控制。
 # 數值影響：非空輸入必選相似度最高的一個值（不靜默：caller 會印出收斂結果）；空值交由上層 fallback。

@@ -546,7 +546,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          （agent 名／`discord:<uid>`／系統 NPC），後者是 Treasury 帳號。
         //          persona → agent 的綁定由身分後台 `UCL_PersonaAgentAdminPage` 的換綁操作寫入
         //          （走 §8.6 寫入接縫，actor+reason+審計）⇒ **那是這條綁定的事實來源，本檔只讀它**。
-        //   🩸 2026-08-20 Tim 抓到：此前這裡呼叫 `UCL_TreasuryAccountResolver.Resolve(persona)`
+        //   🩸 2026-08-20 Tim 抓到：此前這裡呼叫 `UCL_BankResolve.Resolve(persona)`
         //      取 `AccountId`（＝bank）當顯示身分。2026-08-14 寫下時那條解析是 persona→agent→bank，
         //      而當時的 agent id 剛好也是 `identities.json` 的 id（`zeta`／`cc`）⇒ 看起來對。
         //      §8.1 反向登記把解析改成「bank 端宣告誰是自己的人」之後，顯示身分就變成 **bank 粒度**：
@@ -1296,7 +1296,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 // 邊界：**不計酬不擋發言**。發言權與收款權是兩回事，把它們綁在一起會讓
                 //      「沒登記的人不能說話」，那不是這條規則要解決的問題。
                 // ===========================================================
-                var payee = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryAccountResolver.Resolve(payPersona ?? "");
+                var payee = UCL.Core.EditorLib.AgentCommands.Treasury.UCL_BankResolve.Resolve(payPersona ?? "");
                 if (string.IsNullOrEmpty(payPersona) || payee.IsUnresolved)
                 {
                     Debug.Log($"[Tavern] post_reward skip — persona={(string.IsNullOrEmpty(payPersona) ? "(未帶)" : payPersona)}"

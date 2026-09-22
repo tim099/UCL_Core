@@ -155,7 +155,7 @@ letters 有自己 repo 的 persona 各自一筆（LY 實測 9 位），其餘在
 | Bar | `Zeta` | `Zeta-da-xiaojie` ＝ **3,507** | `Zeta` ＝ **6** |
 | Bar | `antigravity` | `antigravity-da-xiaojie` ＝ **1,650** | `antigravity` ＝ **18** |
 
-⇒ **解析端（`UCL_TreasuryAccountResolver`）在改名／歸併完成之前，不可以直接把綁定值當帳號用。**
+⇒ **解析端（`SCP_BankAccountResolver`）在改名／歸併完成之前，不可以直接把綁定值當帳號用。**
 那樣做的症狀不是報錯，是**薪水靜默轉向一個餘額 0 的合法帳號**。
 
 **兩條合法路徑，二選一（要拍）**：

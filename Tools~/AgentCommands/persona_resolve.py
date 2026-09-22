@@ -39,7 +39,7 @@ import sys
 from pathlib import Path
 
 # 保留字：不是 persona，是「沒有宣告身分」這個狀態本身。
-# 讀到它必須回 none —— 否則它會流進記帳層，而 bank_resolver 的命名慣例 fallback
+# 讀到它必須回 none —— 否則它會流進記帳層，而解析端的命名慣例 fallback
 # （{name}-da-xiaojie）會替一個不存在的人隱含開帳戶。
 ANONYMOUS = "anonymous"
 

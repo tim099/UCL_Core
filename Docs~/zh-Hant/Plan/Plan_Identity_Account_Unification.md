@@ -228,7 +228,7 @@ letters/kiara/bank/<Bar 的 ID>.md  →  Myth          （Bar 那邊的綁定，
 
 ### 3.6 「沒有綁定就報錯 ＋ 綁央行 ＋ ErrorLog」的落點（Tim 指示 ⑤）
 
-`UCL_TreasuryAccountResolver.Resolve()` 現在的 ⑥ 分支是
+`SCP_BankAccountResolver.Resolve()` 現在的 ⑥ 分支是
 「查無對應（未歸一，將產生／沿用孤兒帳戶）」—— **不 derive、不 mint，但也不出聲**。
 改成：`Debug.LogError` ＋ 落 `UCL_CentralBankSettings.DefaultCentralBankAccount`
 （＝`pacific-standard-public-deposit-bank`）。
@@ -322,7 +322,7 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
 | `antigravity-da-xiaojie-da-xiaojie` | 0 | `antigravity` | 0 | ⚠ **雙後綴**，去一次還剩一個 |
 | `zeta-da-xiaojie` | 0 | `zeta` | 2,738 | ⚠ 已存在 |
 
-🩸 大小寫是這裡最陰的一格：`UCL_TreasuryAccountResolver` 的檔頭明寫
+🩸 大小寫是這裡最陰的一格：`SCP_BankAccountResolver` 的檔頭明寫
 「`zeta`（現行）與 `Zeta-da-xiaojie`（舊世代）小寫不同，不會撞」——**那是刻意的**。
 去後綴之後變成 `zeta` 與 `Zeta` 兩個只差大小寫的帳號，**看起來像同一個而實際是兩個**。
 

@@ -299,13 +299,22 @@ namespace UCL.Core.EditorLib.AgentCommands
                 //   （probe0264，75 bytes）就讓它印出「queue is empty」。Console 有紅字，
                 //   而**這一行沒有**，⇒ 讀日誌的人（與所有程式化消費端）看到的是「空」。
                 // ⛔ 這條路上我們只報不修：修 queue 是別人的動作，而**猜它本來有什麼**比不修更危險。
-                if (queueReadState == UCL_AgentCommandQueue.QueueReadState.Unreadable)
+                // 🔴 能往下走的只有兩種結局：`Ok`（讀到了）與 `Missing`（還沒有人送過東西）。
+                //   ⛔ 判準寫成**列舉允許**，不是逐一擋掉已知的壞結局 ——
+                //   後者的失效樣子是「新增一個態 ⇒ 它自動變成可以執行」，而新的態多半正是
+                //   「我這次沒讀到真正的內容」（TASK-0264 QA，kotoko 2026-09-22 的 `Busy` 就是這樣長出來的）。
+                if (queueReadState != UCL_AgentCommandQueue.QueueReadState.Ok
+                    && queueReadState != UCL_AgentCommandQueue.QueueReadState.Missing)
                 {
-                    Debug.LogError($"[UCL_AgentCmd:{labelTag}] ⛔ queue **讀不到**（不是空的）："
-                                   + $"{UCL_AgentCommandQueue.GetQueuePath(agentId)}"
-                                   + " —— 檔在而解析失敗（截斷／壞碼／寫到一半）。"
-                                   + " 本輪不執行任何指令、也**不寫回 queue**（寫回等於刪光）。"
-                                   + " ⇒ 修它：看上一行的 parse 例外，並比對檔尾是否被截斷。");
+                    bool aBusy = queueReadState == UCL_AgentCommandQueue.QueueReadState.Busy;
+                    Debug.LogError($"[UCL_AgentCmd:{labelTag}] ⛔ queue **沒讀到內容**（不是空的）："
+                                   + $"{UCL_AgentCommandQueue.GetQueuePath(agentId)} 結局＝{queueReadState}"
+                                   + (aBusy
+                                       ? " —— 檔在而**開不了**（換檔在飛／別的 process 握著），重試已用完。"
+                                         + " ⇒ 這是爭用不是壞檔：**等下一輪**即可，⛔ 不要去修那顆檔。"
+                                       : " —— 檔在而解析失敗（截斷／壞碼／寫到一半）。"
+                                         + " ⇒ 修它：看上一行的 parse 例外，並比對檔尾是否被截斷。")
+                                   + " 本輪不執行任何指令、也**不寫回 queue**（寫回等於刪光）。");
                     return;
                 }
                 if (total == 0)

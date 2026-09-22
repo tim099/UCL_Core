@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -1082,10 +1082,14 @@ namespace UCL.Core.EditorLib.Page
             using var aQueueLock = UCL_AgentCommandQueue.LockQueue();
             var aData = UCL_AgentCommandQueue.Load(null, out var aReadState)
                         ?? new UCL_AgentCommandQueueData();
-            if (aReadState == UCL_AgentCommandQueue.QueueReadState.Unreadable)
+            // 判準是**列舉允許**（Ok／Missing），⛔ 不是逐一擋掉已知的壞結局 ——
+            //   新增一個態（TASK-0264 QA 的 `Busy`）時，預設要落在「不准寫」那邊。
+            if (aReadState != UCL_AgentCommandQueue.QueueReadState.Ok
+                && aReadState != UCL_AgentCommandQueue.QueueReadState.Missing)
             {
-                Debug.LogError("[UCL_LibraryManagePage] ⛔ 預設 queue **讀不到**（檔在、解析失敗）"
-                               + " ⇒ 拒絕派遣，一個位元組都不寫。");
+                Debug.LogError($"[UCL_LibraryManagePage] ⛔ 預設 queue 沒讀到內容（結局＝{aReadState}）"
+                               + " ⇒ 拒絕派遣，一個位元組都不寫。"
+                               + " Unreadable ＝檔壞了去看 parse 例外；Busy ＝這一瞬間開不了，稍後再試。");
                 return;
             }
             aData.Commands ??= new List<UCL_AgentCommand>();

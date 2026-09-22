@@ -221,6 +221,18 @@ namespace UCL.Core.EditorLib.AgentCommands
             /// 而「我剛加的那筆在不在」這種回讀驗證**照樣會通過**。</para>
             /// </summary>
             Unreadable = 2,
+
+            /// <summary>
+            /// **這一瞬間開不了**：檔在、而 OS 拒絕開檔（換檔正在飛／另一個 process 握著）。重試用完仍是這樣。
+            /// <para>🩸 TASK-0264 QA（kotoko 2026-09-22）：第一版把它併進 <see cref="Unreadable"/> ——
+            /// 於是一個**毫秒級的爭用**被分類成「檔案壞了」，而 <c>Unreadable</c> 是破壞力最強的那一態
+            /// （Runner 整批不執行／收尾放棄寫回 ⇒ 跑完的 OneShot 留在 queue 裡，而 Runner 那圈
+            /// 沒有 <c>LastRunResult == "Success"</c> 守衛 ⇒ **下一輪照跑一次**，而那條路上有動錢的 handler）。</para>
+            /// <para>⇒ 分開的理由是**下一步不同**：<c>Unreadable</c> ＝去看那顆檔；<c>Busy</c> ＝等一下再來。
+            /// ⛔ 而它一樣**不准被當成空 queue 寫回去** —— 寫回的判準是
+            /// <c>== Ok</c>，⛔ 不是「不是 Unreadable」（見 <see cref="SaveMerged"/>）。</para>
+            /// </summary>
+            Busy = 3,
         }
 
         /// <summary>讀取 queue.json — 不存在或解析失敗時回傳空 queue。</summary>
@@ -229,7 +241,19 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static UCL_AgentCommandQueueData Load(string agentId = null)
             => Load(agentId, out _);
 
-        /// <summary>讀取 queue.json，並回報**這一次讀取的結局**（三態）。</summary>
+        /// <summary>讀取 queue.json，並回報**這一次讀取的結局**（四態）。</summary>
+        /// <remarks>
+        /// 🔴 **開檔失敗與解析失敗是兩件事**（TASK-0264 QA，kotoko 2026-09-22）：
+        /// <c>SwapInto</c> 換檔的那一瞬間，不拿鎖的讀取端**開檔會被拒**
+        /// （她的對照組：reader 改成開檔而不是 stat ⇒ Replace 那列 323630/368997 次被拒，
+        /// 錯誤碼 <c>SHARING_VIOLATION</c>；⚠ 那是零延遲狂開檔的 harness，**不是線上發生率**）。
+        /// <para>⇒ 這裡給讀取端**對等於 <see cref="SwapInto"/> 的重試**：
+        /// 寫入端有五次而讀取端一次都沒有，那個不對稱就是把瞬時爭用推進 <c>Unreadable</c> 的原因。
+        /// 重試用完仍開不了 ⇒ 回 <see cref="QueueReadState.Busy"/>，⛔ 不回 <c>Unreadable</c>
+        /// （前者叫人等一下，後者叫人去修檔 —— 派錯人的代價是整批不執行）。</para>
+        /// <para>⚠ 重試跑在**呼叫端的執行緒**上（Editor 主緒也會走這裡），最壞 2+4+6+8 ＝ 20ms／次。
+        /// ⛔ 而它換來的是「不把爭用誤判成壞檔」—— 誤判那一邊的代價是重跑一筆動錢的指令。</para>
+        /// </remarks>
         public static UCL_AgentCommandQueueData Load(string agentId, out QueueReadState oState)
         {
             string path = GetQueuePath(agentId);
@@ -238,20 +262,52 @@ namespace UCL.Core.EditorLib.AgentCommands
                 oState = QueueReadState.Missing;
                 return new UCL_AgentCommandQueueData();
             }
-            try
+
+            const int aMaxAttempt = 5;
+            Exception aLastOpenError = null;
+            for (int aAttempt = 1; aAttempt <= aMaxAttempt; ++aAttempt)
             {
-                string json = File.ReadAllText(path, Encoding.UTF8);
-                // Unity JsonUtility 不支援 Dictionary，因此採手寫 JSON parse（極簡）
-                var aData = ParseJson(json);
-                oState = QueueReadState.Ok;
-                return aData;
+                string aJson;
+                try
+                {
+                    aJson = File.ReadAllText(path, Encoding.UTF8);
+                }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+                {
+                    // ⛔ 開檔這一層的失敗**不落 Unreadable** —— 它多半是換檔在飛，毫秒內自己過去。
+                    aLastOpenError = e;
+                    if (aAttempt < aMaxAttempt) System.Threading.Thread.Sleep(2 * aAttempt);
+                    continue;
+                }
+
+                try
+                {
+                    // Unity JsonUtility 不支援 Dictionary，因此採手寫 JSON parse（極簡）
+                    var aData = ParseJson(aJson);
+                    oState = QueueReadState.Ok;
+                    return aData;
+                }
+                catch (Exception e)
+                {
+                    // 這一層是**內容**的問題（截斷／壞碼）⇒ 重試不會變好，直接落 Unreadable。
+                    Debug.LogError($"[UCL_AgentCommandQueue] Failed to parse queue: {e}");
+                    oState = QueueReadState.Unreadable;
+                    return new UCL_AgentCommandQueueData();
+                }
             }
-            catch (Exception e)
+
+            // 重試用完。⚠ 這裡再問一次磁碟：檔**真的被刪掉**的話那是 Missing，
+            //   把它報成 Busy 會讓呼叫端一直等一個不會回來的東西。
+            if (!File.Exists(path))
             {
-                Debug.LogError($"[UCL_AgentCommandQueue] Failed to load queue: {e}");
-                oState = QueueReadState.Unreadable;
+                oState = QueueReadState.Missing;
                 return new UCL_AgentCommandQueueData();
             }
+            Debug.LogError($"[UCL_AgentCommandQueue] queue 開不了（重試 {aMaxAttempt} 次）：{path}"
+                           + " ⇒ 這是**爭用**不是壞檔，呼叫端請稍後再來，⛔ 不要拿空的寫回去。"
+                           + $" 最後一個錯誤：{aLastOpenError}");
+            oState = QueueReadState.Busy;
+            return new UCL_AgentCommandQueueData();
         }
 
         /// <summary>
@@ -278,10 +334,19 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// ⇒ 目標存在時走 <c>File.Replace</c>（就地原子替換，Unix 端即 rename），
         /// 中途沒有任何一瞬間檔案是不存在的。</para>
         /// <para>⚠ 射程：只有「目標不存在」那一格走 <c>Move</c>（那是建檔，本來就沒有舊值可讀）。
-        /// 而 <c>Exists</c> 與 <c>Replace</c> 之間若有人刪掉目標，<c>Replace</c> 會丟例外被下面的 catch 記成錯誤
-        /// ⇒ **大聲失敗，⛔ 不退回 Delete-then-Move**（退回去等於把剛拆掉的窗口靜默裝回來）。</para>
+        /// 🩸 **這一段原本寫著「<c>Exists</c> 與 <c>Replace</c> 之間被人刪掉 ⇒ 大聲失敗」—— 那句是舊的**
+        /// （kotoko 2026-09-22 QA 逐格量過）：<see cref="SwapInto"/> 加上重試之後，那兩個方向都**自癒** ——
+        /// <c>Exists=true</c> 後被刪 ⇒ <c>Replace</c> 炸 ⇒ 重試時走 <c>Move</c>；
+        /// <c>Exists=false</c> 後被建 ⇒ <c>Move</c> 炸 ⇒ 重試時走 <c>Replace</c>。
+        /// ⇒ 大聲失敗只發生在**重試用完**（回 <c>false</c>），⛔ 仍然不退回 Delete-then-Move。</para>
         /// </remarks>
-        public static void Save(UCL_AgentCommandQueueData data, string agentId = null)
+        /// <returns><c>true</c> ＝ 換檔真的成立。
+        /// <para>🩸 TASK-0264 QA（kotoko 2026-09-22）：本方法原本是 <c>void</c> ＋ 一個吞例外的 catch，
+        /// 而 <see cref="SaveMerged"/> 宣稱自己的 <c>true</c> ＝「真的寫回去了」——
+        /// <c>SwapInto</c> 重試用完往上丟的那顆例外**只飛一層就死在這裡**，那個 bool 照樣是 true。
+        /// ⇒ **一個宣稱了自己沒有的性質的 API**：今天沒有行為損害（兩個呼叫端都不看回傳值），
+        /// 而下一個讀它的人會拿那個宣稱當前提。⛔ 錯的不是 catch，是「void 的失敗**沒有出口**」。</para></returns>
+        public static bool Save(UCL_AgentCommandQueueData data, string agentId = null)
         {
             EnsureDir(agentId);
             string path = GetQueuePath(agentId);
@@ -292,10 +357,12 @@ namespace UCL.Core.EditorLib.AgentCommands
                 File.WriteAllText(tmp, json, new UTF8Encoding(false)); // no BOM
                 SwapInto(tmp, path);
                 Debug.Log($"[UCL_AgentCommandQueue] Saved queue -> {path}");
+                return true;
             }
             catch (Exception e)
             {
                 Debug.LogError($"[UCL_AgentCommandQueue] Failed to save queue: {e}");
+                return false;
             }
         }
 
@@ -350,11 +417,15 @@ namespace UCL.Core.EditorLib.AgentCommands
             using (LockQueue(agentId))
             {
                 var aDisk = Load(agentId, out QueueReadState aState);
-                if (aState == QueueReadState.Unreadable)
+                // 🔴 判準是 **== Ok**，⛔ 不是「不是 Unreadable」（TASK-0264 QA，kotoko 2026-09-22）：
+                //   後者的失效樣子是「新加一個態就自動變成可以寫回」，而新的態多半正是
+                //   「我這次沒讀到真正的內容」。⇒ 允許寫回的條件要**列舉允許**，不是列舉禁止。
+                if (aState != QueueReadState.Ok)
                 {
-                    Debug.LogError($"[UCL_AgentCommandQueue] 收尾放棄寫回：{GetQueuePath(agentId)} 讀不到"
-                                   + "（截斷／壞碼）。這一批的出隊結果**沒有落盤**，"
-                                   + "而那好過拿一份空的覆蓋掉整條 queue。");
+                    Debug.LogError($"[UCL_AgentCommandQueue] 收尾放棄寫回：{GetQueuePath(agentId)} 讀取結局＝{aState}"
+                                   + "（Unreadable ＝截斷／壞碼，去看那顆檔；Busy ＝開不了，等一下再來；"
+                                   + "Missing ＝檔不見了，而收尾本來就該有一顆）。"
+                                   + "這一批的出隊結果**沒有落盤**，而那好過拿一份空的覆蓋掉整條 queue。");
                     return false;
                 }
 

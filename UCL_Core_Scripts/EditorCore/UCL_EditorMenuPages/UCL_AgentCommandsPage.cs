@@ -1,4 +1,4 @@
-
+﻿
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 05/04 2026
@@ -422,8 +422,19 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (removeIdx >= 0)
                 {
-                    m_Cached.Commands.RemoveAt(removeIdx);
-                    UCL_AgentCommandQueue.Save(m_Cached, SelectedAgentId);
+                    // ⚠ 受詞是**那一筆的 Id**，⛔ 不是 `m_Cached` 裡的索引 ——
+                    //   磁碟那份的順序與長度跟畫面上這份不一定一樣（TASK-0264）。
+                    string aRemoveId = m_Cached?.Commands != null && removeIdx < m_Cached.Commands.Count
+                                       ? m_Cached.Commands[removeIdx]?.Id : null;
+                    if (string.IsNullOrEmpty(aRemoveId))
+                    {
+                        Debug.LogError("[UCL_AgentCmd UI] ⛔ 刪除：那一列沒有 Id，不動磁碟（畫面請按 Refresh）。");
+                    }
+                    else
+                    {
+                        MutateQueueOnDisk($"刪除 {aRemoveId}",
+                            iData => iData.Commands.RemoveAll(c => c != null && c.Id == aRemoveId));
+                    }
                 }
             }
         }
@@ -840,12 +851,14 @@ namespace UCL.Core.EditorLib.Page
             // 🩸 舊版把「檔在而解析失敗」讀成空 queue ⇒ 這一段會寫回一份**只有新指令那一筆**的 queue，
             //   把所有人待跑的都洗掉。而下面那段回讀驗證只問「我這筆在不在」⇒ **它照樣會通過**。
             //   （2026-09-21 實測：一顆 75 bytes 的截斷檔被 Runner 印成 "queue is empty"。）
-            if (aReadState == UCL_AgentCommandQueue.QueueReadState.Unreadable)
+            if (aReadState != UCL_AgentCommandQueue.QueueReadState.Ok
+                && aReadState != UCL_AgentCommandQueue.QueueReadState.Missing)
             {
-                Debug.LogError($"[UCL_AgentCmd UI] ⛔ queue '{aQueueId ?? "default"}' **讀不到**"
-                               + "（檔在、解析失敗）⇒ 拒絕補跑，一個位元組都不寫。"
+                Debug.LogError($"[UCL_AgentCmd UI] ⛔ queue '{aQueueId ?? "default"}' **沒讀到內容**"
+                               + $"（結局＝{aReadState}）⇒ 拒絕補跑，一個位元組都不寫。"
                                + " 寫下去會把整條 queue 換成這一筆。"
-                               + " ⇒ 先看 Console 上一行的 parse 例外，修好檔再來。");
+                               + " ⇒ Unreadable：先看 Console 上一行的 parse 例外，修好檔再來；"
+                               + " Busy：這一瞬間開不了（換檔在飛），稍後再按。");
                 return;
             }
             aData.Commands ??= new List<UCL_AgentCommand>();
@@ -1594,6 +1607,55 @@ namespace UCL.Core.EditorLib.Page
         // 物理意義：失敗 OneShot 預設留在 queue 給作者除錯，但若是 Type 拼錯之類的死局，
         //          留著只會每次 Run Pending 都重試失敗。這顆按鈕一鍵清空。
         // 數值影響：寫回 queue.json；只清失敗的，不動 Pending / Success / Repeatable
+        // ===========================================================
+        // 區塊職責：UI 這側**唯一**的 queue 寫入路徑 —— 鎖 → 重讀磁碟 → 在磁碟那份上動手 → 寫回 → 刷新快取。
+        // 物理意義：🩸 TASK-0264 QA（kotoko 2026-09-22）：本頁有 **5 個寫入點而只有 1 個包了鎖**，
+        //          另外三處（`AddCommand`／清失敗／刪一筆）把 `m_Cached` **整份**寫回去。
+        //          而 `m_Cached` 只在幾個特定時機重載（⛔ 不是每幀）⇒ 頁面開著不動就能舊到任意久，
+        //          失效樣子比 lost update 更難看：**把 Runner 已經出隊的成功指令復活**
+        //          （`UCL_AgentCommandRunner` 那圈沒有 `LastRunResult == "Success"` 守衛 ⇒ 下一輪照跑一次，
+        //          而那條路上有動錢的 handler），順便把別人期間 append 的吃掉。
+        // ⛔ 為什麼收成一條路而不是逐處補三次守衛：三份一樣的守衛會各自漂，
+        //          而**漏掉的那一處不會報錯** —— 它會安靜地寫回一份舊清單。收成一處＝只有一種寫法。
+        // 數值影響：寫 queue.json（temp → 換檔）；讀不到／開不了時**一個位元組都不寫**並回 false。
+        // ===========================================================
+        bool MutateQueueOnDisk(string iWhat, Action<UCL_AgentCommandQueueData> iMutate)
+        {
+            string aQueueId = SelectedAgentId;
+
+            // 🔴 讀改寫整段包在鎖裡（TASK-0263／0264）—— 只鎖寫的那一下等於沒鎖。
+            using var aLock = UCL_AgentCommandQueue.LockQueue(aQueueId);
+
+            var aDisk = UCL_AgentCommandQueue.Load(aQueueId, out var aState)
+                        ?? new UCL_AgentCommandQueueData();
+
+            // 判準是**列舉允許**（Ok ＝讀到了／Missing ＝還沒有人送過東西），
+            // ⛔ 不是逐一擋掉已知的壞結局 —— 新增一個態時，預設要落在「不准寫」那邊。
+            if (aState != UCL_AgentCommandQueue.QueueReadState.Ok
+                && aState != UCL_AgentCommandQueue.QueueReadState.Missing)
+            {
+                Debug.LogError($"[UCL_AgentCmd UI] ⛔ {iWhat}：queue '{aQueueId ?? "default"}' 沒讀到內容"
+                               + $"（結局＝{aState}）⇒ 拒絕寫入，一個位元組都不寫。"
+                               + " Unreadable ＝檔壞了，先看 Console 上一行的 parse 例外；"
+                               + " Busy ＝這一瞬間開不了（換檔在飛），稍後再按。");
+                return false;
+            }
+            aDisk.Commands ??= new List<UCL_AgentCommand>();
+
+            iMutate(aDisk);
+
+            bool aSaved = UCL_AgentCommandQueue.Save(aDisk, aQueueId);
+            if (!aSaved)
+            {
+                Debug.LogError($"[UCL_AgentCmd UI] ⛔ {iWhat}：寫回 queue '{aQueueId ?? "default"}' **失敗**"
+                               + "（換檔重試用完）⇒ 這次的改動沒有落盤。"
+                               + "⛔ 不要把畫面上的樣子當成磁碟上的樣子。");
+            }
+            // 不管成敗都刷新快取 —— 讓畫面回到**磁碟現況**，⛔ 不是我以為的樣子。
+            m_Cached = UCL_AgentCommandQueue.Load(aQueueId);
+            return aSaved;
+        }
+
         void ClearFailedCommands()
         {
             if (m_Cached?.Commands == null || m_Cached.Commands.Count == 0)
@@ -1601,11 +1663,17 @@ namespace UCL.Core.EditorLib.Page
                 Debug.Log("[UCL_AgentCmd UI] queue is empty — nothing to clear.");
                 return;
             }
-            int before = m_Cached.Commands.Count;
-            m_Cached.Commands.RemoveAll(c => c != null && c.LastRunResult == "Failed");
-            int removed = before - m_Cached.Commands.Count;
-            UCL_AgentCommandQueue.Save(m_Cached, SelectedAgentId);
-            Debug.Log($"[UCL_AgentCmd UI] Cleared {removed} failed cmd(s) from queue '{SelectedAgentId ?? "default"}' (kept {m_Cached.Commands.Count}).");
+            // ⚠ 計數要從**磁碟那份**算 —— 從 `m_Cached` 算出來的 removed 是「畫面上少了幾筆」，
+            //   而那個數字在畫面過期時會說謊（TASK-0264）。
+            int aRemoved = 0, aKept = 0;
+            if (!MutateQueueOnDisk("清除失敗指令", iData =>
+                {
+                    int aBefore = iData.Commands.Count;
+                    iData.Commands.RemoveAll(c => c != null && c.LastRunResult == "Failed");
+                    aRemoved = aBefore - iData.Commands.Count;
+                    aKept = iData.Commands.Count;
+                })) return;
+            Debug.Log($"[UCL_AgentCmd UI] Cleared {aRemoved} failed cmd(s) from queue '{SelectedAgentId ?? "default"}' (kept {aKept}).");
         }
 
         // 區塊職責：把表單 / 模板 / 歷史的指令送進 queue，並把這次操作寫進 History
@@ -1619,9 +1687,6 @@ namespace UCL.Core.EditorLib.Page
                 Debug.LogWarning("[UCL_AgentCmd UI] Type is empty — abort.");
                 return;
             }
-            if (m_Cached == null) m_Cached = new UCL_AgentCommandQueueData();
-            if (m_Cached.Commands == null) m_Cached.Commands = new List<UCL_AgentCommand>();
-
             var safeArgs = args ?? new Dictionary<string, string>();
             var c = new UCL_AgentCommand
             {
@@ -1633,8 +1698,12 @@ namespace UCL.Core.EditorLib.Page
                 CreatedAt = DateTime.UtcNow.ToString("o"),
                 Description = string.IsNullOrEmpty(description) ? null : description,
             };
-            m_Cached.Commands.Add(c);
-            UCL_AgentCommandQueue.Save(m_Cached, SelectedAgentId);
+            // 🔴 append 到**磁碟現況**那一份，⛔ 不是把 `m_Cached` 整份寫回去（TASK-0264 QA）：
+            //   這顆按鈕是 UI 主要的送指令入口（手動／樣板／歷史補送三個按鈕都走它），
+            //   而整份寫回會**復活 Runner 已經出隊的成功指令**。
+            // ⛔ 沒寫成功就不記 History —— 一筆「歷史說送了、queue 裡沒有」的紀錄，
+            //   下一次補送會照著它再送一次。
+            if (!MutateQueueOnDisk($"新增 {c.Type}", iData => iData.Commands.Add(c))) return;
 
             // 寫入 / 重用 History（以管理層 API 操作，Page 不直接動檔）
             // queueId 跟上一行 Save 用的是**同一個值** —— 指令落哪條 queue、歷史就記哪條，

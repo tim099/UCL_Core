@@ -944,76 +944,177 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// python notify_discord.py，是 2026-07-28 併發失控事故的結構性根因）。</summary>
         // ===========================================================
         // 區塊職責：把一則訊息**委派給 Senate Server** 寫（`tavern.writer=server` 那條路）。
-        // 物理意義：TASK-0106 第 5 步。Editor 不直接碰磁碟 —— 它寫一筆 queue 進 Server 的執行器根，
-        //          等 `_cmd_results/<id>.json` 的判定，從 `values.seq` 拿回號碼。
-        // ⛔ 三種失敗**都丟例外**，而且訊息各自不同（它們的下一步不同）：
-        //   · 沒有 Server／Server 死了 ⇒ 去啟動它（⛔ 不是「發文壞了」）
-        //   · Server 回報失敗 ⇒ 看它說什麼（那一則**確定沒寫**）
-        //   · 等不到判定 ⇒ ⛔ **不要重送**：那一筆可能已經寫了，而 seq 全域遞增 ⇒ 重送 ＝ 多一則
-        // ⚠ 本函式**同步阻塞** —— Tim 2026-09-21 拍板「①全部都等」，理由是**過渡期取最穩的那條**
-        //   （之後其他系統也會陸續搬到 Senate Server，這條路的形狀會被抄很多次）。
-        //   實測：24 個呼叫端裡**只有 4 個在用回傳的 seq**（3 個在 `Cmd_Tavern`、1 個在本檔），
-        //   其餘 18 個是 fire-and-forget（酒保 daemon／UI 頁）—— 它們現在也要付這段等待（粗估 0–2 秒／則）。
-        //   ⛔ 而「只讓那 4 個等、其餘丟出去就走」被否掉了：那 18 處的失敗會變成**靜默**，
-        //   正是 D10 要根治的病。要改非同步，得先有一個「發文失敗」的通知落點，⛔ 不是先拿掉等待。
+        // 物理意義：TASK-0106 第 5 步 ＋ TASK-0267 ③④。Editor 不直接碰磁碟，也**不自己接檔案協議** ——
+        //          它跑一次 `senate cmd tavern-write`，由 CLI 去委派給 Server。
+        //          ⭐ 這條路**免費得到 autostart**：`Cmd_TavernWrite : ServerDelegateCmd`，
+        //          而 `ServerDelegateCmd` 在委派之前會走 `SCP_ServerAutoStart.Ensure`
+        //          ⇒ Server 沒在跑就自己拉一顆（淨室實測 2026-09-22：**212 ms**），
+        //          ⛔ 而 Editor 一行都不維護「**怎麼**拉」—— 那半是宿主的事（WMI 脫樹、回退路、log 落檔）。
+        //          ⭐ 副效益（不只是照規矩）：那顆 Server 由 `senate.exe` 走 WMI 生出來，
+        //          **不是 Editor 的子孫**（實測父行程 ＝ `WmiPrvSE.exe`）⇒ TASK-0204 那一整族
+        //          （封裝 app 的常駐子孫擋住新版註冊）在這條路上**結構性不成立**。
+        //
+        // 🔴 為什麼是「整條委派走 CLI」而不是「只有冷啟動走 CLI」（Tim 2026-09-22 拍板 A）：
+        //   逐字：「**之後應該會整套遷移到 Senate，所以這只是暫時的。**」
+        //   ⇒ B 案（常態維持檔案協議、只冷啟動叫 CLI）要給 `Cmd_ServerPing` 多一個 `--arg id`，
+        //     而**整套遷移之後那個參數是廢的** ⇒ 為一條暫時的路造一個永久的旋鈕，
+        //     代價會活得比收益久。⚠ 而那種旋鈕**不會叫**：它不會變錯，它只會變成
+        //     一個沒有人記得為什麼存在的東西。
+        //
+        // ⚠ ⑪ **這一跳 process 是過渡期的代價，不是終局形狀。**
+        //   終局是整套搬進 Senate（TASK-0100 路線圖）⇒ ⛔ **不要為這一跳做最佳化**
+        //   （常駐 client、連線池、快取 seq…）—— 那些在遷移當天會整包丟掉，
+        //   而寫最佳化的人到時候已經不記得它是暫時的了。
+        //
+        // ⛔ 失敗**都丟例外**，而且訊息各自不同（它們的下一步不同）：
+        //   · 叫不到 `senate` ⇒ PATH 沒有它（⛔ 不是「Server 死了」；OS 只會說「找不到指定的檔案」）
+        //   · CLI 非零退出 ⇒ 看它印什麼；`🔢 delegate_failure` 分得出
+        //     `autostart_timeout`（**不知道**：可能還在載入）與 `autostart_failed`（**確定沒起來**）
+        //   · 等不到它結束 ⇒ ⛔ **不要重送**：那一筆可能已經寫了，而 seq 全域遞增 ⇒ 重送 ＝ 多一則
+        //
+        // ⚠ 本函式**同步阻塞主執行緒** —— Tim 2026-09-21 拍板「①全部都等」（過渡期取最穩那條）。
+        //   🩸 而 `Coding_Standards.md` 的外部工具骨架第①條逐字寫著「主執行緒 `WaitForExit`
+        //   會凍住整個 Editor，連 AgentCommand watcher 一起卡死」—— 這裡是**知情違反**，
+        //   理由是**改動前也是阻塞的**（既有 `SCP_ServerCmdClient.Wait` 同樣在主執行緒同步等 15s）
+        //   ⇒ 本筆改變的是**時間長度**，不是阻塞與否：常態多一次 process 起落（~0.5–1s），
+        //   而「Server 沒在跑」那一趟要多付 autostart（上限 20s）。
         //   📌 什麼時候該回來看這一格：**有人拿得出「被拖到」的讀數**時，⛔ 不是覺得慢的時候。
+        //   骨架其餘四條**照做**：② WorkingDirectory ③ 編碼三件套
+        //   ④ 兩條 stream 都非阻塞讀（只讀一條 ⇒ 子行程寫滿另一條的 buffer ⇒ **永久 deadlock 且無訊息**）
+        //   ⑤ 登記包在 `using`（Tim 2026-08-06：**全部都要登記**，短命的也要 ——
+        //     一份有例外的登記表最危險的不是漏那幾筆，是它讓人停止懷疑）。
         // ===========================================================
-        const double SERVER_DELEGATE_TIMEOUT_SEC = 15.0;
+        // 🩸 兩層逾時的**大小關係是刻意的**，⛔ 不是各自隨手填的：
+        //   內層（CLI 等 Server）30s ＋ autostart 上限 20s ＝ 50s ＜ 外層 60s
+        //   ⇒ **內層一定先逾時**，於是外層拿到的是「**它說了什麼**」而不是「我不知道」。
+        //   反過來（外層先到）就是自己把診斷訊息殺掉，而畫面上兩者長得一樣。
+        const double SERVER_DELEGATE_TIMEOUT_SEC = 60.0;
+        const int SERVER_DELEGATE_INNER_WAIT_SEC = 30;
+        const string SERVER_DELEGATE_TAG = "tavern_write_cli";
 
         static int DelegateAppendToServer(string roomId, UCL_ChatMessage msg)
         {
             string aDataRoot = UCL_AgentCommandsPath.DataRoot;
-            SCP.Core.Proc.SCP_ServerProbe aProbe =
-                SCP.Core.Proc.SCP_ServerEndpoint.Probe(aDataRoot, "tavern");
-            if (!aProbe.Alive)
-                throw new InvalidOperationException(
-                    "[Tavern] 開關是 server，而 " + aProbe.Detail
-                    + "　⇒ **這一則沒有寫出去**（⛔ 不降級寫本地）。"
-                    + "　啟動：`senate server start --id tavern`"
-                    + "　／切回 Editor：`senate cmd tavern-writer --arg data_root=" + aDataRoot
-                    + " --arg set=editor`");
 
-            string aServerRoot = aProbe.Info.ServerRoot;
-            // lane ＝ **固定一條**（TASK-0106 驗收 ③，PM 2026-09-21 拍板候選 A：近 7 日 100% 的
-            //   寫入落在同一個房 ⇒ per-room lane 的並行收益是 0，而它多依賴一個前提）。
-            // ⭐ 常數住在 SCP_Core，**與 Senate 那側 `Cmd_TavernWrite.Lane()` 是同一顆**
-            //   ⇒ ⛔ 不是各寫一個字面再靠註解維持一致（lane 對不上的失效樣子是
-            //   **15 秒逾時、沒有任何一層說不認得**，那種不一致不會有人來報）。
-            // 🩸 而它必須是**一層目錄名**：`tavern/<room>` 是協議的子分道寫法，檔案會落在
-            //   `queues/tavern/queue-<room>.json`，而 `ServerExecutor.Tick` 掃的是 `queues/*` 那一層目錄、
-            //   只認 `pending.trigger` ⇒ **它永遠讀不到那一筆**（2026-09-21 端到端實測）。
-            string aLane = SCP.Core.Tavern.SCP_TavernWriter.LaneName;
-            var aArgs = new Dictionary<string, string>
+            // msg_json 很長（正文＋meta）⇒ 走 `--arg-file`，⛔ 不塞 argv。
+            //   argv 有長度上限，而超過的失效樣子是「指令被截斷」，不是「太長」。
+            string aTmp = Path.Combine(Path.GetTempPath(),
+                "ucl_tavern_write_" + Guid.NewGuid().ToString("N") + ".json");
+            File.WriteAllText(aTmp, UCL_ChatTavernIO_PerMsgFile.SerializeMessageNoSeq(msg),
+                new UTF8Encoding(false));
+
+            var aOut = new StringBuilder();
+            var aErr = new StringBuilder();
+            int aExit = -1;
+            try
             {
-                ["data_root"] = aDataRoot,
-                ["room"] = roomId,
-                // ⭐ 直接送**落盤同形**的 JSON（Editor 這側既有的序列化器）——
-                //   ⛔ 不逐欄拆成 --arg：漏掉的那一欄不會報錯，只會在落盤檔裡安靜少一格。
-                ["msg_json"] = UCL_ChatTavernIO_PerMsgFile.SerializeMessageNoSeq(msg),
-            };
+                using (var aProc = new Process())
+                {
+                    // `FileName = "senate"` ⇒ 靠 PATH，同本 core `FileName = "python"` 的慣例。
+                    //   ⚠ 實測 2026-09-22：Editor 進程的 PATH 含 Senate 的 publish 目錄，
+                    //   且它是**持久的使用者環境變數**（Machine=False／User=True）。
+                    //   ⛔ 不為了找那顆 exe 新增第四套路徑解析器。
+                    aProc.StartInfo.FileName = "senate";
+                    aProc.StartInfo.ArgumentList.Add("cmd");
+                    aProc.StartInfo.ArgumentList.Add("tavern-write");
+                    aProc.StartInfo.ArgumentList.Add("--arg");
+                    aProc.StartInfo.ArgumentList.Add("data_root=" + aDataRoot);
+                    aProc.StartInfo.ArgumentList.Add("--arg");
+                    aProc.StartInfo.ArgumentList.Add("room=" + roomId);
+                    aProc.StartInfo.ArgumentList.Add("--arg");
+                    aProc.StartInfo.ArgumentList.Add("timeout=" + SERVER_DELEGATE_INNER_WAIT_SEC);
+                    aProc.StartInfo.ArgumentList.Add("--arg-file");
+                    aProc.StartInfo.ArgumentList.Add("msg_json=" + aTmp);
+                    aProc.StartInfo.WorkingDirectory = UCL_RepoPath.RepoRoot;
+                    aProc.StartInfo.UseShellExecute = false;
+                    aProc.StartInfo.RedirectStandardOutput = true;
+                    aProc.StartInfo.RedirectStandardError = true;
+                    aProc.StartInfo.CreateNoWindow = true;
+                    aProc.StartInfo.StandardOutputEncoding = new UTF8Encoding(false);
+                    aProc.StartInfo.StandardErrorEncoding = new UTF8Encoding(false);
+                    aProc.OutputDataReceived += (iS, iE) => { if (iE.Data != null) aOut.AppendLine(iE.Data); };
+                    aProc.ErrorDataReceived += (iS, iE) => { if (iE.Data != null) aErr.AppendLine(iE.Data); };
 
-            // ⚠ `Type` 是 **Cmd 的 `Name`**（`SCP_CmdRegistry.Find` 查的那一個），⛔ 不是類別名。
-            //   🩸 2026-09-21 端到端實測：送 `TavernWrite` ⇒ Server 回
-            //   「認不得的指令 'TavernWrite'」—— 這一格**有出聲**，是今天少數自己會叫的。
-            string aCmdId = SCP.Core.Proc.SCP_ServerCmdClient.Submit(
-                aServerRoot, aLane, "tavern-write", aArgs);
-            SCP.Core.Proc.SCP_ServerCmdWait aWait = SCP.Core.Proc.SCP_ServerCmdClient.Wait(
-                aServerRoot, aCmdId, SERVER_DELEGATE_TIMEOUT_SEC);
+                    try { aProc.Start(); }
+                    catch (System.ComponentModel.Win32Exception e)
+                    {
+                        // OS 只說「找不到指定的檔案」—— 它**不會說**該把 publish 加進 PATH。
+                        throw new InvalidOperationException(
+                            "[Tavern] 叫不到 `senate`（PATH 上沒有它）⇒ **這一則沒有寫出去**。"
+                            + "　出路二選一：把 Senate 的 `publish` 加進 PATH，"
+                            + "或切回 Editor 寫入 `senate cmd tavern-writer --arg data_root=" + aDataRoot
+                            + " --arg set=editor`。　原始錯誤：" + e.Message, e);
+                    }
 
-            if (aWait.Outcome == SCP.Core.Proc.SCP_ServerCmdOutcome.Timeout)
+                    using (UCL_ProcessRegistryService.RegisterScope(aProc, SERVER_DELEGATE_TAG,
+                        "酒館寫入委派（senate cmd tavern-write）", nameof(UCL_ChatTavernIO)))
+                    {
+                        aProc.BeginOutputReadLine();
+                        aProc.BeginErrorReadLine();
+                        if (!aProc.WaitForExit((int)(SERVER_DELEGATE_TIMEOUT_SEC * 1000)))
+                            throw new InvalidOperationException(
+                                "[Tavern] `senate cmd tavern-write` 等了 " + SERVER_DELEGATE_TIMEOUT_SEC
+                                + "s 還沒結束 —— 這是「**不知道**」不是「沒寫出去」。"
+                                + "　⛔ **不要重送**：那一筆可能已經寫了，而 seq 全域遞增 ⇒ 重送 ＝ 多一則。"
+                                + "　先回讀那個房最後一則再決定。已收到的輸出：\n" + aOut + aErr);
+                        aExit = aProc.ExitCode;
+                    }
+                }
+            }
+            finally
+            {
+                // 暫存檔留著不影響正確性 ⇒ 刪不掉只是髒，⛔ 不要因此把整筆判成失敗。
+                try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch (Exception) { }
+            }
+
+            string aAll = aOut.ToString() + aErr.ToString();
+            if (aExit != 0)
                 throw new InvalidOperationException(
-                    "[Tavern] " + aWait.Detail + "　回讀："
-                    + SCP.Core.Proc.SCP_ServerCmdClient.ResultPath(aServerRoot, aCmdId));
-            if (!aWait.Ok)
-                throw new InvalidOperationException("[Tavern] " + aWait.Detail + "（cmd " + aCmdId + "）");
+                    "[Tavern] `senate cmd tavern-write` 以 exit " + aExit + " 結束 ⇒ **這一則沒有寫出去**。"
+                    + "　⚠ 輸出裡的 `🔢 delegate_failure` 要分開讀："
+                    + "`autostart_timeout` ＝ **不知道**（它可能還在載入 ⇒ 先看啟動 log）；"
+                    + "`autostart_failed` ＝ **確定沒起來**（環境有問題，不必等）。\n" + aAll);
 
-            string aSeqText = aWait.Value("seq");
+            // `🔢 k = v` 是**明文契約**：`Senate.Cli/Program.cs` 的註解逐字寫著那是
+            //   「全部 Cmd 共用的機器讀數通道」⇒ 解析它**不是 hack**。
+            string aSeqText = ReadCliReadout(aAll, "seq");
             if (!int.TryParse(aSeqText, out int aSeq) || aSeq <= 0)
                 throw new InvalidOperationException(
-                    "[Tavern] Server 回報成功而**沒有給得出 seq**（`values.seq` = '" + aSeqText + "'）"
+                    "[Tavern] CLI 回報成功而**沒有給得出 seq**（`🔢 seq` ＝ '" + aSeqText + "'）"
                     + " ⇒ 那一則多半寫了，但這裡拿不到號碼。⛔ 不猜一個號碼回去："
-                    + "下游會拿它去組回覆鏈與引用。回讀：" + aWait.Detail);
+                    + "下游會拿它去組回覆鏈與引用。\n" + aAll);
+
+            // ⭐ **第二條路徑的證言**（憲法④：同源多量只證明一致性）——
+            //   同一趟回傳的 `path` 拿來回讀那個訊息檔，⛔ 不是只信 seq 那個數字。
+            //   ⚠ 射程：本格只驗「那個檔在」，**不驗內容逐位元組相同**（那要再讀一次並反序列化，
+            //   而這條路上每一則都要付那個成本）⇒ 它擋得住「回報了號碼而檔沒落地」，
+            //   擋不住「落地了而內容被改寫」。
+            string aPath = ReadCliReadout(aAll, "path");
+            if (aPath.Length > 0 && !File.Exists(aPath))
+                throw new InvalidOperationException(
+                    "[Tavern] CLI 回報 seq " + aSeq + " 而**它指的檔不在**（" + aPath + "）"
+                    + " ⇒ 兩條路徑對不上，⛔ 不把它當成功回去。\n" + aAll);
+
             return aSeq;
+        }
+
+        /// <summary>
+        /// 從 CLI 的輸出撈一格 `🔢 k = v`。找不到回**空字串** ——
+        /// ⛔ 不丟例外：哪一格可不可省是呼叫端的判斷（seq 不可省、path 可省）。
+        /// <para>⚠ 取**第一筆**命中。同一個 key 印兩次時（例：`delegate_host`）本函式看不出來，
+        /// 而那種 key 目前不被本條路徑使用。</para>
+        /// </summary>
+        static string ReadCliReadout(string iStdout, string iKey)
+        {
+            if (string.IsNullOrEmpty(iStdout) || string.IsNullOrEmpty(iKey)) return "";
+            string aNeedle = "🔢 " + iKey + " = ";
+            foreach (string aLine in iStdout.Split('\n'))
+            {
+                string aTrim = aLine.Trim();
+                if (aTrim.StartsWith(aNeedle, StringComparison.Ordinal))
+                    return aTrim.Substring(aNeedle.Length).Trim();
+            }
+            return "";
         }
 
         public static int AppendMessage(string roomId, UCL_ChatMessage msg)

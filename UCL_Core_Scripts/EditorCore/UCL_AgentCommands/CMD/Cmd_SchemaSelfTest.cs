@@ -47,7 +47,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         public override string ExampleArgs => "probe=1";
 
         public override string HelpURL =>
-            "ucl_core:Docs~/{lang}/Plan/Plan_AgentCmd_Schema_Reflection_Export.md";
+            "ucl_core:Docs~/{lang}/Plan/completed/Plan_AgentCmd_Schema_Reflection_Export.md";
 
         // 區塊職責：本 Cmd 的機器可讀規格 —— **同時是被測物**。
         // 物理意義：required 一個、alias 一組，形狀刻意與其他 Cmd 不同。

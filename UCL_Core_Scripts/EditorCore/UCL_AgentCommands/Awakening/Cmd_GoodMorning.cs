@@ -48,7 +48,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public override string ExampleArgs => "step=wake;persona=Template";
 
         public override string HelpURL =>
-            "ucl_core:Docs~/zh-Hant/Plan/Plan_Awakening_Flow_Simplification.md";
+            "ucl_core:Docs~/{lang}/Plan/completed/Plan_Awakening_Flow_Simplification.md";
 
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {

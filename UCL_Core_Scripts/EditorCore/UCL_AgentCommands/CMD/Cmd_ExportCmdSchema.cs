@@ -43,7 +43,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         public override string ExampleArgs => "";
 
         public override string HelpURL =>
-            "ucl_core:Docs~/{lang}/Plan/Plan_AgentCmd_Schema_Reflection_Export.md";
+            "ucl_core:Docs~/{lang}/Plan/completed/Plan_AgentCmd_Schema_Reflection_Export.md";
 
         public override async UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token)
         {

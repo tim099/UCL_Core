@@ -1099,6 +1099,17 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     aProc.OutputDataReceived += (iS, iE) => { if (iE.Data != null) aOut.AppendLine(iE.Data); };
                     aProc.ErrorDataReceived += (iS, iE) => { if (iE.Data != null) aErr.AppendLine(iE.Data); };
 
+                    // ⏱ TASK-0267 ⑧：碼錶夾的是**這一跳本身**（`Start` → `WaitForExit`），
+                    //   ⛔ 不是整趟 ucmd。
+                    // 🩸 為什麼要在內側量（kotoko 2026-09-22 QA）：從 CLI 外面量到的兩組數字
+                    //   （她 5164/5177/6155/6185 ms、我 10379/6295/6323/5323 ms）**全部叢集在整秒附近**，
+                    //   因為 `senate` 的等待路徑是 `Poll: every 1.0s`
+                    //   ⇒ **量具的解析度（1s）比被量的東西（多一跳 process）還粗**，
+                    //   而在 n=4 下「兩臂不重疊」是量化雜訊排出來的，不是訊號。
+                    // ⛔ 這不是「為這一跳做最佳化」（⑪ 禁的那件事）—— 它只讀不改，
+                    //   存在的理由是條文⑧要一個**數字**，而遷移到 Senate 的那天它跟這條路一起消失。
+                    var aHopWatch = System.Diagnostics.Stopwatch.StartNew();
+
                     try { aProc.Start(); }
                     catch (System.ComponentModel.Win32Exception e)
                     {
@@ -1123,6 +1134,13 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                                 + "　先回讀那個房最後一則再決定。已收到的輸出：\n" + aOut + aErr);
                         aExit = aProc.ExitCode;
                     }
+
+                    // ⏱ 一行一則，`🔢` 形狀是為了讓它可以被 grep 成一欄數字（⛔ 不必解析人話）。
+                    //   ⚠ 射程：它量的是 Editor 這側**等那顆 CLI 的時間** ——
+                    //   含 process 起落＋CLI 等 Server 回覆；**冷啟動那一趟還含 autostart**
+                    //   ⇒ 冷暖要分開讀，⛔ 不要把兩者平均在一起。
+                    Debug.Log($"[Tavern] ⏱ CLI 一跳 🔢 hop_ms = {aHopWatch.ElapsedMilliseconds}"
+                              + $"（room={roomId}／exit={aExit}）");
                 }
             }
             finally

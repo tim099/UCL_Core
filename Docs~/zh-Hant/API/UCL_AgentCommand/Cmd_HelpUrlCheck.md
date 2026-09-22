@@ -51,9 +51,21 @@ senate ucmd run HelpUrlCheck --persona <me> --arg max_list=0
 - ⛔ **需要 Unity Editor**。走 `UCL_URL.ResolveURL` 本人的代價就是它必須在 Editor 內跑
   （Unity 型別 ＋ `UCL_LocalizeService.CurLang`）。那不是遺漏，是「不重寫第二把尺」的直接後果 ——
   重寫一份解析規則的話，兩把尺會漂移，而**漂移的樣子正好是「0 個缺檔」**。
-- 掃描口徑是 **AppDomain 全部型別**，不是 `Assets/**/*.cs`：後者是自己搭的尺，
-  而 Unity 自家型別的 `HelpURL` 全是 `https` ⇒ 它們自己會落進雲端桶，不必先分類。
-  （對照：開單時的 grep 把 7 個**註解裡的示範字串**數成了真 attribute，而那批印出來跟真的一模一樣。）
+- ⛔ **只涵蓋 `[HelpURL]` attribute。** 另有以 `public override string HelpURL =>` property 宣告的
+  （@summit 2026-09-22 QA grep 讀數：**至少 47 處**，多數是 AgentCommand handler），
+  走同一個 `ucl_core:` 前綴、同一支 `ResolveURL`、同樣會壞，而反射掃 attribute **看不到它們**
+  ⇒ 報告那句「零缺檔」**與它們無關**。要不要擴口徑是另一張單。
+  🩸 這一格是 QA 退回來的：條文的受詞逐字就是 attribute ⇒ 照字面沒有漏做，
+  而**射程小的綠燈跟射程大的綠燈同形** —— 那正是本 Cmd 自己在防的那件事的變體。
+- 掃描口徑是 **AppDomain 全部型別**，不是 `Assets/**/*.cs`：後者是自己搭的尺
+  （對照：開單時的 grep 把 7 個**註解裡的示範字串**數成了真 attribute，而那批印出來跟真的一模一樣）。
+  ⚠ 而「掃全部」**需要**後面那層分桶，⛔ 不能靠 `://` 自己分開：
+  Unity 自家型別的 `HelpURL` 很多是**裸 slug**（`class-State`／`NestedStateMachines`），
+  不含 `://` ⇒ 會被當成專案相對路徑 → `GetFullPath` → 檔案不存在 → **永遠紅燈**。
+  🩸 這就是 `GetProjectAssemblyNames()` 存在的理由；活體讀數：外部宣告 200 條，而雲端桶只有 **4** 條。
+  ⛔ 本行的前一版寫著「Unity 自家的 HelpURL 全是 https，會自己落進雲端桶，不必先分類」——
+  那句**否證了它自己所在的那份 code 為什麼存在**，而它不會叫（分桶是對的、讀數是對的，只有解釋是反的）。
+  ⇒ 它是在寫分桶**之前**寫的，而修完 code 沒有回頭改字：**我寫下的字比它描述的事實活得更久。**
 - `{lang}` 的取值與 fallback 完全由 `ResolveURL` 決定 —— 回傳檔會把當前語系印出來，因為
   「缺檔」與「這個語系還沒翻譯」在檔案系統上同形。
 

@@ -10,6 +10,12 @@
 //
 // ⚠ 射程（刻意寫在最前面，不寫在結尾）：本 Cmd 驗的是「解得到路徑且檔案存在」。
 //   ⛔ **不宣稱**「按鈕點下去會開出 MarkdownViewer」—— 那是 GUI 行為讀數，本 Cmd 給不了。
+//   ⛔ 也**只涵蓋 `[HelpURL]` attribute**：另有以 `public override string HelpURL =>` property 宣告的
+//     （@summit 2026-09-22 QA 讀數：至少 47 處，多數是 AgentCommand handler），走同一個 `ucl_core:` 前綴、
+//     同一支 ResolveURL、同樣會壞，而反射掃 attribute **看不到它們**。
+//     🩸 這一格是 QA 退回來的，而咬人的不是漏做（條文的受詞逐字就是 attribute）——
+//     是**射程小的綠燈跟射程大的綠燈同形**：報告那句「零缺檔」讀起來像全專案的說明連結都驗過了。
+//     ⇒ 所以定語寫進報告正文，⛔ 不是只寫在這裡（沒有人會為了讀射程去開 .cs）。
 //   ⚠ 走 ResolveURL 本人的代價是它必須在 Editor 內跑（Unity 型別 + 語系服務）⇒ 入口是
 //   `senate ucmd run HelpUrlCheck`，**Editor 沒開就跑不完**。那不是遺漏，是「不重寫第二把尺」的直接後果。
 #if UNITY_EDITOR
@@ -274,10 +280,14 @@ namespace UCL.Core.EditorLib.AgentCommands.HelpUrlCheck
             aSb.AppendLine();
             aSb.AppendLine(iMissing.Count > 0
                 ? $"⛔ **缺 {iMissing.Count} 條** —— 本 Cmd 以非零退出結束。"
-                : "✅ 本地目標**零缺檔** —— 而這句只在上面三個數字同時在場時才有意義。");
+                : "✅ **`[HelpURL]` attribute 的**本地目標零缺檔 —— 定語不可省（見下面射程），"
+                  + "而這句只在上面三個數字同時在場時才有意義。");
             aSb.AppendLine();
             aSb.AppendLine("⚠ 射程：本檢查只回答「解得到路徑且檔案存在」。");
             aSb.AppendLine("⛔ 它**不宣稱**那顆 `?` 按鈕點下去會開出 MarkdownViewer —— 那是 GUI 行為讀數，本 Cmd 給不了。");
+            aSb.AppendLine("⛔ 它也**只涵蓋 `[HelpURL]` attribute** —— 另有以 `public override string HelpURL =>` property");
+            aSb.AppendLine("　 宣告的（@summit 2026-09-22 grep 讀數：**至少 47 處**，多數是 AgentCommand handler），");
+            aSb.AppendLine("　 同樣走 `ucl_core:` 前綴、同樣會壞，而反射掃 attribute **看不到它們** ⇒ 上面那個「缺 0」與它們無關。");
 
             if (iMissing.Count > 0)
             {

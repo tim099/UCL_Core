@@ -285,6 +285,12 @@ namespace UCL.Core.EditorLib.AgentCommands.HelpUrlCheck
             aSb.AppendLine();
             aSb.AppendLine("⚠ 射程：本檢查只回答「解得到路徑且檔案存在」。");
             aSb.AppendLine("⛔ 它**不宣稱**那顆 `?` 按鈕點下去會開出 MarkdownViewer —— 那是 GUI 行為讀數，本 Cmd 給不了。");
+            // 🩸 這一行是 QA 第二輪退回來的（@summit 2026-09-22）：條文⑤的字面是「報告正文要同時標明三格」，
+            //   而它以前只在 doc §4 與本檔檔頭有 ⇒ **宣告比產物大一格**，
+            //   而那一格的宣告正好寫在描述上一次修法的 commit 訊息裡（`3005d4ae`）。
+            //   ⇒ 修法選「讓產物追上宣告」不是「把宣告縮小」—— 縮小的話那段訊息會留在原地變成憑據。
+            aSb.AppendLine("⛔ 它**需要 Unity Editor** —— 走 `UCL_URL.ResolveURL` 本人的代價就是它必須在 Editor 內跑；");
+            aSb.AppendLine("　 headless CI 跑不了它。那不是遺漏，是「不重寫第二把尺」的直接後果。");
             aSb.AppendLine("⛔ 它也**只涵蓋 `[HelpURL]` attribute** —— 另有以 `public override string HelpURL =>` property");
             aSb.AppendLine("　 宣告的（@summit 2026-09-22 grep 讀數：**至少 47 處**，多數是 AgentCommand handler），");
             aSb.AppendLine("　 同樣走 `ucl_core:` 前綴、同樣會壞，而反射掃 attribute **看不到它們** ⇒ 上面那個「缺 0」與它們無關。");

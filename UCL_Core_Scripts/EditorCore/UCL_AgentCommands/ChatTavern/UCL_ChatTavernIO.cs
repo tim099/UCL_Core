@@ -992,6 +992,68 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         const int SERVER_DELEGATE_INNER_WAIT_SEC = 30;
         const string SERVER_DELEGATE_TAG = "tavern_write_cli";
 
+        // ===========================================================
+        // 區塊職責：**測試縫** —— 讓「叫不到 senate」這個狀態在**不動任何人的環境**下造得出來。
+        // 物理意義：委派時要執行的檔名平常就是 SENATE_EXE_NAME；只有測試會把它換成一個不存在的名字，
+        //          於是 Process.Start 丟 Win32Exception ⇒ 走到下面那條「這一則沒有寫出去」的路。
+        // 🩸 TASK-0280：這條路以前**驗不到**。FileName 靠**進程 PATH** 解析，而 PATH 在 Editor
+        //   起來的那一刻就固定了 ⇒ 要造出「叫不到」只剩兩條，而兩條都是弄壞共用宿主：
+        //   ① 改整個進程的 PATH（@summit 2026-09-22 試過，被宿主的權限閘擋下、沒有執行）
+        //   ② 把 senate.exe 移走（那會讓**全機**的人當場叫不到它）
+        //   ⇒ 一個**要弄壞共用宿主才跑得動的驗收，跑得了一次、跑不了第二次** ——
+        //   它會變成「有人在某天勾過」，而它守的那條分支之後怎麼漂都不會有人知道。
+        // 數值影響：null ＝ 生產行為。非 null ⇒ 那一趟必然失敗，**而且每次使用都出聲**（見 ResolveSenateExeName）。
+        // ⛔ **這不是一個設定**：沒有設定檔、沒有環境變數、沒有第四套路徑解析器 ——
+        //   它只活在記憶體，Editor 一重開就沒了。要它變成設定得有人顯式去做，而那時會被看見。
+        // ===========================================================
+        const string SENATE_EXE_NAME = "senate";
+
+        /// <summary>⚠ **測試專用**：委派時要執行的檔名覆寫。<c>null</c> ＝ 生產行為。</summary>
+        static string s_SenateExeNameOverride;
+
+        /// <summary>
+        /// ⚠ **測試專用**：設定／清除執行檔名覆寫，回傳**前一個值**（給呼叫端還原用）。
+        /// <para>⛔ 生產路徑不得呼叫。留著沒清的話，之後每一次委派都會噴一行 <c>LogError</c>
+        /// —— 那是刻意的：**一個被忘記清掉的測試縫，失效樣子必須大聲**，
+        /// 否則它跟「Server 真的叫不到」在現場長得一模一樣，而後者是要有人去修環境的。</para>
+        /// <para>清除：傳 <c>null</c> 或空字串。</para>
+        /// </summary>
+        public static string SetSenateExeNameOverrideForTest(string iName)
+        {
+            string aPrev = s_SenateExeNameOverride;
+            s_SenateExeNameOverride = string.IsNullOrEmpty(iName) ? null : iName;
+            Debug.LogWarning($"[Tavern] ⚠ 測試縫（TASK-0280）：委派執行檔名 "
+                             + $"'{aPrev ?? SENATE_EXE_NAME}' ⇒ '{s_SenateExeNameOverride ?? SENATE_EXE_NAME}'"
+                             + "　⛔ 測完請還原 —— 沒還原的話每一則發文都會失敗。");
+            return aPrev;
+        }
+
+        /// <summary>
+        /// ⚠ **測試專用**：清除覆寫、回到生產行為；回傳被清掉的那個值（沒設過時回 <c>null</c>）。
+        /// <para>🩸 TASK-0280 自驗時量到的：<see cref="SetSenateExeNameOverrideForTest"/>
+        /// **設得進去、清不掉** —— 驅動端（<c>ucmd run Invoke</c>）沒有「傳 null／空字串」的寫法，
+        /// <c>--arg args=</c> 會被擋成「no value provided」。
+        /// ⇒ 一條**設得進、清不掉**的縫，它的失效樣子是「有人測完就走，
+        /// 而從此每一則走委派的發文都在失敗」—— 而那正是這條縫本來要防的東西。
+        /// ⇒ 所以清除必須有一個**不需要引數**的入口。⛔ 別把它併回上面那支。</para>
+        /// </summary>
+        public static string ClearSenateExeNameOverrideForTest()
+        {
+            return SetSenateExeNameOverrideForTest(null);
+        }
+
+        // 區塊職責：取這一趟要執行的檔名。
+        // 物理意義：平常就是常數；被測試覆寫時**每一次都出聲**（理由見上面那段的「大聲」）。
+        // 數值影響：回傳值直接餵給 StartInfo.FileName。
+        static string ResolveSenateExeName()
+        {
+            if (s_SenateExeNameOverride == null) return SENATE_EXE_NAME;
+            Debug.LogError($"[Tavern] ⛔ 執行檔名正被**測試縫**覆寫成 '{s_SenateExeNameOverride}'（TASK-0280）"
+                           + " ⇒ **這一則會失敗，而那是預期的**。"
+                           + " 若妳不是在跑測試：呼叫 SetSenateExeNameOverrideForTest(null) 還原。");
+            return s_SenateExeNameOverride;
+        }
+
         static int DelegateAppendToServer(string roomId, UCL_ChatMessage msg)
         {
             string aDataRoot = UCL_AgentCommandsPath.DataRoot;
@@ -1014,7 +1076,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     //   ⚠ 實測 2026-09-22：Editor 進程的 PATH 含 Senate 的 publish 目錄，
                     //   且它是**持久的使用者環境變數**（Machine=False／User=True）。
                     //   ⛔ 不為了找那顆 exe 新增第四套路徑解析器。
-                    aProc.StartInfo.FileName = "senate";
+                    //   ⚠ TASK-0280：平常回 SENATE_EXE_NAME，只有測試縫會換掉它（那時會出聲）。
+                    string aExeName = ResolveSenateExeName();
+                    aProc.StartInfo.FileName = aExeName;
                     aProc.StartInfo.ArgumentList.Add("cmd");
                     aProc.StartInfo.ArgumentList.Add("tavern-write");
                     aProc.StartInfo.ArgumentList.Add("--arg");
@@ -1040,7 +1104,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     {
                         // OS 只說「找不到指定的檔案」—— 它**不會說**該把 publish 加進 PATH。
                         throw new InvalidOperationException(
-                            "[Tavern] 叫不到 `senate`（PATH 上沒有它）⇒ **這一則沒有寫出去**。"
+                            "[Tavern] 叫不到 `" + aExeName + "`（PATH 上沒有它）⇒ **這一則沒有寫出去**。"
                             + "　出路二選一：把 Senate 的 `publish` 加進 PATH，"
                             + "或切回 Editor 寫入 `senate cmd tavern-writer --arg data_root=" + aDataRoot
                             + " --arg set=editor`。　原始錯誤：" + e.Message, e);

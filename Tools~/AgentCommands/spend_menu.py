@@ -168,7 +168,7 @@ def query_balance(account: str) -> int | None:
 
 
 def _treasury_cmd():
-    """lazy import 同目錄 _lib/treasury_cmd（沿用 library.py / mbti.py 既有慣例）。"""
+    """lazy import 同目錄 _lib/treasury_cmd（沿用 mbti.py 既有慣例）。"""
     import importlib.util as _ilu
     _spec = _ilu.spec_from_file_location(
         "_treasury_cmd_spend", _HERE / "_lib" / "treasury_cmd.py")

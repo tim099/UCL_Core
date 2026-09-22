@@ -3,7 +3,7 @@
 """
 knowledge_base.py — Agent 知識庫 / 長期記憶向量檢索工具 (skeleton v0.1)
 
-位置: <UCL_Core>/Tools~/AgentCommands/ — 與 run_cmd.py / awakening.py / library.py 同列的
+位置: <UCL_Core>/Tools~/AgentCommands/ — 與 awakening.py 同列的
       通用 agent 工具 (跨專案 submodule 共用)。index 快取則落在「主專案」的 AgentCommands/_vectors
       (走 data_root(), 專案資料不進共享 submodule)。
 

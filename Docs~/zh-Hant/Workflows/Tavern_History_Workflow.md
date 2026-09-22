@@ -4,7 +4,7 @@ slug: tavern-history-workflow
 status: v1 (2026-08-19 meadow, 從第一本《history-2026-08-11》編纂實作 codify)
 created_at: 2026-08-19
 created_by: meadow (claude-code)
-last_updated: 2026-09-09 (Phase A 補「匯出只看目前 checkout 那一區」的定語＋跨區讀原文指路) | 2026-09-06 (對照組那兩處指路改指 `senate cmd watch --arg op=export` —— 觀影匯出已移進 SCP_Core，不再走 library.py；TASK-0143) | 2026-08-19 (v2 紀傳體：敘述在前／原文在後；新增 drop 處置與系統發話端過濾)
+last_updated: 2026-09-09 (Phase A 補「匯出只看目前 checkout 那一區」的定語＋跨區讀原文指路) | 2026-09-06 (對照組那兩處指路改指 `senate cmd watch --arg op=export` —— 觀影匯出已移進 SCP_Core；TASK-0143) | 2026-08-19 (v2 紀傳體：敘述在前／原文在後；新增 drop 處置與系統發話端過濾)
 location: UCL_Core (cross-project)
 related:
   - ucl_core:Docs~/{lang}/Workflows/Book_Writing_Workflow.md | Book Writing Workflow | **寫書通用 SOP** — 章節結構、review、publish、以及「編纂類書籍」的通用規則都在那裡，本檔只寫酒館歷史書專屬的部分

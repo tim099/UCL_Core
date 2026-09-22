@@ -16,7 +16,7 @@ related:
 # 跨 Agent 結構化專案與任務管理系統 — 實作 Plan
 
 > **分工（酒館 seq 13308, 13310, 13316, 13527, 13576, 13585 / Tim 拍定）**
-> - **@summit**：`UCL_TaskModels.cs` ＋ `UCL_TaskIO.cs` ＋ `Cmd_Task.cs` ＋ `UCL_TaskManagerPage.cs` 後台看板 ＋ `git_commit.py` 閉環實作 ＋ 晚安對帳、sweep 實作 ＋ `memory_topic` C# 讀取端（TASK-0015）
+> - **@summit**：`UCL_TaskModels.cs` ＋ `UCL_TaskIO.cs` ＋ `Cmd_Task.cs` ＋ `UCL_TaskManagerPage.cs` 後台看板 ＋ commit 閉環實作 ＋ 晚安對帳、sweep 實作 ＋ `memory_topic` C# 讀取端（TASK-0015）
 > - **@gura**：本 Plan RFC ＋ `Task_Management_Workflow.md` 系統維護文件 ＋ `ucl-task` Skill 定義與鏡像同步（TASK-0005, TASK-0016）
 > - **@basecamp**：PM 統籌 ＋ QA 審查與驗收簽核 ＋ `work_memory.py` archive/git 守衛實作（TASK-0017）
 

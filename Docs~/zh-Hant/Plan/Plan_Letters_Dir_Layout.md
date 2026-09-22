@@ -102,7 +102,7 @@ letters/gura/
 | 端 | 數量 | 內容 |
 |---|---|---|
 | **C# 寫入/讀取** | 12 檔 | `Cmd_GoodMorning` / `Cmd_GoodNight` / `Cmd_FreeTime` / `Cmd_StreamWatch` / `Cmd_Library` / `UCL_AwakeningService` / `UCL_ReadingLibraryIO` / `UCL_LoginStatusPage` / `UCL_ReadingNotesManagePage` / `UCL_AgentCommandRunner` ／本案新增兩支 |
-| **python** | 8 檔 | `awakening.py` / `wake_brief.py` / `tavern_catchup.py` / `library.py` / `memory.py` / `persona_resolve.py` / `tavern_cmd.py` / `migrate_persona_binding.py` |
+| **python** | 7 檔 | `awakening.py` / `wake_brief.py` / `tavern_catchup.py` / `memory.py` / `persona_resolve.py` / `tavern_cmd.py` / `migrate_persona_binding.py` |
 | **skill / 文件印著這些路徑** | **18 檔** | 會變成死指路；而那裡面有早安／晚安／觀影等**每天在跑的流程** |
 
 ⚠ 而那 12 個 C# 端**各自算路徑**（`Cmd_FreeTime.PayloadPath` / `Cmd_Sculpture.PayloadPath` /
@@ -161,8 +161,8 @@ FreeTime 那 5 個已完成（§0）。**這一節是給接手的人照著跑的
 | `_goodmorning_*` | 3 | `Cmd_GoodMorning` / `UCL_AwakeningService` | `awakening.py` |
 | `_goodnight_*` | 4 | `Cmd_GoodNight` / `UCL_AwakeningService` / `UCL_LoginStatusPage` | `awakening.py` |
 | `_streamwatch_*` | 4 | `Cmd_StreamWatch`（⚠ **自己推導 letters 根**，不用 `LettersDir`） | — |
-| `_reading_recall_*` | 3 | `Cmd_Library` / `UCL_ReadingLibraryIO` / `Cmd_StreamWatch` / `UCL_ReadingNotesManagePage` | `library.py` |
-| `_wake_brief` | 1 | `Cmd_GoodMorning` / `UCL_AwakeningService`（＋多個唯讀端） | `awakening.py` / `wake_brief.py` / `memory.py` / `library.py` |
+| `_reading_recall_*` | 3 | `Cmd_Library` / `UCL_ReadingLibraryIO` / `Cmd_StreamWatch` / `UCL_ReadingNotesManagePage` | — |
+| `_wake_brief` | 1 | `Cmd_GoodMorning` / `UCL_AwakeningService`（＋多個唯讀端） | `awakening.py` / `wake_brief.py` / `memory.py` |
 | `_ding_brief` | 1 | — | `tavern_catchup.py` |
 
 ⚠ `_wake_brief` 是**最多讀取端**的一份（C# 九檔、python 四檔提到它）——
@@ -173,7 +173,7 @@ FreeTime 那 5 個已完成（§0）。**這一節是給接手的人照著跑的
 ```
 ① _streamwatch_*      （寫入端 1 個，順帶修掉它自己推導 letters 根那格）
 ② _ding_brief          （只有 tavern_catchup.py）
-③ _reading_recall_*    （4 個 C# ＋ library.py）
+③ _reading_recall_*    （4 個 C#）
 ④ _goodnight_*         （含 UCL_LoginStatusPage 這個 GUI 讀取端）
 ⑤ _goodmorning_*       （早安流程，skill 指路要同步）
 ⑥ _wake_brief          （最後，單獨一筆）

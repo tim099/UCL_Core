@@ -27,9 +27,10 @@ namespace UCL.Core.EditorLib.Page
     // 設計理由 (Tim 2026-05-26 派 task)：
     //   原生 CLI 沒有可視化介面，Tim / agent 想一眼看「圖書館裡有哪些書、誰捐的、進度到哪」沒地方看。
     //   本 page 補可視化清單 + 常用操作 GUI fallback。
-    // ⚠ 2026-09-10（basecamp）：捐贈鈕原本 spawn `library.py donate`，而那支同日已整支退場成
-    //   指路 stub（69 行、一律 exit 2、零副作用）⇒ **按鈕在、能力不在**，
-    //   而 Console 照樣印一段看起來執行過的紀錄（stdout ＋ exit code）—— 兩種相反的結果同形。
+    // 🩸 判準（basecamp 2026-09-10 的血證留下來的）：**按鈕在 ≠ 能力在**。
+    //   一顆 spawn 外部工具的鈕，在那支工具變成零功能之後，Console 照樣印一段
+    //   看起來執行過的紀錄（stdout ＋ exit code）—— 兩種相反的結果同形。
+    //   ⇒ 所以本頁的寫入一律走 `Books` AgentCommand，⛔ 不 spawn。
     //   改派 `Books` AgentCommand：與 agent 走的是同一個寫入端，⛔ 本頁不再有第二條寫入路。
     // 2026-08-17：Mechanics/Reading_Library.md 不存在（死連結）。暫改指既有的閱讀庫 workflow ——
     // ⚠ 這是**止血不是治好**：按「說明」的人要的是「這頁怎麼用」，而 workflow 講的是流程。
@@ -87,7 +88,7 @@ namespace UCL.Core.EditorLib.Page
             public string Status = "";
             public string BookId = "";       // 若已建檔則指向 book slug，否則空
             public string Synopsis = "";
-            public string AddedDate = "";    // 排序用（對齊 library.py 的 added_date 再 title 序）
+            public string AddedDate = "";    // 排序用（added_date 再 title 序）
         }
 
         // 區塊職責：全文書庫 entry — 對齊 Books/<slug>/（NNN.txt 章節檔 + _donation.json）
@@ -181,8 +182,8 @@ namespace UCL.Core.EditorLib.Page
             base.Init(p_Controller);
             // 區塊：路徑解析
             // 物理意義：BookNotes / Books 落 per-project repo root。
-            // ⚠ 2026-09-10 起本頁不再解析 UCL_Core 安裝路徑 —— 那一格只服務 `library.py` 的 spawn，
-            //   而那條路已整段移除（寫入走 `Books` AgentCommand，資料根由 Cmd 那側解析）。
+            // ⚠ 本頁**不解析 UCL_Core 安裝路徑** —— 寫入走 `Books` AgentCommand，
+            //   資料根由 Cmd 那側解析。
             m_AgentCommandsDir = UCL_RepoPath.AgentCommandsDir;
             m_BookNotesDir = Path.Combine(m_AgentCommandsDir, "BookNotes");
             // 新 Library 根 —— 書籍索引的事實源（舊的 BookNotes/<slug>/ 已空）
@@ -384,7 +385,7 @@ namespace UCL.Core.EditorLib.Page
                         }
                     }
                 }
-                // 穩定排序對齊 library.py（added_date 再 title）
+                // 穩定排序：added_date 再 title
                 m_Recommends.Sort((a, b) =>
                 {
                     int c = string.CompareOrdinal(a.AddedDate, b.AddedDate);

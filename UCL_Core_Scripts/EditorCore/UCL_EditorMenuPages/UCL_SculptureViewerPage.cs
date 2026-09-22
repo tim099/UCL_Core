@@ -465,7 +465,7 @@ namespace UCL.Core.EditorLib.Page
             Render(aArgs);
         }
 
-        // 區塊職責：spawn 引擎渲染（同步等待 —— 秒級渲染，對齊 LibraryManagePage spawn library.py 模式）
+        // 區塊職責：spawn 引擎渲染（同步等待 —— 秒級渲染）
         void Render(string iViewArgs)
         {
             string aScript = ResolveEngineScript();

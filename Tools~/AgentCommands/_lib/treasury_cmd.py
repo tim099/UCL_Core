@@ -19,7 +19,7 @@
 用法：
     from _lib.treasury_cmd import treasury_debit, treasury_credit
     ok, msg = treasury_debit(account="zeta", amount=3, source_kind="canvas_pixel",
-                             source_ref=event_uuid, description="...", caller="library.py")
+                             source_ref=event_uuid, description="...", caller="zeta")
 """
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ _PATHS = _ucl_paths()
 def _run(cmd_type: str, args: dict, *, timeout: float = 180.0) -> tuple[bool, str]:
     """送一個 Cmd 進 Editor 佇列並等它跑完。回 (ok, 訊息尾段)。"""
     # 區塊職責：走 system lane（Tim 2026-08-18 拍板）。
-    # 物理意義：金流 Cmd **不是人派的** —— 呼叫端是 library.py 這類工具，
+    # 物理意義：金流 Cmd **不是人派的** —— 呼叫端是工具而不是某個 persona，
     #          而 args 裡的 `account` 是**銀行**（Myth / cc / zeta）不是 persona，
     #          本來就路由不到任何人的 lane。過去兩個旗標都沒帶 ⇒ 全落 queues/anonymous/，
     #          跟「漏帶 --persona 的人」混在一起，那個資料夾就不再是儀表。
@@ -134,7 +134,7 @@ def treasury_debit(*, account: str, amount: int, source_kind: str, source_ref: s
         "description": description,
         # ⚠ caller 必須是 **帳戶本人**（或 "system"）—— UCL_TreasuryLedger 有帳戶隔離鐵律：
         #   caller 非 "system" 且 != accountId 就拋例外「不可動用對方帳戶」。
-        #   傳工具名（例 "library.py"）會被自己的防盜用規則擋死，而錯誤訊息長得像帳本壞了。
+        #   傳工具名（而不是帳戶 id）會被自己的防盜用規則擋死，而錯誤訊息長得像帳本壞了。
         #   語意上這裡就是「該帳戶花自己的錢」，所以 caller = account 是正確的宣告，
         #   不是為了繞過檢查。真正的代操作（後台代所有帳戶）才用 "system"。
         "caller": caller or account,

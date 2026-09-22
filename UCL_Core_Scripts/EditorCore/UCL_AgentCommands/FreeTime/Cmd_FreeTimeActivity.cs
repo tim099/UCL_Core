@@ -16,7 +16,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
     // ===========================================================
     // 區塊職責：把自由時間的活動包一層 Cmd（Tim 2026-08-18 拍板）。
     //
-    // 物理意義：原本活動是「自己去跑 chess.py / canvas.py / library.py / Cmd_Sculpture」，
+    // 物理意義：原本活動是「自己去跑 chess.py / canvas.py / Cmd_Sculpture 這些工具」，
     //          於是自由時間的流程提示**只活在 Cmd_FreeTime 的回傳檔裡** ——
     //          而人一旦進到活動工具，那些工具的輸出一個字都沒提自由時間，
     //          流程就斷在那裡（Tim 觀察：很容易中斷、或一直重骰卻沒開工）。
@@ -393,7 +393,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             var aRun = await RunToolStep(aHit, aStep, aStepArgs, iPersona, iToken);
 
             // ⚠ **定語要說出這一步實際走的是哪條路** —— 同一份 md 現在可能一半 step 走 python spawn、
-            //   一半走 in-process cmd。印死 `aHit.tool` 的話，畫面會說「工具: library.py」
+            //   一半走 in-process cmd。印死 `aHit.tool` 的話，畫面會說某支 python 的名字
             //   而它其實跑的是 C#（有出處的假話最毒）。
             (bool aRanRouted, string aRanCmd, string aRanOp, _) = aHit.CmdRouteForStep(aStep);
             ioR.AppendLine($"## {aHit.name} — step `{aStep}`　{(aRun.ok ? "✅ 成功" : "❌ 失敗")}");
@@ -622,7 +622,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // 物理意義：`step_args` 原樣轉發，而**工具對身分的要求逐 step 不同、旗標名也不同**：
         //   - `canvas.py` 的 `view` / `pixel` / `stats` **沒有 --persona 這個選項**（硬塞 ⇒ unrecognized arguments）
         //   - `canvas.py` 的 `note` / `claim` / `freetime` / `voucher` 少了它 ⇒ exit 2
-        //   - `library.py` 用的是 `--reader`，不是 `--persona`
+        //   - 而有的工具用的是 `--reader`，不是 `--persona`
         //   ⇒ 所以「一律注入」與「猜旗標名」都會壞，而且壞在不同的活動上。
         //   本函式只做**宣告過**的事：md 沒寫 `persona_flag` / `steps_need_persona` ⇒ 原樣回傳。
         //

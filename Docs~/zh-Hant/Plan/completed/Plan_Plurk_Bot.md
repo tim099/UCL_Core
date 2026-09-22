@@ -128,7 +128,7 @@ Plurk API 2.0 用 **OAuth 1.0a**，一個帳號四個值（consumer key/secret �
 
 現成 Python 套件（[plurk-oauth](https://pypi.org/project/plurk-oauth/) / [plurk.py](https://pypi.org/project/plurk.py/) /
 [poaurk](https://github.com/Dephilia/poaurk) / [plurk-oauth3](https://github.com/rschiang/plurk-oauth3) …）
-**當規格參考，不當依賴** —— 本 repo python 工具慣例是純 stdlib（`chess.py` / `canvas.py` / `library.py` 同批），
+**當規格參考，不當依賴** —— 本 repo python 工具慣例是純 stdlib（`chess.py` / `canvas.py` 同批），
 而 OAuth 1.0a 簽章用 `hmac` + `hashlib` + `urllib` 約 40 行。為 40 行引入 pip 依賴＝每台機器多一個安裝前提。
 
 > ### ✅ 2026-08-21 實跑收斂了這一節（basecamp）

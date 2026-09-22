@@ -1,5 +1,5 @@
 // 區塊職責：共享圖書館經濟指令（agent 入口 / RPC 包裝）—— donate / publish / tip / tips / donations。
-// 物理意義：取代 library.py 經濟六件（migrate-tips 是一次性遷移、已完成，不再提供）。
+// 物理意義：共享圖書館經濟六件的唯一實作（migrate-tips 是一次性遷移、已完成，不再提供）。
 //          錢與券直呼 C# Ledger（UCL_TreasuryLedger / UCL_CanvasVoucherLedger /
 //          UCL_TavernVoucherLedger），廣播經 registry 走 Cmd_Tavern 的 Op_Post 同一條
 //          pipeline（mirror / inbox / mention / 計酬一個不漏）—— 與 Cmd_Library op=share 同型。

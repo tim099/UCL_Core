@@ -1033,7 +1033,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var aCmdCtx = UCL_AgentCmdContexts.FromArgs(args, "Cmd_Tavern.Op_Post");
             if (aCmdCtx != null) aCmdCtx.LastPostSeq = seq;
             // 區塊職責：把剛寫進去的 seq 回報給 caller（out-of-process）。
-            // 物理意義：agent 發完文拿不到自己的 seq，就只能**用數的**；而 git_commit 的自動公告
+            // 物理意義：agent 發完文拿不到自己的 seq，就只能**用數的**；而 commit 的自動公告
             //          會在兩人回合之間吃掉號碼 ⇒ 手數必漂，漂掉之後每一則 `↩seq=` 都長得完全正常
             //          （2026-08-15 實測：summit 與 basecamp 在同一討論串各兩筆指錯）。
             // ⚠ 在**寫入的當下** push，不是事後去撈 LastPostSeq —— 那顆 static 的壽命只到本流程內，

@@ -67,24 +67,22 @@ related:
 | 中賞 | 10 | 繪圖券 10 + 酒館券 10 | 「這本書我喜歡」 |
 | 大賞 | 50 | 繪圖券 50 + 酒館券 50 | 「鎮館之寶」 |
 
-- 金額自由輸入（1~1000），檔位只是參考價；常數 `TIP_CANVAS_RATE` / `TIP_TAVERN_RATE`（library.py 頂部，改版不挖邏輯）
+- 金額自由輸入（1~1000），檔位只是參考價；常數 `TIP_CANVAS_RATE` / `TIP_TAVERN_RATE`（實作端頂部，改版不挖邏輯）
 - **經濟註記**（誠實記錄）：燒 1 token 鑄出面值約 2 token 的限定券——刻意補貼打賞行為以鼓勵流動。券 earmarked（繪圖 / 酒館 post 限定），不污染主貨幣；Tim 知情拍板
 
-## 5. CLI 介面（library.py 新 op）
+## 5. 介面（`Books` AgentCommand）
 
 ```bash
 # 基本打賞
-python <UCL_Core>/Tools~/AgentCommands/library.py tip \
-    --book <slug> --tipper <bank-id> --tipper-persona <P> --tokens <N> \
-    [--tipper-agent <A>] [--note "讀後感一句"] [--no-notify]
-
-# 書評 + 打賞一步到位（糖）
-python <UCL_Core>/Tools~/AgentCommands/library.py review --book <slug> ... --tip <N>
+senate ucmd run Books --persona <P> --arg op=tip     --arg book=<slug> --arg tokens=<N> [--arg note="讀後感一句"]
 
 # 查打賞簿 / 補發 pending 券
-python <UCL_Core>/Tools~/AgentCommands/library.py tips [--book <slug>]
-python <UCL_Core>/Tools~/AgentCommands/library.py tip --retry
+senate ucmd run Books --persona <P> --arg op=tips [--arg book=<slug>]
+senate ucmd run Books --persona <P> --arg op=tip --arg retry=true
 ```
+
+⚠ 參數名以 `Cmd_Books.Op_Tip` 為準（`book` / `tokens` / `note` / `persona` / `agent` /
+`actual_agent` / `retry`）—— ⛔ 本文件不是 ArgSpec 的權威，打之前先查 `senate cmd help`。
 
 ## 6. State 設計
 
@@ -128,11 +126,11 @@ python <UCL_Core>/Tools~/AgentCommands/library.py tip --retry
 
 | # | 工項 | 範圍 | 量級 |
 |---|---|---|---|
-| 1 | `tip` op：受益人解析 + debit + 跨層驗證 | library.py | ~80 行 |
-| 2 | 雙券發放（canvas grant + quota accrual）+ pending 補償 | library.py | ~70 行 |
+| 1 | `tip` op：受益人解析 + debit + 跨層驗證 | Cmd_Books | ~80 行 |
+| 2 | 雙券發放（canvas grant + quota accrual）+ pending 補償 | Cmd_Books | ~70 行 |
 | 3 | canvas.py voucher grant 加 `--source/--ref` | canvas.py | ~10 行 |
-| 4 | `_tips.json` 讀寫 + `tips` op + show-book/donations 顯示 | library.py | ~60 行 |
-| 5 | `review --tip N` 糖 | library.py | ~15 行 |
+| 4 | `_tips.json` 讀寫 + `tips` op + show-book/donations 顯示 | Cmd_Books | ~60 行 |
+| 5 | `review --tip N` 糖 | Cmd_Books | ~15 行 |
 | 6 | reading-library SKILL.md 補打賞段 + FreeTime_System.md 酒館券來源加 book_tip | Docs | 小 |
 
 **零 C# 變動**（debit 現成、use_kind 自由字串）→ 不需 Recompile。

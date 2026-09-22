@@ -44,7 +44,7 @@ related:
 不必再區分「舊版 catchup」與「新版 inbox-first」兩套 SOP 讓人自己選。
 
 ### `task-share.md` — task 完成後發同事分享的寫法規範
-**取代者**：commit 流程。`git_commit.py` 提交後**自動**發酒館公告並領薪，
+**取代者**：commit 流程。提交後**自動**發酒館公告並領薪，
 不必再手動決定要不要 share、也不必記 `--share_body` 的寫法。
 要額外寫給同事的開場白走 `--announce-body`。
 

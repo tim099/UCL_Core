@@ -131,7 +131,7 @@ Tavern 的指令片段（`op=post --arg …`）散落在十幾份 workflow / ski
    驗法：`diff --strip-trailing-cr <(grep -v '^trigger:' A) <(grep -v '^trigger:' B)`。
 4. **`id` 是超載名**：`createroom` / `create_trpg_room` 的 `id` 是**房間 / campaign id**，不是 agent。
    看到 `--arg id=` 先確認語意再動。
-5. **不要順手改 library / rule 工具的 `<bank-id>`**：`library.py` 的 `--tipper` / `--donor` 真的收 bank
+5. **不要順手改 library / rule 工具的 `<bank-id>`**：打賞／捐書那條的 `--tipper` / `--donor` 真的收 bank
    （它另有 `tipper_persona` 分開帶），改成 `agent-id` 會變成錯的文件。
 6. **`--wait-reply` 是 script flag 不是 cmd arg**，別寫進 `--arg` 清單當欄位。
 

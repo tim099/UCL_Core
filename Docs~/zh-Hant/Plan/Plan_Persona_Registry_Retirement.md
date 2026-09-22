@@ -52,7 +52,7 @@ related:
 |---|---|---|
 | `_lib/bank_resolver.py` | persona→agent→bank（薪資／扣款的唯一解析） | `agent` |
 | `canvas.py` / `mbti.py` / `freetime.py` / `dice.py` | 扣款、寄信、發薪前反查 bank | `agent` |
-| `git_commit.py` / `agent_email.py` / `agent_model.py` | commit trailer（`agent@persona(model) <email>`） | `agent` `model` `actual_agent` `email` |
+| commit 入口 / `agent_email.py` / `agent_model.py` | commit trailer（`agent@persona(model) <email>`） | `agent` `model` `actual_agent` `email` |
 | `registered_mail.py` / `_lib/session_common.py` | 收件人解析 / session 共用 | `agent` |
 | `Tools/tavern_catchup.py` | 顯示發言者所屬 agent | `agent` |
 | `UCL_TreasuryAccountResolver.cs` / `UCL_BankAdminPage.cs` | C# 端同一套 bank 解析 | `agent` |
@@ -221,7 +221,7 @@ letters/<persona>/
 |---|---|---|
 | C# `Cmd_LoginStatus` / `LoginStatusPage` / `PersonaInspectorPage` / `AgentEmailRegistry` | ✅ 走接縫 | Phase 0 |
 | C# `PersonaAgentAdminPage` 建人／fork 來源 | ✅ 走接縫 | kiara `705b6ae`。直讀會**複製到舊值** ⇒ 生一個帶過期血統的孩子 |
-| python `agent_email.load_persona`（＝`agent_model` / `git_commit` / commit-msg hook 的共同瓶頸） | ✅ 走接縫 | kiara `4c0f568`。一處改對四處跟著對 |
+| python `agent_email.load_persona`（＝`agent_model` / commit 入口 / commit-msg hook 的共同瓶頸） | ✅ 走接縫 | kiara `4c0f568`。一處改對四處跟著對 |
 | python `awakening.load_registry` | ✅ 走接縫 | kiara `f8807c5`（Tim 拍板：早安流程本來就走 Cmd，資料由 Cmd 供給；備援只要支援 brief） |
 | python `check_letters_layout` / `sync_letters_gitignore` | ✅ 走 `pool_names()` | kiara `705b6ae`。只讀名單不讀 identity，改的理由是**判準漂移不會有人喊痛** |
 | python `_lib/session_common` | ✅ **整支刪除** | kiara 2026-08-20。**不是收進接縫，是它已經沒有存在理由**：這支是「上班模式全面退役」（`4f48884`）時為了不讓 `stream_watch_session.py` 壞掉才抽出來的工具層，而那支唯一消費端已於 `842801e` 退場（陪看改走 C# `Cmd_StreamWatch`）。全樹 grep：**零 .py／.cs 呼叫端**，其 state 檔 `work_sessions.json` 連檔都不存在。<br>⇒ session 相關的狀態擁有者是 C#／Cmd（Tim 2026-08-20 重申：session 只有 Editor 開著才能跑）—— 這支是遷移前的殘影。**它的正向鏈 bank 解析（`_resolve_bank(agent)`）也隨之消失**，那條與 §8.1 反向登記今日實測 0/21 分岔（初值由現況導出），但它會在「銀行端改了誰屬於誰」時開始說謊 |

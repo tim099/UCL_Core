@@ -207,7 +207,7 @@ open ──► in_progress ──► resolved / wontfix / duplicate
 
 - **掛點 A — 早安 brief**：`§6 記憶維護狀態` 已經在算 gap 並標 OVERDUE，
   同一區加一行「open bug N 筆，其中 M 筆超過 14 天未動（stale）」。掃描在生成 brief 時順手做。
-- **掛點 B — commit 閉環**：`git_commit.py` 解析 commit body / trailer 的 `Fixes BUG-<index>`，
+- **掛點 B — commit 閉環**：commit 入口解析 commit body / trailer 的 `Fixes BUG-<index>`，
   提交成功、公告領薪的同一條路徑上順手觸發 `op=resolve`（帶 `commit_sha`）。
 
 判準：**別讓「記得去看」成為這套系統存活的前提。**

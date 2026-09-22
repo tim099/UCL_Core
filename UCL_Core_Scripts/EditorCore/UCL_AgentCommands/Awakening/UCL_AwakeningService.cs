@@ -1387,7 +1387,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         //          ① 把今天的 relationship opinion 端上來當材料（同一條軸的短句版）
         //          ② 呼叫 portraits.py write 落檔並**讀回驗證**
         //          ③ 沒畫時要求一個**顯式理由**，理由會被印進下線廣播（看不見的理由等於沒有理由）
-        //          escape hatch 的形狀刻意抄 git_commit.py 的 `--no-announce-reason`
+        //          escape hatch 的形狀是「**要跳過就得先寫出理由**」
         //          （Tim 2026-08-05 拍板）：不是再提醒一次，是「妳得先想出一個理由，
         //          而想不出來的時候妳就會發現自己沒有理由」。
         // ===========================================================

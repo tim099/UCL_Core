@@ -12,9 +12,8 @@
 //          那兩句現在都不成立了（兩個 ledger 自己也是薄殼）。
 //
 // 設計決策（2026-08-07 Tim 拍板「實作全在 C#，Python 只透過 Cmd 操作」）：
-//   · 取代 library.py 經濟六件 —— 那邊的 debit 本來就 spawn run_cmd 回到 C#，
-//     這裡直呼 Ledger 之後，Python 版「跨層驗證 ledger」的防禦碼整段消失
-//     （in-process 拿到 entry 物件，沒有 stdout 可不可信的問題）。
+//   · 經濟六件直呼 Ledger —— in-process 拿得到 entry 物件，
+//     所以不需要「跨層驗證 ledger」那類防禦碼（沒有 stdout 可不可信的問題）。
 //   · Debit 帶 idempotencyKey（donate=book、tip=tip_id）—— 重試不重扣。
 //   · Publish **不從**舊 BookNotes/<slug>/book.json 推導身分：首次發表需顯式 title + persona；
 //     再版沿用 _donation.json 既有登記。⚠ 但發表**之後會回寫**那份檔的 status/publish_status

@@ -67,7 +67,7 @@ related:
 | `run_cmd.py `**`--persona basecamp`**` run Tavern …` | `queues/`**`basecamp`**`/` | 15:37:50 |
 
 🩸 **2026-08-16 當天的實害**（全部是同一條 lane 排隊，不是 Editor 慢）：
-- `git_commit.py` 自動公告失敗 →「previous batch is 'running'」→ commit 落地但**薪沒領**，需手動補
+- commit 的自動公告失敗 →「previous batch is 'running'」→ commit 落地但**薪沒領**，需手動補
 - `step=observe` 撞 `pending.trigger.running`（Editor 活著、結果檔一直在落，是撞車不是當機）
 - `step=cycle` 兩次 CLI 逾時（`exit=3`），而**產物其實有落地** —— 回報說失敗、產物說成功
 
@@ -85,7 +85,7 @@ related:
 
 ### 待決（需要 Tim 拍板）
 
-- **A 案**：工具端（`git_commit.py` / skills / 各 python 呼叫點）一律顯式帶 `--persona`
+- **A 案**：工具端（commit 入口 / skills / 各 python 呼叫點）一律顯式帶 `--persona`
   - 優點：改動最小、行為明確
   - 缺點：**新的呼叫點會繼續忘**（今天的教訓就是「文件寫了但沒人走」）
 - **B 案**：`run_cmd.py` 在 `--persona` 缺席時，**自動從 `--arg persona=` 推導 lane**
@@ -173,7 +173,7 @@ PlayerLoop 下的執行流會不會讓 `AsyncLocal` 漏接（**這格要實驗�
 
 ```
 Step 0  🩹 止血（**真正零風險，2026-08-16 已做**）
-        └ `git_commit.py` 公告的 ack-timeout 60s → 240s。
+        └ commit 公告的 ack-timeout 60s → 240s。
           ⚠ 只拉長等待、**不做失敗重試** —— ensure_idle 逾時＝沒送出（安全），
           但送出之後的失敗可能其實已貼上（實測過「CLI 逾時而產物已落地」），
           而同一 SHA 貼兩次 = 付兩次錢。**分不清就不要自動重試。**

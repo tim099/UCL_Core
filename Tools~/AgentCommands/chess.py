@@ -11,7 +11,7 @@ chess.py — 自由時間「下棋」活動 (西洋棋第一本 RuleBook)。
   - 對局 index 從 0 自增, 每局獨立狀態檔。
   - 獎勵繪圖券綁 persona (跟 ucl-canvas 共用同一份餘額 ledger): 勝+10 / 敗+5 / 和雙方各+5 / solo 一人拿滿。
 
-純 stdlib (無 pip 依賴, 跟 library.py 一致)。
+純 stdlib (無 pip 依賴, 同目錄工具慣例)。
 
 規則書 (RuleBook): 隨 code 放 UCL_Core/Tools~/AgentCommands/rulebooks/<ruleid>.yaml (跨專案共用 spec);
   reward/symbols/board 資料驅動 (有 pyyaml 就讀, 無則內建 fallback)。
@@ -56,7 +56,7 @@ import sys
 import uuid
 from pathlib import Path
 
-# 區塊職責：Windows console UTF-8 fallback（對齊 library.py 等同目錄工具慣例）。
+# 區塊職責：Windows console UTF-8 fallback（同目錄工具慣例）。
 # 物理意義：**stderr 也要 reconfigure** —— 本檔原本只設 stdout，於是 argparse 的錯誤訊息
 #          （唯一寫進 stderr 的東西）在 Windows 走 cp950。
 # 🩸 2026-08-18 實測：`Cmd_FreeTimeActivity op=step` 以 UTF-8 解 stderr，於是錯誤訊息裡的中文

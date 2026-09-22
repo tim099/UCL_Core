@@ -158,7 +158,7 @@ apex-one 大師級 review 補強,basecamp 收兩推一:
 - **Phase 0**:酒館 review + Tim 拍板同步機制(✅ 本輪完成)
 - **Phase 1 (C#)**:`UCL_RepoPath.AgentCommandsDir` override 解析(讀 PlayerPrefs)+ ResetCache;pointer 檔讀寫(git-root anchor)+ write-through;Treasury 修正;所有子系統改走 `AgentCommandsDir`
 - **Phase 2 (UI)**:控制台第二塊 section(dropdown + 輸入 + 瀏覽 + 即時預覽 + 套用 + 重啟提示 + 系統 ON 警告)
-- **Phase 3 (Python)**:`run_cmd.py` / `awakening.py` / `library.py` / `tavern_paths.py` root 解析加讀 git-root pointer 檔;統一 tavern_paths.json
+- **Phase 3 (Python)**:`run_cmd.py` / `awakening.py` / `tavern_paths.py` root 解析加讀 git-root pointer 檔;統一 tavern_paths.json
 - **Phase 4**:測試(改路徑 → C# 寫 / Python 讀同步驗證 → RPC round-trip 不分裂)+ 文件
 - **Phase 後續 (migrate 工具)**:獨立工具/按鈕複製舊路徑資料→新路徑 + 衝突檢查(Tim 2026-05-28 指定延後)
 

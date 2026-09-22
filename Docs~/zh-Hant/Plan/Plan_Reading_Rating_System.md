@@ -165,7 +165,7 @@ C# ：Cmd_Library 新增 op=rate
 Python：零新增邏輯，只有 senate ucmd run Library --arg op=rate …
 ```
 
-方向與 2026-08-07 已完成的 `library.py reading-recall` 退位一致（正本改指 `op=recall`）。
+方向與 2026-08-07 已完成的 reading-recall 退位一致（正本改指 `op=recall`）。
 
 ### 2.6 可擴充性四手段（Tim：「未定規格在架構上保持可擴充」）
 

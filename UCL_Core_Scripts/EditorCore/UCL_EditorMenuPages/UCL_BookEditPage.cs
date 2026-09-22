@@ -13,7 +13,7 @@ namespace UCL.Core.EditorLib.Page
     // 區塊職責：書籍編輯 Page（簡易 Prototype）— 編輯 Books/<slug>/ 全文書庫的章節純文字檔
     // 物理意義：Books/<slug>/ 內每個 NNN.txt 是一章全文（000.txt 常為序）。本 Page 提供：
     //          選章節（下拉）→ TextArea 編輯內文 → 存檔；以及新增空章節（下一個流水號 NNN.txt）。
-    // 數值影響：Save 直接覆寫對應 .txt；新增章節寫新檔。純檔案 IO，不走 library.py（library.py 管 BookNotes 筆記，不管全文）。
+    // 數值影響：Save 直接覆寫對應 .txt；新增章節寫新檔。純檔案 IO —— 本頁管的是**全文**，BookNotes 筆記那條是另一套。
     //
     // 設計理由 (Tim 2026-05-26 派 task — 先做簡易 Prototype)：
     //   從 UCL_LibraryManagePage 的 Books 下拉選書後，按「編輯書籍」跳轉進來。MVP 範圍：增章節 / 改內文 / 存檔。

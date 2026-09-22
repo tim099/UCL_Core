@@ -1,4 +1,4 @@
-
+﻿
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 05/04 2026
@@ -448,12 +448,23 @@ namespace UCL.Core.EditorLib.AgentCommands
 
                 var aWrite = data ?? new UCL_AgentCommandQueueData();
                 aWrite.Commands = aOut;
-                Save(aWrite, agentId);
+
+                // 🩸 TASK-0264 QA 第二輪（kotoko 2026-09-22）：上一輪我把 `Save` 從 void 改成 bool
+                //   並在文件上寫「`SaveMerged` 照實回報」—— 而**傳播沒改**，這裡照樣無條件 `return true`。
+                //   ⇒ 同一支檔、同一天：我在新寫的 `MutateQueueOnDisk` 裡接對了，在這支舊的沒有。
+                //   📌 她給的成因值得留著：**讀一段 code 去改 A，不會順便讓妳看見 B。**
+                bool aSaved = Save(aWrite, agentId);
+                if (!aSaved)
+                {
+                    Debug.LogError($"[UCL_AgentCommandQueue] 收尾寫回**失敗**：{GetQueuePath(agentId)}"
+                                   + " —— 合併算完了而換檔沒成立 ⇒ 這一批的出隊結果沒有落盤。"
+                                   + " ⛔ 回 false，⛔ 不要把「合併邏輯跑完了」當成「寫回去了」。");
+                }
                 if (aKeptNew > 0)
                 {
                     Debug.Log($"[UCL_AgentCommandQueue] 保留了這一批期間新進的 {aKeptNew} 筆（下一輪跑）");
                 }
-                return true;
+                return aSaved;
             }
         }
 

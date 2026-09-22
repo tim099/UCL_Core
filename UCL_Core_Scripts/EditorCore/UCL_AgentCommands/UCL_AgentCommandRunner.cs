@@ -1,4 +1,4 @@
-
+﻿
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 05/04 2026
@@ -284,6 +284,15 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
             string labelTag = string.IsNullOrEmpty(agentId) ? "default" : agentId;
             bool isPlayModeInterrupted = false;
+            // 🔴 TASK-0264 ⊕：Busy 那一輪要不要**重新武裝 trigger**（在 finally 的 Clear 之後做）。
+            //   🩸 QA（kotoko 2026-09-22）量到的：Busy 是正常返回 ⇒ finally 把兩個 trigger 檔都清掉，
+            //   而 Watcher 的觸發判準只有 `PendingExists`（⛔ 它不掃 queue.json 內容）
+            //   ⇒ 那筆指令**原地擱淺**，等某個不相干的未來 trigger 才跑；
+            //   而呼叫端此時已經拿到 timeout ⇒ **延後執行，而且是在它被告知逾時之後**。
+            //   ⛔ 那條路上有動錢的 handler。
+            bool aRearmForBusy = false;
+            // ⚠ 計數要在 Clear **之前**讀（trigger 檔就是計數器的載體）—— 見 RearmForBusy 的血證。
+            int aBusyRetrySeen = 0;
             try
             {
                 // ⏱ 批次前奏的秒錶（TASK-0162）—— queue load ＋ ModuleService 等待都在主緒上，
@@ -307,11 +316,15 @@ namespace UCL.Core.EditorLib.AgentCommands
                     && queueReadState != UCL_AgentCommandQueue.QueueReadState.Missing)
                 {
                     bool aBusy = queueReadState == UCL_AgentCommandQueue.QueueReadState.Busy;
+                    // ⊕ Busy ＝爭用，而爭用會自己過去 ⇒ 這一輪要**把 trigger 重新武裝**（有界，見 finally）。
+                    //   ⛔ Unreadable 不武裝：壞檔重來幾次都一樣壞，而那會變成一個吵而沒用的迴圈。
+                    aRearmForBusy = aBusy;
+                    if (aBusy) aBusyRetrySeen = UCL_AgentCommandTrigger.ReadBusyRetry(agentId);
                     Debug.LogError($"[UCL_AgentCmd:{labelTag}] ⛔ queue **沒讀到內容**（不是空的）："
                                    + $"{UCL_AgentCommandQueue.GetQueuePath(agentId)} 結局＝{queueReadState}"
                                    + (aBusy
                                        ? " —— 檔在而**開不了**（換檔在飛／別的 process 握著），重試已用完。"
-                                         + " ⇒ 這是爭用不是壞檔：**等下一輪**即可，⛔ 不要去修那顆檔。"
+                                         + " ⇒ 這是爭用不是壞檔：**這一輪會重新武裝 trigger**（有界，見 finally 那行），⛔ 不要去修那顆檔。"
                                        : " —— 檔在而解析失敗（截斷／壞碼／寫到一半）。"
                                          + " ⇒ 修它：看上一行的 parse 例外，並比對檔尾是否被截斷。")
                                    + " 本輪不執行任何指令、也**不寫回 queue**（寫回等於刪光）。");
@@ -667,6 +680,29 @@ namespace UCL.Core.EditorLib.AgentCommands
                 else
                 {
                     UCL_AgentCommandTrigger.Clear(agentId);
+
+                    // ⊕ TASK-0264：Busy 那一輪在 Clear **之後**重新武裝（之前寫的會被 Clear 掉）。
+                    if (aRearmForBusy)
+                    {
+                        int aNextRetry = aBusyRetrySeen + 1;
+                        if (UCL_AgentCommandTrigger.RearmForBusy(agentId, aNextRetry))
+                        {
+                            Debug.LogWarning($"[UCL_AgentCmd:{labelTag}] ⊕ queue 開不了（Busy）⇒ 已**重新武裝** trigger"
+                                             + $"（第 {aNextRetry}/{UCL_AgentCommandTrigger.BUSY_REARM_MAX} 次）"
+                                             + " —— 那筆指令還在 queue 裡，下一輪 Watcher 會再來一次。");
+                        }
+                        else
+                        {
+                            // ⛔ 說實話那一半：次數用完之後**沒有人會再來**，別再寫「等下一輪」。
+                            Debug.LogError($"[UCL_AgentCmd:{labelTag}] ⛔ queue 連續 {UCL_AgentCommandTrigger.BUSY_REARM_MAX} 輪都開不了"
+                                           + $"：{UCL_AgentCommandQueue.GetQueuePath(agentId)}"
+                                           + " ⇒ **不再自動重來**。那幾筆指令仍在 queue 裡，而"
+                                           + "**沒有任何東西會自己叫它們** —— 要嘛查是誰長期握著那顆檔，"
+                                           + "要嘛由送件端重下一次 trigger。"
+                                           + " ⚠ 呼叫端這時多半已經拿到 timeout ⇒ ⛔ 重送前先回讀那條 queue，"
+                                           + "同一筆送兩次就是跑兩次。");
+                        }
+                    }
                 }
                 lock (s_RunningLock) s_RunningAgents.Remove(norm);
             }

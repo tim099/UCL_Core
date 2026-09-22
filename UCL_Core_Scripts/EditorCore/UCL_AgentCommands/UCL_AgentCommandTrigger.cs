@@ -1,4 +1,4 @@
-// Trigger file helpers — 集中管理 pending.trigger / pending.trigger.running 的 file ops。
+﻿// Trigger file helpers — 集中管理 pending.trigger / pending.trigger.running 的 file ops。
 // 設計理由：避免 Watcher / Runner / Page 三處重複處理 File.Move / Delete / Exists 等細節。
 //          所有 IO 失敗都吞例外並用 Debug.LogWarning 回報，盡量讓上層流程不被 IO race 中斷。
 #if UNITY_EDITOR
@@ -116,6 +116,89 @@ namespace UCL.Core.EditorLib.AgentCommands
             catch (Exception e)
             {
                 Debug.LogWarning($"[UCL_AgentCmdTrigger] CreatePending failed: {e.Message}");
+            }
+        }
+
+        // ===========================================================
+        // 區塊職責：Busy（queue 開不了）那一輪的**有界重新武裝**（TASK-0264 ⊕）。
+        // 物理意義：Busy 是正常返回 ⇒ Runner 的 finally 會 `Clear` 掉兩個 trigger 檔，
+        //          而 Watcher 只看 `PendingExists`（⛔ 不掃 queue.json 內容）
+        //          ⇒ 那筆指令原地擱淺，等某個不相干的未來 trigger 才跑，
+        //          而呼叫端此時已經拿到 timeout。**「延後執行」比「沒執行」難查。**
+        // ⚠ 為什麼要有界：無界重下 trigger ＝ 只要那顆檔一直被獨佔，Watcher 就每輪回來一次（連跳）。
+        //          次數寫在 trigger 檔自己身上（`busyRetry`）⇒ 計數**跟著那一輪走**，
+        //          ⛔ 不放 static（domain reload 會清掉，而清掉之後計數從頭開始 ＝ 又變成無界）。
+        // 數值影響：最多再武裝 <see cref="BUSY_REARM_MAX"/> 次；用完只留一行大聲的 LogError，
+        //          ⛔ 不再自己重來 —— 那時候「等下一輪」這句話就不成立，要說實話。
+        // ===========================================================
+
+        /// <summary>Busy 最多重新武裝幾次 —— ⛔ 不是重試次數上限的猜測，是「連跳」的閘。</summary>
+        public const int BUSY_REARM_MAX = 3;
+
+        /// <summary>讀出這一輪 trigger 上的 <c>busyRetry</c>（running 優先，其次 pending）。讀不到回 0。</summary>
+        public static int ReadBusyRetry(string agentId = null)
+        {
+            int aFromRunning = ReadBusyRetryFrom(UCL_AgentCommandQueue.GetRunningTriggerPath(agentId));
+            if (aFromRunning > 0) return aFromRunning;
+            return ReadBusyRetryFrom(UCL_AgentCommandQueue.GetTriggerPath(agentId));
+        }
+
+        /// <summary>
+        /// 重新武裝一次 pending.trigger 並把 <c>busyRetry</c> 加一。
+        /// <para>⚠ 呼叫時機是 Runner finally 裡 <see cref="Clear"/> **之後** —— 在那之前寫的會被 Clear 掉，
+        /// 而那個失效樣子是「我明明重下了而它不見了」。</para>
+        /// </summary>
+        /// <param name="iNextRetry">這一次要寫進 trigger 的第幾次。
+        /// 🩸 **必須由呼叫端在 <see cref="Clear"/> 之前讀好再傳進來**（2026-09-22 活體抓到）：
+        /// 第一版讓本函式自己去讀，而它跑在 Clear 之後 ⇒ 兩個 trigger 檔都不在了 ⇒ 永遠讀到 0、
+        /// 永遠寫「第 1 次」⇒ **那個上限根本沒有生效**，12 秒內連跳至少三輪。
+        /// ⚠ 而畫面上完全正常：每一輪都印「已重新武裝（第 1/3 次）」，⛔ 它跟真的有界長得一樣。</param>
+        /// <returns>true ＝ 真的重新武裝了；false ＝ 次數用完（呼叫端要出聲說實話）。</returns>
+        public static bool RearmForBusy(string agentId, int iNextRetry)
+        {
+            int aNext = iNextRetry;
+            if (aNext > BUSY_REARM_MAX) return false;
+
+            UCL_AgentCommandQueue.EnsureDir(agentId);
+            string aPath = UCL_AgentCommandQueue.GetTriggerPath(agentId);
+            string aBody = "{\n  \"createdAt\": \"" + DateTime.UtcNow.ToString("o") + "\",\n"
+                         + "  \"submittedBy\": \"busy-rearm\",\n"
+                         + "  \"busyRetry\": " + aNext + "\n}\n";
+            try
+            {
+                File.WriteAllText(aPath, aBody, new UTF8Encoding(false));
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[UCL_AgentCmdTrigger] RearmForBusy failed: {e.Message}");
+                return false;
+            }
+        }
+
+        static int ReadBusyRetryFrom(string iPath)
+        {
+            try
+            {
+                if (!File.Exists(iPath)) return 0;
+                string aText = File.ReadAllText(iPath);
+                const string aKey = "\"busyRetry\"";
+                int aAt = aText.IndexOf(aKey, StringComparison.Ordinal);
+                if (aAt < 0) return 0;
+                int aColon = aText.IndexOf(':', aAt + aKey.Length);
+                if (aColon < 0) return 0;
+                int aEnd = aColon + 1;
+                while (aEnd < aText.Length && (char.IsWhiteSpace(aText[aEnd]))) ++aEnd;
+                int aNumStart = aEnd;
+                while (aEnd < aText.Length && char.IsDigit(aText[aEnd])) ++aEnd;
+                if (aEnd == aNumStart) return 0;
+                return int.TryParse(aText.Substring(aNumStart, aEnd - aNumStart), out int aN) ? aN : 0;
+            }
+            catch (Exception)
+            {
+                // ⛔ 讀不到就當 0：它只會讓我們**多**武裝幾次（有上限），
+                //   而反過來（讀壞了當成已達上限）會安靜地把自癒關掉。
+                return 0;
             }
         }
 

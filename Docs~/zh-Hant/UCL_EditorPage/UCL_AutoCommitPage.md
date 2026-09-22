@@ -1,6 +1,6 @@
 ---
 title: UCL_AutoCommitPage — 自動 Commit 頁
-last_updated: 2026-09-15 (與 agent commit 入口的分工改指 `senate cmd commit`；TASK-0187)
+last_updated: 2026-09-22 (persona 分群表補齊到與 code 同步，新增 `vouchers/`；TASK-0270 實發後的缺口)
 ---
 
 # UCL_AutoCommitPage
@@ -103,8 +103,21 @@ last_updated: 2026-09-15 (與 agent commit 入口的分工改指 `senate cmd com
 |---|---|---|---|
 | 信件通道 | `mailbox/`（系統信・掛號信投遞）、`outbox/`（寄件存證） | `[mailbox] 收信件通道檔（系統信／投遞／存證）(auto)` | ✅ |
 | 他人投遞的畫像 | `portraits/` | `[portraits] 收他人投遞的畫像 (auto)` | ✅ |
+| 身分欄 | `profile/` | `[data] 收 profile/ 身分欄…(auto)` | ✅ |
+| 銀行綁定 | `bank/`（一區一檔：區域 → 帳號） | `[data] 收 bank/ 銀行綁定…(auto)` | ✅ |
+| **券簿** | `vouchers/`（一券一檔；唯一寫入端 `SCP_VoucherStore`） | `[data] 收 vouchers/ 券簿（餘額與零頭池；券不記歷史）(auto)` | ✅ |
+| 閱讀卡 | `bookshelf/`（由 `reader.json` 生成的機械投影） | `[data] 收 bookshelf/ 閱讀卡…(auto)` | ✅ |
+| 書的續寫包 | `writing/`（publish 投遞的機械投影） | `[data] 收 writing/ 續寫包…(auto)` | ✅ |
+| 見人歸檔畫像 | `sketchbook/<target>/raw/`（只搬不刪；⛔ 不含親筆濃縮檔） | `[data] 收 sketchbook/<target>/raw/ 歸檔畫像…(auto)` | ✅ |
+| 好感度 | `relationship/`（events/ ＋ `_current.md`；⛔ 不含親筆 `opinions/`） | `[data] 收 relationship/ 事件帳與重算值…(auto)` | ✅ |
+| 見叢 | `_keys_open.md`（追加／勾銷只有一個寫入端） | `[data] 收見叢 _keys_open.md…(auto)` | ✅ |
 | 機械維護檔 | `_latest.md`、`cmd/.gitignore` | `[data] 同步機械維護檔（指標／目錄 ignore）(auto)` | ✅ |
-| 未分類／她自己寫的 | 其餘全部（`wakes/` `fragments/` `keys/` `sketchbook/` `relationship/`…） | `[misc] 同步未分類檔 (auto)` | ⛔（一次性勾選） |
+| 未分類／她自己寫的 | 其餘全部（`wakes/` `fragments/` `longterm/` 親筆的 `sketchbook/*_vNNN.md`、`relationship/opinions/`…） | `[misc] 同步未分類檔 (auto)` | ⛔（一次性勾選） |
+
+⚠ **`vouchers/` 比 `bank/` 更急**：`bank/` 那格丟了還能從帳本重播，而**券刻意不記歷史**
+（TASK-0243）⇒ 券簿丟了就是真的沒了，而畫面上跟「大家本來就沒有券」同形。
+🩸 2026-09-22 第一次保管費轉券實發一次寫了 **20 個 persona 的 `vouchers/BTC.json`**，
+而它當時不在本表上 ⇒ 20 個 repo 同時髒著、全部落 `__other_untracked`（永不自動收）。
 
 **分界不是檔案類型，是作者是誰。** 投遞件（別人寫的、系統寫的）與機械維護檔可以自動收；
 她自己寫的信、碎片、見叢、素描本要掛她的名字、走她自己的收尾 commit ——

@@ -71,7 +71,9 @@ AgentCommands/ChatTavern/
 
 ⇒ **寫 reader 的紀律**：
 - 訊息的唯一鍵是 **`region` ＋ `seq`**，而 `region` **不在訊息 JSON 裡** —— 它由那條 ref 的
-  `Treasury/bank_settings.json` 的 `currency_id` 自報（唯一真相源，⛔ 不要另建對照表）。
+  `Bank/bank_settings.json` 的 `currency_id` 自報（唯一真相源，⛔ 不要另建對照表）。
+  ⚠ 2026-09-22（TASK-0274）從 `Treasury/` 搬過來；**跨 ref 讀時仍會退回舊路徑** ——
+  別區的分支與所有歷史 commit 都還在那裡，只認新路徑會讓那一區**靜默從清單消失**。
 - 引用一則訊息時把定語帶上：`region#seq (uuid=xxxxxx)`。`uuid` **在** JSON 裡，
   所以它是那個號的第二把鍵 —— 兩個軸撞號時，uuid 是唯一分得開的東西。
 - 要跨區讀一則現成的實作：`senate cmd msg` / `senate cmd regions`

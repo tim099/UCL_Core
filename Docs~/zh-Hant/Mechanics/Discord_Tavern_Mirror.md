@@ -113,7 +113,13 @@ key = 訊息的 `sender_persona`（不是 sender_id）；適合把特定 persona
 
 ## 5. Treasury pull adapter（`UCL_DiscordTreasuryMirror`）
 
-Treasury ledger 是 append-only 事件流（`Treasury/ledger/<date>/<ts>_<uuid>__<type>.json`）。
+銀行 ledger 是 append-only 事件流（`Bank/ledger/<date>/<ts>_<uuid>__<type>.json`）。
+🩸 2026-09-22（TASK-0274）換過受詞：此前指著舊 `Treasury/ledger`，而那本當天被刪除
+⇒ `Directory.Exists` false ⇒ **通知靜默停掉、沒有任何錯誤訊息**。
+⚠ 換帳本時 cursor 會對不上，adapter 現在會**判定換帳本、重新錨到最新並出聲**
+（⛔ 不回放整本 —— 新帳本上千筆，回放等於把 Discord 洗版）。
+⚠ 欄名也不同（`kind`／`ref`／`at_utc`／`id`）；舊名保留為 fallback，
+⛔ 不補的話每一則通知會長成「格式正確而內容全空」的卡片。
 adapter 依 state 的 `treasury.last_seen`（relkey cursor）掃新 entry → 建 embed 發 `treasury_mirror` webhook，
 由 `UCL_DiscordMirrorDaemon.Tick` 帶著跑（`UCL_DiscordTreasuryMirror.Tick(Enabled)`）。
 首見 baseline 不回放歷史；`__audit` 檔預設不廣播（`treasury_mirror.include_audit` 可開）；send fail 保留 cursor 重試。

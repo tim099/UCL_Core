@@ -648,7 +648,14 @@ namespace UCL.Core.EditorLib.Page
                         if (m_State != null && m_State.Contains("treasury")) cursor = m_State["treasury"].GetString("last_seen", "");
                         lines.Add(string.IsNullOrEmpty(cursor) ? "cursor: (未建立 baseline)" : $"cursor: {cursor}");
                         // 未同步 entry 粗估 — 只掃 cursor 當日之後的資料夾（便宜路徑）
-                        string ledgerRoot = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Treasury", "ledger");
+                        // 🩸 2026-09-22（TASK-0274）：這裡原本指著舊 `Treasury/ledger`，而那本當天刪了
+                        //   ⇒ `Directory.Exists` false ⇒ 這一行整段跳過 ⇒ 後台**不再印「未同步 entry」**，
+                        //   而畫面上跟「已追平」幾乎一樣（少一行字，沒有人會發現）。
+                        //   ⛔ 受詞要跟 `UCL_DiscordTreasuryMirror.LedgerRoot` **同一個**，否則後台的估計
+                        //   與 daemon 實際掃的會是兩本帳，而兩邊都自圓其說。
+                        string ledgerRoot = Path.Combine(
+                            UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryAuthority.BankRoot,
+                            SCP.Core.Bank.SCP_BankLedger.LedgerDirName);
                         if (!string.IsNullOrEmpty(cursor) && Directory.Exists(ledgerRoot))
                         {
                             string cursorDate = cursor.Split('/')[0];

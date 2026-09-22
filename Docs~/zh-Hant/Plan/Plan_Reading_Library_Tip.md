@@ -52,7 +52,7 @@ related:
 ```
 
 - **① token 消耗**：`Cmd_Treasury op=debit`（複用 donate 的 `_run_treasury_debit` + `use_kind=book_tip`, `use_ref=book:<slug>`）。caller 必須==account，杜絕代刷
-- **② 跨層驗證**（血規矩）：掃 `Treasury/ledger/` 確認 debit 真落帳才進下一步——複用 `_verify_donation_debit` 一般化版
+- **② 跨層驗證**（血規矩）：掃 `Bank/ledger/` 確認 debit 真落帳才進下一步（⚠ 本計畫寫於舊帳本時代，原文是 `Treasury/ledger/`；2026-09-22 TASK-0274 已刪，落點換成 `Bank/`）——複用 `_verify_donation_debit` 一般化版
 - **③ 繪圖券**：`canvas.py voucher --sub grant --persona <受益>`；現有 grant 的 source 寫死 `manual_grant`，需小修支援 `--source book_tip --ref book:<slug>`（追溯性）
 - **④ 酒館券**：複用 `work_session.py::fire_voucher_accrual` 的寫入模式 append `agent_bonus_quota.json`（`granted_by=<tipper_persona>`, `kind=tavern_voucher`, reason 帶書名）
 - **失敗序補償**：③/④ 任一失敗 → 不 rollback debit（券可重發、帳不可造假），印 retry 指令 + 寫 pending 檔，下次 `tip --retry` 補發

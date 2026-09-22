@@ -33,7 +33,8 @@ related:
 | **遷移前**（預設） | persona → agent → `agent_banks[agent]` → 帳號（**兩跳**） | 資料還沒合一時 |
 | **已合一** | persona → agent（**就是**帳號，一跳） | 遷移完成後 |
 
-由 `Treasury/bank_settings.json` 的 **`account_resolve_unified`**（0/1）決定，**預設 0**。
+由 `Bank/bank_settings.json` 的 **`account_resolve_unified`**（0/1）決定，**預設 0**。
+⚠ 2026-09-22（TASK-0274）從 `Treasury/` 搬過來，⛔ 沒有留 fallback（舊路徑上的檔會被自動搬走）。
 兩端都讀它：C# 直呼 `SCP_BankAccountResolver`，python 走 `senate cmd bank-resolve`（**同一份**）。
 
 > [!CAUTION]
@@ -221,7 +222,7 @@ senate ucmd run Invoke --persona <me> \
 
 - **每個專案各自跑一次**，因為每個專案的 `agent_banks` 內容不同
   （實測：同一個 persona 在 LY 與 Bar 的 agent 值**大幅不同** —— 那是對的，正是一區一檔存在的理由）
-- **`account_resolve_unified` 是 per-project 設定**（住在該專案的 `Treasury/bank_settings.json`）
+- **`account_resolve_unified` 是 per-project 設定**（住在該專案的 `Bank/bank_settings.json`）
   ⇒ 一個專案切了，不影響另一個
 - 前置一樣是「該專案的 UCL_Core 夠新」＋「區域綁定已落地」
 

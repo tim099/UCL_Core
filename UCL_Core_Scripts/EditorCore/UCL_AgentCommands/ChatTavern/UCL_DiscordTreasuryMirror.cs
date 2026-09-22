@@ -101,7 +101,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===========================================================
         // 區塊職責：ledger 掃描 — cursor 之後的 relkey 升冪清單（date dir 名 < cursor date 的整夾 cheap prune）
         // ===========================================================
-        static string LedgerRoot => Path.Combine(UCL_RepoPath.AgentCommandsDir, "Treasury", "ledger");
+        // 🩸 2026-09-22（TASK-0274）：這裡原本寫死 `Path.Combine(…, "Treasury", "ledger")` ——
+        //   而舊帳本當天被刪除 ⇒ `Directory.Exists` false ⇒ `CollectPending` 回空
+        //   ⇒ **Discord 的金流通知靜默停掉**，而它沒有任何錯誤訊息（fail-soft 回空）。
+        //   ⛔ 最難看的不是它壞了，是**我那道「誰還在讀 Treasury/ledger」的 grep 沒抓到它**：
+        //     它是 `"Treasury", "ledger"` 兩個參數，而我的 pattern 只找連在一起的字串
+        //     ⇒ 我用一個有洞的尺量完，然後宣告「沒有人在讀了」。
+        // ⇒ 改成問銀行根那一格，⛔ 不在這裡再拼一次字面（那會是第六份）。
+        static string LedgerRoot => Path.Combine(
+            UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryAuthority.BankRoot,
+            SCP.Core.Bank.SCP_BankLedger.LedgerDirName);
 
         static List<string> CollectPending(string cursor)
         {
@@ -208,6 +217,19 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 return;
             }
 
+            // 🔴 rebase：cursor 指的那一筆**在現在這本帳上不存在** ⇒ 換過帳本了（TASK-0274 那次）。
+            //   ⛔ 不可以照常往下播：新帳本有上千筆歷史，而 cursor 比對不上 ⇒ 它會**整本回放到 Discord**。
+            //   ⛔ 也不可以靜默跳過：那會漏掉真正的新分錄，而漏掉跟「今天沒有動錢」同形。
+            //   ⇒ 比照 baseline 錨到最新，**而且大聲說一次**（換帳本是一次性事件，它該在 log 裡留痕）。
+            if (!File.Exists(Path.Combine(LedgerRoot, cursor.Replace('/', Path.DirectorySeparatorChar))))
+            {
+                SaveCursor(pending[pending.Count - 1]);
+                Debug.LogWarning($"[TreasuryMirror] cursor `{cursor}` 在現在這本帳（{LedgerRoot}）上找不到"
+                                 + $" ⇒ 判定**換過帳本**，重新錨到最新（略過 {pending.Count} 筆，⛔ 不回放整本）。"
+                                 + " 若這不是換帳本而是檔案被刪，那些分錄就不會被播出去 —— 這一行是唯一的痕跡。");
+                return;
+            }
+
             string relkey = pending[0];
 
             // __audit 檔（0 金額稽核記錄）預設不播 → 靜默推進
@@ -307,11 +329,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             int amount = entry.GetInt("amount", 0);
             string currency = entry.GetString("currency", "tavern_token");
             string account = entry.GetString("account_id", "?");
-            string srcKind = entry.GetString("source_kind", entry.GetString("use_kind", "?"));
-            string srcRef = entry.GetString("source_ref", entry.GetString("use_ref", ""));
-            string srcDesc = entry.GetString("source_description", entry.GetString("description", ""));
-            string ts = entry.GetString("ts", "");
-            string uuid = entry.GetString("uuid", "");
+            // 🩸 2026-09-22（TASK-0274）：新帳本的欄名跟舊的不同（`kind`／`ref`／`at_utc`／`id`），
+            //   而舊名在新分錄上一律缺席 ⇒ **不補這幾格的話，每一則通知都會長成
+            //   「↑ 進帳 +1 tavern_token ／ 來源 ? ／ 時間空白」** —— 它照樣發得出去，只是什麼都沒說。
+            //   ⛔ 那種壞法不報錯：Discord 上會有一排格式正確、內容空掉的卡片。
+            //   ⚠ 舊名保留在後面當 fallback：git 歷史裡的舊分錄若被重播，仍要讀得動。
+            string srcKind = entry.GetString("kind",
+                             entry.GetString("source_kind", entry.GetString("use_kind", "?")));
+            string srcRef = entry.GetString("ref",
+                            entry.GetString("source_ref", entry.GetString("use_ref", "")));
+            string srcDesc = entry.GetString("description", entry.GetString("source_description", ""));
+            string ts = entry.GetString("at_utc", entry.GetString("ts", ""));
+            string uuid = entry.GetString("id", entry.GetString("uuid", ""));
             string sigClaimed = entry.GetString("sig_agent_id_claimed", "?");
             string sigEnv = entry.GetString("sig_env_marker", "?");
             bool sigMismatch = entry.GetBool("signature_mismatch", false);

@@ -208,6 +208,9 @@ python -c "import json;[print(json.dumps(json.loads(l),ensure_ascii=False,indent
 
 ### 為什麼跨日那一次曾經特別重（2026-08-15 已修）
 
+⚠ 以下是**歷史敘述**（2026-08-15 已修）：`UCL_TreasuryLedger.LoadAllEntries()` 與舊 `Treasury/ledger/`
+都已於 2026-09-22 隨 TASK-0274 整支刪除，⛔ 別照這段去找那支 API。
+
 原本這裡呼叫 `UCL_TreasuryLedger.LoadAllEntries()` —— 逐檔 read + parse `Treasury/ledger/` 底下
 **每一個** entry 檔（本專案已 14,700+ 檔／20MB）。冷啟動時 OS 檔案快取是空的、逐檔開檔又各吃一次
 防毒即時掃描，於是熱讀 0.5 秒的東西冷讀是分鐘級 —— 那就是 08-14 / 08-15 兩次

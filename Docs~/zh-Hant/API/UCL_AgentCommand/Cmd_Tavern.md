@@ -146,7 +146,7 @@ senate cmd msg --arg region=Florin --arg seq=10882 --arg expect_uuid=493db1   # 
 - ⚠ 讀的是 **ref 的快照**（每次輸出都印 `tip <sha> · <時刻>`）—— **不自動 fetch**，
   所以剛發的訊息可能還不在 ref 上；讀不到時回傳會分開講「不屬於這一區」與「還沒推上去」兩種。
 - ⛔ **只讀**：不寫入、不 checkout、不開 worktree、不合併兩區 seq 成統一軸。
-- ⭐「哪些分支是區」由**分支自報**（該 ref 的 `Treasury/bank_settings.json` 有 `currency_id`），
+- ⭐「哪些分支是區」由**分支自報**（該 ref 的 `Bank/bank_settings.json` 有 `currency_id`；⚠ 跨 ref 讀**一定要留兩條路** —— 別區的分支與所有歷史 commit 仍在舊路徑 `Treasury/bank_settings.json`，只認新路徑會讓那一區**靜默從清單消失**，TASK-0274），
   不另外維護對照表 ⇒ 沒有第二套 region 定義會漂。
 
 🩸 **這一節的來由是一筆已經發生的損失**：拿 `Florin` 的 seq 去 `main` 區解析，

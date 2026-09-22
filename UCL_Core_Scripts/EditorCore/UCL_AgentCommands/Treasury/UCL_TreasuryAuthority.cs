@@ -148,6 +148,38 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string iDescription, string iCaller, string iCmdId, string iIdemKey,
             System.Collections.Generic.List<string> iExtraArgs)
         {
+            var aArgs = new System.Collections.Generic.List<string>
+            {
+                "op=" + iType,
+                // ⛔ 不帶 `bank_root`（也不要拿 `data_root` 頂替 —— 那是用另一個手填值繞過同一條拍板）。
+                //   它是 `<資料根>/Bank` 的推導值（Tim 2026-09-17）；TASK-0260 起 Cmd 端**拒絕手填**。
+                //   🩸 2026-09-22：這一行沒跟著拿掉 ⇒ 每一筆領薪 exit 2，而 `post 主流程不受影響`
+                //     讓發文照樣回 `announce = Posted` ⇒ **整天 0 筆落帳而沒有任何一層喊**（TASK-0273）。
+                "account=" + iAccount,
+                "amount=" + iAmount,
+                "kind=" + Fallback(iKind, "unspecified"),
+                "ref=" + Fallback(iRef, "-"),
+                "caller=" + Fallback(iCaller, "system"),
+            };
+            if (!string.IsNullOrEmpty(iDescription)) aArgs.Add("description=" + iDescription);
+            if (!string.IsNullOrEmpty(iCmdId)) aArgs.Add("cmd_id=" + iCmdId);
+            if (!string.IsNullOrEmpty(iIdemKey)) aArgs.Add("idem_key=" + iIdemKey);
+            if (iExtraArgs != null) aArgs.AddRange(iExtraArgs);
+            return RunSenateCmd("bank", aArgs, "[Treasury] 權威＝新銀行，而");
+        }
+
+        // ===========================================================
+        // 區塊職責：**跑一支 `senate cmd <名>` 並把 `🔢` 值表收回來** —— 派給 Server 的共用那一段。
+        // 物理意義：TASK-0278 把跨日保管費整段搬去 `cmd demurrage` 之後，這一段就有第二個呼叫端了。
+        // 🩸 為什麼抽出來：同一段 spawn＋解析在本 repo 已經有三份（Treasury／Voucher／ChatTavernIO），
+        //   而三份會漂 —— 漂掉時每一份都自圓其說。⛔ 不再加第四份。
+        //   （另外兩份**不在本單射程**：它們各自有自己的失敗語意，動它們要另外量。）
+        // ⚠ 用 `ArgumentList` 不拼字串 —— 引號同時扮演「綁詞」與「內容」兩個角色，而 CreateProcess 只認前者。
+        // 數值影響：失敗一律 throw（呼叫端的語意都是「這件事到底有沒有發生」），⛔ 不回一個空表。
+        // ===========================================================
+        public static System.Collections.Generic.Dictionary<string, string> RunSenateCmd(
+            string iCmdName, System.Collections.Generic.List<string> iArgs, string iFailPrefix = "[Senate] ")
+        {
             string aExe = SenatePath;
             if (string.IsNullOrWhiteSpace(aExe)) aExe = "senate";
 
@@ -166,25 +198,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     StandardErrorEncoding = Encoding.UTF8,
                 };
                 aPsi.ArgumentList.Add("cmd");
-                aPsi.ArgumentList.Add("bank");
-                aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("op=" + iType);
-                // ⛔ 不帶 `bank_root`（也不要拿 `data_root` 頂替 —— 那是用另一個手填值繞過同一條拍板）。
-                //   它是 `<資料根>/Bank` 的推導值（Tim 2026-09-17）；TASK-0260 起 Cmd 端**拒絕手填**。
-                //   🩸 2026-09-22：這一行沒跟著拿掉 ⇒ 每一筆領薪 exit 2，而 `post 主流程不受影響`
-                //     讓發文照樣回 `announce = Posted` ⇒ **整天 0 筆落帳而沒有任何一層喊**（TASK-0273）。
-                aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("account=" + iAccount);
-                aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("amount=" + iAmount);
-                aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("kind=" + Fallback(iKind, "unspecified"));
-                aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("ref=" + Fallback(iRef, "-"));
-                aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("caller=" + Fallback(iCaller, "system"));
-                if (!string.IsNullOrEmpty(iDescription))
-                { aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("description=" + iDescription); }
-                if (!string.IsNullOrEmpty(iCmdId))
-                { aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("cmd_id=" + iCmdId); }
-                if (!string.IsNullOrEmpty(iIdemKey))
-                { aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("idem_key=" + iIdemKey); }
-                if (iExtraArgs != null)
-                    foreach (string aArg in iExtraArgs)
+                aPsi.ArgumentList.Add(iCmdName);
+                if (iArgs != null)
+                    foreach (string aArg in iArgs)
                     { aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add(aArg); }
 
                 var aProc = System.Diagnostics.Process.Start(aPsi);
@@ -198,14 +214,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             {
                 // ⚠ 這條路就是**反向對照**會走到的那一條（把 senate 指到一個不存在的檔）。
                 throw new InvalidOperationException(
-                    $"[Treasury] 權威＝新銀行，而派給 Senate Server 失敗（{e.GetType().Name}: {e.Message}）"
-                    + $" —— 這筆錢**沒有動**。⛔ 不降級寫舊帳本。", e);
+                    $"{iFailPrefix}派給 Senate Server 失敗（{e.GetType().Name}: {e.Message}）"
+                    + $" —— 這一趟**沒有發生**。⛔ 不降級成本地跑。", e);
             }
 
             if (aExit != 0)
                 throw new InvalidOperationException(
-                    $"[Treasury] 新銀行拒絕這一筆（exit {aExit}）：{PickReason(aOut, aErr)}"
-                    + " —— 這筆錢**沒有動**。");
+                    $"{iFailPrefix}`cmd {iCmdName}` 回 exit {aExit}：{PickReason(aOut, aErr)}"
+                    + " —— 這一趟**沒有發生**。");
 
             // `🔢 k = v` 收成表（`pay` 靠 paid_voucher／paid_token 分辨這筆是怎麼付的）
             var aValues = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);

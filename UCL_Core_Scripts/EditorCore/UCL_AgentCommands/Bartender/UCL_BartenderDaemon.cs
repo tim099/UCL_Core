@@ -893,62 +893,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         }
 
         // ===========================================================
-        // 區塊：跨日存款保管費 (Anti-inflation, Tim 2026-05-13 拍板 5 token task)
-        // 物理意義：超過門檻的部分, 跨日時收保管費. 例: balance=1100, 門檻 1000, 費率 5%
-        //          → excess=100 → fee=5 token (floor(100 × 0.05)).
-        // ⚠ 2026-08-01 改版（Tim 拍板）—— **兩件事同時變了**：
-        //   ① 門檻與費率不再是 const，改讀 UCL_CentralBankSettings（後台可調，不必改 code 重編）
-        //   ② **保管費不再蒸發** —— 每筆 debit 之後對央行帳戶補一筆等額 credit.
-        //      原本是純 sink（token 消失）；現在是集中到公庫，之後由活動再分配回來.
-        //      Tim 的話：「這樣可以直觀知道有多少保管費, 且之後可以用央行的資金辦活動」.
-        //      ⚠ 這是**經濟模型層級的改變**：保管費是全系統 97% 的排水管道
-        //        （改版當日 189 筆 / 35,932 token，是 agent 主動消費總額 1,029 的 35 倍），
-        //        它變成蓄水池之後這個經濟體暫時沒有任何 sink。詳見 UCL_CentralBankSettings 檔頭。
-        // 數值影響：state.last_overnight_check_date 推進; 每 over-threshold account debit fee
-        //          + 央行同額 credit; 兩者都用 system caller 走 Treasury (account 隔離 bypass).
-        //          央行自己**豁免收費**（Tim 拍板）—— 不豁免的話 debit 與 credit 落在同一帳號,
-        //          淨額為零卻多兩筆無意義的帳. 豁免會**在廣播裡明列**, 不靜默跳過.
+        // 區塊：跨日存款保管費的**觸發**（Anti-inflation, Tim 2026-05-13 拍板）
+        // ⭐ TASK-0278（Tim 2026-09-22 拍板）：**扣繳的計算與落帳已整段搬到 Senate 端**
+        //   （`SCP_Demurrage` ／ `senate cmd demurrage`）。⛔ 這裡不再算錢、不再寫帳本。
+        //   ⇒ 政策（門檻／費率／央行／豁免）、算式、冪等鍵、廣播本文**全部只有那一份**，
+        //     判準與血證寫在 `SCP_Demurrage` 檔頭，⛔ 本檔不重抄（抄兩份必漂，而漂掉時兩邊都不報錯）。
+        // 本層只剩三件事：
+        //   ① **判跨日**（state.last_overnight_check_date != 今天 UTC）＋ 首次啟動的 grace
+        //   ② **派一次** `cmd demurrage op=run`（Server 是唯一寫入端）
+        //   ③ **把 Cmd 組好的廣播本文貼上酒館**（酒館寫入端目前是 Editor，Server 沒有資格寫）
         // 觸發：daemon tick 每次跑, 但 state.last_overnight_check_date == today → skip.
-        //       跨日 (今天 != state 紀錄日期) → 跑一輪檢查 + 更新 state.
         //       首次啟動 (state 為空) → init today, **不收費** (避免新裝立刻課稅).
-        // Idempotency：debit useRef = "overnight-fee-<date>-<account>"；
-        //              credit sourceRef = "overnight-fee-credit-<date>-<account>"（**分開記**）.
-        //              兩者各自 scan ledger 判重 —— 刻意不共用一個旗標:
-        //              若 debit 成功後 crash 在 credit 之前, 共用旗標會讓那筆錢
-        //              「從使用者扣走了但沒進央行」而且再也補不回來（帳目永久漏水且無聲）.
-        //              分開判重則下一輪會偵測到「已扣未存」並單獨補上 credit.
+        // ⚠ 射程：TASK-0278 ⑧ 明寫**本單不含「觸發也搬走」** —— 排程／常駐由誰跑是下一張單。
         // ===========================================================
-
-        /// <summary>把一筆保管費存進央行。回傳是否成功（失敗只警告，由下一輪的「已扣未存」偵測補）。</summary>
-        /// <remarks>
-        /// sourceRef 帶繳費者 account —— credit 落在央行帳上，account_id 是央行，
-        /// 沒有這個尾段就無從得知「這筆是誰繳的」，也無法做「已扣未存」判重。
-        /// </remarks>
-        static bool TryDepositToCentralBank(string centralBank, int amount, string today,
-                                            string payerAccount, string creditRefPrefix)
-        {
-            if (string.IsNullOrEmpty(centralBank) || amount <= 0) return false;
-            try
-            {
-                UCL_TreasuryLedger.Credit(
-                    accountId: centralBank,
-                    amount: amount,
-                    sourceKind: "overnight_storage_fee_deposit",
-                    sourceRef: $"{creditRefPrefix}{payerAccount}",
-                    description: $"跨日 {today} 存款保管費入庫（繳費者 @{payerAccount}）",
-                    callerAgentId: "system",
-                    // ⭐ TASK-0242 ⑭：判重交給 Server 的 `idem_key`（同一把鑰匙重送＝回既有那一筆，不會入兩次）。
-                    //   ⇒ 「已扣未存」的補償不再需要掃帳本：下一輪原樣再送一次就好，
-                    //     成功過就是 no-op，沒成功過才真的補上。
-                    idempotencyKey: $"{creditRefPrefix}{payerAccount}");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Bartender] 央行入庫失敗 payer={payerAccount} amount={amount}: {ex.Message}");
-                return false;
-            }
-        }
 
         static void CheckOvernightDeposits()
         {
@@ -1041,216 +998,55 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             }
             MarkPhase("overnight.closing", $"written={closingWritten}");
 
-            // 跨日了 — 跑一輪檢查
             // ===========================================================
-// 1. 取得本輪要檢查的帳戶與餘額 —— **一次問新銀行**（TASK-0242 ④⑭）
-            //
-            // 🩸 2026-09-18 之前這裡掃的是舊 `Treasury/` 的 entry 檔，用來做三件事：
-            //   ① 列出所有帳戶 ② 今日保管費 debit 判重 ③「已扣未存」的補償金額。
-            //   而權威切到新銀行那一刻，**那三件事同時變成假的** —— 掃描看的是一本凍結的帳：
-            //   ①新開的帳戶永遠不在裡面 ②今天的扣款寫在新銀行 ⇒ 判重永遠回「沒扣過」
-            //   ③補償金額永遠查無。⛔ 而三格的失效樣子都不會叫（空集合跟「今天還沒扣」同形）。
-            //
-            // ⇒ 現在的做法，三件事各自換一個**當下就成立**的來源：
-            //   ① 帳戶與餘額 → `GetAllBalances()` 一次拿全部（新銀行；它本來就是這一輪要的東西）
-            //   ② 判重 → 交給 Server 的 `idem_key`（唯一有資格判的那一層）
-            //   ③ 補償 → 央行那一腳也帶 idem_key ⇒ 每輪原樣再送一次，成功過就是 no-op
-            //
-            // ⚠ 「扣了多少」不再用算的，改成**扣完回讀餘額**（before/after 相減）——
-            //   冪等命中時兩者相等，於是「這次沒有動錢」是量出來的，⛔ 不是我推的。
+            // 區塊職責：把這一輪的扣繳**整段派給 Senate Server**（TASK-0278）。
+            // 物理意義：計算與落帳住在 `SCP_Demurrage`／`cmd demurrage`，⛔ 不在這裡。
+            //          本層剩下的只有三件事：**判跨日**（上面）、**派一次**、**把廣播貼上酒館**。
+            // 🩸 為什麼扣款不留在這裡：`SCP_BankLedger` 那把 debit 鎖只在 **同一個 process 內**有效，
+            //   而它成立的前提是「只有 Server 在寫」。Editor 自己算完自己扣＝安靜地多一個寫入端。
+            // ⚠ 為什麼廣播還在這裡：酒館寫入端目前是 **Editor**（`tavern.writer=editor`）
+            //   ⇒ Server 那側沒有資格寫酒館。⛔ 不為了「搬乾淨」而在那邊偷開第二個酒館寫入端
+            //   —— 那是 TASK-0106 正在收斂的那條線。⇒ 本文由 Cmd 組好寫進檔，這裡讀出來貼。
+            // 數值影響：失敗**不推進 state** —— 下一個 tick 會再試一次，而重跑是冪等的。
             // ===========================================================
-            Dictionary<string, int> balancesBefore;
-            var allAccounts = new HashSet<string>();
+            string bodyFile = Path.Combine(UCL_BartenderIO.GetBartenderDir(), $"demurrage_{today}.md");
+            var demurrageArgs = new List<string>
+            {
+                "op=run", "confirm=1", $"date={today}", $"body_out={bodyFile}",
+            };
+            System.Collections.Generic.Dictionary<string, string> demurrageValues;
             try
             {
-                balancesBefore = UCL_TreasuryLedger.GetAllBalances();
-                foreach (var kv in balancesBefore) allAccounts.Add(kv.Key);
+                demurrageValues = UCL_TreasuryAuthority.RunSenateCmd("demurrage", demurrageArgs);
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[Bartender] overnight check 讀不到新銀行餘額: {ex.Message}");
-                MarkPhase("overnight.load_entries", "FAILED");
-                return;  // 不更新 state, 隔下個 tick 再試
+                // ⛔ 不推進 state：這一輪**沒有發生**，下一個 tick 要再來一次。
+                //   ⚠ 而它跟「已經扣過了」不同形 —— 那一種會走完並回冪等命中。
+                Debug.LogWarning($"[Bartender] 跨日保管費派給 Server 失敗，**本輪沒有扣款**：{ex.Message}");
+                MarkPhase("overnight.delegate", "FAILED");
+                return;
             }
-            MarkPhase("overnight.load_entries", $"accounts={allAccounts.Count}（來源＝新銀行）");
+            demurrageValues.TryGetValue("total_fee", out string totalFeeText);
+            demurrageValues.TryGetValue("accounts_charged", out string chargedText);
+            MarkPhase("overnight.delegate", $"charged={chargedText} total_fee={totalFeeText}");
 
-            string useRefPrefix = $"overnight-fee-{today}-";
-            string creditRefPrefix = $"overnight-fee-credit-{today}-";
-
-            
-            // 本輪參數（後台可調；每輪重讀，Tim 改完不必等重編）
-            int overnightThreshold = UCL_CentralBankSettings.OvernightThreshold;
-            double overnightFeeRate = UCL_CentralBankSettings.OvernightFeeRate;
-            string centralBank = UCL_CentralBankSettings.CentralBankAccount;
-            bool exemptCentral = UCL_CentralBankSettings.ExemptCentralBank;
-            string rateDisplay = UCL_CentralBankSettings.FeeRateDisplay;
-            int centralBankIncome = 0;      // 本輪央行實收（廣播用）
-            var exemptReports = new List<string>();
-
-            // ── 區塊：豁免帳戶先結算、先快照（Tim 2026-08-04 拍板）──────────────────────
-            // 物理意義：豁免帳戶的餘額原本是**在扣費迴圈中途**才讀的 —— 帳號字典序輪到它時，
-            //          排在它前面的帳戶已經扣完並把錢 credit 進央行了。於是廣播裡出現三個數字
-            //          彼此對不起來：豁免段 509、本次入庫 +358、央行餘額 611（509 既不是結算前
-            //          的 253 也不是結算後的 611，它是「跑到字母 p 的那一瞬間」）。
-            //          數字沒有錯，錯的是它沒有時點 —— 一個沒有時點的餘額，讀的人無法對帳，
-            //          而對不起來的帳看久了就會被當成雜訊忽略（比沒有更糟）。
-            // 修法：迴圈前先把豁免帳戶抓出來、當場讀餘額（此刻**尚未有任何資金移動**），
-            //      再用「排除豁免」的清單去跑扣費。於是廣播三個數字自動閉合：
-            //      結算前 253 ＋ 本次入庫 358 ＝ 結算後 611。
-            // 邊界：exemptCentral 關閉時集合為空 → 央行照常回到扣費清單，行為與從前一致。
-            //      豁免帳戶**餘額 0 也列**（下面 chargeable 迴圈的 `balance <= 0 continue`
-            //      是為了濾掉雜訊帳號，但豁免是一條 audit 聲明，不是雜訊）。
-            var exemptAccounts = new HashSet<string>();
-            if (exemptCentral && !string.IsNullOrEmpty(centralBank) && allAccounts.Contains(centralBank))
-                exemptAccounts.Add(centralBank);
-            foreach (var account in exemptAccounts.OrderBy(a => a))
-            {
-                string balText;
-                try { balText = UCL_TreasuryLedger.GetBalance(account).ToString(); }
-                catch { balText = "?"; }
-                exemptReports.Add($"- 🏦 @{account}: **結算前** balance {balText} " +
-                                  "(**央行豁免** — 對自己收費會讓 debit/credit 落在同一帳號)");
-            }
-            // 這一段含**本輪第一次 GetBalance** —— 而第一次會觸發 balance 快取初掃
-            // （列舉 ledger 全目錄 + 由每日結帳熱啟）。把它跟扣費迴圈分開量，
-            // 才分得出「慢在快取初掃」還是「慢在逐帳戶扣費」。
-            MarkPhase("overnight.exempt_scan", $"exempt={exemptAccounts.Count}");
-
-            // 4. 對每 account 算超額 fee + debit（已排除豁免帳戶）
-            //    Tim 2026-05-14 拍板補: audit broadcast 也列出沒扣費的 account 餘額 (full transparency)
-            //    → 蒐集兩 list: feeReports (扣費) + safeReports (沒扣費, 但餘額 > 0)
-            var feeReports = new List<string>();
-            var safeReports = new List<string>();
-            int totalFee = 0;
-            foreach (var account in allAccounts.Where(a => !exemptAccounts.Contains(a)).OrderBy(a => a))
-            {
-                if (!balancesBefore.TryGetValue(account, out int balance)) continue;
-                if (balance <= 0) continue;  // 0 或負數 account 不列 (純 noise)
-
-                // ⚠ 「今天扣過了嗎」**不在這一層判**了（TASK-0242 ⑭）——
-                //   唯一有資格判的是 Server（`idem_key`），而它判完的結果我們用**回讀餘額**看得出來。
-                //   ⇒ 所以這裡照常送，冪等命中時 before==after，下面那行會如實印「這次沒有動錢」。
-                if (balance <= overnightThreshold)
-                {
-                    safeReports.Add($"- @{account}: balance {balance} (≤ {overnightThreshold}, 安全)");
-                    continue;
-                }
-
-                int excess = balance - overnightThreshold;
-                int fee = (int)Math.Floor(excess * overnightFeeRate);
-                if (fee <= 0)
-                {
-                    safeReports.Add($"- @{account}: balance {balance} (excess {excess} × {rateDisplay}% = 0, floor 取整免費)");
-                    continue;
-                }
-
-                string useRef = $"{useRefPrefix}{account}";
-                try
-                {
-                    UCL_TreasuryLedger.Debit(
-                        accountId: account,
-                        amount: fee,
-                        useKind: "overnight_storage_fee",
-                        useRef: useRef,
-                        description: $"跨日 {today} 存款保管費 {rateDisplay}% (超過 {overnightThreshold} 的 {excess} × {rateDisplay}% = {fee}) → 存入 {centralBank}",
-                        callerAgentId: "system",
-                        idempotencyKey: useRef);   // ⭐ 判重的唯一權威（Server 端；同 key 重送回既有那一筆）
-
-                    // ⭐ **扣了多少用回讀的，⛔ 不用算的**：冪等命中時 Server 不動錢，
-                    //   而「我算出來的 fee」跟「真的扣掉的數」在那一刻會差一整筆。
-                    int aAfter = UCL_TreasuryLedger.GetBalance(account);
-                    int aMoved = balance - aAfter;
-                    if (aMoved <= 0)
-                    {
-                        safeReports.Add($"- @{account}: balance {balance} (今日已扣過 — 冪等命中，**這次沒有動錢**)");
-                    }
-                    else
-                    {
-                        feeReports.Add($"- @{account}: balance {balance} → **-{aMoved} token** (excess {excess} × {rateDisplay}%)");
-                        totalFee += aMoved;
-                    }
-                    // 入庫那一腳照送（它自己也有 idem_key）—— 送過就是 no-op，沒送過才真的補上。
-                    // ⇒ 「已扣未存」的漏水由這條路收拾，⛔ 不再需要掃帳本找那筆錢是多少。
-                    if (aMoved > 0 && TryDepositToCentralBank(centralBank, aMoved, today, account, creditRefPrefix))
-                        centralBankIncome += aMoved;
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[Bartender] overnight fee debit fail for {account}: {ex.Message}");
-                }
-            }
-
-            MarkPhase("overnight.charge_loop",
-                      $"accounts={allAccounts.Count} charged={feeReports.Count} safe={safeReports.Count}");
-
-            // 5. 推進 state.last_overnight_check_date (即使無人扣費也推進, 避免重跑)
+            // 5. 推進 state.last_overnight_check_date（即使無人扣費也推進，避免重跑）
             state.last_overnight_check_date = today;
             UCL_BartenderIO.SaveState(state);
 
-            // 6. Broadcast 結果 — Tim 2026-05-13 拍板: 每次 cross-day check 都要有 audit 訊息.
-            //    Tim 2026-05-14 拍板補: 沒扣費的 account 餘額也要顯示 (full audit transparency).
-            //    一律分 [扣費] + [安全] 兩段, 各自可空, 一致格式.
+            // 6. Broadcast —— 本文由 Cmd 組好（同一份判準、同一段文字），這裡只負責貼。
+            //    ⚠ 讀不到本文就**不要自己編一段** ——「這一輪發生了什麼」只有 Cmd 知道，
+            //      而一段編出來的公告會蓋掉真正的讀數。出聲，然後不貼。
             string body;
-            string subtag;
-            string headerLine = $"🏦 **跨日存款保管費結算** ({today}) — 超過 {overnightThreshold} token 部分收 {rateDisplay}%，全數存入 {UCL_CentralBankSettings.CentralBankDisplayName}";
-            var bodySb = new System.Text.StringBuilder();
-            bodySb.AppendLine(headerLine);
-            bodySb.AppendLine();
-
-            // 豁免段排在**最前面**（Tim 2026-08-04）：它是「這輪誰不參與扣費」的前提宣告，
-            // 排在扣費結果後面會讀成「事後補充」，而它其實是這輪的起始狀態。
-            if (exemptReports.Count > 0)
-            {
-                bodySb.AppendLine($"### 🏦 豁免帳戶 ({exemptReports.Count} 個, 結算前餘額)");
-                bodySb.AppendLine(string.Join("\n", exemptReports));
-                bodySb.AppendLine();
-            }
-
-            if (feeReports.Count > 0)
-            {
-                bodySb.AppendLine($"### 💸 扣費帳戶 ({feeReports.Count} 個)");
-                bodySb.AppendLine(string.Join("\n", feeReports));
-                bodySb.AppendLine();
-                bodySb.AppendLine($"累計回收: **-{totalFee} token**");
-                bodySb.AppendLine();
-                subtag = "overnight-deposit-fee";
-            }
-            else
-            {
-                bodySb.AppendLine("### ✅ 無扣費 — 全 account 餘額皆 ≤ threshold");
-                bodySb.AppendLine();
-                subtag = "overnight-deposit-fee-clean";
-            }
-
-            if (safeReports.Count > 0)
-            {
-                bodySb.AppendLine($"### 🟢 安全帳戶 ({safeReports.Count} 個, 餘額顯示)");
-                bodySb.AppendLine(string.Join("\n", safeReports));
-                bodySb.AppendLine();
-            }
-
-            // 央行段 —— Tim 2026-08-01「豁免並且列出增額」。豁免與增額都必須看得見：
-            // 這是全系統最大的一條資金流，它流去哪不該只有 code 知道。
-            // （豁免清單已移到廣播最前面當前提宣告，這裡只收尾算增額。）
-            try
-            {
-                int cbBalance = UCL_TreasuryLedger.GetBalance(centralBank);
-                bodySb.AppendLine($"### 🏦 {UCL_CentralBankSettings.CentralBankDisplayName}");
-                bodySb.AppendLine($"- 本次入庫: **+{centralBankIncome} token**");
-                // 「結算後」三個字是這段能不能被對帳的關鍵 —— 上面豁免段標了「結算前」，
-                // 兩個時點都寫明，讀的人才能自己驗：結算前 ＋ 本次入庫 ＝ 結算後。
-                bodySb.AppendLine($"- 央行餘額: **{cbBalance} token**（結算後）");
-                if (centralBankIncome != totalFee)
-                    bodySb.AppendLine($"- ⚠ 入庫 {centralBankIncome} 與扣費 {totalFee} 不符 — 有帳戶扣了但沒入庫，下一輪會偵測並補存");
-                bodySb.AppendLine();
-            }
+            try { body = File.ReadAllText(bodyFile); }
             catch (Exception ex)
             {
-                bodySb.AppendLine($"### 🏦 央行餘額讀取失敗: {ex.Message}");
-                bodySb.AppendLine();
+                Debug.LogWarning($"[Bartender] 保管費廣播本文讀不到（{bodyFile}）：{ex.Message}"
+                                 + " —— ⚠ 錢**已經扣了**（見上面的讀數），只是這一則公告沒有發出去。");
+                MarkPhase("overnight.broadcast", "MISSING_BODY");
+                return;
             }
-            bodySb.Append($"_保管費不再蒸發 — 集中到公庫，之後由活動再分配。{overnightThreshold} 以下不收費_");
-            body = bodySb.ToString();
             var msg = new UCL_ChatMessage
             {
                 sender_id = TavernKeeperId,
@@ -1260,18 +1056,23 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 meta = new Dictionary<string, string>
                 {
                     { "tag", BartenderRelayTag },
-                    { "subtag", subtag },
+                    { "subtag", Value(demurrageValues, "subtag", "overnight-deposit-fee") },
                     { "check_date", today },
-                    { "total_fee", totalFee.ToString() },
-                    { "central_bank", centralBank },
-                    { "central_bank_income", centralBankIncome.ToString() },
-                    { "accounts_charged", feeReports.Count.ToString() },
-                    { "accounts_safe", safeReports.Count.ToString() },
+                    { "total_fee", Value(demurrageValues, "meta_total_fee", "0") },
+                    { "central_bank", Value(demurrageValues, "meta_central_bank", "") },
+                    { "central_bank_income", Value(demurrageValues, "meta_central_bank_income", "0") },
+                    { "accounts_charged", Value(demurrageValues, "meta_accounts_charged", "0") },
+                    { "accounts_safe", Value(demurrageValues, "meta_accounts_safe", "0") },
                 },
             };
             UCL_ChatTavernIO.AppendMessage("tavern", msg);  // 預設 fire mirror = Discord broadcast
             MarkPhase("overnight.broadcast", $"body_len={body.Length}");
         }
+
+        /// <summary>從 Server 印的 `🔢` 值表取一格；沒有就回預設（⛔ 不丟例外 —— 錢已經動了）。</summary>
+        static string Value(System.Collections.Generic.Dictionary<string, string> iValues,
+                            string iKey, string iFallback)
+            => iValues != null && iValues.TryGetValue(iKey, out string aV) && aV.Length > 0 ? aV : iFallback;
     }
 }
 #endif

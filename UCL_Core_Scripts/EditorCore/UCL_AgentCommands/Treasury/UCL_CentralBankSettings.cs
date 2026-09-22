@@ -1,4 +1,8 @@
-﻿// 區塊職責：央行（Pacific Standard Public Deposit Bank）與跨日存款保管費參數的**唯一真相源**。
+﻿// 區塊職責：Unity 這一側的**央行帳號／區域（貨幣）ID／掛號信費**唯讀查詢。
+// ⭐ TASK-0278（2026-09-22）：保管費的門檻／費率／央行豁免**已經不在這裡** ——
+//   唯一真相源是 `SCP_BankPolicy`（`SCP_Core/Runtime/Bank/`），扣繳整段在 Senate 端跑
+//   （`SCP_Demurrage` ／ `senate cmd demurrage`），Unity 只剩觸發。
+//   ⇒ 底下那段經濟模型的敘述**仍然成立**（它講的是錢往哪流），只是實作換了宿主。
 // 物理意義：保管費原本是 UCL_BartenderDaemon 裡兩個 const（threshold=1000 / rate=5%），
 //          改參數要改 code、要重編、Tim 動不了。Tim 2026-08-01 要求後台可調 → 落 JSON。
 //          更根本的一件事同時發生：**保管費不再蒸發，改存央行**。
@@ -35,52 +39,19 @@ using UnityEngine;
 namespace UCL.Core.EditorLib.AgentCommands.Treasury
 {
     /// <summary>
-    /// 央行帳號與保管費參數。UCL_BartenderDaemon 跨日結算時取用；
-    /// 設定檔直接改；Python 端讀同一份 JSON。
+    /// 央行帳號、區域（貨幣）ID 與掛號信費的唯讀查詢。
+    /// <para>⛔ 保管費的門檻／費率／豁免**不在這裡** —— 見 <c>SCP_BankPolicy</c>（TASK-0278）。</para>
     /// </summary>
     public static class UCL_CentralBankSettings
     {
         /// <summary>央行帳號 id（Tim 2026-08-01 命名：Pacific Standard Public Deposit Bank）。</summary>
         public const string DefaultCentralBankAccount = "pacific-standard-public-deposit-bank";
 
-        /// <summary>預設央行的顯示名 —— 只在「央行仍是預設帳戶、且它沒有帳戶資料」時才用得到。</summary>
-        public const string DefaultCentralBankDisplayName = "Pacific Standard Public Deposit Bank";
-
-        // 區塊職責：央行的顯示名。
-        // 物理意義：真相源是**帳戶資料**（`Treasury/accounts/<id>.json` 的 display_name，
-        //          與酒館／Discord 的署名同一個來源）。
-        // 🩸 為什麼不能是常數：央行帳戶住在設定檔裡（⚠ 寫入端已於 TASK-0242 ⑫ 退場，本類現在唯讀）——
-        //   常數會在換了央行之後繼續顯示舊名字，而那是一個**看起來完全正常的錯誤**
-        //   （判準⑤：別造一個名字比事實大的東西）。
-        public static string CentralBankDisplayName
-        {
-            get
-            {
-                string acc = CentralBankAccount;
-                string dn = UCL_BankAccountProfileIO.GetDisplayName(acc);
-                if (!string.IsNullOrEmpty(dn)) return dn;
-                return acc == DefaultCentralBankAccount ? DefaultCentralBankDisplayName : acc;
-            }
-        }
-
-        // 預設值＝改版前的既有行為，本次只把硬編搬成可調參數，不偷改數字。
-        public const int DefaultThreshold = 1000;
-        /// <summary>費率以**千分比整數**存（50 = 5.0%）。</summary>
-        /// <remarks>
-        /// 為什麼不存 double：本 repo 的 JsonData 只有無參數的 `GetDouble()`，
-        /// 帶 key + 預設值的多載**只在 GetInt / GetString 上驗證過**
-        /// （UCL_ChatTavernSettings 用的就是那兩個）。為了一個小數點賭一個沒人用過的多載，
-        /// 換來的是編譯期才發現、或更糟——執行期靜默拿到 0 的費率。
-        /// 千分比整數同時給到 0.1% 的調整粒度，UI 仍以 % 顯示。
-        /// </remarks>
-        public const int DefaultFeePermille = 50;      // 5.0%
-
-        /// <summary>費率下限 0 —— 等於停收（合法的關閉手段，不必改 code）。</summary>
-        public const int MinFeePermille = 0;
-        /// <summary>費率上限 500‰ = 50%。再高一晚就砍半，那不是保管費是沒收。</summary>
-        public const int MaxFeePermille = 500;
-        /// <summary>門檻下限 0 —— 等於全額計費。</summary>
-        public const int MinThreshold = 0;
+        // ⭐ TASK-0278（2026-09-22）：**保管費那一族（門檻／費率／央行豁免／央行顯示名）整段移除**
+        //   —— ⛔ 不留 deprecated 薄殼。唯一真相源是 `SCP_BankPolicy`（Senate 端），扣繳也在那一側跑。
+        //   🩸 為什麼不是「留著當唯讀鏡像」：同名同義的兩份參數會漂，而漂掉時**兩邊都讀得出一個
+        //     合法的數字** —— 誰是權威在畫面上看不出來（本檔頭原本就自己警告過這一格）。
+        //   ⇒ 退路在 git，不在程式碼裡。
 
         public const string SettingsFileName = "bank_settings.json";
 
@@ -111,63 +82,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     if (!string.IsNullOrEmpty(v)) return v.Trim();
                 }
                 return DefaultCentralBankAccount;
-            }
-        }
-
-        /// <summary>超過這個餘額的部分才收保管費。</summary>
-        public static int OvernightThreshold
-        {
-            get
-            {
-                var jd = Load();
-                int v = (jd != null && jd.Contains("overnight_threshold"))
-                    ? jd.GetInt("overnight_threshold", DefaultThreshold) : DefaultThreshold;
-                return v < MinThreshold ? MinThreshold : v;
-            }
-        }
-
-        /// <summary>超額部分的費率，千分比整數（50 = 5.0%）。</summary>
-        public static int OvernightFeePermille
-        {
-            get
-            {
-                var jd = Load();
-                int v = (jd != null && jd.Contains("overnight_fee_permille"))
-                    ? jd.GetInt("overnight_fee_permille", DefaultFeePermille) : DefaultFeePermille;
-                return ClampPermille(v);
-            }
-        }
-
-        /// <summary>費率的小數形式（供計算用）：50‰ → 0.05。</summary>
-        public static double OvernightFeeRate => OvernightFeePermille / 1000.0;
-
-        /// <summary>費率的顯示字串（供 UI / 廣播用）：50‰ → "5"、25‰ → "2.5"。</summary>
-        public static string FeeRateDisplay
-        {
-            get
-            {
-                int p = OvernightFeePermille;
-                return (p % 10 == 0) ? (p / 10).ToString() : (p / 10.0).ToString("0.#");
-            }
-        }
-
-        /// <summary>
-        /// 央行自己免收保管費（Tim 2026-08-01 拍板：豁免，並在稽核廣播列出增額）。
-        /// </summary>
-        /// <remarks>
-        /// 不豁免的話 debit 與 credit 會落在同一個帳號 —— 帳面淨額為零卻多兩筆 ledger，
-        /// 是一筆沒有物理意義的帳。豁免必須**在廣播裡明講**：
-        /// 靜默的豁免下次就沒有人記得為什麼那個帳號不在扣費名單上。
-        /// </remarks>
-        public static bool ExemptCentralBank
-        {
-            get
-            {
-                // 存 0/1 而非 bool —— 理由同費率：只用驗證過的 GetInt 多載（見 DefaultFeePermille 註解）
-                var jd = Load();
-                int v = (jd != null && jd.Contains("exempt_central_bank"))
-                    ? jd.GetInt("exempt_central_bank", 1) : 1;
-                return v != 0;
             }
         }
 
@@ -251,9 +165,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 if (v.IndexOf(c) >= 0) return false;
             return true;
         }
-
-        public static int ClampPermille(int v)
-            => v < MinFeePermille ? MinFeePermille : (v > MaxFeePermille ? MaxFeePermille : v);
 
         static JsonData Load()
         {

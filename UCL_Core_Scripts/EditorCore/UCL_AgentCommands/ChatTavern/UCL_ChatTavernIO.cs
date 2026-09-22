@@ -1068,6 +1068,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var aOut = new StringBuilder();
             var aErr = new StringBuilder();
             int aExit = -1;
+            // ⏱ 碼錶宣告在 try **外面** —— finally 要讀得到它（TASK-0267 ⑧）。
+            //   在這裡起錶會多算「建 Process 物件＋填 StartInfo」那幾行，量級是微秒 ⇒ 不影響結論。
+            var aHopWatch = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 using (var aProc = new Process())
@@ -1108,8 +1111,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     //   而在 n=4 下「兩臂不重疊」是量化雜訊排出來的，不是訊號。
                     // ⛔ 這不是「為這一跳做最佳化」（⑪ 禁的那件事）—— 它只讀不改，
                     //   存在的理由是條文⑧要一個**數字**，而遷移到 Senate 的那天它跟這條路一起消失。
-                    var aHopWatch = System.Diagnostics.Stopwatch.StartNew();
-
                     try { aProc.Start(); }
                     catch (System.ComponentModel.Win32Exception e)
                     {
@@ -1135,16 +1136,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         aExit = aProc.ExitCode;
                     }
 
-                    // ⏱ 一行一則，`🔢` 形狀是為了讓它可以被 grep 成一欄數字（⛔ 不必解析人話）。
-                    //   ⚠ 射程：它量的是 Editor 這側**等那顆 CLI 的時間** ——
-                    //   含 process 起落＋CLI 等 Server 回覆；**冷啟動那一趟還含 autostart**
-                    //   ⇒ 冷暖要分開讀，⛔ 不要把兩者平均在一起。
-                    Debug.Log($"[Tavern] ⏱ CLI 一跳 🔢 hop_ms = {aHopWatch.ElapsedMilliseconds}"
-                              + $"（room={roomId}／exit={aExit}）");
                 }
             }
             finally
             {
+                // ⏱ 一行一則，`🔢` 形狀是為了讓它可以被 grep 成一欄數字（⛔ 不必解析人話）。
+                //   ⚠ 射程：它量的是 Editor 這側**等那顆 CLI 的時間** ——
+                //   含 process 起落＋CLI 等 Server 回覆；**冷啟動那一趟還含 autostart**
+                //   ⇒ 冷暖要分開讀，⛔ 不要把兩者平均在一起。
+                // 🩸 QA（kotoko 2026-09-22）：第一版印在 `WaitForExit` 之後、**還在 try 裡**
+                //   ⇒ 只有成功那條路會印，於是「這行缺席」同時代表**沒走委派路**與**走了但失敗**
+                //   —— 又一個合法的零。⇒ 移進 finally：**只要走過這條路就一定印**，
+                //   失敗那趟印的是它失敗前等了多久（那個數字在查逾時的時候才是重點）。
+                // ⚠ `exit=-1` ＝ 沒有拿到退出碼（叫不到執行檔／逾時），⛔ 不是「退出碼是 -1」。
+                Debug.Log($"[Tavern] ⏱ CLI 一跳 🔢 hop_ms = {aHopWatch.ElapsedMilliseconds}"
+                          + $"（room={roomId}／exit={aExit}"
+                          + (aExit == 0 ? "" : "／⚠ 這一趟**沒有**成功") + "）");
+
                 // 暫存檔留著不影響正確性 ⇒ 刪不掉只是髒，⛔ 不要因此把整筆判成失敗。
                 try { if (File.Exists(aTmp)) File.Delete(aTmp); } catch (Exception) { }
             }

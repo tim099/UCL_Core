@@ -271,6 +271,15 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// 而那顆半截檔會被 <see cref="Load(string)"/> 讀成「空 queue」
         /// ⇒ 下一個「讀 → 加一筆 → 寫回」的呼叫端就把整條 queue 洗掉，
         /// 而它的回讀驗證（只問「我這筆在不在」）**照樣通過**。</para>
+        /// <para>🩸 TASK-0264 QA（kotoko 2026-09-21）：換檔的第一版寫成 <c>Delete</c> 然後 <c>Move</c>，
+        /// 而那兩步之間 <c>queue.json</c> **不存在** —— <see cref="Load(string)"/> 不拿鎖，
+        /// 檔不存在時回 <c>Missing</c> ＋空 queue ⇒ **那是本修法自己新引入的窗口，
+        /// 而它的失效樣子正是本單在治的那一族**（沒拿鎖的讀取端拿到「空」，讀起來像「沒有待辦」）。
+        /// ⇒ 目標存在時走 <c>File.Replace</c>（就地原子替換，Unix 端即 rename），
+        /// 中途沒有任何一瞬間檔案是不存在的。</para>
+        /// <para>⚠ 射程：只有「目標不存在」那一格走 <c>Move</c>（那是建檔，本來就沒有舊值可讀）。
+        /// 而 <c>Exists</c> 與 <c>Replace</c> 之間若有人刪掉目標，<c>Replace</c> 會丟例外被下面的 catch 記成錯誤
+        /// ⇒ **大聲失敗，⛔ 不退回 Delete-then-Move**（退回去等於把剛拆掉的窗口靜默裝回來）。</para>
         /// </remarks>
         public static void Save(UCL_AgentCommandQueueData data, string agentId = null)
         {
@@ -281,13 +290,45 @@ namespace UCL.Core.EditorLib.AgentCommands
                 string json = SerializeJson(data);
                 string tmp = path + ".tmp" + System.Diagnostics.Process.GetCurrentProcess().Id;
                 File.WriteAllText(tmp, json, new UTF8Encoding(false)); // no BOM
-                if (File.Exists(path)) File.Delete(path);
-                File.Move(tmp, path);
+                SwapInto(tmp, path);
                 Debug.Log($"[UCL_AgentCommandQueue] Saved queue -> {path}");
             }
             catch (Exception e)
             {
                 Debug.LogError($"[UCL_AgentCommandQueue] Failed to save queue: {e}");
+            }
+        }
+
+        /// <summary>把 <paramref name="iTmp"/> 換成 <paramref name="iPath"/> —— 中途**不存在**「檔案不存在」的瞬間。</summary>
+        /// <remarks>
+        /// 🔬 TASK-0264 對照組（summit 2026-09-22，Windows，3000 次寫入 × 一個不拿鎖的讀取端狂 stat）：
+        /// <list type="table">
+        /// <item><description><c>Delete</c> 然後 <c>Move</c> ⇒ 取樣 39359 次，**讀到「檔案不存在」20125 次（51.1%）**</description></item>
+        /// <item><description><c>Replace</c> ⇒ 取樣 27441 次，**0 次**</description></item>
+        /// </list>
+        /// ⚠ 而同一組讀數給了第二件事：<c>Replace</c> 在那個極端取樣下被 OS 瞬時拒絕（<c>ACCESS_DENIED</c>）**220 次**，
+        /// 而 <c>Delete</c>＋<c>Move</c> 是 0 次 —— **那是這次修法換來的代價，⛔ 不是白拿的。**
+        /// <para>⇒ 所以這裡收斂一格有限重試：瞬時拒絕會在毫秒內自己過去，而**沒有重試的失效樣子是
+        /// 「Save 悄悄失敗、那一筆指令從此不存在」** —— 正是本單在治的那一族。
+        /// ⛔ 重試次數用完仍失敗就讓它往上炸，**不退回 Delete-then-Move**（退回去等於把剛拆掉的窗口靜默裝回來）。</para>
+        /// <para>⚠ 射程：那 220 次來自一個 thread 每秒數萬次 stat 的 harness，**真實負載下的發生率我沒有量**。
+        /// ⇒ 這格重試是照「代價已知、發生率未知」處理的，不是照一個量到的線上讀數。</para>
+        /// </remarks>
+        private static void SwapInto(string iTmp, string iPath)
+        {
+            const int aMaxAttempt = 5;
+            for (int aAttempt = 1; ; ++aAttempt)
+            {
+                try
+                {
+                    if (File.Exists(iPath)) File.Replace(iTmp, iPath, null); // 原子替換
+                    else File.Move(iTmp, iPath);                             // 建檔（沒有舊值可讀）
+                    return;
+                }
+                catch (Exception) when (aAttempt < aMaxAttempt)
+                {
+                    System.Threading.Thread.Sleep(2 * aAttempt);
+                }
             }
         }
 

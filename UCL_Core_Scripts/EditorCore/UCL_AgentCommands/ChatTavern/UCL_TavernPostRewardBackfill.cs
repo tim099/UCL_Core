@@ -49,34 +49,40 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         const string SourceKind = "work_post";
 
         /// <summary>
-        /// 區塊職責：把 ledger 裡所有 work_post 的 source_ref 收成集合（＝「已經發過的那些則」）。
-        /// 物理意義：這是冪等的唯一依據。**問帳本，不問旗標** —— ledger 沒有去重機制，
-        ///          所以「發過沒」只能由帳上有沒有那筆來回答。
-        /// 數值影響：一次全掃（現有約 8000+ 筆），單次成本可接受；Plan / Apply 各建一次。
+        /// 區塊職責：把帳本裡所有 work_post 的 `ref` 收成集合（＝「已經發過的那些則」）。
+        /// 物理意義：這是冪等的唯一依據 —— **問帳本，不問旗標**。
+        /// 數值影響：一次全掃（新帳本現有約 1000 筆）；Plan / Apply 各建一次。
+        ///
+        /// 🩸 2026-09-22（TASK-0274）改了兩件事，兩件都會靜默給出錯答案：
+        ///   ① 它讀的是**凍結的舊帳本** `Treasury/ledger`（09-18 起不再長）
+        ///      ⇒ 09-18 之後發的每一則都會被當成「沒發過」⇒ **重複增發**。
+        ///   ② 它自己 parse 原檔，用的是舊 schema 的鍵（`source_kind` / `source_ref`）——
+        ///      新帳本那兩格叫 `kind` / `ref` ⇒ 就算路徑改對了，也會**一筆都比對不到**。
+        ///   ⇒ 改成走 `SCP_BankLedger.EnumerateEntries`：帳本解析全系統只有那一份。
+        ///     📌 那也正是本檔隔壁 `UCL_TreasuryLedger` 檔頭那條硬規則
+        ///     （「⛔ 不准自己解析原檔」，Tim 2026-08-20）——而這支一直是它的例外。
         /// </summary>
         static HashSet<string> LoadPaidRefs(out string error)
         {
             error = "";
             var set = new HashSet<string>(StringComparer.Ordinal);
-            string ledgerRoot;
-            try { ledgerRoot = Treasury.UCL_TreasuryPaths.GetLedgerRoot(); }
-            catch (Exception e) { error = "找不到 ledger 目錄：" + e.Message; return set; }
-            if (!Directory.Exists(ledgerRoot)) { error = "ledger 目錄不存在：" + ledgerRoot; return set; }
+            string bankRoot;
+            try { bankRoot = Treasury.UCL_TreasuryAuthority.BankRoot; }
+            catch (Exception e) { error = "找不到銀行根：" + e.Message; return set; }
+            if (!Directory.Exists(bankRoot)) { error = "銀行根不存在：" + bankRoot; return set; }
 
-            foreach (string dayDir in Directory.GetDirectories(ledgerRoot))
+            var problems = new List<string>();
+            foreach (SCP.Core.Bank.SCP_BankEntry e in
+                     SCP.Core.Bank.SCP_BankLedger.EnumerateEntries(bankRoot, problems))
             {
-                foreach (string f in Directory.GetFiles(dayDir, "*.json"))
-                {
-                    try
-                    {
-                        var j = JsonData.ParseJson(File.ReadAllText(f, Encoding.UTF8));
-                        if (j == null || !j.Contains("source_kind")) continue;
-                        if (j["source_kind"].GetString() != SourceKind) continue;
-                        if (j.Contains("source_ref")) set.Add(j["source_ref"].GetString());
-                    }
-                    catch { /* 單筆壞檔不該讓整個補款停擺；但它會讓那則被當成「沒發過」→ 見下方保護 */ }
-                }
+                if (!string.Equals(e.Kind, SourceKind, StringComparison.Ordinal)) continue;
+                if (e.Ref.Length > 0) set.Add(e.Ref);
             }
+            // ⚠ 壞檔要被看見：一筆讀不動的分錄會讓那一則被當成「沒發過」⇒ 重複增發。
+            //   ⛔ 不讓它靜默 —— 而也不因此停擺（下面 `paid.Count == 0` 那道閘才是硬擋）。
+            if (problems.Count > 0)
+                Debug.LogWarning($"[PostRewardBackfill] 帳本有 {problems.Count} 筆讀不動"
+                                 + "（那些則會被當成沒發過）：\n  · " + string.Join("\n  · ", problems));
             return set;
         }
 
@@ -95,9 +101,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 後者會讓補款把**每一則都當成沒發過**而重複增發。分不出來就不要動錢。
             if (paid.Count == 0)
             {
-                r.Error = "ledger 裡找不到任何 work_post 紀錄 —— 可能是路徑錯或解析全失敗。"
+                r.Error = "帳本裡找不到任何 work_post 紀錄 —— 可能是路徑錯或解析全失敗。"
                           + "無法分辨「真的沒發過」與「讀不到帳」，**拒絕執行**（避免重複增發）。"
-                          + "歷史上確實有 8000+ 筆 work_post，若真的歸零請人工確認後再跑。";
+                          + "⚠ 2026-09-22 的讀數：新帳本 `Bank/ledger` 有 799 筆 work_post"
+                          + "（舊 `Treasury/ledger` 那 8000+ 筆已凍結並刪除，⛔ 不是這支要看的）"
+                          + "—— 若真的歸零請人工確認後再跑。";
                 return r;
             }
 
@@ -139,22 +147,35 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         if (!Cmd_Tavern.IsPostRewardEligible(msg.sender_id, category, out _, out string why))
                         { Bump(r.SkipReasons, why); continue; }
 
+                        // 🔴 計酬帳號由 **persona** 決定，⛔ 不是 sender_id —— 判準與發放路徑同一條。
+                        //   🩸 2026-09-22（TASK-0274）量到這支還停在舊判準：拿 `sender_id` 當帳號正是
+                        //     2026-08-14 那隻（`--arg agent=Zeta` 在 `Zeta` 開了一個有錢沒主人的帳戶，
+                        //     實測 310 token）。⇒ 補款跑下去會把那個病**一次重演幾千則**。
+                        //   ⇒ 解析不到就跳過，跟發放路徑一樣**不開新孤兒**。
+                        var payee = Treasury.UCL_BankResolve.Resolve(msg.sender_persona ?? "");
+                        if (string.IsNullOrEmpty(msg.sender_persona) || payee.IsUnresolved)
+                        { Bump(r.SkipReasons, "persona 解析不到正式帳號"); continue; }
+
                         r.Eligible++;
-                        Bump(r.ByAccount, msg.sender_id ?? "(unknown)");
+                        Bump(r.ByAccount, payee.AccountId);
 
                         if (apply)
                         {
                             try
                             {
                                 Treasury.UCL_TreasuryLedger.Credit(
-                                    accountId: msg.sender_id,
+                                    accountId: payee.AccountId,
                                     amount: 1,
                                     sourceKind: SourceKind,
                                     sourceRef: sref,
                                     description: $"post reward backfill: room={roomId} seq={seq} category="
                                                  + (string.IsNullOrEmpty(category) ? "(unset→default)" : category),
                                     callerAgentId: "system",
-                                    cmdId: $"backfill_work_post_{roomId}_{seq}");
+                                    // 🔴 冪等鍵要跟發放路徑**逐字相同**（`work_post_<room>_<seq>`）——
+                                    //   ⛔ 舊版用 `backfill_` 前綴，那等於兩個寫入端各有一把不同的鍵
+                                    //   ⇒ 同一則訊息補款與常態發放**判不了重**，兩邊各付一次。
+                                    cmdId: $"work_post_{roomId}_{seq}",
+                                    idempotencyKey: $"work_post_{roomId}_{seq}");
                                 r.Credited++;
                                 paid.Add(sref);      // 同一次執行內也不重複（防同房重掃）
                             }

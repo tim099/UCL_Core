@@ -83,7 +83,7 @@ REPO_ROOT = _repo_root()
 # letters 走唯一入口（BUG-2）—— 從 REPO_ROOT 自己拼會繞過 data root override
 from _lib.ucl_paths import letters_root as _letters_root
 LETTERS_DIR = _letters_root()
-BANK_SETTINGS = REPO_ROOT / "AgentCommands" / "Treasury" / "bank_settings.json"
+BANK_SETTINGS = REPO_ROOT / "AgentCommands" / "Bank" / "bank_settings.json"   # TASK-0274：從 Treasury/ 搬過來
 
 MAILBOX_DIRNAME = "mailbox"   # 收件者端
 OUTBOX_DIRNAME = "outbox"     # 寄件者端

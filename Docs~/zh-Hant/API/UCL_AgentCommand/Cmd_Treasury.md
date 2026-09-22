@@ -3,7 +3,7 @@ title: Cmd_Treasury — Agent Token 帳本（使用層：op 與欄位怎麼填�
 description: 經濟體的單一財務入口 — 14 個 op 涵蓋餘額查詢（單筆／整批）/ 進出帳 / 守恆轉帳 / 請款單 / 轉帳單 / 每日結帳。本檔講「呼叫時要填什麼」與「哪些欄位其實沒人驗」。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/Treasury/
 namespace: UCL.Core.EditorLib.AgentCommands.Treasury
-last_updated: 2026-09-18
+last_updated: 2026-09-22
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | 姊妹 Cmd | 身分層（agent vs persona）的正名拍板在那邊
@@ -77,8 +77,8 @@ senate ucmd run Treasury \
 | `credit` | **✓ 進帳** | `account` `amount` `source_kind` | 加錢 |
 | `debit` | **✓ 出帳** | `account` `amount` `use_kind` | 扣錢（有帳戶隔離鐵律，見 §3） |
 | `transfer` | **✓ 守恆搬錢** | `from_account` `to_account` `amount` `use_kind` `source_kind` | A→B 原子雙分錄 |
-| `audit` | ✗ | `account` | 列**歷史** entries（舊 `Treasury/`，凍結於 2026-09-18；可帶 `since_ts`） |
-| `verify` | ✗ | `account` | 重放**歷史**全量驗 `balance_before/after` 一致性（同上，只驗凍結那一段） |
+| `audit` | ✗ | `account` | 列該帳戶的分錄明細（**新銀行**；可帶 `since_ts`） |
+| ~~`verify`~~ | ✗ | — | ⛔ **已退場**（TASK-0274）—— 新銀行分錄沒有 `balance_before/after` 可對，照跑會每筆誤報 DRIFT；改用 `closing_list`（驗結帳鏈）／`audit`（看明細） |
 | `request` | ✗ | `target_bank` `amount` `reason` | 開**請款單**（消耗公庫），等 Tim 批 |
 | `request_list` | ✗ | — | 列請款單（預設只列 pending） |
 | `request_cancel` | ✗ | `request_id` | 撤回自己開的請款單 |
@@ -94,11 +94,16 @@ senate ucmd run Treasury \
 > ⚠ `out_path` 落的報表是**某一刻的快照**（自帶 `generated_at` 與帳戶數）；⛔ 它不是第二份真相源，
 > 而且它跟 `balance`、跟舊快照檔**共用同一份快取** —— 三者一致**不是**三個證人。
 
-> **⚠ `audit` / `verify` 問的是「哪個時代」**（2026-09-18，TASK-0242）：
-> 權威切到 Senate 新銀行之後，舊 `Treasury/` **凍結為唯讀歷史**（Tim 拍板：不刪、轉唯讀）。
-> 這兩支讀的是**那本凍結的帳**（`UCL_TreasuryHistory`），⛔ 它們答不出切換之後的任何一筆。
-> ⇒ 表格為空**不代表沒有交易**，只代表那一段不在這本帳上 —— 回傳檔會自己印這句定語。
-> 📌 而 `balance` / `balances` 問的是**現在**（新銀行）⇒ 「歷史累計」加不回「現在餘額」，那不是 bug。
+> **⭐ 2026-09-22（TASK-0274）起只有一本帳了。**
+> 此前 `audit` / `verify` 讀的是**凍結於 2026-09-18 的舊 `Treasury/`**（`UCL_TreasuryHistory`），
+> 而 `balance` / `balances` 問的是新銀行 ⇒ 兩個數字加不回去，文件與程式各寫了一段免責解釋它。
+> 🩸 那個免責本身就是病徵：**一段解釋為什麼兩個數字對不起來的註解，多數時候是在描述一個該修的東西。**
+> ⛔ 而它不會叫 —— 明細少了四天，畫面上跟「這四天沒有動過錢」一模一樣。
+>
+> ⇒ Tim 2026-09-22 拍板「舊帳本與相關文件一起廢棄（刪除），歷史由 git 紀錄」：
+> `UCL_TreasuryHistory` 與 `UCL_TreasuryClosing` **整支刪除**，`audit` 改問新銀行
+> （`UCL_TreasuryLedger.Audit` → `SCP_BankLedger`）⇒ **餘額與明細同源，相減應該要相等**。
+> 📌 酒保的餘額回報現在會**當場對帳**：淨額與餘額不符就印出差額，⛔ 不再只放一句免責。
 
 > **請款單 vs 轉帳單刻意分開**：請款**消耗公庫**（無中生有一筆錢），轉帳**總量守恆**（只換位置）。
 > 審批者要能一眼分辨自己在批哪一種 —— 混成一種單據，公庫就會在沒人注意時被搬空。
@@ -217,7 +222,9 @@ senate ucmd run Treasury --arg op=closing_generate
 - **餘額 0 的帳戶照樣寫入** —— 不寫的話「歸零」跟「這個帳戶不存在」在下游長得一樣，
   金融語意上兩者本質不同。
 - 寫檔 atomic（tmp + move），避免半寫檔被讀到。
-- 落檔：`AgentCommands/Treasury/closing/<YYYY-MM-DD>.json`（日期一律 **UTC**，與 ledger 日期夾同曆）。
+- 落檔：`AgentCommands/Bank/closing/<YYYY-MM-DD>.json`（日期一律 **UTC**，與 ledger 日期夾同曆）。
+- 🔴 **鏈要驗得動**：每份記 `prev_date`；鏈接不上就拒絕暖啟動、退回全量重放並出聲 ——
+  防的是「中間某天的結帳被刪掉」，那會讓餘額**少算一整天**而每一層都回成功。
 
 ### 5.4 `audit` 區塊：記錄而不執法
 
@@ -237,10 +244,10 @@ senate ucmd run Treasury --arg op=closing_generate
 
 | 東西 | 路徑（相對 repo 根） |
 |---|---|
-| ledger entry | `AgentCommands/Treasury/ledger/<YYYY-MM-DD>/<HHMMSS>_<MMM>_<UUID6>__<type>.json` |
-| 每日結帳 | `AgentCommands/Treasury/closing/<YYYY-MM-DD>.json` |
-| 請款單 | `AgentCommands/Treasury/requests/<YYYY-MM-DD>/...__request.json` |
-| 經濟規則宣告 | `AgentCommands/Treasury/rules.json` |
+| ledger entry | `AgentCommands/Bank/ledger/<YYYY-MM-DD>/<HHMMSS>_<MMM>_<UUID6>__<type>.json`（⚠ 舊 `Treasury/ledger/` 已於 2026-09-22 刪除，歷史在 git） |
+| 每日結帳 | `AgentCommands/Bank/closing/<YYYY-MM-DD>.json`（實作＝`SCP_BankClosing`） |
+| 請款單 | `AgentCommands/Bank/requests/<YYYY-MM-DD>/...__request.json`（TASK-0274 搬家；舊路徑由 `SCP_BankMigration` 自動遷移） |
+| ~~經濟規則宣告~~ | ⛔ `Treasury/rules.json` **已刪除**（2026-09-22 全樹 grep 零讀取端 —— 它是一份沒有人看的宣告） |
 | 餘額快取 | `AgentCommands/Treasury/accounts/` |
 
 路徑一律走 `UCL_TreasuryPaths` helper，**不要 hardcode**。

@@ -677,10 +677,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 // python 相依、以及「同一個餘額有兩套算法」。
                 // UCL_TreasuryLedger 是餘額的唯一擁有者（增量快取 + snapshot），也比全掃快。
                 int bal = Treasury.UCL_TreasuryLedger.GetBalance(account);
-                // ⚠ 餘額問的是**新銀行（現在）**，而下面這份明細來自**舊帳本（凍結於 2026-09-18）**。
-                //   ⇒ 兩者的時代不同，所以「累計 +credit/-debit」**推不出**上面那個餘額。
-                //   ⛔ 不要把它們相減當成對帳 —— 那個差額只是「切換之後的帳不在這本上」。
-                var entries = Treasury.UCL_TreasuryHistory.Audit(account);
+                // ⭐ 2026-09-22（TASK-0274）起餘額與明細**同一本帳**（都是新銀行）——
+                //   此前明細來自凍結於 09-18 的舊帳本，兩者時代不同、加不回同一個數字。
+                var entries = Treasury.UCL_TreasuryLedger.Audit(account);
 
                 int credit = 0, debit = 0;
                 foreach (var e in entries)
@@ -690,8 +689,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
                 var sb = new StringBuilder();
                 sb.AppendLine($"💰 **{account} 帳戶餘額**: `{bal}` tavern_token");
-                sb.AppendLine($"📊 **歷史**累計: +{credit} / -{debit}（共 {entries.Count} 筆，資料源＝舊 `Treasury/`，"
-                              + "凍結於 2026-09-18 權威切換；⛔ 切換後的帳不在這裡，所以它加不回上面那個餘額）");
+                sb.AppendLine($"📊 累計: +{credit} / -{debit}（共 {entries.Count} 筆，資料源＝新銀行 `Bank/`）"
+                              + $"　⇒ 淨額 {credit - debit}"
+                              + (credit - debit == bal ? "，與上面的餘額**相符**"
+                                                       : $"，⚠ 與上面的餘額 {bal} **對不起來**（差 {bal - (credit - debit)}）"));
 
                 if (limit > 0 && entries.Count > 0)
                 {
@@ -1022,8 +1023,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             int closingWritten = 0;
             try
             {
-                closingWritten = UCL_TreasuryClosing.GenerateMissing(out string closingSummary);
+                // 🩸 2026-09-22（TASK-0274）換了受詞：舊的 `UCL_TreasuryClosing` 結的是**凍結的**
+                //   `Treasury/ledger`（09-18 起不再長）⇒ 它每天被叫、每天什麼都沒結，
+                //   而畫面上跟「今天沒有要結的」一模一樣（closing/ 最後一份停在 2026-09-18 為證）。
+                //   ⇒ 改打新帳本的 `SCP_BankClosing`。
+                var closingProblems = new List<string>();
+                closingWritten = SCP.Core.Bank.SCP_BankClosing.GenerateMissing(
+                    UCL_TreasuryAuthority.BankRoot, out string closingSummary, closingProblems);
                 if (closingWritten > 0) Debug.Log($"[Bartender] 每日結帳：{closingSummary}");
+                if (closingProblems.Count > 0)
+                    Debug.LogWarning($"[Bartender] 每日結帳有 {closingProblems.Count} 格讀不動：\n  · "
+                                     + string.Join("\n  · ", closingProblems));
             }
             catch (Exception ex)
             {

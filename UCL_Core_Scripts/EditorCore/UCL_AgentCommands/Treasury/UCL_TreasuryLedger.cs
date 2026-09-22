@@ -431,6 +431,44 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public static int GetBalance(string accountId, string currency = "tavern_token")
             => SCP.Core.Bank.SCP_BankLedger.GetBalance(UCL_TreasuryAuthority.BankRoot, accountId, currency);
 
+        // 區塊職責：某帳戶的分錄明細（畫「歷史」那一欄用）。
+        // 🩸 2026-09-22（TASK-0274）從 `UCL_TreasuryHistory` 搬過來，而那支已整支刪除。
+        //   它存在的理由是「現在的錢在新銀行、歷史在凍結的舊帳本，兩個時代要用兩個名字分開」——
+        //   ⇒ **舊帳本刪掉之後那個理由就沒了**，而留著一個叫 History 卻讀著新帳本的類，
+        //     是把一個已經消失的區分寫在名字上騙下一個人。
+        //   ⛔ 而它原本的失效樣子最冷：餘額是今天的、明細停在 09-18，
+        //     兩個數字加不回去而程式裡寫了一段免責解釋它 ——
+        //     **一段解釋為什麼兩個數字對不起來的註解，多數時候是在描述一個該修的東西。**
+        public static List<TreasuryLedgerEntry> Audit(string accountId, string sinceTs = null)
+        {
+            var list = new List<TreasuryLedgerEntry>();
+            string bankRoot = UCL_TreasuryAuthority.BankRoot;
+            if (!Directory.Exists(bankRoot)) return list;
+
+            var problems = new List<string>();
+            string wanted = SCP.Core.Bank.SCP_BankId.Normalize(accountId).Id;
+            foreach (SCP.Core.Bank.SCP_BankEntry e in
+                     SCP.Core.Bank.SCP_BankLedger.EnumerateEntries(bankRoot, problems))
+            {
+                if (!string.Equals(e.AccountId, wanted, StringComparison.Ordinal)) continue;
+                if (!string.IsNullOrEmpty(sinceTs) && string.CompareOrdinal(e.AtUtc, sinceTs) <= 0) continue;
+                list.Add(new TreasuryLedgerEntry
+                {
+                    ts = e.AtUtc,
+                    type = e.Type == SCP.Core.Bank.SCP_BankEntryType.Debit ? "debit" : "credit",
+                    amount = e.Amount,
+                    account_id = e.AccountId,
+                    source_kind = e.Kind,
+                    source_ref = e.Ref,
+                });
+            }
+            // ⚠ 讀不動的分錄要被看見 —— 少掉的那幾筆在明細上跟「沒有那幾筆」同形。
+            if (problems.Count > 0)
+                Debug.LogWarning($"[Treasury] 帳本有 {problems.Count} 筆讀不動（明細會少那幾筆）：\n  · "
+                                 + string.Join("\n  · ", problems));
+            return list;
+        }
+
         // ==========================================================
         // 區塊職責：JSON serialize / parse — 簡易手寫（同 ChatTavern 慣例）
         // ==========================================================

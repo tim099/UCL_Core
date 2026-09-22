@@ -1306,6 +1306,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
 
                 string cmdId = !string.IsNullOrEmpty(idempKey) ? $"{idempKey}_work_post" : $"work_post_{roomId}_{seq}";
+                // 🔴 這個鍵要同時落進 **`idem_key`**，⛔ 不是只落 `cmd_id`。
+                //   `cmd_id` 是「誰派的」（追溯用），**判重的那一格是 `idem_key`** ——
+                //   🩸 2026-09-22 量到：全庫 799 筆 `work_post` 只有 295 筆帶 `idempotency_key`
+                //     （那 295 筆是補款工具寫的，它有帶）⇒ **這條常態路寫出來的分錄判不了重**。
+                //   ⇒ 後果是補發／重放會**付第二次**，而 TASK-0273 的單子上寫著「冪等鍵 ⇒ 重放安全」
+                //     —— 一個寫在紙上而沒有落到資料上的保證，比沒有保證危險。
                 UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.Credit(
                     accountId: payee.AccountId,
                     amount: 1,
@@ -1313,7 +1319,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     sourceRef: PostRewardSourceRef(roomId, seq),
                     description: $"post reward: category={(string.IsNullOrEmpty(categoryMeta) ? "(unset→default)" : categoryMeta)} group={targetGroup.ID} seq={seq}",
                     callerAgentId: "system",
-                    cmdId: cmdId);
+                    cmdId: cmdId,
+                    idempotencyKey: cmdId);
                 Debug.Log($"[Tavern] post_reward auto-credit +1 → {payee.AccountId}"
                           + $"（persona={payPersona}{(payee.Changed ? $" via {payee.Kind}" : "")}, sender={senderId},"
                           + $" group={targetGroup.ID}, category={categoryMeta})");

@@ -84,8 +84,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
         public const string SettingsFileName = "bank_settings.json";
 
+        // 🩸 2026-09-22（TASK-0274）：這裡原本自己拼 `"Treasury"` —— 那是**第四份**同一個路徑的字面
+        //   （另外三份在 `SCP_BankRegion`／`registered_mail.py`／`_lib/persona_profile.py`）。
+        //   我搬檔時只改了看得見的那幾份，於是 Editor 這側讀不到設定 ⇒ 區域變空字串
+        //   ⇒ `letters/<persona>/bank/<區域>.md` 找不到 ⇒ **每一則發文都「解析不到正式帳號」而不計酬**，
+        //     而畫面上跟「這個身分本來就沒登記」一模一樣（活體現形：seq 20022／20023 兩則都沒落帳）。
+        //   🩸 抓不到它的原因更值得記：我那道 grep 帶了 `head`，輸出**剛好**滿行被截斷，
+        //     於是我把「我的窗裡只有一份」讀成「全樹只有一份」。
+        // ⇒ 改成引用 SCP_Core 那一份常數，⛔ 不在這裡再拼一次。
         static string SettingsPath =>
-            Path.Combine(UCL_AgentCommandsPath.DataRoot, "Treasury", SettingsFileName);
+            Path.Combine(UCL_AgentCommandsPath.DataRoot,
+                         SCP.Core.Bank.SCP_BankRegion.SettingsRelPath.Replace('/', Path.DirectorySeparatorChar));
 
         /// <summary>設定檔所在目錄 —— 給後台「開啟設定檔位置」用（路徑只有一個擁有者，不讓頁面自己拼）。</summary>
         public static string SettingsDir => Path.GetDirectoryName(SettingsPath);

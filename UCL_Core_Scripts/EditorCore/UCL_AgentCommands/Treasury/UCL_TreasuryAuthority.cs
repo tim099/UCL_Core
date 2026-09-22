@@ -2,9 +2,11 @@
 // 物理意義：錢記在 Senate 新銀行（`Bank/`）。**讀**直接問 `SCP_BankLedger`（純讀、in-process 安全），
 //          **寫**一律派給常駐的 Senate Server（`senate cmd bank`）。
 // ⛔ 沒有「另一本帳」可以選了：`money_authority` 旗標與 `legacy` 分支已於 TASK-0242 ④ 整段移除
-//   （Tim 2026-09-18：「不刪，轉唯讀就好」⇒ 舊 `Treasury/` 的**資料**原封不動留著當歷史，
-//   而**選它的那條路**沒有留 —— 退路在資料上，不在程式碼上）。
-//   舊帳本要讀 → `UCL_TreasuryHistory`（它的名字就說了那是哪個時代的答案）。
+//   （Tim 2026-09-18：「不刪，轉唯讀就好」⇒ 舊 `Treasury/` 的**資料**當時原封不動留著）。
+//   ⚖ 而 2026-09-22 Tim 改了那一格：「Treasury/ledger ＆ 相關文件一起廢棄（刪除），歷史由 git 紀錄」
+//   ⇒ TASK-0274 把舊帳本與 `UCL_TreasuryHistory`／`UCL_TreasuryClosing` 整支刪除，
+//     明細改問新銀行（`UCL_TreasuryLedger.Audit`）⇒ **餘額與明細回到同一本帳**。
+//   📌 退路現在只在 git 歷史上，⛔ 不在工作區、也不在程式碼裡。
 //
 // 🔬 為什麼寫入一定要繞 Server，而讀取不必（兩個不同的理由，⛔ 別合成一句「統一走 Server」）：
 //   `SCP_BankLedger` 檔頭自己寫著 —— 一筆一檔＋uuid 檔名 ⇒ credit append 天生沒有碰撞；
@@ -90,9 +92,29 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
         /// <summary>新銀行帳本根 —— **沿用描述表那一格的算式**，⛔ 不在這裡再拼一次字面。</summary>
         public static string BankRoot
-            => System.IO.Path.Combine(
-                UCL_RepoPath.AgentCommandsDir,
-                SCP.Core.Paths.SCP_PathRegistry.Get(SCP.Core.Paths.SCP_PathId.BankRoot).DeriveSuffix);
+        {
+            get
+            {
+                // 🚚 舊 `Treasury/` → 新 `Bank/` 的自動遷移（TASK-0275）。冪等，已是新版時零成本。
+                //   掛在這裡的理由：Unity 這側**所有**碰銀行的路都會先問這個根 ⇒ 它是必經路。
+                //   ⚠ 而它是「取值裡的副作用」—— 接受它的判準寫在 `SCP_BankMigration` 檔頭：
+                //     要求每個消費端記得先跑一支遷移指令，等於把正確性押在人記得上。
+                EnsureBankMigrated();
+                return System.IO.Path.Combine(
+                    UCL_RepoPath.AgentCommandsDir,
+                    SCP.Core.Paths.SCP_PathRegistry.Get(SCP.Core.Paths.SCP_PathId.BankRoot).DeriveSuffix);
+            }
+        }
+
+        /// <summary>跑一次自動遷移並把它說的話印出來（⛔ 靜默的搬檔跟沒搬長得一樣）。</summary>
+        static void EnsureBankMigrated()
+        {
+            SCP.Core.Bank.SCP_BankMigration.EnsureOnce(UCL_RepoPath.AgentCommandsDir);
+            var aReport = SCP.Core.Bank.SCP_BankMigration.LastReport;
+            if (aReport == null || aReport.Count == 0) return;
+            SCP.Core.Bank.SCP_BankMigration.ClearReport();
+            UnityEngine.Debug.Log("[Treasury] 銀行資料自動遷移：\n  · " + string.Join("\n  · ", aReport));
+        }
 
         // ===========================================================
         // 區塊職責：把一筆錢派給 Senate Server 寫進新銀行。
@@ -146,7 +168,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 aPsi.ArgumentList.Add("cmd");
                 aPsi.ArgumentList.Add("bank");
                 aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("op=" + iType);
-                aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("bank_root=" + BankRoot);
+                // ⛔ 不帶 `bank_root`（也不要拿 `data_root` 頂替 —— 那是用另一個手填值繞過同一條拍板）。
+                //   它是 `<資料根>/Bank` 的推導值（Tim 2026-09-17）；TASK-0260 起 Cmd 端**拒絕手填**。
+                //   🩸 2026-09-22：這一行沒跟著拿掉 ⇒ 每一筆領薪 exit 2，而 `post 主流程不受影響`
+                //     讓發文照樣回 `announce = Posted` ⇒ **整天 0 筆落帳而沒有任何一層喊**（TASK-0273）。
                 aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("account=" + iAccount);
                 aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("amount=" + iAmount);
                 aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("kind=" + Fallback(iKind, "unspecified"));

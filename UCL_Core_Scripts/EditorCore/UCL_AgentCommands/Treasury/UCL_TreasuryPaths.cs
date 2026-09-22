@@ -16,6 +16,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
     public static class UCL_TreasuryPaths
     {
         public const string TreasuryDirRelative = "AgentCommands/Treasury";
+
+        // 區塊職責：**新帳本根**（TASK-0274 遷移的落點）
+        // 物理意義：2026-09-18 起金流權威是 `AgentCommands/Bank`；舊 `Treasury/` 只剩凍結歷史。
+        //          單據（requests / transfer_requests）與設定此前**刻意留在舊路徑**，
+        //          理由是「它們是單據不是帳」—— 而那讓系統停在半遷移狀態：
+        //          🩸 2026-09-22 量到：刪舊目錄會一起刪掉還在用的請款單，
+        //            而「凍結歷史」與「還活著的單據」在同一個資料夾底下**長得一模一樣**。
+        // 數值影響：只換根，子目錄名與檔名形狀不動 ⇒ 搬檔就是 `git mv`。
+        public const string BankDirRelative = "AgentCommands/Bank";
+
         public const string LedgerDirName = "ledger";
         public const string AccountsDirName = "accounts";
         public const string RulesFile = "rules.json";
@@ -31,6 +41,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         /// 統一改走 ResolveData;預設模式 = RepoRoot/AgentCommands/Treasury,與舊 nested layout 結果相同。</summary>
         public static string GetTreasuryDir()
             => UCL_AgentCommandsPath.ResolveData(TreasuryDirRelative);
+
+        /// <summary>新帳本根（`AgentCommands/Bank`）—— 單據與設定的落點，⛔ 不是凍結的 `Treasury/`。</summary>
+        public static string GetBankDir()
+            => UCL_AgentCommandsPath.ResolveData(BankDirRelative);
 
         /// <summary>ledger/ 根目錄</summary>
         public static string GetLedgerRoot()
@@ -76,9 +90,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public static string GetAccountSnapshotPath(string accountId)
             => Path.Combine(GetAccountsRoot(), $"{accountId}.snapshot.json");
 
-        /// <summary>請款單根目錄（<Treasury>/requests）。</summary>
+        /// <summary>請款單根目錄（<Bank>/requests —— TASK-0274 從 `Treasury/` 搬過來，⛔ 沒有 fallback）。</summary>
         public static string GetRequestsRoot()
-            => Path.Combine(GetTreasuryDir(), RequestsDirName);
+            => Path.Combine(GetBankDir(), RequestsDirName);
 
         /// <summary>請款單的當日分桶目錄 — 與 ledger 同構（按日分桶，避免單一目錄千檔）。</summary>
         public static string GetRequestDateDir(DateTime utcDate)
@@ -92,7 +106,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public const string TransfersDirName = "transfer_requests";
 
         public static string GetTransferRequestsRoot()
-            => Path.Combine(GetTreasuryDir(), TransfersDirName);
+            => Path.Combine(GetBankDir(), TransfersDirName);
 
         public static string GetTransferRequestDateDir(DateTime utcDate)
             => Path.Combine(GetTransferRequestsRoot(), utcDate.ToString("yyyy-MM-dd"));

@@ -194,7 +194,7 @@ def _local_parse() -> dict:
 def _project_region() -> str:
     """本專案的區域（貨幣）ID —— 真相源是 C# 的 `UCL_CentralBankSettings`（bank_settings.json）。"""
     try:
-        p = _PATHS.data_root() / "Treasury" / "bank_settings.json"
+        p = _PATHS.data_root() / "Bank" / "bank_settings.json"   # TASK-0274：從 Treasury/ 搬過來
         if not p.exists():
             return ""
         return str(json.loads(p.read_text(encoding="utf-8")).get("currency_id") or "")

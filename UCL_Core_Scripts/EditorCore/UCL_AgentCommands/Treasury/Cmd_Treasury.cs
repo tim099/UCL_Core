@@ -29,7 +29,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             "debit: account=帳戶ID amount=N use_kind=分類字串(必填,不驗值) [use_ref=...] [description=...] [caller=自報agent_id] [idempotency_key=...] — 出帳；caller 必須==account（除非 system）\n" +
             "transfer (T55): from_account to_account amount use_kind source_kind [reason_ref] [description] [tx_id] [caller=system] — 跨帳戶守恆轉移；atomic dual entry 共用 tx_id；mid-fail rollback\n" +
             "audit: account=帳戶ID [since_ts=ISO8601] — 列 entries\n" +
-            "verify: account=帳戶ID — 跑 replay 驗 balance_after consistency\n" +
+            "verify: ⛔ **已退場**（TASK-0274）—— 新銀行分錄沒有 balance_before/after 可對；改跑 closing_list / audit\n" +
             "request: target_bank=收款bank amount=N reason=為什麼該付 [source_kind=commit|tim_grant|...] [source_ref=SHA/task_id] [agent=請款者agent] [persona=請款者persona] — 開請款單（不動錢，等 Tim 從 `senate cmd bank op=approve` 批款）\n" +
             "request_list: [pending_only=true|false] [max=200] — 列請款單\n" +
             "request_cancel: request_id=<id> [note=原因] — 撤回自己開的請款單\n" +
@@ -373,7 +373,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
             // ⚠ 這一支問的是**歷史**（舊 `Treasury/`，凍結於 2026-09-18 權威切換）——
             //   ⛔ 它答不出切換之後的任何一筆。定語印在回傳檔裡，⛔ 不靠使用者記得。
-            var entries = UCL_TreasuryHistory.Audit(account, sinceTs);
+            var entries = UCL_TreasuryLedger.Audit(account, sinceTs);
             var sb = new StringBuilder();
             sb.Append($"# 📒 Treasury audit（**歷史**）— `{account}`");
             if (!string.IsNullOrEmpty(sinceTs)) sb.Append($" (since `{sinceTs}`)");
@@ -390,37 +390,22 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             Debug.Log($"[Treasury] audit {account} → {entries.Count} entries");
         }
 
+        // 🔴 2026-09-22（TASK-0274）本 op 退場為**指路 stub**，而它是刻意不刪的。
+        //   它驗的是舊帳本每一筆自帶的 `balance_before` / `balance_after` 跟重放對不對得上 ——
+        //   **新銀行的分錄沒有那兩個欄位**（餘額由 `SCP_BankLedger` 重放算出，不存在分錄上）。
+        //   🩸 舊帳本刪掉之後若讓它照跑：那兩欄一律是 0 ⇒ 除了第一筆以外**每一筆都報 DRIFT**
+        //     ⇒ 一面永遠亮紅燈的儀表，比沒有儀表更糟（看的人會學會忽略它）。
+        //   ⛔ 而「整支刪掉」也不對：呼叫它的人會得到「未知 op」，那答不出**為什麼**沒有了。
+        //   ⇒ 退場成一句說得出理由的拒絕。真要驗新帳本，該驗的是別的東西
+        //     （例如結帳鏈：`op=closing_list` 會說暖啟動用不用得上）。
         void Op_Verify(Dictionary<string, string> args)
         {
-            string account = GetArg(args, "account", "");
-            if (string.IsNullOrEmpty(account)) { Cmd_Tavern_Helpers.RejectLastOp(args, "verify 缺少 account"); return; }
-
-            // ⚠ 同 `op=audit`：verify 驗的是**舊帳本自己的內部一致性**（凍結的那一段），
-            //   ⛔ 它不驗新銀行 —— 那一側的餘額由 `SCP_BankLedger` 自己算，沒有 balance_after 欄位可對。
-            var entries = UCL_TreasuryHistory.Audit(account, null);
-            int expectedBalance = 0;
-            int driftCount = 0;
-            var sb = new StringBuilder();
-            foreach (var e in entries)
-            {
-                int beforeMatch = e.balance_before;
-                if (beforeMatch != expectedBalance)
-                {
-                    driftCount++;
-                    sb.AppendLine($"- ⚠ DRIFT entry uuid={e.uuid}: balance_before={beforeMatch} but replay={expectedBalance}");
-                }
-                if (e.type == "credit") expectedBalance += e.amount;
-                else if (e.type == "debit") expectedBalance -= e.amount;
-                if (e.balance_after != expectedBalance)
-                {
-                    driftCount++;
-                    sb.AppendLine($"- ⚠ DRIFT entry uuid={e.uuid}: balance_after={e.balance_after} but replay={expectedBalance}");
-                }
-            }
-            string head = $"# 🔍 Treasury verify — `{account}`\n\n- entries: {entries.Count}\n- final balance (replay): {expectedBalance}\n- drift count: {driftCount}\n";
-            string status = driftCount == 0 ? "\n✅ ledger consistent" : "\n❌ DRIFT detected\n\n" + sb.ToString();
-            Cmd_Tavern_Helpers.WriteLastOp(args, head + status);
-            Debug.Log($"[Treasury] verify {account}: {entries.Count} entries, drift={driftCount}");
+            Cmd_Tavern_Helpers.RejectLastOp(args,
+                "op=verify 已退場（TASK-0274）—— 它驗的是舊帳本分錄自帶的 "
+                + "`balance_before`/`balance_after` 與重放是否一致，而**新銀行的分錄沒有那兩個欄位**"
+                + "（餘額是重放算出來的，不存在分錄上）⇒ 照跑會每一筆都誤報 DRIFT。"
+                + "⇒ 要驗帳本健康度改跑 `op=closing_list`（它會說結帳鏈接不接得上、暖啟動用不用得上）；"
+                + "要看明細跑 `op=audit`。");
         }
 
         // ===========================================================
@@ -519,26 +504,38 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
 
         // 區塊職責：op=closing_generate —— 補齊所有「已完結但尚未結帳」的 UTC 日期。
         // 物理意義：平時由酒保跨日 tick 自動跑；本 op 給人手動補算（首次上線 / 確認狀態）。
-        // 數值影響：只寫 Treasury/closing/*.json，**不動任何餘額、不動 ledger**。
+        // 數值影響：只寫 `Bank/closing/*.json`，**不動任何餘額、不動 ledger**。
         // 邊界：今天不會被結帳（今天還在寫）；已結過的日期不重複寫。
+        // 🩸 2026-09-22（TASK-0274）換了受詞：本支原本結的是**凍結的舊帳本**
+        //   （`Treasury/ledger`，09-18 起不再長）⇒ 它每次被叫都「沒有要結的」，
+        //   而那跟「今天真的沒有新的一天要結」在畫面上是同一句話。
         void Op_ClosingGenerate(Dictionary<string, string> args)
         {
-            int n = UCL_TreasuryClosing.GenerateMissing(out string summary);
+            string bankRoot = UCL_TreasuryAuthority.BankRoot;
+            var problems = new List<string>();
+            int n = SCP.Core.Bank.SCP_BankClosing.GenerateMissing(bankRoot, out string summary, problems);
             var sb = new StringBuilder();
             sb.AppendLine($"# 📘 每日結帳 — 新產生 {n} 份");
             sb.AppendLine();
             sb.AppendLine($"- {summary}");
-            sb.AppendLine($"- 已結帳日期共 {UCL_TreasuryClosing.ListClosingDateKeys().Count} 份");
-            sb.AppendLine($"- 落檔位置：`{UCL_TreasuryPaths.GetClosingRoot()}`");
+            sb.AppendLine($"- 已結帳日期共 {SCP.Core.Bank.SCP_BankClosing.ClosedDayKeys(bankRoot).Count} 份");
+            sb.AppendLine($"- 落檔位置：`{SCP.Core.Bank.SCP_BankClosing.ClosingDir(bankRoot)}`");
             sb.AppendLine();
             sb.AppendLine("餘額讀取 = 最近一份結帳 + 該日之後的 entry。已關帳期間不重算。");
+            if (problems.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"⚠ **有 {problems.Count} 格讀不動**（⛔ 不當成「那裡沒有東西」）：");
+                foreach (string w in problems) sb.AppendLine("  · " + w);
+            }
             Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
         }
 
-        // 區塊職責：op=closing_list —— 列出已結帳日期與最新一份的內容摘要。
+        // 區塊職責：op=closing_list —— 列出已結帳日期與**暖啟動基準**。
         void Op_ClosingList(Dictionary<string, string> args)
         {
-            var keys = UCL_TreasuryClosing.ListClosingDateKeys();
+            string bankRoot = UCL_TreasuryAuthority.BankRoot;
+            var keys = SCP.Core.Bank.SCP_BankClosing.ClosedDayKeys(bankRoot);
             var sb = new StringBuilder();
             sb.AppendLine($"# 📘 已結帳日期（{keys.Count} 份）");
             sb.AppendLine();
@@ -549,13 +546,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             else
             {
                 sb.AppendLine($"- 最早：`{keys[0]}`　最新：`{keys[keys.Count - 1]}`");
-                var latest = UCL_TreasuryClosing.LoadLatestBefore(
-                    UCL_TreasuryPaths.DateKey(System.DateTime.UtcNow));
-                if (latest != null)
-                {
-                    sb.AppendLine($"- 讀取基準：`{latest.DateKey}`（{latest.Balances.Count} 個帳戶／幣別，"
-                                  + $"累計 entry {latest.CumulativeEntryCount}）");
-                }
+                // ⚠ 「有結帳檔」與「暖啟動用得上」是兩件事 —— 鏈驗不過時後者是 null。
+                //   ⛔ 兩者同形的話，一個被砍斷的鏈看起來會跟健康的一模一樣。
+                var basis = SCP.Core.Bank.SCP_BankClosing.FindWarmStart(bankRoot, out string why);
+                if (basis != null)
+                    sb.AppendLine($"- 讀取基準：`{basis.Date}`（{basis.Balances.Count} 種幣別，"
+                                  + $"該日 entry {basis.EntryCount}）");
+                else
+                    sb.AppendLine($"- ⚠ **暖啟動用不上**（改走全量重放）：{why}");
             }
             Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
         }

@@ -42,6 +42,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public readonly Dictionary<string, int> ByAccount = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         public readonly Dictionary<string, int> SkipReasons = new Dictionary<string, int>(StringComparer.Ordinal);
         public readonly List<string> Failures = new List<string>();
+
+        /// <summary>被「整天跳過」擋掉的訊息數。</summary>
+        public int SkippedByDay;
+
+        /// <summary>哪幾天被整天跳過、為什麼 —— ⛔ 一定要印，靜默跳過跟「那天沒缺口」長得一樣。</summary>
+        public readonly List<string> SkipDayNotes = new List<string>();
     }
 
     public static class UCL_TavernPostRewardBackfill
@@ -83,8 +89,48 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (problems.Count > 0)
                 Debug.LogWarning($"[PostRewardBackfill] 帳本有 {problems.Count} 筆讀不動"
                                  + "（那些則會被當成沒發過）：\n  · " + string.Join("\n  · ", problems));
+
+            // 🔴 **已結算清單**：不是走 `work_post` 而是用**別的方式**補過的那些則。
+            //   🩸 2026-09-22：TASK-0273 ⑤ 的 114 則是走**請款**（央行撥款）補的，
+            //     而請款分錄**不帶逐則 ref** ⇒ 本工具看不見它們 ⇒ 不列在這裡就會**再付一次**。
+            //   ⛔ 此前我用啟發式擋（「當天請款撥款 ≥ 當天差集」）—— 那個受詞是錯的：
+            //     09-21 的 `payout_request` 其實是測試撥款給 `template`，跟補薪無關。
+            //   📌 2026-09-22 起補款一律走**增發**（帶 ref）⇒ 這份清單只該有那一批，不該再長。
+            int settled = 0;
+            try
+            {
+                string sp = Path.Combine(Treasury.UCL_TreasuryAuthority.BankRoot, SettledFileName);
+                if (File.Exists(sp))
+                {
+                    var jd = JsonData.ParseJson(File.ReadAllText(sp, Encoding.UTF8));
+                    JsonData batches = (jd != null && jd.Contains("settled")) ? jd["settled"] : null;
+                    if (batches != null && batches.IsArray)
+                        for (int bi = 0; bi < batches.Count; bi++)
+                        {
+                            JsonData b = batches[bi];
+                            if (b == null || !b.Contains("refs")) continue;
+                            JsonData refs = b["refs"];
+                            if (refs == null || !refs.IsArray) continue;
+                            for (int ri = 0; ri < refs.Count; ri++)
+                                if (set.Add(refs[ri].GetString())) settled++;
+                        }
+                }
+            }
+            catch (Exception e)
+            {
+                // ⚠ 讀不動**要出聲並停手** —— 讀不到這份清單就等於「不知道哪些已經補過」，
+                //   而往下跑的後果是重複增發。⛔ 不往付錢的方向猜。
+                error = $"`{SettledFileName}` 讀不動（{e.GetType().Name}：{e.Message}）—— "
+                        + "**拒絕執行**：不知道哪些則已經用別的方式補過，跑下去會重複增發。";
+                return set;
+            }
+            if (settled > 0)
+                Debug.Log($"[PostRewardBackfill] 已結算清單補進 {settled} 筆 ref（那些是用請款等方式補過的）");
             return set;
         }
+
+        /// <summary>已結算清單的檔名（在銀行根底下）。</summary>
+        public const string SettledFileName = "payroll_settled.json";
 
         /// <summary>
         /// 區塊職責：掃全部房間訊息，算出「該補哪些」。
@@ -92,6 +138,83 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// 設計取捨：**不設時間窗**。判準是「帳上有沒有」而不是「哪一天之後」——
         ///          時間窗要人挑，挑錯就漏補或重補；而漏補是靜默的。
         /// </summary>
+        // ===========================================================
+        // 區塊職責：**整天跳過**的名單 —— 兩種日子按下去會付錯錢，而兩種都不會當場叫。
+        // 物理意義：判準**共用 `SCP_PayrollAudit`**（差集只有一份實作）——
+        //          本層若自己再算一次「那天缺幾則」，兩份遲早分岔，而分岔時兩邊都自圓其說。
+        // 數值影響：只讀。回傳的是日期字串集合；被跳過的原因**逐條寫進 oNotes 印在報告上**
+        //          （⛔ 靜默跳過跟「那天沒有缺口」在報告上長得一樣）。
+        //
+        // 🩸 兩種日子，兩筆血證（都是 2026-09-22 當天的）：
+        //   ① **早於權威切換**（`SCP_PayrollAudit.MeasurableFromDayKey`）：那些天的帳在舊
+        //      `Treasury/ledger`，而那本當天被刪除（TASK-0274）⇒ 本工具**一筆都比對不到**
+        //      ⇒ 會把 09-17 以前**每一則**都當成沒發過。實測那三天就有 768 則
+        //      ⇒ 按一下按鈕＝憑空增發近千 token，而**報告上看起來完全合理**。
+        //   ② **當天已經用請款補償過**：請款分錄（`payout_request`）**不帶逐則 `ref`**
+        //      ⇒ 本工具看不見它，於是那些則仍算「沒發過」。09-22 那 114 則就是這樣
+        //      ⇒ 不擋的話會**再發一次**。
+        //   ⇒ 判準是 `該日請款撥款 ≥ 該日差集` 才跳過 —— ⛔ 不是「有請款就整天跳過」：
+        //     09-21 有 2 token 的請款而差 235，整天跳掉就是漏補 235。
+        // ===========================================================
+        static HashSet<string> BuildSkipDays(string roomsRoot, List<string> oNotes)
+        {
+            var skip = new HashSet<string>(StringComparer.Ordinal);
+            var days = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (string roomDir in Directory.GetDirectories(roomsRoot))
+            {
+                string msgDir = Path.Combine(roomDir, "messages");
+                if (!Directory.Exists(msgDir)) continue;
+                foreach (string d in Directory.GetDirectories(msgDir))
+                {
+                    string name = Path.GetFileName(d);
+                    if (SCP.Core.Bank.SCP_BankClosing.IsDateKey(name)) days.Add(name);
+                }
+            }
+
+            string dataRoot = UCL_RepoPath.AgentCommandsDir;
+            string lettersRoot = Treasury.UCL_BankResolve.LettersRoot;
+            string region = Treasury.UCL_BankResolve.Region;
+            var preSwitch = new List<string>();
+
+            foreach (string day in days)
+            {
+                if (string.CompareOrdinal(day, SCP.Core.Bank.SCP_PayrollAudit.MeasurableFromDayKey) < 0)
+                {
+                    // ⚠ 這一類**收斂成一行** —— 它有一百多天，一天一行會把報告淹掉，
+                    //   而被淹掉的那幾行正是「已補償」那一類（真正需要人讀的）。
+                    skip.Add(day);
+                    preSwitch.Add(day);
+                    continue;
+                }
+                // 🔴 過渡日：權威切換那一天有**一部分**錢寫在已刪除的舊帳本上
+                //   ⇒ 差集**結構性偏高**，照數字補會多付。⛔ 它跟上面那類不同：
+                //   那類是整天查無帳，這類是**半天查無帳**，而半天在數字上看不出來。
+                if (day == SCP.Core.Bank.SCP_PayrollAudit.TransitionDayKey)
+                {
+                    skip.Add(day);
+                    oNotes.Add($"⛔ {day}：**權威切換的過渡日** —— 當天有一部分錢寫在已刪除的舊帳本上"
+                               + "（實測新帳本當天已收 261 筆）⇒ 差集偏高，照數字補會**多付**。"
+                               + " 要補得先從 git 撈回那一天的舊 work_post 算出真實缺口（TASK-0277 ③）。");
+                    continue;
+                }
+                // 🩸 這裡原本有第三種判準：「當天請款撥款 ≥ 當天差集 ⇒ 整天跳過」。**已移除，因為它的受詞是錯的。**
+                //   它把「當天有沒有 `payout_request`」當成「當天補過薪了沒」——
+                //   而 2026-09-21 那兩筆 `payout_request` 其實是 TASK-0261/0260 的**活體測試撥款給 `template`**，
+                //   跟補薪一點關係都沒有。⇒ 金額要是剛好對上，它會把一整天（差 235）靜默擋掉。
+                //   ⚠ 而它還很脆：今天差 115、撥款 114 ⇒ **多一則新訊息就讓整天重新開放**，
+                //     那 114 會被重付。⇒ 一個隨當天發文量擺動的閘，不是閘。
+                //   ⇒ 改成 `payroll_settled.json` 那份**逐則 ref 的明確清單**（見 LoadPaidRefs）。
+            }
+
+            if (preSwitch.Count > 0)
+                oNotes.Insert(0,
+                    $"⛔ **{preSwitch.Count} 天**早於權威切換（{SCP.Core.Bank.SCP_PayrollAudit.MeasurableFromDayKey}）"
+                    + $"：{preSwitch[0]} ~ {preSwitch[preSwitch.Count - 1]} —— 那些天的帳在**已刪除**的舊"
+                    + " `Treasury/ledger`（TASK-0274，歷史在 git）⇒ 本工具**查無帳**。"
+                    + " 🩸 **查無帳 ≠ 沒發過**：不擋的話這一段會被整段當成漏發而憑空增發。");
+            return skip;
+        }
+
         public static UCL_PostRewardBackfillResult Run(bool apply)
         {
             var r = new UCL_PostRewardBackfillResult();
@@ -111,6 +234,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             string roomsRoot = UCL_ChatTavernIO.GetRoomsRoot();
             if (!Directory.Exists(roomsRoot)) { r.Error = "找不到 rooms 目錄：" + roomsRoot; return r; }
+
+            // 🔴 整天跳過的名單。⛔ 判準**共用 `SCP_PayrollAudit`**（差集只有一份實作）。
+            HashSet<string> skipDays = BuildSkipDays(roomsRoot, r.SkipDayNotes);
 
             try
             {
@@ -132,6 +258,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         string sref = Cmd_Tavern.PostRewardSourceRef(roomId, seq);
                         r.ScannedMessages++;
                         if (paid.Contains(sref)) { r.AlreadyPaid++; continue; }
+
+                        // 🔴 整天跳過的兩種日子（理由在 BuildSkipDays）。⛔ 這一格在**解析訊息之前**，
+                        //   因為它跟訊息內容無關，而且它擋的是「會付兩次錢」那條路。
+                        string dayKey = Path.GetFileName(Path.GetDirectoryName(files[i]) ?? "");
+                        if (skipDays.Contains(dayKey)) { r.SkippedByDay++; continue; }
 
                         UCL_ChatMessage msg;
                         try { msg = UCL_ChatTavernIO.ParseMessage(File.ReadAllText(files[i], Encoding.UTF8)); }
@@ -202,7 +333,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             var sb = new StringBuilder();
             if (!string.IsNullOrEmpty(r.Error)) return "🚫 " + r.Error;
-            sb.AppendLine($"掃過訊息 {r.ScannedMessages} 則 / 已發過 {r.AlreadyPaid} / **該補 {r.Eligible}**");
+            sb.AppendLine($"掃過訊息 {r.ScannedMessages} 則 / 已發過 {r.AlreadyPaid}"
+                          + $" / 整天跳過 {r.SkippedByDay} / **該補 {r.Eligible}**");
+            // 🔴 被整天跳過的日子**一定要印在最前面** —— 它直接決定「該補」那個數字，
+            //    而靜默跳過跟「那天沒有缺口」在這份報告上長得一模一樣。
+            if (r.SkipDayNotes.Count > 0)
+            {
+                sb.AppendLine("\n整天跳過的日子（⛔ 不是沒缺口，是**這支不該碰**）：");
+                foreach (string n in r.SkipDayNotes) sb.AppendLine("   · " + n);
+            }
             if (r.Cancelled) sb.AppendLine("⚠ 使用者取消 —— 已增發的部分不會回收（重跑會跳過它們，不重複）。");
             if (applied) sb.AppendLine($"✅ 已增發 {r.Credited} token");
             if (r.ByAccount.Count > 0)

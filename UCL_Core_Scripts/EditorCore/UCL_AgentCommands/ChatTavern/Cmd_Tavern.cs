@@ -40,6 +40,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "note_append: room=房間ID key=筆記key body=要追加的文字 [sender=ID]（OS 原子 append；不動 frontmatter）\n" +
             "note_read: room=房間ID key=筆記key（回完整 markdown）\n" +
             "note_list: room=房間ID（列房內所有 note keys）\n" +
+            "post_reward_backfill: [apply=1 confirm=1] — 補「當時該發 +1 卻沒發」的發文計酬（**增發**，不從央行扣）。\n" +
+            "      ⚠ 不給 apply＝**唯讀試算**（零寫入）；apply=1 **必須**同時帶 confirm=1，少一個就拒絕。\n" +
+            "      ⛔ 會整天跳過兩種日子：早於權威切換（帳在已刪除的舊帳本 ⇒ 查無帳≠沒發過）、\n" +
+            "      以及當天請款撥款已 ≥ 差集的（請款分錄不帶逐則 ref，不擋會再發一次）。理由逐條印在報告裡。\n" +
             "note_delete: room=房間ID key=筆記key（刪檔）\n" +
             "─── Quest Workflow (MVP A) — 詳見 Docs~/zh-Hant/Workflows/Quest_Workflow.md ───\n" +
             "task_create: room=房間ID task_id=任務ID title=標題 [role=...] [priority=high|normal|low] [depends_on=t1,t2] [group_id=group名(同group全done自動觸發group_complete)] [suggested_owner=身分ID] [body=Markdown規格] [idempotency_key]\n" +
@@ -246,6 +250,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "note_write": Op_NoteWrite(args); break;
                     case "note_append": Op_NoteAppend(args); break;
                     case "note_read": Op_NoteRead(args); break;
+                    case "post_reward_backfill": Op_PostRewardBackfill(args); break;
                     case "note_list": Op_NoteList(args); break;
                     case "note_delete": Op_NoteDelete(args); break;
                     // Quest Workflow MVP A
@@ -1208,6 +1213,48 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         /// <summary>post_reward 在 ledger 的 source_ref 格式 —— 補款靠它判斷「這則發過沒」。</summary>
         public static string PostRewardSourceRef(string roomId, int seq) => $"{roomId}#seq={seq}";
+
+        // ===========================================================
+        // 區塊職責：`op=post_reward_backfill` —— 把後台那顆「一鍵補全部」開給 CLI。
+        // 物理意義：規則本體在 `UCL_TavernPostRewardBackfill`，本層只是入口。⛔ 不複製判準。
+        // 數值影響：不給 `apply=1` ＝**零寫入**；給了就是**增發**（不從央行或任何帳戶扣）。
+        //
+        // 🩸 為什麼補這個入口（2026-09-22，TASK-0277）：這支此前**只有 Editor 頁面的按鈕**
+        //   ⇒ agent 連「唯讀試算」都叫不動 ⇒ 它的驗收格結構上簽不掉，而看板上跟「還沒做」一樣。
+        //   📌 同一份檔案裡的另一句話早就寫過：「一個不可手動觸發的機制既難驗證也難救援
+        //   （可測性不是奢侈品）」—— 那句當時講的是結帳，而這支自己犯了同一條。
+        // ⚠ `apply` 與 `confirm` 是**兩個**旗標：動錢那條路不可以只差一個字元。
+        // ===========================================================
+        void Op_PostRewardBackfill(Dictionary<string, string> args)
+        {
+            bool apply = GetArg(args, "apply", "").Trim() == "1";
+            bool confirm = GetArg(args, "confirm", "").Trim() == "1";
+            if (apply && !confirm)
+            {
+                RejectLastOp(args,
+                    "post_reward_backfill 帶了 `apply=1` 卻沒有 `confirm=1` —— **這一趟沒有執行**。"
+                    + " 增發之後不會自動回收（要退只能人工反向扣）⇒ 兩個旗標都要。"
+                    + " 先跑不帶 apply 的唯讀試算看各帳戶會拿到多少。");
+                return;
+            }
+
+            UCL_PostRewardBackfillResult res;
+            try { res = UCL_TavernPostRewardBackfill.Run(apply); }
+            catch (Exception e)
+            { FailLastOp(args, $"post_reward_backfill 例外：{e.Message}\n{e.StackTrace}"); return; }
+
+            string md = "# 💸 發文計酬補款" + (apply ? "（**已增發**）" : "（唯讀試算，零寫入）") + "\n\n"
+                        + UCL_TavernPostRewardBackfill.Format(res, apply);
+            UCL_AgentCommandRunner.ReportOutputValue(args, "applied", apply ? "1" : "0");
+            UCL_AgentCommandRunner.ReportOutputValue(args, "scanned", res.ScannedMessages.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "already_paid", res.AlreadyPaid.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "skipped_by_day", res.SkippedByDay.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "eligible", res.Eligible.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "credited", res.Credited.ToString());
+            UCL_AgentCommandRunner.ReportOutputValue(args, "failures", res.Failures.Count.ToString());
+            if (!string.IsNullOrEmpty(res.Error)) { FailLastOp(args, res.Error); return; }
+            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
+        }
 
         static bool IsRealAgentSender(string senderId)
         {

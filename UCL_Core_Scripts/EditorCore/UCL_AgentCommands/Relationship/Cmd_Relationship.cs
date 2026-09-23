@@ -108,6 +108,12 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
                 axis_deltas = aDeltas,
                 reason = aReason,
             };
+            // ⊕ TASK-0291：寫進去**之前**先取一次投影（`iDryRun:true` ⇒ 零寫入）。
+            //   物理意義：`Recompute` 是「逐筆全部累加、最後才 clamp 一次」，
+            //   所以一個已達上限的軸再加正值時，**事件檔裡逐字留著那筆 delta、而投影一動也不動**。
+            //   ⇒ 前後投影相減 ＝ 這一筆**真正生效**的量。⛔ 不碰 `Recompute`（本修法只加輸出）。
+            var aBefore = UCL_RelationshipIO.RebuildCurrent(iPersona, e.target, null, true);
+
             UCL_RelationshipIO.WriteEvent(e, false, out string aEvPath);
 
             string aOpinion = GetArg(iArgs, "opinion", "").Trim();
@@ -118,8 +124,48 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
 
             ioR.AppendLine($"## ✅ {iPersona} → {e.target}");
             ioR.AppendLine($"- 事件：`{Path.GetFileName(aEvPath)}`");
-            ioR.AppendLine($"- 動了 {aDeltas.Count} 軸："
-                + string.Join("　", DeltaStrings(aDeltas)));
+            // ⊕ TASK-0291：逐軸比「要求 delta」與「實際生效 delta」。
+            //   🔴 守衛的判準是**有軸被截斷**，⛔ 不是「分數下降」——
+            //   分數下降有正當成因（真的記了一筆負向事件），兩者不可共用一句訊息。
+            var aTruncated = new List<string>();
+            foreach (var kv in aDeltas)
+            {
+                float aB = aBefore.emotion_vector.TryGetValue(kv.Key, out float b) ? b : 0f;
+                float aA = aCur.emotion_vector.TryGetValue(kv.Key, out float a) ? a : 0f;
+                float aEff = (float)Math.Round(aA - aB, 4);
+                if (Math.Abs(aEff - kv.Value) <= 0.0001f) continue;
+                // ⚠ 這一行的字面要同時對「全額吃掉」與「部分吃掉」成立 ——
+                //   2026-09-23 實測：trust 停在 0.98 時要求 +0.05 只裝得下 +0.02，
+                //   而第一版印「沒有反映在投影上」⇒ **低報**（它其實生效了一部分）。
+                float aLost = (float)Math.Round(kv.Value - aEff, 4);
+                aTruncated.Add($"    · {kv.Key}：要求 {(kv.Value >= 0 ? "+" : "")}"
+                    + kv.Value.ToString("0.####", CultureInfo.InvariantCulture)
+                    + $" ／ 實際 {(aEff >= 0 ? "+" : "")}"
+                    + aEff.ToString("0.####", CultureInfo.InvariantCulture)
+                    + $"　⇒ **有 {Math.Abs(aLost).ToString("0.####", CultureInfo.InvariantCulture)} 沒進投影**"
+                    + $"（該軸現值 {aA.ToString("0.####", CultureInfo.InvariantCulture)}，"
+                    + $"上限 {(kv.Value >= 0 ? UCL_RelationshipAxes.MAX : UCL_RelationshipAxes.MIN)}）");
+            }
+
+            // ⛔ 一軸都沒被截斷時，這一行**逐位元組維持原樣** ——
+            //   新訊息不可以在每一筆正常事件上都多印一行（TASK-0291 ④ 反向對照組）。
+            if (aTruncated.Count == 0)
+            {
+                ioR.AppendLine($"- 動了 {aDeltas.Count} 軸："
+                    + string.Join("　", DeltaStrings(aDeltas)));
+            }
+            else
+            {
+                ioR.AppendLine($"- 要求 {aDeltas.Count} 軸："
+                    + string.Join("　", DeltaStrings(aDeltas)));
+                ioR.AppendLine($"- ⚠ 🔴 **有 {aTruncated.Count} 軸被上限截斷**"
+                    + "（要求的量沒有全部進到投影裡）：");
+                foreach (var t in aTruncated) ioR.AppendLine(t);
+                ioR.AppendLine("  ⛔ 這**不是「沒記到」** —— 事件檔裡逐字留著那筆 delta，"
+                    + "只有投影停在上限。⚠ 而反方向同樣安靜：那幾軸累積出來的餘裕會先吃掉未來的負向事件。");
+                ioR.AppendLine("  📌 ⇒ 若這一筆的 surface_score 沒漲甚至**下降**，成因就在上面那幾行，"
+                    + "⛔ 不是你記錯了方向。");
+            }
             ioR.AppendLine($"- 現值：**{aCur.surface_score}**（{aCur.tier}）　"
                 + $"累計事件 {aCur.event_count} 筆 / 看法 {aCur.opinion_count} 則");
             ioR.AppendLine($"- reason: {aReason}");

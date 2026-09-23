@@ -290,7 +290,19 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public static UCL_SessionLockData ReadLock(string iPersona)
         {
             string aPath = LockPath(iPersona);
-            if (!File.Exists(aPath)) return null;
+            // 🔴 這裡原本是 `if (!File.Exists(aPath)) return null;`（TASK-0265）。
+            //   ⛔ 那一行的代價不是「少讀一個檔」：`null` 在呼叫端的語意是**「這個 persona 沒有登入」**，
+            //     而那正是早安「同一個 persona 不得同時登入兩次」那道守衛讀的東西。
+            //   ⇒ lock 檔換檔那一瞬間（實測窗口 6.4~40.9%）讀到 false ⇒ **守衛放行**，而沒有任何一層會叫。
+            //   ⚠ `Busy` 仍然回 `null`（呼叫端的型別只有「有/沒有」兩種），⛔ 但它**出聲**：
+            //     不出聲的話，「真的沒登入」與「我這次沒讀到」在日誌上也同形。
+            if (!UCL_AtomicFileRead.TryReadAllText(aPath, out _, out UCL_FileReadState aState))
+            {
+                if (aState == UCL_FileReadState.Busy)
+                    UnityEngine.Debug.LogWarning(UCL_AtomicFileRead.DescribeBusy(aPath)
+                        + $" ⇒ 本次把 `{iPersona}` 讀成「沒有 lock」，⚠ 那可能是錯的。");
+                return null;
+            }
             try { return UCL_SessionLockData.LoadFromFile(aPath); }
             catch (Exception e)
             {
@@ -798,8 +810,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public static int KeysOpenCount(string iPersona)
         {
             string aPath = KeysPath(iPersona);
-            if (!File.Exists(aPath)) return 0;
-            try { return File.ReadAllLines(aPath).Count(l => l.TrimStart().StartsWith("- [ ]")); }
+            // ⚠ TASK-0265：`0` 在這裡是「見叢沒有未完項目」，而換檔那一瞬間讀不到也會給同一個 0。
+            //   ⇒ `Missing`（真的還沒有見叢）才回 0；`Busy` 要出聲，⛔ 別讓「沒讀到」長成「都做完了」。
+            if (!UCL_AtomicFileRead.TryReadAllLines(aPath, out string[] aLines, out UCL_FileReadState aState))
+            {
+                if (aState == UCL_FileReadState.Busy)
+                    UnityEngine.Debug.LogWarning(UCL_AtomicFileRead.DescribeBusy(aPath)
+                        + $" ⇒ 本次把 `{iPersona}` 的見叢未完數讀成 0，⚠ 那可能是錯的。");
+                return 0;
+            }
+            try { return aLines.Count(l => l.TrimStart().StartsWith("- [ ]")); }
             catch { return 0; }
         }
 
@@ -1273,8 +1293,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public static int ExpireTokens(string iPersona, string iReason)
         {
             string aTokensPath = Path.Combine(SessionDir, "_tokens.json");
-            if (!File.Exists(aTokensPath)) return 0;
-            JsonData aTokens = JsonData.ParseJson(File.ReadAllText(aTokensPath));
+            // ⚠ TASK-0265：回 0 的語意是「這個 persona 沒有 active token 要作廢」。
+            //   ⇒ 換檔瞬間讀不到 ⇒ **該過期的 token 沒被標 expired，而呼叫端以為它做完了**。
+            //   ⛔ `Busy` 不可以靜默回 0：那是「不知道」，而這條路的下游是安全語意。
+            if (!UCL_AtomicFileRead.TryReadAllText(aTokensPath, out string aTokensJson, out UCL_FileReadState aState))
+            {
+                if (aState == UCL_FileReadState.Busy)
+                    UnityEngine.Debug.LogWarning(UCL_AtomicFileRead.DescribeBusy(aTokensPath)
+                        + $" ⇒ 本次沒有作廢 `{iPersona}` 的任何 token，⚠ 那**不是**「沒有 token 要作廢」。");
+                return 0;
+            }
+            JsonData aTokens = JsonData.ParseJson(aTokensJson);
             if (aTokens == null || !aTokens.Contains("tokens")) return 0;
             var aDic = aTokens["tokens"];
             if (!aDic.IsObject || aDic.Dic == null) return 0;

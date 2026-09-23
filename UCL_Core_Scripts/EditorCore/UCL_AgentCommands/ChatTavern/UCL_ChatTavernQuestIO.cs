@@ -965,6 +965,24 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             return sb.ToString();
         }
 
+        /// <summary>
+        /// 找 <c>"data"</c> 那個值的左大括號位置（回傳 <c>{</c> 的 index；找不到回 -1）。
+        /// <para>⚠ 對 key 與 <c>:</c>、<c>:</c> 與 <c>{</c> 之間的**任意空白**不敏感（TASK-0288）。</para>
+        /// </summary>
+        static int IndexOfDataBrace(string line)
+        {
+            if (string.IsNullOrEmpty(line)) return -1;
+            int k = line.IndexOf("\"data\"");
+            if (k < 0) return -1;
+            int p = k + "\"data\"".Length;
+            while (p < line.Length && char.IsWhiteSpace(line[p])) p++;
+            if (p >= line.Length || line[p] != ':') return -1;
+            p++;
+            while (p < line.Length && char.IsWhiteSpace(line[p])) p++;
+            if (p >= line.Length || line[p] != '{') return -1;
+            return p;
+        }
+
         public static UCL_QuestEvent ParseEvent(string line)
         {
             // MVP：不做完整 JSON parser；只認預期欄位順序（自家 SerializeEvent 寫出來的）。
@@ -976,11 +994,19 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             e.idempotency_key = ExtractStr(line, "\"idempotency_key\":");
             e.type = ExtractStr(line, "\"type\":");
             e.task_id = ExtractStr(line, "\"task_id\":");
-            // data 欄位 (optional) — 簡易抽取 "data":{...} 整段，再 split key/val
-            int dataIdx = line.IndexOf("\"data\":{");
+            // data 欄位 (optional) — 抽 "data" : { ... } 整段，再 split key/val
+            // 🩸 TASK-0288：這裡原本是 IndexOf("\"data\":{") —— 認死「冒號後**緊接**大括號」。
+            //   而全庫 668 個 quest 事件檔裡有 **200 檔**寫的是 `"data": {`（多一個空格，另一個寫入端）
+            //   ⇒ 找不到 ⇒ data **整包被丟掉**；而 data 是 optional ⇒ **沒有任何一層會叫**，
+            //     失效樣子是「那些欄位剛好都是空的」（room `tavern-entry-latency` 的 Role 欄 28 筆全是 `-`）。
+            //   ⛔ 修法不是多比對一個帶空格的字面 —— 那只把洞縮小一格，
+            //     下一個寫入端換成換行或 tab 就又漏，而它一樣不會叫。
+            //   📌 成因可追：本函式檔頭自己寫著「只認自家 SerializeEvent 寫出來的」——
+            //     那句話在寫的當下是誠實的，病在**後來多了第二個寫入端**，而那句話沒有跟著失效。
+            int dataIdx = IndexOfDataBrace(line);
             if (dataIdx >= 0)
             {
-                int start = dataIdx + "\"data\":{".Length;
+                int start = dataIdx + 1;
                 int depth = 1, end = start;
                 while (end < line.Length && depth > 0)
                 {

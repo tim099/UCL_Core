@@ -257,12 +257,22 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static UCL_AgentCommandQueueData Load(string agentId, out QueueReadState oState)
         {
             string path = GetQueuePath(agentId);
-            if (!File.Exists(path))
-            {
-                oState = QueueReadState.Missing;
-                return new UCL_AgentCommandQueueData();
-            }
 
+            // 🩸 TASK-0286（@kotoko 開單，而這扇門是 TASK-0264 的修法自己留下的鄰居）：
+            //   這裡原本是 `if (!File.Exists(path)) ⇒ Missing ＋ 空 queue`，**在重試迴圈之前**。
+            //   ⛔ `File.Exists` 對**任何**失敗都回 false ⇒「檔案真的不存在」與「這一瞬間查不了」
+            //   在它的回傳值上**同形**，而 `Missing` 正是下游被教導成「收尾本來就該有一顆」的那個態。
+            //   ⇒ 換檔飛過去的那一瞬間，讀取端拿到 Missing ＋ **空 queue**，
+            //     而 0264 花三輪建起來的四態**從第一行就被繞過去了**。
+            //
+            // 📊 活體（Unity 行程內，2026-09-23）：外部以 `File.Replace` 持續換檔時，
+            //   Editor 進程內 `File.Exists` 取樣 25 次 ⇒ **False 3 次**，而那個檔全程都在。
+            //
+            // ⇒ 修法＝**用開檔的結果分類，⛔ 不用 stat**（判準是 @kotoko 在 0264 ⊕ 給的：
+            //   `stat` 與「開檔」是兩個不同的 syscall，而只有後者分得出這兩種狀態）。
+            //   ⚠ catch 的**順序**是這個修法的本體：`FileNotFoundException` 與
+            //   `DirectoryNotFoundException` **繼承自 `IOException`** ⇒ 不先接它們的話，
+            //   「真的不存在」會被吃進重試、最後報成 Busy —— 而那會叫呼叫端去等一個不會回來的東西。
             const int aMaxAttempt = 5;
             Exception aLastOpenError = null;
             for (int aAttempt = 1; aAttempt <= aMaxAttempt; ++aAttempt)
@@ -275,6 +285,18 @@ namespace UCL.Core.EditorLib.AgentCommands
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
                 {
                     // ⛔ 開檔這一層的失敗**不落 Unreadable** —— 它多半是換檔在飛，毫秒內自己過去。
+                    //
+                    // 🩸 **`FileNotFoundException` 也走這裡，而那是量出來的，⛔ 不是設計上的寬容**：
+                    //   本單的第一版修法寫「`FileNotFoundException` ⇒ 立刻回 `Missing`，不重試」，
+                    //   理由是「重試不會讓一個不存在的檔長出來」。⚠ 那句話是對的，**而前提是錯的**：
+                    //   活體（Unity 行程內，換檔 107 次/秒，18 次取樣）⇒ 成功 10／`IOException` **5**／
+                    //   **`FileNotFoundException` 3** —— **換檔飛過去的那一瞬間也會丟它**。
+                    //   ⇒ 那一版等於把本單要治的病**換一個入口再做一次**：爭用被判成 Missing ＋ 空 queue。
+                    //   📌 我為了省 20ms，讓一個爭用長得像「不存在」。
+                    //
+                    // ⇒ 所以兩者**都重試**；分類留到重試用完之後，看**最後那個例外的型別**（見迴圈外）。
+                    //   ⚠ 判準的依據是**時間尺度**不是型別：爭用窗口是毫秒級（@kotoko 量到 ~1.4ms），
+                    //   而 2+4+6+8 ＝ 20ms 跨得過去；一個真的不存在的檔，重試 5 次仍然不存在。
                     aLastOpenError = e;
                     if (aAttempt < aMaxAttempt) System.Threading.Thread.Sleep(2 * aAttempt);
                     continue;
@@ -296,9 +318,15 @@ namespace UCL.Core.EditorLib.AgentCommands
                 }
             }
 
-            // 重試用完。⚠ 這裡再問一次磁碟：檔**真的被刪掉**的話那是 Missing，
-            //   把它報成 Busy 會讓呼叫端一直等一個不會回來的東西。
-            if (!File.Exists(path))
+            // 重試用完 ⇒ **在這裡分類**，判準是最後那個例外的型別。
+            // 🩸 TASK-0286：這裡原本**再問一次** `File.Exists` —— 同一族的第二個實例，
+            //   而它是 TASK-0264 的修法自己寫的。爭用時它一樣回 false ⇒ **爭用被判成 Missing**。
+            // ⇒ 換成例外型別：`File.Exists` 對**任何**失敗都回 false（兩種狀態同形），
+            //   而開檔的例外**分得出來** —— 那是 @kotoko 在 TASK-0264 ⊕ 給的判準：
+            //   `stat` 與「開檔」是兩個不同的 syscall，而只有後者回答得了「為什麼拿不到」。
+            // ⚠ 而**重試用完仍然是 FileNotFound** 才算不存在：毫秒級的爭用跨不過 20ms 的重試，
+            //   ⛔ 單次的 FileNotFound 不算（活體：換檔中 18 次取樣就丟了 3 次）。
+            if (aLastOpenError is FileNotFoundException || aLastOpenError is DirectoryNotFoundException)
             {
                 oState = QueueReadState.Missing;
                 return new UCL_AgentCommandQueueData();

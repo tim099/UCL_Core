@@ -667,6 +667,27 @@ namespace UCL.Core.EditorLib.AgentCommands
                 Debug.Log($"[UCL_AgentCmd:{labelTag}] Done. {succeeded} succeeded / {failed} failed / {removed} OneShot removed (success or auto-dequeued failure).");
                 PurgeOldCmdResults();
             }
+            catch (UCL_AgentCommandQueue.QueueLockTimeoutException e)
+            {
+                // 🔴 TASK-0264 QA（kotoko 2026-09-23）：這條路是**本修法自己新引入的**
+                //   （188c3fc3^ 那版 grep LockQueue 零命中）。SaveMerged 兩個呼叫點都在
+                //   per-command try 之**外**，而外層這圈只有 finally、沒有 catch
+                //   ⇒ 鎖逾時會炸穿整批、finally 清掉 trigger，而指令原樣躺在 queue 裡
+                //   —— 失效樣子是**安靜停擆**，沒有任何一層會叫。
+                //
+                // ⛔ **這一條不重新武裝 trigger**，而理由不是「比較保守」：
+                //   兩個呼叫點的共同點是**已經跑過的指令還沒從 queue 裡移除**
+                //   （:431 在每一筆開跑前、:666 在收尾寫回）⇒ 重新武裝 ＝ **同一筆跑兩次**。
+                //   ⚠ 而本檔已經有一個同形的表態（見 finally 裡 Busy 次數用完那一支）：
+                //   它也是「不再自動重來＋大聲說出來」。⇒ 這裡跟它一致，⛔ 不另造第二種立場。
+                Debug.LogError($"[UCL_AgentCmd:{labelTag}] ⛔ 等不到 queue 的互斥鎖（預設 20s）：{e.QueuePath}"
+                               + " ⇒ **本批就此中斷**，而這一輪沒寫回 queue。"
+                               + " ⚠ 已跑過的指令**還在 queue 裡**（移除那一下正好是拿不到鎖的那一下）"
+                               + " ⇒ ⛔ **不自動重來**，因為重來就是同一筆跑兩次。"
+                               + " ⊙ 該做的是：查**是誰長期握著那顆檔**（等不到 20 秒代表有人卡住，"
+                               + "不是瞬間爭用），放掉之後**先回讀 queue 再決定要不要重送**。"
+                               + $"　成因（inner）：{e.InnerException}");
+            }
             finally
             {
                 // 區塊職責：無論成功 / 失敗 / 例外都要清掉 trigger 檔 (per-agent)，但 PlayMode 轉移中斷除外

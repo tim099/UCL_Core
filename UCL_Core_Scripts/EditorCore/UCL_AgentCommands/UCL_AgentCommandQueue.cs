@@ -342,10 +342,46 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// 取這顆 queue 的**跨 process 互斥鎖**（與 TASK-0263 同一支 <c>SCP_FileLock</c>）。
         /// <para>⚠ 「讀 → 改 → 寫回」要**整段**包在裡面；只鎖寫的那一下等於沒鎖。</para>
         /// </summary>
+        /// <para>🩸 TASK-0264 QA（kotoko 2026-09-23）：<c>Acquire</c> 等不到鎖時丟的是一顆
+        /// **裸 <see cref="IOException"/>**，而本檔唯一的呼叫點（<see cref="SaveMerged"/>）
+        /// 跑在 Runner 的外層 <c>try</c> 裡 —— 而那一圈**只有 finally、沒有 catch**
+        /// ⇒ 它會炸穿整批、<c>finally</c> 清掉 trigger，而那幾筆指令**原樣留在 queue 裡**
+        /// —— 沒有任何東西會再來收。⚠ 而它是**本修法自己新引入的**：
+        /// <c>188c3fc3^</c> 那版 grep <c>LockQueue</c> 零命中。</para>
+        /// <para>⇒ 這裡把它換成一個**認得出來的型別**，讓呼叫端分得出
+        /// 「等不到鎖」與其餘 IO 失敗 —— ⛔ 不靠比對例外訊息字串（那把尺會在
+        /// 訊息被改寫的那天**安靜失效**）。</para>
         public static IDisposable LockQueue(string agentId = null)
         {
             EnsureDir(agentId);
-            return SCP.Core.Io.SCP_FileLock.Acquire(GetQueuePath(agentId));
+            string aPath = GetQueuePath(agentId);
+            try
+            {
+                return SCP.Core.Io.SCP_FileLock.Acquire(aPath);
+            }
+            catch (IOException e)
+            {
+                // ⛔ 不吐、不降級（「拿不到鎖還是寫下去」正是 TASK-0264 要根治的病）——
+                //    只換一個呼叫端認得出來的型別，成因整顆掛在 inner 上。
+                throw new QueueLockTimeoutException(aPath, e);
+            }
+        }
+
+        /// <summary>
+        /// 等不到 <c>queue.json</c> 的互斥鎖（<see cref="LockQueue"/> 逾時，預設 20s）。
+        /// <para>⚠ 它的語意是「**有人長期握著那顆檔**」，⛔ 不是「檔壞了」——
+        /// 兩者的處置**相反**：前者查是誰握著，後者修那顆檔。</para>
+        /// </summary>
+        public sealed class QueueLockTimeoutException : IOException
+        {
+            /// <summary>等不到鎖的那顆 queue 檔。</summary>
+            public string QueuePath { get; private set; }
+
+            public QueueLockTimeoutException(string iQueuePath, Exception iInner)
+                : base("等不到 queue 的互斥鎖：" + iQueuePath
+                       + "　⇒ 有人長期握著它（成因見 inner）。"
+                       + "⛔ 本呼叫**沒有**寫入任何東西。", iInner)
+            { QueuePath = iQueuePath; }
         }
 
         /// <summary>寫入 queue.json（會覆寫整個檔案）。</summary>

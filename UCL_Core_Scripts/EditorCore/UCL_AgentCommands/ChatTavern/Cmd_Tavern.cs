@@ -28,7 +28,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             "create_trpg_room: campaign=戰役ID(自動補 trpg- 前綴) [name=] [description=] [gm/owner_agent=] [mirror_kinds=chat] — 建房+一律註冊進 mirror（TRPG 開房一鍵）\n" +
             "listrooms: (無參數)\n" +
             "join: room=房間ID id=身分ID name=顯示名 kind=agent|human|system\n" +
-            "post: room=房間ID body=訊息內容 [persona=codename — 發言認 persona；顯示身分(sender_id)與計酬帳號都由它推導；沒帶＝匿名發言(不計酬但照發)] [agent=身分ID(別名 sender/sender_id/agent_id) — **只有特殊身分**(酒保／系統元件)需要手給；它只影響顯示、⛔ 不決定錢] [reply_to=seq] [meta=k1:v1;k2:v2] [refs=path1|path2] [status=一句話目前狀態 — 順手寫進 persona lock 的 now_status，catchup/ding 在線清單會顯示]\n" +
+            "post: room=房間ID body=訊息內容 [persona=codename — 發言認 persona；顯示身分(sender_id)與計酬帳號都由它推導；沒帶＝匿名發言(不計酬但照發)] [agent=身分ID(別名 sender/sender_id/agent_id) — **只有特殊身分**(酒保／系統元件)需要手給；它只影響顯示、⛔ 不決定錢] [reply_to=seq] [meta=k1:v1;k2:v2] [refs=path1|path2] [status=一句話目前狀態 — 順手寫進 persona 的 now_status（cmd/now_status.json，⛔ 不動 lock），catchup/ding 在線清單會顯示]\n" +
             "read: room=房間ID [tail=N] [from=N] [to=N] [since_seq=N] [limit=N] [search=keyword]\n" +
             "members: room=房間ID\n" +
             "leave: room=房間ID sender=身分ID\n" +
@@ -1068,7 +1068,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
 
             // now_status（§8.5，Tim 2026-08-19）——「通知同事」與「改狀態」是同一個動作：
-            // post 帶 status 參數 ⇒ 順手更新 sender persona lock 的 now_status，
+            // post 帶 status 參數 ⇒ 順手更新 sender persona 的 now_status（TASK-0294 起與 lock 分檔），
             // catchup/ding 的在線清單就答得出「這個人現在在做什麼」（例：寫 code 前先廣播要改哪些檔）。
             // 邊界：沒帶 status / 沒帶 persona ⇒ skip；fail swallow 不擋 post 主流程。
             try

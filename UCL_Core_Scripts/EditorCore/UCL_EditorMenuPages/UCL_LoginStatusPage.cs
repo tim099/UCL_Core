@@ -427,7 +427,7 @@ namespace UCL.Core.EditorLib.Page
                     // 區塊職責：一個 lock 的顯示 —— **摘要一行 ＋ 詳細折疊**（Tim 2026-08-19 指定）。
                     // 物理意義：舊版把 8 個欄位橫著攤成「標題在上、值在下」的兩行 ×8 欄，
                     //          每個 lock 佔兩行、寬度爆出視窗，而**最想知道的那件事
-                    //          （這個人現在在做什麼）根本沒顯示** —— now_status 欄自 §8.5 就存在 lock 裡，
+                    //          （這個人現在在做什麼）根本沒顯示** —— now_status 欄自 §8.5 就存在（當時在 lock 裡；TASK-0294 起分檔到 `cmd/now_status.json`，經 UCL_ActivePersonaLocks 讀），
                     //          catchup／ding 都印，只有這頁沒接。
                     //          ⇒ 摘要行只留身分三格（persona／agent／帳戶）＋ now_status；
                     //            排錯用的欄（實際 Agent／pid／鎖定時間／session_key／token）收進折疊。

@@ -510,23 +510,27 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public static string NowLocal() => DateTime.Now.ToString("yyyy-MM-dd HH:mm:sszzz");
 
         // ===========================================================
-        // 區塊職責：更新 lock 的 now_status（§8.5）—— 「我現在在做什麼」一句話＋時間戳。
-        // 物理意義：now_status 是活體狀態，住 lock（登出即滅、不進 git）；寫入通道只有本函式
-        //          （呼叫端＝Cmd_Tavern post 的 status 參數 —— 「通知同事」與「改狀態」是同一個動作）。
-        //          patch-write：parse 既有 lock、只動兩欄、整檔重寫（lock 不入版控，無 diff churn 問題）。
-        // 數值影響：lock 不存在 ⇒ no-op 回 false（沒登入就沒有「現在狀態」可言）；不動其他欄。
+        // 區塊職責：更新 persona 的 now_status（§8.5）—— 「我現在在做什麼」一句話＋時間戳。
+        // 物理意義：now_status 是活體狀態，寫入通道只有本函式
+        //          （呼叫端＝Cmd_Tavern post 的 status 參數、Cmd_Coding 開場／更新／收場）。
+        //          TASK-0294（Tim 2026-09-25）：**只寫 `cmd/now_status.json`，⛔ 不再改寫 lock** ——
+        //          lock 只在上線寫、下線刪（原本整檔重寫 lock，每次都開一個「lock 不存在」的窗口）。
+        //          狀態檔帶 lock 的 session_key：讀取端對不上就丟棄 ⇒ 上一場的狀態不會掛到新的一場。
+        // 數值影響：lock 不存在或讀不了 ⇒ no-op 回 false（沒登入就沒有「現在狀態」可言）；lock 只讀不寫。
         // ===========================================================
         public static bool UpdateNowStatus(string iPersona, string iStatus)
         {
-            string aPath = LockPath(iPersona);
-            if (!File.Exists(aPath)) return false;
+            if (!UCL_AtomicFileRead.TryReadAllText(LockPath(iPersona), out string aLockText, out _)) return false;
             try
             {
-                var aRaw = JsonData.ParseJson(File.ReadAllText(aPath));
-                if (aRaw == null) return false;
-                aRaw["now_status"] = iStatus ?? "";
-                aRaw["status_updated_at"] = NowIso();
-                AtomicWrite(aPath, aRaw.ToJsonBeautify());
+                var aLock = JsonData.ParseJson(aLockText);
+                if (aLock == null) return false;
+                var aStatus = new JsonData();
+                aStatus["session_key"] = new JsonData(aLock.GetString("session_key", ""));
+                aStatus["now_status"] = new JsonData(iStatus ?? "");
+                aStatus["status_updated_at"] = new JsonData(NowIso());
+                UCL_LettersPath.EnsureCmdDir(iPersona);
+                AtomicWrite(UCL_LettersPath.NowStatus(iPersona), aStatus.ToJsonBeautify());
                 return true;
             }
             catch (Exception e)
@@ -534,6 +538,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 UnityEngine.Debug.LogWarning($"[Awakening] UpdateNowStatus({iPersona}) 失敗：{e.Message}");
                 return false;
             }
+        }
+
+        /// <summary>刪 persona 的 now_status 檔（登入／登出用）。失敗只警告 —— 殘留的狀態檔會被 session_key 比對擋掉。</summary>
+        public static void DeleteNowStatus(string iPersona)
+        {
+            string aPath = UCL_LettersPath.NowStatus(iPersona);
+            try { if (File.Exists(aPath)) File.Delete(aPath); }
+            catch (Exception e) { UnityEngine.Debug.LogWarning($"[Awakening] 刪 now_status 失敗（{aPath}）：{e.Message}"); }
         }
 
         static void AtomicWrite(string iPath, string iContent)
@@ -1007,6 +1019,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aLockJson["session_token"] = aToken;
             Directory.CreateDirectory(Path.GetDirectoryName(LockPath(iPersona)));   // profile/ 通常已在；沒有也不該讓登入炸
             AtomicWrite(LockPath(iPersona), aLockJson.ToJsonBeautify());
+            DeleteNowStatus(iPersona);   // 新的一場從「沒設定狀態」開始（TASK-0294 ④）
 
             string aMemoPath = Path.Combine(MemosDir, aAgent, iPersona, "_session_token.md");
             string aMemoBody =
@@ -1805,6 +1818,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 File.Delete(LockPath(iPersona));
                 aR.AppendLine("🔓 persona lock removed");
             }
+            DeleteNowStatus(iPersona);   // 狀態登出即滅（TASK-0294 ④）—— lock 讀不到時也清，它不閘任何行為
 
             // 廣播 body（系統欄位；summary 由 Cmd 端併入 —— 單則）
             // 晚安廣播的帳號同樣走 persona→帳號 的唯一入口（`aActor` 是舊正向鏈的值，

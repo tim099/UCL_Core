@@ -96,6 +96,22 @@ namespace UCL.Core.EditorLib
         public static string SessionLock(string iPersona) => Path.Combine(ProfileDir(iPersona), SessionLockFileName);
 
         // ===========================================================
+        // 區塊職責：persona 的**目前狀態**（`letters/<persona>/cmd/now_status.json`）—— 「我現在在做什麼」一句話。
+        // 物理意義：TASK-0294（Tim 2026-09-25 拍板）—— lock **只在上線寫、下線刪**，會動態變化的資訊跟 lock 分開讀寫。
+        //          🩸 分開之前 now_status 住在 lock 裡，每次酒館 post 帶 status=／每次 Coding 開場收場
+        //            都整檔重寫 lock（Delete＋Move）⇒ 每一次都開一個「lock 不存在」的窗口，
+        //            而晚安讀到那個窗口會跳過刪 lock（registry 已 offline、lock 殘留、隔天早安被擋）。
+        // ⚠ 放 `cmd/` 不放 `profile/`：`/cmd/*` 在每一份 letters `.gitignore` 都已擋住 ⇒ 零 gitignore 改動；
+        //   而這個檔就算被誤刪，損失的只是一句顯示用的狀態 —— 失效方向是良性的。
+        // ⚠ 檔內帶 `session_key`：讀取端與 lock 的 session_key 對不上就丟棄 ⇒ 上一場殘留的狀態不會掛到新的一場上
+        //   （登入／登出也會刪它，但刪檔失敗不該讓舊狀態復活）。
+        // ===========================================================
+        public const string NowStatusFileName = "now_status.json";
+
+        /// <summary>某 persona 的目前狀態檔（`letters/&lt;persona&gt;/cmd/now_status.json`）—— 與 lock 分開讀寫。</summary>
+        public static string NowStatus(string iPersona) => Path.Combine(CmdDir(iPersona), NowStatusFileName);
+
+        // ===========================================================
         // 區塊職責：persona 的**銀行綁定**目錄（`letters/<persona>/bank/`）—— 一個區域一個檔。
         // 物理意義：Tim 2026-08-20 拍板 —— 銀行（酒館系統）每個專案有自己的區域 ID（貨幣名，
         //          `UCL_CentralBankSettings.CurrencyId`），而 persona 在該區域使用的**帳號**

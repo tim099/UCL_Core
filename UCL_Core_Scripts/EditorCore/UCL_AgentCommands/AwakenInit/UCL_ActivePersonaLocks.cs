@@ -126,6 +126,8 @@ namespace UCL.Core.EditorLib.AgentCommands
                         if (!string.IsNullOrEmpty(declared) && !string.Equals(declared, persona, StringComparison.Ordinal))
                             Debug.LogWarning($"[ActivePersonaLocks] {file} 內 persona='{declared}' 與目錄名 '{persona}' 不同 —— 以目錄名為準");
                         string actualRaw = data.GetString("actual_agent", "");
+                        string sessionKey = data.GetString("session_key", "");
+                        ReadNowStatus(persona, sessionKey, out string nowStatus, out string statusUpdatedAt);
                         list.Add(new UCL_PersonaLockInfo
                         {
                             Persona = persona,
@@ -135,12 +137,12 @@ namespace UCL.Core.EditorLib.AgentCommands
                             ActualAgent = UCL_ActualAgentUtility.ParseOrNone(actualRaw),
                             ActualAgentRaw = actualRaw,
                             LockedAt = data.GetString("locked_at", ""),
-                            SessionKey = data.GetString("session_key", ""),
+                            SessionKey = sessionKey,
                             ClaimOrigin = data.GetString("claim_origin", ""),
                             Pid = data.GetInt("pid", 0),
                             RawSessionToken = data.GetString("session_token", ""),
-                            NowStatus = data.GetString("now_status", ""),
-                            StatusUpdatedAt = data.GetString("status_updated_at", ""),
+                            NowStatus = nowStatus,
+                            StatusUpdatedAt = statusUpdatedAt,
                             FilePath = file.Replace('\\', '/'),
                         });
                     }
@@ -156,6 +158,29 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
             list.Sort((a, b) => string.CompareOrdinal(a.Persona, b.Persona));
             return list;
+        }
+
+        // ===========================================================
+        // 區塊職責：讀 persona 的 now_status（`cmd/now_status.json`，TASK-0294 起與 lock 分檔）。
+        // 物理意義：狀態檔的 session_key 必須等於這一場 lock 的 session_key —— 對不上＝上一場的殘留，丟棄。
+        // 數值影響：檔不存在／讀不了／壞檔／對不上 ⇒ 兩欄皆空（顯示「沒設定目前狀態」）。
+        //          ⚠ 這裡把「讀不了」壓成「沒設定」是刻意的：now_status 只供顯示、不閘任何行為。
+        // ===========================================================
+        static void ReadNowStatus(string persona, string sessionKey, out string nowStatus, out string statusUpdatedAt)
+        {
+            nowStatus = ""; statusUpdatedAt = "";
+            if (!UCL_AtomicFileRead.TryReadAllText(UCL_LettersPath.NowStatus(persona), out string text, out _)) return;
+            try
+            {
+                var data = JsonData.ParseJson(text);
+                if (data == null || !string.Equals(data.GetString("session_key", ""), sessionKey, StringComparison.Ordinal)) return;
+                nowStatus = data.GetString("now_status", "");
+                statusUpdatedAt = data.GetString("status_updated_at", "");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ActivePersonaLocks] 略過壞掉的 now_status 檔（{persona}）：{e.Message}");
+            }
         }
 
         /// <summary>在線清單 —— 過期機制移除後即 <see cref="ListLocks"/> 的語意別名（有 lock ＝ 在線）。</summary>

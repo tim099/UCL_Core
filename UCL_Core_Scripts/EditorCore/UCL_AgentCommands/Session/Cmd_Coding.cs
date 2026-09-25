@@ -6,7 +6,7 @@
 //          只能靠人肉歸因（血證：2026-08-26 basecamp 驗 TASK-0051 時 ErrorLog 混入
 //          summit TASK-0052 施工中的三筆紅）。本 Cmd 讓那件事變成一筆可查的場。
 // 數值影響：寫 sessions/<persona>.json（唯一寫入端仍是 SCP_ActivitySessionStore）
-//          ＋ 順手投影到 persona lock 的 now_status（唯一寫入通道 Awakening.UCL_AwakeningService.UpdateNowStatus）。
+//          ＋ 順手投影到 persona 的 now_status（`cmd/now_status.json`，唯一寫入通道 Awakening.UCL_AwakeningService.UpdateNowStatus）。
 //          退出閘只**讀** .compile_status.json，不寫。
 //
 // ⚠ 射程（A1）：**Unity 側**。Senate 那側的進場入口與 build.sh 退出閘是 A2，本檔沒有。
@@ -285,7 +285,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 throw new Exception("[Coding] 進場被擋 —— 原因與出口見回傳檔：" + iPayload);
             }
 
-            Awakening.UCL_AwakeningService.UpdateNowStatus(iPersona, "🛠 Coding：" + aStatus);
+            bool aStatusOk = Awakening.UCL_AwakeningService.UpdateNowStatus(iPersona, "🛠 Coding：" + aStatus);
             UCL_AgentCommandRunner.ReportOutputValue(args, "started", "1");
             UCL_AgentCommandRunner.ReportOutputValue(args, "session_id", aSession.session_id);
 
@@ -304,7 +304,9 @@ namespace UCL.Core.EditorLib.AgentCommands
             ioR.AppendLine("- ⚠ 到期**不會自動釋放** —— 只是落回「殘留」，別人要搶場仍得顯式跑 "
                            + $"`senate cmd sessions --arg op=close --arg persona={iPersona} --arg confirm=1`（寫別人的檔、留痕跡）。");
             ioR.AppendLine($"- ⭐ 續期走 `step=status`（那一步本來就要跑）：每次更新 status 就順手續 {aHours} 小時。");
-            ioR.AppendLine($"- lock now_status 已同步（顯示端：`senate cmd sessions` / catchup 在線清單）");
+            ioR.AppendLine(aStatusOk
+                ? "- now_status 已同步（顯示端：`senate cmd sessions` / catchup 在線清單）"
+                : "- ⚠ now_status **沒有寫入**（lock 不存在或讀不了 ⇒ 視為未登入）—— 施工場照開，只是在線清單不會顯示這句");
             ioR.AppendLine();
             ioR.AppendLine(kScopeCaveat);
             ioR.AppendLine();
@@ -439,7 +441,7 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             SCP.Core.Session.SCP_ActivitySessionStore.Close(
                 UCL_AgentCommandsPath.ScpDataRoot, iPersona, aSession, aEndReason);
-            Awakening.UCL_AwakeningService.UpdateNowStatus(iPersona, "");
+            bool aClearOk = Awakening.UCL_AwakeningService.UpdateNowStatus(iPersona, "");
 
             UCL_AgentCommandRunner.ReportOutputValue(args, "exited", "1");
             UCL_AgentCommandRunner.ReportOutputValue(args, "forced", aGreen ? "0" : "1");
@@ -448,7 +450,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             ioR.AppendLine($"- session_id: `{aSession.session_id}`");
             ioR.AppendLine($"- end_reason: {aEndReason}");
             if (!aGreen) ioR.AppendLine($"- 🩸 force 理由留在本場的 `force_reason` 欄：{aReason}");
-            ioR.AppendLine("- lock now_status 已清空");
+            ioR.AppendLine(aClearOk ? "- now_status 已清空" : "- ⚠ now_status **沒有清空**（lock 不存在或讀不了）");
             ioR.AppendLine();
             ioR.AppendLine(kScopeCaveat);
         }

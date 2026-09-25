@@ -1260,9 +1260,53 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // @summit 的訊息 summit 完全收不到）。放這裡天然 exactly-once（AppendMessage 是唯一寫入點）。
             NotifyMentions(roomId, msg, derivedSeq, aMsgFilePath);
 
+            // 發薪（TASK-0296）：editor 模式下**寫入端就是這裡** ⇒ 在這裡規劃；server 模式由 Server 寫完規劃
+            //   （Senate `Cmd_TavernWrite`）—— 兩邊呼叫同一支 SCP_TavernPayroll，⛔ 不在 `op=post` 裡另算。
+            PayrollAfterLocalWrite(roomId, msg, derivedSeq);
+
             // Discord 鏡像不在此觸發 (2026-07-28 python 路徑移除)：UCL_DiscordMirrorDaemon 以
             // EditorApplication.update 1Hz 自行 poll + per-webhook 游標送出，寫入端零額外成本。
             return derivedSeq;
+        }
+
+        // ===========================================================
+        // 區塊職責：editor 模式的**寫完就發薪**（TASK-0296）。
+        // 物理意義：規則在 SCP_TavernPayroll（與 Senate Server 寫入端同一支）；入帳走 Unity 這側動錢的唯一出口
+        //          UCL_TreasuryAuthority.Post（它派給銀行那顆 Server）。發薪掛在寫入端而不是 `op=post` ⇒
+        //          任何呼叫 AppendMessage 的入口都照同一套規則（系統身分由規則本身排除，⛔ 不靠「沒走那條路」）。
+        // 數值影響：失敗只警告 —— 訊息已經落檔、seq 已經給出去了，⛔ 不讓寫入回報失敗。冪等命中另外標出來。
+        // ===========================================================
+        static void PayrollAfterLocalWrite(string iRoom, UCL_ChatMessage iMsg, int iSeq)
+        {
+            try
+            {
+                var aIn = new SCP.Core.Tavern.SCP_TavernPayInput
+                {
+                    Room = iRoom, Seq = iSeq, SenderId = iMsg.sender_id ?? "", SenderPersona = iMsg.sender_persona ?? "",
+                    Body = iMsg.body ?? "", Meta = iMsg.meta,
+                };
+                var aPlan = SCP.Core.Tavern.SCP_TavernPayroll.Plan(UCL_AgentCommandsPath.DataRoot, aIn);
+                foreach (string aWarn in aPlan.Warnings)
+                    Debug.LogWarning($"[Tavern] 發薪：{aWarn}（{iRoom}#seq={iSeq}）");
+                foreach (var aItem in aPlan.Items)
+                {
+                    try
+                    {
+                        Treasury.UCL_TreasuryAuthority.Post(aItem.BankOp, aItem.Account, aItem.Amount, aItem.Kind, aItem.Ref,
+                            aItem.Description, "system", aItem.CmdId, aItem.IdemKey, out bool aDup);
+                        Debug.Log("[Tavern] 💰 " + SCP.Core.Tavern.SCP_TavernPayroll.Describe(aItem)
+                                  + (aDup ? "　（冪等命中，錢沒動）" : ""));
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning("[Tavern] ✗ 發薪失敗 " + SCP.Core.Tavern.SCP_TavernPayroll.Describe(aItem) + "：" + e.Message);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Tavern] 發薪規劃例外（訊息已落檔，⛔ 這一則沒發）：{iRoom}#seq={iSeq}：{e.Message}");
+            }
         }
 
         // ===========================================================

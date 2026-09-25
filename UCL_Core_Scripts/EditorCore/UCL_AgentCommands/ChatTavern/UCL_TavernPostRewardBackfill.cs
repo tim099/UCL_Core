@@ -23,7 +23,7 @@
 //
 // ⚠ 兩條命脈，缺一條這支就不能用：
 //
-// ① **判準必須與現行發放路徑同源。** 本檔呼叫 `Cmd_Tavern.IsPostRewardEligible()` 本人，
+// ① **判準必須與現行發放路徑同源。** 本檔呼叫 `SCP_TavernPayroll.IsPostRewardEligible()` 本人（TASK-0296 起發薪規則住 SCP_Core、寫入端規劃也呼叫它），
 //    不複製規則。自己抄一份的話，補出來的是「補款作者以為當時會發的」而不是當時真的會發的 ——
 //    而那種差異沒有人會發現：帳看起來是平的，只是平在錯的基準上。
 //
@@ -267,7 +267,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     for (int i = 0; i < files.Length; i++)
                     {
                         int seq = i + 1;                       // seq 的定義：排序清單的 index+1（與發放路徑一致）
-                        string sref = Cmd_Tavern.PostRewardSourceRef(roomId, seq);
+                        string sref = SCP.Core.Tavern.SCP_TavernPayroll.PostRewardSourceRef(roomId, seq);
                         r.ScannedMessages++;
                         if (paid.Contains(sref)) { r.AlreadyPaid++; continue; }
 
@@ -287,7 +287,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         if (msg.meta != null) msg.meta.TryGetValue("category", out category);
 
                         // ★ 判準走現行發放路徑的同一支函式，不複製規則
-                        if (!Cmd_Tavern.IsPostRewardEligible(msg.sender_id, category, out _, out string why))
+                        if (!SCP.Core.Tavern.SCP_TavernPayroll.IsPostRewardEligible(UCL_AgentCommandsPath.ScpDataRoot.Value, msg.sender_id, category, out _, out string why))
                         { Bump(r.SkipReasons, why); continue; }
 
                         // 🔴 計酬帳號由 **persona** 決定，⛔ 不是 sender_id —— 判準與發放路徑同一條。

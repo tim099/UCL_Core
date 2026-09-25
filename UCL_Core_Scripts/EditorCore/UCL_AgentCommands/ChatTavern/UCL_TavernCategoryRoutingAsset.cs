@@ -1,4 +1,9 @@
-﻿// 區塊職責：Tavern 訊息分類路由規則 — UCL_Asset<T> 持久化資料
+﻿// ⚠⚠ TASK-0296（Tim 2026-09-25 拍板）：**路由語意的真相源已搬到資料根** `ChatTavern/tavern_routing.json`
+//    （SCP_TavernRouting；看／解析：`senate cmd tavern-routing`）。發薪判斷與 Discord 鏡像都讀那一份。
+//    ⇒ 本 asset 現在**只剩一個消費者欄位：`m_WebhookUrls`**（秘密不進資料根，Discord 鏡像依 id 來這裡取）。
+//    ⛔ 在這裡改 m_Categories／m_Enabled／m_IsDefault／m_IsPaidPost／m_Exclusive **不會有任何效果** —— 改資料根那份。
+//    （下方沿革段落描述的是搬家之前的形狀，留著是因為欄位語意沒變。）
+// 區塊職責：Tavern 訊息分類路由規則 — UCL_Asset<T> 持久化資料
 // 物理意義：每個 routing group = 一個 Asset 檔，承載「哪些 category meta tag → 哪組 Discord webhook URL」；
 //          Editor 內透過 UCL_AssetEditPage 視覺化編輯（拖 Inspector 編 List<string>），
 //          Python 端 notify_discord.py 走 _load_category_routing_groups loader 掃 .BuiltinModules dir 載入。
@@ -121,116 +126,5 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         public UCL_TavernCategoryRoutingAsset() { ID = DefaultID; }
         public UCL_TavernCategoryRoutingAsset(string iID) { Init(iID); }
-
-        // ===========================================================
-        // 區塊職責：靜態 helper — 對齊 Python 端 _match_msg_to_routing_groups precedence，
-        //          給 C# 端（Cmd_Tavern.Op_Post）判定訊息 routing target group 用
-        // 物理意義：載入所有 enabled UCL_TavernCategoryRoutingAsset → 命中 category 的 group，
-        //          沒命中走 IsDefault group。回傳第一筆 matched group instance（or null 表都沒命中且沒 default）
-        // 數值影響：fail swallow — Asset dir 不存在 / 任何例外 → 回 null（caller 自決 fallback）
-        // ===========================================================
-
-        // 區塊職責：多命中版 helper — 給 Discord Mirror native daemon（T6）用，對齊 Python
-        //          _match_msg_to_routing_groups 的完整語意（multi-group additive；exclusive 判定交 caller）
-        // 物理意義：單命中版 ResolveTargetGroup 只回第一筆（Cmd_Tavern 房間層路由夠用），但 mirror
-        //          broadcast 語意是「category 命中的每個 enabled group 各收一份」→ 需要完整命中清單。
-        // 數值影響：Layer1 category 命中 0..N 筆全回；Layer2 沒命中 → 回 [第一筆 enabled IsDefault]；
-        //          Layer3 都沒 → 回空 list（caller fallback 走 tavern_mirror.webhook_urls）。
-        // 邊界：fail swallow — Asset dir 不存在 / 例外 → 回空 list；每次呼叫重掃 disk（caller 自行快取）。
-        /// <summary>多命中版：訊息 category 該 broadcast 的所有 routing groups（Python parity，mirror 用）。</summary>
-        public static List<UCL_TavernCategoryRoutingAsset> ResolveTargetGroups(string category)
-        {
-            var result = new List<UCL_TavernCategoryRoutingAsset>();
-            try
-            {
-                // GetAllIDs(true) 強制重掃 module asset dir — 新增 group asset 免 domain reload 即生效
-                var allIDs = new UCL_TavernCategoryRoutingAsset().GetAllIDs(true);
-                if (allIDs == null || allIDs.Count == 0) return result;
-
-                string normalized = (category ?? "").Trim().ToLowerInvariant();
-                UCL_TavernCategoryRoutingAsset defaultGroup = null;
-
-                foreach (var id in allIDs)
-                {
-                    if (string.IsNullOrEmpty(id)) continue;
-                    UCL_TavernCategoryRoutingAsset g = null;
-                    try { g = new UCL_TavernCategoryRoutingAsset().GetData(id, false); } catch { continue; }
-                    if (g == null || !g.m_Enabled) continue;
-
-                    // Layer 1: category 命中 group's m_Categories → 收進 matched（不 early-return，multi-group additive）
-                    bool matched = false;
-                    if (!string.IsNullOrEmpty(normalized) && g.m_Categories != null)
-                    {
-                        foreach (var c in g.m_Categories)
-                        {
-                            if (!string.IsNullOrEmpty(c) && string.Equals(c.Trim().ToLowerInvariant(), normalized))
-                            {
-                                matched = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (matched) result.Add(g);
-
-                    // 順手蒐集 default group 候選（第一筆 enabled IsDefault）
-                    if (defaultGroup == null && g.m_IsDefault) defaultGroup = g;
-                }
-
-                // Layer 2: 都沒命中 → fallback 到 default group（單筆）
-                if (result.Count == 0 && defaultGroup != null) result.Add(defaultGroup);
-            }
-            catch (System.Exception ex)
-            {
-                UnityEngine.Debug.LogWarning($"[UCL_TavernCategoryRoutingAsset.ResolveTargetGroups] fail (category={category})：{ex.Message}");
-            }
-            return result;
-        }
-
-        /// <summary>
-        /// 對訊息 category meta value 解析該 broadcast 的 routing group。
-        /// </summary>
-        /// <param name="category">訊息 meta.category 值（可空字串 = 不帶 category）</param>
-        /// <returns>命中的 group instance；沒命中且沒 default group → null</returns>
-        public static UCL_TavernCategoryRoutingAsset ResolveTargetGroup(string category)
-        {
-            try
-            {
-                // 走 GetAllIDs(true) — 強制重掃 module asset dir，避免 cache 漏看新加入的 group asset
-                var allIDs = new UCL_TavernCategoryRoutingAsset().GetAllIDs(true);
-                if (allIDs == null || allIDs.Count == 0) return null;
-
-                string normalized = (category ?? "").Trim().ToLowerInvariant();
-
-                UCL_TavernCategoryRoutingAsset defaultGroup = null;
-                foreach (var id in allIDs)
-                {
-                    if (string.IsNullOrEmpty(id)) continue;
-                    UCL_TavernCategoryRoutingAsset g = null;
-                    try { g = new UCL_TavernCategoryRoutingAsset().GetData(id, false); /* iUseCache=false → 強制重讀 disk JSON */ } catch { continue; }
-                    if (g == null || !g.m_Enabled) continue;
-
-                    // Layer 1: category 命中 group's m_Categories
-                    if (!string.IsNullOrEmpty(normalized) && g.m_Categories != null)
-                    {
-                        foreach (var c in g.m_Categories)
-                        {
-                            if (!string.IsNullOrEmpty(c) && string.Equals(c.Trim().ToLowerInvariant(), normalized))
-                                return g;
-                        }
-                    }
-
-                    // 順手蒐集 default group 候選（取第一筆 enabled IsDefault）
-                    if (defaultGroup == null && g.m_IsDefault) defaultGroup = g;
-                }
-
-                // Layer 2: 都沒命中 → fallback default group
-                return defaultGroup;
-            }
-            catch (System.Exception ex)
-            {
-                UnityEngine.Debug.LogWarning($"[UCL_TavernCategoryRoutingAsset.ResolveTargetGroup] fail (category={category})：{ex.Message}");
-                return null;
-            }
-        }
     }
 }

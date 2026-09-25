@@ -418,30 +418,30 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             var targets = new List<MirrorRoutingTarget>();
             try
             {
-                var allIDs = new UCL_TavernCategoryRoutingAsset().GetAllIDs(true);
-                if (allIDs != null)
+                // 路由語意（category／enabled／exclusive／default／env var 與 file 名）讀資料根那一份
+                // （TASK-0296：`ChatTavern/tavern_routing.json`，與發薪判斷同一份）。
+                // ⚠ webhook URL **不在那份裡**（秘密不擴散）⇒ 仍依 id 從 Unity asset 取 m_WebhookUrls 當最後備援。
+                var aRouting = SCP.Core.Tavern.SCP_TavernRouting.Read(UCL_AgentCommandsPath.ScpDataRoot.Value);
+                if (!aRouting.Ok)
+                    Debug.LogWarning($"[DiscordMirror] 路由判準讀不了 ⇒ 本輪沒有任何 group 可送：{aRouting.Error}");
+                foreach (var r in aRouting.Groups)
                 {
-                    foreach (var id in allIDs)
+                    if (!r.Enabled) continue;
+                    UCL_TavernCategoryRoutingAsset asset = null;
+                    try { asset = new UCL_TavernCategoryRoutingAsset().GetData(r.Id, false); } catch { /* 沒有對應 asset ⇒ 只剩 env／file 兩個來源 */ }
+
+                    var cats = new HashSet<string>();
+                    foreach (var c in r.Categories)
+                        if (!string.IsNullOrEmpty(c)) cats.Add(c.Trim().ToLowerInvariant());
+
+                    targets.Add(new MirrorRoutingTarget
                     {
-                        if (string.IsNullOrEmpty(id)) continue;
-                        UCL_TavernCategoryRoutingAsset g = null;
-                        try { g = new UCL_TavernCategoryRoutingAsset().GetData(id, false); } catch { continue; }
-                        if (g == null || !g.m_Enabled) continue;
-
-                        var cats = new HashSet<string>();
-                        if (g.m_Categories != null)
-                            foreach (var c in g.m_Categories)
-                                if (!string.IsNullOrEmpty(c)) cats.Add(c.Trim().ToLowerInvariant());
-
-                        targets.Add(new MirrorRoutingTarget
-                        {
-                            id = g.ID,
-                            exclusive = g.m_Exclusive,
-                            isDefault = g.m_IsDefault,
-                            categories = cats,
-                            urls = ResolveScopeUrls(g.m_WebhookEnvVar, g.m_WebhookFile, g.m_WebhookUrls),
-                        });
-                    }
+                        id = r.Id,
+                        exclusive = r.Exclusive,
+                        isDefault = r.IsDefault,
+                        categories = cats,
+                        urls = ResolveScopeUrls(r.WebhookEnvVar, r.WebhookFile, asset?.m_WebhookUrls),
+                    });
                 }
             }
             catch (Exception e) { Debug.LogWarning($"[DiscordMirror] routing groups load fail: {e.Message}"); }

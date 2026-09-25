@@ -197,7 +197,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             {
                 throw new Exception($"[Coding] --arg scope 解析不了：'{aScopeRaw}'"
                     + (aScopeErr.Length > 0 ? $"（{aScopeErr}）" : "")
-                    + " —— 要的是絕對路徑，例：D:/Unity/LY/Assets/Plugins/UCL_Core");
+                    + " —— 要的是絕對路徑，例：D:/Unity/LY/Assets/Plugins/UCL_Core；多段用 | 分隔（TASK-0301）");
             }
 
             int aHours = ParseHours(args);

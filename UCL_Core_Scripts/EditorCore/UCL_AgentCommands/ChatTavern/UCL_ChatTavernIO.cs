@@ -1159,11 +1159,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             string aAll = aOut.ToString() + aErr.ToString();
             if (aExit != 0)
+            {
+                // ⚠ exit≠0 **不全是**「沒寫出去」：`timeout`／`unknown` ＝ 已經送進 Server、只是沒等到回執
+                //   （ServerDelegateCmd.ShouldQueueForLater 同一條判準）⇒ 那兩種要說「不知道，先回讀」。
+                // 🩸 2026-09-25 summit：commit 公告 `delegate_failure = timeout`，本訊息印「這一則沒有寫出去」，
+                //   而那則在 2 秒後落成 seq 21822 —— 照這句補發就是同一個 SHA 付兩次錢。
+                string aFailure = ReadCliReadout(aAll, "delegate_failure");
+                bool aUnknown = aFailure == "timeout" || aFailure == "unknown";
                 throw new InvalidOperationException(
-                    "[Tavern] `senate cmd tavern-write` 以 exit " + aExit + " 結束 ⇒ **這一則沒有寫出去**。"
+                    "[Tavern] `senate cmd tavern-write` 以 exit " + aExit + " 結束 ⇒ "
+                    + (aUnknown
+                        ? "**不知道有沒有寫出去**（delegate_failure=" + aFailure + "：已送進 Server、沒等到回執）⇒ ⛔ 先回讀酒館再決定，別直接重發。"
+                        : "**這一則沒有寫出去**" + (aFailure.Length > 0 ? "（delegate_failure=" + aFailure + "）" : "") + "。")
                     + "　⚠ 輸出裡的 `🔢 delegate_failure` 要分開讀："
                     + "`autostart_timeout` ＝ **不知道**（它可能還在載入 ⇒ 先看啟動 log）；"
                     + "`autostart_failed` ＝ **確定沒起來**（環境有問題，不必等）。\n" + aAll);
+            }
 
             // `🔢 k = v` 是**明文契約**：`Senate.Cli/Program.cs` 的註解逐字寫著那是
             //   「全部 Cmd 共用的機器讀數通道」⇒ 解析它**不是 hack**。

@@ -151,7 +151,7 @@ senate cmd coding --arg data_root=<AgentCommands 根> --arg op=start --arg perso
 | **文件** | `ucl_core:` / `repo:` prefix | 寫死 `Assets/Plugins/UCL_Core/...` |
 
 > 🩸 **2026-08-17 一天內同一個病撞到三次，全部無聲**：
-> `chess.py` 判準寫死 `CardGame/`（別的專案的目錄名）→ fallback 跳到 **repo 外**，
+> `chess.py`（當時的 python 版，TASK-0268 已移植進 C#）判準寫死 `CardGame/`（別的專案的目錄名）→ fallback 跳到 **repo 外**，
 > 整批棋局檔不在版控裡，而 C# 讀 repo 內的舊快照 ⇒ **兩邊骰面對同一局講出相反的話**。
 > `UCL_BartenderDaemon` 用 `dataPath/../..` → 跳出去**剛好命中一棵舊資料樹**，
 > 餘額查詢回報 453、真實帳本 1330 —— **差 877，連錯誤訊息都沒有**。

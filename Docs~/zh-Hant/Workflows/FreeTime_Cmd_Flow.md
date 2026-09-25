@@ -4,7 +4,7 @@ slug: freetime-cmd-flow
 status: active
 created_at: 2026-08-18T03:10:00Z
 created_by: basecamp
-last_updated: 2026-09-07
+last_updated: 2026-09-25
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
@@ -197,7 +197,7 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> 
 |---|---|
 | `id` / `name` | 識別與顯示 |
 | `how` | **給人讀**的執行方式（自由文字） |
-| `tool` | 代跑用的腳本檔名（例 `chess.py`）。**空＝不支援代跑** |
+| `tool` | 代跑用的腳本檔名（例 `<腳本>.py`）。**空＝不走腳本那條路**（改走 `cmd_steps` 或不支援代跑） |
 | `steps` | 允許代跑的子命令**白名單**（逗號分隔）。空＝即使有 tool 也不放行 |
 | `enabled` | `false` = 不進骰面（**停用要留下停用的理由，那是資料不是垃圾**） |
 | `min_minutes` | 建議所需分鐘；0＝不做時間感知排序 |
@@ -208,8 +208,9 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> 
 - 掃描器**跳過 `_` 開頭的檔**（`_README.md` 等）
 - 雙層：共用層（UCL_Core）＋專案層，**同 id 專案覆蓋**
 
-已接代跑：`chess` → `chess.py`（腳本那條路）／`reading`・`book-writing` → **`cmd_steps` 路由到
+已接代跑：`chess` → **`cmd_steps` 路由到 `senate cmd chess`**（TASK-0268，十個 step 全數）／`reading`・`book-writing` → **`cmd_steps` 路由到
 `senate cmd book`**（in-process，不經過腳本；沒有 cmd 平替的 step 一律不列進 `steps`）。
+⚠ 至此**沒有任何活動走腳本那條路**（`tool:`）—— 那條 spawn python 的程式碼還在，但目前沒有消費端。
 ⚠ `canvas-2d` **不接代跑**：它的寫入端是 `senate cmd canvas`，而代跑那層 spawn 的是
 `python <tool>`（`FileName` 寫死 python）⇒ 餵不了 exe。
 ⇒ 它走引擎既有的另一條路：`op=step` 回「尚未支援 Cmd 代跑 —— 自己跑」，指令寫在該活動 md 裡。

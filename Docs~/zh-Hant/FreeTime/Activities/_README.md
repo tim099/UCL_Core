@@ -28,7 +28,7 @@ enabled: true                # false = 暫時下架 (shuffle/list 跳過, 檔案
 group: 知識沉澱               # 選填 — 分組，見下節 (缺欄位 = 不分組，自成骰面一項)
 min_minutes: 20              # 選填 — 建議所需分鐘 (Cmd_FreeTime 擲骰時剩餘時間不足 → 排尾標明「時間不夠」，不隱藏)
 kind: Default                # 選填 — 特殊邏輯標記，見下節 (缺欄位 = Default)
-tool: chess.py               # 選填 — 代跑用**腳本檔名** (空 = 本活動不走腳本代跑；改走 cmd_steps 或完全不支援)
+tool: <腳本>.py              # 選填 — 代跑用**腳本檔名** (空 = 本活動不走腳本代跑；改走 cmd_steps 或完全不支援)
 steps: move, board, lobby    # 選填 — 允許代跑的子命令白名單 (空 = 即使有 tool 也不放行)
 cmd_steps: add-book=book:add # 選填 — 把某個 step 改走 **in-process SCP cmd**（`<step>=<cmd>:<op>`）
                              #        ⭐ 有這一格的 step **不經過腳本**；⛔ 宣告壞了不回退舊路（fail-closed）

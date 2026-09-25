@@ -648,30 +648,21 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         }
 
         /// <summary>兩人之間有沒有未完的棋局 —— 有就標局號與輪到誰（配對表的一欄）。</summary>
+        /// <remarks>TASK-0268 ⑤：讀取與篩選走 `SCP_ChessStore`（與 `senate cmd chess` 同一支），⛔ 不再自己掃 `Chess/games`。</remarks>
         static string ChessNoteWith(string iSelf, string iOther)
         {
             try
             {
-                string aDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Chess", "games");
-                if (!Directory.Exists(aDir)) return "—";
-                foreach (var aFile in Directory.GetFiles(aDir, "*.json"))
+                var aGames = SCP.Core.Chess.SCP_ChessStore.LoadAll(UCL_AgentCommandsPath.DataRoot, out _);
+                foreach (var (aG, aOpp, aMeW) in SCP.Core.Chess.SCP_ChessStore.MyVersusGames(aGames, iSelf))
                 {
-                    JsonData aG;
-                    try { aG = JsonData.ParseJson(File.ReadAllText(aFile, Encoding.UTF8)); }
-                    catch (Exception) { continue; }
-                    if (aG == null || !aG.Contains("seats")) continue;
-                    if (!string.Equals(ReadStr(aG, "status"), "in_progress", StringComparison.OrdinalIgnoreCase)) continue;
-                    string aW = ReadStr(aG["seats"], "white"), aB2 = ReadStr(aG["seats"], "black");
-                    bool aMeW = string.Equals(aW, iSelf, StringComparison.OrdinalIgnoreCase);
-                    bool aMeB = string.Equals(aB2, iSelf, StringComparison.OrdinalIgnoreCase);
-                    bool aOpp = string.Equals(aMeW ? aB2 : aW, iOther, StringComparison.OrdinalIgnoreCase);
-                    if ((!aMeW && !aMeB) || !aOpp) continue;
-                    string[] aFen = ReadStr(aG, "fen").Split(' ');
+                    if (aOpp != iOther) continue;
+                    bool? aWhiteToMove = SCP.Core.Chess.SCP_ChessStore.WhiteToMove(aG);
                     // 用「對方」不用「他」—— 簡報不該替沒說明稱謂的人做假設（同 UCL_FreeTimeGating）
-                    string aTurn = aFen.Length >= 2
-                        ? (((aFen[1] == "w") == aMeW) ? "**輪到你**" : "等對方走")
+                    string aTurn = aWhiteToMove.HasValue
+                        ? ((aWhiteToMove.Value == aMeW) ? "**輪到你**" : "等對方走")
                         : "進行中";
-                    return $"♟ 第 {ReadStr(aG, "index")} 局 · {aTurn}";
+                    return $"♟ 第 {aG["index"].AsInt()} 局 · {aTurn}";
                 }
             }
             catch (Exception) { /* 配對表的一欄而已，讀不到就留白，不炸整份簡報 */ }
@@ -1283,7 +1274,6 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             return true;
         }
 
-        static string ReadStr(JsonData iJd, string iKey) => iJd != null && iJd.Contains(iKey) ? iJd[iKey].ToString() : "";
         static int ReadInt(JsonData iJd, string iKey) { try { return iJd != null && iJd.Contains(iKey) ? int.Parse(iJd[iKey].ToString()) : 0; } catch { return 0; } }
         static bool ReadBool(JsonData iJd, string iKey) { try { return iJd != null && iJd.GetBool(iKey, false); } catch { return false; } }
 

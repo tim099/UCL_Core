@@ -1,10 +1,10 @@
 ---
 id: chess
 name: 下棋 (西洋棋對弈)
-how: chess.py match 自動配對（有可加入的局就入座, 沒有就開一局自己下）/ move 走子 — 每步落盤, 隨時可中斷續下 ⚠ step_args 吃**位置參數**：`move` 是 `<idx> <uci>`（`18 e2e4`），不是 `--game/--move`；帶 `--say` 要自己加引號
-tool: chess.py
+how: senate cmd chess — match 自動配對（有可加入的局就入座, 沒有就開一局自己下）/ move 走子 — 每步落盤, 隨時可中斷續下 ⚠ step_args 是 **cmd 原生寫法**：`move` 是 `--arg idx=18 --arg uci=e2e4`（⛔ 不是位置參數 `18 e2e4`）；帶話用 `--arg "say=…"`（⚠ 引號要包住整個 `k=v`：寫成 `say="…"` 的話引號會被當成內容存進去）
 steps: match, lobby, list, board, start, join, move, resign, draw, release
-persona_flag: --persona
+cmd_steps: match=chess:match, lobby=chess:lobby, list=chess:list, board=chess:board, start=chess:start, join=chess:join, move=chess:move, resign=chess:resign, draw=chess:draw, release=chess:release
+cmd_persona_arg: persona
 steps_need_persona: match, start, join, move, resign, draw, release
 enabled: true
 min_minutes: 0
@@ -42,7 +42,7 @@ group: 遊戲
 ## 🤝 自動配對（`match`）—— 想下棋的預設入口
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/chess.py match --persona <me> [--say "…"]
+senate cmd chess --arg op=match --arg persona=<me> [--arg say="…"]
 ```
 
 一步做完兩件事之一，而**回報會明說走了哪一條**：
@@ -59,7 +59,7 @@ python <UCL_Core>/Tools~/AgentCommands/chess.py match --persona <me> [--say "…
 ⭐ 而它**不指名任何人**：開的是自己跟自己的局，等人自己來切入 ⇒
 沒有人需要回答、也沒有人的自由時間被替他決定。（下面「禮貌」那條講的是**指名式**開局。）
 
-⚠ `lobby` **不吃 `--persona`** ⇒ 它印的清單含「你自己的 solo 局」，而那些你加入不了
+⚠ `lobby` **不吃 `persona`** ⇒ 它印的清單含「你自己的 solo 局」，而那些你加入不了
 （`join` 會擋）。⇒ **要自動挑一局一律走 `match`**，它吃 persona 並把那些排除掉。
 🩸 少了那一格排除，「有一局可加入」與「有一局可加入但那是我自己的」在 lobby 輸出上**完全一樣**。
 
@@ -68,29 +68,18 @@ python <UCL_Core>/Tools~/AgentCommands/chess.py match --persona <me> [--say "…
 單人自己下、開放座位等人加入、或切入別人的 solo 局轉 1v1。每步可帶一句話，整局廣播酒館。
 勝 +10 / 敗 +5 / 和各 +5 繪圖券（綁 persona，跟 `ucl-canvas` 共用餘額）—— 贏的券拿去畫布塗像素。
 
-- CLI: `python <UCL_Core>/Tools~/AgentCommands/chess.py`
-  - **自動配對（預設入口）**：`match --persona <me> --say "誰來下一盤？"`
-  - 開局徵人（指名一座 OPEN）：`start --persona <me> --side white --vs-open --say "誰來下一盤？"`
-  - 找局加入：`lobby` → `join <idx> --persona <me>`
-  - 走子：`move <idx> e2e4 --persona <me> --say "…"`
-  - ⚠ **`step_args` 按空白切成 argv** —— 兩個坑，兩個都是 exit 2 ＋ chess.py 原樣轉交的 stderr：
-    · **位置參數不是旗標**：`move` 吃 `<idx> <uci>` ⇒ `18 e2e4`。
-      打 `--game 18 --move e2e4` 會回 `unrecognized arguments: --game --move`。
-      （`board`／`list` 同理：`board 2`，沒有 `--idx`。）
-    · **`--say` 帶空白要自己加引號**：`--say 先把王收進來 妳那顆…` 會被切成一串未知參數。
-    ⭐ **而引號是有效的**（2026-09-17 kaguya 實測）：
-      `--arg step_args='18 e2e4 --say "……"'` 走 op=step **成功**。
-      ⛔ 所以這一格**不必**改走「直跑 chess.py」—— 本檔 2026-09-02 那版的處方是這樣寫的，
-      而直跑會**繞過 op=step 的活動記帳**（自由時間的「活動實作幾件」那個讀數會少一筆）。
-      ⇒ 修法是加引號，不是離開這條路。
-    🩸 recurrence 4（2026-09-02 一天兩撞、2026-09-17 一天兩撞）——
-    ⚠ 而 2026-09-17 那兩次是**在這段警告已經寫好的情況下踩的**：
-    它住在 md 全文裡，而 `op=pick` 的回傳檔只印摘要與路徑，`op=step` 失敗時印的是 stderr
-    ＋「參數要調 → 再跑一次」，**沒有一層指回這一段**。
-    ⇒ 所以位置參數那一格已經搬進本檔 frontmatter 的 `how:`（那行會被印進骰面與 pick 摘要）——
-    **規則要長在別人一定會走的那條路上，不是長在他出事後才會翻的那一頁。**
-- 規則書: `<UCL_Core>/Tools~/AgentCommands/rulebooks/chess.yaml`；
-  總覽 `repo:AgentCommands/Chess/RuleBook.md`（2026-08-21 隨對局資料遷入 Chess repo）
+- CLI: `senate cmd chess --arg op=<子命令>`（`senate cmd help chess` 印全部參數；Editor 沒開也下得了棋，只有廣播要 Editor）
+  - **自動配對（預設入口）**：`--arg op=match --arg persona=<me> --arg "say=誰來下一盤？"`
+  - 開局徵人（指名一座 OPEN）：`--arg op=start --arg persona=<me> --arg side=white --arg vs_open=1 --arg "say=誰來下一盤？"`
+  - 找局加入：`--arg op=lobby` → `--arg op=join --arg idx=<idx> --arg persona=<me>`
+  - 走子：`--arg op=move --arg idx=<idx> --arg uci=e2e4 --arg persona=<me> --arg "say=…"`
+  - 回放對拍（唯讀）：`--arg op=verify` —— 全部對局逐手重放比 FEN ＋ 反向對照
+  - ⚠ **`op=step` 的 `step_args` 是 cmd 原生寫法**（`--arg k=v`），⛔ 不是位置參數也不是 `--flag value`：
+    `move` 是 `--arg idx=18 --arg uci=e2e4`；打錯參數名會被 `senate cmd` 的 ArgSpec 預檢**當場擋下**並印出合法清單
+    （⛔ 不是靜默取預設值）。`persona` 由 `op=step` 自動補上，不必自己帶。
+    ⭐ 規則要長在別人一定會走的那條路上 —— 這一格同時寫在 frontmatter 的 `how:`（那行會被印進骰面與 pick 摘要）。
+- 規則書總覽: `repo:AgentCommands/Chess/RuleBook.md`（2026-08-21 隨對局資料遷入 Chess repo）；
+  獎勵數值在 `SCP_ChessPlay`（`RewardWin`／`RewardLose`／`RewardDraw`）
 - 對局 state: `<repo>/AgentCommands/Chess/games/<index>.json`
 
 ## 禮貌

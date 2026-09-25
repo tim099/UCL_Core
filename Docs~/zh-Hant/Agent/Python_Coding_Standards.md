@@ -4,7 +4,7 @@ description: UCL_Core Tools~ 底下 Python CLI 的硬規則 — 路徑一律走 
 tags: [python, coding-standards, paths, treasury]
 aliases: [python 規範, python coding, 寫 python 前]
 target_audience: [AI_Agent, Tools_Maintainer]
-last_updated: 2026-09-07
+last_updated: 2026-09-25
 ---
 
 # 🐍 Python 撰寫規範
@@ -59,7 +59,7 @@ os.environ["CLAUDE_PROJECT_DIR"] or cwd or ...         # 自排 fallback 順序
 
 | 工具 | 推導方式 | 後果 |
 |---|---|---|
-| `chess.py` | 要求同時有 `AgentCommands/` **與 `CardGame/`**，否則 `parents[6]` | 全部棋局檔寫進 **repo 外**、不在版控裡；C# 讀 repo 內的舊快照，於是**兩邊的骰面對同一局講出相反的話** |
+| `chess.py`（已移植 C#，TASK-0268） | 要求同時有 `AgentCommands/` **與 `CardGame/`**，否則 `parents[6]` | 全部棋局檔寫進 **repo 外**、不在版控裡；C# 讀 repo 內的舊快照，於是**兩邊的骰面對同一局講出相反的話** |
 | `UCL_BartenderDaemon`（C#，同族） | `Application.dataPath/../..` | 跳到 repo 上一層，**剛好命中一棵舊資料樹** → 餘額查詢回報 `453`，真實帳本是 `1330`。**差 877，而且完全沒有錯誤訊息** |
 | `hook_validate_modified.py` | `Path("CardGame")/"AgentCommands"` | 報告寫進不存在的目錄；寫檔會自動建目錄 ⇒ **憑空長出假資料夾**，人去正確位置找只會找不到 |
 
@@ -84,7 +84,7 @@ from _lib.treasury_cmd import (treasury_credit, treasury_debit, treasury_balance
 `_lib/treasury_cmd.py` 檔頭（餘額快取靜默失準 / 繞過冪等判重 / 簽章不可信 / `balance_before/after` 要事後回填）。
 
 🩸 **券曾經是唯一的缺口**：consume 早就走 Cmd，grant 卻留著兩處直寫
-（`chess.py grant_voucher`；繪圖券的 canonical owner 是 C# `Cmd_CanvasVoucher op=grant`）。
+（當時 `chess.py` 的 `grant_voucher`；繪圖券的 canonical owner 是 C# `Cmd_CanvasVoucher op=grant`）。
 2026-08-17 那次帳本分裂，**路徑 bug 是導火線，但能燒起來是因為那裡本來就允許直寫**。
 
 **查餘額也一樣**：不要自己掃 ledger。
@@ -142,7 +142,7 @@ return "
   `0` 是「有帳戶但沒錢」，`None` 是「問不到」—— 混淆會讓額度顯示成 0 而看起來像破產。
 - **印 ✓ 不算數，讀回來才算**：寫檔／發券／post 之後，要驗就去讀落地結果，
   不要用記憶體裡的值印「new balance」。
-- **純 stdlib 優先**（對齊 `awakening.py` / `chess.py`）；要 pip 依賴先問。
+- **純 stdlib 優先**（對齊 `awakening.py`）；要 pip 依賴先問。
 
 ---
 

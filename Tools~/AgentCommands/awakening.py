@@ -1196,7 +1196,7 @@ def tavern_post(sender_id: str | None, persona: str, body: str, meta: dict | Non
     傳 None 時 TavernClient 會整個丟掉這個參數，由 Cmd_Tavern 從 `persona` 推導
     （`ResolveDisplaySenderId`：persona → 綁定的 agent），那是唯一的推導點。
     顯式帶值 = 繞過推導，而繞過的結果不會報錯，只會署錯名字：
-      🩸 `chess.py` 帶 persona 名（BUG-23）／`spend_menu.py` 硬編碼某個 bank（BUG-24，全員同名）。
+      🩸 `chess.py` 帶 persona 名（BUG-23；TASK-0268 移植進 C# 後已不帶）／`spend_menu.py` 硬編碼某個 bank（BUG-24，全員同名）。
     ⚠ 傳 `None` 不是 `""`：只有 None 會被丟棄，空字串會原樣帶成 `sender=`。
     ⚠ 仍為位置參數而非直接移除，是因為尚有呼叫端未收束（見 BUG-23 描述的同族清單）；
       收束完成後應整個移除此參數，讓還在傳的呼叫端當場 TypeError（fail-loud > 靜默接受）。

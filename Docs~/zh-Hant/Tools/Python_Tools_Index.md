@@ -1,7 +1,7 @@
 ---
 title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
 description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / Editor 整合 (hooks) / migration scripts / skill installer。⚠ 退場有三種狀態（整支刪除／整支指路／部分退場），見本檔開頭那張表 —— 「在索引裡」不等於「還有功能」。
-last_updated: 2026-09-10
+last_updated: 2026-09-25
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md | Awakening Init Protocol | morning/goodnight 三步驟設計
@@ -15,7 +15,7 @@ related:
 
 > [!WARNING]
 > **本索引不完整**：UCL_Core 現有 **53 支** .py（頂層 36 ＋ 子目錄 17；2026-09-10 `find` 實測），
-> 本檔只列到 21 支（`memory.py` / `knowledge_base.py` / `chess.py` … 皆未列入）。
+> 本檔只列到 21 支（`memory.py` / `knowledge_base.py` … 皆未列入）。
 > ⇒ 查不到某支工具**不代表它不存在** —— 直接 `ls <UCL_Core>/Tools~/AgentCommands/`
 > 是比本索引可信的來源。
 >

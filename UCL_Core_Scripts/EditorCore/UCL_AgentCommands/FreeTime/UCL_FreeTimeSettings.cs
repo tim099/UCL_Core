@@ -101,7 +101,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         public string group = "";
 
         // 區塊職責：讓活動的「一步」可以被 Cmd 代跑（Tim 2026-08-18）。
-        // 物理意義：`how` 是給人讀的一整串自由文字（"chess.py lobby 找局 / start 開局徵人 / move 走子…"）——
+        // 物理意義：`how` 是給人讀的一整串自由文字（"senate cmd chess — match 自動配對 / move 走子…"）——
         //          機器沒辦法從它取出「第一步該跑什麼」，所以活動層只能整串轉貼。
         //          下棋走一子、繪圖放一個像素**本來就是一次性的次秒級動作**，
         //          拆成「一步」之後 Cmd 就能代跑並在回傳檔接上下一步。
@@ -109,7 +109,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         //   用 op=pick 取得指令自己跑」。**沒填不是壞掉，是還沒接** —— 兩者要長得不一樣。
         // 數值影響：純資料；`steps` 是白名單，不在名單上的子命令一律拒跑
         //          （不做白名單＝把任意 argv 交給外部程式，那是 CLI 注入面）。
-        /// <summary>代跑用的腳本檔名（frontmatter `tool`，例 `chess.py`）。空＝本活動不支援代跑。</summary>
+        /// <summary>代跑用的腳本檔名（frontmatter `tool`，例 `<腳本>.py`）。空＝本活動不支援代跑。</summary>
         public string tool = "";
         /// <summary>允許代跑的子命令白名單（frontmatter `steps`，逗號分隔）。空＝即使有 tool 也不放行。</summary>
         public List<string> steps = new List<string>();

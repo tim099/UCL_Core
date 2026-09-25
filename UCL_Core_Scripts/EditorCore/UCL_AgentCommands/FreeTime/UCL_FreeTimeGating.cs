@@ -175,10 +175,13 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         //          真正決定「現在該不該下」的不是剩幾分鐘，是**對手在不在**。
         //          對手在自由時間 ＝ 他此刻正在挑活動，一步棋馬上有人接
         //          —— 這才是把下棋頂到最優先的理由。
-        // 數值影響：掃 <DataRoot>/Chess/games/*.json 取 status=in_progress 且我在 seats 的局；
-        //          對手用自由時間 session（active 且未過 end_ts）判定。
-        //          找到多局取**第一個成立的**（骰面只需要一個理由，不需要全部列出）。
+        // 數值影響：棋局讀取與「我在座、對手是另一個人」的篩選走 `SCP_ChessStore`（TASK-0268 ⑤：
+        //          與 `senate cmd chess` 同一支讀取器，⛔ 不再自己掃 `Chess/games`）；
+        //          本檔只加一格宿主才答得出來的條件：對手的自由時間 session（active 且未過 end_ts）。
+        //          找到多局取**第一個成立的**（index 升冪；骰面只需要一個理由，不需要全部列出）。
         //          任何讀取失敗 → 回 false（少一個優先推薦，不炸擲骰）。
+        // ⚠ persona 比對改成 **Ordinal**（原本這裡是 OrdinalIgnoreCase、python 寫入端是區分大小寫 ——
+        //   兩把尺並存，今天沒出事只因 persona 全是小寫）。
         // ===========================================================
         public static bool TryFindWaitingChess(string iPersona, out string oOpponent, out int oGameIndex, out bool oMyTurn)
         {
@@ -186,36 +189,15 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             if (string.IsNullOrEmpty(iPersona)) return false;
             try
             {
-                string aDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Chess", "games");
-                if (!Directory.Exists(aDir)) return false;
-                foreach (var aFile in Directory.GetFiles(aDir, "*.json"))
+                var aGames = SCP.Core.Chess.SCP_ChessStore.LoadAll(UCL_AgentCommandsPath.DataRoot, out _);   // 單一壞檔不該讓整個判定失效
+                foreach (var (aGame, aOpp, aIAmWhite) in SCP.Core.Chess.SCP_ChessStore.MyVersusGames(aGames, iPersona))
                 {
-                    JsonData aGame;
-                    try { aGame = JsonData.ParseJson(File.ReadAllText(aFile, Encoding.UTF8)); }
-                    catch (Exception) { continue; }     // 單一壞檔不該讓整個判定失效
-                    if (aGame == null) continue;
-                    if (!string.Equals(Str(aGame, "status"), "in_progress", StringComparison.OrdinalIgnoreCase)) continue;
-                    if (!aGame.Contains("seats")) continue;
-
-                    var aSeats = aGame["seats"];
-                    string aWhite = Str(aSeats, "white");
-                    string aBlack = Str(aSeats, "black");
-                    bool aIAmWhite = string.Equals(aWhite, iPersona, StringComparison.OrdinalIgnoreCase);
-                    bool aIAmBlack = string.Equals(aBlack, iPersona, StringComparison.OrdinalIgnoreCase);
-                    if (!aIAmWhite && !aIAmBlack) continue;
-
-                    string aOpp = aIAmWhite ? aBlack : aWhite;
-                    // 空座位＝還在徵人，那不是「有對手在等」；單人 solo 局同理不算。
-                    if (string.IsNullOrEmpty(aOpp) || string.Equals(aOpp, iPersona, StringComparison.OrdinalIgnoreCase)) continue;
                     if (!IsInFreeTime(aOpp)) continue;
-
                     oOpponent = aOpp;
-                    int.TryParse(Str(aGame, "index"), out oGameIndex);
+                    oGameIndex = aGame["index"].AsInt();
                     // FEN 第二段是「輪到誰走」（w/b）——盤面自己就記著，不必另存回合欄。
-                    string aFen = Str(aGame, "fen");
-                    string[] aParts = aFen.Split(' ');
-                    if (aParts.Length >= 2)
-                        oMyTurn = (aParts[1] == "w" && aIAmWhite) || (aParts[1] == "b" && aIAmBlack);
+                    bool? aWhiteToMove = SCP.Core.Chess.SCP_ChessStore.WhiteToMove(aGame);
+                    oMyTurn = aWhiteToMove.HasValue && aWhiteToMove.Value == aIAmWhite;
                     return true;
                 }
             }
@@ -242,21 +224,16 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
         // ⭐ 而它**刻意不看對手在不在自由時間**（上面那條看）——
         //   一局在等人，跟開局的人此刻是否在線無關：下棋每步落盤、跨好幾次醒來
         //   （`min_minutes: 0` 就是那個意思）。要求對方在線才顯示，等於把一局等了三天的棋藏起來。
-        // 🩸 為什麼這一格值得存在（Tim 2026-09-11 拍板加）：`chess.py start --vs-open`
+        // 🩸 為什麼這一格值得存在（Tim 2026-09-11 拍板加）：`start --vs-open`
         //   躺了三個月 —— 全酒館「徵人」廣播只有 5 筆、最後一筆 2026-08-17。
         //   積木在、路通、而**沒有任何一層告訴人「現在有一局在等」** ⇒ 它就不會被用。
         //
-        // ⛔⛔ **判準重複警告 —— 這裡與 `chess.py` 的 `pick_match_candidate` 是同一份判斷的兩份實作。**
-        //   跨語言（C# 骰面／python 配對）沒辦法共用一份，所以這裡把失效樣子寫死在紙上：
-        //   **漂掉的症狀是「骰面說有一局在等，而 `match` 去了卻開了新局」** ——
-        //   兩邊都不會報錯，而讀的人會以為是配對壞了。
-        //   ⇒ 改任一邊的過濾條件（status／OPEN 座／solo／排除自己在座）**必須同時改另一邊**。
-        //   📌 對應位置：`<UCL_Core>/Tools~/AgentCommands/chess.py` → `pick_match_candidate()`
-        //      （那邊也有一條指回本函式的註解）。
-        // 數值影響：掃同一批 `<DataRoot>/Chess/games/*.json`；取 status=in_progress 且
-        //          （有 OPEN 座 或 solo）且**我不在任何一座**；多局取「已走手數最少、同手數取小 index」
-        //          —— 與 python 那側的排序鍵逐字相同（那也是可複驗的理由）。
-        //          任何讀取失敗 → 回 false（少一個優先推薦，不炸擲骰）。
+        // ⭐ TASK-0268 ⑤：挑選判準**直接呼叫** `SCP_ChessStore.PickMatchCandidate` ——
+        //   與 `senate cmd chess --arg op=match` 真的去配的那一支**是同一支函式**。
+        //   以前是跨語言兩份實作（這裡一份、`chess.py pick_match_candidate` 一份），
+        //   漂掉的症狀是「骰面說有一局在等，而 match 去了卻開了新局」、兩邊都不報錯 —— 那條判準重複警告就此退場。
+        // 數值影響：取 status=in_progress 且（有 OPEN 座 或 solo）且**我不在任何一座**；
+        //          多局取「已走手數最少、同手數取小 index」。任何讀取失敗 → 回 false（少一個優先推薦，不炸擲骰）。
         // ===========================================================
         public static bool TryFindJoinableChess(string iPersona, out string oOpener, out int oGameIndex,
                                                 out int oMoves, out int oWaitingCount)
@@ -265,66 +242,21 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             if (string.IsNullOrEmpty(iPersona)) return false;
             try
             {
-                string aDir = Path.Combine(UCL_AgentCommandsPath.DataRoot, "Chess", "games");
-                if (!Directory.Exists(aDir)) return false;
-                bool aFound = false;
-                int aBestMoves = int.MaxValue, aBestIdx = int.MaxValue;
-                foreach (var aFile in Directory.GetFiles(aDir, "*.json"))
-                {
-                    JsonData aGame;
-                    try { aGame = JsonData.ParseJson(File.ReadAllText(aFile, Encoding.UTF8)); }
-                    catch (Exception) { continue; }     // 單一壞檔不該讓整個判定失效
-                    if (aGame == null) continue;
-                    if (!string.Equals(Str(aGame, "status"), "in_progress", StringComparison.OrdinalIgnoreCase)) continue;
-                    if (!aGame.Contains("seats")) continue;
-
-                    var aSeats = aGame["seats"];
-                    string aWhite = Str(aSeats, "white");
-                    string aBlack = Str(aSeats, "black");
-                    bool aHasOpen = string.IsNullOrEmpty(aWhite) || string.IsNullOrEmpty(aBlack);
-                    bool aSolo = !string.IsNullOrEmpty(aWhite)
-                                 && string.Equals(aWhite, aBlack, StringComparison.OrdinalIgnoreCase);
-                    if (!aHasOpen && !aSolo) continue;
-                    // ⛔ 我已經在座的局不算「可加入」—— `chess.py join` 本來就會擋，
-                    //    而骰面把它算進來的話，人照著去跑 match 會拿到一個他配不上去的理由。
-                    if (string.Equals(aWhite, iPersona, StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(aBlack, iPersona, StringComparison.OrdinalIgnoreCase)) continue;
-
-                    oWaitingCount++;
-                    int aIdx = 0; int.TryParse(Str(aGame, "index"), out aIdx);
-                    int aMoves = CountChessMoves(aGame);
-                    if (aMoves < aBestMoves || (aMoves == aBestMoves && aIdx < aBestIdx))
-                    {
-                        aBestMoves = aMoves; aBestIdx = aIdx;
-                        oOpener = string.IsNullOrEmpty(aWhite) ? aBlack : aWhite;
-                        oGameIndex = aIdx; oMoves = aMoves;
-                        aFound = true;
-                    }
-                }
-                return aFound;
+                var aGames = SCP.Core.Chess.SCP_ChessStore.LoadAll(UCL_AgentCommandsPath.DataRoot, out _);   // 單一壞檔不該讓整個判定失效
+                var (aPick, aCount, _) = SCP.Core.Chess.SCP_ChessStore.PickMatchCandidate(aGames, iPersona);
+                oWaitingCount = aCount;
+                if (aPick == null) return false;
+                string aWhite = SCP.Core.Chess.SCP_ChessStore.SeatOf(aPick, "white");
+                oOpener = aWhite.Length > 0 ? aWhite : SCP.Core.Chess.SCP_ChessStore.SeatOf(aPick, "black");
+                oGameIndex = aPick["index"].AsInt();
+                oMoves = SCP.Core.Chess.SCP_ChessStore.CountMoves(aPick);
+                return true;
             }
             catch (Exception e)
             {
                 Debug.LogWarning($"[FreeTime] 可加入棋局判定失敗（骰面照常，只是少一個優先推薦）: {e.Message}");
             }
             return false;
-        }
-
-        // 真正的走子數 —— history 裡也記 join:/release: 這類事件，那些不是手數。
-        // ⚠ 與 `chess.py` 的 `count_moves()` 同一份定義（見上面的判準重複警告）。
-        static int CountChessMoves(JsonData iGame)
-        {
-            if (iGame == null || !iGame.Contains("history")) return 0;
-            var aHist = iGame["history"];
-            // 照 codebase 慣例先問 IsArray 再 Count（見 UCL_ReadingLibraryIO 的 aliases 走法）。
-            if (aHist == null || !aHist.IsArray) return 0;
-            int aN = 0;
-            for (int i = 0; i < aHist.Count; i++)
-            {
-                string aUci = Str(aHist[i], "uci");
-                if (aUci != null && aUci.Length >= 4 && !aUci.Contains(":")) aN++;
-            }
-            return aN;
         }
 
         public static bool IsInFreeTime(string iPersona)
@@ -344,22 +276,6 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 return aSession.IsRunningAt(DateTime.Now, out _);
             }
             catch (Exception) { return false; }
-        }
-
-        // 🩸 2026-09-11：這一行原本是 `iJd != null && iJd.Contains(iKey) ? iJd[iKey].ToString() : ""`，
-        //   而它漏了第三格：**鍵在、而值是 JSON null**（棋局的 OPEN 座就是 `"white": null`）。
-        //   三格的失敗長得一樣（NullRef），而呼叫端 `TryFindWaitingChess` 把例外
-        //   fail-soft 吞掉 ⇒ **Chess 優先層在任何一局有 OPEN 座時就整條靜默失效**，
-        //   而骰面照常印、只是少一個推薦 —— 沒有任何人會發現。
-        //   ⇒ 「不隱藏」變成了「沒有人看見」：fail-soft 有出聲（Debug.LogWarning），
-        //     而那行警告躺在 Editor.log 裡沒有人讀。抓到它的是我加新判定時**同一行警告出現兩次**。
-        // ⚠ 而 JSON null 不能回 `"null"` 字串 —— 那會讓空座位變成一個叫 "null" 的人。
-        static string Str(JsonData iJd, string iKey)
-        {
-            if (iJd == null || !iJd.Contains(iKey)) return "";
-            var aV = iJd[iKey];
-            if (aV == null || aV.JsonType == JsonType.None) return "";
-            return aV.ToString();
         }
     }
 }

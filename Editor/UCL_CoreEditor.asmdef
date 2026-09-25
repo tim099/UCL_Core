@@ -3,6 +3,7 @@
     "rootNamespace": "",
     "references": [
         "UCL_Core",
+        "SCP_Core",
         "UniTask",
         "Unity.Addressables",
         "Unity.Addressables.Editor"

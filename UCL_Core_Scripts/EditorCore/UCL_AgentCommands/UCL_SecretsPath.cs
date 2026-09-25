@@ -42,9 +42,9 @@ namespace UCL.Core.EditorLib.AgentCommands
     public static class UCL_SecretsPath
     {
         /// <summary>設定檔名（放 DataRoot 底下）。</summary>
-        public const string ConfigFileName = "secrets_config.json";
+        public const string ConfigFileName = SCP.Core.Secret.SCP_SecretStore.ConfigFileName;   // 與 SCP 端同一個常數
         /// <summary>設定檔缺席時的預設值（新專案的正確值；既有專案請顯式寫檔）。</summary>
-        public const string DefaultDirName = "Secret";
+        public const string DefaultDirName = SCP.Core.Secret.SCP_SecretStore.DefaultDirName;
         /// <summary>`ResolveData` 吃的前綴（既有 code 的慣例：`AgentCommands/<sub>`）。</summary>
         public const string ResolvePrefix = "AgentCommands";
 
@@ -73,38 +73,13 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         public static void ResetCache() => s_CachedDirName = null;
 
-        /// <summary>讀設定。壞檔**印 warning 並用預設**（不 throw）——
-        /// 這條路徑會被 daemon 與多個頁面在畫面上呼叫，讓它丟例外等於把整頁弄壞；
-        /// 但**壞掉必須看得見**，所以印 warning 而不是安靜吞掉。</summary>
+        /// <summary>讀設定 —— **轉呼叫 SCP 端 `SCP_SecretStore.ReadDirName`**（TASK-0300：Senate 的加密檔頁讀同一個檔，
+        /// 判準只留一份）。壞檔**印 warning 並用預設**（不 throw —— daemon 與多個頁面在畫面上呼叫；但壞掉必須看得見）。</summary>
         static string LoadDirName()
         {
-            try
-            {
-                string aPath = ConfigPath;
-                if (!File.Exists(aPath)) return DefaultDirName;
-                string aText = File.ReadAllText(aPath);
-                if (string.IsNullOrWhiteSpace(aText)) return DefaultDirName;
-                var aJson = JsonData.ParseJson(aText);
-                if (aJson == null)
-                {
-                    Debug.LogWarning($"[UCL_SecretsPath] 設定檔解析失敗，改用預設 '{DefaultDirName}'：{aPath}");
-                    return DefaultDirName;
-                }
-                var aConfig = new UCL_SecretsPathConfig();
-                aConfig.DeserializeFromJson(aJson);
-                string aDir = (aConfig.m_SecretsDir ?? "").Trim().Replace('\\', '/').Trim('/');
-                if (string.IsNullOrEmpty(aDir))
-                {
-                    Debug.LogWarning($"[UCL_SecretsPath] 設定檔的 SecretsDir 是空的，改用預設 '{DefaultDirName}'");
-                    return DefaultDirName;
-                }
-                return aDir;
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[UCL_SecretsPath] 讀設定失敗，改用預設 '{DefaultDirName}'：{e.Message}");
-                return DefaultDirName;
-            }
+            string aDir = SCP.Core.Secret.SCP_SecretStore.ReadDirName(UCL_AgentCommandsPath.DataRoot, out string aWarning);
+            if (aWarning != null) Debug.LogWarning("[UCL_SecretsPath] " + aWarning);
+            return aDir;
         }
 
         /// <summary>寫設定（UTF-8 無 BOM —— python 端也讀這個檔）。寫完清快取。</summary>

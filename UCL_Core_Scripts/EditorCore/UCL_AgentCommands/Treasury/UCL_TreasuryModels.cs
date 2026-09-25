@@ -119,6 +119,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public string reason;              // 為什麼該付這筆（給人看的，核准與否靠它判斷）
         public string source_kind;         // 核准後寫進 ledger 的 source_kind（例 commit / tim_grant）
         public string source_ref;          // 憑證引用（SHA / task_id / message uuid…），可為空
+        // 錢從哪來："central"（央行撥款）／"mint"（增發）／空（未宣告 ⇒ 審批端用 central）。
+        // ⚠ 欄名與值域必須與 Senate 側 `SCP_TreasuryRequests`（讀 "funding"）／`SCP_PayoutFunding` 逐字相同 ——
+        //   審批只在 Senate 那側發生，本層只負責把宣告寫進單子，讓核准時不用再手選。
+        public string funding;
 
         // ---- 請款者身分（雙欄：agent 層 + persona 層，跟酒館訊息同慣例）----
         public string requester_agent;     // agent id（例 claude-code / Zeta / Myth）

@@ -30,7 +30,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             "transfer (T55): from_account to_account amount use_kind source_kind [reason_ref] [description] [tx_id] [caller=system] — 跨帳戶守恆轉移；atomic dual entry 共用 tx_id；mid-fail rollback\n" +
             "audit: account=帳戶ID [since_ts=ISO8601] — 列 entries\n" +
             "verify: ⛔ **已退場**（TASK-0274）—— 新銀行分錄沒有 balance_before/after 可對；改跑 closing_list / audit\n" +
-            "request: target_bank=收款bank amount=N reason=為什麼該付 [source_kind=commit|tim_grant|...] [source_ref=SHA/task_id] [agent=請款者agent] [persona=請款者persona] — 開請款單（不動錢，等 Tim 從 `senate cmd bank op=approve` 批款）\n" +
+            "request: target_bank=收款bank amount=N reason=為什麼該付 [source_kind=commit|tim_grant|...] [source_ref=SHA/task_id] [funding=central|mint（補薪 work_post_backfill 預設 mint）] [agent=請款者agent] [persona=請款者persona] — 開請款單（不動錢，等 Tim 從 `senate cmd bank op=approve` 批款）\n" +
             "request_list: [pending_only=true|false] [max=200] — 列請款單\n" +
             "request_cancel: request_id=<id> [note=原因] — 撤回自己開的請款單\n" +
             "transfer_request: from_bank=出款bank to_bank=收款bank amount=N reason=為什麼該搬 [kind=manual_transfer] [agent=] [persona=] — 開轉帳單（不動錢，總量守恆；請款單消耗公庫，兩者刻意分開）\n" +
@@ -430,17 +430,29 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             if (!int.TryParse(amountRaw, out int amount) || amount <= 0)
             { Cmd_Tavern_Helpers.RejectLastOp(args, $"request 的 amount 需為正整數（收到 '{amountRaw}'）"); return; }
 
+            // 錢從哪來：開單時就宣告，審批端（Senate `bank op=approve`／BankAdminPage）照單走，不必再手選（Tim 2026-09-25）。
+            // ⚠ 值域寫死成 Senate 側 `SCP_PayoutFunding` 的兩個值；打錯字**擋下**，⛔ 不靜默落成未宣告
+            //   —— 未宣告在審批端會變成央行撥款，而那跟「我宣告了增發」在單子上一眼分不出來。
+            // 📌 `source_kind=work_post_backfill`（補薪）沒給就預設 mint：補薪是勞動新產生的價值，不是從公庫搬（Tim 2026-09-22）。
+            string sourceKind = GetArg(args, "source_kind", "manual_request");
+            string funding = GetArg(args, "funding", "").Trim().ToLowerInvariant();
+            bool fundingDefaulted = false;
+            if (funding.Length == 0 && sourceKind == "work_post_backfill") { funding = "mint"; fundingDefaulted = true; }
+            if (funding.Length > 0 && funding != "central" && funding != "mint")
+            { Cmd_Tavern_Helpers.RejectLastOp(args, $"request 的 funding 只能是 central（央行撥款）或 mint（增發），收到 '{funding}'"); return; }
+
             try
             {
                 var req = UCL_TreasuryRequestStore.Create(
                     targetBank: targetBank,
                     amount: amount,
                     reason: reason,
-                    sourceKind: GetArg(args, "source_kind", "manual_request"),
+                    sourceKind: sourceKind,
                     sourceRef: GetArg(args, "source_ref", ""),
                     requesterAgent: GetArg(args, "agent", GetArg(args, "caller", "")),
                     requesterPersona: GetArg(args, "persona", ""),
-                    currency: GetArg(args, "currency", "tavern_token"));
+                    currency: GetArg(args, "currency", "tavern_token"),
+                    funding: funding);
 
                 var sb = new StringBuilder();
                 sb.AppendLine($"# 🧾 請款單已開 — `{req.request_id}`");
@@ -449,6 +461,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 sb.AppendLine($"- 收款 bank：**{req.target_bank}**");
                 sb.AppendLine($"- 理由：{req.reason}");
                 sb.AppendLine($"- source_kind / ref：{req.source_kind} / {(string.IsNullOrEmpty(req.source_ref) ? "(無)" : req.source_ref)}");
+                sb.AppendLine($"- 資金來源：{(req.funding == "mint" ? "**增發**（mint）" : req.funding == "central" ? "**央行撥款**（central）" : "⚠ 未宣告 ⇒ 審批端會用央行撥款")}{(fundingDefaulted ? "（補薪預設）" : "")}");
                 sb.AppendLine($"- 請款者：{req.requester_agent}@{req.requester_persona}");
                 sb.AppendLine($"- 狀態：**{req.status}** —— 錢還沒動，等審批 —— `senate cmd bank --arg op=requests` 看待審、`--arg op=approve --arg request_id=<單號> --arg confirm=1` 核准");
                 Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());

@@ -43,7 +43,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             string targetBank, int amount, string reason,
             string sourceKind, string sourceRef,
             string requesterAgent, string requesterPersona,
-            string currency = "tavern_token")
+            string currency = "tavern_token", string funding = "")
         {
             if (string.IsNullOrWhiteSpace(targetBank)) throw new ArgumentException("target_bank 必填（收款 agent id，不是 persona 名）");
             if (amount <= 0) throw new ArgumentException($"amount 必 > 0（傳入 {amount}）");
@@ -62,6 +62,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 reason = reason.Trim(),
                 source_kind = string.IsNullOrWhiteSpace(sourceKind) ? "manual_request" : sourceKind.Trim(),
                 source_ref = sourceRef?.Trim(),
+                funding = string.IsNullOrWhiteSpace(funding) ? "" : funding.Trim(),
                 requester_agent = requesterAgent?.Trim(),
                 requester_persona = requesterPersona?.Trim(),
             };

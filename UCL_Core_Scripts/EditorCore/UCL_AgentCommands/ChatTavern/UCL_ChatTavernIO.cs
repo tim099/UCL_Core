@@ -1229,9 +1229,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (aMode.Host == SCP.Core.Tavern.SCP_TavernWriteHost.Server)
             {
                 int aRemoteSeq = DelegateAppendToServer(roomId, msg);
-                // 寫入不變量照走：mention 通知跟「誰寫的」無關 —— 它掛在「訊息進到房間」這件事上。
-                // ⚠ 而它讀的是**磁碟上那一則**，所以要在 Server 回報成功之後才跑（順序已經對）。
-                NotifyMentions(roomId, msg, aRemoteSeq, "");
+                // mention 通知與發薪都由 **Server 寫完就做**（TASK-0299／0296：Senate `Cmd_TavernWrite`）——
+                // ⛔ 這裡不再補發：補發的話直打 `tavern-write` 的訊息仍然沒人通知（那正是 0299 的缺口），
+                //   而經過這裡的訊息會被通知兩次（冪等會擋，但那是在替一條多餘的路付 IO）。
                 return aRemoteSeq;
             }
 
@@ -1310,36 +1310,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊：@mention → 對方 inbox 自動通知（R7；2026-07-29 自 Op_Post 下沉至此）
+        // 區塊：@mention → 對方 inbox 自動通知（R7；2026-07-29 自 Op_Post 下沉至寫入端）
         // 物理意義：mention 不只是視覺標記，是 wake 信號 — 對方 re-enter 先讀 inbox 比 tail 快準。
-        // 數值影響：sender 自己 / 系統 id（_ 開頭）/ 非白名單者全跳過；白名單 = identities.json（agent 層）
-        //          ∪ AwakenInit/personas（persona 層），各自寫 inbox/<id>.md 天然分流。
-        // 效能：白名單解析走 TTL 快取（預設 60s）— 下沉後酒保 / Discord daemon 等高頻寫入端也會走這條，
-        //      每筆含 @ 的訊息都重讀兩份檔會變成每秒 IO。
-        // Robustness：整段 try-catch fail-swallow — regex / IO 失敗都不該讓已寫入的訊息回報失敗。
+        // ⭐ TASK-0299（2026-09-25）：規則本體（白名單、條目格式、跳過誰）搬到 SCP_TavernMentions，
+        //   inbox 的附加／修剪搬到 SCP_TavernInbox（跨 process 鎖）—— Editor 與 Senate Server 呼叫同一支。
+        //   本檔只剩轉接（見下方 NotifyMentions／IsExternalRelay）。
         // ===========================================================
-        const double MENTION_WHITELIST_TTL_SEC = 60.0;
-        static HashSet<string> s_MentionWhitelist = null;
-        static double s_MentionWhitelistAt = -1;
-
-        static HashSet<string> GetMentionWhitelist()
-        {
-            double now = UnityEditor.EditorApplication.timeSinceStartup;
-            if (s_MentionWhitelist != null && (now - s_MentionWhitelistAt) < MENTION_WHITELIST_TTL_SEC)
-            {
-                return s_MentionWhitelist;
-            }
-            var aValid = new HashSet<string>();
-            var aIdentList = LoadIdentities();
-            if (aIdentList != null && aIdentList.identities != null)
-            {
-                foreach (var aRow in aIdentList.identities) aValid.Add(aRow.id);
-            }
-            foreach (var aPersonaId in LoadPersonaIds()) aValid.Add(aPersonaId);
-            s_MentionWhitelist = aValid;
-            s_MentionWhitelistAt = now;
-            return aValid;
-        }
 
         // ===========================================================
         // 區塊：外部中繼判定（2026-07-29 契約化）
@@ -1355,23 +1331,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //   初版寫成「source != agent 即外部中繼」→ 後台通知會被 mirror daemon 當 echo 跳過，
         //   Tim 手機就收不到銀行後台廣播（自己上午才建的 IsEcho 改寫踩到自己）。
         //   因此改成「已知中繼來源前綴」白名單；新增中繼通道（line / webhook…）時擴這裡。
-        static readonly string[] RELAY_SOURCE_PREFIXES = { "discord", "line", "telegram", "webhook" };
-
+        // ⇒ 前綴清單與判定本體住 SCP_TavernMentions（TASK-0299：Server 寫入端也要判它），這裡只轉接。
         public static bool IsExternalRelay(UCL_ChatMessage msg)
-        {
-            if (msg == null) return false;
-            if (msg.meta != null && msg.meta.TryGetValue("source", out var aSrc) && !string.IsNullOrEmpty(aSrc))
-            {
-                string aLower = aSrc.ToLowerInvariant();
-                foreach (var aPrefix in RELAY_SOURCE_PREFIXES)
-                {
-                    if (aLower.StartsWith(aPrefix)) return true;
-                }
-            }
-            // 第二道識別：中繼身分的 sender_id 慣例是「<來源>:<外部 uid>」
-            if (!string.IsNullOrEmpty(msg.sender_id) && msg.sender_id.StartsWith("discord:")) return true;
-            return false;
-        }
+            => msg != null && SCP.Core.Tavern.SCP_TavernMentions.IsExternalRelay(msg.meta, msg.sender_id);
 
         /// <summary>
         /// IsExternalRelay 判定自我檢查（不開遊戲）：涵蓋中繼來源 / 後台來源 / 純 agent 三類。
@@ -1456,83 +1418,30 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             catch { return absPath.Replace('\\', '/'); }
         }
 
-        // msgFilePath（2026-08-13 新增）：這筆訊息「實際寫出的那個檔」的絕對路徑，由 AppendMessage
-        // 從寫入端原樣傳進來。用途是讓被截斷的 inbox 條目能直接指出全文在哪 —— 讀的人不必知道
-        // messages/<日期>/<seq:D8>.json 這條命名慣例，也不必自己從 seq 反推（反推會在檔案被刪過的
-        // 房間指向別人的訊息，而且指錯了不會報錯）。傳空字串代表呼叫端沒給，此時只印 seq，不編造路徑。
+        // ===========================================================
+        // 區塊職責：@mention → 對方 inbox —— **本體在 SCP_TavernMentions**（TASK-0299）。
+        // 物理意義：通知是寫入不變量 ⇒ 掛在寫入端。editor 模式寫入端就是本檔的 AppendMessage（本地寫完呼叫這裡）；
+        //          server 模式由 Senate `Cmd_TavernWrite` 寫完呼叫同一支 ⇒ 直打 tavern-write 的訊息也有人通知。
+        // 數值影響：msgFilePath 是這筆訊息實際寫出的檔（絕對路徑），給截斷的條目指出全文在哪；
+        //          傳空 ＝ 呼叫端沒給 ⇒ 只印 seq，⛔ 不由 seq 反推編造。失敗只警告，⛔ 不讓已寫入的訊息回報失敗。
+        // ===========================================================
         static void NotifyMentions(string roomId, UCL_ChatMessage msg, int seq, string msgFilePath = null)
         {
+            if (msg == null) return;
             try
             {
-                if (msg == null || string.IsNullOrEmpty(msg.body) || seq <= 0) return;
-                string aSenderId = msg.sender_id ?? string.Empty;
-                var aMatches = System.Text.RegularExpressions.Regex.Matches(msg.body, @"@([a-zA-Z0-9_-]+)");
-                if (aMatches.Count == 0) return;
-
-                var aMentioned = new HashSet<string>();
-                foreach (System.Text.RegularExpressions.Match m in aMatches) aMentioned.Add(m.Groups[1].Value);
-
-                var aValidIds = GetMentionWhitelist();
-                string aSenderName = !string.IsNullOrEmpty(msg.sender_name) ? msg.sender_name : aSenderId;
-                // 房間用 roomId 不用顯示名：agent 要回覆時 op=post --arg room=<roomId> 吃的就是這個值，
-                // 顯示名（如「酒館主廳 (Tavern)」）看得懂但貼不進指令，反而要再查一次。
-                string aRoomRef = roomId;
-
-                // 區塊職責：組 inbox 條目的標題與內文（2026-07-29 Tim 拍板精簡版）
-                // 物理意義：標題列 = 「誰、對誰、什麼時候、什麼性質」四件事一行看完；
-                //          房名放建議句（掃 inbox 時才知道要去哪個房回），不重複塞標題。
-                // 數值影響：純渲染。附加標記皆為「有才印」— 沒有的情況版面跟舊版一樣短。
-                //   📱 = 外部中繼（Discord 等）進來的訊息，跟 agent 在館內發言區分；
-                //   [tag] = meta.tag（task-share / ack-only / idle-self-talk…）給 triage 用；
-                //   ↩seq=N = 這筆是回覆某則，接 thread 用；📎N = 帶 N 個附件。
-                // inbox 標題只稱 persona（Tim 2026-08-01 拍板，幽靈點名配套）：
-                // 顯示「月讀大小姐@kaguya」會養成「@agent persona」的錯誌寫法，而 mention regex 只認 @persona
-                // → 顯示層帶頭只稱 persona，稱呼習慣從讀到的格式養。無 persona 的訊息（酒保/系統）保留原顯示名。
-                string aSenderLabel = !string.IsNullOrEmpty(msg.sender_persona)
-                    ? msg.sender_persona : aSenderName;
-                var aMarks = new List<string>();
-                if (IsExternalRelay(msg)) aMarks.Add("📱");
-                if (msg.meta != null && msg.meta.TryGetValue("tag", out var aTag) && !string.IsNullOrEmpty(aTag)) aMarks.Add($"[{aTag}]");
-                if (msg.reply_to.HasValue && msg.reply_to.Value > 0) aMarks.Add($"↩seq={msg.reply_to.Value}");
-                if (msg.refs != null && msg.refs.Count > 0) aMarks.Add($"📎{msg.refs.Count}");
-                string aMarkStr = aMarks.Count > 0 ? " " + string.Join(" ", aMarks) : string.Empty;
-
-                bool aTruncated = msg.body.Length > 200;
-                string aQuoted = aTruncated ? msg.body.Substring(0, 200) + "…" : msg.body;
-                // 截斷時附上原訊息檔路徑（Tim 2026-08-13 拍板）：舊版只給「（全文 seq=N）」，
-                // 而 seq 不是路徑 —— 讀到的人得自己知道 messages/<日期夾>/<seq:D8>.json 這條慣例才找得到，
-                // 實務上就是不去找，於是被截掉的 200 字之後全部靜默流失。
-                // 路徑只印「寫入端交過來的真路徑」；沒拿到就退回舊格式，**不由 seq 反推編造**。
-                string aTail = string.Empty;
-                if (aTruncated)
+                var aIn = new SCP.Core.Tavern.SCP_MentionInput
                 {
-                    string aRel = ToRepoRelative(msgFilePath);
-                    aTail = string.IsNullOrEmpty(aRel)
-                        ? $"（全文 seq={seq}）"
-                        : $"（全文 seq={seq} — 完整原文請讀 `{aRel}`）";
-                }
-
-                int aNotifyCount = 0;
-                foreach (string aTargetId in aMentioned)
-                {
-                    // 不通知自己 — 必須同時比 sender_id 與 sender_persona（crest-001 QA 2026-07-29）：
-                    // sender_id 是 bank/agent 層 id（cc / zeta），persona 才是 @ 得到的名字（crest-001 / summit）。
-                    // 只比 sender_id 的話，persona 在文中提到自己名字（例如「請 Tim 發一筆 @crest-001」）
-                    // 就會通知到自己 — 她親自當了案例。
-                    // 邊界：只跳過「完全同名」；同 actor 的跨 persona（basecamp 提到 ridge-001）仍算真通知，要送。
-                    if (aTargetId == aSenderId) continue;
-                    if (!string.IsNullOrEmpty(msg.sender_persona) && aTargetId == msg.sender_persona) continue;
-                    if (aTargetId.StartsWith("_")) continue;         // 系統 id（_quest_system 等）
-                    if (!aValidIds.Contains(aTargetId)) continue;    // 白名單外（@everyone / 拼錯 / 書名 slug）
-                    string aTitle = $"💬 {aSenderLabel} @妳{aMarkStr}";
-                    string aBody = $"> {aQuoted}\n\n建議前往 `{aRoomRef}` 房回覆{aTail}";
-                    UCL_ChatTavernQuestIO.AppendInbox(roomId, aTargetId, seq, aTitle, aBody);
-                    aNotifyCount++;
-                }
-                if (aNotifyCount > 0)
-                {
-                    Debug.Log($"[ChatTavern] {roomId}/seq={seq} mention 寫 inbox ×{aNotifyCount}: {string.Join(",", aMentioned)}");
-                }
+                    Room = roomId, Seq = seq, SenderId = msg.sender_id ?? "", SenderName = msg.sender_name ?? "",
+                    SenderPersona = msg.sender_persona ?? "", Body = msg.body ?? "", Meta = msg.meta,
+                    ReplyTo = msg.reply_to, RefsCount = msg.refs?.Count ?? 0, MsgFilePath = msgFilePath ?? "",
+                };
+                var aRes = SCP.Core.Tavern.SCP_TavernMentions.Notify(UCL_AgentCommandsPath.DataRoot, aIn, UCL_RepoPath.RepoRoot,
+                                                                     iLine => Debug.Log("[ChatTavern] " + iLine));
+                if (aRes.Notified.Count > 0)
+                    Debug.Log($"[ChatTavern] {roomId}/seq={seq} mention 寫 inbox ×{aRes.Notified.Count}: {string.Join(",", aRes.Notified)}");
+                foreach (string aFail in aRes.Failures)
+                    Debug.LogWarning($"[ChatTavern] mention 通知失敗（訊息已寫入，不受影響）：{aFail}");
             }
             catch (Exception ex)
             {

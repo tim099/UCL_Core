@@ -127,7 +127,8 @@ namespace UCL.Core.EditorLib.AgentCommands
                             Debug.LogWarning($"[ActivePersonaLocks] {file} 內 persona='{declared}' 與目錄名 '{persona}' 不同 —— 以目錄名為準");
                         string actualRaw = data.GetString("actual_agent", "");
                         string sessionKey = data.GetString("session_key", "");
-                        ReadNowStatus(persona, sessionKey, out string nowStatus, out string statusUpdatedAt);
+                        string lockedAt = data.GetString("locked_at", "");
+                        ReadNowStatus(persona, sessionKey, lockedAt, out string nowStatus, out string statusUpdatedAt);
                         list.Add(new UCL_PersonaLockInfo
                         {
                             Persona = persona,
@@ -136,7 +137,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                             BankAccount = data.GetString("bank_account", ""),
                             ActualAgent = UCL_ActualAgentUtility.ParseOrNone(actualRaw),
                             ActualAgentRaw = actualRaw,
-                            LockedAt = data.GetString("locked_at", ""),
+                            LockedAt = lockedAt,
                             SessionKey = sessionKey,
                             ClaimOrigin = data.GetString("claim_origin", ""),
                             Pid = data.GetInt("pid", 0),
@@ -162,18 +163,22 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         // ===========================================================
         // 區塊職責：讀 persona 的 now_status（`cmd/now_status.json`，TASK-0294 起與 lock 分檔）。
-        // 物理意義：狀態檔的 session_key 必須等於這一場 lock 的 session_key —— 對不上＝上一場的殘留，丟棄。
+        // 物理意義：狀態檔的 session_key **與** locked_at 都必須等於這一場 lock 的 —— 對不上＝上一場的殘留，丟棄。
+        //          ⛔ 只比 session_key 不夠：它是 `{actual_agent}-{persona}` 的常數，同 agent 重新登入完全相同
+        //          （TASK-0294 QA @kotoko）。TASK-0294 返工前寫出、沒有 locked_at 的舊狀態檔 ⇒ 對不上 ⇒ 丟棄（只供顯示，可接受）。
         // 數值影響：檔不存在／讀不了／壞檔／對不上 ⇒ 兩欄皆空（顯示「沒設定目前狀態」）。
         //          ⚠ 這裡把「讀不了」壓成「沒設定」是刻意的：now_status 只供顯示、不閘任何行為。
         // ===========================================================
-        static void ReadNowStatus(string persona, string sessionKey, out string nowStatus, out string statusUpdatedAt)
+        static void ReadNowStatus(string persona, string sessionKey, string lockedAt, out string nowStatus, out string statusUpdatedAt)
         {
             nowStatus = ""; statusUpdatedAt = "";
             if (!UCL_AtomicFileRead.TryReadAllText(UCL_LettersPath.NowStatus(persona), out string text, out _)) return;
             try
             {
                 var data = JsonData.ParseJson(text);
-                if (data == null || !string.Equals(data.GetString("session_key", ""), sessionKey, StringComparison.Ordinal)) return;
+                if (data == null
+                    || !string.Equals(data.GetString("session_key", ""), sessionKey, StringComparison.Ordinal)
+                    || !string.Equals(data.GetString("locked_at", ""), lockedAt, StringComparison.Ordinal)) return;
                 nowStatus = data.GetString("now_status", "");
                 statusUpdatedAt = data.GetString("status_updated_at", "");
             }

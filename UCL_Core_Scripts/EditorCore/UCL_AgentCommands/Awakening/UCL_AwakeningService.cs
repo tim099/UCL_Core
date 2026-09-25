@@ -515,7 +515,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         //          （呼叫端＝Cmd_Tavern post 的 status 參數、Cmd_Coding 開場／更新／收場）。
         //          TASK-0294（Tim 2026-09-25）：**只寫 `cmd/now_status.json`，⛔ 不再改寫 lock** ——
         //          lock 只在上線寫、下線刪（原本整檔重寫 lock，每次都開一個「lock 不存在」的窗口）。
-        //          狀態檔帶 lock 的 session_key：讀取端對不上就丟棄 ⇒ 上一場的狀態不會掛到新的一場。
+        //          狀態檔帶 lock 的 session_key ＋ locked_at：讀取端兩格都對上才採用 ⇒ 上一場的狀態不會掛到新的一場。
+        //          ⛔ 只帶 session_key 不夠：它是 `{actual_agent}-{persona}` 的常數，同 agent 重新登入完全相同
+        //          （TASK-0294 QA @kotoko）；locked_at 只在登入時寫、每次重生。
         // 數值影響：lock 不存在或讀不了 ⇒ no-op 回 false（沒登入就沒有「現在狀態」可言）；lock 只讀不寫。
         // ===========================================================
         public static bool UpdateNowStatus(string iPersona, string iStatus)
@@ -527,6 +529,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 if (aLock == null) return false;
                 var aStatus = new JsonData();
                 aStatus["session_key"] = new JsonData(aLock.GetString("session_key", ""));
+                aStatus["locked_at"] = new JsonData(aLock.GetString("locked_at", ""));
                 aStatus["now_status"] = new JsonData(iStatus ?? "");
                 aStatus["status_updated_at"] = new JsonData(NowIso());
                 UCL_LettersPath.EnsureCmdDir(iPersona);
@@ -540,7 +543,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             }
         }
 
-        /// <summary>刪 persona 的 now_status 檔（登入／登出用）。失敗只警告 —— 殘留的狀態檔會被 session_key 比對擋掉。</summary>
+        /// <summary>刪 persona 的 now_status 檔（登入／登出用）。失敗只警告 —— 殘留的狀態檔會被讀取端的 session_key＋locked_at 比對擋掉。</summary>
         public static void DeleteNowStatus(string iPersona)
         {
             string aPath = UCL_LettersPath.NowStatus(iPersona);

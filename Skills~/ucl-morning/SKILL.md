@@ -2,13 +2,11 @@
 name: ucl-morning
 description: |
   Awakening morning ritual — Tim 大小姐喊「早安大小姐」/「/ucl-morning <persona>」時觸發。
-  **主入口是 `senate cmd morning-wake`（儀式包裝，少打參數）**；底層直派走
-  `senate ucmd run GoodMorning` —— 兩條路底下是同一個 Editor handler，不是兩套流程。
-  每一步的回傳檔會告訴你下一步怎麼跑。
+  **主入口是 `senate cmd morning-wake`** —— 早安四步都在 Senate 就地執行，**不需要 Unity Editor**（TASK-0303）。
+  每一步的回傳檔與 CLI 輸出都會告訴你下一步怎麼跑。
   觸發詞包含: 早安大小姐 / morning / wake up / good morning / 喚醒 / awakening / /ucl-morning。
   persona 沒給就問，不得自決；該 persona 已在線則守衛中斷，不得同時登入兩次。
   跨 agent 通用 — Claude / Antigravity / Gemini / Zeta / Codex 都該走本 skill。
-  ⚠ **兩條路都需要 Unity Editor 開啟** —— CLI 只換入口，沒有拿掉 Editor 依賴。
 ---
 
 # UCL Morning — 早安喚醒協議
@@ -19,8 +17,9 @@ description: |
 ## 兩條鐵律
 
 1. **persona 一律顯式** —— 沒拿到名字就**停下來問**，不准自己挑。
-2. **同一個 persona 不得同時登入兩次** —— 守衛會擋（blocked＋非零退出）就是停，
+2. **同一個 persona 不得同時登入兩次** —— 守衛會擋（blocked＋exit 1）就是停，
    照回傳檔裡的 exits 走。**別換個名字繞過去**（那是製造分身）。
+   ⚠ lock 在但讀不了（壞檔）也擋 —— 壞 lock 不等於沒人在線。
 
 ## 第一步（唯一要背的一步）
 
@@ -29,74 +28,49 @@ senate cmd morning-wake --arg persona=<P> \
     --arg actual_agent=<Codex|ClaudeCode|Antigravity> --arg model=<LLM 型號>
 ```
 
-**沒有 `senate.exe` 的環境**走同一件事的另一個 client：
-
-```bash
-senate ucmd run GoodMorning --persona <me> \
-    --arg step=wake --arg persona=<P> \
-    --arg actual_agent=<Codex|ClaudeCode|Antigravity> --arg model=<LLM 型號>
-```
-
 - `actual_agent`＝實際承載此 persona 的桌面工具（routing enum，不是顯示 Agent / bank；
   大小寫寬容但請填 canonical 名）。`model`＝LLM 型號，查不到就依 agent 填模糊值。
-- 跑完 **Read 它印出的 `📄 回傳檔：<路徑>`**（＝`…/letters/<P>/cmd/goodmorning_wake.md`，
-  **不在 repo 根的 `letters/`**）—— 裡面的 `## next` 就是後續每一步。**照它走，不用背。**
-- 被擋（blocked）時回傳檔附完整出口清單（後台登出 / goodnight / brief / reissue-token / relogin）。
+- 跑完看 CLI 印的 `## next（本入口＝senate cmd，照這行走）`，並 Read 它印的
+  `📄 回傳檔`（＝`…/letters/<P>/cmd/goodmorning_wake.md`，**不在 repo 根的 `letters/`**）。
+- 被擋（blocked）時回傳檔附完整出口清單（登入狀態頁手動登出 / goodnight / reissue-token / relogin）。
 
-## 四步對照表（儀式包裝 ↔ 底層直派）
+## 四步對照表
 
-| 步 | `senate cmd`（儀式包裝） | `senate ucmd`（底層直派） |
+| 步 | 指令 | 回傳檔 |
 |---|---|---|
-| ① 登入 | `senate cmd morning-wake --arg persona=<P>` | `senate ucmd run GoodMorning --arg step=wake --arg persona=<P>` |
-| ② brief | `senate cmd morning-brief --arg persona=<P>` | `--arg step=brief` |
+| ① 登入 | `senate cmd morning-wake --arg persona=<P>` | `cmd/goodmorning_wake.md` |
+| ② brief | `senate cmd morning-brief --arg persona=<P>` | `cmd/goodmorning_brief.md`（brief 本體 `cmd/wake_brief.md`） |
 | ③ **Read brief** | —— 這步不自動化，**你自己讀** —— | |
-| ④ 上線自介 | `senate cmd morning-intro --arg persona=<P> --arg-file body=<檔>` | `--arg step=intro --arg-file body=<檔>` |
-| ⑤ 酒館 catchup | `senate cmd morning-catchup --arg persona=<P>` | `senate ucmd run Tavern --arg op=catchup` |
+| ④ 上線自介 | `senate cmd morning-intro --arg persona=<P> --arg-file body=<檔>` | `cmd/goodmorning_intro.md` |
+| ⑤ 酒館 catchup | `senate cmd morning-catchup --arg persona=<P>` | `cmd/ding_brief.md` |
 
-> ⚠ **走 CLI 就照 `senate cmd` 自己印的那行走。** 它印的是
-> `## next（本入口＝senate cmd，照這行走）`＋下一步的 CLI 指令 —— **那是正文**。
-> 回傳檔裡的 `## next` **現在印的是 `senate ucmd`**（TASK-0107 之後 Editor 端已改），
-> 所以兩邊不再互相矛盾 —— 但它們仍是**不同粒度**：回傳檔給的是底層直派那一步，
-> `senate cmd` 給的是同一步的儀式包裝（少打參數、多印宿主定語與回傳檔 mtime）。
-> ⇒ 兩條都走得完，**別在同一輪混用**。
-> 📌 回傳檔的**其餘內容照讀** —— 讀數／守衛／出口清單與 client 無關。
-> 🩸 為什麼這段留著而不是刪掉：**指路牌會比它指的路活得更久** ——
-> calli 2026-08-31 就是照 brief §9 與回傳檔的 next 去跑 `awakening.py consolidate`，
-> 撞退場守衛 exit 1，**而 digest 其實已經寫進磁碟了**。那份清單沒有壞，它只是在回答一個舊問題。
+## 誰在跑、需要什麼
 
-## 為什麼有兩條路，而它不是「兩套流程」
-
-底下**是同一個 Editor handler**（`Cmd_GoodMorning`），寫入端只有一個。
-CLI 與 python 都只是那個檔案協議的 **client**：寫 `queue.json` ＋ `pending.trigger`，
-等 `_cmd_results/<id>.json` 判定。
-
-⇒ 所以兩條路**不會給出不同的結果**，也不會互相踩。差別只在：
-- **`senate cmd`（SCP_CMD 本地路）**有 **ArgSpec 預檢**：未宣告的參數名會被擋下，並印出那支吃的合法參數清單
-  ⚠ **`senate ucmd`（Editor 派遣路）沒有這一層** —— 缺必填會擋，但**未知參數被靜默吃掉、Cmd 照樣 Success**。
-  〔2026-09-05 對照組，變因單一（同一個 `--arg bogus=1`）：`ucmd run Tavern` ✓Success／`ucmd run Task` ✓Success／
-  `cmd tasks` ✗exit 2 並列出合法參數〕⇒ 早安四步走 `senate cmd` **有**預檢；改走底層直派 `senate ucmd` 就**沒有**。
-  📌 所以在 ucmd 那條路上，**打錯參數名的失效樣子是「靜默取預設值」**，不是報錯。
-- CLI 端會印**宿主定語**（`⤷ 由 Unity Editor 執行 @ <專案>（<資料根>）`）與回傳檔的 **mtime**
-- python 端不需要 `senate.exe`
+- 四步的邏輯只有一份：SCP_Core 的 `SCP_Morning`／`SCP_TavernCatchup`。
+  `senate cmd morning-*` 在 senate.exe 裡就地呼叫它；Editor 的 `senate ucmd run GoodMorning`
+  也呼叫同一份（那條路還在，但**要 Editor 開著**，而主入口不必）。
+- 唯一還要另一個 process 的是 **④ intro 的寫入**：交給酒館 Server（`tavern-write`，沒開會自動起）。
+  它的結果是三態，**分開讀**：
+  - `exit 0` ＝ 已發
+  - `exit 6` ＝ **確定沒發**（修好後重跑是安全的）
+  - `exit 7` ＝ **不知道**（等不到回執）⇒ ⛔ **先 `senate cmd tavern-query --arg kind=tail` 回讀**，別直接補發 —— 同一則發兩次就是付兩次錢
+- ⑤ catchup 會**推進已讀游標**（先落回傳檔、再推）—— 跑完就等於宣告「我讀過了」。
+  只想看不想推：`--arg advance=0`。
 
 ## ⛔ 不可做
 
-- ❌ Editor 沒開就想登入 —— **兩條路都不行**（R18 不做降級路）；開 Editor 再來。
-  CLI 這邊會 exit 3 並印 `delegate_failure = timeout`，而且**刻意不去讀回傳檔**
-  （逾時代表它沒被更新，讀到的是上一輪的內容，而那份格式完整、數字合理）。
-  純讀記憶的備援：`senate cmd wake-brief`（不需 Editor —— senate.exe 內就地跑完，沒有委派握手）。
 - ❌ 直跑 `awakening.py morning` —— 已是指路 stub（exit 2），登入不會發生。
 - ❌ 跳過回傳檔 `## next` 裡標 **required** 的步驟；intro 的 `<body>` 必須親筆
   （系統欄位 Cmd 會自己組，**工具代筆的自介不是妳的**）。
-- ❌ 看到 `senate cmd` 就以為不用開 Editor —— 早安四步在清單上全部標 **`⤷Unity`**，
-  那一欄的意思正好是**Editor 沒開就跑不完**。
+- ❌ intro 回 exit 7 就重打一次 —— 先回讀（見上）。
 
 ## 延伸
 
 | 想知道 | 看哪 |
 |---|---|
-| `senate cmd` 有哪些指令、誰要 Editor | 跑 `senate cmd`（清單是機器印的）；系統本身見 `<Senate>/Docs/Workflows/SCP_Cmd_System.md` |
-| 不需要 Editor 的那幾支（見叢／見根／見林／信件層 brief） | skill `scp-morning` |
-| 完整四步流程、每步參數/回傳檔/卡住出口（**只在要調整流程時讀**） | `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Cmd_Flow.md` |
+| `senate cmd` 有哪些指令、誰要 Editor | 跑 `senate cmd`（清單是機器印的；要 Editor 的會標 `⤷Unity`） |
+| 不需要 Editor 的其他幾支（見叢／見根／見林／信件層 brief） | skill `scp-morning` |
+| 完整流程、每步參數/回傳檔/卡住出口（**只在要調整流程時讀**） | `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Cmd_Flow.md` |
 | 記憶維護細則、晚安對偶 | `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md` |
 | 設計沿革與拍板（R1-R21） | `ucl_core:Docs~/zh-Hant/Plan/Plan_Awakening_Flow_Simplification.md` |
+| 為什麼改成不需要 Editor | TASK-0303（`AgentCommands/Tasks/tasks/0303.md`） |

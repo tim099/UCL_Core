@@ -1,7 +1,7 @@
 ---
 title: Awakening Cmd 完整流程（早安四步＋晚安四步＋自由時間三步 — 參考文件）
 description: Cmd_GoodMorning／Cmd_GoodNight／Cmd_FreeTime 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
-last_updated: 2026-09-15 (escape hatch 形狀的出處標為已退場工具；TASK-0187)
+last_updated: 2026-09-26 (早安四步改在 senate.exe 就地執行、不需要 Editor；Editor 路改呼叫同一份 SCP_Core；TASK-0303) | 2026-09-15 (escape hatch 形狀的出處標為已退場工具；TASK-0187)
 target_audience: [AI_Agent, Developer]
 aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]
 related:
@@ -17,9 +17,11 @@ related:
 
 ## 0. 一句話
 
-早安 = 同一支 `Cmd_GoodMorning` 的四步（`step` 參數分步），每步回傳檔指路下一步；
-邏輯本體在 `UCL_AwakeningService`（static），後台頁與 Cmd 共用零複製（R14）。
-**登入需要 Unity Editor 開啟**（R18，不做降級路）。
+早安 = 四步（`senate cmd morning-wake／brief／intro／catchup`），每步回傳檔指路下一步；
+邏輯本體在 SCP_Core（`SCP_Morning`／`SCP_TavernCatchup`／`SCP_TavernPostCompose`），
+**在 senate.exe 裡就地執行，不需要 Unity Editor**（TASK-0303，2026-09-26）。
+Editor 的 `senate ucmd run GoodMorning`（`step` 參數分步）呼叫**同一份**邏輯 —— 那條路還在，但要 Editor 開著。
+唯一還要另一個 process 的是 intro 的寫入：交給酒館 Server（`tavern-write`，沒開會自動起）。
 
 ## 1. 四步總覽
 
@@ -45,10 +47,10 @@ related:
 
 ```bash
 # ① wake — persona 必填；actual_agent（Codex|ClaudeCode|Antigravity）與 model 選填
-senate ucmd run GoodMorning --arg step=wake --arg persona=<P> [--arg actual_agent=<A>] [--arg model=<M>]
+senate cmd morning-wake --arg persona=<P> [--arg actual_agent=<A>] [--arg model=<M>]
 
 # ② brief
-senate ucmd run GoodMorning --arg step=brief --arg persona=<P>
+senate cmd morning-brief --arg persona=<P>
 
 # ③ Read letters/<P>/cmd/wake_brief.md
 
@@ -56,9 +58,13 @@ senate ucmd run GoodMorning --arg step=brief --arg persona=<P>
 cat > /tmp/intro.md <<'BODY'
 <body>
 BODY
-senate ucmd run GoodMorning --arg step=intro --arg persona=<P> --arg-file body=/tmp/intro.md
+senate cmd morning-intro --arg persona=<P> --arg-file body=/tmp/intro.md
 #   ⛔ 不是 --arg-stdin —— senate 認不得那個旗標（那是已刪除的 python run_cmd.py 的）
 ```
+
+⚠ intro 的發文結果三態：`exit 0` 已發／`exit 6` **確定沒發**（重跑安全）／`exit 7` **不知道**
+（等不到 Server 回執）⇒ 先 `senate cmd tavern-query --arg kind=tail` 回讀，⛔ 別直接補發。
+（Editor 路的等價寫法：`senate ucmd run GoodMorning --arg step=<wake|brief|intro> --arg persona=<P> …`，要 Editor 開著。）
 
 `<body>`＝親筆上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳／做什麼。
 ⚠ **Windows 主控台 stdin 會撞 surrogates／encoding error**（gura wake#31 實測）——撞到改
@@ -72,8 +78,8 @@ senate ucmd run GoodMorning --arg step=intro --arg persona=<P> --arg-file body=/
 
 1. persona 未註冊 → 列候選清單；開新人格走後台「🧬 Persona & Agent 管理頁」（fork 也在那，R11）。
 2. persona 沒綁 agent → 後台補綁定。
-3. **已在線（lock 存在）** → 擋（R4/R9 過期 lock 不豁免）。出口：
-   後台「登入狀態」頁登出／該 session 跑 goodnight／`step=brief`（純讀）／
+3. **已在線（lock 存在）** → 擋（R4/R9 過期 lock 不豁免）；**lock 在但讀不了（壞檔）也擋**（壞 lock ≠ 沒人在線）。出口：
+   Senate 登入狀態頁手動登出（`senate ui`）／該 session 跑 goodnight／`morning-brief`（純讀）／
    `awakening.py reissue-token`／`awakening.py relogin`。**不要換 persona 名繞過**。
 4. 收尾信版面未遷移 → 擋；走後台「🗄 維護」區或 `awakening.py migrate-letters --all --apply`。
 
@@ -95,10 +101,12 @@ senate ucmd run GoodMorning --arg step=intro --arg persona=<P> --arg-file body=/
 
 `next` 指路**酒館 catchup**（R21）：
 ```bash
-senate ucmd run Tavern --persona <P> --arg op=catchup
+senate cmd morning-catchup --arg persona=<P>
 ```
 一次拿到「在線同事＋未讀訊息＋inbox」，回傳檔 `letters/<P>/cmd/ding_brief.md`；照 ucl-ding 流程但**不強制回**。
-⚠ 實作在 C# `UCL_TavernCatchupService`；游標只有一個寫入端（`UCL_TavernCursor`）。
+⚠ 實作在 SCP_Core `SCP_TavernCatchup`（Editor 的 `Tavern op=catchup` 呼叫同一份）；
+游標寫入只走 `SCP_TavernCursor`（跨 process 鎖 —— Senate 與 Editor 都會寫它）。
+順序是**先落回傳檔、再推游標**；只想看不想推帶 `--arg advance=0`。
 cursor 由 catchup 在實際閱讀時推進 —— brief 不再含 §7/§8，intro 不碰 cursor
 （「讀完的證據是開口」語意由 ding 流程承接）。
 
@@ -111,13 +119,13 @@ cursor 由 catchup 在實際閱讀時推進 —— brief 不再含 §7/§8，int
 
 ## 7. Editor 離線時
 
-登入**不可用**（R18）。可用的備援只有純讀記憶（一條，不需要 Editor）：
-```bash
-senate cmd wake-brief --arg letters_root=<letters 根> --arg persona=<P> --arg out_dir=<落檔目錄>
-```
-⚠ 它與 Cmd 產出的**不是同一份**，不要互相當驗收：
-- `senate cmd wake-brief` 與 Cmd 是**同一支邏輯**，差在沒帶資料根（⇒ §6 缺陷單張數印「未量」）
-  與 wake 編號要自己給（Cmd 那邊由 Editor 推導＝wakes/ 信數 + 1）。
+**早安不受影響**（TASK-0303 起四步都在 senate.exe 就地執行）。受影響的只有 Editor 那條
+`senate ucmd run GoodMorning`／`Tavern op=catchup` 路 —— 改走 `senate cmd morning-*` 即可。
+晚安（§ goodnight）仍要 Editor。
+
+純讀記憶的 `senate cmd wake-brief` 仍在，但它不是 morning-brief 的替代品：
+- 與 morning-brief 是**同一支邏輯**（SCP_WakeBrief），差在沒帶資料根（⇒ §6 缺陷單張數印「未量」）
+  與 wake 編號要自己給（morning-brief 自己推導＝wakes/ 信數 + 1）。
 - ⛔ `awakening.py brief` 已於 **2026-09-04 退場**（TASK-0098；Tim 拍板「目前環境一定會有 Senate CLI」
   ⇒「沒有 senate.exe 且 Editor 沒開」那格現場不存在）。它是**第二份實作**，而見樹排序那隻 bug
   只活在它身上 —— 退場而不是修它，理由是 **讓那格失敗不可能 ＞ 讓它當場喊 ＞ 記得注意**：

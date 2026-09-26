@@ -2,7 +2,8 @@
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 08/18 2026
-// per-persona 酒館已讀游標的讀寫 —— **唯一實作**（游標檔沒有第二個寫入端）。
+// per-persona 酒館已讀游標 —— Editor 端的入口。讀寫本體在 SCP_Core `SCP_TavernCursor`（TASK-0303），
+// 本類只剩吃 UCL_ChatMessage 的 ReadUnread／AdvanceToSeq（自由時間、觀影用）。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -18,10 +19,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
     // 物理意義：游標檔 `ChatTavern/_inbox_cursor/<persona>.json` 只有一個判準欄位
     //          `last_seen_ts`（ISO 字串），規則是 **ts > last_seen_ts 即未讀**。
     //
-    // ⚠⚠ **本類是這個游標檔唯一的寫入端。** 這一格是硬需求不是潔癖：
+    // ⚠⚠ **游標檔的寫入只准走 SCP_TavernCursor.WriteCursor**（本類的 WriteCursor 就是轉呼叫它）。
     //   游標是 read-modify-write，多個寫入端各自讀舊值再寫回 ⇒ 後寫的把前一次的推進吃掉，
     //   而失效樣子是「有幾則訊息再也不會出現在任何人的未讀裡」—— **沒有任何一層會喊**。
-    //   ⇒ 要讀未讀訊息一律經過本類（`Cmd_Tavern op=catchup` / 自由時間配對簡報都走這裡）；
+    //   ⇒ Editor 與 Senate 兩個 process 都會寫它，所以寫入拿的是跨 process 鎖（TASK-0303）；
     //   ⛔ 不要為了「只是讀幾行」在別處再寫一份判準。
     //
     // ⚠ 判準只有一條，改它就是改所有消費端：**`ts > last_seen_ts` 即未讀**。
@@ -42,55 +43,23 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// 絕不用「推到看得見的最新」去換一個好看的結果。</summary>
         public const int BACKLOG_SCAN_CAP = 4000;
 
-        public static string CursorPath(string iPersona)
-            => Path.Combine(UCL_RepoPath.AgentCommandsDir, "ChatTavern", "_inbox_cursor", iPersona + ".json");
+        // 區塊職責：游標檔的讀寫 —— 轉呼叫 SCP_Core `SCP_TavernCursor`（TASK-0303）。
+        // 物理意義：Senate 的 morning-catchup 也寫這個檔 ⇒ 兩個 process 的寫入必須拿**同一把**跨 process 鎖，
+        //          只能是同一份實作（單調規則、原子寫、欄位名 last_seen_ts／updated_at 都在那一份裡）。
+        // ⚠ 根改用 `UCL_AgentCommandsPath.DataRoot`（舊版是 `UCL_RepoPath.AgentCommandsDir`）——
+        //   rooms／inbox／設定都住在 DataRoot，只有游標用另一個根；預設兩者相同，覆寫資料根時舊版會各寫各的。
+        static string DataRoot => UCL_AgentCommandsPath.DataRoot.Replace('\\', '/');
+
+        public static string CursorPath(string iPersona) => SCP.Core.Tavern.SCP_TavernCursor.CursorPath(DataRoot, iPersona);
 
         /// <summary>讀 last_seen_ts；沒有游標檔回 null（語意＝「全部都算未讀」）。</summary>
-        public static string ReadCursor(string iPersona)
-        {
-            try
-            {
-                string aPath = CursorPath(iPersona);
-                if (!File.Exists(aPath)) return null;
-                var aJd = JsonData.ParseJson(File.ReadAllText(aPath, Encoding.UTF8));
-                string aTs = aJd?.GetString("last_seen_ts", "");
-                return string.IsNullOrEmpty(aTs) ? null : aTs;
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[TavernCursor] 讀取失敗（{iPersona}）: {e.Message}");
-                return null;
-            }
-        }
+        public static string ReadCursor(string iPersona) => SCP.Core.Tavern.SCP_TavernCursor.ReadCursor(DataRoot, iPersona);
 
-        // 區塊職責：推進游標（原子寫）。
-        // 物理意義：半寫的游標檔會被下一次讀取判成「沒有游標」⇒ **整個歷史重新變成未讀**。
-        //          所以先寫 tmp 再 rename，與 python 端同樣做法。
-        // 數值影響：寫入 last_seen_ts + updated_at 兩欄（欄位名與 python 端一致，別改）。
-        // ⚠ **單調**：只前進不後退（與 python `tavern_cmd.py` 的提交規則一致 ——
-        //   「pending <= 現有 last_seen_ts 就不動」）。少了這道，某輪讀到 0 筆或讀到舊訊息時
-        //   會把游標打回去 ⇒ 整批已讀重新變未讀，而那長得像「突然湧入一堆新訊息」。
+        /// <summary>推進游標（單調＋原子＋跨 process 鎖）。失敗只 warning —— 呼叫端要讀回比對。</summary>
         public static void WriteCursor(string iPersona, string iLastSeenTs)
         {
-            if (string.IsNullOrEmpty(iLastSeenTs)) return;
-            string aCur = ReadCursor(iPersona);
-            if (!string.IsNullOrEmpty(aCur) && string.CompareOrdinal(iLastSeenTs, aCur) <= 0) return;
-            try
-            {
-                string aPath = CursorPath(iPersona);
-                Directory.CreateDirectory(Path.GetDirectoryName(aPath));
-                var aJd = new JsonData();
-                aJd["last_seen_ts"] = new JsonData(iLastSeenTs);
-                aJd["updated_at"] = new JsonData(DateTime.UtcNow.ToString("o"));
-                string aTmp = aPath + ".tmp";
-                File.WriteAllText(aTmp, aJd.ToJsonBeautify(), new UTF8Encoding(false));
-                if (File.Exists(aPath)) File.Delete(aPath);
-                File.Move(aTmp, aPath);
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[TavernCursor] 推進失敗（{iPersona}）: {e.Message}");
-            }
+            string aErr = SCP.Core.Tavern.SCP_TavernCursor.WriteCursor(DataRoot, iPersona, iLastSeenTs);
+            if (aErr != null) Debug.LogWarning($"[TavernCursor] 推進失敗（{iPersona}）: {aErr}");
         }
 
 

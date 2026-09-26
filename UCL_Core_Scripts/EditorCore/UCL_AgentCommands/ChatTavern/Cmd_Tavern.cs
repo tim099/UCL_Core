@@ -1243,10 +1243,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 區塊：op=read — 切片查詢
         // ===========================================================
         // ===========================================================
-        // 區塊職責：op=catchup —— 叮／醒來的酒館 catch-up **唯一入口**。
-        // 物理意義：本方法只解參數、呼叫 `UCL_TavernCatchupService`、落回傳檔。
-        //          組裝與游標邏輯**一行都不寫在這裡**（Tim：邏輯抽 static class，不放 Cmd 內）。
-        // 數值影響：唯一寫入是游標推進（由 service 走 UCL_TavernCursor）＋一份回傳檔。
+        // 區塊職責：op=catchup —— 叮／醒來的酒館 catch-up（`senate ucmd run Tavern --arg op=catchup` 那條路）。
+        // 物理意義：組裝與游標邏輯在 SCP_Core `SCP_TavernCatchup`（TASK-0303）—— Senate 的 morning-catchup
+        //          呼叫同一份，Editor 不再有自己的一份。本方法只解參數、落回傳檔、推游標。
+        // ⚠ 順序：**先落回傳檔、再推游標**。舊版反過來（Build 內就推了），回傳檔寫不出來時訊息已被標成已讀。
+        // 數值影響：唯一寫入是游標推進（SCP_TavernCursor，跨 process 鎖）＋一份回傳檔。
         // ===========================================================
         void Op_Catchup(Dictionary<string, string> args)
         {
@@ -1254,22 +1255,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             if (string.IsNullOrEmpty(persona))
             { RejectLastOp(args, "catchup 缺少 persona（要知道是誰的游標與 inbox）"); return; }
 
-            string md = UCL_TavernCatchupService.Build(
-                persona,
+            string dataRoot = UCL_AgentCommandsPath.DataRoot.Replace('\\', '/');
+            var built = SCP.Core.Tavern.SCP_TavernCatchup.Build(
+                dataRoot, Awakening.UCL_AwakeningService.LettersDir.Replace('\\', '/'), persona,
                 GetArg(args, "room", "tavern"),
                 ParseIntArg(args, "min", 0),
                 GetArg(args, "quiet_system", "1") != "0",
                 GetArg(args, "include_self", "0") == "1",
-                ParseIntArg(args, "inbox_show", 0),
-                GetArg(args, "advance", "1") != "0",
-                out string advancedTo, out int unread);
+                ParseIntArg(args, "inbox_show", 0));
 
             string path = UCL_LettersPath.CmdPayload(persona, "ding", "brief");
-            UCL_LettersPath.EnsurePayloadDir(path);
-            string tmp = path + ".tmp";
-            File.WriteAllText(tmp, md, new UTF8Encoding(false));
-            if (File.Exists(path)) File.Delete(path);
-            File.Move(tmp, path);
+            SCP.Core.Letters.SCP_CmdPayload.Write(path, built.Body
+                + "- 游標：推進中…（若停在這行，代表推進那一步沒跑完 —— 下次會重讀這一段）\n");
+            var (cursorLine, advancedTo) = SCP.Core.Tavern.SCP_TavernCatchup.AdvanceAfterWrite(
+                dataRoot, persona, built, GetArg(args, "advance", "1") != "0");
+            SCP.Core.Letters.SCP_CmdPayload.Write(path, built.Body + cursorLine + Environment.NewLine);
+            int unread = built.Unread;
             UCL_AgentCommandRunner.ReportOutputFile(args, path);
             UCL_AgentCommandRunner.ReportOutputValue(args, "unread", unread.ToString());
             UCL_AgentCommandRunner.ReportOutputValue(args, "cursor_advanced_to", advancedTo ?? "(未推進)");

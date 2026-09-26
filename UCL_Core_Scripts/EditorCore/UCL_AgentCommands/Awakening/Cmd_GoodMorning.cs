@@ -1,7 +1,8 @@
 // 區塊職責：Cmd_GoodMorning — 早安流程的 Cmd 入口（Plan_Awakening_Flow_Simplification §8.8-§8.9）。
 //          同一支 Cmd 以 step 參數分步，每步回傳「下一步怎麼操作、傳哪些參數」（R16 next 導引）。
-// 物理意義：實際邏輯全在 UCL_AwakeningService（static，後台頁共用，R14）；本檔只做參數解析、
-//          步驟分派、回傳落檔。四步：wake（守衛+狀態寫入，不廣播）→ brief（就地跑 SCP_WakeBrief，
+// 物理意義：實際邏輯在 SCP_Core `SCP_Morning`（TASK-0303：Senate 的 morning-* 與本檔呼叫同一份，
+//          Editor 不再有自己的一份）；本檔只做參數解析、步驟分派、回傳落檔。
+//          ⚠ 主入口已是 `senate cmd morning-*`（不需要 Editor）；本 Cmd 留給 `senate ucmd run GoodMorning` 那條路。四步：wake（守衛+狀態寫入，不廣播）→ brief（就地跑 SCP_WakeBrief，
 //          2026-09-01 起不再 spawn python）→ [agent Read brief] → intro（單則上線廣播＋next 指路 catchup，R21）。
 // 數值影響：每一步的回傳值落檔（Tim 2026-08-13 拍板供 QA）——
 //          persona 步驟 → letters/<persona>/cmd/goodmorning_<step>.md（回傳檔一律住 cmd/，
@@ -84,47 +85,37 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 case "brief":
                 {
                     RequirePersona(aStep, aPersona);
-                    // 路徑解析在主執行緒先做（CorePath 走 AssetDatabase，main-thread-only）；
-                    // 長跑段（brief 組裝要讀幾十個檔）仍丟背景執行緒，不擋 Editor 主執行緒。
-                    string aScript = UCL_AwakeningService.ResolveAwakeningScriptPath();
-                    string aWarmLetters = UCL_LettersPath.Root;   // 暖 DataRoot 快取（PlayerPrefs 同屬主執行緒資源）
-                    // 餘額也在主緒先查好餵過去（同理由：Treasury 路徑解析走 DataRoot）。
+                    // 根在主執行緒先解析（DataRoot／RepoRoot 的快取屬主執行緒資源）；
+                    // 長跑段（brief 組裝要讀幾十個檔）丟背景執行緒，不擋 Editor 主執行緒。
+                    var aRoots = UCL_AwakeningService.MorningRoots();
                     var aResult = await UniTask.RunOnThreadPool(
-                        () => UCL_AwakeningService.RunBrief(aPersona, nameof(Cmd_GoodMorning), 120000, aScript),
-                        cancellationToken: token);
+                        () => SCP.Core.Letters.SCP_Morning.Brief(aRoots, aPersona), cancellationToken: token);
                     var aSb = new StringBuilder();
                     aSb.AppendLine($"# GoodMorning step=brief persona={aPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
                     aSb.AppendLine();
-                    aSb.AppendLine(aResult.report);
+                    aSb.AppendLine(aResult.Report);
                     // QA 欄位/格式摘要**不進回傳值**（Tim 2026-08-13 拍板）——agent 的下一步是讀 brief 本體，
                     // 摘要對它是純噪音；人工 QA 走後台頁「📄 生成 brief」按鈕（那裡會顯示 SummarizeBrief）。
-                    if (aResult.ok)
+                    if (aResult.Ok)
                     {
                         aSb.AppendLine("## next");
                         int aNo = 1;
-                        aSb.AppendLine($"{aNo++}. **required** — Read `{aResult.briefPath}`（接回身分 —— 這步不自動化）");
+                        aSb.AppendLine($"{aNo++}. **required** — Read `{aResult.BriefPath}`（接回身分 —— 這步不自動化）");
                         // 條件步驟 B2：無自我介紹文件 → 讀完 brief 後先補件（intro 前置守衛會實擋）
-                        if (UCL_AwakeningService.FindGlossaryPersonaEntry(aPersona) == null)
+                        if (SCP.Core.Letters.SCP_Morning.FindGlossaryPersonaEntry(aRoots, aPersona) == null)
                         {
-                            var aTodo = UCL_AwakeningService.SelfIntroTodoLines(aPersona);
+                            var aTodo = SCP.Core.Letters.SCP_Morning.SelfIntroTodoLines(aRoots, aPersona);
                             aSb.AppendLine($"{aNo++}. **required** — {aTodo[0]}");
                             for (int i = 1; i < aTodo.Count; i++) aSb.AppendLine(aTodo[i]);
                         }
-                        // 🩸 2026-09-10：這一行原本教 `--arg-stdin body`，而 **senate 認不得那個旗標**
-                        //   （實測：`✗ ucmd 認不得的旗標 '--arg-stdin'` —— 那是已刪除的 python `run_cmd.py` 的旗標）。
-                        //   ⚠ 它印在**早安必經路**上：每個人 wake 都會照這一行打。
-                        //   ⛔ 同一句話有第二個寫入端（`UCL_AwakeningService`）—— 改這裡要同時改那裡，
-                        //   不然兩個寫入端會各教一種打法，而讀的人分不出哪個是對的。
-                        aSb.AppendLine($"{aNo++}. **required** — 上線自介：senate ucmd run GoodMorning --arg step=intro --arg persona={aPersona} --arg-file body=<檔> ＜<body> 親筆，長文一律走檔案、不經過 shell＞");
-                        aSb.AppendLine("   <body>＝妳**親筆**的上線自介（建議 2-5 句）：讀完 brief 後跟同事打招呼、今天打算接哪條帳/做什麼、想 @ 誰就 @。");
-                        aSb.AppendLine("（⚠ Windows 主控台 stdin 撞 surrogates/encoding error 時，改 --arg-file body=<檔> —— gura wake#31 實測）");
-                        aSb.AppendLine("   系統欄位（wake# / Agent / Bank 餘額 / Layer）由 Cmd 自動組在訊息前半，**不用寫**；只寫妳自己的話 —— 工具代筆的自介不是妳的（憲法⑥）。");
+                        // intro 那一步的指路只有一份（SCP_Morning.IntroNextLines）—— Senate 與 Editor 兩個入口印同一句。
+                        foreach (string aLine in SCP.Core.Letters.SCP_Morning.IntroNextLines(aPersona, ref aNo)) aSb.AppendLine(aLine);
                     }
                     string aPath = UCL_AwakeningService.StepPayloadPath(aPersona, "brief");
                     WritePayload(args, aPath, aSb.ToString());
-                    if (!aResult.ok)
+                    if (!aResult.Ok)
                         throw new Exception($"[GoodMorning] brief 生成失敗（詳見 {aPath}）");
-                    Debug.Log($"[GoodMorning] step=brief 完成（{aResult.briefLines} 行）→ {aPath}");
+                    Debug.Log($"[GoodMorning] step=brief 完成（{aResult.BriefLines} 行）→ {aPath}");
                     return;
                 }
 
@@ -139,16 +130,17 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                         throw new Exception($"[GoodMorning] step=intro 缺 body（詳見 {aPath}）");
                     }
 
-                    // 前置守衛：brief-before-broadcast 不變式的新形狀（在線 + brief 存在且非空且不早於 lock）
-                    var aCheck = UCL_AwakeningService.PrecheckIntro(aPersona);
-                    if (!aCheck.ok)
+                    // 前置守衛與標頭都在 SCP_Core（SCP_Morning，TASK-0303）—— Senate 的 morning-intro 呼叫同一份。
+                    var aRoots = UCL_AwakeningService.MorningRoots();
+                    var aCheck = SCP.Core.Letters.SCP_Morning.PrecheckIntro(aRoots, aPersona);
+                    if (!aCheck.Ok)
                     {
-                        WritePayload(args, aPath, $"# GoodMorning step=intro persona={aPersona}\n\n## blocked\n- reason: {aCheck.error}\n");
+                        WritePayload(args, aPath, $"# GoodMorning step=intro persona={aPersona}\n\n## blocked\n- reason: {aCheck.Error}\n");
                         throw new Exception($"[GoodMorning] step=intro 前置檢查未過（詳見 {aPath}）");
                     }
-                    var aLock = aCheck.lockData;
+                    var aLock = aCheck.Lock;
 
-                    // 兩則併一則（§8.6）：系統欄位段（Cmd 組）＋ 親筆 body —— 走 Cmd_Tavern in-process
+                    // 兩則併一則（§8.6）：系統欄位段（SCP_Morning 組）＋ 親筆 body —— 走 Cmd_Tavern in-process
                     // post（op=share 同款模式），token enforce / schema 檢查 / 計酬 / mirror 全沿用不重寫。
                     int aWake = 0;
                     string aLayerRole = "";
@@ -160,8 +152,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                         if (aPJd != null) { aWake = aP.wake_count; aLayerRole = aP.layer_role; }
                     }
                     catch (Exception e) { Debug.LogWarning($"[GoodMorning] persona 檔讀取失敗（自介標頭降級）: {e.Message}"); }
-                    string aHeader = UCL_AwakeningService.BuildIntroHeader(
-                        aPersona, aLock.agent, aLock.model, aLock.bank_account, aWake, aLayerRole);
+                    string aHeader = SCP.Core.Letters.SCP_Morning.BuildIntroHeader(
+                        aRoots, aPersona, aLock.Agent, aLock.Model, aLock.BankAccount, aWake, aLayerRole);
                     string aNote = GetArg(args, "note", "");
                     if (!string.IsNullOrEmpty(aNote)) aHeader += $"\n- Note: {aNote}";
                     string aMerged = aHeader + "\n\n---\n\n" + aBody;
@@ -172,7 +164,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                         { "room", "tavern" },
                         { "persona", aPersona },
                         { "body", aMerged },
-                        { "session_token", aLock.session_token },   // enforce ON 時的通行證；OFF 時無害
+                        { "session_token", aLock.SessionToken },   // enforce ON 時的通行證；OFF 時無害
                         { "meta", "{\"tag\":\"goodmorning-protocol\",\"category\":\"meta\",\"status-change\":\"online\",\"decision\":\"preferred\"}" },
                     };
                     // in-process 呼叫 → 把「我是哪筆 cmd」帶進子 args，seq 才回得到我的 context
@@ -198,7 +190,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     aSb.AppendLine("## verify（讀回的事實）");
                     aSb.AppendLine($"- seq: **{aSeq}**");
                     aSb.AppendLine($"- message: `{aMsgPath}`（exists={File.Exists(aMsgPath)}）");
-                    aSb.AppendLine($"- brief 前置: `{aCheck.briefPath}`（{aCheck.briefLines} 行，mtime 晚於 locked_at）");
+                    aSb.AppendLine($"- brief 前置: `{aCheck.BriefPath}`（{aCheck.BriefLines} 行，mtime 晚於 locked_at）");
                     aSb.AppendLine("## next");
                     // 🩸 指路只寫**現在還活著的入口**。判準不是「寫得對不對」，是
                     //    **回傳檔的 next 是可直接照跑的指令** —— 這個預期是 R16/R17 整套流程的地基，
@@ -206,7 +198,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     //    ⚠ 而退場的入口不一定留得下 stub：檔案被刪之後，照跑得到的是
                     //    「找不到檔案」，一句話都不解釋 ⇒ **不可以靠「它自己會印指路」兜底**。
                     aSb.AppendLine($"1. **required** — 酒館 catchup（知道在線同事＋追上訊息；照 ucl-ding 流程但**不強制回**）：");
-                    aSb.AppendLine($"   senate ucmd run Tavern --persona {aPersona} --arg op=catchup");
+                    aSb.AppendLine($"   senate cmd morning-catchup --arg persona={aPersona}");
                     aSb.AppendLine($"   （回傳檔 `letters/{aPersona}/cmd/ding_brief.md`；`--persona` 同時決定 queue 路由並戳進 args，不必再寫 --arg persona=）");
                     aSb.AppendLine("2. 之後照 brief §9 的今日動作清單走（見林 OVERDUE / 見森待折是 morning 的一部分，不是選配）。");
                     WritePayload(args, aPath, aSb.ToString());

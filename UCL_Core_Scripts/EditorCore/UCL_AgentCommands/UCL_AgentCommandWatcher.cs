@@ -168,11 +168,41 @@ namespace UCL.Core.EditorLib.AgentCommands
                 {
                     TryDispatchAgent(agentId);
                 }
+                WarnOrphanTriggers();
             }
             catch (Exception e)
             {
                 Debug.LogError($"[UCL_AgentCmdWatcher] OnEditorUpdate error: {e}");
             }
+        }
+
+        // 同一顆孤兒 trigger 只報一次；key = 路徑 + 寫入時間（重新投遞＝新的一顆，會再報）
+        static readonly System.Collections.Generic.HashSet<string> s_WarnedOrphans
+            = new System.Collections.Generic.HashSet<string>();
+
+        // 區塊職責：把「有 trigger、沒有 queue 檔」的 lane 從安靜變成出聲（TASK-0292）。
+        // 物理意義：上面的派工迴圈只走 ListAgentIds（以 queue 檔列舉）⇒ 這種 lane 的 trigger 永遠沒人看。
+        //   血證：2026-09-26 summit 活體，probe0292 無 queue.json ⇒ 30.2 秒無人收、Editor.log 零行；
+        //   補上 queue.json ⇒ 同一顆 trigger 1.04 秒被收走。
+        //   ⛔ 只出聲、不派工也不補 queue 檔 —— 該不該派是設計問題，不在本單射程。
+        // 數值影響：每拍多一次 queues/*/pending*.trigger 掃描；每顆孤兒 trigger 一行 LogWarning（不每秒重印）。
+        static void WarnOrphanTriggers()
+        {
+            var orphans = UCL_AgentCommandQueue.ListOrphanTriggers();
+            if (orphans.Count == 0 && s_WarnedOrphans.Count == 0) return;
+            var alive = new System.Collections.Generic.HashSet<string>();
+            foreach (var (queueId, triggerPath) in orphans)
+            {
+                string key;
+                try { key = triggerPath + "|" + System.IO.File.GetLastWriteTimeUtc(triggerPath).Ticks; }
+                catch { continue; }
+                alive.Add(key);
+                if (!s_WarnedOrphans.Add(key)) continue;
+                Debug.LogWarning($"[UCL_AgentCmdWatcher] lane '{queueId}' 有 trigger 但沒有 queue 檔 ⇒ 沒有人會來收它" +
+                                 $"（trigger 原樣留著，送件端只會拿到 timeout；⛔ 不會自動補 queue 檔）。" +
+                                 $"\n  trigger: {triggerPath}\n  缺的 queue 檔: {UCL_AgentCommandQueue.GetQueuePath(queueId)}");
+            }
+            s_WarnedOrphans.IntersectWith(alive);   // trigger 被收走或刪掉就忘掉，集合不無限長
         }
 
         // 區塊職責：分配特定 Agent 的待執行指令至 Runner，並負責偵測與修復因狀態變更（如 PlayMode 轉換）導致的「孤兒鎖」死鎖狀態。

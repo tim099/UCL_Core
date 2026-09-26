@@ -3,7 +3,7 @@ title: UCL Agent Command 系統整體架構
 description: AI agent 與 Unity Editor 的跨 process 指令系統 — 自動發現 / 反射註冊 / async 執行 / 多種觸發方式（UI / queue.json / Python / batchmode）
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-08-13 (§4.3 result 檔新增 outputs 欄 —— 回傳檔路徑隨 verdict 印出，caller 不再靠 skill 背路徑)
+last_updated: 2026-09-26 (Watcher 掃描段改成現況：拿掉已退場的 TryDispatchAgent(null)、新增孤兒 trigger 出聲 —— TASK-0292)
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -355,11 +355,14 @@ null → legacy default 路徑（行為跟改動前完全相同）。
 
 ### Watcher 多 trigger scan
 
-`UCL_AgentCommandWatcher.OnEditorUpdate`（1Hz throttled）改成兩段掃：
+`UCL_AgentCommandWatcher.OnEditorUpdate`（1Hz throttled）每拍做兩件事：
 
-1. `TryDispatchAgent(null)` — 匿名落點（`queues/anonymous/pending.trigger`）
-2. `foreach (var agentId in UCL_AgentCommandQueue.ListAgentIds())` — 掃 `queues/<persona>/queue*.json`，
-   本命回 `"<persona>"`、子通道回 `"<persona>/<lane>"` → 各自 `TryDispatchAgent(agentId)`
+1. `foreach (var agentId in UCL_AgentCommandQueue.ListAgentIds())` — 掃 `queues/<persona>/queue*.json`，
+   本命回 `"<persona>"`、子通道回 `"<persona>/<lane>"` → 各自 `TryDispatchAgent(agentId)`。
+   匿名落點 `queues/anonymous/` 也是這樣被列到的 ⇒ ⛔ 不另外呼叫 `TryDispatchAgent(null)`（會同一條 queue 派兩次，2026-08-01 雙扣款事故）。
+2. `WarnOrphanTriggers()`（TASK-0292）— `ListOrphanTriggers()` 找「有 `pending[-<lane>].trigger`、卻沒有對應 queue 檔」的 lane。
+   ⚠ 第 1 步**以 queue 檔列舉** ⇒ 這種 lane 的 trigger 永遠不會被派工，送件端只拿到 timeout。
+   本步只讓它**出聲**：每顆 trigger 一行 `LogWarning`（key＝路徑＋寫入時間，不每秒重印），⛔ 不派工、不自動補 queue 檔。
 
 多 trigger 同時存在會並行 dispatch（per-agent Runner 互不阻塞，Runner 端用 `HashSet<string> s_RunningAgents + lock` 防同 agent 重入）。
 

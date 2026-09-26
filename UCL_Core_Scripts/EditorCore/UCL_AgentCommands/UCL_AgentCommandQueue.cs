@@ -175,6 +175,47 @@ namespace UCL.Core.EditorLib.AgentCommands
         }
 
         /// <summary>
+        /// 列出**有 pending trigger、卻沒有對應 queue 檔**的 lane（TASK-0292）。
+        /// 回傳 (queueId, triggerPath)；queueId 形狀同 <see cref="ListAgentIds"/>。
+        /// </summary>
+        /// <remarks>
+        /// 🩸 <see cref="ListAgentIds"/> 以 queue 檔列舉 lane ⇒ queue 檔不在的 lane **不在候選集合裡**，
+        /// Watcher 永遠不會去看它的 trigger —— trigger 原樣躺著、送件端只拿到 timeout、Editor 一個字都不說
+        /// （2026-09-23 kotoko 於 TASK-0286 QA 活體量到：10 秒＋15 秒無人來收）。
+        /// 本函式只負責**看見**，⛔ 不替它補 queue 檔：猜它原本裝著什麼比不修更危險（沿用 TASK-0264 立場）。
+        /// 只看 pending；`.running` 不列 —— 它只會出現在已被列舉、派過工的 lane 上。
+        /// </remarks>
+        public static System.Collections.Generic.List<(string QueueId, string TriggerPath)> ListOrphanTriggers()
+        {
+            var list = new System.Collections.Generic.List<(string, string)>();
+            string queuesDir = Path.Combine(UCL_RepoPath.AgentCommandsDir, QueuesSubdir);
+            if (!Directory.Exists(queuesDir)) return list;
+            foreach (var dir in Directory.GetDirectories(queuesDir))
+            {
+                string persona = Path.GetFileName(dir);
+                if (string.IsNullOrEmpty(persona)) continue;
+                foreach (var f in Directory.GetFiles(dir, "pending*.trigger"))
+                {
+                    string name = Path.GetFileName(f);
+                    // GetFiles 的萬用字元在 Windows 上會連帶命中 8.3 短檔名 ⇒ 字尾再判一次，擋掉 .running
+                    if (!name.EndsWith(".trigger", StringComparison.Ordinal)) continue;
+                    string queueId;
+                    if (name == TriggerFileName) queueId = persona;                                  // 本命
+                    else if (name.StartsWith("pending-", StringComparison.Ordinal))                 // 子通道
+                    {
+                        string lane = name.Substring("pending-".Length, name.Length - "pending-".Length - ".trigger".Length);
+                        // 不合法的 lane 名丟給 GetQueuePath 會落 anonymous 並每拍印一次 warning ⇒ 這裡先擋
+                        if (!IsSafeSegment(lane)) continue;
+                        queueId = persona + LaneSeparator + lane;
+                    }
+                    else continue;
+                    if (!File.Exists(GetQueuePath(queueId))) list.Add((queueId, f));
+                }
+            }
+            return list;
+        }
+
+        /// <summary>
         /// 從 queueId 取得宣告的 persona —— 身分解析階梯 tier 2「queue 反推」。
         /// 查不到 / 匿名一律回 null。
         /// </summary>

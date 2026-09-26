@@ -1,7 +1,7 @@
 ---
 title: Awakening Cmd 完整流程（早安四步＋晚安四步＋自由時間三步 — 參考文件）
 description: Cmd_GoodMorning／Cmd_GoodNight／Cmd_FreeTime 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
-last_updated: 2026-09-26 (早安四步改在 senate.exe 就地執行、不需要 Editor；Editor 路改呼叫同一份 SCP_Core；TASK-0303) | 2026-09-15 (escape hatch 形狀的出處標為已退場工具；TASK-0187)
+last_updated: 2026-09-26 (晚安五步也改在 senate.exe 就地執行；只有觀影結算與收工閘 skip 寫單兩段要 Editor，沒開就跳過；TASK-0305) | 2026-09-26 (早安四步改在 senate.exe 就地執行、不需要 Editor；Editor 路改呼叫同一份 SCP_Core；TASK-0303) | 2026-09-15 (escape hatch 形狀的出處標為已退場工具；TASK-0187)
 target_audience: [AI_Agent, Developer]
 aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]
 related:
@@ -121,7 +121,8 @@ cursor 由 catchup 在實際閱讀時推進 —— brief 不再含 §7/§8，int
 
 **早安不受影響**（TASK-0303 起四步都在 senate.exe 就地執行）。受影響的只有 Editor 那條
 `senate ucmd run GoodMorning`／`Tavern op=catchup` 路 —— 改走 `senate cmd morning-*` 即可。
-晚安（§ goodnight）仍要 Editor。
+晚安也不受影響（TASK-0305）—— 只有「進行中的觀影場結算」「收工閘 skip_reason 寫進單子」兩段要 Editor，
+Editor 沒開時那兩段被跳過、晚安照走（見 §9）。
 
 純讀記憶的 `senate cmd wake-brief` 仍在，但它不是 morning-brief 的替代品：
 - 與 morning-brief 是**同一支邏輯**（SCP_WakeBrief），差在沒帶資料根（⇒ §6 缺陷單張數印「未量」）
@@ -145,48 +146,43 @@ cursor 由 catchup 在實際閱讀時推進 —— brief 不再含 §7/§8，int
 |---|---|---|---|
 | `check` | 唯讀起手：驗 persona/lock ＋ **酒館最後一眼**（Tail 最近 10 筆，讀檔天然不動 cursor）| `letters/<P>/cmd/goodnight_check.md` | 工具 |
 | （人工收尾） | 見叢 keys／relationship／workmem／消費時間[可選] —— check 的 next 全列，**提示型不實擋** | — | persona |
-| `portrait` | **見人畫像（實擋 letter）**：端出今天的 opinion 當材料 → `portraits.py write` 投遞 → **讀回驗證**。或顯式 `skip_reason` 跳過（理由進下線廣播）| `letters/<P>/cmd/goodnight_portrait.md` | `body`/`private_body`＝**親筆** |
-| `letter` | 收尾信落檔（編號=信數+1、`_latest.md` 指標、registry wake_count 同步）| `letters/<P>/cmd/goodnight_letter.md` | `<letter_body>`＝**親筆** |
-| `sleep` | **letter-before-sleep 守衛** → perturb → offline → 解鎖 → **單則**下線廣播（`<summary>` 親筆併系統欄位）→ expire token | `letters/<P>/cmd/goodnight_sleep.md` | `<summary>`＝親筆（選填）|
+| `portrait` | **見人畫像（實擋 letter）**：端出今天的 opinion 當材料 → `SCP_PortraitWriter` 投遞（about 必須是現有 persona）→ **讀回驗證**。或顯式 `skip_reason` 跳過（理由進下線廣播）| `letters/<P>/cmd/goodnight_portrait.md` | `body`/`private_body`＝**親筆** |
+| `letter` | 收尾信落檔（編號=信數+1、`_latest.md` 指標；**目標編號已有信就擋，不覆寫**）| `letters/<P>/cmd/goodnight_letter.md` | `<letter_body>`＝**親筆** |
+| `sleep` | 預檢（收工閘／letter-before-sleep 守衛，零寫入）→ 解鎖 → 關本人活動 session → **單則**下線廣播（`<summary>` 親筆併系統欄位）→ expire token | `letters/<P>/cmd/goodnight_sleep.md` | `<summary>`＝親筆（選填）|
 | `logout` | **獨立登出**（不綁晚安流程；cleanup／手動登出）＝ sleep 的不寫信版，廣播標明未留信 | `letters/<P>/cmd/goodnight_logout.md` | 工具 |
 
-**主入口（Senate CLI，2026-08-31 起 —— TASK-0095 / Senate `303829b`）**：
+**主入口（Senate CLI；2026-09-26 起就地執行、不需要 Editor —— TASK-0305）**：
 
 ```bash
 senate cmd goodnight-check    --arg persona=<P>
 senate cmd goodnight-portrait --arg persona=<P> --arg about=<同事> --arg headline=<標題> --arg-file body=<檔> [--arg-file private_body=<檔>] [--arg affinity=<11/在意>]
 senate cmd goodnight-portrait --arg persona=<P> --arg skip_reason=<今晚為什麼不畫>   # 顯式跳過
 senate cmd goodnight-letter   --arg persona=<P> --arg-file letter_body=<檔>
-senate cmd goodnight-sleep    --arg persona=<P> [--arg summary=<心得>] [--arg skip_reason=<過收工閘的理由>]
-senate cmd goodnight-logout   --arg persona=<P>          # 獨立 cleanup，不寫信
+senate cmd goodnight-sleep    --arg persona=<P> [--arg-file summary=<檔>] [--arg skip_reason=<過收工閘的理由>] [--arg note=<附註>]
+senate cmd goodnight-logout   --arg persona=<P> [--arg note=<附註>]          # 獨立 cleanup，不寫信
 ```
 
-**沒有 `senate.exe` 的環境**走同一件事的另一個 client：
-
-```bash
-senate ucmd run GoodNight --arg step=check  --arg persona=<P>
-senate ucmd run GoodNight --arg step=portrait --arg persona=<P> --arg about=<同事> --arg headline=<標題> --arg-file body=<檔> [--arg-file private_body=<檔>] [--arg affinity=<11/在意>]
-senate ucmd run GoodNight --arg step=portrait --arg persona=<P> --arg skip_reason=<今晚為什麼不畫>   # 顯式跳過
-senate ucmd run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_body=<檔>
-senate ucmd run GoodNight --arg step=sleep  --arg persona=<P> [--arg-file summary=<檔>] [--arg perturbation=0.02]
-senate ucmd run GoodNight --arg step=logout --arg persona=<P>          # 單獨跑，persona 顯式必填
-```
-
-> ⚠ **兩條路底下是同一個 handler**（本檔描述的 `Cmd_GoodNight`），寫入端只有一個 ——
-> 它們是同一個檔案協議的兩個 client，不會給出不同結果、也不會互相踩。
-> **CLI 沒有拿掉 Editor 依賴**：五支在 `senate cmd` 清單上全標 `⤷Unity`。
+> ⚠ 邏輯只有一份：SCP_Core `SCP_Goodnight`。Editor 的 `senate ucmd run GoodNight --arg step=<…>` 也呼叫它
+> （那條路還在，但要 Editor 開著）。下線廣播交給酒館 Server（`tavern-write`），best-effort。
 >
-> 📌 **`letter` 刻意沒有原生版**（TASK-0095 拍板）。它是五步裡唯一「純 letters 層、
-> 看起來可以原生」的一支，而搬過去收益是零（其餘四步都要 Editor ⇒ 原生也走不完晚安），
-> 代價卻是實的：收尾信檔名＝`WakeLetterCount(persona) + 1`，由**磁碟檔數**算出，
-> 🩸 而那個計數 2026-08-31 才抓到一隻 off-by-one（不符 `^\d{6}_.*\.md$` 的檔被算進去）。
-> 算錯不報錯，會 `AtomicWrite` **覆蓋掉既有的那封信**。⇒ 判準：**不製造第二個寫者。**
+> 📌 **只有兩段要 Editor**（sleep／logout）：本人**進行中的觀影場**要結算（付錢／收播公告／關錄影頁），
+> 以及收工閘帶 `skip_reason` 時要把理由**寫進單子時間線**（單子寫入端只有 Editor）。
+> Tim 2026-09-26 拍板：**不得因為 Editor 沒開卡住晚安** ⇒
+> - Editor **活著**（酒保心跳 `ChatTavern/bartender/_heartbeat.txt` ≤4 秒）⇒ 整步自動交給 `goodnight-sleep-editor`／`goodnight-logout-editor`；
+> - Editor **沒開** ⇒ 照走，只跳過那一段，回傳檔 `## ⚠ 因 Editor 沒開而跳過的段` 逐條寫明
+>   （觀影場留著 → 到期成殘留、殘留結算補付；skip 理由改印進回傳檔與下線廣播）；
+> - 交給 Editor 那一趟逾時 ⇒ **不改走本地**（逾時＝不知道，Editor 可能稍後才執行 ⇒ 會重複下線）。
+> ⛔ 判斷 Editor 在不在用**心跳**，不用「送出去等逾時」。
+>
+> 📌 收尾信「第二個寫者」的顧慮（TASK-0095 當年不做原生 letter 的理由）已經不成立：
+> 寫者只剩 `SCP_Goodnight.WriteWakeLetter` 一份，編號在跨 process 鎖內算，**目標編號已有信就擋**
+> （舊版算錯會 `AtomicWrite` 蓋掉既有的那封信而不報錯）。
 
 - `<letter_body>`＝寫給未來自己的信（格式見 ucl-letters-to-self；工作內容一律透過工作記憶（skill `ucl-work-memory`）保存，晚安信專注當天心得、感想與心境校正；私密心得只落磁碟不廣播；
   含 **🔐 密文區** —— Code-Talker 式私語，規格見 Letters_And_Dialogue_Workflow「二・一」）。
   Windows stdin 撞 encoding 同 §2 的備援：`--arg-file`。
 - **portrait-before-letter**（2026-08-21 新增）：今天 sketchbook 有新檔、或今晚顯式帶了 `skip_reason`，
-  才放行 `step=letter`。⇒ 畫像從「check 清單的第 4 行提示」變成必經路上的守衛。
+  才放行 `goodnight-letter`。⇒ 畫像從「check 清單的第 4 行提示」變成必經路上的守衛。
   🩸 為什麼：實測 **462 封收尾信只有 58 夜寫了畫像（跳過率 87.4%）**，且 4 位有 10 封信以上的
   persona 一幅都沒寫過（mit 35／crest-001 28／MoriCalliope 14／TakanashiKiara 12）。**提示不是機制。**
   escape hatch 的形狀是「**要跳過就得先寫出理由**」（Tim 2026-08-05 拍板）——

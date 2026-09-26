@@ -1,308 +1,25 @@
-// 區塊職責：晚安對帳 —— 見叢（`_keys_open.md`）的 `[TASK-n]` 引用 ✕ 單子的實際狀態。
+// 區塊職責：晚安的**收工閘**（PendingWrapups）與「顯式跳過」寫入（WriteSkip）—— Editor 端。
 //
-// 物理意義：Tim 2026-08-24 拍板「**早安 brief 不新增任何節**」，Task 經由見叢的引用行進入 brief。
-//   ⇒ 那條拍板開了一個洞：**別人指派給我、而我沒寫進見叢的單，早安不會提** ——
-//     因為見叢是我寫的，而我不知道的事不會出現在我自己列的清單上（枚舉盲區那一族）。
-//   本檔就是那個洞的補丁，而它**補在晚安**（我們本來就會停下來的那一格），不補在早安。
+// 物理意義：晚安 check 的「Task 對帳」報告已搬進 SCP_Core `SCP_TaskReconcileReport`（TASK-0305）——
+//   Senate 的 goodnight-check 與 Editor 的 GoodNight step=check 呼叫同一份；收工閘的判準本體也早已在
+//   SCP_Core（`SCP_TaskReconcile.PendingWrapups`）。本檔只剩兩件只有 Editor 做得到的事：
+//   把 SCP 判出的單讀成 UCL_TaskEntry，以及把跳過理由寫進單子時間線（單子寫入端目前只有 Editor 有）。
 //
-// ⚠ **只印不改**（RFC §2③）：晚安 `step=check` 的契約是「唯讀起手」，
-//   而在那裡靜默改任務狀態的話，那一行沒有人會讀 —— 自動化要掛在有 SHA 當證據的 commit 那一格。
-//   逾期認領的釋放是**機械但顯式**的：走 `Cmd_Task op=sweep`（本檔只把候選印出來 ＋ 附上那道指令）。
-//
-// 數值影響：純讀（見叢一次、tasks/ 一次）。任何失敗都回傳一行「對帳失敗」而不是靜默跳過 ——
-//   晚安流程不因對帳壞掉而中斷，但「今晚沒對到帳」必須看得見。
-// 2026-08-24 summit（TASK-0004）
+// ⚠ Senate 的 goodnight-sleep 在「收工閘帶 skip_reason」且 Editor 活著時會整步轉派到 Editor，
+//   就是為了走到這裡的 WriteSkip；Editor 沒開時那一段被跳過並在回傳檔明說（Tim 2026-09-26）。
+// 2026-08-24 summit（TASK-0004）；2026-09-26 報告部分移出（TASK-0305）
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using UnityEngine;   // TASK-0163：WriteSkip 沒落盤時要出聲（Debug.LogError）
 
 namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 {
     public static class UCL_TaskReconcile
     {
-        static readonly Regex TASK_REF = new Regex(@"TASK-(\d+)", RegexOptions.Compiled);
-
-        // ===========================================================
-        // 🩸 2026-09-08（TASK-0149）：本函式原本逐行找 `TASK-\d+`，**不看 `[ ]` / `[x]`**。
-        //   實測 summit 的見叢：未勾銷且含 `TASK-` 的行 **0** 行、已勾銷 **64** 行，
-        //   而晚安對帳 ⚠① 印「見叢還有 **26** 筆引用 —— 舊規則殘留，勾銷掉」，
-        //   並把已關的單逐條標成「**假帳：見叢說還沒做**」。
-        //   ⇒ 那句話本身才是假帳：**它叫人去勾銷已經勾銷的行**，而 `senate cmd keys --arg done_index=`
-        //   只認未完行 ⇒ 照它做會撞 exit 2，於是每晚重複報同一批行、而沒有任何動作能讓它變短。
-        // 📌 這正是本單標題講的病長在**消費端**的樣子：生產端補了勾銷入口之後，
-        //   「勾得動，但勾了沒有人讀」—— 做完的行與沒做的行在**讀取端**仍然同形。
-        // ===========================================================
-        // 🩸 2026-09-09（TASK-0180）：上一版只看「這一行自己是不是 `- [x]`」，**不看它屬於誰**。
-        //   而見叢的條目是多行的：續行縮排兩格接在條目底下。實測 kiara 的見叢 ——
-        //   `TASK-0057` / `TASK-0121` 兩個單號都只出現在 **`- [x]` 條目的續行**裡
-        //   （第 42 行那筆 `[x]` 的 ②③ 續行），而同一時刻 `senate cmd keys` 的兩筆未完
-        //   **一個單號都沒有** ⇒ 對帳 ① 照樣印「見叢說還沒做」。
-        //   ⇒ 上一版修的是「條目」那一格，而引用可以長在「續行」那一格 —— **守了一條路，而入口有兩個。**
-        // ⚠ 非縮排的散文行仍然算（手寫敘述提到單號）：那種行**無法被勾銷**，
-        //   是真的該從見叢移走的殘留 ⇒ 不能跟「已勾銷」混為一談。而它現在會被標成「不屬於任何未完條目」，
-        //   ⛔ 不再借用「見叢說還沒做」那句話 —— 那句話的主詞是條目，而它沒有條目。
-        // ⭐ `OpenIndex` 的尺**刻意跟 `SCP_Cmd_Keys` 的 `done_index` 對齊**（`- [ ]` 的 1-based 出現序）：
-        //   對帳印出來的序號要能直接貼進那道指令，否則這一段給的處置照樣是做不了的。
-        // ===========================================================
-
-        /// <summary>見叢裡一筆 `[TASK-n]` 引用：它在哪一行、屬於第幾筆未完條目。</summary>
-        public struct KeysRef
-        {
-            /// <summary>引用所在行（原文，已 Trim）。</summary>
-            public string Line;
-            /// <summary>擁有這一行的**未完**條目序號（1-based，與 `senate cmd keys --arg done_index=` 同一把尺）；
-            /// <c>0</c> ＝這一行不屬於任何未完條目（散文殘留 ⇒ 勾不掉，要手動移走）。</summary>
-            public int OpenIndex;
-        }
-
-        /// <summary>
-        /// 見叢裡**還沒勾銷**的條目（含其續行）提到的單號 → 那筆引用。
-        /// <para>⚠ 已勾銷（`- [x]`）的條目**連同它的續行**都不算 —— 它們是「做完了」，不是「殘留」。</para>
-        /// </summary>
-        public static Dictionary<int, KeysRef> ReadKeysRefs(string iKeysPath)
-        {
-            var aOut = new Dictionary<int, KeysRef>();
-            if (!File.Exists(iKeysPath)) return aOut;
-
-            int aOpenSeq = 0;        // 到目前為止數過幾筆未完條目（＝ done_index 的那把尺）
-            int aOwnerOpen = 0;      // 目前這一段的擁有者是第幾筆未完條目（0 ＝沒有未完擁有者）
-            bool aOwnerChecked = false;  // 目前這一段的擁有者是不是已勾銷條目
-
-            foreach (var aLine in File.ReadAllLines(iKeysPath, Encoding.UTF8))
-            {
-                string aTrimmed = aLine.TrimStart();
-                if (IsOpenEntryLine(aTrimmed))
-                {
-                    aOpenSeq++; aOwnerOpen = aOpenSeq; aOwnerChecked = false;
-                }
-                else if (IsCheckedEntryLine(aTrimmed))
-                {
-                    aOwnerOpen = 0; aOwnerChecked = true;
-                }
-                else if (aLine.Trim().Length == 0 || !char.IsWhiteSpace(aLine[0]))
-                {
-                    // 空行結束一段；沒縮排的非條目行是自成一段的散文 —— 兩者都沒有擁有者。
-                    aOwnerOpen = 0; aOwnerChecked = false;
-                }
-                // else：縮排的續行 ⇒ 沿用目前這一段的擁有者（這就是上一版漏掉的那一格）
-
-                if (aOwnerChecked) continue;
-
-                foreach (Match m in TASK_REF.Matches(aLine))
-                {
-                    if (!int.TryParse(m.Groups[1].Value, out int aIdx)) continue;
-                    if (aOut.ContainsKey(aIdx)) continue;
-                    aOut[aIdx] = new KeysRef { Line = aLine.Trim(), OpenIndex = aOwnerOpen };
-                }
-            }
-            return aOut;
-        }
-
-        /// <summary>這一行是不是**未勾銷**的見叢條目（`- [ ]`）。⚠ 傳入的字串應已 TrimStart。</summary>
-        // ⚠ 這兩支刻意**不要求結尾空白**：`SCP_WakeLetters.KeysEntries`（`done_index` 的來源）
-        //   比對的是 `- [ ]` / `- [x]`，要求空白會讓兩把尺在「條目後面沒有內容」那一行分家，
-        //   而分家的樣子是序號差一格 —— 那種錯不會報錯，只會勾錯行。
-        static bool IsOpenEntryLine(string iTrimmed)
-            => !string.IsNullOrEmpty(iTrimmed) && iTrimmed.StartsWith("- [ ]", StringComparison.Ordinal);
-
-        /// <summary>這一行是不是**已勾銷**的見叢條目（`- [x]` / `- [X]`）。⚠ 傳入的字串應已 TrimStart。</summary>
-        static bool IsCheckedEntryLine(string iTrimmed)
-            => !string.IsNullOrEmpty(iTrimmed)
-            && (iTrimmed.StartsWith("- [x]", StringComparison.Ordinal)
-                || iTrimmed.StartsWith("- [X]", StringComparison.Ordinal));
-
-        /// <summary>這張單跟這個 persona 有關嗎（參與者或開單人）。</summary>
-        static bool Involves(UCL_TaskEntry e, string iPersona)
-            => e.RolesOf(iPersona).Count > 0
-            || string.Equals(e.reporter, iPersona, StringComparison.OrdinalIgnoreCase);
-
-        // ===========================================================
-        // 區塊職責：組出晚安對帳那一段（markdown）。
-        // 物理意義：以下每一段都**只印**（段號別當成段數 —— 這個清單長過，而註解漏過一次：
-        //   ④ 是 TASK-0015 加的，而本行當時還寫著「三類」）：
-        //   ① 見叢裡還留著 `[TASK-n]` 引用 ⇒ **舊規則的殘留**，該勾銷（2026-09-07 起見叢只放個人代辦）
-        //   ② 跟我有關、還開著的單的張數 —— **只報數字**，逐張列在早安 brief 的 §2.5 見單
-        //   ③ 我掛在 in_progress 且逾期 ⇒ 認領變成占位（釋放走 op=sweep，顯式）
-        //   ④ Task ↔ 工作記憶：(a) 連結壞掉 (b) 久未更新
-        //   ⑤ 收工預告：等一下 `step=sleep` 會擋什麼（**只列不擋**，TASK-0019）
-        // 數值影響：純讀。回傳字串一定非空 —— 沒有不一致時也要印「對過帳了，沒有不一致」，
-        //   因為「沒印」跟「沒對」在回傳檔上長得一樣。
-        // ===========================================================
-        public static string BuildReport(string iPersona, string iKeysPath)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("## 📋 Task 對帳（見叢引用 ✕ 單子實際狀態）—— **只印不改**");
-            try
-            {
-                var aAll = UCL_TaskIO.LoadAll();
-                if (aAll.Count == 0)
-                {
-                    sb.AppendLine("- 系統裡目前沒有任何單（`AgentCommands/Tasks/tasks/` 是空的）——"
-                        + " 這是「沒有單」，不是「沒對帳」。");
-                    return sb.ToString();
-                }
-                var aRefs = ReadKeysRefs(iKeysPath);
-                sb.AppendLine($"- 讀數：單 **{aAll.Count}** 張／見叢引用 **{aRefs.Count}** 筆"
-                    + $"（見叢：`{iKeysPath}`{(File.Exists(iKeysPath) ? "" : " ⚠ **檔不存在**")}）");
-
-                // ① 見叢裡的 `[TASK-n]` 引用 —— 新規則下**一筆都不該有**
-                // 🩸 2026-09-07 之前這裡只抓「指向已關單」的引用，而規則改成
-                //   「專案的事一律開 Task、見叢只放個人代辦」之後，**引用本身**就是殘留：
-                //   開著的那些會跟早安 §2.5 重複報一次，關掉的那些會躺在見叢裡變成假帳。
-                // ⚠ 這一段每一句都只准講**量到的東西**（TASK-0180）：
-                //   上一版對每個已關單一律加註「**假帳**：見叢說還沒做」，而那句話的主詞是「見叢的某一筆」——
-                //   引用長在已勾銷條目的續行裡時，見叢**根本沒有說**那句話，是掃描器替它說的。
-                //   ⇒ 現在分三種講法，而且每一種都帶位址（第幾筆未完／不屬於任何條目）。
-                var aStaleRefs = new List<string>();
-                var aCheckOffIdx = new List<int>();   // 真的勾得掉的那幾筆（序號直接貼進指令）
-                foreach (var kv in aRefs.OrderBy(k => k.Key))
-                {
-                    var e = aAll.FirstOrDefault(t => t.index == kv.Key);
-                    int aOpen = kv.Value.OpenIndex;
-                    string aWhere = aOpen > 0
-                        ? $"見叢第 **#{aOpen}** 筆（未完）引用了它"
-                        : "而引用它的那一行**不屬於任何未完條目**（勾不掉 —— 要手動從見叢移走）";
-                    string aState;
-                    if (e == null) aState = $"**單子不存在** —— {aWhere}";
-                    else if (e.IsClosed())
-                    {
-                        aState = $"已 `{e.status}` —— {aWhere}";
-                        if (aOpen > 0) aCheckOffIdx.Add(aOpen);
-                    }
-                    else aState = $"還開著（早安 §2.5 已經會列它，這行是重複的）—— {aWhere}";
-                    aStaleRefs.Add($"TASK-{kv.Key:0000} {aState}"
-                        + $"\n      · 見叢原文：{Trunc(kv.Value.Line, 120)}");
-                }
-                // 處置只在**真的勾得掉**的時候才印，而且印的是實際序號 ——
-                // 🩸 上一版一律印 `<未完序號>` 這個佔位字，而那兩筆根本不在未完清單上 ⇒
-                //   照它走的人會拿一個不存在的序號去勾，或勾掉無關的第 1 筆。
-                string aHint = aCheckOffIdx.Count == 0 ? ""
-                    : $"\n    ⇒ `senate cmd keys --arg persona={iPersona} --arg done_index="
-                      + string.Join(",", aCheckOffIdx.Distinct().OrderBy(i => i)) + "`";
-                sb.AppendLine(aStaleRefs.Count == 0
-                    ? "- ✅ ① 見叢裡沒有任何 `[TASK-n]` 引用（合乎新規則：見叢只放個人代辦）"
-                    : $"- ⚠ ① 見叢還有 **{aStaleRefs.Count}** 筆 `[TASK-n]` 引用 —— 舊規則殘留：" + aHint);
-                foreach (var s in aStaleRefs) sb.AppendLine("    · " + s);
-
-                // ② 跟我有關、還開著的單 —— **只報張數**。
-                // 🩸 這一格以前是「見叢沒引用 ⇒ 早安不會提它們」的洞，補在晚安。
-                //   2026-09-07 早安長出 §2.5 見單（每天機械撈）之後那個洞不存在了 ——
-                //   而一個補完的洞如果繼續報，它會讓人以為還有洞。⇒ 降成一行讀數。
-                var aMine = aAll.Where(e => !e.IsClosed() && Involves(e, iPersona)).ToList();
-                sb.AppendLine($"- 📋 ② 跟我有關的未關單 **{aMine.Count}** 張"
-                    + " —— 逐張列在早安 brief 的 **§2.5 見單**（機械撈取，不需要抄進見叢）");
-
-                // ③ 逾期認領（占位）
-                var aNow = DateTime.UtcNow;
-                var aStaleClaims = aAll.Where(e => !e.IsClosed()
-                        && e.status == UCL_TaskStatus.in_progress
-                        && e.RolesOf(iPersona).Count > 0
-                        && e.DaysSinceUpdate(aNow) >= UCL_TaskIO.STALE_DAYS).ToList();
-                sb.AppendLine(aStaleClaims.Count == 0
-                    ? $"- ✅ ③ 我沒有逾期認領（in_progress 超過 {UCL_TaskIO.STALE_DAYS} 天沒動）"
-                    : $"- ⏳ ③ 有 **{aStaleClaims.Count}** 張我認領後逾期未動 ⇒ 認領已經變成占位：");
-                foreach (var e in aStaleClaims)
-                    sb.AppendLine($"    · {e.Id} {Trunc(e.title, 60)}　{e.DaysSinceUpdate(aNow)} 天沒動");
-                if (aStaleClaims.Count > 0)
-                    sb.AppendLine($"    ⇒ 釋放回 todo（機械、可重跑）："
-                        + $"`run Task --arg op=sweep --arg confirm=1`");
-
-                // ===========================================================
-                // ④ Task ↔ 工作記憶（TASK-0015；契約 ②「不一致只印不自動修」）
-                // 物理意義：跨多日的大 Task 最常死在「單子還開著，而沒有人記得上次做到哪」。
-                //   ⇒ 兩類都只印：
-                //     (a) **單向連結** —— 單子指向一個主題，而**那個主題不在磁碟上**
-                //     (b) **久未更新** —— 未關單的 `updated_at` 超過門檻
-                //   ⚠ (a) 只判「主題不存在」，**不判「主題在但沒有 state」** —— 後者不是壞連結，
-                //     是拍板後的正確形狀（Tim 2026-08-24：進度由 Task 紀錄，記憶不額外記進度）。
-                //     🩸 2026-08-25 修正：本註解原本多寫了「（或沒有 state）」而 code 從未這樣判 ——
-                //     **註解比實作大**。照拍板改註解不改 code：把合規列成異常，就是製造一個天天亮的警示。
-                // ⚠ 門檻沿用 `STALE_DAYS`（basecamp 拍板 ②）：Tim 的新約束是「進度由 Task 本身紀錄，
-                //   記憶不額外記進度」⇒ 這裡量的與 sweep 量的是**同一件事：這張單多久沒動**。
-                //   📌 同一個量就該一個常數；不同的量才需要各自的常數。
-                // ===========================================================
-                // ⚠ `aMine` 是 ② 算好的那一份（同一個定義：跟我有關且未關）——
-                //   刻意共用，兩份各算一次遲早會有一邊改了另一邊沒改，而兩邊都不報錯。
-                var aBrokenLink = new List<string>();
-                var aColdMemory = new List<string>();
-                foreach (var e in aMine)
-                {
-                    string aTopic = (e.memory_topic ?? "").Trim();
-                    if (aTopic.Length > 0 && !UCL_TaskMemoryLink.TopicExists(aTopic))
-                    {
-                        aBrokenLink.Add($"{e.Id} → `{aTopic}`　"
-                            + ((e.memory_archived_commit ?? "").Length > 0
-                                ? $"（已歸檔 `{e.memory_archived_commit}` —— 這是正常的，只是提醒接手要去 git 找）"
-                                : "**主題不在磁碟上且沒有歸檔 sha** ⇒ 連結壞了，不是沒有記憶"));
-                    }
-                    int aDays = e.DaysSinceUpdate(aNow);
-                    if (aDays >= UCL_TaskIO.STALE_DAYS)
-                        aColdMemory.Add($"{e.Id} `{e.status}` {Trunc(e.title, 50)}　**{aDays} 天沒動**"
-                            + (aTopic.Length == 0 ? "（沒掛記憶 ⇒ 接手的人只有這張單）"
-                                                  : $"　記憶：`{aTopic}`"));
-                }
-                sb.AppendLine(aBrokenLink.Count == 0
-                    ? "- ✅ ④a 記憶連結沒有壞的（掛了主題的單，主題都在）"
-                    : $"- ⚠ ④a 有 **{aBrokenLink.Count}** 筆記憶連結要看：");
-                foreach (var s in aBrokenLink) sb.AppendLine("    · " + s);
-                sb.AppendLine(aColdMemory.Count == 0
-                    ? $"- ✅ ④b 跟我有關的未關單都在 {UCL_TaskIO.STALE_DAYS} 天內動過"
-                    : $"- 🧊 ④b 有 **{aColdMemory.Count}** 張未關單超過 {UCL_TaskIO.STALE_DAYS} 天沒動"
-                        + "（跨多日大 Task 死在這裡：單還開著，而沒人記得上次做到哪）：");
-                foreach (var s in aColdMemory) sb.AppendLine("    · " + s);
-                if (aColdMemory.Count > 0)
-                    sb.AppendLine("    ⇒ **只印不改**（契約②）：要嘛去推進它，要嘛把現況寫進它的記憶主題，"
-                        + "要嘛 `op=update` 改狀態說明它為什麼停著。");
-
-                // ===========================================================
-                // ⑤ 收工預告（TASK-0019 唯一退回的那格；QA basecamp 2026-08-27）
-                // 物理意義：PM 把原驗收的「印出…並擋住」拆成兩半 —— **擋**留在 `step=sleep`
-                //   （閘要長在真正下線的必經路上），**印**補在這裡。而在此之前 check 對收工閘
-                //   **一個字都沒印**：人要一路走到 sleep 才第一次知道等一下會被什麼擋住。
-                // ⚠ 這一段**只列不擋** —— check 的契約是唯讀起手（本檔開頭那條「只印不改」）。
-                // ⚠ 印的是 `PendingWrapups` 本人，**跟閘同一個述詞**，不是另寫一份
-                //   「我猜它會擋什麼」的清單 —— 那就是第二個真相源，而它會漂：
-                //   預告與實擋一旦分家，最先出現的樣子是「預告說沒事而 sleep 擋下」，
-                //   那比沒有預告更糟（人會開始不信預告）。
-                //   📌 代價是 `LoadAll()` 多跑一次（本段與 ①-④ 各載一次）——
-                //     刻意付：省下那一次就得把清單傳進來，而傳進來的東西會跟閘的判準分岔。
-                // ⚠ 零筆也要印：「沒印」跟「沒對」在回傳檔上長得一樣（同本方法開頭那條）。
-                // ===========================================================
-                var aPreWrapup = PendingWrapups(iPersona);
-                sb.AppendLine(aPreWrapup.Count == 0
-                    ? "- ✅ ⑤ 收工預告：目前**沒有單會擋下線**"
-                        + "（本次醒來後有動靜（含別人在單上留言）、還開著、而收工紀錄已過期或從未收工的單：0 張）"
-                    : $"- 🔔 ⑤ 收工預告：有 **{aPreWrapup.Count}** 張單會在 `step=sleep` **實擋**"
-                        + "（本次醒來後有動靜（含別人在單上留言）＋ 還開著 ＋ 我是參與者 ＋ 最後一次收工之後又有動靜／從沒收過工）：");
-                foreach (var e in aPreWrapup)
-                    sb.AppendLine($"    · {e.Id} `{e.status}` {Trunc(e.title, 60)}");
-                if (aPreWrapup.Count > 0)
-                {
-                    sb.AppendLine("    ⇒ 現在就可以收（**本段只列不擋**，擋的是 `step=sleep`）：");
-                    // ⚠ 不做 Take(N)：截斷的清單看起來跟完整的清單一模一樣，
-                    //   而這份清單的長度本來就被「本次醒來有動靜的單」夾住了。
-                    foreach (var e in aPreWrapup)
-                        sb.AppendLine($"      `run Task --arg op=wrapup --arg index={e.index}"
-                            + " --arg-file progress=<還剩什麼、下一步從哪接>"
-                            + " [--arg-file why=<為什麼卡住／試過什麼不行 ⇒ 進工作記憶>]`");
-                    sb.AppendLine("    ⇒ 真的沒東西可寫 → `step=sleep` 帶 `--arg skip_reason=<一句話>`"
-                        + "（理由會寫進那幾張單的時間線）。");
-                }
-            }
-            catch (Exception ex)
-            {
-                // ⚠ 失敗要看得見：晚安流程照走，但「今晚沒對到帳」不可以長得像「對過帳沒問題」
-                sb.AppendLine($"- ⚠ **對帳失敗**（{ex.Message}）—— 這一段沒有讀數，"
-                    + "不要當成「沒有不一致」。");
-            }
-            return sb.ToString();
-        }
-
         // ===========================================================
         // 區塊職責：晚安的**收工閘** —— 本次醒來後有動靜（含別人在單上留言）、還開著、我是參與者，
         //   而**最後一次收工之後又有動靜**（或從沒收過工）的單。
@@ -473,7 +190,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             if (e == null) return false;
             string aNow = UCL_TaskIO.NowUtc();
             // ⭐ TASK-0163：本函式就是那個「`⛔ [RMW-END]` 前哨貼不進來」的位置 ——
-            //   它把 `e` **當參數收**，於是 READ 發生在更上游（`UCL_AwakeningService.PrepareSleep`
+            //   它把 `e` **當參數收**，於是 READ 發生在更上游（`Cmd_GoodNight` sleep 那一步
             //   的 `foreach` 之前就把清單載好了），這裡沒有一個地方放得下那個標記。
             //   ⇒ 走 `Mutate` 之後跨度由型別決定：拿 index 進去、在鎖內重讀，
             //   呼叫端傳進來的 `e` 降級成「提示」（只用它的 index）。
@@ -499,12 +216,6 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var aRoles = e.RolesOf(iPersona);
             if (aRoles.Count > 0) return aRoles.Select(r => r.ToString()).ToList();
             return new List<string> { "reporter（開單人，未列參與者）" };
-        }
-
-        static string Trunc(string s, int n)
-        {
-            s = (s ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
-            return s.Length <= n ? s : s.Substring(0, n) + "…";
         }
     }
 }

@@ -3,7 +3,7 @@ title: UCL Agent Command 系統整體架構
 description: AI agent 與 Unity Editor 的跨 process 指令系統 — 自動發現 / 反射註冊 / async 執行 / 多種觸發方式（UI / queue.json / Python / batchmode）
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/
 namespace: UCL.Core.EditorLib.AgentCommands
-last_updated: 2026-09-26 (Watcher 掃描段改成現況：拿掉已退場的 TryDispatchAgent(null)、新增孤兒 trigger 出聲 —— TASK-0292)
+last_updated: 2026-09-27 (§4.1.1 開跑過而被砍斷的 OneShot 不再從頭重跑、RerunSafeAfterInterrupt —— TASK-0306)
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -91,6 +91,23 @@ UCL Agent Command 解決的問題：**AI agent 沒有 Unity 環境**，但需要
 [3a] 成功 → 寫 _cmd_results/<id>.json (Success) → 從 queue 移除
 [3b] 失敗 → 寫 _cmd_errors/<id>.md + _cmd_results/<id>.json (Failed) → 也從 queue 移除（§4.3）
 ```
+
+### 4.1.1 開跑過而被砍斷的 OneShot ⛔ 不從頭再跑（TASK-0306，2026-09-27）
+
+runner 在 handler 起跑**前**把 `StartedAt` 寫進 queue，有結論（成功／失敗）就清掉。
+⇒ 重載後載入時看到「`StartedAt` 有值而 `LastRunResult` 是 null」＝**上一個 domain 把它砍在半路**
+（domain reload／PlayMode 轉移／Editor 崩潰），對外副作用**可能已經發生**。
+
+| 情況 | runner 的處置 |
+|---|---|
+| 本進程另一批正在跑它（PlayMode 不重載時） | 不碰，留給那一批 |
+| `_cmd_results/<id>.json` 已在（跑完了，只是出隊沒落盤） | 直接出隊，⛔ 不重跑、不覆寫 verdict |
+| handler 宣告 `RerunSafeAfterInterrupt => true` | 從頭再跑一次（舊的「自癒」只剩這一條） |
+| 其餘（**預設**） | 標 `Failed`，result 檔帶 `interrupted: true`＋`started_at`，失敗紀錄可一鍵補跑，然後出隊 |
+
+> 🩸 血證（basecamp 2026-09-26）：Plurk post 跑到一半 HTTP 已送出，domain reload 砍掉它，
+> 重載後 runCount=0 從頭再跑 ⇒ 同一則回應發了兩次。
+> ⚠ 呼叫端讀到 `interrupted: true` 時，意思是「**不知道做了沒**」（⛔ 不是「沒做成」）⇒ 先回讀目標，再決定補不補。
 
 ### 4.2 Repeatable
 
@@ -390,6 +407,10 @@ null → legacy default 路徑（行為跟改動前完全相同）。
 ## 8.2 卡住排查 / 繞行 Recovery（2026-06-07 summit 補，血換）
 
 **症狀**：送了 cmd 但 `_last_op.md` 一直不更新、`run_cmd.py` timeout、queue 裡某筆 `LastRunError` 顯示 `Interrupted by PlayMode transition, waiting for self-healing resumption...`。
+
+> ⚠ 2026-09-27 起（TASK-0306）：接手的那一批**不再一律重跑**被 PlayMode 轉移打斷的那筆 ——
+> 只有宣告 `RerunSafeAfterInterrupt` 的 handler 才重跑，其餘標「中斷、結果未知」出隊（見 §4.1.1）。
+> 跨 PlayMode 的 cmd（`PlayMode`／`RCG_StartNewGame`）若要沿用自癒，要在該 handler 上宣告它。
 
 **根因**：cmd 在「進 PlayMode 那刻」被 **domain reload** 打斷 → in-memory runner 的 UniTask state 被清掉 → 該筆卡在 `.running` orphan lock，**堵住同一條 queue 後續所有 cmd**。
 

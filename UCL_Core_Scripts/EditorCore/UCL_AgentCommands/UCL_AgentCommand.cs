@@ -51,6 +51,13 @@ namespace UCL.Core.EditorLib.AgentCommands
         public string LastRunResult;
         /// <summary>上次執行錯誤訊息（成功時為 null）</summary>
         public string LastRunError;
+        /// <summary>
+        /// 本次開跑時間（ISO 8601）—— handler 起跑**前**由 runner 寫進 queue、有結論後清掉（TASK-0306）。
+        /// <para>⚠ 載入時看到「有值而 <see cref="LastRunResult"/> 是 null」＝**開跑過而沒有結論**
+        /// （domain reload／PlayMode 轉移／Editor 崩潰把它砍在半路）⇒ 對外副作用**可能已經發生**，
+        /// ⛔ 不可以當成「還在排隊」從頭再跑。</para>
+        /// </summary>
+        public string StartedAt;
 
         /// <summary>選填：給人類看的描述（agent 留下的備註）</summary>
         public string Description;

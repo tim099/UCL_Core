@@ -42,6 +42,30 @@ namespace UCL.Core.EditorLib.AgentCommands
         static readonly System.Collections.Generic.HashSet<string> s_RunningAgents = new System.Collections.Generic.HashSet<string>();
         static readonly object s_RunningLock = new object();
 
+        // 區塊職責：本進程**此刻正在跑 handler** 的 cmd id（TASK-0306）
+        // 物理意義：queue 上的 StartedAt 只說「有人開跑過它」；要判「被砍在半路」還得排除「本進程還在跑它」。
+        //          ⚠ 會發生：PlayMode 轉移時 s_RunningAgents 被清空（見 ResetRunningAgents），
+        //          而關掉 domain reload 的進 Play 設定下舊批次還活著 ⇒ 新批次會讀到同一筆。
+        // 數值影響：static ⇒ domain reload 一併清空 —— 那正是我們要的：新 domain 裡沒有任何一筆在跑。
+        static readonly System.Collections.Generic.HashSet<string> s_InFlightCmdIds
+            = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+
+        static bool IsInFlight(string iCmdId)
+        {
+            if (string.IsNullOrEmpty(iCmdId)) return false;
+            lock (s_RunningLock) return s_InFlightCmdIds.Contains(iCmdId);
+        }
+
+        static void MarkInFlight(string iCmdId, bool iOn)
+        {
+            if (string.IsNullOrEmpty(iCmdId)) return;
+            lock (s_RunningLock)
+            {
+                if (iOn) s_InFlightCmdIds.Add(iCmdId);
+                else s_InFlightCmdIds.Remove(iCmdId);
+            }
+        }
+
         // 區塊職責：觸發編輯器編譯與領域重載以重設記憶體狀態
         // 物理意義：藉由修改程式碼的微小變更，強迫 Unity Editor 偵測檔案異動並重新編譯，進而清空殘留於靜態變數中的死鎖狀態 (如 s_RunningAgents)。[Antigravity domain reload trigger 2026-05-30]
         // 數值影響：不影響任何核心計算與業務邏輯，僅用於維護管線健康。
@@ -417,6 +441,63 @@ namespace UCL.Core.EditorLib.AgentCommands
                     // 🩸 第一版我把它起在 Begin 旁邊，量出 runner_ms 818.3 / handler 819.0 ——
                     //   兩個數字幾乎相同 ⇒ 那個位置**什麼都沒多包到**，而它看起來完全正常。
                     //   實測要包的是這一格：handler 869.3ms 而同一區間主執行緒斷拍 2007.1ms。
+                    // ===========================================================
+                    // 區塊職責：**開跑過而沒有結論**的 OneShot ⛔ 不從頭再跑（TASK-0306）
+                    // 🩸 血證（basecamp 2026-09-26）：Plurk post 跑到一半 HTTP 已送出，domain reload 砍掉它
+                    //   ⇒ 沒出隊、沒寫 result ⇒ 重載後以 runCount=0 **從頭再跑** ⇒ 同一則回應發了兩次。
+                    //   而 Editor.log 上兩趟都印同一行 `▶ Run`，**第一趟沒有留下任何其他痕跡**。
+                    // 物理意義：StartedAt 在 handler 起跑前落盤、有結論就清掉 ⇒ 載入時「有值而沒結論」
+                    //          只有一種成因：上一個 domain 把它砍在半路。對外副作用**可能已經發生**。
+                    // 數值影響：三條出口 ——
+                    //   ① 本進程正在跑它（PlayMode 不重載時舊批次還活著）⇒ 不碰，留給那一批收；
+                    //   ② result 檔已經在（跑完了，只是收尾寫回沒落盤）⇒ 直接出隊，⛔ 不覆寫那份 verdict；
+                    //   ③ 其餘：handler 宣告 RerunSafeAfterInterrupt 才重跑；否則標「中斷、結果未知」寫 result 並出隊。
+                    // ⚠ 射程：StartedAt 那一下寫回若沒落盤（queue Busy），這一格退回舊行為（會重跑）——
+                    //   那一下的失敗已經由 SaveMerged 自己出聲，這裡不另外補。
+                    // ===========================================================
+                    if (c.Mode == UCL_AgentCommandMode.OneShot && !string.IsNullOrEmpty(c.StartedAt)
+                        && c.LastRunResult == null)
+                    {
+                        if (IsInFlight(c.Id))
+                        {
+                            // 從本批撤掉、也從 originalIds 撤掉 ⇒ 收尾合併時磁碟上那一份原樣保留（⛔ 不拿舊副本蓋它）
+                            Debug.Log($"[UCL_AgentCmd] ⏸ '{c.Type}' (id={c.Id}) 本進程另一批正在跑它 —— 本批跳過");
+                            originalIds.Remove(c.Id);
+                            commands.RemoveAt(i);
+                            continue;
+                        }
+                        if (HasCmdResult(c.Id))
+                        {
+                            Debug.LogWarning($"[UCL_AgentCmd] ⏭ '{c.Type}' (id={c.Id}) 開跑於 {c.StartedAt}，result 檔已在"
+                                             + " ⇒ 它跑完了，只是出隊沒落盤。直接出隊，⛔ 不重跑、不覆寫 verdict。");
+                            commands.RemoveAt(i);
+                            removed++;
+                            continue;
+                        }
+                        if (!handler.RerunSafeAfterInterrupt)
+                        {
+                            string aInterruptError =
+                                $"Interrupted: 這筆指令在 {c.StartedAt} 開跑過，而在有結論之前被砍斷"
+                                + "（domain reload／PlayMode 轉移／Editor 崩潰）⇒ **結果未知**：對外副作用可能已經發生、也可能沒有。"
+                                + " ⛔ 未自動重跑（重跑可能重複發文／轉帳）。先回讀目標確認，再決定要不要補跑"
+                                + "（UCL_AgentCommandsPage 的失敗紀錄可一鍵補跑）。";
+                            c.LastRunResult = "Failed";
+                            c.LastRunError = aInterruptError;
+                            c.LastRunAt = DateTime.UtcNow.ToString("o");
+                            failed++;
+                            Debug.LogError($"[UCL_AgentCmd] ⚠ '{c.Type}' (id={c.Id}) {aInterruptError}");
+                            WriteCmdErrorReport(c, new InvalidOperationException(aInterruptError));
+                            WriteCmdResult(c, success: false, error: aInterruptError, iInterruptedStartedAt: c.StartedAt);
+                            UCL_AgentCommandFailedStore.Record(c, aInterruptError,
+                                string.IsNullOrEmpty(agentId) ? UCL_AgentCommandQueue.AnonymousQueueId : agentId);
+                            commands.RemoveAt(i);
+                            removed++;
+                            continue;
+                        }
+                        Debug.LogWarning($"[UCL_AgentCmd] ↻ '{c.Type}' (id={c.Id}) 開跑於 {c.StartedAt} 而被砍斷；"
+                                         + "handler 宣告 RerunSafeAfterInterrupt ⇒ 從頭再跑一次。");
+                    }
+
                     var cmdIterWatch = System.Diagnostics.Stopwatch.StartNew();
                     Debug.Log($"[UCL_AgentCmd] ▶ Run '{c.Type}' (id={c.Id}, mode={c.Mode}, runCount={c.RunCount})");
                     // 區塊職責：重置執行結果並立即存檔
@@ -425,6 +506,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                     // 數值影響：重置 c.LastRunResult = null, c.LastRunError = null，並 Save 磁碟。
                     c.LastRunResult = null;
                     c.LastRunError = null;
+                    // TASK-0306：開跑戳記跟著這一下落盤 —— 下一個 domain 靠它分辨「排隊中」與「跑到一半被砍」。
+                    c.StartedAt = DateTime.UtcNow.ToString("o");
+                    MarkInFlight(c.Id, true);
                     // TASK-0264：合併寫回（重讀磁碟、只動 originalIds）。
                     //   這一下發生在**每一筆指令開跑前**，而批次可能很長 ⇒ 舊版的整份覆寫
                     //   會把這期間別人 append 的那幾筆寫沒。
@@ -550,6 +634,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                         c.LastRunResult = "Success";
                         c.LastRunError = null;
                         c.LastRunAt = DateTime.UtcNow.ToString("o");
+                        c.StartedAt = null;   // TASK-0306：有結論了（Repeatable 留在 queue，下一趟不可被誤判成中斷）
                         c.RunCount++;
                         succeeded++;
                         Debug.Log($"[UCL_AgentCmd] ✓ '{c.Type}' (id={c.Id}) succeeded. RunCount={c.RunCount}");
@@ -583,6 +668,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                             //          以便在進入 PlayMode 後由 Watcher 的自癒機制接手恢復執行。
                             // 數值影響：不將 LastRunResult 設為 "Failed"（保持 null），LastRunError 設為轉移標記，
                             //          不增加 failed 計數。
+                            // ⚠ TASK-0306：StartedAt **刻意不清** ⇒ 接手的那一批會看到「開跑過而沒結論」，
+                            //   只有 RerunSafeAfterInterrupt 的 handler 才真的自癒重跑；其餘標「中斷、結果未知」出隊。
+                            //   ⛔ 舊行為是一律從頭再跑 —— 跑到一半的發噗／轉帳會再做一次。
                             isPlayModeInterrupted = true;
                             c.LastRunResult = null;
                             c.LastRunError = "Interrupted by PlayMode transition, waiting for self-healing resumption...";
@@ -593,6 +681,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                             c.LastRunResult = "Failed";
                             c.LastRunError = e.Message;
                             c.LastRunAt = DateTime.UtcNow.ToString("o");
+                            c.StartedAt = null;   // TASK-0306：有結論了（失敗也是結論）
                             failed++;
                             Debug.LogError($"[UCL_AgentCmd] ✗ '{c.Type}' (id={c.Id}) failed: {e}");
                             // 詳細錯誤落檔（Tim 2026-07-29）：只印 Editor log 的話，python client 只拿到
@@ -628,6 +717,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                     }
                     finally
                     {
+                        MarkInFlight(c.Id, false);
                         // 清掉 per-cmd 的 caller env_marker slot, 防 cross-cmd leak
                         UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.CurrentCallerEnvMarker = null;
                         // T-LastOp-CmdId：同步清 cmd_id slot — 防下一筆 cmd（或非 queue 路徑的 WriteLastOp）誤 stamp 上一筆的 id
@@ -738,7 +828,22 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          error_report 路徑（_cmd_errors/<id>.md）。IO 失敗吞掉 ——
         //          result 檔寫不出來時 python 端 fallback 回舊推論，不擋執行。
         // ===========================================================
-        static void WriteCmdResult(UCL_AgentCommand c, bool success, string error)
+        // TASK-0306：這一筆有沒有 verdict 了（跑完而出隊沒落盤時，queue 上它仍是「開跑過而沒結論」）。
+        // ⚠ 讀不了（Busy）當成「有」⇒ 走出隊不重跑那條 —— 兩個錯的方向裡，重跑那個要付副作用。
+        static bool HasCmdResult(string iCmdId)
+        {
+            if (string.IsNullOrEmpty(iCmdId)) return false;
+            string aPath = System.IO.Path.Combine(UCL.Core.EditorLib.UCL_AgentCommandsPath.DataRoot, "_cmd_results", $"{iCmdId}.json");
+            if (UCL_AtomicFileRead.TryReadAllText(aPath, out _, out UCL_FileReadState aState)) return true;
+            if (aState == UCL_FileReadState.Busy)
+            {
+                Debug.LogWarning(UCL_AtomicFileRead.DescribeBusy(aPath) + " ⇒ 當成 verdict 已在，⛔ 不重跑。");
+                return true;
+            }
+            return false;
+        }
+
+        static void WriteCmdResult(UCL_AgentCommand c, bool success, string error, string iInterruptedStartedAt = null)
         {
             try
             {
@@ -789,6 +894,13 @@ namespace UCL.Core.EditorLib.AgentCommands
                         aValues.Add(aOne);
                     }
                     jd["values"] = aValues;
+                }
+                // interrupted：開跑過而在有結論前被砍斷（TASK-0306）—— ⛔ 呼叫端別把這筆讀成一般的失敗：
+                //   一般失敗是「沒做成」，這一筆是「**不知道做了沒**」，要先回讀目標再決定補不補。
+                if (!string.IsNullOrEmpty(iInterruptedStartedAt))
+                {
+                    jd["interrupted"] = new UCL.Core.JsonLib.JsonData(true);
+                    jd["started_at"] = new UCL.Core.JsonLib.JsonData(iInterruptedStartedAt);
                 }
                 if (!success)
                 {

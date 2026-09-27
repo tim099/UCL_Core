@@ -74,6 +74,15 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// </summary>
         public virtual int TimeoutSeconds => 1200;
 
+        /// <summary>
+        /// 開跑後被砍在半路（domain reload／PlayMode 轉移／Editor 崩潰）的 OneShot，重載後**可不可以從頭再跑**（TASK-0306）。
+        /// <para>預設 <c>false</c>：runner 把它標成「中斷、結果未知」寫 result 並出隊，⛔ 不重跑 ——
+        /// 因為它的對外副作用（發噗、酒館公告、轉帳）**可能已經發生**，而重跑就是再付一次。</para>
+        /// <para>只有**重跑與只跑一次結果相同**的 Cmd 才 override 成 <c>true</c>（純讀、或自帶冪等鍵）。
+        /// ⛔ 別因為「重跑比較方便」就打開 —— 那正是本旗標要擋的那一種。</para>
+        /// </summary>
+        public virtual bool RerunSafeAfterInterrupt => false;
+
         /// <summary>實際執行邏輯（async）。</summary>
         public abstract UniTask ExecuteAsync(Dictionary<string, string> args, CancellationToken token);
 

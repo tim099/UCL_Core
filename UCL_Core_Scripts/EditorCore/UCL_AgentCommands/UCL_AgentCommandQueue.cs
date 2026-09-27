@@ -608,6 +608,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 AppendField(sb, "LastRunAt", c.LastRunAt, false);
                 AppendField(sb, "LastRunResult", c.LastRunResult, false);
                 AppendField(sb, "LastRunError", c.LastRunError, false);
+                AppendField(sb, "StartedAt", c.StartedAt, false);
                 AppendField(sb, "Description", c.Description, false);
                 sb.Append("\n    }");
             }
@@ -715,6 +716,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                     case "LastRunAt":     c.LastRunAt = ParseStringOrNull(json, ref pos); break;
                     case "LastRunResult": c.LastRunResult = ParseStringOrNull(json, ref pos); break;
                     case "LastRunError":  c.LastRunError = ParseStringOrNull(json, ref pos); break;
+                    case "StartedAt":     c.StartedAt = ParseStringOrNull(json, ref pos); break;
                     case "Description":   c.Description = ParseStringOrNull(json, ref pos); break;
                     default:              SkipValue(json, ref pos); break;
                 }

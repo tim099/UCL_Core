@@ -1275,6 +1275,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             //   （Senate `Cmd_TavernWrite`）—— 兩邊呼叫同一支 SCP_TavernPayroll，⛔ 不在 `op=post` 裡另算。
             PayrollAfterLocalWrite(roomId, msg, derivedSeq);
 
+            // creative 留念信（TASK-0312）：同發薪 —— editor 模式寫入端就是這裡；server 模式由 Server 寫完寄
+            //   （Senate `Cmd_TavernWrite.AppendCreativeArchive`）。兩條互斥 ⇒ 恰好一封。⛔ 不在 `op=post` 裡另寄。
+            try
+            {
+                bool? aSent = SCP.Core.Tavern.SCP_TavernCreativeArchive.TrySend(
+                    UCL_LettersPath.Root, msg.sender_persona, roomId, derivedSeq, msg.body, msg.meta,
+                    out _, out string aMailErr);
+                if (aSent == false)
+                    Debug.LogWarning($"[Tavern] 創作已貼出（seq {derivedSeq}）但留念掛號信沒寄成（收件人 '{msg.sender_persona}'）：{aMailErr}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Tavern] 創作留念信失敗（seq {derivedSeq}）：{e.Message} —— 貼文本身不受影響。");
+            }
+
             // Discord 鏡像不在此觸發 (2026-07-28 python 路徑移除)：UCL_DiscordMirrorDaemon 以
             // EditorApplication.update 1Hz 自行 poll + per-webhook 游標送出，寫入端零額外成本。
             return derivedSeq;

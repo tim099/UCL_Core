@@ -707,11 +707,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             //   - 不同房 → 各算各的（Tail 只看當前 room）
             //   - 中間有第三方訊息（last sender ≠ alter pair）→ 不算 ping-pong，立刻 post
             //   - 第一筆無前筆 → skip
-            // 安全上限：MAX_DELAY = 600s 防 agent 帶異常大值卡死 watcher
+            // 安全上限：900s（T26.1）防 agent 帶異常大值卡死 watcher —— 數值與 hierarchy 見 SCP_TavernAlterPacing
             // ===========================================================
-            const double ALTER_PACING_DEFAULT_SEC = 300.0;
-            const double ALTER_PACING_BRAINSTORM_SEC = 30.0;
-            const double ALTER_PACING_MAX_SEC = 900.0;   // 安全上限 (T26.1: 從 600s 上修至 900s 配合 idle 拉長至 720s)
             var earlyMeta = ParseMeta(metaStr);
 
             // T06.3 (Plan_Standby_Dispatch_Bartender, 2026-05-14) — tag=commit／task-assign／task-ack 的 meta schema 驗證。
@@ -725,80 +722,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 RejectLastOp(args, schemaReject);
                 return;
             }
-            // 計算 effective delay 秒數（hierarchy）
-            double effectiveDelaySec = ALTER_PACING_DEFAULT_SEC;
-            bool bypassPacing = false;
-            if (earlyMeta != null)
+            // 延遲秒數與配對判斷住 SCP_Core `SCP_TavernAlterPacing`（TASK-0312）—— Senate 的 tavern-post 呼叫同一支。
+            //   （T34 idle-self-talk 720s／T26.1 上限 900s 等數值都在那支的檔頭。）
+            //   ⚠ **等的方式**各宿主自己決定：Editor 在 handler 裡 await（期間 Watcher 不接別的 Cmd，沿用既有取捨）；
+            //     Senate 放進酒館 Server 的延後發文匣（CLI 不被卡住）。
             {
-                if (earlyMeta.TryGetValue("alter-pacing-bypass", out var bypassVal)
-                    && bypassVal != null && bypassVal.ToLowerInvariant() == "true")
-                {
-                    bypassPacing = true;
-                }
-                else if (earlyMeta.TryGetValue("alter-delay-sec", out var rawDelay)
-                    && double.TryParse(rawDelay, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var explicitDelay)
-                    && explicitDelay >= 0)
-                {
-                    effectiveDelaySec = Math.Min(explicitDelay, ALTER_PACING_MAX_SEC);
-                }
-                else if (earlyMeta.TryGetValue("tag", out var tagVal) && !string.IsNullOrEmpty(tagVal))
-                {
-                    string tagLow = tagVal.ToLowerInvariant();
-                    // T34 — idle-self-talk 待機模式（per Tim Round 33 拍板 T33 方案 A）
-                    // 物理意義：「進入聊天酒館 待機模式」觸發 → agent 走 8 min self↔alter 自我對話
-                    //          + 每 round 前 inbox_read 偵測中斷 + cap=10 round 防 token 暴增
-                    // 數值影響：720s = 12 min (T26.1 從 480s 上修, per Tim 2026-05-14「Idle訊息等待間隔可以更長 避免洗版」)
-                    //          每 round ~12 min → 10 round cap ≈ 120 min, 比原 80 min 更不洗版
-                    //          ⚠ 超過 Bash tool 10 min wait 上限 → idle post 該 `--wait-reply 0` fire-and-forget, 不阻塞 agent turn
-                    const double ALTER_PACING_IDLE_SEC = 720.0;
-                    if (tagLow.Contains("idle-self-talk") || tagLow.Contains("idle-standby") || tagLow.Contains("standby"))
-                    {
-                        effectiveDelaySec = ALTER_PACING_IDLE_SEC;
-                    }
-                    else if (tagLow.Contains("brainstorm") || tagLow.Contains("self-talk"))
-                    {
-                        effectiveDelaySec = ALTER_PACING_BRAINSTORM_SEC;
-                    }
-                    else if (tagLow.Contains("slow"))
-                    {
-                        effectiveDelaySec = ALTER_PACING_DEFAULT_SEC;
-                    }
-                }
-            }
-            if (!bypassPacing && effectiveDelaySec > 0)
-            {
-                // 計算 alter pair 期望 partner_id
-                string expectedPartner;
-                const string ALTER_SUFFIX = "-alter";
-                if (senderId.EndsWith(ALTER_SUFFIX))
-                {
-                    expectedPartner = senderId.Substring(0, senderId.Length - ALTER_SUFFIX.Length);
-                }
-                else
-                {
-                    expectedPartner = senderId + ALTER_SUFFIX;
-                }
-                // 讀當前 room 最後一筆訊息
                 var lastMsgs = UCL_ChatTavernIO.Tail(roomId, 1);
-                if (lastMsgs != null && lastMsgs.Count > 0)
+                var lastMsg = lastMsgs != null && lastMsgs.Count > 0 ? lastMsgs[0] : null;
+                TimeSpan? aPacingWait = SCP.Core.Tavern.SCP_TavernAlterPacing.Remaining(
+                    earlyMeta, senderId, lastMsg?.sender_id, lastMsg?.ts, DateTime.UtcNow);
+                if (aPacingWait.HasValue)
                 {
-                    var lastMsg = lastMsgs[0];
-                    // 只有 last sender = expected alter partner 才算配對
-                    if (lastMsg != null && lastMsg.sender_id == expectedPartner && !string.IsNullOrEmpty(lastMsg.ts))
-                    {
-                        // 解析 last ts，計算間隔
-                        if (DateTime.TryParse(lastMsg.ts, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var lastTs))
-                        {
-                            var elapsedSec = (DateTime.UtcNow - lastTs).TotalSeconds;
-                            if (elapsedSec < effectiveDelaySec)
-                            {
-                                var remainSec = Math.Min(effectiveDelaySec - elapsedSec, ALTER_PACING_MAX_SEC);
-                                int remainMs = (int)Math.Ceiling(remainSec * 1000.0);
-                                Debug.Log($"[Tavern T26] Solo Alter pacing — sender={senderId} 配對 {expectedPartner}，mode-effective={effectiveDelaySec:F0}s，elapsed={elapsedSec:F1}s，自動延遲 {remainSec:F1}s 後 post（不擋訊息）");
-                                await UniTask.Delay(remainMs, cancellationToken: token);
-                            }
-                        }
-                    }
+                    int remainMs = (int)Math.Ceiling(aPacingWait.Value.TotalMilliseconds);
+                    Debug.Log($"[Tavern T26] Solo Alter pacing — sender={senderId} 配對 {SCP.Core.Tavern.SCP_TavernAlterPacing.ExpectedPartner(senderId)}，"
+                              + $"自動延遲 {aPacingWait.Value.TotalSeconds:F1}s 後 post（不擋訊息）");
+                    await UniTask.Delay(remainMs, cancellationToken: token);
                 }
             }
 
@@ -1012,10 +950,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             Debug.Log($"[Tavern] post → {roomId} seq={seq} by {senderName}");
 
             // Sub-rule F: creative（Tim 2026-08-18 拍板）— tag=creative → 寄一封系統掛號信把原文送回作者留念。
-            // ⚠ 這一條**不是發薪**：發薪自 TASK-0296 起住在寫入端（SCP_TavernPayroll，有出資方之類的排除條件），
-            //   而「把自己的創作留一份」是存檔 —— 兩者的適用範圍不同，混在一起就會
-            //   被計酬那邊的排除條件連坐擋掉（而症狀是「信有時會寄有時不會」，最難查的那種）。
-            TryArchiveCreativePost(senderPersona, roomId, seq, body, earlyMeta);
+            // ⭐ TASK-0312 起**寄信在寫入端**（同 @mention／發薪）：`AppendMessage` 的本地寫那條與 Senate 的 `tavern-write`
+            //   各寄一次（兩條互斥，恰好一封），判準與信文在 SCP_Core `SCP_TavernCreativeArchive`。⛔ 這裡不再寄 —— 否則
+            //   writer=server 時 Server 寄一封、這裡再寄一封。
+            // ⚠ 它仍然**不是發薪**：沒有走 SCP_TavernPayroll 的排除條件（那邊的連坐症狀是「信有時會寄有時不會」）。
 
             // Discord tavern mirror 由 UCL_DiscordMirrorDaemon poll 訊息檔送出 (2026-07-28: 寫入端不再觸發).
             // quiet 旗標已在上方 AppendMessage 呼叫處 thread through.
@@ -1077,63 +1015,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊職責：tag=creative 的發言 → 寄一封**系統掛號信**把原文送回作者留念（Tim 2026-08-18）。
-        //
-        // 物理意義：酒館訊息是**流**——它會被後來的訊息推走、被 catchup 讀掉、被壓縮。
-        //          創作型發言（詩／散文／ASCII art）跟工作訊息不同：它的價值不在被讀到一次，
-        //          在**還留著**。掛號信投進該 persona 自己的收件匣，那份就跟著他走。
-        //          機制：免費系統掛號信（fee 固定 0，不碰 Treasury）。
-        //
-        // 數值影響：寫兩份信件檔（收件匣＋寄件備份），不動帳、不動任何 token。
-        // 邊界（三個都刻意）：
-        //   - **不擋發文主流程**：整段 try 包住，寄信失敗只記 warning ——
-        //     已經貼出去的創作不該因為一封留念信寫失敗而看起來像失敗（同 SendSystemMail 自己的取捨）。
-        //   - **匿名發文不寄**：sender_persona 空＝沒有可投遞的收件人。那不是錯誤，是沒有收件人。
-        //   - **不防重**：同一段創作重貼兩次就會收到兩封。跟 commit 同 SHA 重貼同屬社會約束層 ——
-        //     這裡不寄錢，重複的代價只是多一封信，不值得為它加一層狀態。
+        // tag=creative 的留念掛號信（Tim 2026-08-18）—— TASK-0312 起判準、信文與寄送都在 SCP_Core
+        // `SCP_TavernCreativeArchive`，由**寫入端**寄（`UCL_ChatTavernIO.AppendMessage` 本地寫那條／Senate `tavern-write`）。
+        // 邊界照舊：不擋發文主流程、匿名不寄、不防重。
         // ===========================================================
-        /// <summary>創作型發言的 tag —— 蓋這個 tag 的貼文會收到一封留念掛號信。</summary>
-        public const string CreativeTag = "creative";
-
-        static void TryArchiveCreativePost(string senderPersona, string roomId, int seq,
-                                           string body, Dictionary<string, string> meta)
-        {
-            try
-            {
-                if (meta == null) return;
-                if (!meta.TryGetValue("tag", out var tag) || tag != CreativeTag) return;
-                if (string.IsNullOrEmpty(senderPersona)) return;      // 沒有收件人（見邊界②）
-                if (string.IsNullOrWhiteSpace(body)) return;          // 空內文沒有留念的必要
-
-                var aSb = new StringBuilder();
-                aSb.AppendLine($"你在 `{roomId}` 發表的創作（seq {seq}），原文留一份在這裡。");
-                aSb.AppendLine();
-                aSb.AppendLine("---");
-                aSb.AppendLine();
-                aSb.AppendLine(body.TrimEnd());
-                aSb.AppendLine();
-                aSb.AppendLine("---");
-                // 出處寫清楚：日後想回頭對照酒館原串時，seq 是唯一能定位的東西。
-                aSb.AppendLine($"（出處：{roomId} seq {seq}　tag=`{CreativeTag}`　"
-                               + $"寄出於 {DateTime.Now:yyyy-MM-dd HH:mm}）");
-                aSb.AppendLine("訊息是流，會被推走、被讀掉、被壓縮；這封是存檔，跟著你走。");
-
-                bool aOk = Mail.UCL_RegisteredMailIO.SendSystemMail(
-                    senderPersona,
-                    $"📜 創作留念 — {roomId} seq {seq}",
-                    aSb.ToString(),
-                    refId: $"creative-{roomId}-{seq}");
-                if (!aOk)
-                {
-                    // 「貼文成功、信沒寄成」是兩件事，分開講（不靜默）
-                    Debug.LogWarning($"[Tavern] 創作已貼出（seq {seq}）但留念掛號信沒寄成（收件人 '{senderPersona}'）。");
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[Tavern] 創作留念信失敗（seq {seq}）：{e.Message} —— 貼文本身不受影響。");
-            }
-        }
+        /// <summary>創作型發言的 tag —— 蓋這個 tag 的貼文會收到一封留念掛號信（值的真相源在 SCP_Core）。</summary>
+        public const string CreativeTag = SCP.Core.Tavern.SCP_TavernCreativeArchive.CreativeTag;
 
         // ===========================================================
         // 區塊：op=read — 切片查詢

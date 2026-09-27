@@ -136,22 +136,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         /// 攔在寫入端而不是在讀取端剝除，附掛就不會發生而不是發生後再擦
         /// （2026-08-19 詞典污染血證：附掛區塊變成指令的一部分，群發把整本詞典打進別人輸入框）。
         /// ⚠ 只看 prefix，不驗白名單 —— 白名單是「能不能執行」，這裡問的是「這句話是不是指令」。
+        /// <para>判準住 SCP_Core `SCP_TavernCli`（TASK-0312）—— Senate 的發文路呼叫同一支，⛔ 不在這裡另寫一份。
+        /// 讀的是同一個 `ChatTavern/bartender/cli_settings.json`（資料根底下）。</para>
         /// </summary>
         public static bool LooksLikeCliCommand(string iBody)
-        {
-            string aBody = (iBody ?? "").Trim();
-            if (aBody.Length == 0) return false;
-            var aSettings = UCL_BartenderCliIO.Load();
-            if (!aSettings.enabled) return false;
-            return BodyHasCliPrefix(aBody, aSettings);
-        }
+            => SCP.Core.Tavern.SCP_TavernCli.LooksLikeCliCommand(UCL_AgentCommandsPath.DataRoot, iBody);
 
         static bool BodyHasCliPrefix(string iTrimmedBody, UCL_BartenderCliSettings iSettings)
-        {
-            int aSpace = iTrimmedBody.IndexOfAny(s_Sep);
-            string aFirst = aSpace < 0 ? iTrimmedBody : iTrimmedBody.Substring(0, aSpace);
-            return string.Equals(aFirst, iSettings.prefix ?? "cmd", StringComparison.OrdinalIgnoreCase);
-        }
+            => SCP.Core.Tavern.SCP_TavernCli.FirstTokenIs(iTrimmedBody, iSettings.prefix);
 
         public static void Handle(UCL_ChatMessage iMsg, string iRoomId, UCL_BartenderCliSettings iSettings)
         {

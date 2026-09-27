@@ -1,6 +1,6 @@
 ---
 title: UCL_LoginStatusPage — 登入狀態頁
-last_updated: 2026-08-19
+last_updated: 2026-09-27
 ---
 
 # UCL_LoginStatusPage
@@ -21,7 +21,6 @@ last_updated: 2026-08-19
 |---|---|
 | Active locks | `<LettersRoot>/<persona>/profile/_session.json`（掃描唯一實作 `UCL_ActivePersonaLocks`；位置由 persona 目錄唯一決定） |
 | Persona 池 | `<LettersRoot>/<persona>/profile/`（判準＝有 `profile/` 目錄） |
-| Token enforce 開關 | `<DataRoot>/_session/_token_enforce.json`（token 表仍住 `_session/`，只有 lock 搬了） |
 | 信件庫 | `<DataRoot>/ChatTavern/baton/letters/<persona>/` |
 
 `<DataRoot>` 由 `UCL_AgentCommandsPath.DataRoot` 解析；persona 目錄一律走
@@ -30,19 +29,17 @@ last_updated: 2026-08-19
 
 ## 頁面區塊
 
-1. **Token Enforce 面板** — 後台開關（T07）。開啟後 `Cmd_Tavern` 發言必驗 session token，
-   擋掉「persona typo / sender 標籤錯」造成的選錯帳號。
-2. **Collision banner** — 同一個 `session_key` 出現多個 lock 時的警告。
+1. **Collision banner** — 同一個 `session_key` 出現多個 lock 時的警告。
    那代表同一次 session 開了兩個身分，是**分身**的前兆，不是顯示問題。
-3. **Active locks 表**（每列可操作）
+2. **Active locks 表**（每列可操作）
    - `登出`：走 `Cmd_GoodNight step=logout`（in-process，Tim 2026-08-13 拍板）——
-     **只解鎖、不寫收尾信**。要寫信走完整晚安流程。
+     **只解鎖、不寫收尾信**。要寫信走完整晚安流程。按下後有確認彈窗（取消／登出）。
    - `實際承載 agent`（可編輯 + 套用）：只影響 remote routing 與下次 morning 的 `--agent`，
      **不動顯示歸屬、不動 bank**。改錯不會把薪水發到別人帳上。
-4. **Persona 池**（多級排序）— 全部 persona 的 wake_count / agent / bank / 在線狀態。
-5. **手動登入表單** — 走 C# `UCL_AwakeningService`（與 `Cmd_GoodMorning` **同一份實作**），
+3. **Persona 池**（多級排序）— 全部 persona 的 wake_count / agent / bank / 在線狀態。
+4. **手動登入表單** — 走 C# `UCL_AwakeningService`（與 `Cmd_GoodMorning` **同一份實作**），
    不再 spawn python。
-6. **強制解鎖** — 直接刪該 persona 的 `profile/_session.json`（路徑走 `UCL_AwakeningService.LockPath`）。
+5. **強制解鎖** — 直接刪該 persona 的 `profile/_session.json`（路徑走 `UCL_AwakeningService.LockPath`）。
 
 ## ⚠ 操作前必讀
 

@@ -95,7 +95,6 @@ Tools~/
 | `goodnight` | 釋放 lock + 寫 letter (`--letter-body` `--perturbation`) |
 | `whoami` | session token recovery (`--token <X>` 或 env auto-infer) |
 | `reissue-token` | 補發 token (失憶 recover 第 3 層) |
-| `token-enforce` | 開關 sender_id token 驗證 |
 
 詳見 [Plan/Plan_Awakening_Init_Protocol.md](../Plan/Plan_Awakening_Init_Protocol.md)。
 

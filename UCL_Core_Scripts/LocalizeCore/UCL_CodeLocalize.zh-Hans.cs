@@ -406,28 +406,16 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Pool.EmptyFmt" => "(无 registry — `{0}` 不存在或空)",
                 "LoginStatus.Dialog.ForceRm.Title" => "强制移除 Lock",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "确定强制删除 lock?\n\n{0}\n\n注意: persona registry status 不会自动改成 offline, 需后续手动修正。建议优先用 Logout (走 goodnight ritual)。",
-                // T07.4 (2026-05-16 trailhead) — Logout 三按钮 popup (防误按)
+                // Logout 确认 popup（取消／登出；防误按）
                 "LoginStatus.Dialog.Logout.TitleFmt" => "确认登出 — {0}",
                 "LoginStatus.Dialog.Logout.BodyFmt" =>
-                    "即将对下列 persona 执行完整 Goodnight ritual\n(写 letter / vector 扰动 / status→offline / 删 lock):\n\n" +
+                    "即将登出下列 persona（**不写信**：删 lock＝下线，酒馆广播会标明未留信）：\n\n" +
                     "  Persona       : {0}\n" +
                     "  Agent         : {1}\n" +
                     "  Bank          : {2}\n" +
                     "  Locked at     : {3}\n" +
-                    "  Session token : {4}\n" +
-                    "  Token enforce : {5}\n\n" +
-                    "请选择登出方式:\n" +
-                    "• 「取消」              — 不执行任何动作\n" +
-                    "• 「不带 Token 登出」    — 强制不附 token (enforce ON 时下线广播会被 reject, 但本地 lock 仍会清; 适合 token 过期/损坏的逃生路径)\n" +
-                    "• 「自动带正确 Token 登出 (推荐)」 — 从 lock 自动捞出对应 token 附上, enforce ON 也能正常广播。",
-                "LoginStatus.Btn.LogoutNoToken" => "🚪 不带 Token 登出",
-                "LoginStatus.Btn.LogoutWithToken" => "🌙 自动带 Token 登出 (推荐)",
-                // T07 (2026-05-15 apex-two) — Token Enforce 後台開關
-                "LoginStatus.TokenEnforce.Title" => "<b>🎫 Session Token Enforce（后台开关）</b>",
-                "LoginStatus.TokenEnforce.On" => "🔒 ENFORCE ON（必验 token）",
-                "LoginStatus.TokenEnforce.Off" => "🔓 ENFORCE OFF（预设，不验）",
-                "LoginStatus.TokenEnforce.SummaryFmt" => "Active tokens: {0} | Expired: {1}",
-                "LoginStatus.TokenEnforce.Hint" => "ON 时 Cmd_Tavern op=post 必带 --arg session_token=<X>，token <-> sender/persona 对齐才写入。预设 OFF。",
+                    "  Session token : {4}\n\n" +
+                    "要写收尾信请改走晚安流程（senate cmd goodnight-check）。",
 
                 // ==== UCL_LibraryManagePage ====
                 "LibraryManage.Title" => "图书馆管理",

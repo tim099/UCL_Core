@@ -176,12 +176,10 @@ _BONUS_QUOTA_PATH = _resolve_data_path(
 )
 
 # T07 (2026-05-15 apex-two) — Session Token 機制
-# 物理意義: morning 發 token 進 lock + tokens.json 反查表; Cmd_Tavern enforce ON 時必驗 token,
-#          擋住「誤 typo persona / sender 標籤」造成的選錯帳號 (Tim QA 2026-05-15)
+# 物理意義: morning 發 token 進 lock + tokens.json 反查表 —— 給 whoami 失憶救援用。
+#          ⛔ 酒館發言**不驗** token（Tim 2026-09-27，TASK-0308：在線機制是擋重複登入，不是發言許可）。
 # 數值影響: tokens.json schema = { tokens: { <token>: { persona, agent, ..., status } } }
-#          enforce.json schema = { enforce: bool } — 後台開關 (預設 false, Tim 從 UCL_LoginStatusPage 切)
 _TOKENS_PATH = _SESSION_DIR / "_tokens.json"
-_ENFORCE_PATH = _SESSION_DIR / "_token_enforce.json"
 # Memo: per-persona 私人 scratchpad — 跨 session persist, 不公開, 不進 tavern
 _MEMOS_DIR_TPL = _resolve_data_path(
     "AgentCommands/ChatTavern/baton/memos", "memos_dir"
@@ -970,9 +968,8 @@ def find_locks_by_claim_origin(origin: str) -> list:
 
 
 # ─── Session Token (T07, 2026-05-15 apex-two) ────────────────────────────
-# 物理意義: morning 發 32-hex token 寫進 lock + _tokens.json 反查表;
-#          Cmd_Tavern enforce ON 時必驗 (token, sender, persona) 三項對齊, 擋誤 typo.
-#          enforce 開關放 _token_enforce.json, Tim 從 UCL_LoginStatusPage 切.
+# 物理意義: morning 發 32-hex token 寫進 lock + _tokens.json 反查表 —— whoami 失憶救援的反查鍵.
+#          ⛔ 酒館發言不驗 token（Tim 2026-09-27，TASK-0308）.
 # 數值影響: tokens.json schema = {"tokens": {<token>: {persona, agent, bank_account,
 #          issued_at, claim_origin, session_key, status (active|expired)}}}
 #          goodnight 標 expired (不刪, 保留 audit trail).
@@ -1049,27 +1046,6 @@ def expire_token(token: str | None = None, persona: str | None = None,
 def lookup_token(token: str) -> dict | None:
     """token → record (含 status). None if not found."""
     return load_tokens()["tokens"].get(token)
-
-
-def is_token_enforce_enabled() -> bool:
-    """讀 _token_enforce.json toggle. Default False — Tim 顯式開才 enforce."""
-    if not _ENFORCE_PATH.exists():
-        return False
-    try:
-        with open(_ENFORCE_PATH, "r", encoding="utf-8") as f:
-            d = json.load(f)
-        return bool(d.get("enforce", False))
-    except Exception:
-        return False
-
-
-def set_token_enforce(enabled: bool) -> None:
-    _SESSION_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = _ENFORCE_PATH.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"enforce": bool(enabled), "updated_at": utcnow_iso()},
-                  f, indent=2, ensure_ascii=False)
-    os.replace(tmp, _ENFORCE_PATH)
 
 
 # ─── Memo: per-persona 私人 scratchpad (T07) ─────────────────────────────
@@ -1188,7 +1164,7 @@ def fork_persona(reg: dict, source: str, target: str,
 #   而身分決定現在一律由使用者顯式給。fork 命名走顯式 --fork-name。
 
 def tavern_post(sender_id: str | None, persona: str, body: str, meta: dict | None = None,
-                room: str = "tavern", session_token: str | None = None,
+                room: str = "tavern",
                 timeout: float | None = None) -> bool:
     """Spawn run_cmd.py Tavern op=post. fail-swallow 不擋 ritual.
 
@@ -1200,9 +1176,6 @@ def tavern_post(sender_id: str | None, persona: str, body: str, meta: dict | Non
     ⚠ 傳 `None` 不是 `""`：只有 None 會被丟棄，空字串會原樣帶成 `sender=`。
     ⚠ 仍為位置參數而非直接移除，是因為尚有呼叫端未收束（見 BUG-23 描述的同族清單）；
       收束完成後應整個移除此參數，讓還在傳的呼叫端當場 TypeError（fail-loud > 靜默接受）。
-
-    session_token (T07): enforce ON 時必帶，否則 Cmd_Tavern reject。caller (e.g. cmd_goodnight)
-    從 lock.session_token 撈來透傳即可；None / "" → 不附（enforce OFF 路徑）.
 
     timeout (2026-07-22 / 2026-08-12): 顯式短上限透傳給 TavernClient。best-effort 廣播應帶短
     timeout，避免 Editor 卡住時阻塞到觸發外層呼叫者的 timeout（SIGTERM 143）。
@@ -1222,7 +1195,6 @@ def tavern_post(sender_id: str | None, persona: str, body: str, meta: dict | Non
             persona=persona,
             meta=meta or {},
             wait_reply=0,
-            session_token=session_token,
             timeout=timeout,
         )
         if not res.ok:
@@ -2482,24 +2454,6 @@ def cmd_reissue_token(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_token_enforce(args: argparse.Namespace) -> int:
-    """Toggle / query enforce mode. 一般場景由 UCL_LoginStatusPage 切, 本 CLI 給 debug 用."""
-    if args.show:
-        state = is_token_enforce_enabled()
-        print(f"enforce: {'ON' if state else 'OFF'}")
-        return 0
-    if args.on:
-        set_token_enforce(True)
-        print("✓ enforce ON — Cmd_Tavern 必驗 (token, sender, persona) 對齊")
-        return 0
-    if args.off:
-        set_token_enforce(False)
-        print("✓ enforce OFF (預設) — Cmd_Tavern 不驗 token")
-        return 0
-    print("❌ 必須帶 --show / --on / --off 其一", file=sys.stderr)
-    return 2
-
-
 # ─── main ───────────────────────────────────────────────────────────────
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0],
@@ -2555,10 +2509,6 @@ def main():
                          "省略時從 registry 該 persona 的 agent 欄位讀.")
     pg.add_argument("--force", action="store_true",
                     help="env/lock mismatch 時仍強制執行 (debug / 跨 agent 修復用, 慎用).")
-    pg.add_argument("--session-token", default=None,
-                    help="(T07) 顯式帶 session_token 給 tavern_post — enforce ON 時必須帶, "
-                         "否則 Cmd_Tavern.Op_Post reject 下線廣播. "
-                         "省略時自動從 lock.session_token 撈; 空字串 '' = 顯式不帶 (除錯 / 強制走 enforce reject path).")
     pg.set_defaults(func=cmd_goodnight)
 
     prest = sub.add_parser("rest",
@@ -2576,8 +2526,6 @@ def main():
     prest.add_argument("--agent", default=None, help="跟 --persona 配對; 省略時從 registry 讀")
     prest.add_argument("--note", default="", help="optional 小歇 note")
     prest.add_argument("--no-notify", action="store_true", help="不發小歇 tavern 通知")
-    prest.add_argument("--session-token", default=None,
-                       help="(T07) 顯式帶 session_token 給 tavern_post; 省略自動從 lock 撈")
     prest.set_defaults(func=cmd_rest)
 
     prl = sub.add_parser("relogin",
@@ -2645,7 +2593,7 @@ def main():
     pav.set_defaults(func=cmd_set_availability)
 
 
-    # T07 (2026-05-15 apex-two) — Session Token / Memo / Whoami / Enforce
+    # T07 (2026-05-15 apex-two) — Session Token / Memo / Whoami
     pw = sub.add_parser("whoami", help="反查 token → identity (失憶救援)")
     pw.add_argument("--token", default=None,
                     help="32-hex token. 省略則走 env claim_origin 推當前 process 對到的 lock.")
@@ -2663,13 +2611,6 @@ def main():
     prt = sub.add_parser("reissue-token", help="lock 在但 token 丟 → 重發 token 不必 re-wake")
     prt.add_argument("--persona", required=True)
     prt.set_defaults(func=cmd_reissue_token)
-
-    pte = sub.add_parser("token-enforce", help="切 / 查 Cmd_Tavern token enforce 模式 (一般走 UCL_LoginStatusPage)")
-    pte_g = pte.add_mutually_exclusive_group(required=True)
-    pte_g.add_argument("--show", action="store_true", help="只查當前 state")
-    pte_g.add_argument("--on", action="store_true", help="enable enforce")
-    pte_g.add_argument("--off", action="store_true", help="disable enforce (預設)")
-    pte.set_defaults(func=cmd_token_enforce)
 
     args = p.parse_args()
     return args.func(args)

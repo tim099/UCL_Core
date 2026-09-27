@@ -199,7 +199,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 ["share"] = new UCL_CmdOpSpec
                 {
                     Required = new[] { "persona", "media_id", "agent", "chapter" },
-                    Known = new[] { "persona", "media_id", "agent", "chapter", "round", "room", "session_token" },
+                    Known = new[] { "persona", "media_id", "agent", "chapter", "round", "room" },
                 },
                 ["scan"] = new UCL_CmdOpSpec { Known = new[] { "show_migrated" } },
                 ["authored_diff"] = new UCL_CmdOpSpec

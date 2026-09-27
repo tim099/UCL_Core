@@ -141,7 +141,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     var aLock = aCheck.Lock;
 
                     // 兩則併一則（§8.6）：系統欄位段（SCP_Morning 組）＋ 親筆 body —— 走 Cmd_Tavern in-process
-                    // post（op=share 同款模式），token enforce / schema 檢查 / 計酬 / mirror 全沿用不重寫。
+                    // post（op=share 同款模式），schema 檢查 / 計酬 / mirror 全沿用不重寫。
                     int aWake = 0;
                     string aLayerRole = "";
                     try
@@ -164,7 +164,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                         { "room", "tavern" },
                         { "persona", aPersona },
                         { "body", aMerged },
-                        { "session_token", aLock.SessionToken },   // enforce ON 時的通行證；OFF 時無害
                         { "meta", "{\"tag\":\"goodmorning-protocol\",\"category\":\"meta\",\"status-change\":\"online\",\"decision\":\"preferred\"}" },
                     };
                     // in-process 呼叫 → 把「我是哪筆 cmd」帶進子 args，seq 才回得到我的 context

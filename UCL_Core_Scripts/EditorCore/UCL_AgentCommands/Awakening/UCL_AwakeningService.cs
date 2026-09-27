@@ -55,7 +55,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         //    （判準＝profile/ 目錄存在），欄位走 `UCL_PersonaProfile.GetRaw()`。
         //    ⚠ 留一支能組出「那個檔的路徑」的函式，就是留一個邀請下一個人去直讀的入口 ——
         //      而它會 `File.Exists` 失敗後 fail-soft，症狀是「查無此人」，不是「路徑過期」。
-        /// <summary>session **token 表**（`_tokens.json` / `_token_enforce.json`）住的目錄。
+        /// <summary>session **token 表**（`_tokens.json`）住的目錄。
         /// ⚠ persona lock **不在這裡**（TASK-0105 起走 <see cref="LockPath"/> → letters/&lt;p&gt;/profile/）。</summary>
         public static string SessionDir => ResolveDataSub("_session");
         public static string LettersDir => ResolveDataSub(Path.Combine("ChatTavern", "baton", "letters"));

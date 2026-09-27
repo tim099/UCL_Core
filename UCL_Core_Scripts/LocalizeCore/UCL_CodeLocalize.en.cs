@@ -406,28 +406,16 @@ namespace UCL.Core.LocalizeLib
                 "LoginStatus.Pool.EmptyFmt" => "(no registry — `{0}` does not exist or is empty)",
                 "LoginStatus.Dialog.ForceRm.Title" => "Force Remove Lock",
                 "LoginStatus.Dialog.ForceRm.BodyFmt" => "Confirm force-delete lock?\n\n{0}\n\nNote: persona registry status will NOT auto-change to offline; manual fixup required. Prefer Logout (which runs the goodnight ritual).",
-                // T07.4 (2026-05-16 trailhead) — Logout 3-button popup (mis-click guard)
+                // Logout confirm popup (Cancel / Logout; mis-click guard)
                 "LoginStatus.Dialog.Logout.TitleFmt" => "Confirm Logout — {0}",
                 "LoginStatus.Dialog.Logout.BodyFmt" =>
-                    "About to run the full Goodnight ritual on the following persona\n(write letter / perturb vector / status→offline / remove lock):\n\n" +
+                    "About to log out the following persona (**no letter**: the lock is removed = offline; the tavern broadcast notes that no letter was left):\n\n" +
                     "  Persona       : {0}\n" +
                     "  Agent         : {1}\n" +
                     "  Bank          : {2}\n" +
                     "  Locked at     : {3}\n" +
-                    "  Session token : {4}\n" +
-                    "  Token enforce : {5}\n\n" +
-                    "Choose logout mode:\n" +
-                    "• \"Cancel\"                       — do nothing\n" +
-                    "• \"Logout without Token\"          — force no token attached (with enforce ON the offline broadcast will be rejected, but the local lock is still cleared; useful as an escape hatch when the token has expired / become corrupt)\n" +
-                    "• \"Logout with Token (recommended)\" — auto-fetch the matching token from the lock; works under enforce ON.",
-                "LoginStatus.Btn.LogoutNoToken" => "🚪 Logout w/o Token",
-                "LoginStatus.Btn.LogoutWithToken" => "🌙 Logout w/ Token (Recommended)",
-                // T07 (2026-05-15 apex-two) — Token Enforce backend switch
-                "LoginStatus.TokenEnforce.Title" => "<b>🎫 Session Token Enforce (Backend Switch)</b>",
-                "LoginStatus.TokenEnforce.On" => "🔒 ENFORCE ON (token required)",
-                "LoginStatus.TokenEnforce.Off" => "🔓 ENFORCE OFF (default, no check)",
-                "LoginStatus.TokenEnforce.SummaryFmt" => "Active tokens: {0} | Expired: {1}",
-                "LoginStatus.TokenEnforce.Hint" => "When ON, Cmd_Tavern op=post requires --arg session_token=<X>; token must match sender/persona. Default OFF preserves legacy behavior.",
+                    "  Session token : {4}\n\n" +
+                    "To write a closing letter, use the goodnight flow instead (senate cmd goodnight-check).",
 
                 // ==== UCL_LibraryManagePage ====
                 "LibraryManage.Title" => "Library Manager",

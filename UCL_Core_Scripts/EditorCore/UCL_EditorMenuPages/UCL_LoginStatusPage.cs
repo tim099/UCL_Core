@@ -87,11 +87,6 @@ namespace UCL.Core.EditorLib.Page
         List<PersonaEntry> m_Pool = new List<PersonaEntry>();
         Dictionary<string, int> m_SameKeyCount = new Dictionary<string, int>();   // session_key → count (collision 偵測)
 
-        // T07 (2026-05-15 apex-two) — Token enforce state cache
-        // 物理意義：讀 _session/_token_enforce.json + _session/_tokens.json 當前狀態, 給 UI toggle 顯示
-        bool m_TokenEnforce = false;
-        int m_ActiveTokenCount = 0;
-        int m_ExpiredTokenCount = 0;
         //Vector2 m_LocksScroll = Vector2.zero;
         //Vector2 m_PoolScroll = Vector2.zero;
 
@@ -105,7 +100,6 @@ namespace UCL.Core.EditorLib.Page
         //     原 DEFAULT_MANUAL_LETTER placeholder 已移除, 不再偽造心得信。
 
         string m_AgentCommandsDir = "";
-        string m_SessionDir = "";
         string m_LettersRoot = "";
         // persona 信件庫根目錄（letters/<persona>/…）。與 UCL_PersonaInspectorPage 的 m_LettersDir 同一個位置，
         // 兩邊都從 UCL_RepoPath.AgentCommandsDir 推導 —— 不寫死安裝路徑（AgentCommands 本身可能是 submodule）。
@@ -116,10 +110,9 @@ namespace UCL.Core.EditorLib.Page
         {
             base.Init(p_Controller);
             // 區塊：路徑解析
-            // 物理意義：走 UCL_RepoPath.AgentCommandsDir 撈 _session 跟 AwakenInit/personas
+            // 物理意義：走 UCL_RepoPath.AgentCommandsDir 撈 AwakenInit/personas
             //          UCL_Core path 用來找 awakening.py 給 process spawn
             m_AgentCommandsDir = UCL_RepoPath.AgentCommandsDir;
-            m_SessionDir = Path.Combine(m_AgentCommandsDir, "_session");
             // ⚠ persona 目錄改走單一解析點（UCL_AwakeningService.PersonasDir → UCL_AgentCommandsPath.DataRoot）。
             //   本行原本走 UCL_RepoPath.AgentCommandsDir（canonical, 不搬），而 persona 檔屬於
             //   「持久狀態資料」，依 UCL_AgentCommandsPath 的類別契約該走可 override 的 DataRoot。
@@ -188,42 +181,6 @@ namespace UCL.Core.EditorLib.Page
             m_ActualAgentDrafts.Clear();
             m_Pool.Clear();
             m_SameKeyCount.Clear();
-
-            // T07: enforce state + tokens summary
-            m_TokenEnforce = false;
-            m_ActiveTokenCount = 0;
-            m_ExpiredTokenCount = 0;
-            try
-            {
-                string enforcePath = Path.Combine(m_SessionDir, "_token_enforce.json");
-                if (File.Exists(enforcePath))
-                {
-                    var jd = JsonData.ParseJson(File.ReadAllText(enforcePath));
-                    if (jd != null && jd.IsObject && jd.Dic != null)
-                        m_TokenEnforce = jd.GetBool("enforce", false);
-                }
-                string tokensPath = Path.Combine(m_SessionDir, "_tokens.json");
-                if (File.Exists(tokensPath))
-                {
-                    var jd = JsonData.ParseJson(File.ReadAllText(tokensPath));
-                    if (jd != null && jd.IsObject && jd.Dic != null
-                        && jd.Dic.TryGetValue("tokens", out var tokensNode)
-                        && tokensNode != null && tokensNode.IsObject && tokensNode.Dic != null)
-                    {
-                        foreach (var kv in tokensNode.Dic)
-                        {
-                            if (kv.Value == null || !kv.Value.IsObject) continue;
-                            string status = kv.Value.GetString("status", "");
-                            if (status == "active") m_ActiveTokenCount++;
-                            else if (status == "expired") m_ExpiredTokenCount++;
-                        }
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[LoginStatus] T07 token state load failed: {e.Message}");
-            }
 
             // 區塊：scan locks —— 走 UCL_ActivePersonaLocks 唯一掃描實作（本頁要含過期視圖，供人手動清）
             foreach (var l in UCL_ActivePersonaLocks.ListLocks())
@@ -326,7 +283,6 @@ namespace UCL.Core.EditorLib.Page
             }
 
             DrawCollisionBanner();
-            DrawTokenEnforcePanel();
             GUILayout.Space(8);
             DrawActiveLocks();
             GUILayout.Space(12);
@@ -339,51 +295,6 @@ namespace UCL.Core.EditorLib.Page
         // 4 個 helpers (IsScreenStreamRecording / TouchSensitiveFlag / DrawRecordingBlackout / GetRepoRoot)
         // 統一在 UCL.Core.EditorLib.UCL_ScreenStreamGuard 共用. 加 WriteStopLock + DrawRecordingBlackout
         // 內嵌中斷直播按鈕 (寫 _stop.lock → daemon poll 偵測自動關閉).
-
-        // 區塊職責：Token Enforce 後台開關 (T07, 2026-05-15 apex-two)
-        // 物理意義：寫 _session/_token_enforce.json {"enforce": bool}.
-        //          Cmd_Tavern.Op_Post 讀此檔判斷是否驗 token. 預設 OFF.
-        // 數值影響：toggle 後立即 flush 到 disk, 下一次 op=post 即生效 (不必 reload).
-        void DrawTokenEnforcePanel()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.Title"), UCL_GUIStyle.LabelStyle);
-                using (new GUILayout.HorizontalScope())
-                {
-                    bool newVal = GUILayout.Toggle(m_TokenEnforce,
-                        m_TokenEnforce ? UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.On")
-                                        : UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.Off"),
-                        UCL_GUIStyle.ButtonStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(220)));
-                    if (newVal != m_TokenEnforce)
-                    {
-                        m_TokenEnforce = newVal;
-                        WriteTokenEnforce(newVal);
-                    }
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.SummaryFmt"),
-                                                  m_ActiveTokenCount, m_ExpiredTokenCount),
-                                    UCL_GUIStyle.LabelStyle);
-                }
-                GUILayout.Label(UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.Hint"), UCL_GUIStyle.LabelStyle);
-            }
-        }
-
-        void WriteTokenEnforce(bool enabled)
-        {
-            try
-            {
-                Directory.CreateDirectory(m_SessionDir);
-                string p = Path.Combine(m_SessionDir, "_token_enforce.json");
-                string ts = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff") + "Z";
-                string json = $"{{\n  \"enforce\": {(enabled ? "true" : "false")},\n  \"updated_at\": \"{ts}\"\n}}\n";
-                File.WriteAllText(p, json);
-                Debug.Log($"[LoginStatus:T07] token enforce → {(enabled ? "ON" : "OFF")} ({p})");
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[LoginStatus:T07] write enforce failed: {e.Message}");
-            }
-        }
 
         // 區塊職責：collision banner — 同 session_key 多 lock 警告
         // 物理意義：cwd-hash session_key 多 Claude IDE 同 cwd 會撞 (per session-key-collision-fix)
@@ -787,45 +698,31 @@ namespace UCL.Core.EditorLib.Page
             File.Delete(tempPath);
         }
 
-        // 區塊職責：彈窗確認後 spawn awakening.py goodnight per persona
-        // 物理意義：手動 logout — destructive action (一按即走 goodnight: vector perturb / status→offline /
-        //          lock 刪; --no-letter 不寫信), 為防誤按改為三按鈕 popup (Tim 2026-05-16 拍板, T07.4):
-        //            (1) 取消                    → 完全 no-op
-        //            (2) 不帶 Token 登出          → 顯式 --session-token "" (enforce ON 時 tavern 廣播會 reject,
-        //                                          但主 ritual lock/perturb 仍跑 — 適合 token 過期 /
-        //                                          lock 損毀的逃生路徑)
-        //            (3) 自動帶正確 Token 登出 (推薦) → 不帶 --session-token (awakening.py auto-fallback 從
-        //                                          lock.session_token 撈, enforce ON 也能正常廣播下線)
-        // 數值影響：persona status → offline, lock removed; 手動登出走 --no-letter 不寫心得信 (Tim 2026-06-14)
+        // 區塊職責：登出確認彈窗（取消／登出）—— 防誤按（Tim 2026-05-16）
+        // 物理意義：登出是 destructive（刪 lock＝下線、發下線廣播），而且不寫信（Tim 2026-06-14）。
+        // 數值影響：lock removed ⇒ offline；token 預覽只給人對身分，不參與登出。
         void DoLogout(LockEntry l)
         {
             string tokenPreview = string.IsNullOrEmpty(l.SessionToken)
                 ? UCL_CodeLocalize.Get("LoginStatus.Token.None")
                 : (l.SessionToken.Length > 12 ? l.SessionToken.Substring(0, 12) + "…" : l.SessionToken);
-            string enforceStateLabel = m_TokenEnforce
-                ? UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.On")
-                : UCL_CodeLocalize.Get("LoginStatus.TokenEnforce.Off");
             string body = string.Format(UCL_CodeLocalize.Get("LoginStatus.Dialog.Logout.BodyFmt"),
-                l.Persona, l.Agent, l.BankAccount, TruncTs(l.LockedAt), tokenPreview, enforceStateLabel);
+                l.Persona, l.Agent, l.BankAccount, TruncTs(l.LockedAt), tokenPreview);
 
             UCL.Core.Page.UCL_OptionPage.Create(
                 string.Format(UCL_CodeLocalize.Get("LoginStatus.Dialog.Logout.TitleFmt"), l.Persona),
                 body,
                 new ButtonData(UCL_CodeLocalize.Get("Cancel"), () => { }),
-                new ButtonData(UCL_CodeLocalize.Get("LoginStatus.Btn.LogoutNoToken"),
-                    () => RunLogout(l.Persona, l.Agent, explicitNoToken: true),
-                    UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.7f, 0.3f))),   // 橙: 警告但不致命
-                new ButtonData(UCL_CodeLocalize.Get("LoginStatus.Btn.LogoutWithToken"),
-                    () => RunLogout(l.Persona, l.Agent, explicitNoToken: false),
-                    UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(Color.red))                    // 紅: 推薦預設
+                new ButtonData(UCL_CodeLocalize.Get("LoginStatus.Btn.Logout"),
+                    () => RunLogout(l.Persona, l.Agent),
+                    UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(Color.red))
             );
         }
 
         // 區塊職責：登出 — 走 Cmd_GoodNight step=logout（in-process，2026-08-13 Tim 拍板：
         //          登出透過 CMD、可單獨跑、persona 顯式必填；不再 spawn awakening.py goodnight）
         // 物理意義：logout = 不寫信的 cleanup（不偽造心得信，廣播標明未留信），與晚安全流程解耦。
-        // explicitNoToken=true → 帶 no_token=true（顯式不帶 token，enforce reject path 除錯，三態語意沿用）
-        void RunLogout(string persona, string agent, bool explicitNoToken)
+        void RunLogout(string persona, string agent)
         {
             if (m_AwakeningRunning)
             {
@@ -834,7 +731,6 @@ namespace UCL.Core.EditorLib.Page
             }
             m_AwakeningRunning = true;
             var aArgs = new Dictionary<string, string> { { "step", "logout" }, { "persona", persona } };
-            if (explicitNoToken) aArgs["no_token"] = "true";
             RunLogoutAsync(aArgs, persona).Forget();
         }
 

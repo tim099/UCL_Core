@@ -55,9 +55,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         //    （判準＝profile/ 目錄存在），欄位走 `UCL_PersonaProfile.GetRaw()`。
         //    ⚠ 留一支能組出「那個檔的路徑」的函式，就是留一個邀請下一個人去直讀的入口 ——
         //      而它會 `File.Exists` 失敗後 fail-soft，症狀是「查無此人」，不是「路徑過期」。
-        /// <summary>session **token 表**（`_tokens.json`）住的目錄。
-        /// ⚠ persona lock **不在這裡**（TASK-0105 起走 <see cref="LockPath"/> → letters/&lt;p&gt;/profile/）。</summary>
-        public static string SessionDir => ResolveDataSub("_session");
         public static string LettersDir => ResolveDataSub(Path.Combine("ChatTavern", "baton", "letters"));
 
         // ===========================================================
@@ -209,7 +206,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             aSb.AppendLine($"# 🧪 Awakening 對帳（C# 唯讀掃描） ts=`{NowLocal()}`（本地時間）");
             aSb.AppendLine();
             aSb.AppendLine($"- DataRoot: `{DataRoot}`");
-            aSb.AppendLine($"- LettersDir: `{LettersDir}`　SessionDir: `{SessionDir}`");
+            aSb.AppendLine($"- LettersDir: `{LettersDir}`（session token 只住各 persona 的 lock，TASK-0307）");
             aSb.AppendLine($"- agent_banks: {aMeta.agent_banks.Count} 筆");
             aSb.AppendLine();
             aSb.AppendLine("| Persona | 帳號（agent id） | 綁定來源 | wakes/ 信數 | 下次編號 | status | lock | profile 缺席欄 |");
@@ -304,8 +301,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
 
         // ===========================================================
         // 區塊：晚安／後台共用的路徑與時間工具。
-        // ⚠ 登入的寫入（lock／_tokens.json／memo／profile）已經不在本檔 —— 在 SCP_Core `SCP_Morning.Wake`（TASK-0303）。
-        //   本檔剩下的寫入是晚安那一側（StepCheck／ExpireTokens／WriteWakeLetter…）。
+        // ⚠ 登入的寫入（lock〔含 session_token〕／memo／profile）已經不在本檔 —— 在 SCP_Core `SCP_Morning.Wake`（TASK-0303）。
+        //   本檔剩下的寫入是晚安那一側（StepCheck／WriteWakeLetter…）；token 隨 lock 刪除失效（TASK-0307）。
         // ===========================================================
         public static string MemosDir => ResolveDataSub(Path.Combine("ChatTavern", "baton", "memos"));
 

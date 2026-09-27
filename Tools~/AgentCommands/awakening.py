@@ -169,17 +169,16 @@ _PATH_CONFIG_PATH = _paths._path_config_file()
 _resolve_data_path = _paths.resolve_data_path      # 委派：override 感知的唯一實作在 ucl_paths
 
 _REGISTRY_PATH = _paths.registry_path()
-_SESSION_DIR = _resolve_data_path("AgentCommands/_session", "session_dir")
 _LETTERS_DIR_TPL = _paths.letters_root()
 _BONUS_QUOTA_PATH = _resolve_data_path(
     "AgentCommands/ChatTavern/agent_bonus_quota.json", "bonus_quota_path"
 )
 
 # T07 (2026-05-15 apex-two) — Session Token 機制
-# 物理意義: morning 發 token 進 lock + tokens.json 反查表 —— 給 whoami 失憶救援用。
+# 物理意義: morning 發 token 進 lock（`profile/_session.json` 的 session_token 欄）—— 給 whoami 失憶救援用。
 #          ⛔ 酒館發言**不驗** token（Tim 2026-09-27，TASK-0308：在線機制是擋重複登入，不是發言許可）。
-# 數值影響: tokens.json schema = { tokens: { <token>: { persona, agent, ..., status } } }
-_TOKENS_PATH = _SESSION_DIR / "_tokens.json"
+#          TASK-0307（2026-09-27）：`AgentCommands/_session/_tokens.json` 反查表**退場** —— 它只是 lock 的鏡像
+#          ＋ 永遠不收的 expired。token 的生命週期就是 lock 的生命週期（上線建、下線刪）。
 # Memo: per-persona 私人 scratchpad — 跨 session persist, 不公開, 不進 tavern
 _MEMOS_DIR_TPL = _resolve_data_path(
     "AgentCommands/ChatTavern/baton/memos", "memos_dir"
@@ -968,84 +967,26 @@ def find_locks_by_claim_origin(origin: str) -> list:
 
 
 # ─── Session Token (T07, 2026-05-15 apex-two) ────────────────────────────
-# 物理意義: morning 發 32-hex token 寫進 lock + _tokens.json 反查表 —— whoami 失憶救援的反查鍵.
+# 物理意義: morning 發 32-hex token 寫進 lock（唯一存放處，TASK-0307）—— whoami 失憶救援的反查鍵.
 #          ⛔ 酒館發言不驗 token（Tim 2026-09-27，TASK-0308）.
-# 數值影響: tokens.json schema = {"tokens": {<token>: {persona, agent, bank_account,
-#          issued_at, claim_origin, session_key, status (active|expired)}}}
-#          goodnight 標 expired (不刪, 保留 audit trail).
+# 數值影響: 活的 token ＝ 某顆 lock 的 session_token 欄；lock 刪掉（goodnight／logout）＝ token 失效。
 
 def gen_session_token() -> str:
     """32-hex random token. UUID4 hex = 128 bit entropy, agent / Tim 直接讀."""
     return uuid.uuid4().hex
 
 
-def load_tokens() -> dict:
-    if not _TOKENS_PATH.exists():
-        return {"tokens": {}}
-    try:
-        with open(_TOKENS_PATH, "r", encoding="utf-8") as f:
-            d = json.load(f)
-        if "tokens" not in d:
-            d["tokens"] = {}
-        return d
-    except Exception:
-        return {"tokens": {}}
-
-
-def save_tokens(d: dict) -> None:
-    _SESSION_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = _TOKENS_PATH.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, _TOKENS_PATH)
-
-
-def issue_token(persona: str, agent: str, bank_account: str,
-                session_key: str, claim_origin: str) -> str:
-    """Generate token + persist to tokens.json. 同 persona 舊 active token 自動標 expired."""
-    tok = gen_session_token()
-    d = load_tokens()
-    for _old, rec in d["tokens"].items():
-        if rec.get("persona") == persona and rec.get("status") == "active":
-            rec["status"] = "expired"
-            rec["expired_at"] = utcnow_iso()
-            rec["expired_reason"] = "reissued"
-    d["tokens"][tok] = {
-        "persona": persona,
-        "agent": agent,
-        "bank_account": bank_account,
-        "issued_at": utcnow_iso(),
-        "claim_origin": claim_origin,
-        "session_key": session_key,
-        "status": "active",
-    }
-    save_tokens(d)
-    return tok
-
-
-def expire_token(token: str | None = None, persona: str | None = None,
-                 reason: str = "goodnight") -> int:
-    """Mark active token(s) expired by `token` 或 `persona`. Returns count."""
-    d = load_tokens()
-    n = 0
-    for tok, rec in d["tokens"].items():
-        if rec.get("status") != "active":
-            continue
-        match = (token is not None and tok == token) or \
-                (persona is not None and rec.get("persona") == persona)
-        if match:
-            rec["status"] = "expired"
-            rec["expired_at"] = utcnow_iso()
-            rec["expired_reason"] = reason
-            n += 1
-    if n > 0:
-        save_tokens(d)
-    return n
-
-
 def lookup_token(token: str) -> dict | None:
-    """token → record (含 status). None if not found."""
-    return load_tokens()["tokens"].get(token)
+    """token → 持有它的那顆**在線** lock（含 persona 欄）。不在任何 lock 裡 ⇒ None。
+
+    TASK-0307：token 只住 lock ⇒ 「查無」同時涵蓋「已下線（lock 刪了）」與「從未發過」——
+    舊的 `_tokens.json` 能分出前者，是因為它把 201 筆死掉的憑證永久留著；那份帳已退場。
+    """
+    tok = (token or "").strip()
+    if not tok:
+        return None
+    hits = [lk for lk in list_locks() if lk.get("session_token") == tok]
+    return hits[0] if len(hits) == 1 else (None if not hits else {**hits[0], "_ambiguous": len(hits)})
 
 
 # ─── Memo: per-persona 私人 scratchpad (T07) ─────────────────────────────
@@ -2160,7 +2101,6 @@ def cmd_status(args: argparse.Namespace) -> int:
     if _PATH_CONFIG_PATH.exists():
         print(f"- Path config: ACTIVE (`{_PATH_CONFIG_PATH.relative_to(_REPO_ROOT)}`)")
         print(f"  - registry: `{_REGISTRY_PATH}`")
-        print(f"  - session: `{_SESSION_DIR}`")
         print(f"  - letters: `{_LETTERS_DIR_TPL}`")
     else:
         print(f"- Path config: (none — 走 per-project default)")
@@ -2340,17 +2280,20 @@ def cmd_whoami(args: argparse.Namespace) -> int:
     if args.token:
         rec = lookup_token(args.token)
         if rec is None:
-            print(f"❌ token '{args.token}' 不存在 _tokens.json", file=sys.stderr)
-            print(f"   可能性: (1) typo (2) 從未發過 (3) tokens.json 損毀", file=sys.stderr)
+            print(f"❌ token '{args.token}' 不在任何在線 lock 裡", file=sys.stderr)
+            print(f"   可能性: (1) typo (2) 已下線（lock 刪了，token 隨之失效）(3) 從未發過", file=sys.stderr)
+            print(f"   ⚠ 這三種現在分不出來 —— expired 歷史帳已退場（TASK-0307）", file=sys.stderr)
             return 2
-        status = rec.get("status", "?")
+        if rec.get("_ambiguous"):
+            print(f"⚠ 同一個 token 對到 {rec['_ambiguous']} 顆 lock（資料異常）—— 只印第一顆", file=sys.stderr)
+        status = "active"
         print(f"🎫 Token: {args.token}")
         print(f"   Agent:        {rec.get('agent', '?')}")
         print(f"   Persona:      {rec.get('persona', '?')}")
         print(f"   Bank account: {rec.get('bank_account', '?')}")
         print(f"   Claim origin: {rec.get('claim_origin', '?')}")
         print(f"   Session key:  {rec.get('session_key', '?')}")
-        print(f"   Issued at:    {rec.get('issued_at', '?')}")
+        print(f"   Issued at:    {rec.get('locked_at', rec.get('issued_at', '?'))}")
         print(f"   Status:       {status}")
         if status == "expired":
             print(f"   Expired at:   {rec.get('expired_at', '?')}")
@@ -2434,7 +2377,7 @@ def cmd_memo(args: argparse.Namespace) -> int:
 
 
 def cmd_reissue_token(args: argparse.Namespace) -> int:
-    """Lock 還在但 token 丟了 (lock 沒 token 欄, 或 _tokens.json 損毀) → 重發 token."""
+    """Lock 還在但 token 丟了（lock 沒 token 欄，或 memo 找不到）→ 重發 token（寫回 lock）."""
     persona = args.persona
     lock = read_lock(persona)
     if not lock:
@@ -2444,13 +2387,13 @@ def cmd_reissue_token(args: argparse.Namespace) -> int:
     bank = lock.get("bank_account", "")
     session_key = lock.get("session_key", "")
     claim_origin = lock_claim_origin(lock)
-    new_token = issue_token(persona, agent, bank, session_key, claim_origin)
+    new_token = gen_session_token()   # TASK-0307：token 只住 lock ⇒ 覆寫 lock 就是重發（舊的那顆隨之失效）
     # rewrite lock 把新 token 帶進去
     write_lock(persona, agent, lock.get("model", ""), bank,
                session_key=session_key, session_token=new_token,
                actual_agent=lock.get("actual_agent") or agent)
     print(f"✓ reissued session_token for {persona}: {new_token}")
-    print(f"   舊 active token 已標 expired (audit 仍可查)")
+    print(f"   舊 token 隨 lock 覆寫失效（TASK-0307 起不再有 expired 歷史帳）")
     return 0
 
 

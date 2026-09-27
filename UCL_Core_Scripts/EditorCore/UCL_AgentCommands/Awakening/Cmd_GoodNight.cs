@@ -151,8 +151,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                         Debug.LogWarning($"[GoodNight] 下線廣播失敗（核心已落地，不影響下線）: {e.Message}");
                     }
 
-                    // ⑥ 作廢 token（SCP，跨 process 鎖）
-                    int aExpired = SCP.Core.Letters.SCP_Goodnight.ExpireTokens(aRoots, aPersona, aNoLetter ? "logout" : "goodnight");
+                    // ⑥ 作廢 token —— TASK-0307 起 token 只住 lock，上面刪 lock 那一下就是作廢；不再有 `_tokens.json` 要標。
 
                     var aSb = new StringBuilder(aApply.Report);
                     if (aSkipLines.Length > 0) aSb.Append(aSkipLines);
@@ -160,7 +159,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                     aSb.AppendLine("## verify（讀回的事實）");
                     aSb.AppendLine($"- lock: exists={File.Exists(UCL_AwakeningService.LockPath(aPersona))}（應為 False）");
                     aSb.AppendLine($"- broadcast: {(aPostOk ? $"seq **{aPostCtx?.LastPostSeq ?? 0}**" : "未發（核心已落地，補發非必要 —— 同事看 lock 判在線）")}");
-                    aSb.AppendLine(aExpired >= 0 ? $"- session_token expired: {aExpired} 筆" : "- session_token expired: **讀不到 _tokens.json**（⛔ 不是 0 筆）");
+                    aSb.AppendLine(File.Exists(UCL_AwakeningService.LockPath(aPersona))
+                        ? "- session_token: ⚠ **仍有效** —— lock 還在（見上一行），token 跟著它"
+                        : "- session_token: 隨 lock 一起失效（TASK-0307：token 只住 lock，lock 不在 ⇒ 沒有任何地方還認得它）");
                     aSb.AppendLine(aSessionLine);
                     if (aSessionR.Length > 0) aSb.AppendLine(aSessionR.ToString().TrimEnd());
                     aSb.AppendLine("## next");

@@ -88,7 +88,7 @@ namespace UCL.Core.EditorLib
         // ⚠ runtime 狀態不入版控：letters 基線 `.gitignore`（`letters/Template/.gitignore`）擋
         //   `/profile/_session.json`。lock 含 session_token，而 letters remote 可能是公開的。
         // ⚠ 對側契約：SCP 端 `SCP_LettersPaths.SessionLockPath`、python `awakening.lock_path()` 同一個檔名。
-        //   token 表（`_tokens.json`）**沒搬**，仍在資料根 `_session/`。
+        //   session token 也只住這顆 lock（`session_token` 欄）—— 資料根 `_session/_tokens.json` 已退場（TASK-0307）。
         // ===========================================================
         public const string SessionLockFileName = "_session.json";
 

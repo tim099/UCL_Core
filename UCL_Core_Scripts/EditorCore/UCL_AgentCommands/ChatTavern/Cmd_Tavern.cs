@@ -714,80 +714,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             const double ALTER_PACING_MAX_SEC = 900.0;   // 安全上限 (T26.1: 從 600s 上修至 900s 配合 idle 拉長至 720s)
             var earlyMeta = ParseMeta(metaStr);
 
-            // T06.3 (Plan_Standby_Dispatch_Bartender, 2026-05-14) — task-assign / task-ack meta schema validation
-            // 物理意義：bartender task dispatch 用 tavern post 當 carrier (per Q2 拍板)。
-            //          訊息 meta 含 tag=task-assign / tag=task-ack 時必有 required 欄位, 缺則 reject 避免半 valid 訊息進 messages.jsonl 污染 dispatch ledger.
-            // 數值影響：純 validation — reject 早 (在 alter-pacing delay 之前), 不寫 jsonl, FailLastOp 給 caller hint.
-            if (earlyMeta != null && earlyMeta.TryGetValue("tag", out var schemaTag) && !string.IsNullOrEmpty(schemaTag))
+            // T06.3 (Plan_Standby_Dispatch_Bartender, 2026-05-14) — tag=commit／task-assign／task-ack 的 meta schema 驗證。
+            // 物理意義：判準住 SCP_Core `SCP_TavernMetaSchema`（TASK-0311）—— Senate 的發文路（tavern-post／commit 公告）
+            //          呼叫同一支 ⇒ ⛔ 不在這裡另寫一份：兩份遲早分岔，而分岔的樣子是「同一則公告這條路擋、那條路收」。
+            //          commit 必帶單一 hex SHA（+5 的請款憑證，Tim 2026-07-30）；task-assign／task-ack 必填欄位（bartender dispatch 的 carrier）。
+            // 數值影響：純 validation — reject 早 (在 alter-pacing delay 之前), 不寫訊息, RejectLastOp 給 caller hint.
+            string schemaReject = SCP.Core.Tavern.SCP_TavernMetaSchema.Validate(earlyMeta);
+            if (schemaReject != null)
             {
-                if (schemaTag == "task-assign")
-                {
-                    // Required: task_id / task_body / assigned_by / requires_ack (boolean string)
-                    foreach (var req in new[] { "task_id", "task_body", "assigned_by", "requires_ack" })
-                    {
-                        if (!earlyMeta.ContainsKey(req) || string.IsNullOrEmpty(earlyMeta[req]))
-                        {
-                            RejectLastOp(args, $"tag=task-assign 缺 meta.{req} (T06.3 schema). Required: task_id / task_body / assigned_by / requires_ack");
-                            return;
-                        }
-                    }
-                }
-                else if (schemaTag == "commit")
-                {
-                    // Required: sha —— commit 公告貼文的計酬憑證（Tim 2026-07-30 拍板「訊息要有 commit SHA」）。
-                    // 物理意義：這則貼文同時是「給同事看的 commit 概要」與「+5 token 的請款憑證」，
-                    //          沒有 SHA 就只是一句宣稱，事後無法稽核對到哪次 commit → 必填。
-                    // 數值影響：純 validation，reject 在寫 jsonl 之前，不會留下半 valid 的請款紀錄。
-                    if (!earlyMeta.ContainsKey("sha") || string.IsNullOrEmpty(earlyMeta["sha"]))
-                    {
-                        RejectLastOp(args, "tag=commit 缺 meta.sha (T06.3 schema)。commit 公告必須帶 SHA 當計酬憑證。"
-                                     + "一則訊息對一個 SHA；三層 bump 請分三則各自公告（Tim 2026-07-30 拍板）。");
-                        return;
-                    }
-                    // 一則訊息一個 SHA（Tim 2026-07-30 拍板）—— 三層 bump 分三則發，每則各自計酬。
-                    // 理由：一則對一個才讓「公告」與「憑證」一對一，同事看到的是「這層改了什麼」而不是一包混在一起；
-                    //      計酬也自然按 commit 數而非按公告數。
-                    string shaVal = earlyMeta["sha"].Trim();
-                    if (shaVal.Contains(","))
-                    {
-                        RejectLastOp(args, "tag=commit 的 meta.sha 只能帶一個 SHA（收到逗號分隔的多個）。"
-                                     + "三層 bump 請分三則訊息各自公告，每則帶自己那層的 SHA。");
-                        return;
-                    }
-                    // 輕量格式檢查：hex 且長度 7~40（git short sha 最短 7、full sha 40）。
-                    // 目的是攔打錯/貼到非 SHA 的字串，讓憑證有意義；不驗「commit 是否真存在」——
-                    // 那需要枚舉 submodule repo 路徑，正是 T10 auto-recruit 靜默失效的 install-path 陷阱。
-                    bool shaLooksValid = shaVal.Length >= 7 && shaVal.Length <= 40;
-                    if (shaLooksValid)
-                    {
-                        foreach (char c in shaVal)
-                        {
-                            bool isHex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-                            if (!isHex) { shaLooksValid = false; break; }
-                        }
-                    }
-                    if (!shaLooksValid)
-                    {
-                        RejectLastOp(args, $"tag=commit 的 meta.sha 格式不像 git SHA（收到 '{shaVal}'）。"
-                                     + "需為 7~40 位十六進位字元，例如 sha:910a2493。");
-                        return;
-                    }
-                }
-                else if (schemaTag == "task-ack")
-                {
-                    // Required: task_id / action (accept|decline|defer)
-                    if (!earlyMeta.ContainsKey("task_id") || string.IsNullOrEmpty(earlyMeta["task_id"]))
-                    {
-                        RejectLastOp(args, "tag=task-ack 缺 meta.task_id (T06.3 schema)");
-                        return;
-                    }
-                    if (!earlyMeta.TryGetValue("action", out var ackAction)
-                        || (ackAction != "accept" && ackAction != "decline" && ackAction != "defer"))
-                    {
-                        RejectLastOp(args, "tag=task-ack 缺 meta.action 或 action 非 accept|decline|defer (T06.3 schema)");
-                        return;
-                    }
-                }
+                RejectLastOp(args, schemaReject);
+                return;
             }
             // 計算 effective delay 秒數（hierarchy）
             double effectiveDelaySec = ALTER_PACING_DEFAULT_SEC;

@@ -623,7 +623,19 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             //    走的是「已在錄 ⇒ 未動作」那條路，`aOpenedRecording` 留在 false 並**原樣覆寫**準備檔
             //    ⇒ 首次 prepare 開的錄影被記成「不是本場開的」，收工因此不關，而**錄影不會自己停**。
             //    ⚠ 失效樣子是一句看起來很謹慎的話（「不替別人關」）—— 沒有任何一層會說這格是重入改的。
-            var aPrevPrepared = LoadPrepared(aMediaId, out _);   // 重入時的前一份事實（沒有＝首次）
+            var aPrevPrepared = LoadPrepared(aMediaId, out string aPrevReject);   // 重入時的前一份事實（沒有＝首次）
+            // ⚠ 只擋 **Busy**：壞檔／兩鍵矛盾（TASK-0076）那兩種 reject 的修法本來就是「prepare 重寫一份對的」，擋了等於封死修復路。
+            if (aPrevPrepared == null && aPrevReject == UCL_AtomicFileRead.DescribeBusy(PreparedPath(aMediaId)))
+            {
+                // 🔴 TASK-0265 QA：前一份準備檔**在但這一瞬間讀不了**（換檔中／被鎖）——
+                //   舊版丟掉 reject ⇒ 當成「首次 prepare」⇒ 下面照「本次沒開錄影」覆寫它
+                //   ⇒ 首次 prepare 開的錄影被記成「不是本場開的」，收工不關（TASK-0231 同一個洞，換了入口）。
+                //   ⇒ 讀不了就停在覆寫之前；節目名那一步重做一次結果相同，所以停在這裡是安全的。
+                Blocked(iArgs, aR, aPath,
+                        $"前一份準備檔 `prepared/{aMediaId}.json` 讀不了（{aPrevReject}）—— ⛔ 不覆寫它",
+                        "稍後重跑同一個指令（換檔中或被鎖；⛔ 不要動那顆檔）");
+                throw new Exception($"[StreamWatch] step=prepare blocked：前一份準備檔讀不了（詳見 {aPath}）");
+            }
             bool aRecOn = IsRecordingEnabled(out string aCfgNote);
             if (aRecOn) aR.AppendLine($"- 錄影：**已在錄** —— 未動作（{aCfgNote}）");
             else if (!aStartRec) aR.AppendLine($"- 錄影：未開，且 `start_recording=false` ⇒ 不代開（{aCfgNote}）");

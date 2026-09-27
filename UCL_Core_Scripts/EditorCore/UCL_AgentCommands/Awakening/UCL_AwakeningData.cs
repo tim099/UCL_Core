@@ -123,8 +123,14 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
 
         public static UCL_RegistryMeta LoadFromFile(string iPath)
         {
-            if (!File.Exists(iPath)) return new UCL_RegistryMeta();
-            var aJson = JsonData.ParseJson(File.ReadAllText(iPath));
+            // TASK-0265：registry 會被 senate（CloseAccount）換檔 ⇒ 舊版 `!File.Exists ⇒ 空` 會讓 Sculpture 選到替代付款人。
+            //   ⇒ 真的不存在才回空；這一瞬間讀不了照舊丟例外（與舊版「檔在而被鎖」的行為相同）。
+            if (!UCL_AtomicFileRead.TryReadAllText(iPath, out string aText, out UCL_FileReadState aState))
+            {
+                if (aState == UCL_FileReadState.Missing) return new UCL_RegistryMeta();
+                throw new IOException(UCL_AtomicFileRead.DescribeBusy(iPath));
+            }
+            var aJson = JsonData.ParseJson(aText);
             var aData = new UCL_RegistryMeta();
             if (aJson != null && aJson.IsObject) aData.DeserializeFromJson(aJson);
             return aData;

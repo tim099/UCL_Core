@@ -170,7 +170,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         {
             try
             {
-                if (File.Exists(SettingsPath)) return JsonData.ParseJson(File.ReadAllText(SettingsPath));
+                // TASK-0265：senate 的 BankAdminPage 會換這顆檔 ⇒ 重試跨過那一瞬間（舊版 `File.Exists` 會讀成「沒設定 ⇒ Ducat／預設費率」）。
+                if (UCL_AtomicFileRead.TryReadAllText(SettingsPath, out string aText, out UCL_FileReadState aState))
+                    return JsonData.ParseJson(aText);
+                if (aState == UCL_FileReadState.Busy)
+                    Debug.LogWarning(UCL_AtomicFileRead.DescribeBusy(SettingsPath) + " ⇒ 本次改用預設，⚠ 那不是本區的值。");
             }
             catch (System.Exception e)
             {

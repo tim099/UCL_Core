@@ -187,7 +187,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             try
             {
-                if (File.Exists(SettingsPath)) return JsonData.ParseJson(File.ReadAllText(SettingsPath));
+                // TASK-0265：後台頁以 Delete→Move 換檔，而 `op=read` 在背景緒讀它 ⇒ 重試跨過那一瞬間（舊版會讀成預設筆數）。
+                if (UCL_AtomicFileRead.TryReadAllText(SettingsPath, out string aText, out _))
+                    return JsonData.ParseJson(aText);
             }
             catch (System.Exception e)
             {

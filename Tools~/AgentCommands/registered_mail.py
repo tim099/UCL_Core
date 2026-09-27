@@ -32,6 +32,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -95,13 +96,19 @@ def mail_fee() -> int:
     ⚠ 讀不到時回**預設值而非 0**：回 0 會讓寄信變免費且沒有人發現，
       而「費率設定檔壞掉」不該靜默變成「這個功能免費」。
     """
-    try:
-        if BANK_SETTINGS.exists():
+    # TASK-0265：senate 的 BankAdminPage 以 Delete→Move 換這顆檔 ⇒ 舊版 `exists()` 撞上那一瞬間會回預設費率。
+    #   ⇒ 重試跨過窗口（2+4+6+8 ms，同 C# SCP_AtomicFileRead）；真的不在／壞檔才回預設。
+    for attempt in range(1, 6):
+        try:
             v = json.loads(BANK_SETTINGS.read_text(encoding="utf-8")).get("registered_mail_fee")
             if isinstance(v, int) and v >= 0:
                 return v
-    except Exception:
-        pass
+            break
+        except (FileNotFoundError, PermissionError, OSError):
+            if attempt < 5:
+                time.sleep(0.002 * attempt)
+        except Exception:
+            break
     return DEFAULT_MAIL_FEE
 
 

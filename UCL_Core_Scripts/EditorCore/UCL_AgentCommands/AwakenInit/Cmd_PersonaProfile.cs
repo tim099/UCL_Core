@@ -357,6 +357,14 @@ namespace UCL.Core.EditorLib.AgentCommands.AwakenInit
                         string cur = UCL_PersonaProfile.GetBankAccount(p, currency,
                             out string curSrc, out _);
                         bool hasOwn = curSrc == currency;
+                        if (curSrc == UCL_PersonaProfile.BankSourceUnreadable)
+                        {
+                            // 🔴 TASK-0265 QA：讀不了 ⇒ hasOwn=false ⇒ 舊版會把一個**存在但被鎖住**的本區綁定覆寫掉
+                            //   （CopyBankRegionAll 修掉的同一形狀）。⇒ 讀不了就停手，計失敗。
+                            failed++;
+                            sb.AppendLine($"  ✗ {p}：本區綁定這一瞬間讀不了 —— ⛔ 不覆寫；重跑即可");
+                            continue;
+                        }
                         if (string.IsNullOrEmpty(agent))
                         {
                             skippedNoAgent++;

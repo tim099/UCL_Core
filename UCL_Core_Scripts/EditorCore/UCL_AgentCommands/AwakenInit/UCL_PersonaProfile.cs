@@ -418,6 +418,8 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         /// <summary>`GetBankAccount` 的來源標記：本區命中時＝該區域 ID；跨區借用時＝借出的區域 ID。</summary>
         public const string BankSourceAbsent = "absent";
+        /// <summary>綁定檔這一瞬間讀不了（TASK-0265）—— ⛔ 不是 <see cref="BankSourceAbsent"/>。對映 SCP 同名常數。</summary>
+        public const string BankSourceUnreadable = SCP.Core.Letters.SCP_PersonaProfile.BankSourceUnreadable;
         /// <summary>多個其他區域都有值 —— **不挑一個**，回空並由呼叫端處置。</summary>
         public const string BankSourceAmbiguous = "ambiguous";
 
@@ -554,6 +556,13 @@ namespace UCL.Core.EditorLib.AgentCommands
             {
                 string regAgent = GetString(p, "agent", "").Trim();
                 string bound = GetBankAccount(p, iCurrencyId, out string boundSrc, out _);
+                if (boundSrc == BankSourceUnreadable)
+                {
+                    // ⛔ 讀不了就判不出「綁的是不是 aFrom」—— 舊版把它讀成「沒命中」⇒ 漏改一位而整體回 success（TASK-0265 QA）。
+                    oFailed++;
+                    sb.AppendLine($"  ✗ {p}：綁定檔這一瞬間讀不了 —— 判不出要不要改，⛔ 不寫；重跑即可");
+                    continue;
+                }
                 bool regHit = regAgent == aFrom;
                 bool bindHit = bound == aFrom && boundSrc == iCurrencyId;
                 if (!regHit && !bindHit) { skipped++; continue; }

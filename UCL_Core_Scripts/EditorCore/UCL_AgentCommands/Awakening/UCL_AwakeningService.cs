@@ -171,9 +171,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         {
             string aPath = LockPath(iPersona);
             // 🔴 這裡原本是 `if (!File.Exists(aPath)) return null;`（TASK-0265）。
-            //   ⛔ 那一行的代價不是「少讀一個檔」：`null` 在呼叫端的語意是**「這個 persona 沒有登入」**，
-            //     而那正是早安「同一個 persona 不得同時登入兩次」那道守衛讀的東西。
-            //   ⇒ lock 檔換檔那一瞬間（實測窗口 6.4~40.9%）讀到 false ⇒ **守衛放行**，而沒有任何一層會叫。
+            //   `null` 在呼叫端的語意是**「這個 persona 沒有登入」**。
+            //   ⚠ 2026-09-27 起**早安登入守衛不讀這支**：它在 SCP_Core `SCP_PersonaLetters.ReadPersonaLock`
+            //     （TASK-0303；Busy ⇒ Unknown ⇒ blocked，已是 fail-closed）。lock 的寫入端只剩：上線新建
+            //     （SCP_Morning，目標原本不在）與 python `reissue-token` 覆寫（`os.replace`＝MoveFileEx，
+            //     與 .NET `File.Move(…, true)` 同一個 Win32 呼叫，後者 2026-09-23 實測 0% 窗口；
+            //     ⚠ python 那一側本身沒量過）⇒ 沒有 Delete-then-Move 的窗口。
+            //     本支剩下的呼叫端是 Sculpture／TaskReconcile／對帳表。
             //   ⚠ `Busy` 仍然回 `null`（呼叫端的型別只有「有/沒有」兩種），⛔ 但它**出聲**：
             //     不出聲的話，「真的沒登入」與「我這次沒讀到」在日誌上也同形。
             if (!UCL_AtomicFileRead.TryReadAllText(aPath, out _, out UCL_FileReadState aState))

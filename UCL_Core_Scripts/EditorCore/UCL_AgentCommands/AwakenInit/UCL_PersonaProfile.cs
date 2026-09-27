@@ -441,18 +441,25 @@ namespace UCL.Core.EditorLib.AgentCommands
                 out oSource, out oNote, w => Debug.LogWarning(w));
 
         /// <summary>讀一個綁定檔：裸值 ＋ 換行（同 profile/ 的格式）。缺檔／空檔回空字串。</summary>
-        static string ReadBankFile(string iPath)
+        static string ReadBankFile(string iPath) => ReadBankFile(iPath, out _);
+
+        /// <summary>
+        /// 同上，但分得出「沒有綁定」與「這一瞬間讀不了」（<paramref name="oBusy"/>）。
+        /// <para>🔴 TASK-0265：綁定檔由 Unity 與 senate.exe（BankAdminPage）各自 Delete→Move 換檔 ⇒
+        /// 舊版 `!File.Exists ⇒ ""` 會把換檔那一瞬間讀成「沒有綁定」，而 <see cref="CopyBankRegionAll"/>
+        /// 拿「新區沒有綁定」當成可以寫入的依據 ⇒ **繞過衝突守衛、覆寫別人剛設的帳戶**（錢進哪個帳戶就換了）。</para>
+        /// </summary>
+        static string ReadBankFile(string iPath, out bool oBusy)
         {
-            try
+            oBusy = false;
+            if (UCL_AtomicFileRead.TryReadAllText(iPath, out string aText, out UCL_FileReadState aState))
+                return aText.Trim();
+            if (aState == UCL_FileReadState.Busy)
             {
-                if (!File.Exists(iPath)) return "";
-                return File.ReadAllText(iPath).Trim();
+                oBusy = true;
+                Debug.LogWarning(UCL_AtomicFileRead.DescribeBusy(iPath) + " ⇒ 綁定讀成「不知道」，⛔ 不是「沒有綁定」。");
             }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[PersonaProfile] 讀綁定檔失敗（{iPath}）：{e.Message}");
-                return "";
-            }
+            return "";
         }
 
         /// <summary>
@@ -631,8 +638,15 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
             foreach (var p in PoolNamesSorted())
             {
-                string aOld = ReadBankFile(UCL_LettersPath.BankField(p, iFrom));
-                string aNew = ReadBankFile(UCL_LettersPath.BankField(p, iTo));
+                string aOld = ReadBankFile(UCL_LettersPath.BankField(p, iFrom), out bool aOldBusy);
+                string aNew = ReadBankFile(UCL_LettersPath.BankField(p, iTo), out bool aNewBusy);
+                if (aOldBusy || aNewBusy)
+                {
+                    // ⛔ 讀不了不當成「沒有綁定」—— 那會繞過下面的衝突守衛（TASK-0265）。
+                    oFailed++;
+                    aSb.AppendLine($"  ✗ {p}：綁定檔這一瞬間讀不了（{(aOldBusy ? iFrom : iTo)}；換檔中或被鎖）—— 不動，重跑一次即可");
+                    continue;
+                }
                 if (string.IsNullOrEmpty(aOld))
                 {
                     // 舊區本來就沒有 ⇒ 沒有東西可搬。新區有值也不動它（那是別人設的）。

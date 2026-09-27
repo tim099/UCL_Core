@@ -199,8 +199,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aP = PreparedPath(iMediaId);
             try
             {
-                if (!File.Exists(aP)) return null;
-                var aJd = JsonData.ParseJson(File.ReadAllText(aP, Encoding.UTF8));
+                // TASK-0265：settle 在背景緒換檔（Delete→Move）⇒ `!File.Exists` 會把那一瞬間讀成「沒有準備檔」。
+                //   ⇒ 重試跨過窗口；Busy 走 oReject（⛔ 不跟「真的沒有」同形：那一態會擋 join／不關錄影／漏匯出）。
+                if (!UCL_AtomicFileRead.TryReadAllText(aP, out string aText, out UCL_FileReadState aState))
+                {
+                    if (aState == UCL_FileReadState.Busy) oReject = UCL_AtomicFileRead.DescribeBusy(aP);
+                    return null;
+                }
+                var aJd = JsonData.ParseJson(aText);
                 if (aJd == null) { oReject = $"`prepared/{iMediaId}.json` 解析失敗（壞檔）"; return null; }
                 var aOut = new UCL_StreamWatchPrepared();
                 aOut.DeserializeFromJson(aJd);
@@ -3594,8 +3600,15 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         string aMid = Path.GetFileName(aDir);
                         if (aMid != iWork && !aMid.EndsWith("-" + iWork, StringComparison.Ordinal)) continue;
                         string aJson = Path.Combine(aDir, "readers", iPersona, "reader.json");
-                        if (!File.Exists(aJson)) continue;
-                        var aJd = JsonData.ParseJson(File.ReadAllText(aJson));
+                        // TASK-0265：reader.json 由 senate.exe 走 File.Replace 換檔 ⇒ 重試跨過窗口；
+                        //   Busy 不跳過而是列一行（⛔ 跳過＝把「這一瞬間讀不了」印成「首次觀看」）。
+                        if (!UCL_AtomicFileRead.TryReadAllText(aJson, out string aReaderText, out UCL_FileReadState aReaderState))
+                        {
+                            if (aReaderState == UCL_FileReadState.Busy)
+                                aHits.Add($"- `{aMid}` — ⚠ reader.json 這一瞬間讀不了（{UCL_AtomicFileRead.DescribeBusy(aJson)}）");
+                            continue;
+                        }
+                        var aJd = JsonData.ParseJson(aReaderText);
                         string aStatus = ReadStr(aJd, "status");
                         var aProg = aJd != null && aJd.Contains("progress") ? aJd["progress"] : null;
                         string aCh = aProg != null ? ReadStr(aProg, "current_chapter_id") : "";
@@ -3736,12 +3749,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             if (string.IsNullOrEmpty(iLibraryMediaId))
                 return (false, "session 沒有 `library_media_id`（舊場次）⇒ 查不到是誰開的錄影，保守不動");
-            if (!File.Exists(PreparedPath(iLibraryMediaId)))
-                return (false, $"找不到準備檔 `StreamWatch/prepared/{iLibraryMediaId}.json` ⇒ 查不到是誰開的，保守不動");
             try
             {
-                var aP = LoadPrepared(iLibraryMediaId);
-                if (aP == null) return (false, "準備檔讀不出 JSON ⇒ 保守不動");
+                // TASK-0265：⛔ 不另做 `File.Exists` 預檢 —— 那一行本身就是換檔窗口；「沒有」與「讀不了」由 LoadPrepared 分。
+                var aP = LoadPrepared(iLibraryMediaId, out string aPrepReject);
+                if (aP == null)
+                    return (false, string.IsNullOrEmpty(aPrepReject)
+                        ? $"找不到準備檔 `StreamWatch/prepared/{iLibraryMediaId}.json` ⇒ 查不到是誰開的，保守不動"
+                        : $"準備檔讀不出來（{aPrepReject}）⇒ 保守不動");
                 // 🩸 2026-09-08 測試當場抓到：這裡本來寫「開場前就已經在錄」——
                 //   而 `false` 有**兩種成因**（① 開場時已在錄 ② 本場 `start_recording=false` 沒開），
                 //   我卻只宣告了其中一種，於是它在第二種情況下**是一句假話**。
@@ -3787,13 +3802,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             if (string.IsNullOrEmpty(iLibraryMediaId))
                 return (false, "session 沒有 library_media_id（舊場次；台帳自 2026-08-19 起才帶這欄）");
-            string aPath = PreparedPath(iLibraryMediaId);
-            if (!File.Exists(aPath))
-                return (false, $"找不到準備檔 `StreamWatch/prepared/{iLibraryMediaId}.json`（本場沒走 prepare？）");
             try
             {
-                var aP = LoadPrepared(iLibraryMediaId);
-                if (aP == null) return (false, "準備檔讀不出 JSON");
+                // TASK-0265：同 ReadRecordingOwnedSetting —— 預檢那一行就是窗口，交給 LoadPrepared 分「沒有／讀不了」。
+                var aP = LoadPrepared(iLibraryMediaId, out string aPrepReject);
+                if (aP == null)
+                    return (false, string.IsNullOrEmpty(aPrepReject)
+                        ? $"找不到準備檔 `StreamWatch/prepared/{iLibraryMediaId}.json`（本場沒走 prepare？）"
+                        : $"準備檔讀不出來（{aPrepReject}）");
                 if (!aP.auto_export)
                     return (false, "準備檔 `auto_export=false`（本媒材刻意關掉）");
                 string aTitle = aP.chapter_title;
@@ -4461,8 +4477,14 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             try
             {
                 string aPath = RelayPath(iPrimaryPersona);
-                if (!File.Exists(aPath)) return null;
-                var aJd = JsonData.ParseJson(File.ReadAllText(aPath, Encoding.UTF8));
+                // TASK-0265：多人 cycle 同在背景緒讀寫這一顆 ⇒ 缺席會讓前緣歸零、段號重發 #1。重試跨過換檔窗口。
+                if (!UCL_AtomicFileRead.TryReadAllText(aPath, out string aText, out UCL_FileReadState aState))
+                {
+                    if (aState == UCL_FileReadState.Busy)
+                        Debug.LogWarning(UCL_AtomicFileRead.DescribeBusy(aPath) + " ⇒ 本輪把接力前緣當成讀不到（下一輪重讀）。");
+                    return null;
+                }
+                var aJd = JsonData.ParseJson(aText);
                 if (aJd == null) return null;
                 var aRelay = new UCL_StreamWatchRelay();
                 aRelay.DeserializeFromJson(aJd);

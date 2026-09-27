@@ -692,42 +692,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
 
             // ===========================================================
-            // T07 (2026-05-15 apex-two) — Session Token Enforcement
-            // 物理意義：morning 發 32-hex token 寫進 lock + _tokens.json 反查表；
-            //          enforce ON 時必驗 token 合法性 (存在 + active)，阻擋偽造/遺失 token.
-            // 數值影響：enforce OFF (預設) → silent skip.
-            //          enforce ON + token 缺 / 不存在 / 已過期 → RejectLastOp 硬擋.
-            //          enforce ON + token 存在 active 但 sender/persona 不符 (Tim 2026-05-15 修訂) →
-            //            放行, 但 body 尾端附上真實身分警告, 讓 Tim 肉眼辨識誤標帳號.
-            //           caller 可帶 --arg session_token=<X> 或 --arg token=<X> (兩 alias).
-            // 邊界：系統 sender (_quest_system / _bartender 等 _ 開頭) skip 驗證, 不必發 token.
-            string tokenIdentityWarning = null;   // 非 null = identity mismatch, 附進 body 但不擋
-            if (!senderId.StartsWith("_") && TokenEnforce_IsEnabled())
-            {
-                string sessionToken = GetArg(args, "session_token", GetArg(args, "token", ""));
-                if (string.IsNullOrEmpty(sessionToken))
-                {
-                    RejectLastOp(args, "[T07] token enforce ON, 但 post 缺 --arg session_token=<X>。" +
-                                 "跑 awakening.py whoami 撈當前 token；或從 UCL_LoginStatusPage 關閉 enforce。");
-                    return;
-                }
-                // Phase 1: 合法性驗證 (硬擋) — token 是否存在且 active
-                string hardErr = TokenEnforce_CheckValid(sessionToken, out string realBank, out string realPersona);
-                if (!string.IsNullOrEmpty(hardErr))
-                {
-                    RejectLastOp(args, "[T07] token 校驗失敗: " + hardErr);
-                    return;
-                }
-                // Phase 2: identity 對齊檢查 (軟警告) — token 存在 active, 但 sender/persona 不符
-                bool bankMismatch = !string.IsNullOrEmpty(senderId) && realBank != senderId;
-                bool personaMismatch = !string.IsNullOrEmpty(senderPersona) && realPersona != senderPersona;
-                if (bankMismatch || personaMismatch)
-                {
-                    tokenIdentityWarning = $"⚠ [T07 identity mismatch] 真實身分 — bank: {realBank} / persona: {realPersona}";
-                }
-            }
-
-            // ===========================================================
             // T26 — Solo Alter 配對發言間隔自動延遲（per Tim P10 + Round 30 mode-aware 修正）
             // 物理意義：Alter 機制觸發後 agent 容易 self↔alter ping-pong 秒回失去慢速意義；
             //          純 SKILL.md 自律守不住；server 端自動延遲（不擋訊息）— agent 不必處理 reject + retry，
@@ -1006,10 +970,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 Debug.LogWarning($"[Tavern] glossary auto-attach 失敗 (post 不受影響): {ex.Message}");
             }
-
-            // T07 identity mismatch 警告附進 body (在 glossary auto-attach 之後, 確保警告在最尾端)
-            if (!string.IsNullOrEmpty(tokenIdentityWarning))
-                body = body + "\n\n---\n" + tokenIdentityWarning;
 
             var aMsgMeta = ParseMeta(metaStr);
             if (aIsCliCmd)
@@ -1768,107 +1728,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 if (!string.IsNullOrEmpty(k)) d[k] = v;
             }
             return d.Count > 0 ? d : null;
-        }
-
-        // ===========================================================
-        // T07 (2026-05-15 apex-two) — Session Token Enforcement helpers
-        // 區塊職責：讀 AgentCommands/_session/_token_enforce.json + _tokens.json (Python awakening.py 寫).
-        //          enforce 後台開關放 UCL_LoginStatusPage 跟 awakening.py token-enforce CLI 共寫.
-        // 物理意義：純檔案查詢, 不引用 awakening.py — C# 端跟 Python 端 source of truth 一致 (同檔).
-        // 數值影響：enforce 預設 OFF → 完全不走 token 驗證路徑, 既有 caller 不受影響.
-        // ===========================================================
-        static bool TokenEnforce_IsEnabled()
-        {
-            try
-            {
-                string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session", "_token_enforce.json");
-                if (!File.Exists(path)) return false;
-                string json = File.ReadAllText(path);
-                var jd = UCL.Core.JsonLib.JsonData.ParseJson(json);
-                if (jd == null || !jd.IsObject || jd.Dic == null) return false;
-                return jd.GetBool("enforce", false);
-            }
-            catch
-            {
-                return false;   // 讀檔失敗 → 預設 OFF 安全側
-            }
-        }
-
-        // T07 修訂 (Tim 2026-05-15) — 兩段式驗證:
-        // CheckValid: 只驗 token 合法性 (存在 + active), 回傳真實 bank/persona 供 caller 比對.
-        //   回 null = token 合法, out 參數填好; 回 error msg = hard error (caller 應 RejectLastOp).
-        // Verify:     完整驗 token + identity 對齊 (legacy 用途, Op_Post 已改用 CheckValid).
-        static string TokenEnforce_CheckValid(string token, out string realBank, out string realPersona)
-        {
-            realBank = "";
-            realPersona = "";
-            try
-            {
-                string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session", "_tokens.json");
-                if (!File.Exists(path))
-                    return "_tokens.json 不存在 (跑 senate cmd morning-wake --arg persona=<P> 發 token)";
-                string json = File.ReadAllText(path);
-                var jd = UCL.Core.JsonLib.JsonData.ParseJson(json);
-                if (jd == null || !jd.IsObject || jd.Dic == null)
-                    return "_tokens.json 格式錯";
-                var tokensNode = jd.Dic.TryGetValue("tokens", out var tn) ? tn : null;
-                if (tokensNode == null || !tokensNode.IsObject || tokensNode.Dic == null)
-                    return "_tokens.json 缺 tokens 欄";
-                if (!tokensNode.Dic.TryGetValue(token, out var rec) || rec == null || !rec.IsObject)
-                    return "token 不存在 (可能 typo / 已失效 / 從未發過)";
-                string status = rec.GetString("status", "");
-                if (status != "active")
-                    return $"token status={status} (非 active)";
-                realBank = rec.GetString("bank_account", "");
-                realPersona = rec.GetString("persona", "");
-                return null;   // OK
-            }
-            catch (Exception e)
-            {
-                return "verify exception: " + e.Message;
-            }
-        }
-
-        // 驗證 token <-> sender/persona 對齊. 回 null = OK, 回 error msg = reject reason.
-        static string TokenEnforce_Verify(string token, string senderId, string senderPersona)
-        {
-            try
-            {
-                string path = Path.Combine(UCL_AgentCommandsPath.DataRoot, "_session", "_tokens.json");
-                if (!File.Exists(path))
-                    return "_tokens.json 不存在 (跑 senate cmd morning-wake --arg persona=<P> 發 token)";
-                string json = File.ReadAllText(path);
-                var jd = UCL.Core.JsonLib.JsonData.ParseJson(json);
-                if (jd == null || !jd.IsObject || jd.Dic == null)
-                    return "_tokens.json 格式錯";
-                var tokensNode = jd.Dic.TryGetValue("tokens", out var tn) ? tn : null;
-                if (tokensNode == null || !tokensNode.IsObject || tokensNode.Dic == null)
-                    return "_tokens.json 缺 tokens 欄";
-                if (!tokensNode.Dic.TryGetValue(token, out var rec) || rec == null || !rec.IsObject)
-                    return "token 不存在 (可能 typo / 已失效 / 從未發過)";
-
-                string status = rec.GetString("status", "");
-                if (status != "active")
-                    return $"token status={status} (非 active)";
-
-                string tokenBank = rec.GetString("bank_account", "");
-                string tokenPersona = rec.GetString("persona", "");
-
-                // sender 必須 = token 的 bank_account (per-agent bank 共用)
-                if (!string.IsNullOrEmpty(senderId) && tokenBank != senderId)
-                    return $"sender_id 不符 (token 對應 bank={tokenBank}, 你填 sender={senderId})";
-
-                // persona 若 caller 顯式帶, 必須 = token 對應 persona
-                // 沒帶 persona = 不檢查 (legacy 對齊, 但建議 caller 帶上)
-                if (!string.IsNullOrEmpty(senderPersona) && tokenPersona != senderPersona)
-                    return $"persona 不符 (token 對應 persona={tokenPersona}, 你填 persona={senderPersona})";
-
-                return null;   // OK
-            }
-            catch (Exception e)
-            {
-                return "verify exception: " + e.Message;
-            }
         }
 
         /// <summary>解析 "path1|path2|path3" 為 ref list（prototype 階段不支援 anchor/label）。</summary>

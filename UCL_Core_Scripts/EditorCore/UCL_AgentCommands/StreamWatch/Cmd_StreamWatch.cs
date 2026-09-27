@@ -4532,13 +4532,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             try
             {
-                var aLock = UCL_AwakeningService.ReadLock(iPersona);
                 var aArgs = new Dictionary<string, string>
                 {
                     { "op", "post" }, { "room", "tavern" }, { "persona", iPersona }, { "body", iBody },
                     { "meta", $"{{\"tag\":\"stream-watch\",\"subtag\":\"{iSubtag}\",\"category\":\"chat\"}}" },
                 };
-                if (aLock != null && !string.IsNullOrEmpty(aLock.session_token)) aArgs["session_token"] = aLock.session_token;
                 UCL_AgentCmdContexts.PropagateCmdId(iCmdArgs, aArgs);
                 var aPostCtx = UCL_AgentCmdContexts.FromArgs(iCmdArgs, "StreamWatch.TavernPost");
                 if (aPostCtx != null) aPostCtx.LastPostSeq = 0;

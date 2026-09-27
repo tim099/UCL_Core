@@ -492,9 +492,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 ["body"] = body,
                 ["meta"] = "{\"tag\":\"reading-note\",\"category\":\"reading\"}",
             };
-            // token enforce / caller 環境標記照原樣穿透 —— share 不該是繞過驗證的側門
-            if (args.TryGetValue("session_token", out string st) && !string.IsNullOrEmpty(st))
-                tavernArgs["session_token"] = st;
+            // caller 環境標記照原樣穿透 —— share 不該是繞過驗證的側門
             if (args.TryGetValue("_caller_env_marker", out string cem) && !string.IsNullOrEmpty(cem))
                 tavernArgs["_caller_env_marker"] = cem;
 

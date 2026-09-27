@@ -1154,7 +1154,6 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                 //   發言權與收款權是兩回事。而且失敗形式是 LogWarning + 回 0，
                 //   於是宣告會**安靜地不出現**，同事看酒館只會以為「她這場沒發」。
                 //   現在 bank 已完全不參與發文（計酬由 persona 反解），閘門的前提本身也消失了。
-                var aLock = UCL_AwakeningService.ReadLock(iPersona);
                 var aArgs = new Dictionary<string, string>
                 {
                     { "op", "post" },
@@ -1163,7 +1162,6 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     { "body", iBody },
                     { "meta", $"{{\"tag\":\"free-time\",\"subtag\":\"{iSubtag}\",\"category\":\"chat\"}}" },
                 };
-                if (aLock != null && !string.IsNullOrEmpty(aLock.session_token)) aArgs["session_token"] = aLock.session_token;
                 var aPostCtx = UCL_AgentCmdContexts.FromArgs(iArgs, "FreeTime.post");
                 if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
                 UCL_AgentCmdContexts.PropagateCmdId(iArgs, aArgs);

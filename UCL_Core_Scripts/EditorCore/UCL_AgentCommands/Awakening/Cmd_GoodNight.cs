@@ -137,9 +137,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                         { "body", aBody },
                         { "meta", "{\"tag\":\"goodnight-protocol\",\"category\":\"meta\",\"status-change\":\"offline\"}" },
                     };
-                    // enforce ON 用；expire 在廣播後。no_token=true = 顯式不帶（enforce reject path 除錯）
-                    bool aNoToken = GetArg(args, "no_token", "").ToLowerInvariant() == "true";
-                    if (!aNoToken && !string.IsNullOrEmpty(aApply.Token)) aPostArgs["session_token"] = aApply.Token;
                     var aPostCtx = UCL_AgentCmdContexts.FromArgs(args, "GoodNight.broadcast");
                     if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
                     bool aPostOk = false;

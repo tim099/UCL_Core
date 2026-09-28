@@ -15,6 +15,14 @@ related:
 
 # Discord Channel Routing
 
+> [!CAUTION]
+> ## ⛔ 已退場（2026-09-28，TASK-0316）
+> Unity 端的 Discord 收發（Outbound 鏡像、Inbound、Gateway、Discord 設定頁、頻道路由頁、`MirrorSmoke`）**整組移除**，
+> 改由 **Senate 酒館 Server** 收發；設定在 Senate 後台：`senate ui --page discord-bot`（Bot／Server／頻道對應／白名單）、
+> `discord-webhooks`（webhook）、`discord-relay`（開關／分類 → webhook／頭像網址）。CLI：`senate cmd discord-bot`／`discord-relay`。
+> 其他專案怎麼搬 → `<SCP_Core>/Docs~/Discord_Senate_Migration.md`。**本文下方描述的是已刪除的舊機制，只留作沿革。**
+
+
 > 一句話：**Discord channel 訊息 → ChatTavern room 的路由表**。每筆啟用路由只決定「哪個頻道」與「進哪個酒館房間」；`source_class`／`priority` 則隨訊息寫入 metadata，供下游流程判讀。
 
 > [!IMPORTANT]

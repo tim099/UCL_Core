@@ -74,7 +74,6 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawTavernAdminSection();
             GUILayout.Space(8);
-            DrawDiscordSettingsSection();
             GUILayout.Space(8);
             DrawBartenderAdminSection();
             GUILayout.Space(8);
@@ -279,8 +278,8 @@ namespace UCL.Core.EditorLib.Page
 
         // ===========================================================
         // 區塊：酒館後台管理入口（Tim 2026-07-15 拍板）
-        // 物理意義：push UCL_ChatTavernAdminPage — Discord mirror 同步狀態 / persona 頭像 override /
-        //          底層 config・state 檔案的管理頁。
+        // 物理意義：push UCL_ChatTavernAdminPage —— 訊息檔名 migration／渲染筆數參數／底層檔案。
+        //          ⛔ 2026-09-28（TASK-0316）起不再有 Discord 的東西（Unity 端 Discord In／Out 全面退場，改在 Senate）。
         // ===========================================================
         void DrawTavernAdminSection()
         {
@@ -300,91 +299,7 @@ namespace UCL.Core.EditorLib.Page
                 }
 
                 if (!aShow) return;
-
-                // Discord 兩顆開關折疊 因為超過一行!!
-                DrawDiscordSyncToggles();
-                GUILayout.Label("Discord mirror 同步進度（per-room 已同步 seq）、persona 頭像 override URL、底層 config / state 檔案管理。", UCL_GUIStyle.LabelStyle);
-
-                // 區塊職責：Discord 雙向同步的兩顆 daemon 開關直接搬到控制台（Tim 2026-07-28 要求）
-                // 物理意義：outbound = 酒館訊息 → Discord（UCL_DiscordMirrorDaemon）；
-                //          inbound = Discord → 酒館（UCL_DiscordInboundDaemon）。兩者皆 EditorPrefs
-                //          per-machine 持久化、預設 OFF，**與「聊天酒館系統」總開關無關**（獨立關注點）。
-                // 數值影響：inbound 還要 config 的 tavern_inbound.enabled 為 true 才真的運作 →
-                //          兩道閘門任一未開就標示原因，不讓人以為開了就會動（禁靜默失敗）。
-                GUILayout.Label("↑ 兩顆 Discord 開關已提到本區塊 header 下方（折疊時仍可操作）。", UCL_GUIStyle.LabelStyle);
-            }
-        }
-
-        // 區塊職責：Discord 設定集中頁入口。
-        // 物理意義：把 inbound 人員名單、名稱／別名與 Guild 成員候選收斂到一頁；控制台只負責導流。
-        // 數值影響：按鈕不讀寫 Discord 或 notify_config，所有可變設定都在 UCL_DiscordSettingsPage 內顯式套用。
-        void DrawDiscordSettingsSection()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                bool aShow;
-                using (new GUILayout.HorizontalScope())
-                {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "DiscordSettingsFold", 21, iDefaultValue: false);
-                    GUILayout.Label("<b>💬 Discord 設定</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    if (GUILayout.Button("開啟 Discord 設定頁", UCL_GUIStyle.GetButtonStyle(new Color(0.45f, 0.72f, 1f)), GUILayout.ExpandWidth(false)))
-                        UCL_DiscordSettingsPage.Create();
-                    GUILayout.FlexibleSpace();
-                }
-                if (!aShow) return;
-                GUILayout.Label("管理 inbound 白名單、顯示名稱、@ 提及別名與個人簡介；可從 Guild 匯入成員候選，再逐人加入白名單。", UCL_GUIStyle.LabelStyle);
-            }
-        }
-
-        // ===========================================================
-        // 區塊：Discord 雙向同步的兩顆 daemon 開關（Tim 2026-07-28 要求搬進控制台）
-        // 物理意義：outbound = 酒館訊息 → Discord（UCL_DiscordMirrorDaemon）；
-        //          inbound = Discord → 酒館（UCL_DiscordInboundDaemon）。兩者皆 EditorPrefs
-        //          per-machine 持久化、預設 OFF，**與「聊天酒館系統」總開關無關**（獨立關注點）。
-        // 數值影響：inbound 還要 config 的 tavern_inbound.enabled 為 true 才真的運作 →
-        //          兩道閘門任一未開就標示原因，不讓人以為開了就會動（禁靜默失敗）。
-        // 設計取捨：抽成獨立方法並畫在折疊 **外層** —— 這是本頁最高頻操作，收合狀態下也要一鍵可切。
-        // ===========================================================
-        void DrawDiscordSyncToggles()
-        {
-            using (new GUILayout.HorizontalScope())
-            {
-                GUILayout.Label("  <b>Discord 雙向同步</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                GUILayout.Label("（獨立開關，與酒館系統總開關無關）", UCL_GUIStyle.LabelStyle);
-                GUILayout.FlexibleSpace();
-            }
-            {
-                using (new GUILayout.HorizontalScope())
-                {
-                    bool outOn = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.Enabled;
-                    GUILayout.Label("  📤 Outbound（酒館→Discord）", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(230)));
-                    if (GUILayout.Button(outOn ? "● 啟用中（按一下關閉）" : "○ 已關閉（按一下啟用）",
-                            UCL_GUIStyle.GetButtonStyle(outOn ? new Color(0.4f, 0.85f, 0.5f) : new Color(0.85f, 0.5f, 0.4f)),
-                            GUILayout.ExpandWidth(false)))
-                    {
-                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordMirrorDaemon.Enabled = !outOn;
-                    }
-                    GUILayout.FlexibleSpace();
-                }
-                using (new GUILayout.HorizontalScope())
-                {
-                    bool inOn = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled;
-                    bool inCfg = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.ConfigEnabled;
-                    GUILayout.Label("  📥 Inbound（Discord→酒館）", UCL_GUIStyle.LabelStyle, GUILayout.Width(UCL_GUIStyle.GetScaledSize(230)));
-                    if (GUILayout.Button(inOn ? "● 啟用中（按一下關閉）" : "○ 已關閉（按一下啟用）",
-                            UCL_GUIStyle.GetButtonStyle(inOn ? new Color(0.4f, 0.85f, 0.5f) : new Color(0.85f, 0.5f, 0.4f)),
-                            GUILayout.ExpandWidth(false)))
-                    {
-                        UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled = !inOn;
-                    }
-                    if (inOn && !inCfg)
-                        GUILayout.Label("⚠ config tavern_inbound.enabled=false → 仍不會運作", UCL_GUIStyle.LabelStyle);
-                    else if (inOn)
-                        GUILayout.Label($"路由 {UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.ActiveRouteCount} 頻道 · "
-                                        + $"本 session 中繼 {UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.RelayedThisSession} 筆",
-                                        UCL_GUIStyle.LabelStyle);
-                    GUILayout.FlexibleSpace();
-                }
+                GUILayout.Label("訊息檔名 migration、渲染筆數參數、底層檔案。⛔ Discord 設定已移到 Senate 後台（senate ui --page discord-bot／discord-webhooks／discord-relay）。", UCL_GUIStyle.LabelStyle);
             }
         }
 

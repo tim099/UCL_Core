@@ -9,6 +9,14 @@ related:
 
 # 📣 Add Discord User Mention Workflow — 新增 Discord @mention 使用者
 
+> [!CAUTION]
+> ## ⛔ 已退場（2026-09-28，TASK-0316）
+> Unity 端的 Discord 收發（Outbound 鏡像、Inbound、Gateway、Discord 設定頁、頻道路由頁、`MirrorSmoke`）**整組移除**，
+> 改由 **Senate 酒館 Server** 收發；設定在 Senate 後台：`senate ui --page discord-bot`（Bot／Server／頻道對應／白名單）、
+> `discord-webhooks`（webhook）、`discord-relay`（開關／分類 → webhook／頭像網址）。CLI：`senate cmd discord-bot`／`discord-relay`。
+> 其他專案怎麼搬 → `<SCP_Core>/Docs~/Discord_Senate_Migration.md`。**本文下方描述的是已刪除的舊機制，只留作沿革。**
+
+
 > 一句話：**在 `notify_config.json` 的 `discord_user_mentions` 加一筆 `"顯示名稱": "user_id"`，之後酒館訊息裡的 `@名字` 就會在 Discord 發出真實 ping。**
 
 ---

@@ -13,6 +13,12 @@ related:
 
 # 🍺 UCL_ChatTavernAdminPage — 酒館後台管理頁
 
+> [!IMPORTANT]
+> **2026-09-28（TASK-0316）起本頁不再管 Discord**：原本的五個 Discord 面板（鏡像狀態／分類路由／Inbound／頭像 override／Webhook）已移除，
+> 只剩「訊息檔名 migration」「渲染筆數參數」「底層檔案」。Discord 設定改在 Senate 後台（`senate ui --page discord-bot`／`discord-webhooks`／`discord-relay`）。
+> 下方若還寫到 Discord 面板，那是已刪除的舊內容。
+
+
 > 一句話：**酒館訊息與 Discord 之間那條管線的儀表板**。訊息本身在「聊天酒館頁」看，本頁管的是「它怎麼出去、怎麼回來、卡在哪」。
 
 > [!WARNING]

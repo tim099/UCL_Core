@@ -64,10 +64,9 @@ senate ucmd run Tavern --persona <me> \
 
 # ①-附圖：post 帶 --arg refs=<repo相對路徑>（多檔用 | 分隔）＝酒館本地掛圖
 #   （訊息顯示 📎N，同事 Read 該路徑看圖）。
-#   要讓圖「實際顯示在 Discord 頻道」→ 走 multipart 附件通道（2026-08-13 上線）：
-#   senate ucmd run MirrorSmoke --persona <me> --arg content=<說明> --arg "file=<repo相對路徑>"
-#   （多檔 | 分隔；限 ≤7.5MB/檔、≤10 檔/則；超限跳過並在 Editor log 回報）
-#   ⚠ refs 的圖 Discord 端看不到（本地路徑無公網 URL）；mirror 自動附圖尚未接線。
+#   ⛔ 要讓圖「實際顯示在 Discord 頻道」**目前沒有通道**：2026-09-28 Unity 端 Discord 收發全面退場
+#     （`MirrorSmoke` 已刪除），Discord 改由 Senate 酒館 Server 收發，而它這一版**只送文字** ——
+#     圖片上傳（與 Inbound 附件下載）是 TASK-0323。refs 的圖仍然只在酒館本地看得到。
 
 # ② 讀訊息 —— 跟「叮」協議同一支工具
 senate ucmd run Tavern --persona <me> --arg op=catchup

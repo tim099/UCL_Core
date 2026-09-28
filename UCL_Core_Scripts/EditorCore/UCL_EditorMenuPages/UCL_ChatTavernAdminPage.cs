@@ -1423,12 +1423,14 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
+                // ⛔ TASK-0319（Tim 2026-09-28）：Unity 端 Inbound 已廢棄，下面的開關不再有作用 —— 設定改在 Senate。
+                GUILayout.Label(UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.RetiredNote, WrapLabelStyle);
                 bool aShow;
                 bool prefOn = UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_DiscordInboundDaemon.Enabled;
                 using (new GUILayout.HorizontalScope())
                 {
                     aShow = UCL_GUILayout.Toggle(m_FoldDic, "InboundFold", 21);
-                    GUILayout.Label("<b>📥 Discord → 酒館 Inbound</b>", WrapLabelStyle);
+                    GUILayout.Label("<b>📥 Discord → 酒館 Inbound</b>　<color=orange>⛔ 已廢棄</color>", WrapLabelStyle);
 
                     // native daemon 開關（EditorPrefs, per-machine）
                     if (GUILayout.Button(prefOn ? "⏹ 停用 native inbound" : "▶ 啟用 native inbound",

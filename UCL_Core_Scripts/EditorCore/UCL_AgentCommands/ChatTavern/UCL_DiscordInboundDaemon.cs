@@ -1,3 +1,8 @@
+// ⛔ **已廢棄（Tim 2026-09-28，TASK-0319）：「可以先廢棄 Unity 端的 Inbound」「之後只要維護 Senate 版本的」**
+//    ⇒ `IsLive` 恆為 false、Tick 只負責把 gateway 斷乾淨；不再連 Discord、不再寫酒館。
+//    設定（Bot token／Server 清單／頻道對應／白名單）改在 Senate 後台「Discord Bot」頁（`senate ui --page discord-bot`）；
+//    Inbound 本身的 Senate 版是 TASK-0316 ④。⚠ 在那之前 Discord → 酒館**沒有任何一條路**（Tim 知情）。
+//    公開成員先留著（管理頁還在讀它們），⛔ 不要再往這支加功能。
 // 區塊職責：Discord → ChatTavern inbound 中繼 daemon（C# native，取代 discord_inbound_bot.py）。
 // 物理意義：跟 UCL_DiscordMirrorDaemon 對偶 — 後者 outbound（酒館 → Discord webhook），本檔 inbound
 //          （Discord 頻道 → 酒館訊息檔）。**雙進料管線**（2026-07-28 Tim 拍板補 gateway）：
@@ -146,7 +151,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// 註（Tim 2026-07-28 拍板）：**不掛**酒館系統總開關（UCL_ChatTavernSystemControl）—
         ///   那顆管的是酒館自動廣播與 Bartender 等背景程序，inbound 中繼是獨立關注點，各自開關。
         /// </summary>
-        public static bool IsLive => Enabled && ConfigEnabled;
+        /// <summary>⛔ 已廢棄（TASK-0319）⇒ 恆為 false。原本是 <c>Enabled &amp;&amp; ConfigEnabled</c>。</summary>
+        public static bool IsLive => false;
+
+        /// <summary>廢棄說明（管理頁可以直接印這一句）。</summary>
+        public const string RetiredNote = "Unity 端 Discord Inbound 已廢棄（TASK-0319）—— 改由 Senate 維護（senate ui --page discord-bot；Inbound 本身見 TASK-0316）";
+        static bool s_RetiredLogged;
 
         // ===========================================================
         // 區塊：tick — 節流 + fail-safe 包裹（任何例外都不讓 Editor update 掛掉）
@@ -155,6 +165,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             try
             {
+                // ⛔ 已廢棄（TASK-0319）：只把 gateway 斷乾淨（SyncGateway 看 IsLive=false 會 Stop），其餘一概不做。
+                SyncGateway();
+                if (!s_RetiredLogged && Enabled) { s_RetiredLogged = true; Debug.Log("[DiscordInbound] " + RetiredNote); }
+                return;
+#pragma warning disable CS0162 // 廢棄後保留原邏輯供對照；不會執行
                 // ① gateway 生命週期跟 IsLive 連動（Tim 2026-07-28 要求「開啟 inbound 時 bot 上線、關閉後下線」）
                 SyncGateway();
                 // ② gateway 推來的 MESSAGE_CREATE 在主緒 drain → 寫檔（單寫者不變量：背景緒只入列不寫檔）
@@ -172,6 +187,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 if (now - s_LastPollTime < POLL_INTERVAL_SECONDS) return;
                 s_LastPollTime = now;
                 StartNextPoll();
+#pragma warning restore CS0162
             }
             catch (Exception e)
             {

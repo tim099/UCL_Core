@@ -1,4 +1,7 @@
-﻿// 區塊職責：Discord Mirror 常駐背景 daemon（Unity Editor 內）— tavern→Discord 同步的 C# native 版本骨架
+﻿// ⛔ **已廢棄（Tim 2026-09-28，TASK-0316 ⑦）**：Outbound 改由 Senate 酒館 Server 送（`SenateDiscordOutboundJob`），
+//    兩邊同時開會雙發 ⇒ 本 daemon 的 Tick／ForceTick 一進來就返回。銀行流水鏡像（UCL_DiscordTreasuryMirror）掛在本 daemon 上 ⇒ 一起停（見 TASK-0321）。
+//    本檔之後會整支移除（Unity 端 Discord In／Out 全面退場），⛔ 不要再往這裡加功能。
+// 區塊職責：Discord Mirror 常駐背景 daemon（Unity Editor 內）— tavern→Discord 同步的 C# native 版本骨架
 // 物理意義：取代舊「每筆 AppendMessage fire-and-forget spawn python notify_discord.py」的模型
 //          （2026-07-28 python 路徑已整條移除，本 daemon 為 Discord 唯一傳送者）。
 //          2026-07-19 實錄：舊模型在 zombie lock 下累積 3578 隻 python → Unity 編譯 OOM。改常駐 daemon
@@ -89,8 +92,16 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 物理意義：EditorApplication.update 一秒約 60+ 次；節流成每 CHECK_INTERVAL 秒最多進一次 TickInternal
         // 數值影響：!Enabled 直接 return（0 成本）；exception 只 warn 不 throw，絕不擋 Editor 主迴圈
         // ===========================================================
+        /// <summary>廢棄說明（管理頁可以直接印這一句）。</summary>
+        public const string RetiredNote = "Unity 端 Discord Outbound 已廢棄（TASK-0316）—— 改由 Senate 酒館 Server 送（senate ui --page discord-relay）";
+        static bool s_RetiredLogged;
+
         static void Tick()
         {
+            // ⛔ 已廢棄（TASK-0316 ⑦）：不送任何東西（Senate 在送，兩邊都開會雙發）
+            if (!s_RetiredLogged && Enabled) { s_RetiredLogged = true; Debug.Log("[DiscordMirror] " + RetiredNote); }
+            return;
+#pragma warning disable CS0162 // 廢棄後保留原邏輯供對照；不會執行
             double now = EditorApplication.timeSinceStartup;
             if (now - s_LastCheckTime < CHECK_INTERVAL_SECONDS) return;
             s_LastCheckTime = now;
@@ -103,13 +114,17 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 Debug.LogWarning($"[DiscordMirror] tick fail（不擋主迴圈）: {e.Message}");
             }
+#pragma warning restore CS0162
         }
 
         /// <summary>強制立刻 tick（給 Cmd / 測試手動觸發；AdminPage 手動觸發 native owner 下改呼叫此，T6.5）。</summary>
         public static void ForceTick()
         {
+            Debug.Log("[DiscordMirror] " + RetiredNote); return;   // ⛔ 已廢棄（TASK-0316 ⑦）
+#pragma warning disable CS0162
             try { TickInternal(); }
             catch (Exception e) { Debug.LogWarning($"[DiscordMirror] ForceTick fail: {e.Message}"); }
+#pragma warning restore CS0162
         }
 
         // ===========================================================

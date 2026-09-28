@@ -46,7 +46,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         const string TickStateIdle = "Idle";
         const string TickStateCheckKeywordTriggers = nameof(CheckKeywordTriggers);
         const string TickStateCheckTimeRules = nameof(CheckTimeRules);
-        const string TickStateCheckOvernightDeposits = nameof(CheckOvernightDeposits);
 
         // ===========================================================
         // 區塊：Tick 進度可視化 + 可取消 (2026-07-26, Tim 反映 Editor 卡住 "Hold on..." 好幾分鐘看不出卡在哪)
@@ -115,9 +114,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         /// <summary>相位標記 —— s_Profiler 為 null 時安靜跳過，讓被量測的程式碼不必到處判 null。</summary>
         static void MarkPhase(string name, string note = null) => s_Profiler?.Mark(name, note);
-
-        /// <summary>本次 tick 是否走了跨日結算那條重路徑 —— 台帳用它一眼分開「日常 tick 變慢」與「跨日結算慢」。</summary>
-        static bool s_TickWasCrossDay = false;
 
         static void ShowProgress(string title, string info, float progress)
         {
@@ -241,10 +237,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         static void TickInternal()
         {
-            // 區塊職責：tick 三件事 — (1) keyword triggers (2) time rules (3) overnight deposit fee
-            // 物理意義：先掃 message triggers (新訊息驅動), 再掃 time rules (時鐘驅動),
-            //          最後檢查跨日存款保管費 (anti-inflation 機制)
-            //          三條獨立 IO + 獨立 state 欄位 (room_last_seq / fired_today_keys / last_overnight_check_date)
+            // 區塊職責：tick 兩件事 — (1) keyword triggers (2) time rules
+            // 物理意義：先掃 message triggers (新訊息驅動), 再掃 time rules (時鐘驅動)
+            //          兩條獨立 IO + 獨立 state 欄位 (room_last_seq / fired_today_keys)
+            // 註 (2026-09-28, TASK-0315): 每日結算（結帳／保管費／轉券／匯率）的**觸發**已搬到 Senate Server
+            //                 （`SenateOvernightJob`，Editor 沒開也照跑）⇒ 本 daemon 不再判跨日。
             //
             // 註 (2026-07-29): 原本這裡還有 work session 自動開工 / 過期結算兩條 sweep，
             //                 因 script 路徑硬編碼在本專案永遠 miss（靜默失效）已移除，見下方區塊註解。
@@ -253,7 +250,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             bool completed = false;
             var profiler = new TickProfiler();
             s_Profiler = profiler;
-            s_TickWasCrossDay = false;
             try
             {
                 UCL_BartenderIO.WriteTickState(TickStateCheckKeywordTriggers);
@@ -263,9 +259,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 UCL_BartenderIO.WriteTickState(TickStateCheckTimeRules);
                 CheckTimeRules();
                 profiler.Mark(TickStateCheckTimeRules);
-
-                UCL_BartenderIO.WriteTickState(TickStateCheckOvernightDeposits);
-                CheckOvernightDeposits();   // 內部自行 Mark 子相位（跨日那條路才是重的）
                 completed = true;
             }
             finally
@@ -279,7 +272,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 // ⚠ 但 Editor 被殺 / 當掉時這行不會執行（見 TickPhaseFile 的邊界註解）。
                 s_Profiler = null;
                 if (!completed) profiler.Mark("aborted");
-                UCL_BartenderIO.AppendSlowTick(profiler.TotalMs, profiler.ToJsonArray(), s_TickWasCrossDay);
+                UCL_BartenderIO.AppendSlowTick(profiler.TotalMs, profiler.ToJsonArray());
             }
         }
 
@@ -891,188 +884,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             };
             UCL_ChatTavernIO.AppendMessage(roomId, msg);
         }
-
-        // ===========================================================
-        // 區塊：跨日存款保管費的**觸發**（Anti-inflation, Tim 2026-05-13 拍板）
-        // ⭐ TASK-0278（Tim 2026-09-22 拍板）：**扣繳的計算與落帳已整段搬到 Senate 端**
-        //   （`SCP_Demurrage` ／ `senate cmd demurrage`）。⛔ 這裡不再算錢、不再寫帳本。
-        //   ⇒ 政策（門檻／費率／央行／豁免）、算式、冪等鍵、廣播本文**全部只有那一份**，
-        //     判準與血證寫在 `SCP_Demurrage` 檔頭，⛔ 本檔不重抄（抄兩份必漂，而漂掉時兩邊都不報錯）。
-        // 本層只剩三件事：
-        //   ① **判跨日**（state.last_overnight_check_date != 今天 UTC）＋ 首次啟動的 grace
-        //   ② **派一次** `cmd demurrage op=run`（Server 是唯一寫入端）
-        //   ③ **把 Cmd 組好的廣播本文貼上酒館**（酒館寫入端目前是 Editor，Server 沒有資格寫）
-        // 觸發：daemon tick 每次跑, 但 state.last_overnight_check_date == today → skip.
-        //       首次啟動 (state 為空) → init today, **不收費** (避免新裝立刻課稅).
-        // ⚠ 射程：TASK-0278 ⑧ 明寫**本單不含「觸發也搬走」** —— 排程／常駐由誰跑是下一張單。
-        // ===========================================================
-
-        static void CheckOvernightDeposits()
-        {
-            var state = UCL_BartenderIO.LoadState();
-            // 區塊職責：日期一律走 **UTC**（Tim 2026-08-04 拍板統一時區）
-            //          規則本身（含 2026-08-25 全系統拍板與選擇判準）→ repo:docs/Glossary/utc-everywhere-local-display.md
-            //          —— 本註解是史料出處，別只讀這裡（TASK-0046：拍板只活在這裡時咬過人）
-            // 物理意義：ledger 日期夾用 UTC，本流程原本用 local（台灣 +8）——
-            //          於是 local 00:00~08:00 產生的 entry 會落在**前一天**的 UTC 夾。
-            //          兩套曆並存時，結帳邊界會跟檔案位置對不上，
-            //          症狀是「餘額偶爾差一點，而且只在半夜出現」。
-            // 數值影響：結算時點由 local 00:00 變成 local 08:00（= UTC 00:00）。
-            //          `useRef` 判重 key 內嵌的日期也跟著變 UTC。
-            string today = DateTime.UtcNow.ToString("yyyy-MM-dd");
-
-            // First-run grace: state 沒紀錄 → init 成 today, 不收費
-            if (string.IsNullOrEmpty(state.last_overnight_check_date))
-            {
-                state.last_overnight_check_date = today;
-                UCL_BartenderIO.SaveState(state);
-                return;
-            }
-
-            // ── UTC 遷移 grace（一次性）─────────────────────────────────────
-            // 物理意義：state 裡存的可能是**遷移前的 local 日期**。若直接拿它跟 UTC today 比，
-            //          在 local 00:00~08:00 之間會判定「跨日了」而重跑一輪；
-            //          而判重用的 useRef 內嵌日期也不同（local D+1 vs UTC D）→ **重複扣款**。
-            // 數值影響：遷移後第一次執行只寫 state、**不收費**，並落一個不可逆的 marker。
-            //          代價是可能少收一天保管費 —— 相對於重複扣款，這方向明顯該選。
-            //          **壞要往安全的方向壞。**
-            // 設計取捨：不採「新舊 key 都查一次」的雙查期（gura 2026-08-04 提案，技術上更精確）——
-            //          雙查是過渡期專用邏輯，必須在某天被移除，而「該移除卻沒人記得移除」
-            //          的臨時碼在本 repo 是有血債的。一次性少收一天不留債。
-            string graceMarker = Path.Combine(UCL_BartenderIO.GetBartenderDir(), "utc_migration_grace.marker");
-            if (!File.Exists(graceMarker))
-            {
-                try
-                {
-                    Directory.CreateDirectory(UCL_BartenderIO.GetBartenderDir());
-                    File.WriteAllText(graceMarker,
-                        $"UTC 遷移 grace 已執行\nat_utc={DateTime.UtcNow:yyyy-MM-ddTHH:mm:ss}Z\n"
-                        + $"prev_state_date={state.last_overnight_check_date}\nnew_state_date={today}\n"
-                        + "本次刻意不收保管費 —— 避免 local→UTC 換算期間重複扣款。\n",
-                        new System.Text.UTF8Encoding(false));
-                }
-                catch (Exception ex)
-                {
-                    // marker 寫不進去就**不要**跳過收費 —— 否則每輪都當成「還在 grace」而永遠不收費，
-                    // 那是比少收一天嚴重得多的靜默失效。
-                    Debug.LogWarning($"[Bartender] UTC grace marker 寫入失敗，本輪照常收費：{ex.Message}");
-                    goto skipGrace;
-                }
-                state.last_overnight_check_date = today;
-                UCL_BartenderIO.SaveState(state);
-                Debug.Log($"[Bartender] UTC 遷移 grace — state 由 '{state.last_overnight_check_date}' 對齊 UTC {today}，本輪不收費。");
-                return;
-            }
-            skipGrace:
-
-            // 同一天已 check 過 → skip (短路, 避免每 5s 重跑)
-            if (state.last_overnight_check_date == today) return;
-
-            // 以下是**跨日重路徑** —— 一天只會走一次，而它就是初開 Editor 卡住的那一段。
-            // 每個子相位都留下耗時與基數（檔數 / 帳戶數），讓下次不必靠人工對帳去夾區間。
-            s_TickWasCrossDay = true;
-            MarkPhase("overnight.enter");
-
-            // ── 每日結帳（掛在保管費之前）────────────────────────────────────
-            // 物理意義：跨日 tick 是唯一能確定「前一天已經寫完了」的時點，所以結帳掛在這裡。
-            //          先關帳再收費：保管費本身要讀全部帳戶餘額，結帳讓那件事變便宜。
-            // 數值影響：只寫 closing/*.json，不動任何餘額；失敗不擋收費（結帳是加速不是前提）。
-            int closingWritten = 0;
-            try
-            {
-                // 🩸 2026-09-22（TASK-0274）換了受詞：舊的 `UCL_TreasuryClosing` 結的是**凍結的**
-                //   `Treasury/ledger`（09-18 起不再長）⇒ 它每天被叫、每天什麼都沒結，
-                //   而畫面上跟「今天沒有要結的」一模一樣（closing/ 最後一份停在 2026-09-18 為證）。
-                //   ⇒ 改打新帳本的 `SCP_BankClosing`。
-                var closingProblems = new List<string>();
-                closingWritten = SCP.Core.Bank.SCP_BankClosing.GenerateMissing(
-                    UCL_TreasuryAuthority.BankRoot, out string closingSummary, closingProblems);
-                if (closingWritten > 0) Debug.Log($"[Bartender] 每日結帳：{closingSummary}");
-                if (closingProblems.Count > 0)
-                    Debug.LogWarning($"[Bartender] 每日結帳有 {closingProblems.Count} 格讀不動：\n  · "
-                                     + string.Join("\n  · ", closingProblems));
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Bartender] 每日結帳失敗（不擋保管費）：{ex.Message}");
-            }
-            MarkPhase("overnight.closing", $"written={closingWritten}");
-
-            // ===========================================================
-            // 區塊職責：把這一輪的扣繳**整段派給 Senate Server**（TASK-0278）。
-            // 物理意義：計算與落帳住在 `SCP_Demurrage`／`cmd demurrage`，⛔ 不在這裡。
-            //          本層剩下的只有三件事：**判跨日**（上面）、**派一次**、**把廣播貼上酒館**。
-            // 🩸 為什麼扣款不留在這裡：`SCP_BankLedger` 那把 debit 鎖只在 **同一個 process 內**有效，
-            //   而它成立的前提是「只有 Server 在寫」。Editor 自己算完自己扣＝安靜地多一個寫入端。
-            // ⚠ 為什麼廣播還在這裡：酒館寫入端目前是 **Editor**（`tavern.writer=editor`）
-            //   ⇒ Server 那側沒有資格寫酒館。⛔ 不為了「搬乾淨」而在那邊偷開第二個酒館寫入端
-            //   —— 那是 TASK-0106 正在收斂的那條線。⇒ 本文由 Cmd 組好寫進檔，這裡讀出來貼。
-            // 數值影響：失敗**不推進 state** —— 下一個 tick 會再試一次，而重跑是冪等的。
-            // ===========================================================
-            string bodyFile = Path.Combine(UCL_BartenderIO.GetBartenderDir(), $"demurrage_{today}.md");
-            var demurrageArgs = new List<string>
-            {
-                "op=run", "confirm=1", $"date={today}", $"body_out={bodyFile}",
-            };
-            System.Collections.Generic.Dictionary<string, string> demurrageValues;
-            try
-            {
-                demurrageValues = UCL_TreasuryAuthority.RunSenateCmd("demurrage", demurrageArgs);
-            }
-            catch (Exception ex)
-            {
-                // ⛔ 不推進 state：這一輪**沒有發生**，下一個 tick 要再來一次。
-                //   ⚠ 而它跟「已經扣過了」不同形 —— 那一種會走完並回冪等命中。
-                Debug.LogWarning($"[Bartender] 跨日保管費派給 Server 失敗，**本輪沒有扣款**：{ex.Message}");
-                MarkPhase("overnight.delegate", "FAILED");
-                return;
-            }
-            demurrageValues.TryGetValue("total_fee", out string totalFeeText);
-            demurrageValues.TryGetValue("accounts_charged", out string chargedText);
-            MarkPhase("overnight.delegate", $"charged={chargedText} total_fee={totalFeeText}");
-
-            // 5. 推進 state.last_overnight_check_date（即使無人扣費也推進，避免重跑）
-            state.last_overnight_check_date = today;
-            UCL_BartenderIO.SaveState(state);
-
-            // 6. Broadcast —— 本文由 Cmd 組好（同一份判準、同一段文字），這裡只負責貼。
-            //    ⚠ 讀不到本文就**不要自己編一段** ——「這一輪發生了什麼」只有 Cmd 知道，
-            //      而一段編出來的公告會蓋掉真正的讀數。出聲，然後不貼。
-            string body;
-            try { body = File.ReadAllText(bodyFile); }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Bartender] 保管費廣播本文讀不到（{bodyFile}）：{ex.Message}"
-                                 + " —— ⚠ 錢**已經扣了**（見上面的讀數），只是這一則公告沒有發出去。");
-                MarkPhase("overnight.broadcast", "MISSING_BODY");
-                return;
-            }
-            var msg = new UCL_ChatMessage
-            {
-                sender_id = TavernKeeperId,
-                sender_name = "酒保",
-                kind = "chat",
-                body = body,
-                meta = new Dictionary<string, string>
-                {
-                    { "tag", BartenderRelayTag },
-                    { "subtag", Value(demurrageValues, "subtag", "overnight-deposit-fee") },
-                    { "check_date", today },
-                    { "total_fee", Value(demurrageValues, "meta_total_fee", "0") },
-                    { "central_bank", Value(demurrageValues, "meta_central_bank", "") },
-                    { "central_bank_income", Value(demurrageValues, "meta_central_bank_income", "0") },
-                    { "accounts_charged", Value(demurrageValues, "meta_accounts_charged", "0") },
-                    { "accounts_safe", Value(demurrageValues, "meta_accounts_safe", "0") },
-                },
-            };
-            UCL_ChatTavernIO.AppendMessage("tavern", msg);  // 預設 fire mirror = Discord broadcast
-            MarkPhase("overnight.broadcast", $"body_len={body.Length}");
-        }
-
-        /// <summary>從 Server 印的 `🔢` 值表取一格；沒有就回預設（⛔ 不丟例外 —— 錢已經動了）。</summary>
-        static string Value(System.Collections.Generic.Dictionary<string, string> iValues,
-                            string iKey, string iFallback)
-            => iValues != null && iValues.TryGetValue(iKey, out string aV) && aV.Length > 0 ? aV : iFallback;
     }
 }
 #endif

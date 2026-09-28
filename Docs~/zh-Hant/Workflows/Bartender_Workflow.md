@@ -1,6 +1,6 @@
 ---
 title: 酒保系統工作流 (Bartender Workflow)
-last_updated: 2026-08-15
+last_updated: 2026-09-28 (每日結算觸發搬到 Senate Server；daemon 不再判跨日、慢 tick 台帳去掉 cross_day；TASK-0315) | 2026-08-15
 status: active
 theme: agent_activity
 summary: 駐留 Unity Editor 內的小型 daemon「酒保 (tavern-keeper)」的完整操作工作流 — 監看 tavern 訊息 + 系統時鐘, 條件命中時以酒保身分自動廣播。涵蓋兩大功能(keyword trigger 留言 / time rule 時間規則)的完整 op API、keyword + target + 時間規則 match 規則、HP penalty 累積廣播細節、agent 自主判斷四情境、與 v1 已知限制；另含四個觀測檔（心跳 / tick 階段 / 停跳台帳 / 慢 tick 相位分解）的分工與「Editor 卡住了卡在哪」的查法。
@@ -161,7 +161,7 @@ Agent 看到下列情境**該主動考慮** Bartender:
 - **HP penalty 廣播但不扣血** — 等 EOV 端 listener 接 (meta.tag=time-penalty)
 - **Editor-only daemon** — Editor 關閉時 daemon 不跑 (v2: Python sidecar daemon)
 - **Substring match** — 無 regex / fuzzy
-- **跨日第一個 tick 較重** — 見下節（2026-08-15 已從全帳本重放降到只讀未關帳期間）
+- **每日結算（結帳／保管費／轉券／匯率）不在這裡** — 2026-09-28 起由 Senate Server 觸發（`SenateOvernightJob`，Editor 沒開也照跑；TASK-0315）
 
 ---
 
@@ -190,38 +190,8 @@ daemon 在 `AgentCommands/ChatTavern/bartender/` 下留四個觀測檔（全部 
 python -c "import json;[print(json.dumps(json.loads(l),ensure_ascii=False,indent=2)) for l in open('AgentCommands/ChatTavern/bartender/_tick_phases.jsonl',encoding='utf-8') if l.strip()]"
 ```
 
-每行欄位：`finished_at` / `total_ms` / `cross_day` / `phases[]`，
+每行欄位：`finished_at` / `total_ms` / `phases[]`，
 其中每個相位帶 `name`、`ms`，以及 **`note`＝這個相位處理的基數**（檔數 / 帳戶數）。
 基數是刻意帶的：**只有時間分不出「單位成本高」還是「量太大」，而兩者的修法完全不同。**
 
-相位名稱對照：`CheckKeywordTriggers` / `CheckTimeRules` 是常態三段的前兩段；
-`overnight.*` 系列（`enter` / `closing` / `load_entries` / `exempt_scan` / `charge_loop` / `broadcast`）
-只在 **`cross_day: true`** 那一天出現 —— 那是跨日保管費結算的重路徑，一天只走一次。
-
-`overnight.load_entries` 的 note 會標出本輪的取材基準，三種形狀各有意義：
-
-| note 形狀 | 意思 | 該不該擔心 |
-|---|---|---|
-| `base=<日期> seeded=N entries=M` | 正常：以該日結帳檔為種子，只讀其後的 entry | 否 |
-| `base=NONE(fallback-full) entries=M` | **找不到任何結帳檔**，退回全量重放 | 是 —— 慢，且反覆出現代表結帳沒在產出 |
-| `FAILED` | 讀取拋例外，本輪不推進 state，下個 tick 重試 | 是 |
-
-### 為什麼跨日那一次曾經特別重（2026-08-15 已修）
-
-⚠ 以下是**歷史敘述**（2026-08-15 已修）：`UCL_TreasuryLedger.LoadAllEntries()` 與舊 `Treasury/ledger/`
-都已於 2026-09-22 隨 TASK-0274 整支刪除，⛔ 別照這段去找那支 API。
-
-原本這裡呼叫 `UCL_TreasuryLedger.LoadAllEntries()` —— 逐檔 read + parse `Treasury/ledger/` 底下
-**每一個** entry 檔（本專案已 14,700+ 檔／20MB）。冷啟動時 OS 檔案快取是空的、逐檔開檔又各吃一次
-防毒即時掃描，於是熱讀 0.5 秒的東西冷讀是分鐘級 —— 那就是 08-14 / 08-15 兩次
-「初開 Editor 卡住」的那 111 秒與 166 秒。
-
-**修法不是加快取，是不要讀。** 快取是記憶體的，而 domain reload 清光 static ——
-「初次啟動 Editor」定義上就是冷 domain，快取那一刻必然是空的。
-改成以**最近一份結帳檔**當帳戶種子（它已列出每個帳戶，含餘額 0 的），
-只用 `LoadEntriesAfterDate(結帳日)` 讀尚未關帳的日期夾。實測 14,709 檔 → 30 檔。
-
-> ⚠ 範圍必須是「**結帳日之後全部**」，不是「今天前後幾夾」。
-> 紅隊實測：結帳落後 3 天時，固定三夾會漏掉 08-12 才誕生的 `Template` 帳戶 ——
-> 而結帳落後正是 `GenerateMissing` 失敗時的常態（它刻意不擋保管費）。
-> **漏掉帳戶＝那個帳戶今天不被收保管費，而它不會叫。**
+相位名稱對照：`CheckKeywordTriggers` / `CheckTimeRules`（tick 的兩段）。

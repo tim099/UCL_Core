@@ -3,7 +3,7 @@ title: UCL_BartenderAdminPage — 酒保管理頁
 description: 集中管理酒保報時、時間提醒、關鍵字留言、daemon 狀態與 runtime-only 遠端視窗協作的 Editor 後台。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_BartenderAdminPage.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-08-19 (新增酒館 CLI：cmd help / remote-window / msg 群發，含白名單與二次確認)
+last_updated: 2026-09-28 (執行狀態不再顯示跨日檢查日期 —— 每日結算已搬到 Senate Server，TASK-0315) | 2026-08-19 (新增酒館 CLI：cmd help / remote-window / msg 群發，含白名單與二次確認)
 target_audience: [AI_Agent, Developer, Designer]
 aliases: [bartender admin, 酒保後台, 酒保報時, time rules]
 tags: [chat-tavern, bartender, editor]
@@ -32,7 +32,7 @@ related:
 | 遠端視窗協作 | runtime-only 啟動、使用者操作後暫停 checkbox／秒數、ActualAgent enum popup 的手動測試按鈕 | Win32 視窗列舉；不存檔 |
 | 時間規則 | 唯讀總覽 +「✏️ 開啟時間規則編輯頁」跳轉（編輯/新增/刪除 2026-08-03 抽離至 [UCL_BartenderTimeRulePage](UCL_BartenderTimeRulePage.md)，顯式存檔） | `time_rules.json` |
 | 關鍵字留言 | 檢視剩餘觸發額度、刪除、新增全域 keyword trigger | `triggers.json` |
-| 執行狀態 | 各 room 已掃 seq、今天已觸發數、跨日檢查日期 | `state.json` |
+| 執行狀態 | 各 room 已掃 seq、今天已觸發數 | `state.json` |
 
 ## 發言來源（LLM）與被 `@酒保` 點名
 
@@ -125,7 +125,7 @@ related:
 ## 報時的範圍
 
 「🕐 報時」只影響 rule id 以 `announce-rules-` 開頭的每日／每小時規則；睡眠提醒、
-關鍵字留言與跨日保管費仍按各自設定運行。這是可逆的 `enabled` 切換，不會刪除任何規則。
+關鍵字留言仍按各自設定運行（每日結算不在酒保這裡 —— 由 Senate Server 觸發，TASK-0315）。這是可逆的 `enabled` 切換，不會刪除任何規則。
 
 ## 注意事項
 

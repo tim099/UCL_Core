@@ -217,7 +217,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         //          超門檻才讀整檔（≤ TICK_PHASE_KEEP 行）→ 加一行 → 裁切 → atomic 覆寫。
         // 邊界：任何失敗都吞掉。**診斷工具不可以是本業的失敗來源** —— 這條在本檔三個觀測檔一致。
         // ===========================================================
-        public static void AppendSlowTick(double totalMs, string phasesJsonArray, bool crossDay)
+        public static void AppendSlowTick(double totalMs, string phasesJsonArray)
         {
             if (totalMs < TICK_PHASE_LOG_THRESHOLD_MS) return;
             try
@@ -235,7 +235,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 var inv = System.Globalization.CultureInfo.InvariantCulture;
                 lines.Add("{\"finished_at\":\"" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fff") + "Z\""
                           + ",\"total_ms\":" + totalMs.ToString("F1", inv)
-                          + ",\"cross_day\":" + (crossDay ? "true" : "false")
                           + ",\"threshold_ms\":" + TICK_PHASE_LOG_THRESHOLD_MS.ToString("F0", inv)
                           + ",\"phases\":" + (string.IsNullOrEmpty(phasesJsonArray) ? "[]" : phasesJsonArray)
                           + "}");

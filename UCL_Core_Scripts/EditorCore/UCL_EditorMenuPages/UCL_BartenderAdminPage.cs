@@ -1317,7 +1317,7 @@ namespace UCL.Core.EditorLib.Page
                     GUILayout.FlexibleSpace();
                 }
                 if (!show) return;
-                GUILayout.Label($"state 更新：{(string.IsNullOrEmpty(m_State.last_updated) ? "尚無" : m_State.last_updated)}｜今日已觸發：{m_State.fired_today_keys?.Count ?? 0}｜跨日檢查：{m_State.last_overnight_check_date}", UCL_GUIStyle.LabelStyle);
+                GUILayout.Label($"state 更新：{(string.IsNullOrEmpty(m_State.last_updated) ? "尚無" : m_State.last_updated)}｜今日已觸發：{m_State.fired_today_keys?.Count ?? 0}", UCL_GUIStyle.LabelStyle);
                 foreach (var cursor in m_State.room_last_seq)
                     GUILayout.Label($"  {cursor.room_id}: 已掃到 seq {cursor.last_seq}", UCL_GUIStyle.LabelStyle);
             }

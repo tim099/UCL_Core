@@ -70,10 +70,10 @@ python <UCL_Core>/Tools~/AgentCommands/spend_menu.py roll \
 消費**照原價付**，事後開請款單把折扣領回來 —— Tim 核准後**由央行撥款**：
 
 ```bash
-senate ucmd run Treasury --persona <me> \
-  --arg op=request --arg amount=<折扣金額> \
+senate cmd bank-request --arg op=request --arg persona=<me> \
+  --arg target_bank=<你的帳號> --arg amount=<折扣金額> \
   --arg source_kind=spend_menu_rebate \
-  --arg reason='消費時間 第N項 <item_id> 折扣 X%：原價 A → 退 B'
+  --arg-file reason=<理由檔>   # 內容：消費時間 第N項 <item_id> 折扣 X%：原價 A → 退 B
 ```
 
 | 骰出位置 | 折扣 |

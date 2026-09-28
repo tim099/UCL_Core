@@ -29,11 +29,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             "debit: account=帳戶ID amount=N use_kind=分類字串(必填,不驗值) [use_ref=...] [description=...] [caller=自報agent_id] [idempotency_key=...] — 出帳；caller 必須==account（除非 system）\n" +
             "transfer (T55): from_account to_account amount use_kind source_kind [reason_ref] [description] [tx_id] [caller=system] — 跨帳戶守恆轉移；atomic dual entry 共用 tx_id；mid-fail rollback\n" +
             "audit: account=帳戶ID [since_ts=ISO8601] — 列 entries\n" +
+            "request／request_list／request_cancel／transfer_request: ⛔ **已搬到 Senate**（TASK-0327）⇒ `senate cmd bank-request --arg op=request|transfer|cancel|list`\n" +
             "verify: ⛔ **已退場**（TASK-0274）—— 新銀行分錄沒有 balance_before/after 可對；改跑 closing_list / audit\n" +
-            "request: target_bank=收款bank amount=N reason=為什麼該付 [source_kind=commit|tim_grant|...] [source_ref=SHA/task_id] [funding=central|mint（補薪 work_post_backfill 預設 mint）] [agent=請款者agent] [persona=請款者persona] — 開請款單（不動錢，等 Tim 從 `senate cmd bank op=approve` 批款）\n" +
-            "request_list: [pending_only=true|false] [max=200] — 列請款單\n" +
-            "request_cancel: request_id=<id> [note=原因] — 撤回自己開的請款單\n" +
-            "transfer_request: from_bank=出款bank to_bank=收款bank amount=N reason=為什麼該搬 [kind=manual_transfer] [agent=] [persona=] — 開轉帳單（不動錢，總量守恆；請款單消耗公庫，兩者刻意分開）\n" +
             "closing_generate: （無參數）— 補算所有「已完結但未結帳」的 UTC 日；只寫 closing/*.json，不動餘額\n" +
             "closing_list: （無參數）— 列已結帳日期與當前讀取基準\n" +
             "senate_cli: （無參數＝只看現況）[senate_path=絕對路徑|clear] — 派給 Server 用的 `senate` 執行檔；指到不存在的檔＝**寫錢那條路的反向對照**";
@@ -54,7 +51,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 // 錯誤訊息列全部 op —— 舊版只列 5 個，漏掉的 7 個對讀錯誤訊息的人等於不存在。
                 Cmd_Tavern_Helpers.RejectLastOp(args, 
                     "缺少 op 參數（balance / balances / credit / debit / transfer / audit / verify / "
-                    + "request / request_list / request_cancel / transfer_request / "
                     + "closing_generate / closing_list）");
                 return;
             }
@@ -71,13 +67,18 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     case "transfer": Op_Transfer(args); break;   // T55 closed economy v2
                     case "audit":    Op_Audit(args); break;
                     case "verify":   Op_Verify(args); break;
-                    // 請款流程（Tim 2026-07-31 拍板）—— agent 開單，審批走 `senate cmd bank --arg op=approve`
-                    case "request":        Op_Request(args); break;
-                    case "request_list":   Op_RequestList(args); break;
-                    case "request_cancel": Op_RequestCancel(args); break;
-                    // 轉帳單（2026-08-04）—— 開單提案「A→B 搬錢」，Tim 從後台「💸 轉帳審批」核准。
-                    // 與 request 分開的理由：請款消耗公庫、轉帳總量守恆，審批者要能一眼分辨。
-                    case "transfer_request": Op_TransferRequest(args); break;
+                    // ⛔ 請款／轉帳單的開單、撤單、列單已搬到 Senate（TASK-0327，2026-09-28）——
+                    //   審批本來就在 Senate，開單也搬過去之後，`Bank/requests`／`transfer_requests` 只剩一個寫入端。
+                    case "request":
+                    case "request_list":
+                    case "request_cancel":
+                    case "transfer_request":
+                        Cmd_Tavern_Helpers.RejectLastOp(args, $"⛔ op={op} 已搬到 Senate（TASK-0327，2026-09-28）："
+                            + "`senate cmd bank-request --arg op=request|transfer|cancel|list`"
+                            + "（request→op=request、transfer_request→op=transfer、request_cancel→op=cancel、request_list→op=list；"
+                            + "參數名相同：target_bank／from_bank／to_bank／amount／reason／source_kind／source_ref／funding／kind，另外要 `--arg persona=<你>`）。"
+                            + "審批照舊 `senate cmd bank --arg op=approve`。");
+                        break;
                     // 每日結帳（2026-08-04）—— 平時由酒保跨日 tick 自動產生；
                     // 這個 op 是給人手動補算用的（首次上線 backfill / 確認結帳狀態）。
                     // 規格明訂「不自動 rebuild」，但**人必須有辦法補算** —— 否則
@@ -408,113 +409,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                 + "要看明細跑 `op=audit`。");
         }
 
-        // ===========================================================
-        // 區塊：請款流程（Tim 2026-07-31 拍板）— agent 開單 → 審批走 `senate cmd bank --arg op=approve`
-        // 物理意義：補上「agent 主張該收錢」這條正規管道。在此之前只有兩種極端：
-        //          ① 自動 hook（work_post / commit 公告）—— 規則寫死，超出規則的勞動無處可請
-        //          ② 請 Tim 手動 credit —— 沒有單據、沒有稽核痕跡、講過就忘
-        //          請款單填補中間：**有單據、可審批、可駁回、可追溯**。
-        // 數值影響：op=request / request_cancel 完全不動餘額（純檔案）；
-        //          錢只在 Tim 於後台按「核准」時才由 UCL_TreasuryRequestStore.Approve 產生。
-        // 邊界：target_bank 必須是**agent id 不是 persona 名** —— 2026-07-31 血證：
-        //      commit hook 拿貼文 sender 當帳戶，summit 帶 persona 名 `summit`（bank 應為 `zeta`）
-        //      → 錢進影子帳戶。這裡改為顯式宣告 + 後台人眼二次確認，不做任何推斷。
-        // ===========================================================
-        void Op_Request(Dictionary<string, string> args)
-        {
-            string targetBank = GetArg(args, "target_bank", "");
-            string reason = GetArg(args, "reason", "");
-            string amountRaw = GetArg(args, "amount", "");
-            if (string.IsNullOrEmpty(targetBank)) { Cmd_Tavern_Helpers.RejectLastOp(args, "request 缺少 target_bank（收款 agent id，例 cc / zeta / Myth —— 不是 persona 名）"); return; }
-            if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp(args, "request 缺少 reason —— 審批者要有東西可判，不接受無理由請款"); return; }
-            if (!int.TryParse(amountRaw, out int amount) || amount <= 0)
-            { Cmd_Tavern_Helpers.RejectLastOp(args, $"request 的 amount 需為正整數（收到 '{amountRaw}'）"); return; }
-
-            // 錢從哪來：開單時就宣告，審批端（Senate `bank op=approve`／BankAdminPage）照單走，不必再手選（Tim 2026-09-25）。
-            // ⚠ 值域寫死成 Senate 側 `SCP_PayoutFunding` 的兩個值；打錯字**擋下**，⛔ 不靜默落成未宣告
-            //   —— 未宣告在審批端會變成央行撥款，而那跟「我宣告了增發」在單子上一眼分不出來。
-            // 📌 `source_kind=work_post_backfill`（補薪）沒給就預設 mint：補薪是勞動新產生的價值，不是從公庫搬（Tim 2026-09-22）。
-            string sourceKind = GetArg(args, "source_kind", "manual_request");
-            string funding = GetArg(args, "funding", "").Trim().ToLowerInvariant();
-            bool fundingDefaulted = false;
-            if (funding.Length == 0 && sourceKind == "work_post_backfill") { funding = "mint"; fundingDefaulted = true; }
-            if (funding.Length > 0 && funding != "central" && funding != "mint")
-            { Cmd_Tavern_Helpers.RejectLastOp(args, $"request 的 funding 只能是 central（央行撥款）或 mint（增發），收到 '{funding}'"); return; }
-
-            try
-            {
-                var req = UCL_TreasuryRequestStore.Create(
-                    targetBank: targetBank,
-                    amount: amount,
-                    reason: reason,
-                    sourceKind: sourceKind,
-                    sourceRef: GetArg(args, "source_ref", ""),
-                    requesterAgent: GetArg(args, "agent", GetArg(args, "caller", "")),
-                    requesterPersona: GetArg(args, "persona", ""),
-                    currency: GetArg(args, "currency", "tavern_token"),
-                    funding: funding);
-
-                var sb = new StringBuilder();
-                sb.AppendLine($"# 🧾 請款單已開 — `{req.request_id}`");
-                sb.AppendLine();
-                sb.AppendLine($"- 金額：**{req.amount} {req.currency}**");
-                sb.AppendLine($"- 收款 bank：**{req.target_bank}**");
-                sb.AppendLine($"- 理由：{req.reason}");
-                sb.AppendLine($"- source_kind / ref：{req.source_kind} / {(string.IsNullOrEmpty(req.source_ref) ? "(無)" : req.source_ref)}");
-                sb.AppendLine($"- 資金來源：{(req.funding == "mint" ? "**增發**（mint）" : req.funding == "central" ? "**央行撥款**（central）" : "⚠ 未宣告 ⇒ 審批端會用央行撥款")}{(fundingDefaulted ? "（補薪預設）" : "")}");
-                sb.AppendLine($"- 請款者：{req.requester_agent}@{req.requester_persona}");
-                sb.AppendLine($"- 狀態：**{req.status}** —— 錢還沒動，等審批 —— `senate cmd bank --arg op=requests` 看待審、`--arg op=approve --arg request_id=<單號> --arg confirm=1` 核准");
-                Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
-            }
-            catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp(args, $"request 參數不合法：{ex.Message}"); }
-        }
-
-        // 區塊職責：op=transfer_request —— 開一張「從 A 轉到 B」的待審轉帳單。
-        // 物理意義：讓「動別人帳戶的錢」也有提案通道，而不是只能由後台手按。
-        //          主要用途是**歸戶**（把錢從孤兒 / 打錯字的帳戶搬回正主）——
-        //          這種搬移必須留下「誰提的、為什麼」，否則事後只看得到 ledger 兩筆莫名的進出。
-        // 數值影響：**零** —— 只寫一張 pending 單，核准才動錢。
-        // 邊界：from == to / amount <= 0 / 缺 reason 一律拒收（由 Store 丟 ArgumentException 轉成 reject）。
-        //      **不檢查 from 是否為合法帳戶** —— 歸戶的出款方本來就常是不合法的孤兒帳戶。
-        void Op_TransferRequest(Dictionary<string, string> args)
-        {
-            string fromBank = GetArg(args, "from_bank", "");
-            string toBank = GetArg(args, "to_bank", "");
-            string reason = GetArg(args, "reason", "");
-            string amountRaw = GetArg(args, "amount", "");
-            if (string.IsNullOrEmpty(fromBank)) { Cmd_Tavern_Helpers.RejectLastOp(args, "transfer_request 缺少 from_bank（出款 agent id，不是 persona 名）"); return; }
-            if (string.IsNullOrEmpty(toBank)) { Cmd_Tavern_Helpers.RejectLastOp(args, "transfer_request 缺少 to_bank（收款 agent id）"); return; }
-            if (string.IsNullOrEmpty(reason)) { Cmd_Tavern_Helpers.RejectLastOp(args, "transfer_request 缺少 reason —— 審批者要有東西可判"); return; }
-            if (!int.TryParse(amountRaw, out int amount) || amount <= 0)
-            { Cmd_Tavern_Helpers.RejectLastOp(args, $"transfer_request 的 amount 需為正整數（收到 '{amountRaw}'）"); return; }
-
-            try
-            {
-                var req = UCL_TreasuryTransferRequestStore.Create(
-                    fromBank: fromBank,
-                    toBank: toBank,
-                    amount: amount,
-                    reason: reason,
-                    kind: GetArg(args, "kind", "manual_transfer"),
-                    requesterAgent: GetArg(args, "agent", GetArg(args, "caller", "")),
-                    requesterPersona: GetArg(args, "persona", ""),
-                    currency: GetArg(args, "currency", "tavern_token"));
-
-                var sb = new StringBuilder();
-                sb.AppendLine($"# 💸 轉帳單已開 — `{req.request_id}`");
-                sb.AppendLine();
-                sb.AppendLine($"- 金額：**{req.amount} {req.currency}**");
-                sb.AppendLine($"- 出款 bank：**{req.from_bank}**");
-                sb.AppendLine($"- 收款 bank：**{req.to_bank}**");
-                sb.AppendLine($"- 分類：{req.kind}");
-                sb.AppendLine($"- 理由：{req.reason}");
-                sb.AppendLine($"- 提案者：{req.requester_agent}@{req.requester_persona}");
-                sb.AppendLine($"- 狀態：**{req.status}** —— 錢還沒動，等審批 —— `senate cmd bank --arg op=requests` 看待審、`--arg op=approve --arg request_id=<單號> --arg confirm=1` 核准");
-                Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
-            }
-            catch (System.ArgumentException ex) { Cmd_Tavern_Helpers.RejectLastOp(args, $"transfer_request 參數不合法：{ex.Message}"); }
-        }
-
         // 區塊職責：op=closing_generate —— 補齊所有「已完結但尚未結帳」的 UTC 日期。
         // 物理意義：平時由酒保跨日 tick 自動跑；本 op 給人手動補算（首次上線 / 確認狀態）。
         // 數值影響：只寫 `Bank/closing/*.json`，**不動任何餘額、不動 ledger**。
@@ -569,43 +463,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
                     sb.AppendLine($"- ⚠ **暖啟動用不上**（改走全量重放）：{why}");
             }
             Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
-        }
-
-        void Op_RequestList(Dictionary<string, string> args)
-        {
-            bool pendingOnly = GetArg(args, "pending_only", "true").ToLowerInvariant() != "false";
-            if (!int.TryParse(GetArg(args, "max", "200"), out int max) || max <= 0) max = 200;
-            var list = UCL_TreasuryRequestStore.List(pendingOnly, max);
-
-            var sb = new StringBuilder();
-            sb.AppendLine($"# 🧾 請款單列表（{(pendingOnly ? "只列 pending" : "全部")}，共 {list.Count} 筆）");
-            sb.AppendLine();
-            if (list.Count == 0) sb.AppendLine("（無）");
-            foreach (var r in list)
-            {
-                sb.AppendLine($"- `{r.request_id}` **{r.amount} {r.currency}** → `{r.target_bank}`　[{r.status}]"
-                    + $"　{r.requester_agent}@{r.requester_persona}　{r.requested_at}");
-                sb.AppendLine($"    理由：{r.reason}");
-                if (!string.IsNullOrEmpty(r.decision_note)) sb.AppendLine($"    審批備註：{r.decision_note}");
-            }
-            Cmd_Tavern_Helpers.WriteLastOp(args, sb.ToString());
-            Debug.Log($"[Treasury] request_list: {list.Count} 筆（pendingOnly={pendingOnly}）");
-        }
-
-        void Op_RequestCancel(Dictionary<string, string> args)
-        {
-            string id = GetArg(args, "request_id", "");
-            if (string.IsNullOrEmpty(id)) { Cmd_Tavern_Helpers.RejectLastOp(args, "request_cancel 缺少 request_id"); return; }
-            try
-            {
-                var req = UCL_TreasuryRequestStore.Close(
-                    id, UCL_TreasuryRequestStore.StatusCancelled,
-                    decidedBy: GetArg(args, "agent", GetArg(args, "caller", "agent")),
-                    note: GetArg(args, "note", ""));
-                Cmd_Tavern_Helpers.WriteLastOp(args, $"# 🗑 請款單已撤回 — `{req.request_id}`\n\n"
-                    + $"- 原請款：{req.amount} {req.currency} → `{req.target_bank}`\n- 狀態：**{req.status}**\n");
-            }
-            catch (System.Exception ex) { Cmd_Tavern_Helpers.RejectLastOp(args, $"request_cancel 失敗：{ex.Message}"); }
         }
 
         string BuildEntryMd(string action, TreasuryLedgerEntry e)

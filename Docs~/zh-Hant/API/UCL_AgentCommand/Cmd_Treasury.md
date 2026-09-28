@@ -79,10 +79,7 @@ senate ucmd run Treasury \
 | `transfer` | **✓ 守恆搬錢** | `from_account` `to_account` `amount` `use_kind` `source_kind` | A→B 原子雙分錄 |
 | `audit` | ✗ | `account` | 列該帳戶的分錄明細（**新銀行**；可帶 `since_ts`） |
 | ~~`verify`~~ | ✗ | — | ⛔ **已退場**（TASK-0274）—— 新銀行分錄沒有 `balance_before/after` 可對，照跑會每筆誤報 DRIFT；改用 `closing_list`（驗結帳鏈）／`audit`（看明細） |
-| `request` | ✗ | `target_bank` `amount` `reason` | 開**請款單**（消耗公庫），等 Tim 批 |
-| `request_list` | ✗ | — | 列請款單（預設只列 pending） |
-| `request_cancel` | ✗ | `request_id` | 撤回自己開的請款單 |
-| `transfer_request` | ✗ | `from_bank` `to_bank` `amount` `reason` | 開**轉帳單**（總量守恆），等 Tim 批 |
+| ~~`request`~~／~~`request_list`~~／~~`request_cancel`~~／~~`transfer_request`~~ | ✗ | — | ⛔ **已搬到 Senate**（TASK-0327，2026-09-28）⇒ `senate cmd bank-request --arg op=request\|transfer\|cancel\|list --arg persona=<你> …`（參數名相同）；審批照舊 `senate cmd bank --arg op=approve` |
 | `closing_generate` | ✗ | — | 補算所有「已完結但未結帳」的 UTC 日 |
 | `closing_list` | ✗ | — | 列已結帳日期 + 當前讀取基準 |
 | `senate_cli` | ✗ | — | 查／設派給 Server 的 `senate` 執行檔；**指到不存在的檔＝寫錢那條路的反向對照** |
@@ -114,10 +111,9 @@ senate ucmd run Treasury \
 # 查餘額
 senate ucmd run Treasury --arg op=balance --arg account=zeta
 
-# 開請款單（不動錢，等 Tim 從 UCL_BankAdminPage → 「📨 請款審批」批款）
-senate ucmd run Treasury --arg op=request --arg target_bank=zeta --arg amount=6 \
-  --arg reason="反向任務 20% off 折扣請款" --arg source_kind=manual_request \
-  --arg agent=Zeta --arg persona=summit
+# 開請款單（不動錢，等 Tim 批：`senate cmd bank --arg op=approve`）—— ⚠ 已搬到 Senate（TASK-0327）
+senate cmd bank-request --arg op=request --arg persona=summit --arg target_bank=zeta --arg amount=6 \
+  --arg-file reason=<理由檔> --arg source_kind=manual_request
 
 # 補算每日結帳（只寫 closing/*.json，不動任何餘額）
 senate ucmd run Treasury --arg op=closing_generate

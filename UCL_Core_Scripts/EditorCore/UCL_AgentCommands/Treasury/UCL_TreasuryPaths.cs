@@ -29,12 +29,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public const string LedgerDirName = "ledger";
         public const string AccountsDirName = "accounts";
         public const string RulesFile = "rules.json";
-        // 區塊職責：請款單（payout request）存放目錄名
-        // 物理意義：請款單是「還沒發生的錢」—— 它跟 ledger 是兩種東西：ledger 記已成事實的收付，
-        //          請款單記「某 agent 主張該收一筆錢」。核准後才會生出對應的 ledger entry。
-        //          兩者刻意分開存：混進 ledger 會讓「帳面餘額」包含未核准的主張，那是假帳。
-        // 數值影響：路徑 = <Treasury>/requests/<YYYY-MM-DD>/<HHMMSS_fff>_<UUID6>__request.json
-        public const string RequestsDirName = "requests";
 
         /// <summary>Treasury 根目錄 — 走可 override 的資料根 (UCL_AgentCommandsPath.DataRoot)。
         /// 2026-05-28 修正:原本用 UnityProjectRoot/.. 與其他子系統不一致 (nested layout 脆弱),
@@ -90,29 +84,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         public static string GetAccountSnapshotPath(string accountId)
             => Path.Combine(GetAccountsRoot(), $"{accountId}.snapshot.json");
 
-        /// <summary>請款單根目錄（<Bank>/requests —— TASK-0274 從 `Treasury/` 搬過來，⛔ 沒有 fallback）。</summary>
-        public static string GetRequestsRoot()
-            => Path.Combine(GetBankDir(), RequestsDirName);
-
-        /// <summary>請款單的當日分桶目錄 — 與 ledger 同構（按日分桶，避免單一目錄千檔）。</summary>
-        public static string GetRequestDateDir(DateTime utcDate)
-            => Path.Combine(GetRequestsRoot(), utcDate.ToString("yyyy-MM-dd"));
-
-        /// <summary>建構請款單檔名 — <HHMMSS_fff>_<UUID6>__request.json（沿用 ledger 的檔名形狀）。</summary>
-        public static string BuildRequestFileName(DateTime utcTime, string uuid6)
-            => $"{utcTime:HHmmss_fff}_{uuid6}__request.json";
-
-        // ── 轉帳單（2026-08-04）——與請款單同構，另開目錄以免兩種單混在一起難分辨 ──
-        public const string TransfersDirName = "transfer_requests";
-
-        public static string GetTransferRequestsRoot()
-            => Path.Combine(GetBankDir(), TransfersDirName);
-
-        public static string GetTransferRequestDateDir(DateTime utcDate)
-            => Path.Combine(GetTransferRequestsRoot(), utcDate.ToString("yyyy-MM-dd"));
-
-        public static string BuildTransferRequestFileName(DateTime utcTime, string uuid6)
-            => $"{utcTime:HHmmss_fff}_{uuid6}__transfer.json";
+        // ⛔ 請款／轉帳單的路徑已隨開單一起搬到 Senate（`SCP_TreasuryRequests.PayoutDir`／`TransferDir`，TASK-0327）。
 
         public static void EnsureTreasuryDir()
         {

@@ -21,7 +21,7 @@
 // 📐 貨幣供給的完整圖（Tim 2026-08-01 拍板，**刻意只閉一半**）：
 //      增發（憑空 credit）：commit 打款 +5 / 發文計酬 +1 / QA 獎勵 …（auto hook，維持不變）
 //      回收 → 央行        ：跨日保管費（本檔）
-//      央行 → agent        ：請款核准撥款（UCL_TreasuryRequestStore.Approve，央行不足即拒絕）
+//      央行 → agent        ：請款核准撥款（Senate `bank op=approve`，央行不足即拒絕；Unity 端的 RequestStore 已於 TASK-0327 刪除）
 //      蒸發               ：**央行活動**（尚未實作 —— Tim：「之後會有一些蒸發 credit 的地方」）
 //    亦即：日常勞動報酬**刻意保持體外增發**，不受央行餘額影響 ——
 //    讓「今天有沒有薪水」取決於公庫水位，會把可預測的報酬變成賭博。

@@ -254,7 +254,7 @@ Step 1. 收尾兩件（寫 letter 前）：
             python <UCL_Core>/Tools~/AgentCommands/spend_menu.py roll --persona <P> --account <bank>
             擲三項可消費清單；額度上限 = **當前餘額 10%**；
             折扣按骰出位置遞減 —— 第 1 項 50%、第 2 項 20%、第 3 項 10% off。
-            折扣**不自動退**：照原價付，事後開 Treasury op=request
+            折扣**不自動退**：照原價付，事後開請款單 `senate cmd bank-request --arg op=request`
             （source_kind=spend_menu_rebate）由 Tim 核准、央行撥款。
             完整規範見 skills/ucl-spending-time/SKILL.md。
 

@@ -24,27 +24,22 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public override string ShortDescription => "Chat Tavern — 多 agent 聊天室（op 派遣式）";
         public override string ArgsSchema =>
             "op=createroom|create_trpg_room|listrooms|join|post|read|members|leave|wait|note_write|note_read\n" +
-            "createroom: id=房間ID name=顯示名 description=描述 [owner_agent=] [mirror_kinds=chat,system] [mirror=true|false(註冊/反註冊進 Discord mirror watched rooms)]\n" +
+            "createroom: ⛔ 已搬到 Senate（TASK-0328）⇒ `senate cmd channel --arg op=create --arg room=<id> [--arg name=] [--arg description=] [--arg category=<分類>]`\n" +
+            "join／leave: ⛔ 已廢棄（TASK-0328；Tim：發言不用進房）\n" +
+            "note_write／note_append／note_read／note_list／note_delete: ⛔ 留言本已整組移除（TASK-0328；skill 沒有使用、最後一次寫入是 5 月）\n" +
             "create_trpg_room: campaign=戰役ID(自動補 trpg- 前綴) [name=] [description=] [gm/owner_agent=] [mirror_kinds=chat] — 建房+一律註冊進 mirror（TRPG 開房一鍵）\n" +
             "listrooms: (無參數)\n" +
-            "join: room=房間ID id=身分ID name=顯示名 kind=agent|human|system\n" +
             "post: room=房間ID body=訊息內容 [persona=codename — 發言認 persona；顯示身分(sender_id)與計酬帳號都由它推導；沒帶＝匿名發言(不計酬但照發)] [agent=身分ID(別名 sender/sender_id/agent_id) — **只有特殊身分**(酒保／系統元件)需要手給；它只影響顯示、⛔ 不決定錢] [reply_to=seq] [meta=k1:v1;k2:v2] [refs=path1|path2] [status=一句話目前狀態 — 順手寫進 persona 的 now_status（cmd/now_status.json，⛔ 不動 lock），catchup/ding 在線清單會顯示]\n" +
             "read: room=房間ID [tail=N] [from=N] [to=N] [since_seq=N] [limit=N] [search=keyword]\n" +
             "members: room=房間ID\n" +
-            "leave: room=房間ID sender=身分ID\n" +
             "wait: room=房間ID since_seq=N [timeout=300（秒，預設 5 分鐘）] [expect_from=等誰回（只有這個人的發言算命中；不填＝房內任何新訊息都算）] [waiter=誰在等（酒保自動通知據此加權）] [owner=identity_id]\n" +
             "      ⚡ fire-and-forget — handler 立刻返回 wait_id，背景 task 監看訊息；用 op=wait_check 查結果\n" +
             "      ⚠ **等回覆一律走本 op ＋ op=wait_check** —— 那是唯一的等待引擎。\n" +
             "wait_check: wait_id=<由 op=wait 取得的 id> — 同步查詢該 wait 當前狀態（pending/fulfilled/timeout/cancelled）\n" +
-            "note_write: room=房間ID key=筆記key body=Markdown 內容（整個覆寫；更新 last_updated_at）\n" +
-            "note_append: room=房間ID key=筆記key body=要追加的文字 [sender=ID]（OS 原子 append；不動 frontmatter）\n" +
-            "note_read: room=房間ID key=筆記key（回完整 markdown）\n" +
-            "note_list: room=房間ID（列房內所有 note keys）\n" +
             "post_reward_backfill: [apply=1 confirm=1] — 補「當時該發 +1 卻沒發」的發文計酬（**增發**，不從央行扣）。\n" +
             "      ⚠ 不給 apply＝**唯讀試算**（零寫入）；apply=1 **必須**同時帶 confirm=1，少一個就拒絕。\n" +
             "      ⛔ 會整天跳過兩種日子：早於權威切換（帳在已刪除的舊帳本 ⇒ 查無帳≠沒發過）、\n" +
             "      以及當天請款撥款已 ≥ 差集的（請款分錄不帶逐則 ref，不擋會再發一次）。理由逐條印在報告裡。\n" +
-            "note_delete: room=房間ID key=筆記key（刪檔）\n" +
             "─── Quest Workflow (MVP A) — 詳見 Docs~/zh-Hant/Workflows/Quest_Workflow.md ───\n" +
             "task_create: room=房間ID task_id=任務ID title=標題 [role=...] [priority=high|normal|low] [depends_on=t1,t2] [group_id=group名(同group全done自動觸發group_complete)] [suggested_owner=身分ID] [body=Markdown規格] [idempotency_key]\n" +
             "task_claim: room=房間ID task_id=任務ID claimer=身分ID [lease_hours=24] [lease_seconds=N (測試/短任務 override)] [idempotency_key]\n" +
@@ -110,19 +105,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             Ops = new Dictionary<string, UCL_CmdOpSpec>
             {
                 // ─── 房間 / 訊息 ───────────────────────────────────────────
-                ["createroom"] = new UCL_CmdOpSpec {
-                    Required = new[] { "id" },
-                    Aliases = new Dictionary<string, string> { ["room"] = "id", ["owner"] = "owner_agent" } },
+                // ⛔ 退場的 op（TASK-0328）：留空規格 ⇒ 參數不驗、一定走到 Op_Retired 的指路，⛔ 不會先被參數檢查擋成別的錯
+                ["createroom"] = new UCL_CmdOpSpec(),
                 ["create_trpg_room"] = new UCL_CmdOpSpec {
                     Required = new[] { "campaign" },
                     // campaign > id > room；owner_agent > owner > gm
                     Aliases = new Dictionary<string, string> {
                         ["id"] = "campaign", ["room"] = "campaign", ["owner"] = "owner_agent", ["gm"] = "owner_agent" } },
                 ["listrooms"] = new UCL_CmdOpSpec(),
-                ["join"] = new UCL_CmdOpSpec {
-                    Required = new[] { "room", "agent" },
-                    // id > sender_id > sender（注意順序與 post 相反 —— join 的 canonical 是 id）
-                    Aliases = s_AgentAliases },
+                ["join"] = new UCL_CmdOpSpec(),
                 // post 的身分欄位是 **persona**：發言認 persona，顯示身分與計酬帳號都由它推導。
                 // （sender / sender_id / agent_id 等別名仍會被歸一到 agent 欄並被接受，
                 //   但它只影響顯示身分、不決定錢，且不再是必填 —— 呼叫端只要給 persona。）
@@ -133,20 +124,17 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     Aliases = AgentAliasesWith(("sender_persona", "persona")) },
                 ["read"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 ["members"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
-                // leave 在本檔沒有任何 reject —— 刻意不宣告 required（多寫會擋掉合法呼叫）
-                ["leave"] = new UCL_CmdOpSpec {
-                    Aliases = s_AgentAliases },
+                ["leave"] = new UCL_CmdOpSpec(),
                 // wait 只 reject room；since_seq 有預設值，不是必填
                 ["wait"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
                 ["wait_check"] = new UCL_CmdOpSpec { Required = new[] { "wait_id" } },
 
-                // ─── Note ────────────────────────────────────────────────
-                // note_write 只 reject room / key —— body 允許空（等同清空內容）
-                ["note_write"] = new UCL_CmdOpSpec { Required = new[] { "room", "key" } },
-                ["note_append"] = new UCL_CmdOpSpec { Required = new[] { "room", "key", "body" } },
-                ["note_read"] = new UCL_CmdOpSpec { Required = new[] { "room", "key" } },
-                ["note_list"] = new UCL_CmdOpSpec { Required = new[] { "room" } },
-                ["note_delete"] = new UCL_CmdOpSpec { Required = new[] { "room", "key" } },
+                // ─── Note（⛔ 已整組移除，TASK-0328）──────────────────────────
+                ["note_write"] = new UCL_CmdOpSpec(),
+                ["note_append"] = new UCL_CmdOpSpec(),
+                ["note_read"] = new UCL_CmdOpSpec(),
+                ["note_list"] = new UCL_CmdOpSpec(),
+                ["note_delete"] = new UCL_CmdOpSpec(),
 
                 // ─── Catchup ────────────────────────────────────────────────
                 // 🩸 TASK-0069：`catchup` 從一開始就只在 switch 的 case 裡（:250），**沒進這張表** ——
@@ -227,10 +215,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             {
                 switch (op)
                 {
-                    case "createroom": Op_CreateRoom(args); break;
+                    case "createroom": Op_Retired(args, op); break;
                     case "create_trpg_room": Op_CreateTrpgRoom(args); break;
                     case "listrooms": Op_ListRooms(args); break;
-                    case "join": Op_Join(args); break;
+                    case "join": Op_Retired(args, op); break;
                     case "post": await Op_Post(args, token); break;
                     // ⏱ 以下兩格移出主執行緒（TASK-0162 第 2 支）—— **逐 op 判，不是整支 Cmd 判**。
                     //   ✅ 可以動的理由（逐項查過，不是「看起來沒問題」）：
@@ -244,15 +232,15 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     //     ⇒ 要 offload `post` 得先把 seq 配號（與金流那條路）上鎖，那是另一張單。
                     case "read": await UCL_AgentCmdOffload.EnterBackground(args); Op_Read(args); break;
                     case "members": Op_Members(args); break;
-                    case "leave": Op_Leave(args); break;
+                    case "leave": Op_Retired(args, op); break;
                     case "wait": Op_Wait(args, token); break;
                     case "wait_check": Op_WaitCheck(args); break;
-                    case "note_write": Op_NoteWrite(args); break;
-                    case "note_append": Op_NoteAppend(args); break;
-                    case "note_read": Op_NoteRead(args); break;
+                    case "note_write":
+                    case "note_append":
                     case "post_reward_backfill": Op_PostRewardBackfill(args); break;
-                    case "note_list": Op_NoteList(args); break;
-                    case "note_delete": Op_NoteDelete(args); break;
+                    case "note_read":
+                    case "note_list":
+                    case "note_delete": Op_Retired(args, op); break;
                     // Quest Workflow MVP A
                     case "task_create": Op_TaskCreate(args); break;
                     case "task_claim": Op_TaskClaim(args); break;
@@ -290,55 +278,21 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊：op=createroom
+        // 區塊職責：**已退場的 op** 一律走這裡 —— 印「搬到哪／為什麼廢棄」，⛔ 不做任何寫入（TASK-0328，2026-09-28）。
+        // 物理意義：走到這裡的人手上就是舊指令 ⇒ 給他那一行要怎麼改，⛔ 不是只回「未知 op」。
+        //   · createroom ⇒ Senate `channel --arg op=create`（建房＋設分類；Discord 轉發看分類，mirror 註冊那段已沒有人讀）
+        //   · join／leave ⇒ 廢棄（Tim：發言不用進房）
+        //   · note_* ⇒ 留言本整組移除（skill 沒有使用；既有 `rooms/<room>/notes/*.md` 留作紀錄，沒有刪）
         // ===========================================================
-        void Op_CreateRoom(Dictionary<string, string> args)
+        void Op_Retired(Dictionary<string, string> args, string op)
         {
-            // alias 寬進：room=... 也接受（agent 常與 join/post 的 room 參數搞混）
-            string id = GetArg(args, "id", GetArg(args, "room", ""));
-            string name = GetArg(args, "name", id);
-            string desc = GetArg(args, "description", "");
-            // R7 (T04 chat-flow-robust) — 房 owner_agent（模糊「大小姐」routing 用；可選）
-            string ownerAgent = GetArg(args, "owner_agent", GetArg(args, "owner", ""));
-            // R7 (Q20260508-180358 — Quest→Discord 修法 C) — per-room mirror_kinds override
-            // CSV 解析：「chat,system」→ ["chat","system"]；空字串 = 不傳（用 default null=fallback config.kinds）
-            string mirrorKindsCsv = GetArg(args, "mirror_kinds", "");
-            List<string> mirrorKindsList = null;
-            if (!string.IsNullOrEmpty(mirrorKindsCsv))
-            {
-                mirrorKindsList = new List<string>();
-                foreach (var k in mirrorKindsCsv.Split(','))
-                {
-                    var trimmed = k.Trim();
-                    if (!string.IsNullOrEmpty(trimmed)) mirrorKindsList.Add(trimmed);
-                }
-            }
-            if (string.IsNullOrEmpty(id)) { RejectLastOp(args, "createroom 缺少 id（房間ID；可用 id= 或 room=）"); return; }
-            var room = UCL_ChatTavernIO.CreateRoom(id, name, desc,
-                string.IsNullOrEmpty(ownerAgent) ? null : ownerAgent,
-                mirrorKindsList);
-
-            // Discord mirror 註冊 tri-state（Tim 2026-07-21 拍板：把「加進 watched rooms」的手動步驟包進 CMD）
-            // 物理意義：建房後直接寫 notify_config.json 的 tavern_mirror.rooms，省掉 TRPG 開房 SOP §② 的手動註冊。
-            //   mirror 缺席 = 不碰 config（向下相容，既有 caller 行為不變）；
-            //   mirror=true = 確保 room 在 watched list（dedup）；mirror=false = 從 list 移除（反註冊）。
-            // 數值影響：新房被納入時 daemon cursor 種子 = ts_high=now → 不回放歷史（不會噴爆 Discord backlog）。
-            string mirrorArg = GetArg(args, "mirror", "");
-            string mirrorRegLine = "";
-            if (!string.IsNullOrEmpty(mirrorArg))
-            {
-                bool doRegister = mirrorArg.Equals("true", StringComparison.OrdinalIgnoreCase) || mirrorArg == "1";
-                string reg = RegisterRoomToMirror(room.id, doRegister);
-                mirrorRegLine = $"\n- mirror: {(doRegister ? "註冊" : "反註冊")} → {reg}";
-                Debug.Log($"[Tavern] createroom mirror {(doRegister ? "register" : "unregister")} {room.id}: {reg}");
-            }
-
-            string ownerLine = string.IsNullOrEmpty(room.owner_agent) ? "" : $"\n- owner_agent: `{room.owner_agent}`";
-            string mirrorLine = (room.mirror_kinds == null || room.mirror_kinds.Count == 0)
-                ? "" : $"\n- mirror_kinds: [{string.Join(", ", room.mirror_kinds)}]";
-            string md = $"# ✅ Room ready\n\n- id: `{room.id}`\n- name: {room.name}\n- description: {room.description}\n- created_at: {room.created_at}{ownerLine}{mirrorLine}{mirrorRegLine}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
-            Debug.Log($"[Tavern] createroom → {room.id}{(string.IsNullOrEmpty(room.owner_agent) ? "" : $" owner={room.owner_agent}")}{(room.mirror_kinds != null && room.mirror_kinds.Count > 0 ? $" mirror_kinds=[{string.Join(",", room.mirror_kinds)}]" : "")}");
+            string how = op == "createroom"
+                ? "已搬到 Senate：`senate cmd channel --arg op=create --arg room=<id> [--arg name=<顯示名>] [--arg description=...] [--arg category=<分類>]`"
+                  + "（⚠ 沒給分類 ⇒ 不會轉發到 Discord；Unity 版的 mirror 註冊已經沒有人讀了）"
+                : op == "join" || op == "leave"
+                    ? "已廢棄 —— 發言不用進房（直接 `senate cmd tavern-post --arg room=<房>`）"
+                    : "留言本已整組移除 —— skill 沒有使用、最後一次寫入是 5 月；既有的 `rooms/<room>/notes/*.md` 留作紀錄";
+            RejectLastOp(args, $"⛔ op={op} 已退場（TASK-0328，2026-09-28）：{how}");
         }
 
         // ===========================================================
@@ -466,41 +420,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
             Debug.Log($"[Tavern] listrooms → {list.rooms.Count} rooms");
-        }
-
-        // ===========================================================
-        // 區塊：op=join — 註冊（或復用）身分 + 加入房間 + 寫 join 系統訊息 + 回最新 100 筆
-        // ===========================================================
-        void Op_Join(Dictionary<string, string> args)
-        {
-            string roomId = GetArg(args, "room", "");
-            // alias 寬進：sender / sender_id 也接受（與 op=post 的 sender 命名統一）
-            string identityId = GetArg(args, "id", GetAgentArg(args));
-            string displayName = GetArg(args, "name", identityId);
-            string kind = GetArg(args, "kind", "agent");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "join 缺少 room"); return; }
-            if (string.IsNullOrEmpty(identityId)) { RejectLastOp(args, "join 缺少 id（身分ID；可用 id= / sender= / sender_id=）"); return; }
-            var room = UCL_ChatTavernIO.GetRoom(roomId);
-            if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}（請先 createroom）"); return; }
-
-            var ident = UCL_ChatTavernIO.GetOrCreateIdentity(identityId, displayName, kind);
-            UCL_ChatTavernIO.AddMember(roomId, ident.id);
-
-            // 寫 join 系統訊息
-            int seq = UCL_ChatTavernIO.AppendMessage(roomId, new UCL_ChatMessage
-            {
-                sender_id = ident.id,
-                sender_name = ident.display_name,
-                kind = "join",
-                body = $"{ident.display_name} 進入了酒館",
-            });
-
-            var tail = UCL_ChatTavernIO.Tail(roomId, UCL_ChatTavernSettings.LastViewTailCount);
-            // 注意：_last_view.md 是房間共用快照，可能被任何 agent 讀到；header 用中性措辭避免誤導讀者把上一位當成自己
-            string header = $"> 上一筆事件 (seq={seq})：「{ident.display_name}」（id=`{ident.id}`）加入房間「{room.name}」";
-            string md = UCL_ChatTavernRender.WriteLastView(roomId, room.name, tail, seq, header);
-            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
-            Debug.Log($"[Tavern] join {roomId} ← {ident.display_name} (seq={seq})");
         }
 
         // ===========================================================
@@ -1186,30 +1105,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊：op=leave
-        // ===========================================================
-        void Op_Leave(Dictionary<string, string> args)
-        {
-            string roomId = GetArg(args, "room", "");
-            string senderId = GetAgentArg(args, GetArg(args, "id", ""));
-            if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(senderId)) { RejectLastOp(args, "leave 需要 room + sender（可用 sender= / sender_id= / id=）"); return; }
-            // 顯示名稱一律走帳戶資料（Tim 2026-08-20：identities.json 廢棄）——
-            // Op_Post 早就改了、渲染端今天也改了，這裡沒改 ⇒ 同一件事的第三個算點。
-            string name = Treasury.UCL_BankAccountProfileIO.GetDisplayName(senderId);
-            if (string.IsNullOrEmpty(name)) name = senderId;
-            UCL_ChatTavernIO.RemoveMember(roomId, senderId);
-            int seq = UCL_ChatTavernIO.AppendMessage(roomId, new UCL_ChatMessage
-            {
-                sender_id = senderId,
-                sender_name = name,
-                kind = "leave",
-                body = $"{name} 離開了酒館",
-            });
-            UCL_ChatTavernRender.WriteLastOp($"# 👋 {name} left `{roomId}` (seq={seq})\n", args, "tavern");
-            Debug.Log($"[Tavern] leave {roomId} ← {name}");
-        }
-
-        // ===========================================================
         // 區塊：op=wait — fire-and-forget 模式
         // 物理意義：handler 立刻返回 wait_id，背景 UniTask 監看 _seq.txt 直到命中或 timeout
         //           不阻塞 runner → parallel session 之間 cmd↔cmd wait 才能真的奏效
@@ -1317,148 +1212,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
             Debug.Log($"[Tavern] wait_check {waitId} → status={w.status}");
-        }
-
-        // ===========================================================
-        // 區塊：op=note_write — 整個覆寫 note；更新 last_updated_at
-        // 物理意義：source-of-truth 為 .md 檔（rooms/<room>/notes/<key>.md），人類可直接 grep / 編輯
-        // ===========================================================
-        void Op_NoteWrite(Dictionary<string, string> args)
-        {
-            string roomId = GetArg(args, "room", "");
-            string key = GetArg(args, "key", "");
-            string body = GetArg(args, "body", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "note_write 缺少 room"); return; }
-            if (string.IsNullOrEmpty(key)) { RejectLastOp(args, "note_write 缺少 key"); return; }
-            var room = UCL_ChatTavernIO.GetRoom(roomId);
-            if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}"); return; }
-            try
-            {
-                UCL_ChatTavernIO.WriteNote(roomId, key, body);
-            }
-            catch (Exception ex)
-            {
-                FailLastOp(args, $"note_write 失敗：{ex.Message}");
-                return;
-            }
-            string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
-            string md = $"# 📝 Note Written\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n- mode: write (整個覆寫)\n- bytes: {(body?.Length ?? 0)}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
-            Debug.Log($"[Tavern] note_write {roomId}/{key} ({body?.Length ?? 0} bytes)");
-        }
-
-        // ===========================================================
-        // 區塊：op=note_append — 純文字追加；File.AppendAllText 的 OS 原子性；不動 frontmatter
-        // 物理意義：累積式紀錄場景（如 brainstorm 持續追加）；犧牲 last_updated_at 更新換取無 lock 並發安全
-        // 數值影響：append body 自動加 [@sender] 前綴；note 不存在自動先建空 note
-        // ===========================================================
-        void Op_NoteAppend(Dictionary<string, string> args)
-        {
-            string roomId = GetArg(args, "room", "");
-            string key = GetArg(args, "key", "");
-            string body = GetArg(args, "body", "");
-            // 走統一入口（agent > agent_id > sender > sender_id）；全缺回空字串 → 下游視為未署名
-            string sender = GetAgentArg(args);
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "note_append 缺少 room"); return; }
-            if (string.IsNullOrEmpty(key)) { RejectLastOp(args, "note_append 缺少 key"); return; }
-            if (string.IsNullOrEmpty(body)) { RejectLastOp(args, "note_append 缺少 body"); return; }
-            var room = UCL_ChatTavernIO.GetRoom(roomId);
-            if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}"); return; }
-            try
-            {
-                UCL_ChatTavernIO.AppendNote(roomId, key, body, sender);
-            }
-            catch (Exception ex)
-            {
-                FailLastOp(args, $"note_append 失敗：{ex.Message}");
-                return;
-            }
-            string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
-            string md = $"# 📝 Note Appended\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n- mode: append (OS 原子；不動 frontmatter)\n- sender: `{sender ?? "(none)"}`\n- bytes: {body.Length}\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
-            Debug.Log($"[Tavern] note_append {roomId}/{key} by {sender ?? "?"} ({body.Length} bytes)");
-        }
-
-        // ===========================================================
-        // 區塊：op=note_read — 回完整 markdown 內容
-        // ===========================================================
-        void Op_NoteRead(Dictionary<string, string> args)
-        {
-            string roomId = GetArg(args, "room", "");
-            string key = GetArg(args, "key", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "note_read 缺少 room"); return; }
-            if (string.IsNullOrEmpty(key)) { RejectLastOp(args, "note_read 缺少 key"); return; }
-            string content;
-            try
-            {
-                content = UCL_ChatTavernIO.ReadNote(roomId, key);
-            }
-            catch (Exception ex)
-            {
-                FailLastOp(args, $"note_read 失敗：{ex.Message}");
-                return;
-            }
-            if (content == null) { RejectLastOp(args, $"note 不存在：{roomId}/{key}"); return; }
-            string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
-            var sb = new System.Text.StringBuilder();
-            sb.Append($"# 📖 Note: `{roomId}/{key}`\n\n");
-            sb.Append($"- path: `{ToRepoRelative(path)}`\n\n");
-            sb.Append("---\n\n");
-            sb.Append(content);
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
-            Debug.Log($"[Tavern] note_read {roomId}/{key} ({content.Length} bytes)");
-        }
-
-        // ===========================================================
-        // 區塊：op=note_list — 列房內所有 note keys
-        // ===========================================================
-        void Op_NoteList(Dictionary<string, string> args)
-        {
-            string roomId = GetArg(args, "room", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "note_list 缺少 room"); return; }
-            var room = UCL_ChatTavernIO.GetRoom(roomId);
-            if (room == null) { RejectLastOp(args, $"房間不存在：{roomId}"); return; }
-            var keys = UCL_ChatTavernIO.ListNoteKeys(roomId);
-            var sb = new System.Text.StringBuilder();
-            sb.Append($"# 📚 Notes of `{roomId}` ({keys.Count})\n\n");
-            if (keys.Count == 0) sb.Append("_(此房間尚無 note)_\n");
-            else
-            {
-                foreach (var k in keys)
-                {
-                    string path = UCL_ChatTavernIO.GetNotePath(roomId, k);
-                    sb.Append($"- `{k}` — `{ToRepoRelative(path)}`\n");
-                }
-            }
-            UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args, "tavern");
-            Debug.Log($"[Tavern] note_list {roomId} → {keys.Count} notes");
-        }
-
-        // ===========================================================
-        // 區塊：op=note_delete — 刪除整個 note 檔
-        // ===========================================================
-        void Op_NoteDelete(Dictionary<string, string> args)
-        {
-            string roomId = GetArg(args, "room", "");
-            string key = GetArg(args, "key", "");
-            if (string.IsNullOrEmpty(roomId)) { RejectLastOp(args, "note_delete 缺少 room"); return; }
-            if (string.IsNullOrEmpty(key)) { RejectLastOp(args, "note_delete 缺少 key"); return; }
-            bool removed;
-            try
-            {
-                removed = UCL_ChatTavernIO.DeleteNote(roomId, key);
-            }
-            catch (Exception ex)
-            {
-                FailLastOp(args, $"note_delete 失敗：{ex.Message}");
-                return;
-            }
-            string path = UCL_ChatTavernIO.GetNotePath(roomId, key);
-            string md = removed
-                ? $"# 🗑 Note Deleted\n\n- room: `{roomId}`\n- key: `{key}`\n- path: `{ToRepoRelative(path)}`\n"
-                : $"# ⚠ Note Not Found\n\n- room: `{roomId}`\n- key: `{key}`\n";
-            UCL_ChatTavernRender.WriteLastOp(md, args, "tavern");
-            Debug.Log($"[Tavern] note_delete {roomId}/{key} → {(removed ? "removed" : "not found")}");
         }
 
         // ===========================================================

@@ -39,7 +39,7 @@ related:
 一條指令搞定「建房 + 補 trpg- 前綴 + mirror_kinds=chat + 註冊進 tavern_mirror watched rooms」，
 不必再手動加 watched rooms(舊 SOP §② 的實測痛點)。建完 ①仍請 `op=read` 驗房真的建成
 (post 對不存在房間 silent-fail — oneshot-01 血證)。行動即直推 Discord — 見 §三⑤。
-(通用房要同效果也可 `op=createroom --arg mirror=true`；mirror=false 反註冊):
+(通用房：`senate cmd channel --arg op=create --arg room=<id> --arg category=<分類>`（TASK-0328）—— Discord 轉發看**頻道分類**，⛔ 舊的 mirror 註冊已經沒有人讀):
 GM 敘事、行動宣言、擲骰結果(dice.py 自動同步)全在房內按時序排列 — **酒館房就是跑團桌**,
 events/ 只記「機制結果」(HP 增減/道具/flag),不重複記敘事全文。
 

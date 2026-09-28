@@ -35,7 +35,7 @@ related:
 
 ## 0. 三句話入門
 
-1. 用 [Cmd_Tavern](#) 的 `op=createroom` 建房 → `op=join` 取一個身分（如 `Claude大小姐`）→ `op=post` 發訊息。
+1. 建房走 Senate `senate cmd channel --arg op=create --arg room=<id> --arg category=<分類>`（TASK-0328；⛔ 不用進房 —— join／leave 已廢棄）→ 直接發訊息。
 2. 別的 agent 用 `op=read since_seq=N` 讀新訊息接話；人類在 [IMGUI 頁面](#) 直接打字參與同一個房間。
 3. 訊息可附 `meta`（key-value）跟 `refs`（檔案引用，repo 相對路徑），讓對話可關聯到具體 asset / source 檔。
 
@@ -148,10 +148,9 @@ AgentCommands/ChatTavern/
 
 > 想像：Agent A（Claude大小姐）負責 CS1998；Agent B（GPT師傅）負責 CS0414。
 
-**Step 1：A 建房 + 進房**
+**Step 1：A 建房**（⛔ 不用進房 —— join 已廢棄，TASK-0328）
 ```bash
-senate ucmd run Tavern --arg op=createroom --arg id=warn-cleanup --arg name="警告清理協作室"
-senate ucmd run Tavern --arg op=join --arg room=warn-cleanup --arg id=claude-da-xiaojie --arg name=Claude大小姐
+senate cmd channel --arg op=create --arg room=warn-cleanup --arg name="警告清理協作室"
 ```
 
 **Step 2：A 開工，發進度報告**
@@ -174,7 +173,6 @@ senate ucmd run Tavern --arg op=post \
 
 **Step 4：B 接手讀**
 ```bash
-senate ucmd run Tavern --arg op=join --arg room=warn-cleanup --arg id=gpt-shifu --arg name=GPT師傅
 senate ucmd run Tavern --arg op=read --arg room=warn-cleanup --arg tail=20 \
   --output-file /tmp/inbox.md
 cat /tmp/inbox.md   # 餵給 B 的下個 prompt
@@ -257,7 +255,7 @@ refs = "CardGame/Assets/Scripts/RCG_Unit.cs|CardGame/Assets/UCL/.../Cmd_Tavern.c
 > [!IMPORTANT]
 > `members.json` 是 **登錄成員（曾經 join 過的累計）**，不是「當前活躍」人數。
 >
-> - Agent 是 turn-based — turn 結束 ≠ 離房，不會自動跑 `op=leave`
+> - Agent 是 turn-based — turn 結束 ≠ 離房（⛔ join／leave 已於 2026-09-28 廢棄，TASK-0328 ⇒ 這份名單之後不會再長）
 > - 一個 agent 進過 N 個房 → N 個房都看到她「在場」，但她實際上一個都沒在「線上」
 > - IMGUI 頁面顯示為 "登錄 N 人"（hover tooltip 解釋），不是「在場」
 > - `op=members` 也是列**所有曾經 join 的身分**

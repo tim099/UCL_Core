@@ -97,14 +97,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public static string GetSeqPath(string roomId) => Path.Combine(GetRoomDir(roomId), SeqFile);
         public static string GetMembersPath(string roomId) => Path.Combine(GetRoomDir(roomId), MembersFile);
         public static string GetLastViewPath(string roomId) => Path.Combine(GetRoomDir(roomId), LastViewFile);
-        public static string GetNotesDir(string roomId) => Path.Combine(GetRoomDir(roomId), "notes");
-        public static string GetNotePath(string roomId, string key) => Path.Combine(GetNotesDir(roomId), $"{key}.md");
-        public static void EnsureNotesDir(string roomId)
-        {
-            string dir = GetNotesDir(roomId);
-            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-        }
-
         public static void EnsureTavernDir()
         {
             string dir = GetTavernDir();
@@ -492,116 +484,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊職責：Notes — per-room 共享筆記，每個 note 為一個 .md 檔
-        // 物理意義：notes/<key>.md 為 source-of-truth；frontmatter 4 欄（key/room/created_at/last_updated_at）
-        //          write 整個覆寫（last-write-wins）；append 純文字追加（OS 原子性）— 不動 frontmatter
-        // 數值影響：人類可直接 grep / 編輯 .md；agent 透過 ops 操作；走 [chat] 獨立 commit
+        // ⛔ Notes（per-room 留言本）已於 2026-09-28 整組移除（TASK-0328；Tim：「留言本目前其實好像廢棄了，應該也可以移除」）。
+        //    skill 沒有使用、全樹 7 本、最後一次寫入是 5 月。既有 `rooms/<room>/notes/*.md` 留作紀錄，⛔ 沒有刪資料。
         // ===========================================================
-
-        static readonly System.Text.RegularExpressions.Regex s_NoteKeyRegex
-            = new System.Text.RegularExpressions.Regex("^[a-zA-Z0-9_-]+$");
-
-        /// <summary>檢查 key 是否合法。違反 → throw 給 caller 處理。</summary>
-        public static void ValidateNoteKey(string key)
-        {
-            if (string.IsNullOrEmpty(key))
-                throw new ArgumentException("note key 不能為空");
-            if (!s_NoteKeyRegex.IsMatch(key))
-                throw new ArgumentException($"note key '{key}' 不合法 — 僅接受 [a-zA-Z0-9_-]");
-        }
-
-        /// <summary>整個覆寫 note（write 模式）— frontmatter 重新生成、last_updated_at 更新到當下。</summary>
-        public static void WriteNote(string roomId, string key, string body)
-        {
-            ValidateNoteKey(key);
-            EnsureNotesDir(roomId);
-            string path = GetNotePath(roomId, key);
-            string createdAt;
-            if (File.Exists(path))
-            {
-                createdAt = ExtractFrontmatterField(path, "created_at") ?? NowUtcIso();
-            }
-            else
-            {
-                createdAt = NowUtcIso();
-            }
-            string fm =
-                "---\n" +
-                $"key: {key}\n" +
-                $"room: {roomId}\n" +
-                $"created_at: {createdAt}\n" +
-                $"last_updated_at: {NowUtcIso()}\n" +
-                "---\n\n";
-            File.WriteAllText(path, fm + (body ?? ""), new UTF8Encoding(false));
-        }
-
-        /// <summary>純文字 append 模式 — File.AppendAllText 利用 OS 原子性；不更新 frontmatter。
-        /// body 前會自動加 "[@sender] " 行；若 note 不存在 → 自動以空 body 建立後再 append。</summary>
-        public static void AppendNote(string roomId, string key, string body, string sender)
-        {
-            ValidateNoteKey(key);
-            EnsureNotesDir(roomId);
-            string path = GetNotePath(roomId, key);
-            if (!File.Exists(path))
-            {
-                WriteNote(roomId, key, ""); // 先建立空 note 帶 frontmatter
-            }
-            string senderTag = string.IsNullOrEmpty(sender) ? "" : $"[@{sender}] ";
-            string toAppend = "\n" + senderTag + (body ?? "") + "\n";
-            File.AppendAllText(path, toAppend, new UTF8Encoding(false));
-        }
-
-        public static string ReadNote(string roomId, string key)
-        {
-            ValidateNoteKey(key);
-            string path = GetNotePath(roomId, key);
-            if (!File.Exists(path)) return null;
-            return File.ReadAllText(path, Encoding.UTF8);
-        }
-
-        public static List<string> ListNoteKeys(string roomId)
-        {
-            string dir = GetNotesDir(roomId);
-            var result = new List<string>();
-            if (!Directory.Exists(dir)) return result;
-            foreach (var p in Directory.GetFiles(dir, "*.md"))
-            {
-                string name = Path.GetFileNameWithoutExtension(p);
-                if (s_NoteKeyRegex.IsMatch(name)) result.Add(name);
-            }
-            result.Sort(StringComparer.OrdinalIgnoreCase);
-            return result;
-        }
-
-        public static bool DeleteNote(string roomId, string key)
-        {
-            ValidateNoteKey(key);
-            string path = GetNotePath(roomId, key);
-            if (!File.Exists(path)) return false;
-            File.Delete(path);
-            return true;
-        }
-
-        /// <summary>從 .md frontmatter 抓某個 key 的值（簡易解析；YAML 不依賴第三方）。失敗回 null。</summary>
-        static string ExtractFrontmatterField(string path, string field)
-        {
-            try
-            {
-                var lines = File.ReadAllLines(path, Encoding.UTF8);
-                if (lines.Length < 2 || lines[0].Trim() != "---") return null;
-                for (int i = 1; i < lines.Length; i++)
-                {
-                    string line = lines[i];
-                    if (line.Trim() == "---") break;
-                    int idx = line.IndexOf(':');
-                    if (idx <= 0) continue;
-                    string k = line.Substring(0, idx).Trim();
-                    if (k == field) return line.Substring(idx + 1).Trim();
-                }
-            }
-            catch { }
-            return null;
-        }
 
         // ===========================================================
         // 區塊職責：active waits（_active_waits.json）— fire-and-forget wait 全域追蹤

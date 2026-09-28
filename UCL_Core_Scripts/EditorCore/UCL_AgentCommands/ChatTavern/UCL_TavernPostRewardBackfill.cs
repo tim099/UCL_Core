@@ -13,7 +13,7 @@
 // 區塊職責：post_reward（發文 +1 token）的**事後補款** — 找出「當時該發而沒發」的訊息並補上。
 // 物理意義：這是**增發**不是轉帳（Tim 2026-08-06）—— 走 `Credit`，不從央行扣款，
 //          與現行發放路徑做的事完全相同，只是時間點在事後。
-// 數值影響：Plan 完全唯讀。Apply 每則 +1 token，account = sender，source_kind = "work_post"
+// 數值影響：Plan 完全唯讀。Apply 每則照發薪規劃那一項入帳（金額／帳號＝persona 的正式帳號），source_kind = "work_post"
 //          （沿用同一個 kind，歷史查詢才不會斷成兩半）。
 //
 // 為什麼需要它：2026-07-30 把判準由 `m_IsWorkChannel` 換成 `m_IsPaidPost`，但 asset 資料沒補上
@@ -23,8 +23,9 @@
 //
 // ⚠ 兩條命脈，缺一條這支就不能用：
 //
-// ① **判準必須與現行發放路徑同源。** 本檔呼叫 `SCP_TavernPayroll.IsPostRewardEligible()` 本人（TASK-0296 起發薪規則住 SCP_Core、寫入端規劃也呼叫它），
-//    不複製規則。自己抄一份的話，補出來的是「補款作者以為當時會發的」而不是當時真的會發的 ——
+// ① **判準必須與現行發放路徑同源。** 本檔呼叫 `SCP_TavernPayroll.Plan()` 本人（TASK-0296 起寫入端發薪就是跑它），
+//    帳號／金額／ref／冪等鍵全取自它規劃出的 work_post 那一項，不複製規則。
+//    🩸 TASK-0295 ② 之前這裡只呼叫 `IsPostRewardEligible`（規則 A 的一半）、其餘自己拼 —— 漏了 auto-broadcast 那道。自己抄一份的話，補出來的是「補款作者以為當時會發的」而不是當時真的會發的 ——
 //    而那種差異沒有人會發現：帳看起來是平的，只是平在錯的基準上。
 //
 // ② **冪等靠事實不靠旗標。** `UCL_TreasuryLedger` **沒有** idempotency 機制
@@ -286,39 +287,52 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         string category = "";
                         if (msg.meta != null) msg.meta.TryGetValue("category", out category);
 
-                        // ★ 判準走現行發放路徑的同一支函式，不複製規則
-                        if (!SCP.Core.Tavern.SCP_TavernPayroll.IsPostRewardEligible(UCL_AgentCommandsPath.ScpDataRoot.Value, msg.sender_id, category, out _, out string why))
-                        { Bump(r.SkipReasons, why); continue; }
-
-                        // 🔴 計酬帳號由 **persona** 決定，⛔ 不是 sender_id —— 判準與發放路徑同一條。
-                        //   🩸 2026-09-22（TASK-0274）量到這支還停在舊判準：拿 `sender_id` 當帳號正是
-                        //     2026-08-14 那隻（`--arg agent=Zeta` 在 `Zeta` 開了一個有錢沒主人的帳戶，
-                        //     實測 310 token）。⇒ 補款跑下去會把那個病**一次重演幾千則**。
-                        //   ⇒ 解析不到就跳過，跟發放路徑一樣**不開新孤兒**。
-                        var payee = Treasury.UCL_BankResolve.Resolve(msg.sender_persona ?? "");
-                        if (string.IsNullOrEmpty(msg.sender_persona) || payee.IsUnresolved)
-                        { Bump(r.SkipReasons, "persona 解析不到正式帳號"); continue; }
+                        // ★ 判準＝發放路徑**本人**：問 `SCP_TavernPayroll.Plan`（寫入端發薪真正跑的純函式）
+                        //   這則有沒有 work_post 項，帳號／金額／ref／冪等鍵全取自那一項。
+                        //   🩸 2026-09-28（TASK-0295 ②）：這裡原本只呼叫 `IsPostRewardEligible`，再自己解析帳號、
+                        //     寫死 `amount: 1`、自己拼冪等鍵 —— 等於把規則 A 抄了一份，而那份**漏了 `auto-broadcast`**
+                        //     （Plan 在資格判準之前就擋掉工具廣播；`Cmd_Books` 現在仍會發這種帖，全庫已有 9 則）
+                        //     ⇒ 發放路不付的，補款會付。⛔ 副本會在本尊改規則之後繼續照舊規則付錢。
+                        //   ⚠ 帳號仍由 **persona** 決定（Plan 內部同一條；TASK-0274 那隻 sender_id 當帳號的病不會回來）。
+                        var aPlan = SCP.Core.Tavern.SCP_TavernPayroll.Plan(
+                            UCL_AgentCommandsPath.ScpDataRoot.Value,
+                            new SCP.Core.Tavern.SCP_TavernPayInput
+                            {
+                                Room = roomId, Seq = seq, SenderId = msg.sender_id ?? "",
+                                SenderPersona = msg.sender_persona ?? "", Body = msg.body ?? "",
+                                Meta = msg.meta,
+                            });
+                        SCP.Core.Tavern.SCP_TavernPayItem item = aPlan.Items.Find(
+                            x => x.Kind == SCP.Core.Tavern.SCP_TavernPayroll.KindWorkPost);
+                        if (item == null)
+                        {
+                            // 不付的理由取規則 A 那一行（Warning 優先：判準讀不了／帳號解析不到 ⇒ 那是「量不到」不是「不付」）
+                            string why = aPlan.Warnings.Find(w => w.StartsWith("A：", StringComparison.Ordinal))
+                                         ?? aPlan.Notes.Find(n => n.StartsWith("A：", StringComparison.Ordinal))
+                                         ?? (aPlan.Notes.Count > 0 ? aPlan.Notes[0] : "(Plan 無理由)");
+                            Bump(r.SkipReasons, why);
+                            continue;
+                        }
 
                         r.Eligible++;
-                        Bump(r.ByAccount, payee.AccountId);
+                        Bump(r.ByAccount, item.Account);
 
                         if (apply)
                         {
                             try
                             {
                                 Treasury.UCL_TreasuryLedger.Credit(
-                                    accountId: payee.AccountId,
-                                    amount: 1,
+                                    accountId: item.Account,
+                                    amount: item.Amount,
                                     sourceKind: SourceKind,
-                                    sourceRef: sref,
+                                    sourceRef: item.Ref,
                                     description: $"post reward backfill: room={roomId} seq={seq} category="
                                                  + (string.IsNullOrEmpty(category) ? "(unset→default)" : category),
                                     callerAgentId: "system",
-                                    // 🔴 冪等鍵要跟發放路徑**逐字相同**（`work_post_<room>_<seq>`）——
-                                    //   ⛔ 舊版用 `backfill_` 前綴，那等於兩個寫入端各有一把不同的鍵
-                                    //   ⇒ 同一則訊息補款與常態發放**判不了重**，兩邊各付一次。
-                                    cmdId: $"work_post_{roomId}_{seq}",
-                                    idempotencyKey: $"work_post_{roomId}_{seq}");
+                                    // 🔴 冪等鍵與發放路徑**同一把**（取自 Plan 那一項）——
+                                    //   ⛔ 舊版用 `backfill_` 前綴，兩個寫入端各一把鍵 ⇒ 同一則判不了重，兩邊各付一次。
+                                    cmdId: item.CmdId,
+                                    idempotencyKey: item.IdemKey);
                                 r.Credited++;
                                 paid.Add(sref);      // 同一次執行內也不重複（防同房重掃）
                             }

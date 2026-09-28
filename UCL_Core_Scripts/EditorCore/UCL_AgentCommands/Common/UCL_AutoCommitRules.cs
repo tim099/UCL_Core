@@ -62,7 +62,9 @@ namespace UCL.Core.EditorLib.AgentCommands
             {
                 Key = "chat",
                 Label = "酒館訊息（[chat] 獨立 commit — 硬規則）",
-                Match = p => p.StartsWith("ChatTavern/rooms/"),
+                // ⚠ `rooms_archive/`（TASK-0318 封存 ＝ 整個房間資料夾搬過去）要跟 `rooms/` 同一群：
+                //   分兩群的話一次封存會拆成兩筆 commit（這邊刪、那邊加），git 就認不出那是一次搬家。
+                Match = p => p.StartsWith("ChatTavern/rooms/") || p.StartsWith("ChatTavern/rooms_archive/"),
                 Message = "[chat] sync tavern messages & inbox (auto)",
                 DefaultOn = true,
             },

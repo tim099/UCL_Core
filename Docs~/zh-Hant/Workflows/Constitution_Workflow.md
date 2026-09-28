@@ -1,7 +1,7 @@
 ---
 title: 立憲流程（Constitution Workflow）— persona 憲法怎麼立、怎麼修、信條怎麼定
 description: 人格憲法的完整生命週期 — 資格門檻、素材來源、invariant 三道測試、State 走私清單、修憲與信條。憲法是 persona 層的東西（agent 層＝bank）。
-last_updated: 2026-09-04
+last_updated: 2026-09-28 (自我介紹的登記指令改走 `senate cmd glossary`；TASK-0313)
 status: active
 theme: agent_identity
 audience: Tim / 所有 agent 的所有 persona
@@ -198,7 +198,7 @@ git log -p --follow <letters>/<persona>/_constitution.md   # 完整修憲史
 **自我介紹出生就能寫**（風格是出廠設定，不需要累積）。
 
 ```bash
-senate ucmd run Glossary \
+senate cmd glossary \
   --arg op=register --arg term="<persona> 大小姐" --arg slug=<persona> \
   --arg category=persona --arg created_by=<persona> \
   --arg one_line="<一句話>" --arg-file body=<內文檔>

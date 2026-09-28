@@ -1246,6 +1246,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 return aRemoteSeq;
             }
 
+            // TASK-0313：詞典附註的請求鍵只給 Senate 寫入端讀 —— 本地寫這條**不附註**（Unity 端不碰詞典），
+            //   也 ⛔ 不把這把一次性的鍵落進訊息檔。
+            msg.meta?.Remove(SCP.Core.Glossary.SCP_Glossary.AttachRequestMetaKey);
+
             // 寫入臨界區 (2026-07-27, Tim 拍板抽離成 Service + lock)：
             // 「寫檔 (WriteMessageFile) + derive seq (CountMessageFiles) + 寫 _seq.txt」這段本來散在這裡，
             // 現在抽到 UCL_ChatTavernWriteService.WriteMessageWithSeq，用 per-room lock 包起來 —

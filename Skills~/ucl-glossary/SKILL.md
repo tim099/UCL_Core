@@ -11,9 +11,23 @@ description: |
 
 > 一句話: **造詞不造向量 — 用詞時自動附帶解說**。
 
+## 唯一入口：`senate cmd glossary`（不需要 Unity Editor）
+
+```bash
+senate cmd glossary --arg op=register --arg term=<詞> --arg slug=<英文 slug> --arg one_line=<一句話> \
+    [--arg aliases=a,b] [--arg category=concept] [--arg-file body=<檔>] --arg persona=<你>
+senate cmd glossary --arg op=lookup --arg term=<詞／slug／alias>
+senate cmd glossary --arg op=detect --arg-file text=<檔>
+senate cmd glossary --arg op=list [--arg category=persona]
+```
+
+- ⛔ `ucmd run Glossary` **已退場**（TASK-0313，Tim 2026-09-28：Unity 端不碰詞典）。
+- 詞典根＝PathsPage 的 `glossaryRoot`（senate.local.json）——只有 Senate 讀它。
+- 酒館發文的附註**不用自己呼叫**：寫入端 `tavern-write` 會補（Editor 發的文也是），已附過的不重複。
+
 ## 必讀
 
-完整流程(儲存結構、Cmd_Glossary 五個 op 全表、Pre-share 詞條檢查 hard rule、register quality-bar、與其他 skill 協作、Phase 2 backlog) → `ucl_core:Docs~/zh-Hant/Workflows/Glossary_Workflow.md`
+完整流程(儲存結構、五個 op 全表、Pre-share 詞條檢查 hard rule、register quality-bar、與其他 skill 協作、Phase 2 backlog) → `ucl_core:Docs~/zh-Hant/Workflows/Glossary_Workflow.md`
 
 ## 🎯 為何需要 glossary 而非 vector offset
 

@@ -257,7 +257,7 @@ OneShot 成功 → wrapper 印「✓ Cmd disappeared from queue → Success」�
 
 `RejectLastOp` / `ResolveLastOp` **不在** `UCL_AgentCommandHandlerBase` — 假設繼承會撞 CS0103（basecamp 2026-05-11 撞過，ref `Errors_07_53_23.log` 15 條 CS0103 + Cmd_Glossary 早期版本）。
 
-**正解**：各 Cmd 自定義 internal static helper（對齊 Cmd_Tavern / Cmd_Treasury / Cmd_Glossary pattern）：
+**正解**：各 Cmd 自定義 internal static helper（對齊 Cmd_Tavern / Cmd_Treasury pattern）：
 
 ```csharp
 internal static class Cmd_<Name>_Helpers

@@ -805,47 +805,27 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 Debug.LogWarning($"[Tavern] avatar lookup 失敗 (post 不受影響): {ex.Message}");
             }
 
-            // ===========================================================
-            // Proposal #25 Phase 3 — Glossary auto-attach (write-time)
-            // 物理意義: body 含 glossary term → 末尾自動 append refs block;
-            //          跟 docs/Glossary/<slug>.md 對齊, 讓收訊端能直接點 link 跳解釋。
-            // 數值影響:
-            //   - 系統 sender (_ 開頭) skip — 避免 quest_system 廣播訊息被加噪
-            //   - meta key `glossary-auto-attach=false` opt-out — agent 可顯式關閉
-            //   - 命中 0 / body 已含 marker → 原樣返回 (idempotent)
-            // 安全性: helper 內已有 try-catch + fail-swallow, 此處再包一層雙重保險
-            // ===========================================================
             // CLI 指令判定（寫入層攔截，Tim 2026-08-20 拍板）——
-            // 物理意義: 這句話是給酒保 CLI 的**指令**而不是對話 ⇒ 在寫入端就打上 tag 讓後續流程分流：
-            //          glossary auto-attach 直接跳過（不是附掛後由讀取端剝除）。
+            // 物理意義: 這句話是給酒保 CLI 的**指令**而不是對話 ⇒ 打上 tag 讓後續流程分流（詞典附註也據此跳過）。
             // 🩸 2026-08-19 血證: `cmd msg kiara <訊息>` 提到 persona 名被附上整段新詞區塊，
             //          那段變成指令的一部分 ⇒ 群發把整本詞典打進對方輸入框並按 Enter。
-            //          讀取端的 StripAutoAttachedBlocks 仍保留（防舊訊息與其他附掛源），
-            //          但新訊息從這裡起就不再需要被擦。
             bool aIsCliCmd = false;
             try { aIsCliCmd = Bartender.UCL_BartenderCliService.LooksLikeCliCommand(body); }
             catch (Exception ex) { Debug.LogWarning($"[Tavern] CLI 指令判定失敗 (視同一般訊息): {ex.Message}"); }
 
-            try
-            {
-                bool autoAttachEnabled = !senderId.StartsWith("_") && !aIsCliCmd;
-                if (autoAttachEnabled && earlyMeta != null
-                    && earlyMeta.TryGetValue("glossary-auto-attach", out var aaVal)
-                    && aaVal != null && aaVal.ToLowerInvariant() == "false")
-                {
-                    autoAttachEnabled = false;
-                }
-                if (autoAttachEnabled)
-                {
-                    body = UCL.Core.EditorLib.AgentCommands.Glossary.Cmd_Glossary.AppendRefsToText(body, cap: 5);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Tavern] glossary auto-attach 失敗 (post 不受影響): {ex.Message}");
-            }
-
             var aMsgMeta = ParseMeta(metaStr);
+            // ===========================================================
+            // 詞典附註 —— **Unity 端不碰詞典**（TASK-0313，Tim 2026-09-28）。
+            // 物理意義: 本支只放一把一次性的請求鍵；寫入端 `senate cmd tavern-write` 看到它才補附註、補完拿掉它。
+            //          要不要附（系統 sender／CLI 指令／`glossary-auto-attach=false`）也由寫入端判 —— 它讀得到同一份 meta。
+            //          詞典根的唯一真相源在 Senate（senate.local.json），本支不知道詞典在哪。
+            // ⚠ 為什麼是「請求」而不是寫入端全附：本 Editor 還有 20 處直接 AppendMessage（酒保、Discord 進站、頁面…），
+            //   它們以前都不附 ⇒ 不帶鍵就維持原狀。
+            // ⚠ 代價：開關切回 Editor 本地寫（`tavern-writer --arg set=editor`）時**不會有附註**
+            //   （本地寫那條會把這把鍵剝掉，⛔ 不落進訊息檔）。
+            // ===========================================================
+            if (aMsgMeta == null) aMsgMeta = new Dictionary<string, string>();
+            aMsgMeta[SCP.Core.Glossary.SCP_Glossary.AttachRequestMetaKey] = "1";
             if (aIsCliCmd)
             {
                 // 判定為 CLI 指令 ⇒ 打上 tag 讓後續流程（mirror / catchup / 渲染 / 其他附掛）分流。

@@ -150,7 +150,6 @@ Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ExportDocsCatalog.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_FindAssetUsages.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_GetCompileErrors.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Glossary.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Invoke.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_KnowledgeBase.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_LoginStatus.md

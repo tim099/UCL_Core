@@ -1,9 +1,9 @@
 ---
 title: Neologism Glossary 工作流 (Glossary Workflow)
-last_updated: 2026-07-13
+last_updated: 2026-09-28 (入口遷到 `senate cmd glossary`、Editor `Cmd_Glossary` 退場、附註改由寫入端補；TASK-0313)
 status: active
 theme: agent_activity
-summary: 自造新詞 + 對應解釋 .md + auto-attach refs 的完整工作流 — 儲存結構、Cmd_Glossary 五個 op (register/lookup/detect/attach/list) 全表、Pre-share 詞條檢查 hard rule、register quality-bar、與其他 skill 協作對照、Phase 2 backlog。對齊「造詞不造向量」哲學。
+summary: 自造新詞 + 對應解釋 .md + auto-attach refs 的完整工作流 — 儲存結構、`senate cmd glossary` 五個 op (register/lookup/detect/attach/list) 全表、Pre-share 詞條檢查 hard rule、register quality-bar、與其他 skill 協作對照、Phase 2 backlog。對齊「造詞不造向量」哲學。
 audience: Tim / agent (Claude / Antigravity / Gemini / Zeta)
 canonical_term: Neologism Glossary
 related:
@@ -20,43 +20,47 @@ related:
 ## 儲存結構
 
 ```
-docs/Glossary/
+<詞典根>/               # PathsPage 的 glossaryRoot（senate.local.json）；auto ＝ <專案根>/Docs/Glossary
   README.md            # 機制說明 + frontmatter spec
-  <slug>.md            # 一詞一檔
+  <slug>.md            # 一詞一檔（子資料夾也掃，例：personas/<P>.md）
 ```
 
 frontmatter 必填: `term / slug / category / one_line`; 選填 `aliases / created_by / body`。
 
 詳見 `repo:docs/Glossary/README.md`。
 
-## Cmd_Glossary 五個 op
+> ⚠ **詞典根只有 Senate 讀**（Tim 2026-09-27 存 senate.local.json；2026-09-28「Unity 端不碰詞典」）。
+> Editor 的 `ucmd run Glossary` 已退場；實作只有一份：SCP_Core `SCP_Glossary`（TASK-0313）。
+
+## `senate cmd glossary` 五個 op（不需要 Unity Editor）
 
 ### 1. register — 新增詞
 
 ```bash
-senate ucmd run Glossary \
+senate cmd glossary \
   --arg op=register \
   --arg term="basecamp 大小姐" \
   --arg slug=basecamp \
   --arg "aliases=basecamp,Layer 0,basecamp persona" \
   --arg category=persona \
   --arg one_line="Layer 0 alive baseline persona..." \
-  --arg created_by=claude-da-xiaojie
+  --arg persona=basecamp            # 作者；或顯式 --arg created_by=<id>
 ```
 
-categories: `persona` / `concept` / `mechanism` / `tool` / `protocol`。
+categories: `persona` / `concept` / `mechanism` / `tool` / `protocol`。已存在要 `--arg overwrite=true`（寫回原位置，`created_at` 不變）。
+⚠ 新建一律寫在詞典根的根層；persona 條目慣例放 `personas/`，寫完手動搬（之後 overwrite 會寫回搬過去的位置）。
 
 ### 2. lookup — 查詞 (alias-aware)
 
 ```bash
-python ... run Glossary --arg op=lookup --arg term="basecamp"
-# → 回 canonical entry (term="basecamp 大小姐", slug=basecamp, etc.)
+senate cmd glossary --arg op=lookup --arg term="basecamp"
+# → 回 canonical entry (term="basecamp 大小姐", slug=basecamp, etc.)；查無 ⇒ exit 0、🔢 found = 0
 ```
 
 ### 3. detect — 掃文字命中
 
 ```bash
-python ... run Glossary --arg op=detect --arg text="本小姐 basecamp 標準 standby 中" --arg cap=10
+senate cmd glossary --arg op=detect --arg-file text=<檔> --arg cap=10
 ```
 
 回**命中清單**, longest-match-wins, dedupe by slug。
@@ -64,10 +68,10 @@ python ... run Glossary --arg op=detect --arg text="本小姐 basecamp 標準 st
 ### 4. attach — 自動 append refs block
 
 ```bash
-python ... run Glossary --arg op=attach --arg text="<response 文字>" --arg cap=5
+senate cmd glossary --arg op=attach --arg-file text=<檔> --arg out=<結果檔> --arg cap=5
 ```
 
-回**原 text + refs block 結尾 append**。命中 0 不 append。
+回**原 text + refs block 結尾 append**。命中 0 不 append。帶 `out` ⇒ 結果**逐位元組**寫進那個檔（要拿回原文的呼叫端用它，⛔ 別從 stdout 拼）。
 
 範例輸出:
 
@@ -85,8 +89,8 @@ python ... run Glossary --arg op=attach --arg text="<response 文字>" --arg cap
 ### 5. list — 列所有 entries
 
 ```bash
-python ... run Glossary --arg op=list                    # 全部
-python ... run Glossary --arg op=list --arg category=persona   # 篩
+senate cmd glossary --arg op=list                         # 全部
+senate cmd glossary --arg op=list --arg category=persona  # 篩
 ```
 
 ## Agent 自律 SOP
@@ -133,8 +137,9 @@ python ... run Glossary --arg op=list --arg category=persona   # 篩
 如果妳 response 內用了**自造詞** (basecamp / 今日子協議 / persona-ding etc.):
 
 1. **option A (主動 cite)**: 自己手動 cite `→ docs/Glossary/<slug>.md`
-2. **option B (走 Cmd_Glossary)**: 寫完 response 後跑 `op=attach --arg text=<response>` → 拿 attached 版本 → use that
-3. **option C (post 到酒館)**: `Cmd_Tavern.Op_Post` 已 wire auto-attach (Phase 3 ship 2026-05-12) — post 出去自動補 refs block, 不必手動 attach
+2. **option B (走 `senate cmd glossary`)**: 寫完 response 後跑 `op=attach --arg-file text=<response 檔> --arg out=<結果檔>` → 拿 attached 版本 → use that
+3. **option C (post 到酒館)**: 寫入端 `tavern-write` 會自動補 refs block（`senate cmd tavern-post` 與 Editor 的 `op=post` 都是），不必手動 attach。
+   ⚠ 只有**發文**會附：Editor 其他直接寫訊息的路（酒保回覆、Discord 進站…）刻意不附；開關切回 Editor 本地寫時也不附（TASK-0313）。
 
 option A 比較自然 (人類風), option B 自動化 (適合長 response / batch processing), option C 酒館內建零成本。
 
@@ -143,7 +148,7 @@ option A 比較自然 (人類風), option B 自動化 (適合長 response / batc
 → **立刻 register** (basecamp bedrock 自覺: codify 制度優先):
 
 ```bash
-python ... run Glossary --arg op=register --arg term=<new term> ...
+senate cmd glossary --arg op=register --arg term=<new term> --arg slug=<slug> --arg one_line=<一句話> ...
 ```
 
 → 寫 < 30 秒, 利己利他 (跨 agent 共享)。

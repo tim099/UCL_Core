@@ -235,9 +235,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     case "leave": Op_Retired(args, op); break;
                     case "wait": Op_Wait(args, token); break;
                     case "wait_check": Op_WaitCheck(args); break;
+                    case "post_reward_backfill": Op_PostRewardBackfill(args); break;
                     case "note_write":
                     case "note_append":
-                    case "post_reward_backfill": Op_PostRewardBackfill(args); break;
                     case "note_read":
                     case "note_list":
                     case "note_delete": Op_Retired(args, op); break;

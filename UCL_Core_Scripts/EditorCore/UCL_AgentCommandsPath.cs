@@ -1,7 +1,7 @@
 ﻿// 區塊職責：AgentCommands「資料根 (DataRoot)」的可配置解析點 — 控制台路徑設定的核心。
 // 物理意義：
 //   AgentCommands/ 底下同時住「持久狀態資料」(ChatTavern / Treasury / Bartender / _session /
-//   AwakenInit / Lessons / baton / Rules / AutoMessage) 跟「腳本 / RPC 管線」(Tools/*.py /
+//   AwakenInit / Lessons / baton / Rules) 跟「腳本 / RPC 管線」(Tools/*.py /
 //   PromptQueue/*.py / queue.json)。本類只負責**資料**那一半的根 (DataRoot) — 讓 Tim 能把
 //   資料搬到專案外 / 別處。腳本 + RPC queue 仍錨在 repo 的 canonical AgentCommands (走
 //   UCL_RepoPath.AgentCommandsDir),因為那是 code,不該跟著資料搬。

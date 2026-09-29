@@ -1,12 +1,12 @@
 ﻿// 區塊職責：解析 tavern 訊息 body 內的 inline bartender 指令 (跟 Cmd_Bartender 共用底層邏輯)
-// 物理意義：使用者不必跑 Cmd_Bartender RPC, 直接在酒館發言寫 [進行留言] / [進行時間規則] block
-//          → daemon 在 tick 內 parse + register trigger / time rule, 對齊 CMD 行為.
+// 物理意義：使用者不必跑 Cmd_Bartender RPC, 直接在酒館發言寫 [進行時間規則] / [help] / [查詢餘額] block
+//          → daemon 在 tick 內 parse + register time rule／回應, 對齊 CMD 行為.
+//          [進行留言]（關鍵字 trigger）已於 2026-09-29 廢棄：只留偵測，讓 daemon 回一則明確的拒絕。
 // 設計取捨：
 //   - 用 marker prefix (中括號) 明確區分 registration vs 一般 chat
 //   - key:value 解析寬鬆 — 支援 `=` / `:` / ` ` 三種 delimiter (對齊 Tim 自然語感)
-//   - 註冊訊息本身 skip keyword trigger match (control msg, 不是 data msg)
 //   - parse fail 不 throw — fail-safe log warning, 不擋 daemon 其他工作
-// 對齊 Cmd_Bartender 的 args 命名: creator / creator_name / targets / key / msg / tokens / room
+// 對齊 Cmd_Bartender 的 args 命名: id / time / msg / room
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -17,7 +17,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
     /// <summary>
     /// Tavern 訊息 body 內的 inline bartender 指令 parser.
     /// 支援的 marker (case-insensitive, 任一命中即視為 registration):
-    ///   [進行留言] / [留言] / [leave message] / [bartender add]   → keyword trigger
+    ///   [進行留言] / [留言] / [leave message] / [bartender add]   → 已廢棄（只偵測、回拒絕）
     ///   [進行時間規則] / [時間規則] / [time rule] / [bartender time]  → time rule
     /// </summary>
     public static class UCL_BartenderInlineParser
@@ -48,7 +48,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             "[help]", "[幫助]", "[酒保幫助]", "[酒館指令]", "[酒保服務]", "[?]", "[？]",
         };
 
-        public enum InlineCommandKind { None, AddTrigger, AddTimeRule, BalanceQuery, Help }
+        public enum InlineCommandKind { None, RetiredTrigger, AddTimeRule, BalanceQuery, Help }
 
         // 區塊職責：剝 markdown code span (單 backtick) 與 fenced code block (triple backtick)
         // 物理意義：QA bug fix (Zeta 報, 2026-05-13) — 使用者在 tavern 發說明文 / 教學 / share 時,
@@ -76,7 +76,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             string scanBody = StripCodeForMarkerScan(body);
             foreach (var m in TriggerMarkers)
                 if (scanBody.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return InlineCommandKind.AddTrigger;
+                    return InlineCommandKind.RetiredTrigger;
             foreach (var m in TimeRuleMarkers)
                 if (scanBody.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0)
                     return InlineCommandKind.AddTimeRule;
@@ -130,18 +130,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         //          msg 特例: 不止到 next key, 而是整個剩餘 (用戶可能 msg 內含逗號 / 換行)
         // 數值影響: 純 string parse, 無 IO 副作用
 
-        /// <summary>Trigger 解析結果 (對齊 UCL_BartenderTrigger 欄位).</summary>
-        public class TriggerSpec
-        {
-            public string keyword;
-            public string message;
-            public List<string> targets = new List<string>();
-            public int tokens = 1;
-            public string room = "tavern";
-            public bool valid;
-            public string error;
-        }
-
         /// <summary>TimeRule 解析結果.</summary>
         public class TimeRuleSpec
         {
@@ -154,54 +142,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         }
 
         // ===========================================================
-        // Public API — Parse trigger / time rule body
+        // Public API — Parse time rule body
         // ===========================================================
-
-        /// <summary>從 body 解析 trigger spec. body 該含 [進行留言] 或同義 marker.</summary>
-        public static TriggerSpec ParseTrigger(string body)
-        {
-            var spec = new TriggerSpec();
-            if (string.IsNullOrEmpty(body)) { spec.error = "empty body"; return spec; }
-
-            // 1. Strip marker (找到後從 marker 結尾繼續解析)
-            string content = StripMarker(body, TriggerMarkers);
-
-            // 2. 解析各 known key. 順序: 先抓 msg (剩餘吃光), 再抓其他 short keys.
-            // 為什麼 msg 先抓: 其他 key 都是短值, msg 是長值 — 先把 msg 摳出來避免污染.
-            string msg = ExtractValue(content, new[] { "msg", "message", "訊息", "內容" }, greedy: true);
-            spec.message = StripAutoAttachedBlocks((msg ?? "").Trim());
-
-            // 把 msg 從 content 摳掉再抓其他 key
-            string remaining = string.IsNullOrEmpty(msg) ? content : RemoveValueSegment(content, new[] { "msg", "message", "訊息", "內容" });
-
-            string keyword = ExtractValue(remaining, new[] { "key", "keyword", "關鍵字", "key word" });
-            spec.keyword = (keyword ?? "").Trim();
-
-            string targetsRaw = ExtractValue(remaining, new[] { "targets", "target", "目標", "對象" });
-            if (!string.IsNullOrEmpty(targetsRaw))
-            {
-                // 支援 "Zeta, crest-001" / "(Zeta, crest-001)" / "Zeta crest-001"
-                targetsRaw = targetsRaw.Trim().TrimStart('(').TrimEnd(')').Trim();
-                foreach (var t in Regex.Split(targetsRaw, @"[,\s]+"))
-                {
-                    string tt = t.Trim();
-                    if (!string.IsNullOrEmpty(tt)) spec.targets.Add(tt);
-                }
-            }
-
-            string tokensRaw = ExtractValue(remaining, new[] { "tokens", "token" });
-            if (!string.IsNullOrEmpty(tokensRaw) && int.TryParse(tokensRaw.Trim(), out int tk) && tk > 0)
-                spec.tokens = tk;
-
-            string room = ExtractValue(remaining, new[] { "room", "房間" });
-            if (!string.IsNullOrEmpty(room)) spec.room = room.Trim();
-
-            // 3. 驗證必填欄位
-            if (string.IsNullOrEmpty(spec.keyword)) { spec.error = "缺 key (關鍵字)"; return spec; }
-            if (string.IsNullOrEmpty(spec.message)) { spec.error = "缺 msg (留言內容)"; return spec; }
-            spec.valid = true;
-            return spec;
-        }
 
         /// <summary>從 body 解析 time rule spec. body 該含 [進行時間規則] 或同義 marker.</summary>
         public static TimeRuleSpec ParseTimeRule(string body)

@@ -1,9 +1,8 @@
-﻿// 區塊職責：酒保 (Bartender) 系統的資料模型 — Trigger / TimeRule / State
+﻿// 區塊職責：酒保 (Bartender) 系統的資料模型 — TimeRule / State / Assignment
 // 物理意義：酒保是駐留 Unity Editor 內的背景小程序, 監看 tavern 訊息 + 時間, 依規則自動發言.
-//          資料分三類:
-//            (1) UCL_BartenderTrigger — 留言觸發 (keyword-based, token-budgeted)
-//            (2) UCL_BartenderTimeRule — 時間規則 (HH:mm cron-lite, daily one-shot)
-//            (3) UCL_BartenderState — 跨 tick 狀態 (last_seen_seq + fired_today set)
+//          資料分兩類:
+//            (1) UCL_BartenderTimeRule — 時間規則 (HH:mm cron-lite, daily one-shot)
+//            (2) UCL_BartenderState — 跨 tick 狀態 (last_seen_seq + fired_today set)
 // 設計取捨：用 [Serializable] + JsonUtility, 不引入 Newtonsoft (對齊 UCL_ChatTavernIO 慣例).
 //          Dict 無法序列化 → fired_today 用 List<string> "YYYY-MM-DD::rule_id" key.
 //          ⚠ 例外：TimeRule 因為要存多型的 reminder_lines，改走 UCL.Core.JsonLib 的
@@ -18,54 +17,13 @@ using UnityEngine;
 namespace UCL.Core.EditorLib.AgentCommands.Bartender
 {
     /// <summary>
-    /// 留言觸發資料 — 留言者寫一條 "當 target 發言含 keyword 時, bartender 廣播 message".
-    /// 觸發次數由 token 預算決定 (1 token = 1 trigger), 耗盡自動移除.
-    /// </summary>
-    [Serializable]
-    public class UCL_BartenderTrigger : UnityJsonSerializable
-    {
-        /// <summary>uuid (8-hex) — 留言唯一識別.</summary>
-        public string id;
-
-        /// <summary>建立留言的 sender_id (e.g. "Zeta-da-xiaojie") — 用於 [{creator}的留言(N)] 顯示前綴.</summary>
-        public string creator_id;
-
-        /// <summary>display name (creator 對應的 sender_name, e.g. "Zeta大小姐"). 空 → 用 creator_id.</summary>
-        public string creator_name;
-
-        /// <summary>
-        /// 目標清單 — match 規則: 訊息的 sender_id / sender_name / sender_persona 任一含 substring (case-insensitive).
-        /// 空 list = match 任何 sender (廣域 trigger). 設計上鼓勵明確指定避免 noise.
-        /// </summary>
-        public List<string> targets = new List<string>();
-
-        /// <summary>觸發關鍵字 — case-insensitive substring match on message body.</summary>
-        public string keyword;
-
-        /// <summary>留言內容 — bartender 觸發時會以此為 body 發到 tavern (走 AppendMessage → 自動 Discord mirror).</summary>
-        public string message;
-
-        /// <summary>剩餘觸發次數 — 初始 = tokens (or default 1). 每 fire 一次 -1, 歸 0 移除.</summary>
-        public int remaining_triggers;
-
-        /// <summary>初始 token 預算 (用於 audit / display).</summary>
-        public int initial_tokens;
-
-        /// <summary>建立時間 (UTC ISO).</summary>
-        public string created_at;
-
-        /// <summary>目標 room id (空 = "tavern" 主廳).</summary>
-        public string target_room = "tavern";
-    }
-
-    /// <summary>
     /// 時間規則 — 每天指定 HH:mm 觸發一次, daily one-shot (state 內 fired_today key 防同日重觸).
     /// e.g. "23:50 廣播一則該睡覺的提醒".
     /// </summary>
     /// <remarks>
     /// 繼承 <see cref="UCL.Core.JsonLib.UnityJsonSerializable"/> —— 因為 reminder_lines 是多型清單，
     /// 需要走 UCL.Core.JsonLib 的 SaveFields/LoadField（會依 [SerializeReference] 存還原用的 ClassName）。
-    /// 本型別因此**不再**經 JsonUtility 存取；同檔其他 model（Trigger / State）維持原樣。
+    /// 本型別因此**不再**經 JsonUtility 存取；同檔其他 model（State）維持原樣。
     /// </remarks>
     [Serializable]
     public class UCL_BartenderTimeRule : UCL.Core.JsonLib.UnityJsonSerializable, UCLI_IsEnable, UCLI_ShortName
@@ -190,13 +148,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
     {
         public string room_id;
         public int last_seq;
-    }
-
-    /// <summary>triggers.json 頂層 container (List<T> 不能直接 serialize, 用 wrapper).</summary>
-    [Serializable]
-    public class UCL_BartenderTriggerList : UnityJsonSerializable
-    {
-        public List<UCL_BartenderTrigger> triggers = new List<UCL_BartenderTrigger>();
     }
 
     /// <summary>time_rules.json 頂層 container.</summary>

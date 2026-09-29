@@ -82,7 +82,7 @@ namespace UCL.Core.EditorLib.Page
         // 邊界：rooms 目錄由該 migration 走 `UCL_ChatTavernIO.GetRoomsRoot()` 解析，
         //      不寫死安裝路徑，跨專案可用（見 ucl-core-paths）。
         // ⚠ 執行前必須關閉聊天酒館系統總開關：改名進行中的窗口裡 seq 對應是錯亂的，
-        //   bartender 可能對舊訊息誤觸發 keyword trigger（會真的發文）。本區塊會擋（見下）。
+        //   bartender 可能把舊訊息當新訊息重跑 inline 指令／酒館 CLI（會真的發文、CLI 會真的動 Editor）。本區塊會擋（見下）。
         // ===========================================================
         string m_MigrateReport = "";
         Vector2 m_MigrateScroll;
@@ -117,7 +117,7 @@ namespace UCL.Core.EditorLib.Page
                         "🚫 <b>聊天酒館系統目前是開啟的 —— 已停用執行鈕。</b>\n"
                         + "　 改名會讓日期目錄 mtime 改變 → 檔案清單快取失效 → daemon 重新列舉，"
                         + "而<b>改名進行中</b>那個窗口的排序是半舊半新的，seq 對應會暫時錯亂：\n"
-                        + "　 bartender 可能對<b>舊訊息</b>誤觸發 keyword trigger（會真的發文到酒館）。\n"
+                        + "　 bartender 可能把<b>舊訊息</b>當新訊息重跑 inline 指令／酒館 CLI（會真的發文、CLI 會真的動 Editor）。\n"
                         + "　 請先到 <b>UCL_ControlPanelPage</b> 關閉酒館系統總開關。",
                         WrapLabelStyle);
                 }

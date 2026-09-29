@@ -28,11 +28,6 @@
       "optional": false
     },
     {
-      "name": "ucl-auto-message",
-      "summary": "Auto-Message Trigger (Proposal #26) — key 命中 input 自動 inject 預設訊息; 每 fire 1 token, per-session 防循環",
-      "optional": false
-    },
-    {
       "name": "ucl-canvas",
       "summary": "共用像素畫布 (wplace/r/place) — 2048² 全社群畫布, 1 token/繪畫券/自由時間免費像素 = 1 像素, 256 色 8-bit, append-only 事件流 + 自動 canvas_latest.png, 九 op (place/view/voucher/freetime/note/claim...). 工具 canvas.py 在 Tools~/AgentCommands/, state per-project AgentCommands/Canvas/.",
       "optional": false

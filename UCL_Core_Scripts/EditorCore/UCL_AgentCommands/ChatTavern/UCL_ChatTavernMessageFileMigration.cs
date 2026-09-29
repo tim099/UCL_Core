@@ -20,7 +20,7 @@
 // ⚠ 執行前必須關閉聊天酒館系統總開關（UCL_ControlPanelPage）。
 //   改名會動到日期目錄 mtime → 檔案清單快取失效 → daemon 重新列舉，
 //   而**改名進行中**那個窗口的排序是半舊半新的，seq 對應會暫時錯亂：
-//   bartender 可能對舊訊息誤觸發 keyword trigger（會真的發文）。
+//   bartender 可能把舊訊息當新訊息重跑 inline 指令／酒館 CLI（會真的發文、CLI 會真的動 Editor）。
 //   改完之後順序與 seq 完全不變，只有「進行中」有這個窗口。呼叫端（管理頁）負責擋。
 #if UNITY_EDITOR
 using System;

@@ -697,7 +697,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         // ===========================================================
         // 區塊職責：只讀「檔序位 > afterSeq 的訊息」— 增量游標讀取（cache-aware）
-        // 物理意義：daemon CheckKeywordTriggers / CheckWorkSessionStart 只關心游標後的新訊息,
+        // 物理意義：酒保 daemon 的 ScanNewMessages 只關心游標後的新訊息,
         //          舊訊息讀了也丟. 本 helper 只 read+parse 尾段 files[afterSeq..], 永不 cold-parse 歷史.
         //          → 即使 domain reload 後 cache 冷, 第一 tick 也只 parse「自游標起的新檔」(通常 0~少數).
         // 數值影響：seq = 檔序位 (i+1, 1-based), 與 Tail 一致; 共用 LoadAllMessages 同一 path-keyed cache.

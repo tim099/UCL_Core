@@ -25,17 +25,12 @@ namespace UCL.Core.EditorLib.Page
         const string DefaultRoom = "tavern";
         const string KeyDaemonFold = "BartenderDaemonFold";
         const string KeyTimeRulesFold = "BartenderTimeRulesFold";
-        const string KeyTriggersFold = "BartenderTriggersFold";
         const string KeyStateFold = "BartenderStateFold";
         const string KeyRemoteWindowFold = "BartenderRemoteWindowFold";
         const string KeyNotifyTraceFold = "BartenderNotifyTraceFold";
 
-        UCL_BartenderTriggerList m_Triggers = new UCL_BartenderTriggerList();
         UCL_BartenderTimeRuleList m_TimeRules = new UCL_BartenderTimeRuleList();
         UCL_BartenderState m_State = new UCL_BartenderState();
-        string m_NewTriggerKeyword = "";
-        string m_NewTriggerMessage = "";
-        int m_NewTriggerTokens = 1;
         UCL_ActualAgent m_RemoteTestAgent = UCL_ActualAgent.Codex;
         readonly UCL_ObjectDictionary m_RemoteTestAgentPopupDic = new UCL_ObjectDictionary();
         // 區塊職責：persona 測試列的暫存選擇；清單本身每次繪製都重讀 lock 檔，不快取「誰在線」。
@@ -79,10 +74,8 @@ namespace UCL.Core.EditorLib.Page
             if (UCL_RemotePersonaLocateConfig.Load(m_LocateOptions, out string savedPersona)
                 && !string.IsNullOrEmpty(savedPersona))
                 m_RemoteTestPersona = savedPersona;
-            m_Triggers = UCL_BartenderIO.LoadTriggers() ?? new UCL_BartenderTriggerList();
             m_TimeRules = UCL_BartenderIO.LoadTimeRules() ?? new UCL_BartenderTimeRuleList();
             m_State = UCL_BartenderIO.LoadState() ?? new UCL_BartenderState();
-            m_Triggers.triggers ??= new List<UCL_BartenderTrigger>();
             m_TimeRules.rules ??= new List<UCL_BartenderTimeRule>();
             m_State.room_last_seq ??= new List<UCL_BartenderRoomSeq>();
         }
@@ -108,8 +101,6 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Space(6);
                 DrawTimeRulesSection();
                 GUILayout.Space(6);
-                DrawTriggersSection();
-                GUILayout.Space(6);
                 DrawStateSection();
             }
         }
@@ -120,7 +111,7 @@ namespace UCL.Core.EditorLib.Page
         // 區塊職責：管理「酒館裡一句 `cmd …` 可以動 Editor」這條通道 —— 總開關、前綴、
         //          確認逾時，以及**誰可以觸發**。
         // 物理意義：白名單是這條通道唯一的授權層。它比對 sender_id / sender_name / sender_persona
-        //          的**任一全等**（忽略大小寫）—— 精確比對，不是 keyword trigger 那種 substring。
+        //          的**任一全等**（忽略大小寫）—— 精確比對，⛔ 不是 substring。
         //          ⚠ **空清單＝全部擋光**（不是全部放行）：空清單最可能的成因是檔案剛生成或被清掉，
         //            那時 fail-open 等於整條通道對所有人敞開。
         // 數值影響：只寫 `ChatTavern/bartender/cli_settings.json`；不動 llm_settings、不動 triggers。
@@ -281,7 +272,7 @@ namespace UCL.Core.EditorLib.Page
         // 酒保發言來源（罐頭 / 本機 LLM）
         // ===========================================================
         // 區塊職責：選酒保用什麼發言 —— 罐頭（預設）或某顆本機模型；以及模型在顯存待多久。
-        // 物理意義：罐頭＝trigger 裡寫死的 message，永遠可用、零成本、零顯存。
+        // 物理意義：罐頭＝設定裡寫好的固定句（`PickCanned`），永遠可用、零成本、零顯存。
         //          LLM＝同一個觸發改由模型生成一句。**罐頭仍是 fallback** ——
         //          服務沒開／逾時／輸出空，一律退回罐頭。⇒ 通道上永遠有話可講。
         // 數值影響：改設定會寫 `ChatTavern/bartender/llm_settings.json`（原子寫入，daemon 讀同一份）。
@@ -368,7 +359,7 @@ namespace UCL.Core.EditorLib.Page
                 if (m_LLM.IsCannedOnly)
                 {
                     EditorGUILayout.HelpBox(
-                        "目前是**罐頭回應**（預設）—— 行為與接 LLM 之前逐字相同：觸發時發 trigger 裡寫死的訊息。",
+                        "目前是**罐頭回應**（預設）—— 行為與接 LLM 之前逐字相同：被點名時從罐頭句裡挑一句發。",
                         MessageType.Info);
                 }
                 else
@@ -1260,47 +1251,6 @@ namespace UCL.Core.EditorLib.Page
                 {
                     if (rule == null) continue;
                     GUILayout.Label($"{(rule.enabled ? "●" : "○")} {rule.time_hhmm}  {rule.id} → {rule.target_room}  單次提醒", UCL_GUIStyle.LabelStyle);
-                }
-            }
-        }
-
-        void DrawTriggersSection()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                bool show;
-                using (new GUILayout.HorizontalScope())
-                {
-                    show = UCL_GUILayout.Toggle(m_FoldDic, KeyTriggersFold, 21, iDefaultValue: false);
-                    GUILayout.Label($"<b>💬 關鍵字留言（{m_Triggers.triggers.Count}）</b>", new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true }, GUILayout.ExpandWidth(false));
-                    GUILayout.FlexibleSpace();
-                }
-                if (!show) return;
-                string deleteId = null;
-                foreach (var trigger in m_Triggers.triggers)
-                {
-                    if (trigger == null) continue;
-                    using (new GUILayout.HorizontalScope())
-                    {
-                        GUILayout.Label($"{trigger.id}  {trigger.target_room}  關鍵字「{trigger.keyword}」 剩 {trigger.remaining_triggers}/{trigger.initial_tokens}", UCL_GUIStyle.LabelStyle);
-                        GUILayout.FlexibleSpace();
-                        if (GUILayout.Button("刪除", UCL_GUIStyle.GetButtonStyle(Color.red), GUILayout.ExpandWidth(false))) deleteId = trigger.id;
-                    }
-                    GUILayout.Label($"    {trigger.message}", new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true });
-                }
-                if (deleteId != null) { m_Triggers.triggers.RemoveAll(t => t != null && t.id == deleteId); UCL_BartenderIO.SaveTriggers(m_Triggers); }
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label("新增", UCL_GUIStyle.LabelStyle, GUILayout.Width(36));
-                    m_NewTriggerKeyword = GUILayout.TextField(m_NewTriggerKeyword, GUILayout.Width(130));
-                    m_NewTriggerMessage = GUILayout.TextField(m_NewTriggerMessage);
-                    m_NewTriggerTokens = Mathf.Max(1, EditorGUILayout.IntField(m_NewTriggerTokens, GUILayout.Width(45)));
-                    if (GUILayout.Button("新增留言", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 1f, 0.6f)), GUILayout.ExpandWidth(false))
-                        && !string.IsNullOrWhiteSpace(m_NewTriggerKeyword) && !string.IsNullOrWhiteSpace(m_NewTriggerMessage))
-                    {
-                        UCL_BartenderIO.RegisterTrigger("admin", "Admin", new List<string>(), m_NewTriggerKeyword.Trim(), m_NewTriggerMessage.Trim(), m_NewTriggerTokens, DefaultRoom);
-                        Reload();
-                    }
                 }
             }
         }

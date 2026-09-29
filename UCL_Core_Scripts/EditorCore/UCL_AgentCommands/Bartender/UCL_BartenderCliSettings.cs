@@ -5,9 +5,8 @@
 //          指令的實際效果由 UCL_BartenderCliService 的 handler 決定。
 //
 // 設計取捨：
-//   · **授權比對一律精確（case-insensitive 全等），不沿用 keyword trigger 的 liberal substring。**
-//     那邊用 substring 是刻意的（`IsTargetMatch` 讓 "Zeta" 同時命中 sender_id 與 name）——
-//     猜錯的代價只是多發一則罐頭。這裡猜錯的代價是**把遙控權給錯人**：
+//   · **授權比對一律精確（case-insensitive 全等），⛔ 不用 substring。**
+//     這裡猜錯的代價是**把遙控權給錯人**：
 //     substring 之下白名單填 `Tim` 會連 `Tim2` / `not-Tim` 一起放行，而它不會報錯。
 //   · 白名單比對三個欄位（sender_id / sender_name / sender_persona）的**任一個全等**即通過 ——
 //     因為同一個真人在不同路徑進來時填的是不同欄位（Discord 鏡像填 sender_id、

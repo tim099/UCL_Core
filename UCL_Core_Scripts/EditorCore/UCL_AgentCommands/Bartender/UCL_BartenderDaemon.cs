@@ -44,7 +44,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         public static bool Initialized { get; private set; } = false;
         static double s_LastCheckTime = 0;
         const string TickStateIdle = "Idle";
-        const string TickStateCheckKeywordTriggers = nameof(CheckKeywordTriggers);
+        const string TickStateScanNewMessages = nameof(ScanNewMessages);
         const string TickStateCheckTimeRules = nameof(CheckTimeRules);
 
         // ===========================================================
@@ -237,8 +237,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
 
         static void TickInternal()
         {
-            // 區塊職責：tick 兩件事 — (1) keyword triggers (2) time rules
-            // 物理意義：先掃 message triggers (新訊息驅動), 再掃 time rules (時鐘驅動)
+            // 區塊職責：tick 兩件事 — (1) 掃新訊息 (2) time rules
+            // 物理意義：先掃主廳新訊息 (inline marker／酒館 CLI／@酒保), 再掃 time rules (時鐘驅動)
             //          兩條獨立 IO + 獨立 state 欄位 (room_last_seq / fired_today_keys)
             // 註 (2026-09-28, TASK-0315): 每日結算（結帳／保管費／轉券／匯率）的**觸發**已搬到 Senate Server
             //                 （`SenateOvernightJob`，Editor 沒開也照跑）⇒ 本 daemon 不再判跨日。
@@ -252,9 +252,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             s_Profiler = profiler;
             try
             {
-                UCL_BartenderIO.WriteTickState(TickStateCheckKeywordTriggers);
-                CheckKeywordTriggers();
-                profiler.Mark(TickStateCheckKeywordTriggers);
+                UCL_BartenderIO.WriteTickState(TickStateScanNewMessages);
+                ScanNewMessages();
+                profiler.Mark(TickStateScanNewMessages);
 
                 UCL_BartenderIO.WriteTickState(TickStateCheckTimeRules);
                 CheckTimeRules();
@@ -291,157 +291,87 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         // ===========================================================
 
         // ===========================================================
-        // 區塊：keyword trigger 掃描
-        // 物理意義：load triggers.json → 對每 trigger 的 target_room 掃 last_seq 之後的新訊息
-        //          每筆新訊息 vs 每個 trigger 比對 (sender match + keyword match + 非自家訊息)
-        //          命中 → fire (post bartender 訊息) + decrement remaining + 推進 last_seen
-        //          remaining 歸 0 → 移除 trigger
+        // 區塊：主廳新訊息掃描
+        // 物理意義：讀 `tavern` 房 last_seq 之後的新訊息，每筆依序判一種處理：
+        //          inline marker（[進行時間規則]／[help]／[查詢餘額]）→ 酒館 CLI（`cmd …`）→ `@酒保`。
+        //          三者都不是 ⇒ 不處理，只推進游標。
+        // 註 (2026-09-29, Tim 拍板)：關鍵字留言 trigger 已廢棄 —— 本函式原名 CheckKeywordTriggers，
+        //          當時會依 trigger 的 target_room 多掃幾房；trigger 拿掉之後只剩主廳要掃。
         // ===========================================================
-        static void CheckKeywordTriggers()
+        static void ScanNewMessages()
         {
-            // Bug fix (Tim QA 2026-05-12 inline parse 撞到): 不能在 trigger list 空時 early return —
-            // inline registration ([進行留言] / [進行時間規則]) 需在沒任何 trigger 時也能掃描.
-            // 改 contract: 永遠掃新訊息 (推進 last_seq + inline parse); 有 trigger 才跑 keyword match.
-            var triggerList = UCL_BartenderIO.LoadTriggers();
-            if (triggerList == null) triggerList = new UCL_BartenderTriggerList();
-            if (triggerList.triggers == null) triggerList.triggers = new List<UCL_BartenderTrigger>();
-
+            const string roomId = "tavern";
             var state = UCL_BartenderIO.LoadState();
-            bool stateDirty = false;
-            bool triggersDirty = false;
-            // 2026-07-28: Discord 鏡像改由 UCL_DiscordMirrorDaemon poll，寫入端不再觸發任何 spawn
-            //   → 原「tick 內抑制 mirror、tick 末批次 spawn 一次」的協調機制連同 python 路徑一起移除。
-
-            // 把 trigger 按 target_room group 起來, 同 room 只 load 一次訊息
-            var byRoom = new Dictionary<string, List<UCL_BartenderTrigger>>();
-            foreach (var t in triggerList.triggers)
-            {
-                if (t == null || t.remaining_triggers <= 0) continue;
-                string room = string.IsNullOrEmpty(t.target_room) ? "tavern" : t.target_room;
-                if (!byRoom.ContainsKey(room)) byRoom[room] = new List<UCL_BartenderTrigger>();
-                byRoom[room].Add(t);
-            }
-            // 保證 'tavern' 主廳永遠被掃 (給 inline registration parse 用, 即使無任何 trigger)
-            if (!byRoom.ContainsKey("tavern")) byRoom["tavern"] = new List<UCL_BartenderTrigger>();
 
             // 進度可視化門檻 (2026-07-26) — 只有「新訊息數夠多」才顯示進度條, 避免每 5s 空轉 tick
             // 也跳窗口洗畫面. 門檻抓 20: 正常單筆 post 觸發的 tick 遠低於此, 只有 domain-reload /
             // Editor 閒置很久後第一次 tick 面對大量新訊息時才會觸發.
             const int progressThreshold = 20;
-            bool userCancelledScan = false;
 
-            foreach (var kv in byRoom)
+            // 確認 room 存在 — 不存在跳過 (避免 IO error)
+            if (UCL_ChatTavernIO.GetRoom(roomId) == null) return;
+
+            int lastSeq = UCL_BartenderIO.GetLastSeq(state, roomId);
+            // 只讀游標後的新訊息 (perf cache follow-up #1) — 不再全讀整房再跳過舊的.
+            // msg.seq = 檔序位 (1-based), helper 已保證只回 > lastSeq 者.
+            var newMsgs = UCL_ChatTavernIO.LoadMessagesAfterSeq(roomId, lastSeq);
+            if (newMsgs == null || newMsgs.Count == 0) return;
+
+            bool showProgress = newMsgs.Count >= progressThreshold;
+            int total = newMsgs.Count;
+
+            int maxSeq = lastSeq;
+            for (int i = 0; i < newMsgs.Count; i++)
             {
-                if (userCancelledScan) break;
+                var msg = newMsgs[i];
+                if (msg == null) continue;
+                if (msg.seq > maxSeq) maxSeq = msg.seq;
 
-                string roomId = kv.Key;
-                var roomTriggers = kv.Value;
+                // 防回音 — bartender 自家訊息 (sender / meta tag) 不參與處理
+                if (IsBartenderOwnMessage(msg)) continue;
 
-                // 確認 room 存在 — 不存在跳過 (避免 IO error)
-                var room = UCL_ChatTavernIO.GetRoom(roomId);
-                if (room == null) continue;
-
-                int lastSeq = UCL_BartenderIO.GetLastSeq(state, roomId);
-                // 只讀游標後的新訊息 (perf cache follow-up #1) — 不再全讀整房再跳過舊的.
-                // msg.seq = 檔序位 (1-based), helper 已保證只回 > lastSeq 者.
-                var newMsgs = UCL_ChatTavernIO.LoadMessagesAfterSeq(roomId, lastSeq);
-                if (newMsgs == null || newMsgs.Count == 0) continue;
-
-                bool showProgress = newMsgs.Count >= progressThreshold;
-                int total = newMsgs.Count;
-
-                int maxSeq = lastSeq;
-                for (int i = 0; i < newMsgs.Count; i++)
+                // Inline marker — 含 [進行時間規則] / [help] / [查詢餘額] 等 marker 的訊息視為 control message
+                var kind = UCL_BartenderInlineParser.DetectKind(msg.body);
+                if (kind != UCL_BartenderInlineParser.InlineCommandKind.None)
                 {
-                    var msg = newMsgs[i];
-                    if (msg == null) continue;
-                    int effectiveSeq = msg.seq;
-                    if (effectiveSeq > maxSeq) maxSeq = effectiveSeq;
-
-                    // 防回音 — bartender 自家訊息 (sender / meta tag) 不參與 match
-                    if (IsBartenderOwnMessage(msg)) continue;
-
-                    // Inline registration 偵測 — 含 [進行留言] / [進行時間規則] 等 marker 的訊息
-                    // 視為 "control message", 走 inline parse 註冊 + post 確認, 跳過 keyword match
-                    // (避免 registration body 內含 keyword 自觸發新註冊的 trigger)
-                    var kind = UCL_BartenderInlineParser.DetectKind(msg.body);
-                    if (kind != UCL_BartenderInlineParser.InlineCommandKind.None)
-                    {
-                        bool registered = HandleInlineRegistration(kind, msg, roomId);
-                        // 註冊訊息本身不參與 keyword trigger match (control msg)
-                    }
-                    else if (UCL_BartenderCliService.IsCliMessage(msg, out var cliSettings))
-                    {
-                        // 區塊職責：酒館 CLI（`cmd …`）與它的 Y／N 確認回覆。
-                        // 物理意義：這是第四種發言來源，也是**唯一會改變 Editor 狀態**的一種
-                        //          （前三種只是發話）。所以它自己帶三道關卡：總開關／白名單／二次確認。
-                        // ⚠ 排在 mention 與 keyword trigger **之前**：一則訊息一種處理。
-                        //   排在後面的話 `cmd remote-window on` 這句會同時被 keyword 比對到，
-                        //   於是一個指令換來兩則發言，而看起來像 bug。
-                        // ⚠ 確認回覆（使用者只打 `y`）**不以 prefix 開頭** ⇒ IsCliMessage 收整個 msg，
-                        //   要靠發話者 ＋ 落磁碟的 pending 才判得出來；只看 body 字首會漏掉它。
-                        UCL_BartenderCliService.Handle(msg, roomId, cliSettings);
-                    }
-                    else if (UCL_BartenderMentionService.IsMention(msg.body))
-                    {
-                        // 區塊職責：`@酒保` 被點名 → 交給 mention service（async，不在 tick 裡等）。
-                        // 物理意義：這是第三種發言來源（前兩種是 keyword trigger 與 time rule），
-                        //          而它沒有 trigger 的預算上限、也沒有 time rule 的每日一次，
-                        //          所以節流長在 service 裡（冷卻 ＋ 每日上限 ＋ 已回 seq 落磁碟）。
-                        // ⚠ 點名訊息**不再參與 keyword trigger 比對** —— 一則訊息一種處理，
-                        //   否則同一句話會同時觸發罐頭 trigger 與 mention 回話（兩則發言、看起來像 bug）。
-                        // ⚠ 生成期間 service 自己有 s_Running 閘：tick 每 5s 一次而生成可能數十秒，
-                        //   沒有那道閘會疊起來（顯存與訊息都會爆）。
-                        UCL_BartenderMentionService.HandleMentionAsync(msg, roomId);
-                    }
-                    else
-                    {
-                        // 跑所有 trigger 比對
-                        foreach (var t in roomTriggers)
-                        {
-                            if (t.remaining_triggers <= 0) continue;
-                            if (!IsTargetMatch(msg, t.targets)) continue;
-                            if (!IsKeywordMatch(msg.body, t.keyword)) continue;
-
-                            // 命中 — fire bartender 訊息 (跳過內部 mirror, tick 末批次處理)
-                            FireTrigger(t, msg, roomId);
-                            t.remaining_triggers -= 1;
-                            triggersDirty = true;
-                        }
-                    }
-
-                    // 本筆已完整處理（maxSeq 已含這筆）— 這裡才安全 break, 不會漏處理半筆訊息.
-                    if (showProgress)
-                    {
-                        if (ShowCancelableProgress(
-                                "酒保 — 掃描酒館訊息",
-                                $"房間 '{roomId}': 第 {i + 1}/{total} 筆 (累積 lastSeq→{maxSeq})…",
-                                (float)(i + 1) / total))
-                        {
-                            userCancelledScan = true;
-                            Debug.Log($"[Bartender] 使用者取消訊息掃描 — 房間 '{roomId}' 只處理到第 {i + 1}/{total} 筆, " +
-                                      $"游標仍推進到 seq={maxSeq}（未處理的訊息下個 tick 會繼續, 不會被跳過）。");
-                            break;
-                        }
-                    }
+                    HandleInlineRegistration(kind, msg, roomId);
+                }
+                else if (UCL_BartenderCliService.IsCliMessage(msg, out var cliSettings))
+                {
+                    // 區塊職責：酒館 CLI（`cmd …`）與它的 Y／N 確認回覆。
+                    // 物理意義：這是**唯一會改變 Editor 狀態**的一種發言來源，
+                    //          所以它自己帶三道關卡：總開關／白名單／二次確認。
+                    // ⚠ 排在 mention **之前**：一則訊息一種處理。
+                    // ⚠ 確認回覆（使用者只打 `y`）**不以 prefix 開頭** ⇒ IsCliMessage 收整個 msg，
+                    //   要靠發話者 ＋ 落磁碟的 pending 才判得出來；只看 body 字首會漏掉它。
+                    UCL_BartenderCliService.Handle(msg, roomId, cliSettings);
+                }
+                else if (UCL_BartenderMentionService.IsMention(msg.body))
+                {
+                    // 區塊職責：`@酒保` 被點名 → 交給 mention service（async，不在 tick 裡等）。
+                    // 物理意義：節流長在 service 裡（冷卻 ＋ 每日上限 ＋ 已回 seq 落磁碟）。
+                    // ⚠ 生成期間 service 自己有 s_Running 閘：tick 每 5s 一次而生成可能數十秒，
+                    //   沒有那道閘會疊起來（顯存與訊息都會爆）。
+                    UCL_BartenderMentionService.HandleMentionAsync(msg, roomId);
                 }
 
-                if (maxSeq > lastSeq)
+                // 本筆已完整處理（maxSeq 已含這筆）— 這裡才安全 break, 不會漏處理半筆訊息.
+                if (showProgress && ShowCancelableProgress(
+                        "酒保 — 掃描酒館訊息",
+                        $"房間 '{roomId}': 第 {i + 1}/{total} 筆 (累積 lastSeq→{maxSeq})…",
+                        (float)(i + 1) / total))
                 {
-                    UCL_BartenderIO.SetLastSeq(state, roomId, maxSeq);
-                    stateDirty = true;
+                    Debug.Log($"[Bartender] 使用者取消訊息掃描 — 房間 '{roomId}' 只處理到第 {i + 1}/{total} 筆, " +
+                              $"游標仍推進到 seq={maxSeq}（未處理的訊息下個 tick 會繼續, 不會被跳過）。");
+                    break;
                 }
-
-                if (userCancelledScan) break;
             }
 
-            // 移除 remaining=0 的 trigger
-            int removed = triggerList.triggers.RemoveAll(t => t == null || t.remaining_triggers <= 0);
-            if (removed > 0) triggersDirty = true;
-
-            if (triggersDirty) UCL_BartenderIO.SaveTriggers(triggerList);
-            if (stateDirty) UCL_BartenderIO.SaveState(state);
-
+            if (maxSeq > lastSeq)
+            {
+                UCL_BartenderIO.SetLastSeq(state, roomId, maxSeq);
+                UCL_BartenderIO.SaveState(state);
+            }
         }
 
         // ===========================================================
@@ -456,39 +386,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         }
 
         // ===========================================================
-        // Target match — targets 空 = match 任何人; 非空 = OR substring against sender_id/name/persona
-        // 物理意義：Tim 提案 "對象基於 Persona" 但 sender_id 跟 persona 在 schema 不同, 用 liberal OR
-        //          這樣 "Zeta" 同時 match sender_id="Zeta-da-xiaojie" + persona="summit" (name) etc.
-        // ===========================================================
-        static bool IsTargetMatch(UCL_ChatMessage msg, List<string> targets)
-        {
-            if (targets == null || targets.Count == 0) return true;  // 廣域
-            foreach (var t in targets)
-            {
-                if (string.IsNullOrEmpty(t)) continue;
-                if (ContainsCI(msg.sender_id, t)) return true;
-                if (ContainsCI(msg.sender_name, t)) return true;
-                if (ContainsCI(msg.sender_persona, t)) return true;
-            }
-            return false;
-        }
-
-        static bool IsKeywordMatch(string body, string keyword)
-        {
-            if (string.IsNullOrEmpty(keyword)) return false;
-            return ContainsCI(body, keyword);
-        }
-
-        static bool ContainsCI(string haystack, string needle)
-        {
-            if (string.IsNullOrEmpty(haystack) || string.IsNullOrEmpty(needle)) return false;
-            return haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        // ===========================================================
-        // 區塊：Inline registration handler — 解析 [進行留言] / [進行時間規則] marker → register
+        // 區塊：Inline marker handler — 解析 [進行時間規則] / [help] / [查詢餘額] marker
         // 物理意義：使用者在 tavern 直接發 control msg, daemon 解析後走跟 Cmd_Bartender 同 IO 層,
-        //          register 完發 bartender 確認回應 (跟 fire trigger 同路徑).
+        //          處理完發 bartender 確認回應.
         // 數值影響：register 成功才 return true
         // ===========================================================
         static bool HandleInlineRegistration(
@@ -498,29 +398,13 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
             string creator = msg.sender_id ?? "";
             string creatorName = string.IsNullOrEmpty(msg.sender_name) ? creator : msg.sender_name;
 
-            if (kind == UCL_BartenderInlineParser.InlineCommandKind.AddTrigger)
+            if (kind == UCL_BartenderInlineParser.InlineCommandKind.RetiredTrigger)
             {
-                var spec = UCL_BartenderInlineParser.ParseTrigger(msg.body);
-                if (!spec.valid)
-                {
-                    PostBartenderConfirm(roomId,
-                        $"❌ **inline 留言註冊失敗** (來自 {creatorName})\n\n錯誤: {spec.error}\n\n" +
-                        "格式: `[進行留言] key=<關鍵字> msg=<內容> targets=<逗號分隔> tokens=<int>`",
-                        new Dictionary<string, string> { { "subtag", "inline-register-fail" } });
-                    return true;
-                }
-                string id = UCL_BartenderIO.RegisterTrigger(
-                    creator, creatorName, spec.targets, spec.keyword, spec.message,
-                    spec.tokens, string.IsNullOrEmpty(spec.room) ? roomId : spec.room);
-                string targetsDisp = (spec.targets == null || spec.targets.Count == 0) ? "(任何人)" : string.Join(",", spec.targets);
+                // [進行留言] 關鍵字 trigger 已廢棄（Tim 2026-09-29）—— 回一則明確的拒絕，⛔ 不靜默吞掉：
+                //   不回的話發話者看到的是「酒保沒反應」，跟「酒保掛了」長得一樣。
                 PostBartenderConfirm(roomId,
-                    $"✅ **inline 留言已註冊** by {creatorName}\n\n" +
-                    $"- id: `{id}`\n- key: `{spec.keyword}`\n- targets: {targetsDisp}\n" +
-                    $"- tokens: {spec.tokens} (= 觸發 {spec.tokens} 次)\n- msg: {Truncate(spec.message, 100)}",
-                    new Dictionary<string, string> {
-                        { "subtag", "inline-register-ok" },
-                        { "trigger_id", id }, { "trigger_creator", creator },
-                    });
+                    $"⛔ **[進行留言] 已廢棄**（來自 {creatorName}）—— 關鍵字留言 trigger 於 2026-09-29 移除，這則沒有註冊任何東西。",
+                    new Dictionary<string, string> { { "subtag", "inline-register-retired" } });
                 return true;
             }
 
@@ -710,37 +594,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
                 err = $"餘額查詢失敗: {e.Message}";
                 return null;
             }
-        }
-
-        // ===========================================================
-        // Fire trigger — post 留言內容到 tavern (走 AppendMessage 自動 Discord mirror)
-        // ===========================================================
-        static void FireTrigger(UCL_BartenderTrigger t, UCL_ChatMessage triggeringMsg, string roomId)
-        {
-            // 顯示格式: [{creator}的留言({N})] {message}
-            // N = remaining_triggers 包含本次 (即 fire 前的 count)
-            string creatorDisplay = string.IsNullOrEmpty(t.creator_name) ? t.creator_id : t.creator_name;
-            string body = $"[{creatorDisplay}的留言({t.remaining_triggers})] {t.message}";
-
-            var msg = new UCL_ChatMessage
-            {
-                sender_id = TavernKeeperId,
-                sender_name = "酒保",
-                kind = "chat",
-                body = body,
-                meta = new Dictionary<string, string>
-                {
-                    { "tag", BartenderRelayTag },
-                    { "trigger_id", t.id ?? "" },
-                    { "trigger_creator", t.creator_id ?? "" },
-                    { "trigger_keyword", t.keyword ?? "" },
-                    { "triggered_by_seq", triggeringMsg.seq.ToString() },
-                    { "triggered_by_sender", triggeringMsg.sender_id ?? "" },
-                    { "remaining_after_fire", (t.remaining_triggers - 1).ToString() },
-                },
-            };
-
-            UCL_ChatTavernIO.AppendMessage(roomId, msg);
         }
 
         // ===========================================================

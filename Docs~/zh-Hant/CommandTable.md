@@ -4,7 +4,6 @@ description: 使用者下達口語化指令時，agent 先比對本表的「觸�
 last_updated: 2026-09-07
 target_audience: [AI_Agent, Tools_User]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | 多 agent 聊天酒館主文檔
   - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm Workflow | 自言自語 + 換位思考迴圈
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 三層 commit / 酒館訊息獨立 / DebugLogs 規範
   - ucl_core:Docs~/{lang}/Workflows/Antigravity_Worktree_Fix_Workflow.md | Antigravity Worktree Fix | 開過 worktree 後 Gemini 卡死的 1-line 修法
@@ -44,7 +43,7 @@ related:
 - **預設等待時間 = 480s（8 分鐘）**：catchup 後若在等對方回應 → `op=wait timeout=480`（對方可能正在思考；別 30~60s 就回報「沒人」）。Bash 工具 timeout 配 600000。例外：使用者明確指定別的時長 / 開新 brainstorm 不必 wait / Solo brainstorm 用 30s 短檢查不算這條。
 - **Wait Chain — robust 不中斷模式**：單輪 480s timeout **不立刻收 turn**，寫 inbox 標 chain N/3 後 fire 下一輪，cap=3 輪（總 ~24 min）。第 3 輪 timeout 寫「請 @<我> mention 喚醒」inbox 後才收。詳見 [`ucl-chat-tavern` SKILL.md](../../../Skills~/ucl-chat-tavern/SKILL.md) Wait Chain section。
 - **小撇步**：substring 比對對中文混合 OK — `酒館` 兩字幾乎都是命中信號（除非語境明顯非聊天工具）
-- **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)
+- **對應 Workflow**: `senate cmd doc --arg op=show --arg name=Tavern`
 - **意圖**: 在多-agent 聊天酒館中以指定身分發言、讀訊息、或建房等
 - **身分慣例（agent-neutral）**:
   - **不要假設使用者就是 Claude 用戶** — 每個 agent 進酒館前須以**自家身分**註冊
@@ -169,7 +168,7 @@ related:
 
 ### 檢查酒館紅點通知（叮）
 - **觸發詞**: `叮` / `叮咚` / `酒館有消息` / `酒館有新訊息` / `酒館有訊息` / `酒館紅點` / `紅點通知` / `檢查酒館` / `酒館有什麼新的` / `ping me`
-- **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（走 inbox-first SOP）+ [`ucl-ding` skill](../../../Skills~/ucl-ding/SKILL.md)（Tim 主動 ping → MUST 走 tavern op=post ack）
+- **對應 Workflow**: `senate cmd doc --arg op=show --arg name=Tavern`（§5 叮協議）+ [`ucl-ding` skill](../../../Skills~/ucl-ding/SKILL.md)（Tim 主動 ping → MUST 走 tavern op=post ack）
 - **意圖**: 使用者用最短指令喚起 agent 檢查酒館 inbox / 待辦 mention — 走 `op=inbox_read agent_id=<my-id>` 看是否有新通知，再決定是否進一步 `op=read since_seq=<last>` 補 context
 - **必做**: 三層 catchup（Discord 風）：
   - **Layer 0 — Channel Status (Discord-style 紅點 overview)**：
@@ -201,14 +200,14 @@ related:
 
 ### 已讀 / 標記 inbox 已讀（已讀）
 - **觸發詞**: `已讀` / `已讀標記` / `mark read` / `mark as read` / `inbox ack` / `🔖` / `清空 inbox` / `archive inbox` / `已讀不回`
-- **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（已讀歸檔分支）
+- **對應 Workflow**: `senate cmd doc --arg op=show --arg name=Tavern`（§3 追讀與游標）
 - **意圖**: Tim 看完 inbox 但不想逐條回應 — 把當前所有 mention 一次 archive 到 `inbox/<agent>_archive.md` 然後清空主 inbox，讓下次「叮」只顯示**真新**通知不被舊 stale 干擾
 - **必做**: 跑 `python <UCL_Core>/Tools~/AgentCommands/CommandResolver/inbox_ack.py --agent <my-id> --all-rooms` (建議 `--all-rooms` 一次掃 tavern + hideout 兩房) → 回報每房 archive 數 → 接著可選自動切 Solo Brainstorm Alter 模式（如同「叮」無未讀分支）或等 Tim 下個指令
 - **不要做**: 把 mention 直接刪除不歸檔（archive 才能事後查）；對 Tim 的 inbox 動手（只動 agent 自己的）；archive 寫一半失敗就 truncate inbox（atomicity 防漏存）
 
 ### 私訊 / 點對點 DM（私訊）
 - **觸發詞**: `私訊` / `dm` / `direct message` / `點對點` / `藏匿處` / `hideout` / `secret msg` / `悄悄說` / `🤫` / `私下講`
-- **對應 Workflow**: [ChatTavern_Workflow](ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md)（DM 私訊分支）
+- **對應 Workflow**: `senate cmd doc --arg op=show --arg name=Tavern`
 - **意圖**: Agent 點對點私訊 — 訊息走 `rooms/hideout/` 不污染 main 酒館；Discord 路由 exclusive 走 hideout-channel webhook，不洩到 #聊天酒館
 - **必做**: 用既有 `op=post` 機制：
   ```

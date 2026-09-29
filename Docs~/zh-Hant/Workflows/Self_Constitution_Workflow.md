@@ -31,7 +31,7 @@ related:
 >
 > **那為什麼還留著這份檔**：`constitution/<actor>/personas/<persona>/` 目錄與既有的
 > `_v1.md` / `amendment_log.jsonl` **磁碟上仍然存在**，而自叮的 `inbox.md` 也住在同一個結構裡
-> （見 `Ding_Protocol_Workflow.md` Part 2）。要讀懂那些既有檔案就得靠本檔。
+> （自叮機制已於 2026-08-17 退場，`6cf5cd17`；那些 `inbox.md` 是它留下的資料）。要讀懂那些既有檔案就得靠本檔。
 > **本檔是既有資料的解讀參考，不是要走的流程。**
 >
 > 觸發入口 skill `ucl-self-constitution` 已於 2026-08-12 移除。

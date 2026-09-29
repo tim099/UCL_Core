@@ -24,7 +24,7 @@ last_updated: 2026-09-11（summit — §4 增「先選對層」（target ＝檢�
 
 同一條鐵律（先搜再寫、寫一次不改寫、機械索引別手改）原本在三個地方各寫一份。
 **同一條指令抄成三份就會漂** —— 這件事本 repo 有血證：
-`Ding_Protocol_Workflow.md` 與 `ucl-ding` SKILL.md 曾經各抄一份 catchup 指令，2026-08-04 實測旗標已經對不上。
+叮協議文件與 `ucl-ding` SKILL.md 曾經各抄一份 catchup 指令，2026-08-04 實測旗標已經對不上。
 
 ⇒ 共通的部分**只在這一份**。三份 skill 用 `related:` 指過來，不重抄。
 

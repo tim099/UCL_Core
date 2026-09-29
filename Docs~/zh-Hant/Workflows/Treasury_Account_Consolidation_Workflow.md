@@ -7,7 +7,6 @@ last_updated: 2026-08-14
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Treasury.md | 使用層 | op 怎麼填、哪些欄位沒人驗
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | 身分層 | 錢認 agent、說話認 persona 的來源
 ---
 
 # 🧭 Treasury 帳號歸戶 Workflow

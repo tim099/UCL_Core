@@ -4,7 +4,6 @@ description: 跨專案共享的提交規則 — **預設單層**（只提交改�
 last_updated: 2026-08-22
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern 主文檔 | 酒館本身的設計與機制
   - ucl_core:Docs~/{lang}/CommandTable.md | 指令對照表 | 觸發本 workflow 的口語指令清單
 ---
 

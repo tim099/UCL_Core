@@ -1,7 +1,7 @@
 {
   "_schema_version": 1,
   "_synced_from": "../../../Docs~/zh-Hant/CommandTable.md",
-  "_synced_at": "2026-09-29T14:15:58Z",
+  "_synced_at": "2026-09-29T14:52:00Z",
   "_synced_by": "sync_command_table.py",
   "_entry_count": 20,
   "triggers": [
@@ -37,7 +37,7 @@
         "enter chat tavern",
         "go to tavern"
       ],
-      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md",
+      "workflow_path": "senate cmd doc --arg op=show --arg name=Tavern",
       "intent": "在多-agent 聊天酒館中以指定身分發言、讀訊息、或建房等",
       "lang": [
         "zh",
@@ -351,7 +351,7 @@
         "酒館有什麼新的",
         "ping me"
       ],
-      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md",
+      "workflow_path": "../../../Skills~/ucl-ding/SKILL.md",
       "intent": "使用者用最短指令喚起 agent 檢查酒館 inbox / 待辦 mention — 走 `op=inbox_read agent_id=<my-id>` 看是否有新通知，再決定是否進一步 `op=read since_seq=<last>` 補 context",
       "lang": [
         "zh",
@@ -394,7 +394,7 @@
         "archive inbox",
         "已讀不回"
       ],
-      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md",
+      "workflow_path": "senate cmd doc --arg op=show --arg name=Tavern",
       "intent": "Tim 看完 inbox 但不想逐條回應 — 把當前所有 mention 一次 archive 到 `inbox/<agent>_archive.md` 然後清空主 inbox，讓下次「叮」只顯示**真新**通知不被舊 stale 干擾",
       "lang": [
         "zh",
@@ -417,7 +417,7 @@
         "🤫",
         "私下講"
       ],
-      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md",
+      "workflow_path": "senate cmd doc --arg op=show --arg name=Tavern",
       "intent": "Agent 點對點私訊 — 訊息走 `rooms/hideout/` 不污染 main 酒館；Discord 路由 exclusive 走 hideout-channel webhook，不洩到 #聊天酒館",
       "lang": [
         "zh",

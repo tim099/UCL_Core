@@ -79,7 +79,7 @@
     },
     {
       "name": "ucl-ding",
-      "summary": "Tim 叮協議 — Tim 主動 ping → agent MUST 到酒館 tavern 房 op=post 簡短 ack (1-3 句, 實質 or 罐頭文 + meta tag=ack-only); 跟自叮 (persona↔persona, 無專屬 skill — 見 Ding_Protocol_Workflow Part 2) 不同機制",
+      "summary": "Tim 叮協議 — 讀 → 判斷 → 回（被 @／指定 seq 必回，一律走酒館 tavern 房）；規則本體在 senate cmd doc --arg op=show --arg name=Tavern §5",
       "optional": false
     },
     {

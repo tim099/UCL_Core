@@ -4,7 +4,6 @@ description: 說明如何將 Discord 使用者 ID 加入 notify_config.json，�
 last_updated: 2026-07-28
 target_audience: [AI_Agent, Tools_User]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern 主文檔 | 酒館訊息傳送與 Discord mirror 機制
 ---
 
 # 📣 Add Discord User Mention Workflow — 新增 Discord @mention 使用者

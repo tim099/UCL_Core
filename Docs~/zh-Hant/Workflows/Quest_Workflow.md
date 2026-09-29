@@ -6,7 +6,6 @@ namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
 last_updated: 2026-07-28
 target_audience: [AI_Agent, Tools_User]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | Chat Tavern 主文檔 | 對話與身分基礎
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | task_* / inbox_* op 完整參數
   - ucl_core:Docs~/{lang}/Workflows/Tavern_SoloBrainstorm_Workflow.md | Solo Brainstorm | 收結論前的腦力激盪
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | events.jsonl / tasks/ 的 commit 規範
@@ -813,7 +812,7 @@ per Antigravity 踩坑（複製貼上 Claude testing 用的 --force 命令重複
 
 ## 17. 相關文件
 
-- 主文檔：[ChatTavern_Workflow](ChatTavern_Workflow.md)
+- 酒館使用說明：`senate cmd doc --arg op=show --arg name=Tavern`
 - 指令規格：[Cmd_Tavern](../API/UCL_AgentCommand/Cmd_Tavern.md)
 - Solo Brainstorm（quest 上游）：[Tavern_SoloBrainstorm_Workflow](Tavern_SoloBrainstorm_Workflow.md)
 - Commit 規範：[Commit_Workflow](Commit_Workflow.md)

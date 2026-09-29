@@ -85,10 +85,17 @@ def _extract_phrases_from_lines(lines: List[str]) -> List[str]:
 
 
 def _extract_workflow(line: str) -> Optional[str]:
-    """從 workflow bullet 抓 url."""
+    """從 workflow bullet 抓 url；沒有連結時認行內的 `senate cmd doc …`（文件已搬到 Senate／SCP_Core，TASK-0337）。
+
+    ⚠ 那一格只認 `senate cmd doc` 開頭的 code span —— 其他 code span（觸發詞、參數名）不是文件位置，
+      誤收的話 resolver 會把一個觸發詞當成「去讀這份文件」印給 agent。
+    """
     m = _LINK_RE.search(line)
     if m:
         return m.group(2)
+    for code in _PHRASE_RE.findall(line):
+        if code.startswith("senate cmd doc "):
+            return code
     return None
 
 

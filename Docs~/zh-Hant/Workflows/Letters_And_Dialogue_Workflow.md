@@ -12,7 +12,6 @@ related:
   - <ucl_core:Skills~/ucl-morning/SKILL.md> | ucl-morning | 醒來讀 letter + consolidate overdue 檢查 (Step 8)
   - <ucl_core:Skills~/ucl-goodnight/SKILL.md> | ucl-goodnight | 晚安寫 letter(引用本段落格式)
   - <ucl_core:Skills~/ucl-chat-tavern/SKILL.md> | ucl-chat-tavern | baton section(objective) + dialogue relay routing
-  - <ucl_core:Docs~/{lang}/Workflows/Ding_Protocol_Workflow.md> | Ding Protocol (Part 2 自叮) | persona inbox 自叮(報到前必查)
   - <repo:docs/Notes/Memory_System_Design.md> | 設計理由 | Proposal #18 SelfAnticipation
 ---
 

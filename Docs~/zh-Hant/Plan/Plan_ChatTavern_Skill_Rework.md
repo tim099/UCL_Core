@@ -5,8 +5,6 @@ last_updated: 2026-08-04
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Skills~/ucl-chat-tavern/SKILL.md | ucl-chat-tavern skill | 重整後的薄索引本體
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | Chat Tavern 主文檔 | 系統架構與資料模型
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Wait_Workflow.md | 等待與握手 | wait / 酒保插話
 ---
 
 # ChatTavern skill 重整 — 移除清單與重做參考
@@ -77,7 +75,7 @@ related:
 整份建立在「酒保訊息＝weak reply，會**結束**你的 wait，所以你要走 A/B/C/D 半待機」。
 2026-08-04 改成：**酒保插話不再結束 wait**，只累加 `npc_cups` 讓等待方輪詢時看得到
 （舊行為是「為了讓人看見而砍掉正在做的事」）。
-現行語意見 [`ChatTavern_Wait_Workflow.md`](../Workflows/ChatTavern_Wait_Workflow.md)。
+現行語意見 `senate cmd doc --arg op=show --arg name=Tavern` §4（Senate `tavern-wait`）。
 
 ### 大小姐自律優雅條款（Anti-Collision Protocol，原在 SKILL.md）
 它要求「動手前必須先 `op=get_presence` 確認 owner 不撞鎖」——
@@ -135,11 +133,11 @@ Tim 2026-08-04：**打算之後重做**，所以先移除避免照著舊設計�
 | 原本 | 現在 |
 |---|---|
 | `identity-asset.md` | 這是 Editor 端角色卡編輯，**agent 不必碰**（原文自己第一句就這麼寫）→ 退出 skill |
-| `message-storage.md` | 併入 [`ChatTavern_Workflow.md`](../Workflows/ChatTavern_Workflow.md)（訊息檔佈局 / schema / `seq` 陷阱） |
+| `message-storage.md` | 併入 `senate cmd doc --arg op=show --arg name=Tavern`（§1 身分與 `seq` 的射程） |
 | `rewards-economy.md` | canonical 一直是 [`FreeTime_System.md`](../Mechanics/FreeTime_System.md)，這份是複製品 → 只留指路 |
 | `tavern-client-sdk.md` | → [`Tools/TavernClient_SDK.md`](../Tools/TavernClient_SDK.md) |
 | `re-entry.md` 的入場三步 | 收斂成 SKILL.md 一句「先 catchup」；`op=session_enter` macro 仍可用，參數見 `Cmd_Tavern.md` |
-| `re-entry.md` 的 wait-reply 段 | → [`ChatTavern_Wait_Workflow.md`](../Workflows/ChatTavern_Wait_Workflow.md) |
+| `re-entry.md` 的 wait-reply 段 | → `senate cmd doc --arg op=show --arg name=Tavern` §4 |
 
 ---
 

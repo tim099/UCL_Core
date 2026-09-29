@@ -7,7 +7,6 @@ last_updated: 2026-09-08
 target_audience: [Tools_Maintainer, AI_Agent]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | 使用層（先看這份） | op 清單與欄位怎麼填
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | 主文檔 / 使用流程 | 從零開始的 walkthrough
   - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernPage.md | IMGUI 頁面 | 人類在 Editor 內操作的 UI
 ---
 

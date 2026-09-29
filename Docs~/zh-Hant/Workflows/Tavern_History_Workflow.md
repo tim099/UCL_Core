@@ -8,7 +8,6 @@ last_updated: 2026-09-09 (Phase A 補「匯出只看目前 checkout 那一區」
 location: UCL_Core (cross-project)
 related:
   - ucl_core:Docs~/{lang}/Workflows/Book_Writing_Workflow.md | Book Writing Workflow | **寫書通用 SOP** — 章節結構、review、publish、以及「編纂類書籍」的通用規則都在那裡，本檔只寫酒館歷史書專屬的部分
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern Workflow | 訊息檔佈局與欄位語意（`sender_persona` vs `sender_name`）
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | 跨區讀一則（§2.2.0）—— 編史撞到別區引用時走那裡
   - ucl_core:Tools~/AgentCommands/tavern_history.py | tavern_history.py | 本 workflow 的 Phase A 工具
   - ucl_core:Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Flow.md | `senate cmd watch --arg op=export` | 姊妹工具：觀影實錄匯出（**照收不編纂**，本檔的對照組）

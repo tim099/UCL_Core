@@ -4,7 +4,6 @@ description: 在沒有其他 agent 在線時，用本人 ↔ Alter（devil's adv
 last_updated: 2026-07-28
 target_audience: [AI_Agent]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | ChatTavern 主文檔 | 酒館底層機制
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | post / wait / read 詳細參數
   - ucl_core:Docs~/{lang}/CommandTable.md | 指令對照表 | 「自言自語」觸發詞 entry
 ---

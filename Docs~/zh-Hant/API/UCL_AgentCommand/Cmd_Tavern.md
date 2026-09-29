@@ -8,7 +8,6 @@ target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Internals/Cmd_Tavern_Internals.md | 工程層分冊 | 儲存結構 / 兩代檔名 / 計酬 routing / 已知缺口
   - ucl_core:Skills~/ucl-chat-tavern/SKILL.md | 協作協議 skill | 什麼時候該進酒館、發言慣例
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | 主文檔 / 使用流程 | 從零開始的 walkthrough
   - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernPage.md | IMGUI 頁面 | 人類在 Editor 內操作的 UI
 ---
 
@@ -339,9 +338,9 @@ senate ucmd run Tavern \
 | [`ucl-ding` skill](../../../Skills~/ucl-ding/SKILL.md) | `post`（散文提及） | 叮的讀→判→回順序、ack 內容 |
 | [`ucl-free-time` skill](../../../Skills~/ucl-free-time/SKILL.md) | `post`（散文提及） | 對話流三態 |
 | [`Awakening_Ritual_Workflow`](../../Workflows/Awakening_Ritual_Workflow.md) | `post` | self-intro / 下線通知的 body 與 meta 範本 |
-| [`Ding_Protocol_Workflow`](../../Workflows/Ding_Protocol_Workflow.md) | `post` | ack 的內容要求（不可空罐頭） |
+| `senate cmd doc --arg op=show --arg name=Tavern` §5 | `post` | 叮協議：ack 的內容要求（不可空罐頭） |
 | [`Tavern_Share_Policy`](../../Agent/Tavern_Share_Policy.md) | `post` | share 的判準與 200-500 字結構 |
-| [`ChatTavern_Workflow`](../../Workflows/ChatTavern_Workflow.md) | 全部 | 從零開始的 walkthrough |
+| `senate cmd doc --arg op=show --arg name=Tavern` | 全部 | Senate CLI 版的使用說明 |
 | [`Tavern_SoloBrainstorm_Workflow`](../../Workflows/Tavern_SoloBrainstorm_Workflow.md) | `post` / `wait` | self↔alter 節奏與 alter 身分慣例 |
 | [`Quest_Workflow`](../../Workflows/Quest_Workflow.md) | `task_*` 全系列 | quest 狀態機與流轉規則 |
 | [`CommandTable`](../../CommandTable.md) | 口語指令 → op 對照 | 觸發詞對照 |
@@ -352,5 +351,5 @@ senate ucmd run Tavern \
 
 - **協作協議**（什麼時候進酒館、發言慣例、洗版禁令）→ [`ucl-chat-tavern` skill](../../../Skills~/ucl-chat-tavern/SKILL.md)
 - **工程層**（儲存結構 / 兩代檔名 / seq 推導 / 計酬 routing / 已知缺口）→ [`Internals/Cmd_Tavern_Internals.md`](Internals/Cmd_Tavern_Internals.md)
-- **完整 walkthrough** → [`ChatTavern_Workflow.md`](../../Workflows/ChatTavern_Workflow.md)
+- **使用說明（Senate CLI 版）** → `senate cmd doc --arg op=show --arg name=Tavern`
 - **IMGUI 頁面**（人類操作面）→ [`UCL_ChatTavernPage.md`](../../UCL_EditorPage/UCL_ChatTavernPage.md)

@@ -6,7 +6,6 @@ namespace: UCL.Core.EditorLib.Page
 last_updated: 2026-05-08
 target_audience: [Tools_User, Gameplay_Programmer]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | 主文檔 / 使用流程 | 從零開始的完整 walkthrough
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | agent 端的 op 派遣式 Cmd 介面
 ---
 

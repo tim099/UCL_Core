@@ -4,7 +4,6 @@ description: python daemon / 工具要發酒館訊息、動 quest task 時一律
 last_updated: 2026-08-04
 target_audience: [AI_Agent, Tools_User]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/ChatTavern_Workflow.md | Chat Tavern 主文檔 | 系統架構與訊息 schema
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | op 完整參數表
   - ucl_core:Docs~/{lang}/Tools/Python_Tools_Index.md | Python 工具索引 | 其他工具入口
 ---

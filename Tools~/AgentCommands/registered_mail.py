@@ -37,7 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-DEFAULT_MAIL_FEE = 5          # 與 C# UCL_CentralBankSettings.DefaultRegisteredMailFee 對齊
+DEFAULT_MAIL_FEE = 5          # 與 C# SCP_BankPolicy.DefaultMailFee 對齊
 
 
 

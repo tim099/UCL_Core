@@ -1,7 +1,10 @@
-﻿// 區塊職責：Unity 這一側的**央行帳號／區域（貨幣）ID／掛號信費**唯讀查詢。
-// ⭐ TASK-0278（2026-09-22）：保管費的門檻／費率／央行豁免**已經不在這裡** ——
-//   唯一真相源是 `SCP_BankPolicy`（`SCP_Core/Runtime/Bank/`），扣繳整段在 Senate 端跑
-//   （`SCP_Demurrage` ／ `senate cmd demurrage`），Unity 只剩觸發。
+// 區塊職責：Unity 這一側的**區域（貨幣）ID** 唯讀查詢 —— 讀取與合法性規則**轉呼叫 SCP_Core**，本檔不自己讀檔。
+// ⭐ TASK-0330（2026-09-29）：央行設定的讀取收成一份 —— 貨幣 ID ＝ `SCP_BankRegion`、
+//   央行帳號／掛號信費 ＝ `SCP_BankPolicy`（都在 `SCP_Core/Runtime/Bank/`，讀同一顆 `Bank/bank_settings.json`）。
+//   Unity 這份的常數、夾值規則與讀檔整段移除（央行帳號／掛號信費在 Unity 已經沒有呼叫端）。
+//   🩸 為什麼不留一份鏡像：兩份夾值規則漂掉時**兩邊都讀得出合法的數字**，而誰是權威在畫面上看不出來。
+// ⭐ TASK-0278（2026-09-22）：保管費的門檻／費率／央行豁免同樣只在 `SCP_BankPolicy`，
+//   扣繳整段在 Senate 端跑（`SCP_Demurrage`／Senate Server 的每日結算）。
 //   ⇒ 底下那段經濟模型的敘述**仍然成立**（它講的是錢往哪流），只是實作換了宿主。
 // 物理意義：保管費原本是 UCL_BartenderDaemon 裡兩個 const（threshold=1000 / rate=5%），
 //          改參數要改 code、要重編、Tim 動不了。Tim 2026-08-01 要求後台可調 → 落 JSON。
@@ -20,100 +23,29 @@
 //
 // 📐 貨幣供給的完整圖（Tim 2026-08-01 拍板，**刻意只閉一半**）：
 //      增發（憑空 credit）：commit 打款 +5 / 發文計酬 +1 / QA 獎勵 …（auto hook，維持不變）
-//      回收 → 央行        ：跨日保管費（本檔）
+//      回收 → 央行        ：跨日保管費（參數在 `SCP_BankPolicy`）
 //      央行 → agent        ：請款核准撥款（Senate `bank op=approve`，央行不足即拒絕；Unity 端的 RequestStore 已於 TASK-0327 刪除）
 //      蒸發               ：**央行活動**（尚未實作 —— Tim：「之後會有一些蒸發 credit 的地方」）
 //    亦即：日常勞動報酬**刻意保持體外增發**，不受央行餘額影響 ——
 //    讓「今天有沒有薪水」取決於公庫水位，會把可預測的報酬變成賭博。
 //    通膨則由央行活動端的蒸發來收。**這是有意的半閉環，不是還沒做完的閉環。**
-// 設計取捨：跟 UCL_ChatTavernSettings 同形狀（JSON + 原子寫 + 讀失敗回預設），
+// 設計取捨：可調參數落 `Bank/bank_settings.json`，
 //          不塞進 Treasury/rules.json —— 那份是經濟規則宣告，混進可調參數會讓
 //          「誰是真相源」再糊一次（rules.json 自己就有過分類擺錯的舊帳 ——
 //          三項 QA 獎金是 credit 卻掛在 spending_uses 底下；那三項已於 2026-08-04
 //          隨 QA 獎金功能移除，但「宣告與實際用途會漂」這個風險本身沒消失）。
 #if UNITY_EDITOR
-using System.IO;
-using UCL.Core.JsonLib;
+using SCP.Core.Bank;
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.Treasury
 {
     /// <summary>
-    /// 央行帳號、區域（貨幣）ID 與掛號信費的唯讀查詢。
-    /// <para>⛔ 保管費的門檻／費率／豁免**不在這裡** —— 見 <c>SCP_BankPolicy</c>（TASK-0278）。</para>
+    /// 區域（貨幣）ID 的唯讀查詢 —— 轉呼叫 <c>SCP_BankRegion</c>。
+    /// <para>⛔ 央行帳號／掛號信費／保管費參數**不在這裡** —— 見 <c>SCP_BankPolicy</c>（TASK-0278／TASK-0330）。</para>
     /// </summary>
     public static class UCL_CentralBankSettings
     {
-        /// <summary>央行帳號 id（Tim 2026-08-01 命名：Pacific Standard Public Deposit Bank）。</summary>
-        public const string DefaultCentralBankAccount = "pacific-standard-public-deposit-bank";
-
-        // ⭐ TASK-0278（2026-09-22）：**保管費那一族（門檻／費率／央行豁免／央行顯示名）整段移除**
-        //   —— ⛔ 不留 deprecated 薄殼。唯一真相源是 `SCP_BankPolicy`（Senate 端），扣繳也在那一側跑。
-        //   🩸 為什麼不是「留著當唯讀鏡像」：同名同義的兩份參數會漂，而漂掉時**兩邊都讀得出一個
-        //     合法的數字** —— 誰是權威在畫面上看不出來（本檔頭原本就自己警告過這一格）。
-        //   ⇒ 退路在 git，不在程式碼裡。
-
-        public const string SettingsFileName = "bank_settings.json";
-
-        // 🩸 2026-09-22（TASK-0274）：這裡原本自己拼 `"Treasury"` —— 那是**第四份**同一個路徑的字面
-        //   （另外三份在 `SCP_BankRegion`／`registered_mail.py`／`_lib/persona_profile.py`）。
-        //   我搬檔時只改了看得見的那幾份，於是 Editor 這側讀不到設定 ⇒ 區域變空字串
-        //   ⇒ `letters/<persona>/bank/<區域>.md` 找不到 ⇒ **每一則發文都「解析不到正式帳號」而不計酬**，
-        //     而畫面上跟「這個身分本來就沒登記」一模一樣（活體現形：seq 20022／20023 兩則都沒落帳）。
-        //   🩸 抓不到它的原因更值得記：我那道 grep 帶了 `head`，輸出**剛好**滿行被截斷，
-        //     於是我把「我的窗裡只有一份」讀成「全樹只有一份」。
-        // ⇒ 改成引用 SCP_Core 那一份常數，⛔ 不在這裡再拼一次。
-        static string SettingsPath =>
-            Path.Combine(UCL_AgentCommandsPath.DataRoot,
-                         SCP.Core.Bank.SCP_BankRegion.SettingsRelPath.Replace('/', Path.DirectorySeparatorChar));
-
-        /// <summary>設定檔所在目錄 —— 給後台「開啟設定檔位置」用（路徑只有一個擁有者，不讓頁面自己拼）。</summary>
-        public static string SettingsDir => Path.GetDirectoryName(SettingsPath);
-
-        /// <summary>央行帳號 id。</summary>
-        public static string CentralBankAccount
-        {
-            get
-            {
-                var jd = Load();
-                if (jd != null && jd.Contains("central_bank_account"))
-                {
-                    string v = jd.GetString("central_bank_account", DefaultCentralBankAccount);
-                    if (!string.IsNullOrEmpty(v)) return v.Trim();
-                }
-                return DefaultCentralBankAccount;
-            }
-        }
-
-        /// <summary>付費掛號信件每封費用（Tim 2026-08-01；預設 5 token，後台可調）。</summary>
-        /// <remarks>
-        /// 0 = 免費寄信（合法設定，不是壞值）。
-        /// ⚠ 這筆錢**蒸發，不進央行**（Tim 2026-08-01 明確指定：「掛號信費用(蒸發)」，
-        ///   「蒸發代表 token 消失，不進入央行」）—— 也就是純 debit 無對應 credit。
-        /// 這是保管費改制之後這個經濟體的**第一個真 sink**，職責跟央行相反：
-        ///   央行 = 集中再分配（circulation）；掛號信費 = 真的減少貨幣總量（burn）。
-        /// 兩者刻意分開，別看到「都是收費」就把它也導進央行 —— 那會讓系統再次沒有 sink。
-        /// </remarks>
-        public const int DefaultRegisteredMailFee = 5;
-
-        public static int RegisteredMailFee
-        {
-            get
-            {
-                var jd = Load();
-                int v = (jd != null && jd.Contains("registered_mail_fee"))
-                    ? jd.GetInt("registered_mail_fee", DefaultRegisteredMailFee) : DefaultRegisteredMailFee;
-                return v < 0 ? 0 : v;
-            }
-        }
-
-        // ===========================================================
-        // ⚠ 帳號解析模式開關（`account_resolve_unified`）已於 2026-08-20 移除（Tim 拍板）。
-        //   兩個專案都跑完合一遷移 ⇒ 合一是**唯一**模式，解析一律 persona → agent（一跳）。
-        //   留著一條可切回去的舊鏈，會讓「已合一」與「還在過渡」在讀數上長得一模一樣。
-        //   資料檔裡殘留的 `account_resolve_unified` 鍵不再被任何人讀取（無害，下次改設定自然掉）。
-        //   舊行為的實作與血證見 git：`UCL_BankResolve` 的 ⓪ 段。
-
         // 區塊職責：本專案的**區域（貨幣）ID** —— 即 `letters/<persona>/bank/<CurrencyId>.md` 的檔名。
         // 物理意義：Tim 2026-08-20 拍板 —— 銀行（酒館系統）**每個專案有自己的 ID**（可理解為貨幣名），
         //          而 persona 在各區域使用的**帳號**存在它自己的 letters 底下、**一區一檔**。
@@ -126,65 +58,36 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         //            而症狀是「另一個專案的帳號」—— 一個完全合法的字串，沒有任何一層會出聲。
         // 數值影響：**本值是檔名。** 改它等於把全體 persona 的綁定檔重新定鍵 ⇒
         //          後台改動走二段確認，且必須同批改名 letters 底下的檔，否則全員一次落央行。
-        //          預設 `Ducat`；本專案（LY）＝ `Florin`
+        //          預設 `SCP_BankRegion.DefaultRegion`（`Ducat`）；本專案（LY）＝ `Florin`
         //          （Tim 2026-08-20 命名：1252 年由佛羅倫斯共和國鑄造，杜卡特的一生宿敵與前輩）。
-        // ===========================================================
-        public const string DefaultCurrencyId = "Ducat";
 
         /// <summary>本專案的區域（貨幣）ID。缺值／不合法一律回預設，**不猜**。</summary>
         public static string CurrencyId
         {
             get
             {
-                var jd = Load();
-                if (jd != null && jd.Contains("currency_id"))
+                string aId = SCP_BankRegion.Read(UCL_AgentCommandsPath.DataRoot, out string aWhy);
+                // ⚠ 缺檔／缺那一格（未設定）不出聲，跟修前一樣；**狀態壞了**才出聲 ——
+                //   靜默回預設會讓兩個專案都變成 Ducat，而那正是一區一檔要防的對撞。
+                //   判準借 `SCP_BankRegion.Read` 說明字串裡的兩個詞（不合法／讀不了）；
+                //   ⛔ 別在這裡另寫一份「什麼算壞」—— 那會是第二份規則。
+                if (aWhy != null)
                 {
-                    string v = jd.GetString("currency_id", DefaultCurrencyId);
-                    if (IsValidCurrencyId(v)) return v.Trim();
-                    // 落盤值壞掉要出聲：靜默回預設會讓兩個專案都變成 Ducat，
-                    // 而那正是一區一檔要防的對撞（且症狀是「另一個專案的帳號」）。
-                    Debug.LogError($"[CentralBankSettings] currency_id 落盤值不合法（'{v}'），本次改用預設 " +
-                                   $"'{DefaultCurrencyId}' —— 請直接修設定檔。");
+                    if (aWhy.Contains("不合法"))
+                        Debug.LogError($"[CentralBankSettings] {aWhy} —— 請直接修設定檔。");
+                    else if (aWhy.Contains("讀不了"))
+                        Debug.LogWarning($"[CentralBankSettings] {aWhy}");
                 }
-                return DefaultCurrencyId;
+                return aId;
             }
         }
 
-        /// <summary>合法性＝能安全當檔名。空白／`.`／`..`／路徑分隔／檔名非法字元一律拒。</summary>
+        /// <summary>合法性＝能安全當檔名 —— 與 <c>SCP_BankRegion.IsValid</c> 同一條規則（轉呼叫，不另寫一份）。</summary>
         /// <remarks>
         /// 它會被組進 `letters/&lt;persona&gt;/bank/&lt;id&gt;.md` ⇒ 含 `/` 或 `..` 就是寫到別的地方去，
         /// 而寫檔會自動建目錄 ⇒ 症狀是「憑空長出一個資料夾」而不是錯誤（2026-08-17 血證同族）。
         /// </remarks>
-        public static bool IsValidCurrencyId(string iId)
-        {
-            if (string.IsNullOrWhiteSpace(iId)) return false;
-            string v = iId.Trim();
-            if (v == "." || v == "..") return false;
-            if (v.IndexOf('/') >= 0 || v.IndexOf('\\') >= 0) return false;
-            foreach (char c in Path.GetInvalidFileNameChars())
-                if (v.IndexOf(c) >= 0) return false;
-            return true;
-        }
-
-        static JsonData Load()
-        {
-            try
-            {
-                // TASK-0265：senate 的 BankAdminPage 會換這顆檔 ⇒ 重試跨過那一瞬間（舊版 `File.Exists` 會讀成「沒設定 ⇒ Ducat／預設費率」）。
-                if (UCL_AtomicFileRead.TryReadAllText(SettingsPath, out string aText, out UCL_FileReadState aState))
-                    return JsonData.ParseJson(aText);
-                if (aState == UCL_FileReadState.Busy)
-                    Debug.LogWarning(UCL_AtomicFileRead.DescribeBusy(SettingsPath) + " ⇒ 本次改用預設，⚠ 那不是本區的值。");
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogWarning($"[CentralBankSettings] 讀取失敗（改用預設）: {e.Message}");
-            }
-            return JsonData.ParseJson("{}");
-        }
-
-
-
+        public static bool IsValidCurrencyId(string iId) => SCP_BankRegion.IsValid(iId);
     }
 }
 #endif

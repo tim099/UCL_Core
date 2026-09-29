@@ -21,12 +21,9 @@
 
 ### 📁 文件索引
 
-完整多語系文件位於 [`Docs~/`](Docs~/)：
+完整文件位於 [`Docs~/`](Docs~/)（只維護繁體中文）：
 
 - 🇹🇼 [繁體中文](Docs~/zh-Hant/index.md)
-- 🇨🇳 [简体中文](Docs~/zh-Hans/index.md)
-- 🇯🇵 [日本語](Docs~/ja/index.md)
-- 🇬🇧 [English](Docs~/en/index.md)
 
 ### 📝 更新紀錄
 
@@ -115,14 +112,11 @@ MIT License — 見 [`COPYING.txt`](COPYING.txt)。
 
 ### 📁 Documentation Index
 
-Full multi-language documentation lives under [`Docs~/`](Docs~/):
+Full documentation lives under [`Docs~/`](Docs~/) (Traditional Chinese only):
 
 - 🇹🇼 [繁體中文](Docs~/zh-Hant/index.md)
-- 🇨🇳 [简体中文](Docs~/zh-Hans/index.md)
-- 🇯🇵 [日本語](Docs~/ja/index.md)
-- 🇬🇧 [English](Docs~/en/index.md)
 
-⭐ **Recommended starting point**: [`UCL_AgentCommand_Architecture`](Docs~/en/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — the architectural overview of the Agent Command system (component diagram / lifecycle / trigger comparison / extension points).
+⭐ **Recommended starting point**: [`UCL_AgentCommand_Architecture`](Docs~/zh-Hant/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — the architectural overview of the Agent Command system (component diagram / lifecycle / trigger comparison / extension points).
 
 ### 🖥 How to open UCL_EditorMenu and Agent Commands
 
@@ -195,12 +189,9 @@ MIT License — see [`COPYING.txt`](COPYING.txt).
 
 ### 📁 ドキュメント索引
 
-完全な多言語ドキュメントは [`Docs~/`](Docs~/) 配下:
+ドキュメントは [`Docs~/`](Docs~/) 配下（繁體中文のみ）:
 
 - 🇹🇼 [繁體中文](Docs~/zh-Hant/index.md)
-- 🇨🇳 [简体中文](Docs~/zh-Hans/index.md)
-- 🇯🇵 [日本語](Docs~/ja/index.md)
-- 🇬🇧 [English](Docs~/en/index.md)
 
 ### 📝 更新ログ
 
@@ -215,9 +206,9 @@ MIT License — see [`COPYING.txt`](COPYING.txt).
 - [00001_2026-05-05](DevLogs~/00001_2026-05-05_agent-command-lockfile-trigger.md): Agent Command システムに Lock-file 自動トリガー機構を追加
 
 ⭐ **おすすめ**:
-- [`UCL_AgentCommand_Architecture`](Docs~/ja/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command システム全体アーキテクチャ (コンポーネント図 / ライフサイクル / トリガー方法対比 / 拡張ポイント)
-- 🔍 [`Validate_UCL_Asset_Workflow`](Docs~/ja/Workflows/Validate_UCL_Asset_Workflow.md) — UCL_Asset JSON を書いた / 修正した後の検収 SOP ([`Cmd_ValidateAssetFormat`](Docs~/ja/API/UCL_AgentCommand/Cmd_ValidateAssetFormat.md) と組み合わせ)
-- 🔗 [`Hook_Setup_Workflow`](Docs~/ja/Workflows/Hook_Setup_Workflow.md) — Claude Code hooks で上記 SOP を**自動化** — `PostToolUse` 早期警告 + `Stop` 強制検収ゲート。UCL_Core を使う各上位プロジェクトに settings.json テンプレートをコピー
+- [`UCL_AgentCommand_Architecture`](Docs~/zh-Hant/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command システム全体アーキテクチャ (コンポーネント図 / ライフサイクル / トリガー方法対比 / 拡張ポイント)
+- 🔍 [`Validate_UCL_Asset_Workflow`](Docs~/zh-Hant/Workflows/Validate_UCL_Asset_Workflow.md) — UCL_Asset JSON を書いた / 修正した後の検収 SOP ([`Cmd_ValidateAssetFormat`](Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ValidateAssetFormat.md) と組み合わせ)
+- 🔗 [`Hook_Setup_Workflow`](Docs~/zh-Hant/Workflows/Hook_Setup_Workflow.md) — Claude Code hooks で上記 SOP を**自動化** — `PostToolUse` 早期警告 + `Stop` 強制検収ゲート。UCL_Core を使う各上位プロジェクトに settings.json テンプレートをコピー
 
 ### 🖥 UCL_EditorMenu と Agent Commands を開く方法
 

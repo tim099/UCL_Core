@@ -105,8 +105,8 @@ if (-not $UCL_CORE) { throw "UCL_Core 解析失敗：找不到 Tools~/AgentComma
 
 ### C# helper（新增）
 ```csharp
-UCL_EditorPath.ToCoreRelative(absOrProjectPath);     // → "Docs~/en/..."（相對 core 根, forward-slash; 不在 core 下回 null）
-UCL_EditorPath.ToCoreRelativeUrl(absOrProjectPath);  // → "ucl_core:Docs~/en/..."（URL token 形式）
+UCL_EditorPath.ToCoreRelative(absOrProjectPath);     // → "Docs~/zh-Hant/..."（相對 core 根, forward-slash; 不在 core 下回 null）
+UCL_EditorPath.ToCoreRelativeUrl(absOrProjectPath);  // → "ucl_core:Docs~/zh-Hant/..."（URL token 形式）
 ```
 
 ### 模組 docs 來源 token

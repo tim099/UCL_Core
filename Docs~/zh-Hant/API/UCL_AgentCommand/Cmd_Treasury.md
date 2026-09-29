@@ -258,5 +258,4 @@ senate ucmd run Treasury --arg op=closing_generate
   required 欄位列錯會誤擋合法的金流呼叫，所以不自行動工。
 - **`source_kind` / `use_kind` 無驗證**（§4）—— 原 `ArgsSchema` 寫「enum」名不符實，已改為「分類字串(不驗值)」。
 - **`rules.json` 分類有舊帳** —— 三個 qa_* 掛錯在 `spending_uses`。
-- **本檔只有 zh-Hant** —— `HelpURL` 用 `{lang}` 佔位，其他語系尚未翻譯（走 `ucl-translate-docs`）。
 - **計酬 routing 仍讀 `sender_id`**（agent 層），未改走 `sender_persona` → bank 查表。

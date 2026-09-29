@@ -1,7 +1,4 @@
-﻿// 文件關聯：對應的多語系說明文件
-// English: Docs~/en/API/UCL_AgentCommand/Cmd_ReadHierarchy.md
-// 日本語: Docs~/ja/API/UCL_AgentCommand/Cmd_ReadHierarchy.md
-// 简体中文: Docs~/zh-Hans/API/UCL_AgentCommand/Cmd_ReadHierarchy.md
+﻿// 文件關聯：對應的說明文件
 // 繁體中文: Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ReadHierarchy.md
 #if UNITY_EDITOR
 using System;

@@ -1,10 +1,7 @@
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 08/14 2026
-// 文件關聯：對應的多語系說明文件
-// English: Docs~/en/UCL_EditorPage/UCL_AgentCommandsPage.md
-// 日本語: Docs~/ja/UCL_EditorPage/UCL_AgentCommandsPage.md
-// 简体中文: Docs~/zh-Hans/UCL_EditorPage/UCL_AgentCommandsPage.md
+// 文件關聯：對應的說明文件
 // 繁體中文: Docs~/zh-Hant/UCL_EditorPage/UCL_AgentCommandsPage.md
 //
 // 區塊職責：把「這個 Cmd 刻意不做參數驗證」變成一個**帶署名的主張**。

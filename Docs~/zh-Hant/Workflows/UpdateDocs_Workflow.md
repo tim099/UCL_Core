@@ -9,7 +9,6 @@ canonical_term: Update Docs
 related:
   - <ucl_core:Skills~/ucl-update-docs/SKILL.md> | ucl-update-docs | 改完 code 同步文件觸發入口
   - <ucl_core:Skills~/ucl-core-paths/SKILL.md> | ucl-core-paths | UCL_Core 路徑解析慣例
-  - <ucl_core:Skills~/ucl-translate-docs/SKILL.md> | ucl-translate-docs | 多語系文件翻譯/同步
   - <ucl_core:Skills~/ucl-commit/SKILL.md> | ucl-commit | docs 與 code 同筆 commit 規範
 ---
 

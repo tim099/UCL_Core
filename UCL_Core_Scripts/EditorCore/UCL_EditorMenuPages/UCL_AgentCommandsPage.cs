@@ -22,12 +22,9 @@ namespace UCL.Core.EditorLib.Page
     /// 操作放在 TopBarButtons 裡（Refresh / Run / Open Folder）；
     /// ContentOnGUI 列出隊列、可搜尋的 Command 下拉 + 新增表單。
     ///
-    /// 文件關聯：對應的多語系說明文件位於 Docs~/{lang}/UCL_EditorPage/UCL_AgentCommandsPage.md
+    /// 文件關聯：對應的說明文件位於 Docs~/zh-Hant/UCL_EditorPage/UCL_AgentCommandsPage.md
     /// 物理意義：透過 [HelpURL] 將編輯器頁面與本地化文檔綁定，編輯器內的 ? 按鈕會依當前語系跳轉到對應 md。
     /// 數值影響：無執行期影響，僅影響 Inspector / 編輯器內的說明連結指向。
-    /// Docs~\en\UCL_EditorPage\UCL_AgentCommandsPage.md
-    /// Docs~\ja\UCL_EditorPage\UCL_AgentCommandsPage.md
-    /// Docs~\zh-Hans\UCL_EditorPage\UCL_AgentCommandsPage.md
     /// Docs~\zh-Hant\UCL_EditorPage\UCL_AgentCommandsPage.md
     /// </summary>
     [UCL.Core.ATTR.RequiresConstantRepaint]

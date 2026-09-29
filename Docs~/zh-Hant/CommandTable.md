@@ -12,7 +12,6 @@ related:
   - ucl_core:Docs~/{lang}/Workflows/Create_Cmd_Workflow.md | Create Cmd Workflow | 新增 AgentCommand Handler 流程
   - ucl_core:Docs~/{lang}/Workflows/Create_UCL_Asset_Workflow.md | Create UCL Asset Workflow | 新增持久化資料類型與驗證規範
   - ucl_core:Docs~/{lang}/Workflows/Hook_Setup_Workflow.md | Hook Setup Workflow | Claude Code Hook 配置與 JSON 自動驗證
-  - ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md | TranslateDocs Workflow | 跨語系 Markdown 文件翻譯與本地化規範
 ---
 
 # 📋 指令對照表
@@ -247,22 +246,6 @@ related:
   - Play Mode 中 → 拒絕（先 `Cmd_PlayMode action=exit` 退場）
 - **不要做**: 在 Play Mode 中切（破壞 runtime state）；切非白名單 scene（手動到 Project 雙點才行）；切換有未存修改的 scene 不加 force（會丟失）
 
-### 翻譯與本地化文件
-- **觸發詞**: `翻譯文件` / `翻譯 workflow` / `translate doc` / `translate workflow` / `把文件翻成英文` / `把文檔翻成日文` / `本地化文檔`
-- **對應 Workflow**: [TranslateDocs_Workflow](ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md)
-- **意圖**: 翻譯或本地化 Markdown 文件或說明文檔，確保多語系對齊、術語精準及高雅傲嬌語氣。
-- **必做**: 遵守術語對齊（`Glossary-First`，讀取 `translate_glossary.json`）；使用雙軌 Fallback 連結防止死連結；針對 Persona/導覽文檔保留傲嬌靈魂。
-- **不要做**: 期待有 CLI 工具代勞（路徑推算、語系目錄建立、frontmatter 初始化目前全手動）
-
-> _(後續 entry 在此往下加)_
-
----
-
-## 2. Entry 格式規範（給後續維護者）
-
-每個 entry 用一個 `### 意圖名稱` heading，下方三個 bullet 欄位 **固定順序**：
-
-```markdown
 ### <意圖名稱>
 - **觸發詞**: <pattern1> / <pattern2> / <pattern3>
 - **對應 Workflow**: [<label>](<ucl_core: URL>)

@@ -1,9 +1,9 @@
 {
   "_schema_version": 1,
-  "_synced_from": "Assets/Plugins/UCL_Core/Docs~/zh-Hant/CommandTable.md",
-  "_synced_at": "2026-08-17T12:07:25Z",
+  "_synced_from": "../../../Docs~/zh-Hant/CommandTable.md",
+  "_synced_at": "2026-09-29T14:15:58Z",
   "_synced_by": "sync_command_table.py",
-  "_entry_count": 21,
+  "_entry_count": 20,
   "triggers": [
     {
       "entry_id": "entry_dd5b15",
@@ -219,7 +219,7 @@
         "編譯排查"
       ],
       "workflow_path": "ucl_core:Docs~/{lang}/Workflows/CompileError_Diagnose_Workflow.md",
-      "intent": "當修改 `.cs` 腳本後，排查 Unity 的編譯錯誤。走 `senate cmd unity-recompile`（觸發＋等那一趟結束）／`senate cmd unity-compile-status`（只讀現況，本地跑），即使 Cmd 系統因編譯錯誤失效也印得出錯誤清單。",
+      "intent": "當修改 `.cs` 腳本後，排查 Unity 的編譯錯誤。走 Senate CLI，即使 Cmd 系統因編譯錯誤失效也印得出錯誤清單（它只讀 `.compile_status.json`）。",
       "lang": [
         "zh",
         "en"
@@ -295,16 +295,10 @@
       ]
     },
     {
-      "entry_id": "entry_c8c492",
-      "display_name": "酒保留言 / 時間規則 / 留個話",
+      "entry_id": "entry_5dcaf0",
+      "display_name": "酒保時間規則 / 定時提醒",
       "tags": [],
       "phrases": [
-        "留言",
-        "留個話",
-        "留一條",
-        "幫我留話",
-        "leave message",
-        "leave a note",
         "酒保",
         "bartender",
         "提醒我睡覺",
@@ -313,12 +307,10 @@
         "sleep reminder",
         "時間規則",
         "time rule",
-        "定時提醒",
-        "關鍵字觸發",
-        "自動發言"
+        "定時提醒"
       ],
       "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Bartender_Workflow.md",
-      "intent": "透過酒保 (tavern-keeper) daemon 註冊兩類自動廣播 — (1) 留言 keyword trigger (當目標說關鍵字時酒保自動轉達) / (2) 時間規則 (HH:mm reminder + 可選 HP penalty 累積廣播).",
+      "intent": "透過酒保 (tavern-keeper) daemon 註冊時間規則 (HH:mm reminder + 可選 HP penalty 累積廣播)。⚠ 關鍵字留言 trigger 已於 2026-09-29 廢棄（Tim 拍板）—— 「幫我留話給某人」沒有這條自動路徑了。",
       "lang": [
         "zh",
         "en"
@@ -472,26 +464,6 @@
       ],
       "workflow_path": "",
       "intent": "切換 Unity Editor 當前 scene 至 RCG 5 場景白名單之一（不需手動進 Project window 雙點 .unity）",
-      "lang": [
-        "zh",
-        "en"
-      ]
-    },
-    {
-      "entry_id": "entry_3f763f",
-      "display_name": "翻譯與本地化文件",
-      "tags": [],
-      "phrases": [
-        "翻譯文件",
-        "翻譯 workflow",
-        "translate doc",
-        "translate workflow",
-        "把文件翻成英文",
-        "把文檔翻成日文",
-        "本地化文檔"
-      ],
-      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/TranslateDocs_Workflow.md",
-      "intent": "翻譯或本地化 Markdown 文件或說明文檔，確保多語系對齊、術語精準及高雅傲嬌語氣。",
       "lang": [
         "zh",
         "en"

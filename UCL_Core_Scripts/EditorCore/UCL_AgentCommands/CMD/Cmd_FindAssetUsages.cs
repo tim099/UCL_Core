@@ -2,10 +2,7 @@
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 05/06 2026
-// 文件關聯：對應的多語系說明文件
-// English: Docs~/en/API/UCL_AgentCommand/Cmd_FindAssetUsages.md
-// 日本語: Docs~/ja/API/UCL_AgentCommand/Cmd_FindAssetUsages.md
-// 简体中文: Docs~/zh-Hans/API/UCL_AgentCommand/Cmd_FindAssetUsages.md
+// 文件關聯：對應的說明文件
 // 繁體中文: Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_FindAssetUsages.md
 //
 // 區塊職責：本檔提供「反向查詢 UCL_Asset 被引用位置」的 Agent Command 實作。

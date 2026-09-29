@@ -4,13 +4,12 @@ slug: identity-account-unification
 status: **階段一施工中**（第 0 步／第 1a 步已完工並實測；1b 解析端與階段二的歸戶未動 —— §4.2 的人工拍板清單未拍完之前不動階段二）
 created_at: 2026-08-20T02:30:00Z
 created_by: kiara
-last_updated: 2026-08-20
+last_updated: 2026-09-29
 builders: [kiara（第 0 步／第 1a 步／換區重綁）]
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Persona_Registry_Retirement.md | persona registry 退場 | 本案的上游（§8.1 反向登記／§8.3 欄位分家）
-  - ucl_core:Docs~/{lang}/Workflows/Agent_Bank_Unification_Migration_Workflow.md | agent↔帳號 合一遷移 | **階段二的權威流程**（方向：改 agent 名，零 ledger 異動 —— summit 2026-08-20）
   - repo:AgentCommands/BugReports/reports/0021.md | BUG-21 | bank_personas 反向表沒有寫入端
   - repo:AgentCommands/BugReports/reports/0022.md | BUG-22 | 顯示身分取自 bank ⇒ 同 bank 的 persona 全掛同一個名字
 ---
@@ -456,8 +455,8 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
 > ⇒ 改 agent 名是**零 ledger 異動**；我那個方向要搬 **11,338 token**。
 > 他那句判準值得抄下來：**「方向由成本決定，不由美觀決定。」**
 >
-> ⇒ **實際遷移一律走** `ucl_core:Docs~/{lang}/Workflows/Agent_Bank_Unification_Migration_Workflow.md`。
-> 本節保留「為什麼要先合一再接解析端」的理路，**方向以那份為準**。
+> ⇒ 兩個專案都已照這個方向於 2026-08-20 合一完成（合一是唯一的解析模式）。
+> 本節保留「為什麼要先合一再接解析端」的理路。
 > 📌 拍板 ⑫「帳號 id ＝ agent id」講的是**終局只有一個名字**，
 > 不是「哪一邊改名」—— 我把它讀成後者，那是我的誤讀。
 

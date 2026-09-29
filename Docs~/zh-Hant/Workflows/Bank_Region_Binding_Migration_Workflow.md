@@ -1,14 +1,13 @@
 ---
 title: Bank 區域綁定遷移（半自動）—— 在新專案觸發
 description: 在一個新專案（或還沒設區域 ID 的專案）把 persona → 帳號的綁定導出成 letters/<persona>/bank/<區域ID>.md。機械的部分交給 Cmd_PersonaProfile op=migrate_bank（預設 dry_run），判斷的部分留給人。含前置檢查、逐步驗收讀數、卡住出口，以及「綁定值是 agent id 而錢可能還在舊帳號名下」的硬警告。
-last_updated: 2026-08-20
+last_updated: 2026-09-29
 target_audience: [AI_Agent, Developer]
 aliases: [區域銀行遷移, bank 綁定遷移, migrate_bank, 區域 ID 設定, Bar 專案遷移, currency_id]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Identity_Account_Unification.md | 身分／帳號統一案 | 本流程的設計來源與拍板全集
   - ucl_core:Docs~/{lang}/Plan/Plan_Persona_Registry_Retirement.md | persona registry 退場 | 上游（§8.2 一欄一檔／§8.3 欄位分家／§8.6 寫入接縫）
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | 提交規範 | 第 5 步的 commit 邊界
-  - ucl_core:Docs~/{lang}/Workflows/Agent_Bank_Unification_Migration_Workflow.md | agent↔帳號 合一遷移 | 下一步：綁定落地之後把兩個名字收斂成一個
 ---
 
 # 🪙 Bank 區域綁定遷移（半自動）
@@ -143,7 +142,7 @@ letters 有自己 repo 的 persona 各自一筆（LY 實測 9 位），其餘在
 > 實測之後 Tim 改採**把 agent 改名成帳號 id**（少數例外個別指定）——
 > 理由是成本：待合併的組裡，**agent 名那側的帳戶餘額全部是 0**，
 > 改 agent 名零 ledger 異動；反方向要搬 11,338 token。
-> ⇒ **實際遷移一律走** `ucl_core:Docs~/{lang}/Workflows/Agent_Bank_Unification_Migration_Workflow.md`，
+> ⇒ 兩個專案都已照這個方向於 2026-08-20 合一完成，合一是**唯一**的解析模式（`account_resolve_unified` 開關已移除）；
 > 不要照本節字面自行推導方向。本節只負責「綁定檔怎麼落地」，不負責「兩個名字誰留下」。
 
 實測兩個專案的現況（2026-08-20）：

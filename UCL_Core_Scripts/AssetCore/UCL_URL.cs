@@ -98,9 +98,35 @@ namespace UCL.Core
         private static readonly Dictionary<string, IUCL_UrlPrefixResolver> s_Resolvers
             = new Dictionary<string, IUCL_UrlPrefixResolver>(StringComparer.OrdinalIgnoreCase);
 
-        // [常數] fallback 目標語系。en 文件作為「保底文件」，其他語系若缺檔則回退到此。
-        // [物理意義] 與 UCL_LocalizeAsset 的 DefaultLang 對齊；改動時請同步檢查。
-        private const string FALLBACK_LANG = "en";
+        // [常數] fallback 目標語系，依序嘗試。en 文件作為「保底文件」，其他語系若缺檔則回退到此。
+        // [物理意義] en 與 UCL_LocalizeAsset 的 DefaultLang 對齊（遊戲專案的文件多半有 en）；改動時請同步檢查。
+        //           zh-Hant 是第二段：UCL_Core 自家文件自 2026-09-29 起只維護 zh-Hant（TASK-0334 刪了其他語系）。
+        //           ⛔ 不能把 en 直接換成 zh-Hant —— 那會弄壞「只有 en 文件」的遊戲專案。
+        private static readonly string[] FALLBACK_LANGS = { "en", "zh-Hant" };
+
+        /// <summary>
+        /// [職責] 依序把 <paramref name="iPath"/> 裡的 <paramref name="iLang"/> 換成每一個 fallback 語系，回傳第一個存在的版本。
+        /// [數值影響] 全部都不存在 ⇒ 回傳 null（呼叫端維持原路徑）。跳過跟當前語系相同的那一個。
+        /// ⚠ 只換**一整段目錄名**（`/en/` 或 `\en\`），⛔ 不做子字串替換：
+        ///   `en` 是很多字的子字串（`UCL_AgentCommand`），整串 Replace 會把路徑換成一個不存在的檔名。
+        /// </summary>
+        static string FindFallback(string iPath, string iLang, Func<string, bool> iExists)
+        {
+            foreach (string aSep in new[] { "/", "\\" })
+            {
+                string aSegment = aSep + iLang + aSep;
+                int aIdx = iPath.IndexOf(aSegment, StringComparison.Ordinal);
+                if (aIdx < 0) continue;
+                foreach (string aFallbackLang in FALLBACK_LANGS)
+                {
+                    if (aFallbackLang == iLang) continue;
+                    string aCandidate = iPath.Substring(0, aIdx) + aSep + aFallbackLang + aSep
+                                        + iPath.Substring(aIdx + aSegment.Length);
+                    if (iExists(aCandidate)) return aCandidate;
+                }
+            }
+            return null;
+        }
 
         // [註記] UCL_Core 自家的 "ucl_core:" prefix 由 UCL_CoreDocsBootstrap 透過 UCL_DocsModuleRegistry 註冊，
         //       與其他下游模組走同一條路徑，不再於此 static ctor 中做硬編碼註冊。
@@ -167,7 +193,7 @@ namespace UCL.Core
 
             // 區塊職責：從 URL 切出 "prefix:" 並查表 → {lang} 替換 → Exists 檢查 / fallback → Resolve。
             // 物理意義：prefix 為「不含 ://」的命名空間標識；http/https 等 protocol 因為冒號後接 "//" 而被排除。
-            // 數值影響：唯一決定哪一個 Resolver 會被派發，從而決定後續路徑/URL 的根；fallback 機制讓非 en 玩家在缺檔時自動取得 en 文件。
+            // 數值影響：唯一決定哪一個 Resolver 會被派發，從而決定後續路徑/URL 的根；fallback 機制讓缺檔時依序改取 en、zh-Hant 文件。
             int aColonIdx = url.IndexOf(':');
             if (aColonIdx > 0)
             {
@@ -190,15 +216,12 @@ namespace UCL.Core
                             aRelativePath = aRelativePath.Replace("{lang}", aLang);
                         }
 
-                        // [存在檢查 + fallback] 當前語系檔不存在 → 嘗試以 en 取代後再檢查一次。
-                        // 條件：Exists 檢查失敗（Resolver 預設都是 true，除非主動覆寫）、且當前語系非 fallback 目標自身、且 relativePath 確實含有當前語系字串。
-                        if (aLang != FALLBACK_LANG && aRelativePath.Contains(aLang) && !aResolver.Exists(aRelativePath))
+                        // [存在檢查 + fallback] 當前語系檔不存在 → 依序以 FALLBACK_LANGS 取代後再檢查。
+                        // 條件：Exists 檢查失敗（Resolver 預設都是 true，除非主動覆寫）、且 relativePath 確實含有當前語系字串。
+                        if (aRelativePath.Contains(aLang) && !aResolver.Exists(aRelativePath))
                         {
-                            string aFallbackPath = aRelativePath.Replace(aLang, FALLBACK_LANG);
-                            if (aResolver.Exists(aFallbackPath))
-                            {
-                                aRelativePath = aFallbackPath;
-                            }
+                            string aFallbackPath = FindFallback(aRelativePath, aLang, aResolver.Exists);
+                            if (aFallbackPath != null) aRelativePath = aFallbackPath;
                         }
 
                         // [編譯期分流] Editor / Build 差異由 Resolver 註冊端在 #if UNITY_EDITOR 中決定，此處無需感知。
@@ -217,7 +240,7 @@ namespace UCL.Core
             }
 
             // 區塊職責：本地路徑補全與 en 回退（針對無 prefix 的舊式 URL）。
-            // 物理意義：若解析結果非雲端 URL，則視為相對於專案根的路徑並轉為絕對路徑；Editor 下若當前語系檔案缺失，回退到 en。
+            // 物理意義：若解析結果非雲端 URL，則視為相對於專案根的路徑並轉為絕對路徑；Editor 下若當前語系檔案缺失，依序回退到 en、zh-Hant。
             // 數值影響：避免因尚未翻譯的語系版本造成 404；不影響非 Editor 流程。
             if (!url.Contains("://"))
             {
@@ -242,8 +265,8 @@ namespace UCL.Core
 #if UNITY_EDITOR
                 if (!System.IO.File.Exists(url) && url.Contains(aLang))
                 {
-                    string aFallbackUrl = url.Replace(aLang, FALLBACK_LANG);
-                    if (System.IO.File.Exists(aFallbackUrl)) url = aFallbackUrl;
+                    string aFallbackUrl = FindFallback(url, aLang, System.IO.File.Exists);
+                    if (aFallbackUrl != null) url = aFallbackUrl;
                 }
 #endif
             }

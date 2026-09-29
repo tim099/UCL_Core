@@ -17,11 +17,11 @@ UCL_URL 採用 **Resolver 註冊表** 架構。任何一段 `xxx:RelativePath` �
 ### 1.2 本地化佔位符：`{lang}`
 *   **用途**：根據當前語系自動切換文件。
 *   **計算邏輯**：系統會自動將 `{lang}` 替換為 `UCL_LocalizeService.CurLang`（例如 `en`, `zh-Hans`, `ja`）。
-*   **回退機制 (lang → en)**：當前語系文件不存在時，系統會自動把 `lang` 換成 `en` 再試一次。**Editor 與 Build 都支援**（前提是 Resolver 提供了 `Exists` 檢查 — 見 §1.4）。
+*   **回退機制 (lang → en → zh-Hant)**：當前語系文件不存在時，系統會依序把路徑裡 `/<lang>/` 那一段目錄換成 `en`、`zh-Hant` 再試（只換整段目錄名，不做子字串替換）。en 給遊戲專案的保底文件，zh-Hant 給 UCL_Core 自家文件（2026-09-29 起只維護 zh-Hant）。**Editor 與 Build 都支援**（前提是 Resolver 提供了 `Exists` 檢查 — 見 §1.4）。
 *   **歸屬**：`{lang}` 由 `UCL_URL` 共用層處理，**Resolver 端不必各自重複實作**。
 
 ### 1.4 存在檢查與 fallback：`IUCL_UrlPrefixResolver.Exists`
-Resolver 介面提供可選的 `Exists(relativePath)` 方法，**預設回傳 true**（不檢查、不啟用 fallback）。覆寫此方法即可啟用「**lang 缺檔自動 fallback 到 en**」：
+Resolver 介面提供可選的 `Exists(relativePath)` 方法，**預設回傳 true**（不檢查、不啟用 fallback）。覆寫此方法即可啟用「**lang 缺檔自動 fallback（en → zh-Hant）**」：
 
 | 環境 | 典型 `Exists` 實作 |
 |---|---|
@@ -35,7 +35,7 @@ UCL_URL 的呼叫流程（簡化版）：
 4. 呼叫 `Resolver.Resolve(rel)` 取得最終 URL / 路徑。
 
 ### 1.5 UCL_Core 自家的 Build-time Manifest
-UCL_Core 內建一份 manifest 機制，使 `ucl_core:` 在 **Build 模式下也能 fallback 到 en**：
+UCL_Core 內建一份 manifest 機制，使 `ucl_core:` 在 **Build 模式下也能 fallback（en → zh-Hant）**：
 
 | 元件 | 路徑 | 角色 |
 |---|---|---|
@@ -194,7 +194,7 @@ public class CombineSettingAsset { ... }
 
 > [!WARNING]
 > **第三列那個 LogWarning 是 2026-08-17 補的，在那之前這個情況完全靜默。**
-> 鏈路是四層 fail-soft 疊起來：`{lang}` 找不到 → en 回退也找不到 → **維持原路徑**
+> 鏈路是四層 fail-soft 疊起來：`{lang}` 找不到 → en、zh-Hant 回退也找不到 → **維持原路徑**
 > （§1.4 的註解說「最終由 Resolve 回傳的 URL 自行處理 404」，但本地檔案路徑沒有 404 這回事）
 > → `Application.OpenURL(不存在的路徑)` → Windows shell 靜默無視，不丟例外也不寫 log。
 > 使用者只看到「按了沒反應」。

@@ -3,7 +3,7 @@ title: Cmd_Treasury — Agent Token 帳本（使用層：op 與欄位怎麼填�
 description: 經濟體的單一財務入口 — 14 個 op 涵蓋餘額查詢（單筆／整批）/ 進出帳 / 守恆轉帳 / 請款單 / 轉帳單 / 每日結帳。本檔講「呼叫時要填什麼」與「哪些欄位其實沒人驗」。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/Treasury/
 namespace: UCL.Core.EditorLib.AgentCommands.Treasury
-last_updated: 2026-09-22
+last_updated: 2026-09-29 (audit／closing_generate／closing_list 補 Senate `bank` 對應 op；TASK-0331)
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | 姊妹 Cmd | 身分層（agent vs persona）的正名拍板在那邊
@@ -77,11 +77,11 @@ senate ucmd run Treasury \
 | `credit` | **✓ 進帳** | `account` `amount` `source_kind` | 加錢 |
 | `debit` | **✓ 出帳** | `account` `amount` `use_kind` | 扣錢（有帳戶隔離鐵律，見 §3） |
 | `transfer` | **✓ 守恆搬錢** | `from_account` `to_account` `amount` `use_kind` `source_kind` | A→B 原子雙分錄 |
-| `audit` | ✗ | `account` | 列該帳戶的分錄明細（**新銀行**；可帶 `since_ts`） |
+| `audit` | ✗ | `account` | 列該帳戶的分錄明細（**新銀行**；可帶 `since_ts`）。Senate 對應：`senate cmd bank --arg op=entries --arg account=<id> [--arg since_ts=…]`（TASK-0331，逐筆對拍相同；⚠ 沒開戶的帳號會失敗，不回 0 筆） |
 | ~~`verify`~~ | ✗ | — | ⛔ **已退場**（TASK-0274）—— 新銀行分錄沒有 `balance_before/after` 可對，照跑會每筆誤報 DRIFT；改用 `closing_list`（驗結帳鏈）／`audit`（看明細） |
 | ~~`request`~~／~~`request_list`~~／~~`request_cancel`~~／~~`transfer_request`~~ | ✗ | — | ⛔ **已搬到 Senate**（TASK-0327，2026-09-28）⇒ `senate cmd bank-request --arg op=request\|transfer\|cancel\|list --arg persona=<你> …`（參數名相同）；審批照舊 `senate cmd bank --arg op=approve` |
-| `closing_generate` | ✗ | — | 補算所有「已完結但未結帳」的 UTC 日 |
-| `closing_list` | ✗ | — | 列已結帳日期 + 當前讀取基準 |
+| `closing_generate` | ✗ | — | 補算所有「已完結但未結帳」的 UTC 日。Senate 對應：`senate cmd bank --arg op=closing_generate`（與每日結算同一支 `SCP_BankClosing`，TASK-0331） |
+| `closing_list` | ✗ | — | 列已結帳日期 + 當前讀取基準。Senate 對應：`senate cmd bank --arg op=closing_list`（鏈斷掉時 exit 5，TASK-0331） |
 | `senate_cli` | ✗ | — | 查／設派給 Server 的 `senate` 執行檔；**指到不存在的檔＝寫錢那條路的反向對照** |
 
 > **`balances` 為什麼要存在**（2026-09-16，TASK-0223）：本檔頂端的硬規則禁止呼叫端自己重放 ledger、

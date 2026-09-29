@@ -20,6 +20,7 @@
 | **Workflows**（建頁 / 建 Cmd / 建 Asset / 翻譯 / 編譯排錯…） | [`Docs~/zh-Hant/Workflows/`](Docs~/zh-Hant/Workflows/) |
 | **Python 工具索引** | [`Docs~/zh-Hant/Tools/Python_Tools_Index.md`](Docs~/zh-Hant/Tools/Python_Tools_Index.md) |
 | **文件總索引** | [`Docs~/zh-Hant/index.md`](Docs~/zh-Hant/index.md) |
+| **ucmd 搬到 Senate CLI 時文件怎麼搬**（指令住哪、文件就住哪；UCL_Core 舊文件同一筆刪） | `senate cmd doc --arg op=show --arg name=Doc_Query` §3 |
 
 ## 路徑規則（最常踩的坑）
 

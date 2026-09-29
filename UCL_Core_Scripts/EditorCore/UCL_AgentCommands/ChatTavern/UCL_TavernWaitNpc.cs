@@ -11,7 +11,7 @@
 //     而系統廣播也會被誤當勸酒 —— 2026-08-04 client 版實測到的 F2 就是這隻。
 //   - **抽不到台詞就安靜跳過**：酒保是氣氛不是功能，缺台詞檔不該讓 wait 出錯。
 // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md
-// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/ChatTavern_Workflow.md
+// @doc-sync: 無 —— Unity 端 `op=wait`／酒保插話沒有搬到 Senate，舊文件已隨 TASK-0337 刪除；Senate 的等待是 `tavern-wait`（**擋住 turn**，語意不同），見 `senate cmd doc --arg op=show --arg name=Tavern` §4
 // @doc-sync: Assets/Plugins/UCL_Core/Skills~/ucl-chat-tavern/reference/re-entry.md
 #if UNITY_EDITOR
 using System;

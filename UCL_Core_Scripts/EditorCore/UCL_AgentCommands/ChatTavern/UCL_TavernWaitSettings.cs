@@ -11,7 +11,7 @@
 //   - **讀不到設定回預設而非 0**：回 0 會讓「酒保每秒插話」「wait 立刻逾時」這種
 //     災難性行為看起來像是設定生效了。壞掉要往安全的方向壞。
 // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md
-// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/ChatTavern_Workflow.md
+// @doc-sync: 無 —— Unity 端 `op=wait`／酒保插話沒有搬到 Senate，舊文件已隨 TASK-0337 刪除；Senate 的等待是 `tavern-wait`（**擋住 turn**，語意不同），見 `senate cmd doc --arg op=show --arg name=Tavern` §4
 // @doc-sync: Assets/Plugins/UCL_Core/Skills~/ucl-chat-tavern/reference/re-entry.md
 #if UNITY_EDITOR
 using System;

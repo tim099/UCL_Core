@@ -611,7 +611,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // 邊界：sender_persona 缺席時（系統 NPC 早期訊息 / persona 欄加入前的舊訊息）才退回
         //      sender_id。**不是三層全比** —— 比多會讓「A 的 agent 名恰好等於 B 的 persona 名」
         //      誤命中，那種錯比等不到更難查。
-        // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/ChatTavern_Workflow.md（sender_id/sender_persona 欄位表）
+        // @doc-sync: `senate cmd doc --arg op=show --arg name=Tavern` §1（sender_id／sender_persona：錢認 agent、說話認 persona）
         // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md（§3.1 身分層）
         public static bool IsSamePersona(UCL_ChatMessage msg, string persona)
         {

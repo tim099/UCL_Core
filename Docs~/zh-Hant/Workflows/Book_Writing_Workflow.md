@@ -4,7 +4,7 @@ slug: book-writing-workflow
 status: v1 (2026-05-28 basecamp 大小姐, 從《Use Case 雕琢學》寫書 marathon 經驗 codify)
 created_at: 2026-05-28
 created_by: claude-da-xiaojie (basecamp 大小姐)
-last_updated: 2026-09-04 (legacy `source` 欄退場 —— 兩端改讀 origin/read-through，publish 不再寫出；順手對齊 python 與 C# 的捐贈簿分組)
+last_updated: 2026-09-29 (Stage 5：publish 已會同步 book.json 草稿狀態（SCP_Core 0bd7577），移除過期的「不會回寫」段 —— summit 回報)
 location: UCL_Core (cross-project, 任何 persona 都可用)
 related:
   - ucl_core:Skills~/reading-library/SKILL.md | Reading Library | 既有「閱讀」SOP, 本 workflow 補「寫作」面
@@ -265,18 +265,12 @@ XX 在 XX 章還會深入: ...(留到 chN 拆)
 
 > 📌 **金流入口收斂到 ucmd**（Tim 拍板）：`donate` / `publish` / `tip` **只有 `run Books` 這一條路**。
 
-#### 🩸 已知不一致：`publish` **不會回寫 `book.json`**（2026-09-06 實測，未修）
+#### 📌 `publish` 會同步草稿狀態（`BookNotes/<slug>/book.json`）
 
-發表之後 `_donation.json` 有 `published_at`、書也真的出現在藏書架上，
-**但 `BookNotes/<slug>/book.json` 仍是 `status: writing` / `publish_status: draft`**
-（python 的舊實作會把它們改成 `reading` / `published`，C# 這側沒有）。
-
-⇒ 症狀：已發表的書**還會出現在「寫到一半」的清單裡**
-（`senate cmd book --arg op=writing`、早安 brief §6.7 見筆）。
-⚠ 兩個真相源不一致，**而兩邊都不報錯** —— 現場讀數：《同名的房間》2026-09-06 發表成功，
-同一分鐘 `op=writing` 仍把它列為未發布。
-
-**⇒ 發表完請順手回讀 `book.json`**，別把 publish 的 ✅ 當成那兩個欄位也跟著動了。
+發表時 `SCP_BooksOps.Publish` 會把草稿檔的 `publish_status` → `published`、`status` → `reading`，
+輸出多一行「草稿狀態已同步／本來就是 published（冪等）」。
+⚠ 草稿檔**不存在就略過、寫入失敗只印 ⚠**（書照樣入庫）⇒ 看到 ⚠ 那行時，
+那本書會繼續出現在「寫到一半」的清單裡（`senate cmd book --arg op=writing`、早安 brief §6.7 見筆），要手動回讀 `book.json`。
 
 **完稿後**:
 1. ```bash

@@ -1,3 +1,6 @@
+// ⏳ **準備退場**（Tim 2026-09-30，TASK-0340）：SCP_Core 已有同一份檔案格式的讀寫端 `SCP_AutoCommitConfig`
+//    （三態讀檔、Validate、保留未知欄位、原子寫入＋回讀），Senate「自動 Commit」頁的設定編輯區走那一支。
+//    本類別只剩 `UCL_AutoCommitPage` 的設定編輯區在用 —— 兩邊讀寫**同一個檔、同一組欄位名**，退場前別改欄位。
 // 區塊職責：自動 commit 的**分群設定檔**（`.ucl_autocommit.json`，放各 repo 根）——
 //          讓「這個 repo 的機器生成檔怎麼分群」由該 repo 自己宣告，而不是寫死在 UCL_Core。
 // 物理意義：Tim 2026-08-21 拍板。原本規則是兩組寫死的 `GroupDef[]`（agent / letters），

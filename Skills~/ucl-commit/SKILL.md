@@ -12,7 +12,7 @@ description: |
 >
 > ⚠ **兩條路，沒有第三條**：
 > **有作者的產出**（code / 文件 / 她寫的信）走 `senate cmd commit` —— **一律公告領薪，沒有關閉開關**；
-> **沒有作者的檔**（帳本 / 訊息 / cursor / 狀態快照）走 `Cmd AutoCommit` —— 純 git commit，不掛
+> **沒有作者的檔**（帳本 / 訊息 / cursor / 狀態快照）走 `senate cmd auto-commit` —— 純 git commit，不掛
 > trailer、不公告、不領薪。**「手動但不公告」不是一個選項** —— 不想公告就表示它不該走手動那條。
 
 > [!IMPORTANT]
@@ -71,7 +71,7 @@ description: |
 | 類型 | 走哪筆 commit |
 |---|---|
 | 代碼 / 文檔 / `.meta` | 主 commit（**具名 stage**，走 `senate cmd commit`） |
-| **機器生成的重複性檔**（酒館訊息 / Treasury 帳本 / runtime state / persona 的 `mailbox` `portraits` `profile` `bank` `_latest.md`） | **交給自動 commit**（`Cmd AutoCommit`，見下節）—— 不必自己分類 |
+| **機器生成的重複性檔**（酒館訊息 / Treasury 帳本 / runtime state / persona 的 `mailbox` `portraits` `profile` `bank` `_latest.md`） | **交給自動 commit**（`senate cmd auto-commit`，見下節）—— 不必自己分類 |
 | ephemeral：`*.log` / `_last_op.md` / `_last_view.md` / `_active_waits.json` / `_wait_*.md` / DebugLogs / 臨時渲染檔 | **不 commit**（自動 commit 也永遠不收） |
 
 > [!IMPORTANT]
@@ -81,62 +81,53 @@ description: |
 >
 > | | 有作者的產出（code / 文件 / 她寫的信） | 機器生成的狀態（帳本 / 訊息 / cursor / `profile/` / `bank/`） |
 > |---|---|---|
-> | 走哪支 | `senate cmd commit` | `Cmd AutoCommit` |
+> | 走哪支 | `senate cmd commit` | `senate cmd auto-commit`（或 Senate 後台「自動 Commit」頁） |
 > | trailer | ✅ 掛作者 | ❌ 純 git commit |
 > | 酒館公告＋領薪 | ✅ | ❌ **不領薪** —— 掛誰的名字領誰的薪都是假帳 |
 >
 > ```bash
-> # 先掃（預設 op=scan，純讀不動 index）—— 看清分群再決定
-> senate ucmd run AutoCommit --persona <me> --arg op=scan
-> senate ucmd run AutoCommit --persona <me> --arg op=scan --arg mode=letters
+> # 先掃（預設 op=scan，純讀不動 index）—— 看清分群再決定。一次掃完全部 repo，沒有 mode
+> senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters>
 >
-> # 真的提交（逐群一筆 commit；不 push、不 bump 父層）
-> senate ucmd run AutoCommit --persona <me> --arg op=commit
-> senate ucmd run AutoCommit --persona <me> --arg op=commit --arg mode=letters
+> # 真的提交（逐群一筆 commit；子 repo 在前、父層最後；不 push、不 bump 父層）
+> senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters> --arg op=commit
+> #   只做某幾個 repo：--arg only=AgentCommands,kotoko　只做某幾群：--arg groups=chat,keys
 > ```
 >
+> 📌 **掃描範圍是一張清單**（Tim 2026-09-30，TASK-0340）：AgentCommands 本層 ＋ letters 每個信件庫
+> ＋ 帶 `.ucl_autocommit.json` 的 submodule。⛔ **沒有在線守衛了** —— 自動群收的都是機器獨佔的檔，
+> 親筆檔（收尾信・碎片・素描本濃縮・opinions）本來就落未分類、永不自動收。分界是「誰在寫」，不是「在不在線」。
+>
 > ⚠ 四個硬擋（都是「不會當場叫」的錯，所以擋在必經路上）：
-> - **未分類（`__other`）與 submodule pointer（`__subptr`）永遠不自動收** ——
->   前者可能是別人正在寫的產出，後者 bump 了別人會 pull 不到 hash。要收得顯式 `--arg groups=__other`。
-> - **detached HEAD 的 repo 直接跳過**（游離 commit 沒有分支指到它）。
-> - **letters 模式預設跳過在線的 persona** —— 她可能正在寫。要收得 `--arg include_online=1`，
->   而那應該**只針對自己**（`--arg only_persona=<me>`），不是順手掃全部。
-> - **呼叫前 index 已有 staged 檔的 repo，`op=commit` 直接跳過**（BUG-30，**沒有繞法**）——
+> - **`__other`／`__other_untracked`／`__subptr` 永遠不自動收** —— 規則沒認出來 ≠ 機器生成；
+>   pointer（含**還沒登記的巢狀 repo**）bump 了別人會 pull 不到 hash。要收得顯式 `--arg groups=__other`。
+> - **detached HEAD 的 repo 直接擋下**（游離 commit 沒有分支指到它）。
+> - **呼叫前 index 已有 staged 檔的 repo，`op=commit` 直接擋下**（BUG-30，**沒有繞法**）——
 >   分群只決定「工具 stage 哪些檔」，index 裡本來就有的會被併進第一個群、掛上那個群的訊息。
 >   🩸 `git mv` 21 個檔後直接跑 op=commit ⇒ 那批改名落進 `[chat] … [3 files]`：訊息說 3 個、實際 24 個。
 >   **先自己 commit 或 unstage 再跑**；`op=scan` 只警告不擋（那是被擋之後唯一的出路）。
+> - 設定檔壞掉／不合法的 repo 擋下並說為什麼。
 >
-> ⚠ 參數名是 **`only_persona`** 不是 `persona` —— `--persona <me>` 會把 persona 戳進 args
-> （那是「這筆是誰派的」宣告），叫 `persona` 就會被它當成篩選條件。
-> 🩸 實測踩過：letters 模式的掃描範圍從 9 個 repo 靜默縮成 1 個，而輸出是「repos=1」，
-> 看起來像「找不到其他 repo」而不像參數撞名。
->
-> 📌 分群規則的真相源分兩層（2026-08-21 起）：
-> - **AgentCommands 本層與 persona 信件庫** → `UCL_AutoCommitRules`（寫死在程式碼，不開放編輯）。
+> 📌 分群規則的真相源（2026-09-30 起在 SCP_Core）：
+> - **AgentCommands 本層與 persona 信件庫** → `SCP_AutoCommitRules`（寫死在程式碼）。
 >   `[chat]` 獨立 commit 是 CLAUDE.md 等級的硬規則，能被參數亂改的規則等於沒有規則。
-> - **其他 repo** → 該 repo 根目錄的 `.ucl_autocommit.json`（自己宣告分群），走 `mode=submodules`：
->   ```bash
->   senate ucmd run AutoCommit --persona <me> --arg op=scan   --arg mode=submodules
->   senate ucmd run AutoCommit --persona <me> --arg op=commit --arg mode=submodules
->   ```
->   **沒有設定檔、或設定停用的 submodule 都不收**（不猜規則）。第一個消費者是 `Chess`（棋局狀態）。
-   ⚠ 兩個條件缺一不可：**有 `.ucl_autocommit.json`** ＋ **`Enabled=true`**。
-   後台頁的下拉選單可以選到還沒設定的 submodule 並幫你建一份，但**預設停用** ——
-   「加了設定檔卻什麼都沒收」多半就是這一格，看回傳值 `disabled_repos`。
+> - **其他 repo** → 該 repo 根目錄的 `.ucl_autocommit.json`（自己宣告分群）。
+>   **沒有設定檔、或設定停用的 submodule 都不收**（不猜規則）。⚠ 兩個條件缺一不可：
+>   **有 `.ucl_autocommit.json`** ＋ **`Enabled=true`** ——「加了設定檔卻什麼都沒收」多半就是這一格，看回傳值 `disabled_repos`。
 >
-> ⚠ 設定檔為什麼不算「被參數亂改」：它**入版控、由它管的那個 repo 擁有、改動在 diff 裡看得見**，
-> 而當年那句針對的是執行期參數（不留痕跡、事後查不到誰改的）。地板也還在，且由**判定順序**保證
-> 而不是由「記得檢查」保證：`Classify` 走 subptr → ephemeral → 分群 ⇒ 設定檔寫什麼前綴都
-> 碰不到 ephemeral 與 `__other`／`__subptr`。設定檔只吃前綴清單、不吃 regex（比 code 更受限）。
+> ⚠ 設定檔為什麼不算「被參數亂改」：它**入版控、由它管的那個 repo 擁有、改動在 diff 裡看得見**。
+> 地板由**判定順序**保證：`Classify` 走 subptr → ephemeral → 分群 ⇒ 設定檔寫什麼前綴都碰不到它們。
 >
-> 📖 **要把一個 repo 加入管理、或改分群規則 → 走 SOP，不要憑本節猜**：
-> `ucl_core:Docs~/{lang}/Workflows/AutoCommit_Config_Workflow.md`
-> （加入步驟／欄位判準／群怎麼切／地板／⚠ **探針驗收法**）
-> 後台頁（含設定編輯區）→ `ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_AutoCommitPage.md`
+> 📖 完整規格（分群表／設定檔／守衛／機讀值）→ `senate cmd doc --arg op=show --arg name=AutoCommit`
+> 加入管理的 SOP →`ucl_core:Docs~/{lang}/Workflows/AutoCommit_Config_Workflow.md`（⚠ **探針驗收法**）
+> 後台頁 → Senate「自動 Commit」（`senate ui --page auto-commit`，含 ⚙ 設定編輯區）
 >
-> ⚠ 加入管理時**最容易漏的一步**：`repos=1` 只證明設定檔被讀到 ——
+> ⚠ 加入管理時**最容易漏的一步**：`repos=N` 只證明設定檔被讀到 ——
 > **鍵名寫錯導致 0 群時，讀數跟成功時一模一樣。** 一定要放一顆探針再掃一次，
-> 看 Editor log 有沒有印出 `→ <repo> [<群>] N 檔：<訊息>`。看到那行才算通。
+> 看輸出有沒有印出 `→ [<群>] N 檔：<訊息>`。看到那行才算通。
+>
+> ⏳ Unity 端的 `senate ucmd run AutoCommit`（`mode=agent|letters|submodules`）與 UCL 後台頁**準備退場**（TASK-0340），
+> 別再用：⚠ 那個後台頁的提交路徑**沒有** BUG-30 的守衛。
 
 - DebugLogs 保持 **untracked 但不 ignore** — Tim 要在 `git status` 看得到。
 - **絕不 `git add -A`** — 一律具名 stage。**別人正在寫的檔會被你一起 commit 走**，而那不會有錯誤訊息。
@@ -305,7 +296,7 @@ console 會印出推進或結單訊息。
 2. detached HEAD → 先 `switch` + `pull --ff-only`。
 3. 按分類矩陣判斷每個檔走哪筆。
 3.5 **機器生成的重複性檔一律交給自動 commit，這一步不是選配**（見上節）：
-   `run AutoCommit --arg op=scan`（＋ `--arg mode=letters`）看清分群 → `--arg op=commit`。
+   `senate cmd auto-commit`（預設 scan，一次掃完全部 repo）看清分群 → `--arg op=commit`。
    先做這步，剩下的 `git status` 就只剩「有作者的產出」——
    **分類這件事交給規則，而不是交給你這一刻的注意力。**
    ⇒ 之後 `senate cmd commit` 收到的每一筆都該公告領薪；**發現有東西「不想公告」＝它站錯隊了**，

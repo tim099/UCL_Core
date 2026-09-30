@@ -1,7 +1,7 @@
 ---
 title: Commit Workflow — 提交規範（UCL_Core 三層 + ChatTavern 訊息獨立）
 description: 跨專案共享的提交規則 — **預設單層**（只提交改動所在那層，逐層 bump 要使用者明說）、submodule 逐層 bump 流程、submodule 內 commit 前先切追蹤分支（避免 detached HEAD 游離）、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、Commit All 全包模式、commit message 格式與 prefix 約定。
-last_updated: 2026-08-22
+last_updated: 2026-09-30 (自動 commit 改走 senate cmd auto-commit：不分模式、拿掉在線守衛；TASK-0340) | 2026-08-22
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/CommandTable.md | 指令對照表 | 觸發本 workflow 的口語指令清單
@@ -59,7 +59,7 @@ related:
 | | 有作者的產出 | 機器生成的狀態 |
 |---|---|---|
 | 例 | `*.cs` / `Docs~/*.md` / persona 自己寫的信、碎片、素描本 | 酒館訊息 / Treasury 帳本 / cursor / bartender state / `profile/` / `bank/` / `mailbox/` / `portraits/` / `_latest.md` |
-| 走哪支 | `senate cmd commit` | **`Cmd AutoCommit`**（或後台「自動提交」頁） |
+| 走哪支 | `senate cmd commit` | **`senate cmd auto-commit`**（或 Senate 後台「自動 Commit」頁） |
 | trailer | ✅ 掛作者 | ❌ 純 `git commit` |
 | 酒館公告＋領薪 | ✅ | ❌ **不領薪** |
 
@@ -69,14 +69,15 @@ related:
 ### 怎麼用
 
 ```bash
-# 先掃（op=scan 是預設，純讀不動 index）
-senate ucmd run AutoCommit --persona <me> --arg op=scan                    # AgentCommands 本層
-senate ucmd run AutoCommit --persona <me> --arg op=scan --arg mode=letters  # letters/<persona>/ 每個 repo
+# 先掃（op=scan 是預設，純讀不動 index）—— 一次掃完：AgentCommands 本層＋letters 每個信件庫＋有設定檔的 submodule
+senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters>
 
-# 真的提交（逐群一筆 commit；不 push、不 bump 父層）
-senate ucmd run AutoCommit --persona <me> --arg op=commit
-senate ucmd run AutoCommit --persona <me> --arg op=commit --arg mode=letters
+# 真的提交（逐群一筆 commit；子 repo 在前、父層最後；不 push、不 bump 父層）
+senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters> --arg op=commit
 ```
+
+> ⏳ Unity 端的 `senate ucmd run AutoCommit`（`mode=agent|letters|submodules`）與 UCL 後台「自動提交」頁**準備退場**（TASK-0340）。
+> 規則、引擎與完整規格已下沉到 SCP_Core → `senate cmd doc --arg op=show --arg name=AutoCommit`。
 
 `/ucl-commit` 流程把它排在**手動 stage 之前**（skill 的執行順序 3.5）：
 先讓規則把機器檔收掉，剩下的 `git status` 就只剩有作者的產出。
@@ -88,12 +89,11 @@ senate ucmd run AutoCommit --persona <me> --arg op=commit --arg mode=letters
 
 | 擋什麼 | 為什麼 | 要繞得顯式 |
 |---|---|---|
-| 未分類 `__other` | 規則沒認出來的檔，可能是別人正在寫的產出 | `--arg groups=__other` |
-| 巢狀 submodule pointer `__subptr` | bump 了別人會 pull 不到那個 hash | `--arg groups=__subptr` |
-| letters 模式的**在線** persona | 她可能正在寫；動別人正在寫的東西不會報錯，是靜默清掉 | `--arg include_online=1`（**建議搭 `--arg only_persona=<me>` 只收自己**） |
+| 未分類 `__other`／`__other_untracked` | 規則沒認出來的檔，可能是有作者的產出（untracked 那一群是別人選擇不放進版控的） | `--arg groups=__other` |
+| 巢狀 submodule pointer `__subptr`（含**還沒登記的巢狀 repo**） | bump 了別人會 pull 不到那個 hash；未登記的會被 `git add` 塞成沒有 .gitmodules 的 gitlink | `--arg groups=__subptr` |
 | 呼叫前 index 已有 staged 檔的 repo（`op=commit`） | 分群只決定「工具 stage 哪些檔」，index 裡本來就有的會被併進**第一個群**、掛上那個群的訊息 | ⛔ **沒有繞法**：自己先 commit 或 unstage 再跑（BUG-30） |
 
-另有一條非參數的硬擋：**detached HEAD 的 repo 直接跳過** —— 那裡的 commit 落在游離節點，
+另有兩條非參數的硬擋：**設定檔壞掉／不合法的 repo 擋下並說為什麼**；**detached HEAD 的 repo 直接擋下** —— 那裡的 commit 落在游離節點，
 沒有分支指到它，下次 checkout 只剩 reflog 找得到。
 
 🩸 **BUG-30（2026-08-21 現場，2026-08-22 修）**：`git mv` 改名 21 個檔（進了 index）後直接跑
@@ -113,10 +113,9 @@ senate ucmd run AutoCommit --persona <me> --arg op=commit --arg mode=letters
 ⚠ 所有 git 呼叫釘 `-c core.quotepath=false`：預設會把非 ASCII 路徑印成八進位轉義，
 那會讓 `git add` 找不到檔、也讓對帳把**每個中文檔名都誤報成「多帶」**。
 
-⚠ 篩選參數叫 **`only_persona`** 不是 `persona`：`run_cmd.py --persona <me>` 會把 persona
-戳進 args（那是「這筆是誰派的」宣告）⇒ 叫 `persona` 就會被那個宣告當成篩選條件。
-🩸 實測踩過：letters 模式的掃描範圍從 9 個 repo 靜默縮成 1 個，輸出是「repos=1」——
-看起來像「找不到其他 repo」的探索 bug，不像參數撞名。
+⛔ **在線守衛已拿掉**（Tim 2026-09-30，TASK-0340）：自動 commit 管理的部分**不應該手動 commit** ⇒
+那些群收的是機器獨佔的檔；親筆檔（收尾信・碎片・素描本濃縮・opinions）本來就不在任何一群裡。
+分界是「這個檔誰在寫」，不是「這個人在不在線」。只想做某幾個 repo → `--arg only=<repo 顯示名,…>`（打錯名字 exit 2）。
 
 ### 規則住在哪
 
@@ -124,10 +123,10 @@ senate ucmd run AutoCommit --persona <me> --arg op=commit --arg mode=letters
 
 | 對象 | 規則住哪 | 可否編輯 |
 |---|---|---|
-| AgentCommands 本層、persona 信件庫 | `UCL_AutoCommitRules`（程式碼） | ❌ 不開放 —— `[chat]` 獨立 commit 是 `CLAUDE.md` 等級的硬規則 |
+| AgentCommands 本層、persona 信件庫 | `SCP_AutoCommitRules`（SCP_Core 程式碼） | ❌ 不開放 —— `[chat]` 獨立 commit 是 `CLAUDE.md` 等級的硬規則 |
 | **其他 repo**（第一個是 `Chess`） | 該 repo 根的 `.ucl_autocommit.json` | ✅ 由該 repo 自己宣告；後台頁可改可存 |
 
-走 `mode=submodules` 收設定檔那一層；**沒有設定檔的 submodule 不收**（不猜規則）。
+設定檔那一層跟另外兩層**同一趟掃**；**沒有設定檔的 submodule 不收**（不猜規則）。
 完整步驟（加入管理／欄位判準／地板／驗收）→ [`AutoCommit_Config_Workflow.md`](AutoCommit_Config_Workflow.md)。
 
 ⚠ 設定檔為什麼不算「被亂改的規則」：它**入版控、由它管的那個 repo 擁有、改動在 diff 裡看得見**，

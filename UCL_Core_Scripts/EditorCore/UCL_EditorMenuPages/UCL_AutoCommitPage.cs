@@ -1,3 +1,7 @@
+// ⏳ **準備退場**（Tim 2026-09-30，TASK-0340）：已移植到 Senate「自動 Commit」頁（`senate ui --page auto-commit`）
+//    ＋ `senate cmd auto-commit`；規則與引擎在 SCP_Core（SCP_AutoCommitRules／SCP_AutoCommitConfig／SCP_AutoCommit）。
+//    ⚠ 本頁的提交路徑**沒有** Cmd_AutoCommit 那三道 BUG-30 守衛（呼叫前已 staged 擋／pathspec 提交／提交後對帳），
+//      失敗時還整個 `git reset` —— 退場前別再往這裡加功能，要改去改 Senate 那一側。
 // 區塊職責：自動 Commit 頁 — 把「機器自動生成的檔」分群、一鍵各自成 commit
 // 物理意義：兩種掃描對象，同一套「分群→勾選→每群一筆 commit」機制：
 //          ① **AgentCommands 本層**：Treasury 帳本、酒館訊息、inbox cursor、bartender state
@@ -272,6 +276,11 @@ namespace UCL.Core.EditorLib.Page
         {
             using (new GUILayout.VerticalScope("box"))
             {
+                // 退場指路放在最上面 —— 還在用這一頁的人，第一眼就要看到新的去處與這一頁少了什麼。
+                GUILayout.Label("⏳ 本頁準備退場（TASK-0340）：請改用 Senate「自動 Commit」頁（senate ui --page auto-commit）"
+                                + "或 senate cmd auto-commit —— 不分模式、一次掃完全部 repo。"
+                                + "⚠ 本頁的提交路徑沒有 BUG-30 的三道守衛（已 staged 擋／pathspec 提交／提交後對帳）。",
+                    WarnLabelStyle);
                 using (new GUILayout.HorizontalScope())
                 {
                     GUILayout.Label("掃描對象", UCL_GUIStyle.LabelStyle,
@@ -925,7 +934,9 @@ namespace UCL.Core.EditorLib.Page
                 if (string.IsNullOrEmpty(path)) continue;
 
                 string key;
-                if (subPaths.Contains(path)) key = KEY_SUBPTR;
+                // `dir/` 結尾 ＝ 還沒登記進 .gitmodules 的巢狀 repo —— 跟 pointer 同一族（TASK-0340：
+                // 舊版會被 `ChatTavern/` 前綴吃進 runtime 群，git add 會把它塞成沒有 .gitmodules 的 gitlink）。
+                if (subPaths.Contains(path) || path.EndsWith("/", StringComparison.Ordinal)) key = KEY_SUBPTR;
                 else if (IsEphemeral(path)) { ephemeral++; continue; }
                 else
                 {

@@ -1,3 +1,6 @@
+// ⏳ **準備退場**（Tim 2026-09-30，TASK-0340）：取代品是 `senate cmd auto-commit`（SCP_Core 的 SCP_Cmd_AutoCommit，
+//    不需要 Editor、不分模式、沒有在線守衛）。分群規則已經只剩 SCP_Core 那一份（UCL_AutoCommitRules 是轉接層）。
+//    本 Cmd 退場前照舊可用，但每次回報第一行都會指路。
 // 區塊職責：自動 commit 的 **Cmd 入口** —— 讓 agent（`/ucl-commit` 流程）也能把「機器生成的檔」
 //          分群整批 commit，不必自己分類、也不必請人去按後台那顆按鈕。
 // 物理意義：Tim 2026-08-20 要求 `/ucl-commit` 流程改用自動 commit 收重複性檔案。
@@ -45,7 +48,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         public override string CommandType => "AutoCommit";
 
         public override string ShortDescription =>
-            "把機器生成的檔分群整批 commit（規則與自動提交頁共用；預設只掃不提交）。";
+            "⏳ 準備退場 → 改用 `senate cmd auto-commit`（TASK-0340）。把機器生成的檔分群整批 commit（預設只掃不提交）。";
 
         public override string ArgsSchema =>
             "op=scan（預設）— 只掃描分群並回報，不動 index | " +
@@ -162,6 +165,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                 throw new Exception("[AutoCommit] 沒有可處理的 repo —— 檢查 mode / persona 參數");
 
             var sb = new StringBuilder();
+            // 退場指路放在第一行 —— 還在呼叫舊入口的人，回傳檔裡第一眼就要看到新的去處。
+            sb.AppendLine("⏳ 本 Cmd 準備退場（TASK-0340）→ 改用 `senate cmd auto-commit --arg data_root=<…> --arg letters_root=<…>`"
+                + "（不需要 Editor、不分模式、一次掃完全部 repo）。");
             sb.AppendLine($"[AutoCommit] op={op} mode={modeArg} repos={targets.Count} "
                 + $"groups={(explicitGroups == null ? "(各 repo 的 DefaultOn)" : string.Join(",", new List<string>(explicitGroups).ToArray()))}");
 

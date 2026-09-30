@@ -1,37 +1,26 @@
-// 區塊職責：自動 commit 的**分群規則**（單一真相源）——「這個檔屬於哪一群、哪些檔永遠不收」。
-// 物理意義：規則原本只住在 `UCL_AutoCommitPage` 裡，那時它唯一的消費端就是那頁。
-//          Tim 2026-08-20 要求 `/ucl-commit` 流程也能用自動 commit ⇒ 出現第二個消費端（`Cmd_AutoCommit`）。
-//          ⇒ 規則搬到這裡**共用**，而不是在 Cmd 裡再寫一份。
-//          🩸 理由不是「重複很醜」：這種規則的錯配等級是「檔進錯 commit」——
-//            兩份規則漂掉的症狀是「同一個檔在頁面被分到 A 群、在 Cmd 被分到 B 群」，
-//            而兩邊各自看起來都正常。本 repo 已經為「同一個數字兩處各存一份」付過好幾次帳。
-// 數值影響：純資料與純函式，不碰 IO、不碰 GUI 狀態 ⇒ 抽離不改變任何行為。
-//          **執行**（git add / commit）刻意留在各自的呼叫端：頁面要 async ＋ 進度條，
-//          Cmd 要同步 ＋ 回傳值，硬要共用會生出一個誰都不好用的中間層。
-// ⚠ **2026-08-21 部分撤銷** 2026-08-07 的「規則寫在程式碼、不開放 UI／參數編輯」拍板。
-//   撤銷後的形狀是「可宣告、但掀不動地板」，不是「全面開放」：
-//   · 本檔這兩組寫死的 GroupDef（agent / letters）**沒有變** —— AgentCommands 本層與
-//     persona 信件庫的分群仍是專案慣例，不由任何檔案覆寫。
-//   · 新增：其他 repo 可以在自己根目錄放 `.ucl_autocommit.json` 宣告自己的分群
-//     （見 UCL_AutoCommitConfig；第一個消費者是 Chess）。設定檔**入版控、由該 repo 擁有、
-//     改動在 diff 裡看得見** —— 這跟當年那句針對的「執行期參數」（不留痕跡）不是同一種東西。
-//   · 地板由**判定順序**保證，不是由「呼叫端記得檢查」保證：Classify 的順序是
-//     subptr → ephemeral → 分群 ⇒ 設定檔寫什麼前綴都碰不到 ephemeral 與那兩個特殊群。
-//   · 設定檔只吃**前綴清單**，不吃 regex —— 比 code 更受限（理由見下方 GroupDef 的區塊註解：
-//     「錯配是『檔進錯 commit』等級，規則要一眼能驗證」）。
-// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/AutoCommit_Config_Workflow.md（地板：判定順序 subptr→ephemeral→分群）
-// @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/UCL_EditorPage/UCL_AutoCommitPage.md（兩組寫死分群的表）
+// 區塊職責：自動 commit 分群規則的 **Unity 端轉接層** —— 規則本體已下沉到 SCP_Core 的 `SCP_AutoCommitRules`。
+// 物理意義：⏳ **準備退場**（Tim 2026-09-30，TASK-0340）：自動 commit 移植到 Senate
+//          （「自動 Commit」頁＋`senate cmd auto-commit`），規則與引擎在 SCP_Core。
+//          本檔還留著，是因為 `UCL_AutoCommitPage` 與 `Cmd_AutoCommit` 退場前還在用它。
+//          ⭐ 它**不再持有規則表**，只把 SCP_Core 那兩張表轉成本端的 `GroupDef` ——
+//            🩸 理由：下沉之後規則一度有兩份（UCL 一份、SCP 一份），而這種規則的錯配等級是「檔進錯 commit」，
+//            只改其中一份的症狀是「同一個檔在 Unity 被分到 A 群、在 Senate 被分到 B 群」，兩邊各自看起來都正常。
+//            ⇒ 規則只准有一個真相源；改規則去改 `<SCP_Core>/Runtime/Git/SCP_AutoCommitRules.cs`。
+// 數值影響：純資料與純函式，不碰 IO。分群結果與 SCP_Core 端逐群相同（判定順序同為 subptr → ephemeral → 分群）。
+//          ⚠ 行為差異只有一格，而它是修正：status 裡以 `dir/` 結尾的條目（**還沒登記進 .gitmodules 的巢狀 repo**）
+//            一律歸 `__subptr` —— 舊版會被 `ChatTavern/` 前綴吃進 runtime 群（預設勾選），
+//            `git add` 會把它塞成沒有 .gitmodules 的 gitlink，而那不會報錯（TASK-0340 沙盒實測）。
+// @doc-sync: <SCP_Core>/Docs~/AutoCommit.md（分群表的真相源在 SCP_Core）
 #if UNITY_EDITOR
 using System;
+using SCP.Core.Git;
 
 namespace UCL.Core.EditorLib.AgentCommands
 {
-    /// <summary>自動 commit 的分群規則。`UCL_AutoCommitPage`（人按）與 `Cmd_AutoCommit`（agent 跑）共用。</summary>
+    /// <summary>自動 commit 的分群規則（轉接 SCP_Core 的 <see cref="SCP_AutoCommitRules"/>）。</summary>
     public static class UCL_AutoCommitRules
     {
-        // 區塊職責：分群規則（順序即優先序，第一個命中的收走）
-        // 物理意義：Match 吃「相對該 repo root 的正斜線路徑」。規則刻意用前綴不用 regex ——
-        //          這裡的錯配是「檔進錯 commit」等級，規則要一眼能驗證。
+        /// <summary>一群的規則。Match 吃「相對該 repo root 的正斜線路徑」。</summary>
         public class GroupDef
         {
             public string Key;
@@ -41,339 +30,49 @@ namespace UCL.Core.EditorLib.AgentCommands
             public bool DefaultOn;
         }
 
-        /// <summary>掃描結果的兩個特殊群：巢狀 submodule pointer／未分類。</summary>
-        public const string KEY_SUBPTR = "__subptr";
-        public const string KEY_OTHER = "__other";
+        public const string KEY_SUBPTR = SCP_AutoCommitRules.KeySubPtr;
+        public const string KEY_OTHER = SCP_AutoCommitRules.KeyOther;
+        public const string KEY_OTHER_UNTRACKED = SCP_AutoCommitRules.KeyOtherUntracked;
 
-        // 區塊職責：未分類**且從來沒進過版控**的檔 —— 從 KEY_OTHER 拆出來（TASK-0129）。
-        // 物理意義：「untracked」是一個**別人做過的決定** —— 那個檔沒有進版控，是有人選擇不放。
-        //           替他翻案要顯式，而不是被一句 `groups=__other` 順手帶走。
-        // 數值影響：與 KEY_OTHER 同樣**永不自動收**；差別在它現在是**獨立一筆**，
-        //           訊息也不同 ⇒ 收走它的人在 commit 訊息上看得出自己收了什麼。
-        // 🩸 血證（@summit 2026-09-04）：`groups=__other` 一次收走 4 個機器檔
-        //   ＋ **4 個 @calli／@kiara 的 untracked 交付單** ＋ 3 個有作者的 `.py`，
-        //   而那筆的訊息寫著 `unclassified generated files` —— 三樣都不是機器生成的。
-        public const string KEY_OTHER_UNTRACKED = "__other_untracked";
+        /// <summary>AgentCommands 本層（真相源：<see cref="SCP_AutoCommitRules.AgentGroupDefs"/>）。</summary>
+        public static readonly GroupDef[] AgentGroupDefs = Adapt(SCP_AutoCommitRules.AgentGroupDefs);
 
-        // ── AgentCommands 本層 ──────────────────────────────────────────
-        public static readonly GroupDef[] AgentGroupDefs =
-        {
-            new GroupDef
-            {
-                Key = "chat",
-                Label = "酒館訊息（[chat] 獨立 commit — 硬規則）",
-                // ⚠ `rooms_archive/`（TASK-0318 封存 ＝ 整個房間資料夾搬過去）要跟 `rooms/` 同一群：
-                //   分兩群的話一次封存會拆成兩筆 commit（這邊刪、那邊加），git 就認不出那是一次搬家。
-                Match = p => p.StartsWith("ChatTavern/rooms/") || p.StartsWith("ChatTavern/rooms_archive/"),
-                Message = "[chat] sync tavern messages & inbox (auto)",
-                DefaultOn = true,
-            },
-            new GroupDef
-            {
-                Key = "treasury",
-                Label = "Treasury（帳本 / 帳戶）",
-                Match = p => p.StartsWith("Treasury/"),
-                Message = "chore(treasury): sync ledger & account state (auto)",
-                DefaultOn = true,
-            },
-            // ⚠ 新銀行（TASK-0216，2026-09-17 起住 `<資料根>/Bank`）**跟舊帳本分群**：
-            //   同一筆錢在兩本帳上是兩個事件，合成一群的話 commit 訊息說不出動的是哪一本。
-            // 🩸 加這一條的理由：遷移當天它不在任何一群裡 ⇒ 落進 `__other_untracked` ＝ **永遠不會被自動收**。
-            //   而那個症狀是「錢寫進去了、git status 有東西、每晚的自動收帳一個字都不提它」。
-            new GroupDef
-            {
-                Key = "bank",
-                Label = "Bank（新銀行：帳戶 / 分錄）",
-                Match = p => p.StartsWith("Bank/"),
-                Message = "chore(bank): sync new-bank accounts & ledger (auto)",
-                DefaultOn = true,
-            },
-            new GroupDef
-            {
-                Key = "runtime",
-                Label = "Agent runtime state（cursor / bartender / persona / canvas…）",
-                Match = p => p.StartsWith("ChatTavern/") || p.StartsWith("AwakenInit/")
-                             || p.StartsWith("Canvas/") || p.StartsWith("Inbox/"),
-                Message = "chore(runtime): sync agent runtime state (auto)",
-                DefaultOn = true,
-            },
-            new GroupDef
-            {
-                Key = "queue_state",
-                Label = "PromptQueue 狀態（daemon 游標 —— 不含該目錄下的原始碼）",
-                // ⚠ 判準刻意**不是目錄前綴**（`PromptQueue/`）——那底下住著一票 tracked 的 .py
-                //   （qadd / qdrain / messages_dedupe …），前綴會把**有作者的產出**當成機器狀態
-                //   自動收走：掛不到作者、領不到薪、而且訊息會寫成「sync state」。
-                //   那種錯不會當場叫，它長得就像一筆正常的自動 commit。
-                // ⇒ 只收頂層的 `_*_state.json`（daemon 自己寫的游標），子目錄一律不碰。
-                // 🩸 這一格補的是見叢老帳：這兩個檔原本落在 `__other`（未分類永不自動收）
-                //   ⇒ `git status` 天天髒著，而髒久了人就會開始忽略整張表。
-                //   （Tim 2026-09-01 拍板「加一個群去收」。）
-                Match = p => p.StartsWith("PromptQueue/")
-                             && p.EndsWith("_state.json")
-                             && p.IndexOf('/', "PromptQueue/".Length) < 0,
-                Message = "chore(queue): sync prompt queue state (auto)",
-                DefaultOn = true,
-            },
-            // ===========================================================
-            // 區塊職責：`Lessons/` —— 跨 agent 共享的 lesson 知識庫（TASK-0117）。
-            // 物理意義：`lessons.jsonl` 是 `Cmd_NoteLesson` append 的機器檔，
-            //          `_last_lesson.md` 是它的視圖（每次 append 後重寫）。
-            //          內容是誰的教訓寫在**欄位裡**（actor），不是靠 commit 的作者欄表達
-            //          ⇒ 依本表判準它屬於可自動收那側，跟酒館訊息同型（有 sender 欄的機器檔）。
-            // 🩸 為什麼要有這一群：它原本落 `__other`（永不自動收）——
-            //   2026-09-03 summit 實測，`op=commit` 收了 4 群而這兩檔留在工作區，
-            //   顯式帶 `--arg groups=__other` 才收得到。⇒ 那個保護變成每個人每天要繞一次的
-            //   例外手勢，而例外手勢遲早被忘記；忘記的症狀是**工作區靜默累積**，不是報錯。
-            // ⚠ 反向對照（TASK-0117 ①）：全 repo 搜過，**沒有任何一處寫著 Lessons/ 是刻意排除的**
-            //   （`Cmd_AutoCommit.cs` 只把它記成一筆「當日落 __other」的觀測讀數）⇒ 是缺口不是設計。
-            // ===========================================================
-            new GroupDef
-            {
-                Key = "lessons",
-                Label = "Lessons（跨 agent lesson 庫：jsonl ＋ 它的視圖）",
-                Match = p => p.StartsWith("Lessons/"),
-                Message = "chore(lessons): sync lesson log (auto)",
-                DefaultOn = true,
-            },
-            // ===========================================================
-            // 區塊職責：`Plurk/post_audit.jsonl` —— 對外發文的 append-only 稽核帳。
-            // 物理意義：`Cmd_Plurk` 每次發文寫一行（時間／端點／plurk_id／body 的 sha 與長度，
-            //          **不存內文**）⇒ 純機器帳，沒有作者。calli 2026-09-06 在 TASK-0117 上
-            //          點名它「同樣的形狀」，而搜過看板**沒有另一張單在收它** ⇒ 同一個修法一起解。
-            // ⚠ 判準刻意**不是** `Plurk/` 前綴：那底下住著同事親筆的交付單
-            //   （`meadow_*.txt` / `*.md`，tracked）—— 前綴會把有作者的文案當機器帳收走，
-            //   而那種錯不會當場叫，它長得就像一筆正常的自動 commit（同 queue_state 那格的形狀）。
-            // ===========================================================
-            new GroupDef
-            {
-                Key = "plurk_audit",
-                Label = "Plurk 發文稽核帳（post_audit.jsonl —— ⛔ 不含同目錄的親筆交付單）",
-                Match = p => p == "Plurk/post_audit.jsonl",
-                Message = "chore(plurk): sync post audit ledger (auto)",
-                DefaultOn = true,
-            },
-        };
-
-        // ── persona 信件庫（letters/<persona>/，各自一個 repo）───────────
-        // 區塊職責：persona 信件庫的分群規則
-        // 物理意義：這裡的分界不是「檔案類型」，是**作者是誰** ——
-        //          投遞件（別人寫的、系統寫的）與機械維護檔可以自動收；
-        //          她自己寫的一律落到未分類（預設不勾），留給她自己的收尾 commit。
-        // ⚠ `outbox/` 是掛號信的寄件存證（寄出時由工具生成、內容是投遞那一刻的快照），
-        //   跟 `mailbox/` 同一個通道的兩端，所以同群 —— 它不是「她寫的信」，是通道的複本。
-        public static readonly GroupDef[] PersonaGroupDefs =
-        {
-            new GroupDef
-            {
-                Key = "mailbox",
-                Label = "信件通道（mailbox/ 系統信與掛號信投遞、outbox/ 寄件存證）",
-                Match = p => p.StartsWith("mailbox/") || p.StartsWith("outbox/"),
-                Message = "[mailbox] 收信件通道檔（系統信／投遞／存證）(auto)",
-                DefaultOn = true,
-            },
-            new GroupDef
-            {
-                Key = "portraits",
-                Label = "他人投遞的畫像（portraits/ — 作者是別人，我只是收件人）",
-                Match = p => p.StartsWith("portraits/"),
-                Message = "[portraits] 收他人投遞的畫像 (auto)",
-                DefaultOn = true,
-            },
-            // ===========================================================
-            // 區塊職責：`profile/` —— persona 身分欄的新家（退場案 §8.2 一欄一檔）。
-            // 物理意義：這些檔是**機械產生**的：Phase 1 read-through lazy migration
-            //          在消費端第一次讀到該 persona 時，把 legacy `personas/<p>.json` 的
-            //          identity 欄逐欄抄成 `profile/<field>.md`（審計 actor=lazy-migration）。
-            //          觸發者通常是**別人**的讀取，落地時該 persona 不在線
-            //          ⇒ 沒有人會 commit 它們，正是自動 commit 存在的理由。
-            // ⚠ 為什麼預設勾：**身分現在住在這裡**。沒進版控的 profile/ 等於
-            //   「這個人是誰」只存在這一台機器上，而 legacy 那份是不會再更新的舊值
-            //   ⇒ 一次磁碟意外就真的丟了。
-            // ⚠ 內容也可能是人改的（`Cmd PersonaProfile op=set`，例如 Tim 設某人的 email）——
-            //   但那是**設定**不是**作品**：不是信、不是碎片、不是素描本，
-            //   沒有「替她簽名」的問題（紅線是有作者的產出，不是有意圖的設定）。
-            // ===========================================================
-            new GroupDef
-            {
-                Key = "profile",
-                Label = "身分欄 profile/（退場案 Phase 1 遷移產物：一欄一檔）",
-                Match = p => p.StartsWith("profile/"),
-                Message = "[data] 收 profile/ 身分欄（Phase 1 lazy migration 產物）(auto)",
-                DefaultOn = true,
-            },
-            // ===========================================================
-            // 區塊職責：`bank/` —— persona 的銀行綁定（Tim 2026-08-20 拍板，一區一檔）。
-            // 物理意義：`bank/<區域ID>.md` 的內容＝該 persona 在那個區域使用的帳號（＝agent id）。
-            //          寫入走接縫 `UCL_PersonaProfile.WriteBankAccount`（actor/reason 必填＋審計）。
-            // ⚠ 為什麼預設勾（同 profile/ 但更硬）：**錢的歸屬現在住在這裡**。
-            //   沒進版控等於「這個人的薪水該進哪個帳號」只存在這一台機器上，
-            //   而缺綁定的處置是落央行 ⇒ 一次磁碟意外的症狀不是報錯，是薪水靜默轉向。
-            // ⚠ 這一群裡會出現**別的專案的檔**（letters 是同一個 repo 被多專案掛著）——
-            //   那是正常的，照收。⛔ 絕不因為「不認識這個區域」而排除或刪除。
-            // ===========================================================
-            new GroupDef
-            {
-                Key = "bank",
-                Label = "銀行綁定 bank/（區域 → 帳號；一區一檔）",
-                Match = p => p.StartsWith("bank/"),
-                Message = "[data] 收 bank/ 銀行綁定（區域 → 帳號）(auto)",
-                DefaultOn = true,
-            },
-            // ===========================================================
-            // 區塊職責：`vouchers/` —— persona 的券簿（一券一檔，`<券名>.json`）。
-            // 物理意義：唯一寫入端是 `SCP_VoucherStore`（發券／花券／進位都走它）⇒ 純機器檔，
-            //          內容是餘額與零頭池，沒有作者 —— 跟 `bank/` 同一側（錢的狀態，不是作品）。
-            // ⚠ 為什麼預設勾，而且比 `bank/` 更急：**券刻意不記歷史**（TASK-0243）——
-            //   `bank/` 那格丟了還能從帳本重播，券簿丟了就是真的沒了，**而它不會叫**。
-            //   ⇒ 沒進版控 ＝ 一次磁碟意外抹掉所有人的券，且畫面上跟「大家本來就沒有券」同形。
-            // ⚠ 觸發者通常**不是該 persona 自己**：發券是由結算那一側統一鑄出去的
-            //   ⇒ 收到券的人多半不在線，沒有人會 commit 它 —— 正是自動 commit 存在的理由。
-            // 🩸 血證（kaguya 2026-09-22，TASK-0270 第一次實發）：一趟保管費轉券寫了
-            //   **20 個 persona 的 `vouchers/BTC.json`**，而 `vouchers/` 不在本表上
-            //   ⇒ 20 個 repo 同時髒著、全部落 `__other_untracked`（**永不自動收**）。
-            //   ⇒ 這正是 `writing/` 那一格留下的同一句話：**新增一種 letters 產物就必須同時改這裡。**
-            // ===========================================================
-            new GroupDef
-            {
-                Key = "vouchers",
-                Label = "券簿 vouchers/（一券一檔；唯一寫入端 SCP_VoucherStore —— ⚠ 券不記歷史，丟了補不回來）",
-                Match = p => p.StartsWith("vouchers/"),
-                Message = "[data] 收 vouchers/ 券簿（餘額與零頭池；券不記歷史）(auto)",
-                DefaultOn = true,
-            },
-            // ===========================================================
-            // 區塊職責：`bookshelf/` —— 閱讀卡（機械投影，Tim 2026-08-23 拍板收進自動群）。
-            // 物理意義：內容由 `UCL_ReadingLibraryIO` 從 `reader.json` **重新生成**
-            //          （進度／期待度／當前看法／章節 round 清單），檔頭自己就寫著
-            //          「機械投影，手改會被覆寫」⇒ 依本表判準（分界是**作者是誰**）屬於可自動收那側。
-            //          親筆住 Library 的 `reader.json`／各章 round 檔，不在這裡。
-            // ⚠ 之前不在表上，所以它每次落 `__other`、靠人手動 commit ——
-            //   而「沒人收」的症狀是早安 brief 的閱讀卡在別台機器上是舊的，且不會叫。
-            // ===========================================================
-            new GroupDef
-            {
-                Key = "bookshelf",
-                Label = "閱讀卡 bookshelf/（由 reader.json 生成的機械投影）",
-                Match = p => p.StartsWith("bookshelf/"),
-                Message = "[data] 收 bookshelf/ 閱讀卡（reader.json 的機械投影）(auto)",
-                DefaultOn = true,
-            },
-            // ===========================================================
-            // 區塊職責：`writing/` —— 書的續寫包（publish 自動投遞的機械投影）。
-            // 物理意義：內容由 UCL_BookDossier 於 op=publish 時**重生成**（章節現況／接續點／
-            //          素材線索），所以它是投影不是作品 —— 作者的親筆（大綱／設定／待整合素材）
-            //          住 `BookNotes/<slug>/_writing_state.md`，續寫包只引用它。
-            //          ⇒ 依本表的判準（分界是**作者是誰**，不是檔案類型）它屬於可自動收的那一側。
-            // 🩸 2026-08-23：新增這個產物時我沒同步這張表，於是 `writing/` 落進 `__other`
-            //          （未分類永不自動收）——AutoCommit 回報 `commits=0`，而那跟「沒有東西要收」
-            //          長得一模一樣。⇒ **新增一種 letters 產物就必須同時改這裡**，
-            //          否則它永遠不會進版控而且不會叫。
-            // ===========================================================
-            new GroupDef
-            {
-                Key = "writing_dossier",
-                Label = "書的續寫包 writing/（publish 自動投遞的機械投影）",
-                Match = p => p.StartsWith("writing/"),
-                Message = "[data] 收 writing/ 續寫包（publish 投遞的機械投影）(auto)",
-                DefaultOn = true,
-            },
-            // ===========================================================
-            // 區塊職責：`sketchbook/<target>/raw/` —— 見人濃縮的**歸檔半**（TASK-0097）。
-            // 物理意義：折一版濃縮時，那一期的逐幅畫像**只搬不刪**進這裡。搬移是機械動作
-            //          （檔案內容一個位元組都沒變，作者還是原來那個人）⇒ 依本表判準
-            //          （分界是「作者是誰」）屬於可自動收那側。
-            // ⚠ 而**濃縮檔本身（`<target>/*_vNNN.md`）刻意不在這裡** ——
-            //   那是她親筆寫的判斷（見人是判斷不是統計），跟收尾信同一側，留給她自己的 commit。
-            // 🩸 為什麼一定要有這一群：`sketchbook/` 整支原本不在表上（親筆），
-            //   而搬檔會產生「舊路徑刪除 + 新路徑新增」兩筆變更。落 `__other` 的話它永遠不會
-            //   自動進版控**而且不會叫** —— `writing/` 那一格的血證就在本表上方。
-            // ===========================================================
-            new GroupDef
-            {
-                Key = "sketchbook_raw",
-                Label = "見人濃縮的歸檔畫像 sketchbook/<target>/raw/（只搬不刪，內容未變）",
-                // ⚠ 判準要同時吃「在 sketchbook 底下」與「在某個 raw/ 子目錄裡」——
-                //   單看 `sketchbook/` 前綴會把親筆的濃縮檔一起收走。
-                Match = p => p.StartsWith("sketchbook/") && p.Contains("/raw/"),
-                Message = "[data] 收 sketchbook/<target>/raw/ 歸檔畫像（濃縮時搬入，內容未變）(auto)",
-                DefaultOn = true,
-            },
-            // ===========================================================
-            // 區塊職責：`relationship/<target>/` —— 好感度的**機器算出來那半**（TASK-0117）。
-            // 物理意義：`events/*.md` 是事件帳本（append-only，Cmd 寫）、`_current.md` 是由事件
-            //          重算出來的當前值（delta／加權和／時間戳）⇒ 兩者都是算出來的，不是寫出來的。
-            // ⛔ 而 `opinions/` **刻意不在這一群**：那是她親筆的看法（calli 2026-09-06 在單上點名的那一格）。
-            //   ⇒ 把整包 `relationship/` 丟進來，會讓親筆的 opinion 走上不領薪的那條路；
-            //     而它落 `__other` 才是對的 —— 留給她自己的收尾 commit。
-            //   ⚠ 所以判準要同時吃「在 relationship 底下」與「不是 opinions/」，
-            //     單看前綴會把兩種作者混成一筆。
-            // 🩸 血證：calli 2026-09-06 跑一次 `Relationship op=update` 落三個檔，
-            //   AutoCommit 回 `candidate_files=1 / commits=0 / other_files=1` ——
-            //   **掃到了、分進 __other、然後什麼都沒收**，而那跟「這個 repo 沒東西可收」讀起來一模一樣。
-            // ===========================================================
-            new GroupDef
-            {
-                Key = "relationship",
-                Label = "好感度事件與當前值 relationship/（events/ ＋ _current.md；⛔ 不含親筆的 opinions/）",
-                Match = p => p.StartsWith("relationship/") && !p.Contains("/opinions/"),
-                Message = "[data] 收 relationship/ 事件帳與重算值（⛔ 不含親筆 opinions）(auto)",
-                DefaultOn = true,
-            },
-            // ===========================================================
-            // 區塊職責：`_keys_open.md` —— 見叢（當期交棒清單）。
-            // 物理意義：追加與勾銷**只有一個寫入端**（`senate cmd keys --arg add=` / `--arg done_index=`），
-            //          整份由 Cmd 重寫 ⇒ 檔案本身是機器維護的清單，不是一篇作品。
-            //          （裡面那句話是她想的，但那跟 `bank/` 裡的帳號是她選的一樣 ——
-            //            分界是「這個檔誰在寫」，不是「這個內容誰想的」。）
-            // ⚠ 為什麼單獨一群而不是併進 letters_mech：見叢是**每天都會動的待辦**，
-            //   而 `_latest.md` 那類是指標。`git log` 想一次看到的是「見叢怎麼變的」這一條線。
-            // 🩸 它原本落 `__other` ⇒ 每天靜默累積（summit 2026-09-03 實測 5 檔零收）。
-            // ===========================================================
-            new GroupDef
-            {
-                Key = "keys",
-                Label = "見叢 _keys_open.md（追加／勾銷都走 senate cmd keys，整份由 Cmd 重寫）",
-                Match = p => p == "_keys_open.md",
-                Message = "[data] 收見叢 _keys_open.md（當期交棒清單）(auto)",
-                DefaultOn = true,
-            },
-            new GroupDef
-            {
-                Key = "letters_mech",
-                Label = "機械維護檔（_latest.md 指標 / cmd/.gitignore）",
-                Match = p => p == "_latest.md" || p == "cmd/.gitignore",
-                Message = "[data] 同步機械維護檔（指標／目錄 ignore）(auto)",
-                DefaultOn = true,
-            },
-        };
+        /// <summary>persona 信件庫（真相源：<see cref="SCP_AutoCommitRules.PersonaGroupDefs"/>）。</summary>
+        public static readonly GroupDef[] PersonaGroupDefs = Adapt(SCP_AutoCommitRules.PersonaGroupDefs);
 
         /// <summary>取該模式的規則表。`iPersonaLetters`＝letters 模式。</summary>
         public static GroupDef[] Defs(bool iPersonaLetters)
             => iPersonaLetters ? PersonaGroupDefs : AgentGroupDefs;
 
-        // ephemeral —— 永遠不進候選（分類矩陣：*.log / wait 旗標 / 臨時渲染 / DebugLogs，
-        // 見 ucl-commit skill 的檔案分類）。pending.trigger / *.tmp 是 Cmd queue 的瞬時檔。
-        public static bool IsEphemeral(string path)
+        static GroupDef[] Adapt(SCP_AutoCommitGroupDef[] iDefs)
         {
-            string name = path;
-            int slash = path.LastIndexOf('/');
-            if (slash >= 0) name = path.Substring(slash + 1);
-            if (name.EndsWith(".log") || name.EndsWith(".tmp")) return true;
-            if (name == "_last_op.md" || name == "_last_view.md"
-                || name == "_active_waits.json" || name == "pending.trigger") return true;
-            if (name.StartsWith("_wait_")) return true;
-            if (path.StartsWith("DebugLogs/") || path.Contains("/DebugLogs/")) return true;
-            return false;
+            var aOut = new GroupDef[iDefs.Length];
+            for (int i = 0; i < iDefs.Length; ++i)
+            {
+                var aDef = iDefs[i];
+                aOut[i] = new GroupDef
+                {
+                    Key = aDef.Key,
+                    Label = aDef.Label,
+                    Match = aDef.Match,
+                    Message = aDef.Message,
+                    DefaultOn = aDef.DefaultOn,
+                };
+            }
+            return aOut;
         }
+
+        /// <summary>ephemeral —— 永遠不進候選（判準在 SCP_Core）。</summary>
+        public static bool IsEphemeral(string path) => SCP_AutoCommitRules.IsEphemeral(path);
 
         /// <summary>
         /// 一個路徑該進哪一群。`iIsSubPointer`＝這個路徑是巢狀 submodule 的 pointer。
-        /// 回 null ＝ ephemeral（不進候選）。
+        /// 回 null ＝ ephemeral（不進候選）。判定順序同 SCP_Core：subptr → ephemeral → 分群。
         /// </summary>
         public static string Classify(string iPath, GroupDef[] iDefs, bool iIsSubPointer)
         {
-            if (iIsSubPointer) return KEY_SUBPTR;
+            // `dir/` 結尾 ＝ 未登記的巢狀 repo（見檔頭）—— 跟 pointer 同一族，永不自動收。
+            if (iIsSubPointer || iPath.EndsWith("/", StringComparison.Ordinal)) return KEY_SUBPTR;
             if (IsEphemeral(iPath)) return null;
             if (iDefs != null)
             {

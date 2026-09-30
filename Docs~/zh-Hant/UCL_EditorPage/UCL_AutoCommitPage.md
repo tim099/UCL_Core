@@ -1,9 +1,22 @@
 ---
 title: UCL_AutoCommitPage — 自動 Commit 頁
-last_updated: 2026-09-22 (persona 分群表補齊到與 code 同步，新增 `vouchers/`；TASK-0270 實發後的缺口)
+last_updated: 2026-09-30 (⏳ 準備退場：已移植到 Senate「自動 Commit」頁＋`senate cmd auto-commit`；TASK-0340) | 2026-09-22
 ---
 
 # UCL_AutoCommitPage
+
+> [!WARNING]
+> ## ⏳ 本頁準備退場（Tim 2026-09-30，TASK-0340）
+>
+> 已移植到 **Senate「自動 Commit」頁**（`senate ui --page auto-commit`）與 **`senate cmd auto-commit`**，
+> 規則與引擎下沉到 SCP_Core（`SCP_AutoCommitRules` / `SCP_AutoCommitConfig` / `SCP_AutoCommit`）。
+> 完整規格 → `senate cmd doc --arg op=show --arg name=AutoCommit`。
+>
+> 新版的形狀改變：**不分模式**（AgentCommands＋全部信件庫＋有設定檔的 submodule 一次掃完）、**拿掉在線守衛**。
+>
+> ⚠ 下沉時量到：**本頁的提交路徑沒有下面「三道守衛」寫的 BUG-30 那三格**（呼叫前已 staged 擋／pathspec 提交／提交後對帳）——
+> 那三格只有 `Cmd_AutoCommit` 有；本頁失敗時還會整個 `git reset`。本文件以下描述的是**設計**，不是本頁的實作。
+> ⇒ 退場前請改用 Senate 那一側。
 
 把**機器自動生成的檔**分群，**按鈕觸發**、每群各自成一筆 commit，**訊息自動生成**。
 兩種掃描對象共用同一套機制：

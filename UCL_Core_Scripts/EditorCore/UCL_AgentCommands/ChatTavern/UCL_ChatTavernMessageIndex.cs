@@ -7,8 +7,8 @@
 //   索引的格式、驗證與寫檔只有一份，在 SCP_Core `SCP_TavernMsgIndex`；本檔轉呼叫它（同 `UCL_TavernCursor` 的做法）。
 //   索引的維護者是**寫入端**：Server 寫完一則訊息就在房間鎖裡刷新那一房的索引。
 //   以前 Editor 的讀取端也會寫（缺天就順手 Rebuild）⇒ 兩個 process、兩份格式規則寫同一個檔；那一份已刪除。
-//   ⚠ `tavern.writer=editor` 時訊息由 Editor 本地寫、不經過 Server ⇒ 那段期間索引不刷新，
-//     讀取端會多列舉幾天（變慢，不會算錯）。修它：`senate cmd tavern-index --arg op=rebuild`。
+//   ⚠ 繞過 Server 直接丟進 messages/ 的檔（遷移工具、人工）不會刷新索引 ⇒ 讀取端多列舉幾天
+//     （變慢，不會算錯）。修它：`senate cmd tavern-index --arg op=rebuild`，或等 Server 寫該房下一則。
 //
 // 為什麼需要索引（2026-08-06 Tim：「卡頓發生在專案重開時」）：
 //   `GetSortedMessageFiles` 的記憶體快取是 static 欄位，**domain reload 就整份沒了**

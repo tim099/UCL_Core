@@ -458,8 +458,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
         /// <summary>
         /// 區塊職責：把某章某 round 的心得發進酒館，並把 seq 落回該 round 當 receipt。
         /// 物理意義：發文**必須**走 Cmd_Tavern 的 Op_Post 同一條 pipeline（in-process 經 registry 呼叫）——
-        ///           自呼 WriteMessageWithSeq 會漏 mirror / inbox 路由 / mention 解析 / 計酬判定四件事
-        ///           （2026-08-06 定案的硬規則）。seq 由 Cmd_Tavern.LastPostSeq static slot 取回。
+        ///           Op_Post 會替訊息組好 meta（分類、詞典請求…），再交給寫入端（TASK-0341 起只有 Senate Server）
+        ///           做 inbox 路由 / mention / 計酬（2026-08-06 定案的硬規則：⛔ 不自己組訊息繞過 Op_Post）。seq 由 Cmd_Tavern.LastPostSeq static slot 取回。
         /// 數值影響：心得檔只讀不寫（除了 shared_seq receipt）；發文失敗不回滾任何檔
         ///           （檔優先於投影）。同 round 已有 shared_seq → 拒發（防重複計酬）。
         /// </summary>

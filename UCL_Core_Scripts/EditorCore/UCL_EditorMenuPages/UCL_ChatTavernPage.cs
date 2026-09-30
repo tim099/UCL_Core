@@ -1631,8 +1631,8 @@ namespace UCL.Core.EditorLib.Page
         //          靠 polling 偵測變動。rooms / members cheap；messages 的 Tail 雖只讀尾端
         //          內容，但每次仍要「列舉 + 排序全房間檔案路徑」（tavern 房 13,000+ 檔 →
         //          每 2 秒兩個 13k string 陣列 + sort = 常態 GC / CPU 抖動）。
-        // seq 閘門（2026-07-28 卡頓修復）：所有合法寫入都走 UCL_ChatTavernWriteService
-        //          臨界區並 bump _seq.txt → 讀 _seq.txt（一次小檔 IO）就是可靠的
+        // seq 閘門（2026-07-28 卡頓修復）：所有合法寫入都走 Senate Server 的寫入臨界區
+        //          （`SCP_TavernWriter`，TASK-0341 起唯一寫入端）並 bump _seq.txt → 讀 _seq.txt（一次小檔 IO）就是可靠的
         //          「房間有沒有新訊息」訊號。seq 沒變 → 跳過 Tail 的全房列舉。
         // 數值影響：rooms 永遠 poll（讓使用者能看到別人剛建的房）；
         //          messages / members 只在已選中房間且 seq 有變才重抓。

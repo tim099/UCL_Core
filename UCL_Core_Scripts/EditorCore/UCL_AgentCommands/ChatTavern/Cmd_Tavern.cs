@@ -735,8 +735,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             //          詞典根的唯一真相源在 Senate（senate.local.json），本支不知道詞典在哪。
             // ⚠ 為什麼是「請求」而不是寫入端全附：本 Editor 還有 20 處直接 AppendMessage（酒保、Discord 進站、頁面…），
             //   它們以前都不附 ⇒ 不帶鍵就維持原狀。
-            // ⚠ 代價：開關切回 Editor 本地寫（`tavern-writer --arg set=editor`）時**不會有附註**
-            //   （本地寫那條會把這把鍵剝掉，⛔ 不落進訊息檔）。
             // ===========================================================
             if (aMsgMeta == null) aMsgMeta = new Dictionary<string, string>();
             aMsgMeta[SCP.Core.Glossary.SCP_Glossary.AttachRequestMetaKey] = "1";

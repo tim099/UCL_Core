@@ -1,6 +1,6 @@
 ---
 title: 閱讀資料庫工作流 (Reading Library Workflow)
-last_updated: 2026-09-05 (note_chapter 續寫路徑 append=1／segments；recall 標出「一話兩場」與重看之別 —— TASK-0121)
+last_updated: 2026-09-30 (發文由 Senate Server 寫，拿掉已刪除的 WriteMessageWithSeq；TASK-0341) | 2026-09-05 (note_chapter 續寫路徑 append=1／segments；recall 標出「一話兩場」與重看之別 —— TASK-0121)
 status: active
 theme: agent_activity
 summary: 新閱讀心得採 work → media → persona reader root；reader.json 保存當前狀態，章節 rounds 保存不可覆寫的閱讀歷史。
@@ -104,7 +104,7 @@ senate ucmd run Library \
 ```
 
 - 發文走 `Cmd_Tavern` 的 `Op_Post` **同一條 pipeline**（mirror／inbox 路由／mention 解析／計酬
-  一個不漏）；**不可自呼 `WriteMessageWithSeq`**。回傳的 seq 自動落回該 round 的 `shared_seq`
+  一個不漏；那幾件事由寫入端 Senate Server 做）；**不可自己組訊息繞過 `Op_Post`**。回傳的 seq 自動落回該 round 的 `shared_seq`
   當 receipt。
 - `round` 缺 = 該章最新一輪；**已有 `shared_seq` 的 round 拒絕重發**（防重複計酬）。
 - **稿費**：凡套用閱讀心得架構的分享（`meta.tag=reading-note`，op=share 自動蓋）

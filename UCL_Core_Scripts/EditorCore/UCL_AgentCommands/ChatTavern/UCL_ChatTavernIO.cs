@@ -7,8 +7,8 @@
 //     配號的權威是**訊息檔數**，而檔名就是 seq ⇒ 撞號 ＝ 撞檔名。
 //     而建檔已改成原子建檔（`FileMode.CreateNew`）⇒ 撞檔**會出聲**（回 wrote=false 走自我校正），
 //     ⛔ 不再是「靜默覆蓋」。
-//   - 「單一 Editor 內天然序列化」這個前提**現在是可切換的**：`tavern.writer=server` 時
-//     寫入端是 Senate 常駐 Server（單一 process），Editor 改走委派。
+//   - 訊息的寫入端**只有 Senate 常駐 Server**（單一 process）；Editor 一律委派（TASK-0341，2026-09-30）。
+//     以前的 `tavern.writer` 開關與 Editor 本地寫入已刪除。
 //   - JSON 使用手寫 minimal serializer/parser，與 UCL_AgentCommandQueue 風格對齊
 #if UNITY_EDITOR
 using System;
@@ -713,7 +713,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         // ===========================================================
         // 區塊職責：序號（_seq.txt）— 單調遞增
         // 物理意義：⚠ **這一段是死代碼**（`IncrementAndGetSeq` 零呼叫點）——「每 append 前 ReadAndIncrement」
-        //          那個流程早就不存在了。現行配號在 `UCL_ChatTavernWriteService`（訊息檔數＋1），
+        //          那個流程早就不存在了。現行配號在 Senate Server 的 `SCP_TavernWriter`（訊息檔數＋1），
         //          `_seq.txt` 只剩下「給 wait 機制讀的最大 seq 快取」這一個用途。
         //          ⛔ 別照這一行去理解配號，它描述的是一個已經退場的機制。
         // ===========================================================
@@ -809,26 +809,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         }
 
         // ===========================================================
-        // 區塊職責：訊息（messages.jsonl）— append-only
-        // 物理意義：每行一個訊息 JSON。讀取時 split by '\n'，逐行 parse。
-        // ===========================================================
-
-        // 區塊職責：合法 record 簽章 — 標示「這筆走 Cmd_Tavern 正規路徑寫入」。
-        // 物理意義：illicit 直接 file.write 的 record 不會帶這欄；後續 dedupe / health-check 用此區分。
-        //          當前版本 v1；未來若擴充 schema 可 bump（dedupe 工具看版本判別兼容）。
-        // 數值影響：所有 op=post / 系統 join / quest event 鏡像都自動帶；agent 端不必處理。
-        public const string WriterSignatureKey = "_writer";
-        public const string WriterPidKey = "_pid";
-        public const string WriterSignatureValue = "cmd_tavern_v1";
-
-        /// <summary>追加一筆訊息（自動分配 seq + ts + _writer 簽章）。回傳分配後的 seq。
-        /// T38: 內部委派 UCL_ChatTavernIO_PerMsgFile.WriteMessageFile — 改寫單檔 per message
-        /// （取代既有 jsonl append-only），seq 改為 reader 動態 derive。
-        /// Discord 鏡像 (2026-07-28 起)：寫檔後不再做任何觸發 — UCL_DiscordMirrorDaemon 自己 poll
-        /// 訊息檔並依 per-webhook 游標送出，寫入端與傳送端徹底解耦（舊版每筆 post spawn 一隻
-        /// python notify_discord.py，是 2026-07-28 併發失控事故的結構性根因）。</summary>
-        // ===========================================================
-        // 區塊職責：把一則訊息**委派給 Senate Server** 寫（`tavern.writer=server` 那條路）。
+        // 區塊職責：把一則訊息**委派給 Senate Server** 寫（唯一的寫入路，TASK-0341）。
         // 物理意義：TASK-0106 第 5 步 ＋ TASK-0267 ③④。Editor 不直接碰磁碟，也**不自己接檔案協議** ——
         //          它跑一次 `senate cmd tavern-write`，由 CLI 去委派給 Server。
         //          ⭐ 這條路**免費得到 autostart**：`Cmd_TavernWrite : ServerDelegateCmd`，
@@ -1002,9 +983,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                         // OS 只說「找不到指定的檔案」—— 它**不會說**該把 publish 加進 PATH。
                         throw new InvalidOperationException(
                             "[Tavern] 叫不到 `" + aExeName + "`（PATH 上沒有它）⇒ **這一則沒有寫出去**。"
-                            + "　出路二選一：把 Senate 的 `publish` 加進 PATH，"
-                            + "或切回 Editor 寫入 `senate cmd tavern-writer --arg data_root=" + aDataRoot
-                            + " --arg set=editor`。　原始錯誤：" + e.Message, e);
+                            + "　出路：把 Senate 的 `publish` 加進 PATH（酒館訊息只由 Server 寫，⛔ 沒有本地退路，TASK-0341）。"
+                            + "　原始錯誤：" + e.Message, e);
                     }
 
                     using (UCL_ProcessRegistryService.RegisterScope(aProc, SERVER_DELEGATE_TAG,
@@ -1105,131 +1085,20 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         public static int AppendMessage(string roomId, UCL_ChatMessage msg)
         {
-            // ── 寫入端開關（TASK-0106 / D10 丙，Tim 2026-09-20 拍板）────────────────
-            // 🔴 **這一個函式就是切換點**，⛔ 不是 `Cmd_Tavern op=post`：全樹 24 個 AppendMessage
-            //    呼叫端都匯流到這裡，開關放這裡呼叫端一行都不用改；反過來（每個呼叫端插判斷）
-            //    是 24 個各自可能漏的地方，而漏掉的那一個**不會叫**。
-            // ⚠ 開關住資料根的 `agent_settings.json`（`tavern.writer`），與 Senate 那側**同一份解析**
-            //    （`SCP_TavernWriteMode`）—— Tim 2026-09-21 拍「甲」：⛔ 不讓 Editor 自己再解析一次，
-            //    兩份解析遲早分岔，而分岔的失效樣子是「兩邊都說自己是 editor」。
-            // ⛔ **沒有自動降級**：讀不出來就丟例外，不當成 editor 繼續寫。
-            SCP.Core.Tavern.SCP_TavernWriteModeRead aMode =
-                SCP.Core.Tavern.SCP_TavernWriteMode.Read(UCL_AgentCommandsPath.DataRoot);
-            if (!aMode.Ok)
-                throw new InvalidOperationException(
-                    "[Tavern] 寫入端開關讀不出來 ⇒ **這一則沒有寫出去**。" + aMode.Describe()
-                    + "　設定檔："
-                    + SCP.Core.Tavern.SCP_TavernWriteMode.SettingsPath(UCL_AgentCommandsPath.DataRoot)
-                    + "　⛔ 不猜哪一邊：猜錯的那一邊會造出第二個寫入端。");
-
-            if (aMode.Host == SCP.Core.Tavern.SCP_TavernWriteHost.Server)
-            {
-                int aRemoteSeq = DelegateAppendToServer(roomId, msg);
-                // mention 通知與發薪都由 **Server 寫完就做**（TASK-0299／0296：Senate `Cmd_TavernWrite`）——
-                // ⛔ 這裡不再補發：補發的話直打 `tavern-write` 的訊息仍然沒人通知（那正是 0299 的缺口），
-                //   而經過這裡的訊息會被通知兩次（冪等會擋，但那是在替一條多餘的路付 IO）。
-                return aRemoteSeq;
-            }
-
-            // TASK-0313：詞典附註的請求鍵只給 Senate 寫入端讀 —— 本地寫這條**不附註**（Unity 端不碰詞典），
-            //   也 ⛔ 不把這把一次性的鍵落進訊息檔。
-            msg.meta?.Remove(SCP.Core.Glossary.SCP_Glossary.AttachRequestMetaKey);
-
-            // 寫入臨界區 (2026-07-27, Tim 拍板抽離成 Service + lock)：
-            // 「寫檔 (WriteMessageFile) + derive seq (CountMessageFiles) + 寫 _seq.txt」這段本來散在這裡，
-            // 現在抽到 UCL_ChatTavernWriteService.WriteMessageWithSeq，用 per-room lock 包起來 —
-            // 防禦性設計：目前單執行緒同步呼叫鏈本來就沒有真正的 race，但上鎖後就算未來寫入路徑
-            // 真的變成多執行緒 / 被重入，也不會壞掉。
-            //
-            // 效能修復 (2026-07-26, 沿革)：seq 來源從 LoadAllMessages(roomId).Count（全房間 read+parse，
-            // 冷 cache 時在 13000+ 檔房間可以卡到幾分鐘 —— 這正是 Bartender daemon "Hold on..." 卡頓的根因
-            // 之一）改成 CountMessageFiles（純列路徑數量，不讀檔內容）。語意上「無壞檔 / 半寫檔時」才完全
-            // 等價 (basecamp 拍磚 2026-07-27 seq 13741 point③)：LoadAllMessages().Count 數「成功 parse 的
-            // 訊息數」，CountMessageFiles 數「.json 檔數」——但這反而順手修掉一個 C#↔python 定義漂移，
-            // python 端 (tavern_query.py 等) 本來就是按「檔案列舉」編號 seq，跟 CountMessageFiles 對齊。
-            //
-            // 順序 vs 唯一性 (Tim 2026-07-27 拍板)：seq 只要求「不重複」，不要求嚴格對應「送出順序」——
-            // Cmd_Tavern.Op_Post 的 T26 pacing delay 本來就會讓送出順序跟實際寫入順序不同，這點可接受；
-            // per-room lock 保證的是「同一房間內不會有兩筆訊息因為交錯執行而算出同一個 seq」。
-            var (derivedSeq, aMsgFilePath) = UCL_ChatTavernWriteService.WriteMessageWithSeq(roomId, msg);
-
-            // 寫入不變量 (2026-07-29 下沉自 Cmd_Tavern.Op_Post)：
-            // 「任何進到房間的訊息都該觸發提及通知」跟來源無關 — 它是寫入不變量，不是 agent 行為 hook，
-            // 所以住在唯一寫入點才對。原本只掛在 Op_Post，導致 Discord inbound / 酒保 / quest IO /
-            // BankAdminPage 這 6 個呼叫端的 @mention 全部不進 inbox（2026-07-29 實證：Tim 從 Discord
-            // @summit 的訊息 summit 完全收不到）。放這裡天然 exactly-once（AppendMessage 是唯一寫入點）。
-            NotifyMentions(roomId, msg, derivedSeq, aMsgFilePath);
-
-            // 發薪（TASK-0296）：editor 模式下**寫入端就是這裡** ⇒ 在這裡規劃；server 模式由 Server 寫完規劃
-            //   （Senate `Cmd_TavernWrite`）—— 兩邊呼叫同一支 SCP_TavernPayroll，⛔ 不在 `op=post` 裡另算。
-            PayrollAfterLocalWrite(roomId, msg, derivedSeq);
-
-            // creative 留念信（TASK-0312）：同發薪 —— editor 模式寫入端就是這裡；server 模式由 Server 寫完寄
-            //   （Senate `Cmd_TavernWrite.AppendCreativeArchive`）。兩條互斥 ⇒ 恰好一封。⛔ 不在 `op=post` 裡另寄。
-            try
-            {
-                bool? aSent = SCP.Core.Tavern.SCP_TavernCreativeArchive.TrySend(
-                    UCL_LettersPath.Root, msg.sender_persona, roomId, derivedSeq, msg.body, msg.meta,
-                    out _, out string aMailErr);
-                if (aSent == false)
-                    Debug.LogWarning($"[Tavern] 創作已貼出（seq {derivedSeq}）但留念掛號信沒寄成（收件人 '{msg.sender_persona}'）：{aMailErr}");
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[Tavern] 創作留念信失敗（seq {derivedSeq}）：{e.Message} —— 貼文本身不受影響。");
-            }
-
-            // Discord 鏡像不在此觸發 (2026-07-28 python 路徑移除)：UCL_DiscordMirrorDaemon 以
-            // EditorApplication.update 1Hz 自行 poll + per-webhook 游標送出，寫入端零額外成本。
-            return derivedSeq;
+            // ── 酒館訊息**一律由 Senate Server 寫**（TASK-0341，Tim 2026-09-30 拍板）────────────────
+            // 全樹的 AppendMessage 呼叫端都匯流到這裡 ⇒ 這一個函式就是 Editor 通往寫入端的唯一出口。
+            // 以前這裡有 `tavern.writer` 開關、editor 模式時在本地寫（配號、@ 通知、發薪、創作留念信）；
+            // 兩個專案都已全面走 Server，開關與本地寫入整條已刪除。
+            // ⇒ 配號、@ 通知、發薪、詞典附註、創作留念信全部在 Server 寫完才做（Senate `Cmd_TavernWrite`），
+            //   ⛔ 這裡不補做任何一樣 —— 補的話經過這裡的訊息會被做兩次。
+            // ⚠ Server 沒在跑會被自動拉起（見 DelegateAppendToServer）；拉不起來就丟例外 —— **沒有本地退路**。
+            return DelegateAppendToServer(roomId, msg);
         }
 
         // ===========================================================
-        // 區塊職責：editor 模式的**寫完就發薪**（TASK-0296）。
-        // 物理意義：規則在 SCP_TavernPayroll（與 Senate Server 寫入端同一支）；入帳走 Unity 這側動錢的唯一出口
-        //          UCL_TreasuryAuthority.Post（它派給銀行那顆 Server）。發薪掛在寫入端而不是 `op=post` ⇒
-        //          任何呼叫 AppendMessage 的入口都照同一套規則（系統身分由規則本身排除，⛔ 不靠「沒走那條路」）。
-        // 數值影響：失敗只警告 —— 訊息已經落檔、seq 已經給出去了，⛔ 不讓寫入回報失敗。冪等命中另外標出來。
-        // ===========================================================
-        static void PayrollAfterLocalWrite(string iRoom, UCL_ChatMessage iMsg, int iSeq)
-        {
-            try
-            {
-                var aIn = new SCP.Core.Tavern.SCP_TavernPayInput
-                {
-                    Room = iRoom, Seq = iSeq, SenderId = iMsg.sender_id ?? "", SenderPersona = iMsg.sender_persona ?? "",
-                    Body = iMsg.body ?? "", Meta = iMsg.meta,
-                };
-                var aPlan = SCP.Core.Tavern.SCP_TavernPayroll.Plan(UCL_AgentCommandsPath.DataRoot, aIn);
-                foreach (string aWarn in aPlan.Warnings)
-                    Debug.LogWarning($"[Tavern] 發薪：{aWarn}（{iRoom}#seq={iSeq}）");
-                foreach (var aItem in aPlan.Items)
-                {
-                    try
-                    {
-                        Treasury.UCL_TreasuryAuthority.Post(aItem.BankOp, aItem.Account, aItem.Amount, aItem.Kind, aItem.Ref,
-                            aItem.Description, "system", aItem.CmdId, aItem.IdemKey, out bool aDup);
-                        Debug.Log("[Tavern] 💰 " + SCP.Core.Tavern.SCP_TavernPayroll.Describe(aItem)
-                                  + (aDup ? "　（冪等命中，錢沒動）" : ""));
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogWarning("[Tavern] ✗ 發薪失敗 " + SCP.Core.Tavern.SCP_TavernPayroll.Describe(aItem) + "：" + e.Message);
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[Tavern] 發薪規劃例外（訊息已落檔，⛔ 這一則沒發）：{iRoom}#seq={iSeq}：{e.Message}");
-            }
-        }
-
-        // ===========================================================
-        // 區塊：@mention → 對方 inbox 自動通知（R7；2026-07-29 自 Op_Post 下沉至寫入端）
-        // 物理意義：mention 不只是視覺標記，是 wake 信號 — 對方 re-enter 先讀 inbox 比 tail 快準。
-        // ⭐ TASK-0299（2026-09-25）：規則本體（白名單、條目格式、跳過誰）搬到 SCP_TavernMentions，
-        //   inbox 的附加／修剪搬到 SCP_TavernInbox（跨 process 鎖）—— Editor 與 Senate Server 呼叫同一支。
-        //   本檔只剩轉接（見下方 NotifyMentions／IsExternalRelay）。
+        // 區塊：@mention 判定（規則本體在 SCP_TavernMentions，TASK-0299）
+        // 物理意義：@ 通知在 Server 寫完那一刻做（TASK-0341 起 Editor 不再本地寫，也不再自己通知）。
+        //   本檔只剩 IsExternalRelay 這一支轉接（讀取端判斷「這則是不是外部中繼」要用）。
         // ===========================================================
 
         // ===========================================================
@@ -1332,38 +1201,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             catch { return absPath.Replace('\\', '/'); }
         }
-
-        // ===========================================================
-        // 區塊職責：@mention → 對方 inbox —— **本體在 SCP_TavernMentions**（TASK-0299）。
-        // 物理意義：通知是寫入不變量 ⇒ 掛在寫入端。editor 模式寫入端就是本檔的 AppendMessage（本地寫完呼叫這裡）；
-        //          server 模式由 Senate `Cmd_TavernWrite` 寫完呼叫同一支 ⇒ 直打 tavern-write 的訊息也有人通知。
-        // 數值影響：msgFilePath 是這筆訊息實際寫出的檔（絕對路徑），給截斷的條目指出全文在哪；
-        //          傳空 ＝ 呼叫端沒給 ⇒ 只印 seq，⛔ 不由 seq 反推編造。失敗只警告，⛔ 不讓已寫入的訊息回報失敗。
-        // ===========================================================
-        static void NotifyMentions(string roomId, UCL_ChatMessage msg, int seq, string msgFilePath = null)
-        {
-            if (msg == null) return;
-            try
-            {
-                var aIn = new SCP.Core.Tavern.SCP_MentionInput
-                {
-                    Room = roomId, Seq = seq, SenderId = msg.sender_id ?? "", SenderName = msg.sender_name ?? "",
-                    SenderPersona = msg.sender_persona ?? "", Body = msg.body ?? "", Meta = msg.meta,
-                    ReplyTo = msg.reply_to, RefsCount = msg.refs?.Count ?? 0, MsgFilePath = msgFilePath ?? "",
-                };
-                var aRes = SCP.Core.Tavern.SCP_TavernMentions.Notify(UCL_AgentCommandsPath.DataRoot, aIn, UCL_RepoPath.RepoRoot,
-                                                                     iLine => Debug.Log("[ChatTavern] " + iLine));
-                if (aRes.Notified.Count > 0)
-                    Debug.Log($"[ChatTavern] {roomId}/seq={seq} mention 寫 inbox ×{aRes.Notified.Count}: {string.Join(",", aRes.Notified)}");
-                foreach (string aFail in aRes.Failures)
-                    Debug.LogWarning($"[ChatTavern] mention 通知失敗（訊息已寫入，不受影響）：{aFail}");
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[ChatTavern] mention 通知失敗（訊息已寫入，不受影響）：{ex.Message}");
-            }
-        }
-
 
         /// <summary>讀取整個房間 messages — T38 委派 UCL_ChatTavernIO_PerMsgFile.LoadAllMessages
         /// （walk per-msg dir + ordinal sort + derive seq）。</summary>

@@ -32,10 +32,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public const string EventsDirName = "events";
         public const string BackupDirName = "_backup";
 
-        public const string WriterSignatureKey = "_writer";
-        public const string WriterPidKey = "_pid";
-        public const string WriterSignatureValue = "cmd_tavern_v2";   // bump from v1（jsonl era）
-
         public static string GetMessagesRoot(string roomId)
             => Path.Combine(UCL_ChatTavernIO.GetRoomDir(roomId), MessagesDirName);
 
@@ -66,7 +62,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         // ===========================================================
         // 區塊職責：訊息檔名生成 — <SEQ:D8>.json (2026-07-27 改版, 取代舊版 <HHMMSS>_<MMM>_<UUID6>.json)
-        // 物理意義：seq 現在由 UCL_ChatTavernWriteService 在 per-room lock 內先算好才傳進來
+        // 物理意義：seq 由寫入端（TASK-0341 起只有 Senate Server）在 per-room lock 內先算好
         //          (寫入時已知、保證同房間內不重複)，字典序 sort (zero-pad) = seq 數字序，
         //          比舊版「靠時間前綴排序」更直接——seq 本身就是排序依據，不必再繞時間。
         //          時間資訊仍完整保留在訊息內容的 ts 欄位 (SerializeMessageNoSeq 一律寫 ts)，
@@ -76,8 +72,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          (yyyy-MM-dd) 而不是檔名, 檔名格式只在「同一天資料夾內」才需要互相可比。
         // 設計取捨 (Tim 2026-07-27 拍板)：拿掉 uuid6 — seq 已保證不重複, 不再需要隨機尾碼防撞檔。
         //          防撞檔機制從「換個隨機尾碼重試」改成「偵測到撞檔 = 快取跟磁碟真實狀態不同步的訊號,
-        //          回頭問磁碟真相重新算 seq」(見 WriteMessageFileWithSeq 呼叫端 UCL_ChatTavernWriteService
-        //          的 self-heal 邏輯), 比亂數重試更精確——直接找出「正確」的號碼而不是隨便挑一個沒撞到的。
+        //          回頭問磁碟真相重新算 seq」(見 Senate `SCP_TavernWriter.WriteMessage` 的 self-heal),
+        //          比亂數重試更精確——直接找出「正確」的號碼而不是隨便挑一個沒撞到的。
         // ===========================================================
         public static string BuildMessageFileNameFromSeq(int seq)
         {
@@ -88,86 +84,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         {
             string safeType = string.IsNullOrEmpty(eventType) ? "event" : eventType.Replace("/", "_").Replace("\\", "_");
             return $"{utcTime:HHmmss_fff}_{uuid6}__{safeType}.json";
-        }
-
-        // ===========================================================
-        // 區塊職責：寫一筆訊息為獨立 .json 檔，檔名直接用呼叫端已算好的 seq (取代舊版 WriteMessageFile)。
-        // 物理意義：no atomic counter (仍然)、no jsonl append；單檔 **atomic create-new**（撞檔不覆蓋）。
-        // 數值影響：自動填 ts (含 ms) + uuid (仍寫進訊息內容, 給 reply_to_uuid 等功能用；只是不再
-        //          出現在檔名裡) + _writer / _pid 簽章 + ensure date dir。
-        // 回傳：(record, fullPath, wrote) — wrote=false 代表該 seq 對應的檔名已存在 (理論上不該發生,
-        //       代表呼叫端快取跟磁碟真實檔案數不同步)。本函式不自己重試亂猜新號碼——正確作法是讓
-        //       呼叫端 (UCL_ChatTavernWriteService) 重新問磁碟真相 (CountMessageFiles) 拿到正確 seq
-        //       再呼叫一次本函式, 而不是在這裡隨便換個檔名蒙混過去。
-        //       ⭐ 而「檔名已存在」這件事是由 FileMode.CreateNew 建檔失敗量到的 (TASK-0256)，
-        //       ⛔ 不是先 File.Exists 問一次 —— 後者在兩個寫入端同時存在時會靜默覆蓋掉別人的訊息。
-        // 邊界：msg.ts 已填的話沿用（給 migrate 工具用）；否則 DateTime.UtcNow。
-        //       msg.uuid 已填的話沿用；否則 GenerateUUID6（僅供內容識別 / reply 用，跟檔名無關）。
-        // ===========================================================
-        public static (UCL_ChatMessage record, string fullPath, bool wrote) WriteMessageFileWithSeq(string roomId, UCL_ChatMessage msg, int seq)
-        {
-            UCL_ChatTavernIO.EnsureRoomDir(roomId);
-
-            // ts：preserve given (migrate) or 用 now
-            DateTime utcTime;
-            if (!string.IsNullOrEmpty(msg.ts) && DateTime.TryParse(
-                msg.ts, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
-                out var parsed))
-            {
-                utcTime = parsed;
-            }
-            else
-            {
-                utcTime = DateTime.UtcNow;
-                msg.ts = utcTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-            }
-
-            // uuid：preserve given or generate — 仍寫進內容 (reply_to_uuid 等功能用)，只是不再進檔名
-            if (string.IsNullOrEmpty(msg.uuid))
-            {
-                msg.uuid = GenerateUUID6();
-            }
-
-            // _writer / _pid 簽章
-            if (msg.meta == null) msg.meta = new Dictionary<string, string>();
-            msg.meta[WriterSignatureKey] = WriterSignatureValue;
-            try
-            {
-                msg.meta[WriterPidKey] = System.Diagnostics.Process.GetCurrentProcess().Id.ToString();
-            }
-            catch { /* sandbox 環境受限 */ }
-
-            // 檔名 + 路徑（含 ensure date dir）— 檔名純用 seq，不再需要時間/uuid 尾碼
-            string dateDir = GetMessagesDateDir(roomId, utcTime);
-            Directory.CreateDirectory(dateDir);
-            string filename = BuildMessageFileNameFromSeq(seq);
-            string fullPath = Path.Combine(dateDir, filename);
-
-            // serialize（不寫 seq 進 JSON 內容；seq 只活在檔名裡，reader 仍可從檔名或 position 兩種方式得到）
-            string json = SerializeMessageNoSeq(msg);
-
-            // 撞檔偵測＝原子建檔本身（FileMode.CreateNew），⛔ 不是先 File.Exists 再寫 (TASK-0256)。
-            // 舊版是 check-then-write：兩個 process 同時走到「檔案不存在」那一格 ⇒ 兩邊都寫同一個路徑 ⇒
-            // 後寫的覆蓋先寫的。而 seq 沒有重號、wrote 兩邊都是 true ⇒ **沒有任何一層會叫，訊息就是消失**。
-            // CreateNew 把那個判斷交給 OS：檔案已存在時建檔直接失敗 ⇒ 撞檔重新變成呼叫端看得到的 wrote=false，
-            // 走 UCL_ChatTavernWriteService 既有的 self-heal（問磁碟真相重算 seq）。
-            // ⚠ 只有「檔名已經有人了」算撞檔——磁碟滿 / 路徑失效那類要原樣往上炸，
-            //   ⛔ 不可以被降級成「撞檔」（那會讓 self-heal 白重試三次，然後報一個錯的成因）。
-            // 🩸 而判準**不是** `File.Exists`（@kiara 2026-09-21 QA 擋下的回歸）：
-            //   `FileStream(CreateNew)` 一建構，那顆檔就已經存在了（0 bytes，內容還沒寫）
-            //   ⇒ `when (File.Exists(...))` 在**任何**建構之後的 IOException 上都成立。
-            //   她實測把「磁碟空間不足」丟進去：被吃掉、降級成撞檔、**留下 0-byte 孤兒檔永久佔住那個 seq**，
-            //   而最後報出來的成因是「資料層可能損壞，去檢查 messages/」——**那句話會把人送去翻一個沒壞的目錄**。
-            //   ⇒ 判準換成 win32 error code（80 `ERROR_FILE_EXISTS`／183 `ERROR_ALREADY_EXISTS`），
-            //   而且**跟 Senate 那側共用同一支**（`SCP.Core.Io.SCP_AtomicFile`）——
-            //   ⭐ 2026-09-21 稍早這裡曾經各留一份（那時 SCP_Core 指標分叉、我不動別人的 commit），
-            //   分叉一解掉就合回來了。⛔ 別再複製第二份：兩份的失效樣子是「改一邊、另一邊安靜地不同意」。
-            if (!SCP.Core.Io.SCP_AtomicFile.TryCreateNew(fullPath, json))
-            {
-                // 不在這裡亂猜新號碼——回報 wrote=false，讓呼叫端回頭問磁碟真相重新算 seq 後再試一次。
-                return (msg, fullPath, false);
-            }
-            return (msg, fullPath, true);
         }
 
         // ===========================================================
@@ -219,7 +135,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         // ===========================================================
         // 區塊職責：LoadAllMessages parse cache（path-keyed, immutable-file 前提）
-        // 物理意義：per-message 檔一旦寫出永不改寫（WriteMessageFile 只 create-or-throw, 從不 overwrite）
+        // 物理意義：per-message 檔一旦寫出永不改寫（寫入端只原子建檔 CreateNew, 從不 overwrite）
         //          → 舊檔 parse 結果可永久 cache, 按 full path 當 key 絕不失效.
         //          每次 LoadAllMessages 仍重跑 Directory.GetFiles 列「路徑」（便宜, 不讀內容）,
         //          只對沒見過的新檔 read+parse; 消失的檔（刪除 / 歸檔）從 cache 剔除.

@@ -156,7 +156,9 @@ namespace UCL.Core.EditorLib.Page
                     + "於是「排序後的完整清單」可由一張<b>每日範圍表</b>算出來，不必列舉。"
                     + "索引一天一行：大小跟<b>天數</b>成正比，不是跟訊息數成正比。"
                     + "它治的是<b>冷啟動</b>（記憶體快取 domain reload 就沒了，而每次編譯都會 reload）。"
-                    + "索引由「全量列舉」那條路順手產生，任何一致性檢查不過就退回全量 —— 只會變慢，不會算錯。",
+                    + "任何一致性檢查不過就退回全量 —— 只會變慢，不會算錯。"
+                    + "<b>Editor 只讀索引、不寫</b>（TASK-0335）：它由 Senate Server 在寫完每則訊息後刷新；"
+                    + "要重建請跑 <b>senate cmd tavern-index --arg op=rebuild</b>。",
                     WrapLabelStyle);
                 using (new EditorGUI.DisabledScope(m_MigrateRunning))
                 using (new GUILayout.HorizontalScope())
@@ -169,17 +171,6 @@ namespace UCL.Core.EditorLib.Page
                         // 所以驗法是兩條路各跑一次直接對撞，不是看數量、不是抽樣。
                         try { m_MigrateReport = UCL_ChatTavernMessageIndex.Verify(); }
                         catch (Exception e) { m_MigrateReport = $"🚨 驗證例外：{e}"; }
-                    }
-                    if (GUILayout.Button("刪除索引（下次自動重建）",
-                            UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        try
-                        {
-                            int n = UCL_ChatTavernMessageIndex.DeleteAll();
-                            UCL_ChatTavernIO_PerMsgFile.InvalidateMessageCache();
-                            m_MigrateReport = $"已刪除 {n} 份索引，並清空記憶體快取。下次讀取會以全量列舉重建。";
-                        }
-                        catch (Exception e) { m_MigrateReport = $"🚨 刪除例外：{e}"; }
                     }
                 }
 

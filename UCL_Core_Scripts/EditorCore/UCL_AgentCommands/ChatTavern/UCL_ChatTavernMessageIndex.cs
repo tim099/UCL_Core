@@ -1,335 +1,127 @@
-// 區塊職責：訊息檔清單的**落盤索引** — 讓冷啟動不必列舉整房的訊息檔。
-// 物理意義：檔名 migration 之後 `seq == 檔名`，而每個日期目錄裝的是一段**連續**的 seq。
-//          於是「排序後的完整路徑清單」可以由一張每日範圍表**算出來**，不必列舉：
-//              路徑 = <messages>/<date>/<seq:00000000>.json
-//          索引一天一行，所以它的大小跟**天數**成正比，不是跟訊息數成正比 ——
-//          一百萬則訊息時它仍然只有幾百行。這是本設計的全部價值所在。
+// 區塊職責：訊息檔清單的**落盤索引**（Editor 側）— 讓冷啟動不必列舉整房的訊息檔。
+// 物理意義：`seq == 檔名`，而每個日期目錄裝的是一段**連續**的 seq ⇒ 排序後的完整路徑清單
+//          可以由一張每日範圍表**算出來**，不必列舉。索引一天一行，大小跟**天數**成正比。
 // 數值影響：純加速層。任何一致性檢查不過就退回全量列舉（慢但正確），永不給錯清單。
 //
-// 為什麼需要它（2026-08-06 Tim：「卡頓發生在專案重開時」）：
+// ⭐ 本檔**只讀，不寫**（TASK-0335，2026-09-30）：
+//   索引的格式、驗證與寫檔只有一份，在 SCP_Core `SCP_TavernMsgIndex`；本檔轉呼叫它（同 `UCL_TavernCursor` 的做法）。
+//   索引的維護者是**寫入端**：Server 寫完一則訊息就在房間鎖裡刷新那一房的索引。
+//   以前 Editor 的讀取端也會寫（缺天就順手 Rebuild）⇒ 兩個 process、兩份格式規則寫同一個檔；那一份已刪除。
+//   ⚠ `tavern.writer=editor` 時訊息由 Editor 本地寫、不經過 Server ⇒ 那段期間索引不刷新，
+//     讀取端會多列舉幾天（變慢，不會算錯）。修它：`senate cmd tavern-index --arg op=rebuild`。
+//
+// 為什麼需要索引（2026-08-06 Tim：「卡頓發生在專案重開時」）：
 //   `GetSortedMessageFiles` 的記憶體快取是 static 欄位，**domain reload 就整份沒了**
-//   （而 domain reload 每次編譯都發生，不只重開專案）。冷啟動因此每房各付一次
-//   `Directory.GetFiles(AllDirectories)` + 建 N 個 substring key + Array.Sort。
-//   實測（檔案系統快取已熱）：tavern 一房 10,300 檔 21.4ms、52 房合計 28.5ms。
-//   ⚠ 那是**熱**的數字；真冷啟只會更慢，倍數未知 —— 所以本檔解的是「與訊息量成正比」
-//   這個性質，不是那個特定的毫秒數。
-//
-// 一致性怎麼保證（照 UCL_TreasuryLedger 的 watermark/snapshot 形狀）：
-//   索引記每個日期目錄的 (起始 seq, 檔數, 目錄 mtime)。載入時**只 stat 目錄**（60 個約 1ms）：
-//     · mtime 相符 → 該日內容沒動過 ⇒ 直接算出路徑，不列舉
-//     · mtime 不符 / 不在索引 → **只列舉那一天**
-//   最後再驗一次全域 seq 連續性；有斷點就整份丟掉走全量列舉並重建索引。
-//   > **把快取失效降級成「變慢」，而不是「算錯」** —— 這裡算錯的後果很具體：
-//   > 清單少一筆 → seq 全體位移 → 所有游標指到錯的訊息，而外觀完全正常。
-//
-// 索引放**房間目錄**而不是 messages/ 底下：寫在 messages/ 內會改動它的 mtime，
-// 而那正是判斷「有沒有變」的依據 —— 每寫一次索引就讓自己失效一次。
+//   （而 domain reload 每次編譯都發生）⇒ 冷啟動每房各付一次全量列舉＋排序。
 #if UNITY_EDITOR
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Text;
 using UnityEngine;
+using SCP.Core.Tavern;
 
 namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 {
     public static class UCL_ChatTavernMessageIndex
     {
-        public const string IndexFileName = "_msgindex.txt";
-        const string Header = "ucl_msgindex_v1";
-        /// <summary>新格式檔名：8 位補零 seq。字典序 == 數值序。</summary>
-        const string SeqFormat = "00000000";
+        public const string IndexFileName = SCP_TavernMsgIndex.IndexFileName;
 
-        sealed class DayEntry
+        static string DataRoot => UCL_AgentCommandsPath.DataRoot.Replace('\\', '/');
+
+        // SCP 那一側預設把警告印到 stderr，而 Editor 裡沒有人在看 stderr ⇒ 換成 Console 警告。
+        // 靜默降級會讓「索引壞了」變成永遠沒人發現的慢。
+        static UCL_ChatTavernMessageIndex()
         {
-            public string Date;         // yyyy-MM-dd（＝目錄名）
-            public int FirstSeq;        // 該日第一筆的 seq（1-based）；Count==0 時無意義
-            public int Count;
-            public long MtimeTicks;     // 目錄的 LastWriteTimeUtc.Ticks —— 「有沒有變」的判準
-        }
-
-        static string IndexPath(string roomId)
-            => Path.Combine(UCL_ChatTavernIO.GetRoomDir(roomId), IndexFileName);
-
-        // ===========================================================
-        // 讀 / 寫
-        // ===========================================================
-        static Dictionary<string, DayEntry> Load(string roomId)
-        {
-            string path = IndexPath(roomId);
-            if (!File.Exists(path)) return null;
-            try
-            {
-                string[] lines = File.ReadAllLines(path, Encoding.UTF8);
-                if (lines.Length == 0 || lines[0] != Header) return null;   // 版本不合 → 當沒有
-                var map = new Dictionary<string, DayEntry>(StringComparer.Ordinal);
-                for (int i = 1; i < lines.Length; i++)
-                {
-                    if (string.IsNullOrWhiteSpace(lines[i])) continue;
-                    string[] p = lines[i].Split('\t');
-                    if (p.Length != 4) return null;                          // 壞行 → 整份不信
-                    map[p[0]] = new DayEntry
-                    {
-                        Date = p[0],
-                        FirstSeq = int.Parse(p[1], CultureInfo.InvariantCulture),
-                        Count = int.Parse(p[2], CultureInfo.InvariantCulture),
-                        MtimeTicks = long.Parse(p[3], CultureInfo.InvariantCulture),
-                    };
-                }
-                return map;
-            }
-            catch (Exception e)
-            {
-                // 壞索引**不可當成「沒有索引」以外的任何東西** —— 一律回 null 走全量列舉。
-                // 出聲是必要的：靜默降級會讓「索引壞了」變成永遠沒人發現的慢。
-                Debug.LogWarning($"[TavernMsgIndex] 索引解析失敗（{roomId}），本次走全量列舉：{e.Message}");
-                return null;
-            }
-        }
-
-        static void Save(string roomId, List<DayEntry> days)
-        {
-            try
-            {
-                var sb = new StringBuilder().AppendLine(Header);
-                foreach (var d in days)
-                    sb.Append(d.Date).Append('\t').Append(d.FirstSeq).Append('\t')
-                      .Append(d.Count).Append('\t').Append(d.MtimeTicks).Append('\n');
-                string path = IndexPath(roomId);
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
-                File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
-            }
-            catch (Exception e)
-            {
-                // 寫不出來只是「下次還是慢」，不影響正確性 —— 但仍要出聲，
-                // 否則會出現「明明做了索引卻永遠沒生效」而沒人知道。
-                Debug.LogWarning($"[TavernMsgIndex] 索引寫入失敗（{roomId}）：{e.Message}");
-            }
-        }
-
-        public static void Delete(string roomId)
-        {
-            try { if (File.Exists(IndexPath(roomId))) File.Delete(IndexPath(roomId)); }
-            catch (Exception e) { Debug.LogWarning($"[TavernMsgIndex] 索引刪除失敗：{e.Message}"); }
+            SCP_TavernMsgIndex.Warn = s => Debug.LogWarning(s);
         }
 
         // ===========================================================
-        // 主入口
+        // 區塊職責：把 SCP 回傳的路徑接回呼叫端的 messages 根
+        // 物理意義：SCP 回的路徑一律 `/` 分隔；Editor 這側的全量列舉回的是 `root\<date>\<seq>.json`。
+        //          兩條路給同一則訊息的字串必須**逐字相同** —— 讀取端的訊息快取是用路徑當 key 的，
+        //          格式不同就變成同一則訊息兩份快取。⇒ 取最後兩段（日期、檔名），用 root 重新組。
+        // 邊界：呼叫端給的 root 跟 SCP 算出來的不是同一個目錄 ⇒ 回 null（退回全量列舉），⛔ 不猜。
+        // ===========================================================
+        static string[] Remap(string[] iScpPaths, string iMessagesRoot)
+        {
+            if (iScpPaths == null) return null;
+            var aOut = new string[iScpPaths.Length];
+            for (int i = 0; i < iScpPaths.Length; i++)
+            {
+                string p = iScpPaths[i];
+                int aFileSep = p.LastIndexOfAny(s_Seps);
+                int aDateSep = aFileSep > 0 ? p.LastIndexOfAny(s_Seps, aFileSep - 1) : -1;
+                if (aDateSep < 0) return null;
+                string aDate = p.Substring(aDateSep + 1, aFileSep - aDateSep - 1);
+                aOut[i] = Path.Combine(iMessagesRoot, aDate, p.Substring(aFileSep + 1));
+            }
+            return aOut;
+        }
+        static readonly char[] s_Seps = { '/', '\\' };
+
+        static bool SameRoot(string iRoomId, string iMessagesRoot)
+        {
+            string aScp = SCP_TavernMsgIndex.MessagesDir(DataRoot, iRoomId).TrimEnd('/');
+            string aMine = (iMessagesRoot ?? "").Replace('\\', '/').TrimEnd('/');
+            return string.Equals(aScp, aMine, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // ===========================================================
+        // 主入口（簽名沿用舊版，呼叫端不用改）
         // ===========================================================
         /// <summary>
-        /// 區塊職責：取該房排序後的完整訊息檔路徑清單，能用索引就不列舉。
-        /// 數值影響：回傳新陣列（呼叫端可自由持有）。<paramref name="usedIndex"/> 回報這次
-        ///          有沒有真的省到 —— 給診斷用，**不要拿它當正確性的證據**。
+        /// 取該房排序後的完整訊息檔路徑清單，能用索引就不列舉。
+        /// <paramref name="usedIndex"/> 回報這次有沒有真的省到 —— 給診斷用，**不要拿它當正確性的證據**。
         /// 邊界：任何不一致 → 回 null，呼叫端退回全量列舉（本檔絕不回「可能錯的清單」）。
         /// </summary>
         public static string[] TryGetOrderedPaths(string roomId, string messagesRoot, out bool usedIndex)
             => TryGetOrderedPaths(roomId, messagesRoot, out usedIndex, out _);
 
-        /// <summary>
-        /// 同上，外加回報**這次有幾天是現場列舉的**（不在索引裡／目錄動過）。
-        /// 物理意義：這個數字就是「索引還缺幾天」。呼叫端拿它決定要不要把索引補寫回去 ——
-        ///   🩸 2026-08-19 實測：tavern 的索引停在 08-06 而資料到 08-19，落後 10 天。
-        ///     成因不是寫壞，是**成功就 early return，而 Rebuild 只掛在全量列舉那條路的尾巴**
-        ///     ⇒ 索引一旦存在就再也不會被擴充，那 10 天每次冷啟動重列一次，而且會愈長。
-        ///   對 C# 這只是慢（缺的那幾天照樣被列舉，答案從來沒錯過）；
-        ///   但對**沒有列舉能力的消費端**（靜態網頁只能 fetch 推導出的檔名）部分索引是致命的 ——
-        ///   它會安靜地停在索引的最後一天。⇒ 同一份資料在兩個消費端有兩種嚴重度。
-        /// </summary>
+        /// <summary>同上，外加回報**這次有幾天是現場列舉的**（＝索引落後幾天；只回報，⛔ 本側不補寫）。</summary>
         public static string[] TryGetOrderedPaths(string roomId, string messagesRoot,
             out bool usedIndex, out int enumeratedDays)
         {
-            var spans = TryGetValidatedSpans(roomId, messagesRoot, out usedIndex, out enumeratedDays, out int total);
-            if (spans == null) return null;
-            var result = new List<string>(total);
-            foreach (var sp in spans) sp.AppendRange(result, sp.FirstSeq, sp.FirstSeq + sp.Count - 1);
-            return result.ToArray();
+            usedIndex = false;
+            enumeratedDays = 0;
+            if (!SameRoot(roomId, messagesRoot)) return null;
+            return Remap(SCP_TavernMsgIndex.TryGetOrderedPaths(DataRoot, roomId, out usedIndex, out enumeratedDays),
+                         messagesRoot);
         }
 
-        // ===========================================================
-        // 區塊職責：`Tail(n)` 與「游標之後」的**直接定址**入口（TASK-0162，2026-09-08）
-        // 物理意義：`Tail` 想要的是最後 n 筆，而它以前的取得方式是「先要到全部 19,869 條路徑再切尾巴」。
-        //          有了連號 seq ＋ 每日範圍表，最後 n 筆的檔名是**算得出來**的。
-        // 數值影響：`tail=6` 由 O(訊息數) 降為 O(天數) 的 stat ＋ 6 個字串。
-        // 邊界：⚠ 索引缺天時**照樣要補寫回去** —— 否則就重演 2026-08-19 那筆血證
-        //      （索引一旦存在就再也不會被擴充，落後 10 天而沒有任何一層出聲）。
-        //      回 null ＝ 這條路走不了（呼叫端退回全量列舉），**不是**「沒有訊息」。
-        // ===========================================================
+        /// <summary>最後 <paramref name="iCount"/> 筆的路徑（直接定址，TASK-0162）。回 null ＝ 這條路走不了，**不是**「沒有訊息」。</summary>
         public static string[] TryGetTailPaths(string roomId, string messagesRoot, int iCount, out int oTotal)
         {
             oTotal = 0;
-            if (iCount <= 0) return null;
-            var spans = TryGetValidatedSpans(roomId, messagesRoot, out _, out int aEnumDays, out oTotal);
-            if (spans == null) return null;
-            if (aEnumDays > 0) RebuildFromSpans(roomId, messagesRoot, spans);
-            return SliceSpans(spans, oTotal - iCount + 1, oTotal, oTotal);
+            if (!SameRoot(roomId, messagesRoot)) return null;
+            return Remap(SCP_TavernMsgIndex.TryGetTailPaths(DataRoot, roomId, iCount, out oTotal, out _), messagesRoot);
         }
 
         /// <summary>回傳「絕對序位 &gt; iAfterIndex0 的那一段」路徑（序位 1-based ＝ seq）。</summary>
         public static string[] TryGetPathsAfter(string roomId, string messagesRoot, int iAfterIndex0, out int oTotal)
         {
             oTotal = 0;
-            var spans = TryGetValidatedSpans(roomId, messagesRoot, out _, out int aEnumDays, out oTotal);
-            if (spans == null) return null;
-            if (aEnumDays > 0) RebuildFromSpans(roomId, messagesRoot, spans);
-            return SliceSpans(spans, iAfterIndex0 + 1, oTotal, oTotal);
-        }
-
-        static string[] SliceSpans(List<DaySpan> iSpans, int iFromSeq, int iToSeq, int iTotal)
-        {
-            int from = Math.Max(1, iFromSeq);
-            int to = Math.Min(iTotal, iToSeq);
-            if (to < from) return Array.Empty<string>();
-            var result = new List<string>(to - from + 1);
-            foreach (var sp in iSpans)
-            {
-                int lo = Math.Max(from, sp.FirstSeq);
-                int hi = Math.Min(to, sp.FirstSeq + sp.Count - 1);
-                if (hi < lo) continue;      // 這一天整段落在區間外 ⇒ 一個字串都不建
-                sp.AppendRange(result, lo, hi);
-            }
-            return result.ToArray();
-        }
-
-        // 由 span 直接寫索引 —— 跟 `Rebuild(orderedPaths)` 是**同一份索引語意**，
-        // 差別只在來源已經是每日區段，不必再從 19,869 條路徑反推回來。
-        static void RebuildFromSpans(string roomId, string messagesRoot, List<DaySpan> iSpans)
-        {
-            try
-            {
-                var byDate = new List<DayEntry>();
-                var seen = new Dictionary<string, DayEntry>(StringComparer.Ordinal);
-                foreach (var sp in iSpans)
-                {
-                    string date = Path.GetFileName(sp.Dir);
-                    var e = new DayEntry { Date = date, FirstSeq = sp.FirstSeq, Count = sp.Count };
-                    seen[date] = e; byDate.Add(e);
-                }
-                foreach (string dir in Directory.GetDirectories(messagesRoot))
-                {
-                    string date = Path.GetFileName(dir);
-                    if (!seen.ContainsKey(date))
-                    {
-                        var e = new DayEntry { Date = date, FirstSeq = 0, Count = 0 };
-                        seen[date] = e; byDate.Add(e);
-                    }
-                }
-                foreach (var e in byDate)
-                    e.MtimeTicks = Directory.GetLastWriteTimeUtc(Path.Combine(messagesRoot, e.Date)).Ticks;
-                byDate.Sort((a, b) => string.CompareOrdinal(a.Date, b.Date));
-                Save(roomId, byDate);
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[TavernMsgIndex] 索引重建失敗（span 版，{roomId}）：{e.Message}");
-            }
-        }
-
-        // ===========================================================
-        // 區塊職責：索引的**唯一**一份一致性驗證 —— 產出「每日 seq 區段」清單
-        // 物理意義：一天一個 span（目錄 ＋ 起始 seq ＋ 筆數）。乾淨的那幾天路徑用算的，
-        //          動過的那幾天現場列舉並把實際路徑帶在身上。
-        // 邊界：任何一格對不上（跨日不連續 / 有洞 / 重號 / 舊格式檔名 / IO 失敗）一律回 null
-        //      ⇒ 呼叫端退回全量列舉。**把失效降級成「變慢」，不是「算錯」**（見檔頭）。
-        // ===========================================================
-        sealed class DaySpan
-        {
-            public string Dir;
-            public int FirstSeq;
-            public int Count;
-            public string[] Files;   // 非 null ＝ 那天是現場列舉的，路徑照實帶（不重算）
-
-            /// <summary>把 [iLo, iHi]（含端點、絕對 seq）這一段的路徑追加進去。</summary>
-            public void AppendRange(List<string> ioTo, int iLo, int iHi)
-            {
-                for (int seq = iLo; seq <= iHi; seq++)
-                {
-                    int off = seq - FirstSeq;
-                    ioTo.Add(Files != null ? Files[off]
-                                           : Path.Combine(Dir, seq.ToString(SeqFormat) + ".json"));
-                }
-            }
-        }
-
-        static List<DaySpan> TryGetValidatedSpans(string roomId, string messagesRoot,
-            out bool oUsedIndex, out int oEnumeratedDays, out int oTotal)
-        {
-            oUsedIndex = false;
-            oEnumeratedDays = 0;
-            oTotal = 0;
-
-            var idx = Load(roomId);
-            if (idx == null) return null;
-
-            string[] dirs;
-            try { dirs = Directory.GetDirectories(messagesRoot); }
-            catch { return null; }
-            Array.Sort(dirs, StringComparer.Ordinal);
-
-            var spans = new List<DaySpan>(dirs.Length);
-            int expectedNextSeq = 1;
-            bool anyFromIndex = false;
-
-            foreach (string dir in dirs)
-            {
-                string date = Path.GetFileName(dir);
-                long mtime;
-                try { mtime = Directory.GetLastWriteTimeUtc(dir).Ticks; }
-                catch { return null; }
-
-                if (idx.TryGetValue(date, out var e) && e.MtimeTicks == mtime)
-                {
-                    // 目錄沒動過 ⇒ 內容不變 ⇒ 只記區段，**不列舉也不建路徑**（本設計的收益就在這裡）
-                    if (e.Count == 0) continue;                 // 空目錄（實際存在 3 個）
-                    if (e.FirstSeq != expectedNextSeq) return null;   // 跨日不連續 → 整份不信
-                    spans.Add(new DaySpan { Dir = dir, FirstSeq = e.FirstSeq, Count = e.Count });
-                    expectedNextSeq = e.FirstSeq + e.Count;
-                    anyFromIndex = true;
-                }
-                else
-                {
-                    // 只列舉「動過的那一天」。索引的價值不是全有全無，
-                    // 而是把成本從「全部訊息」壓到「今天的訊息」。
-                    oEnumeratedDays++;
-                    string[] files;
-                    try { files = Directory.GetFiles(dir, "*.json"); }
-                    catch { return null; }
-                    Array.Sort(files, StringComparer.Ordinal);
-                    if (files.Length == 0) continue;
-                    int first = expectedNextSeq;
-                    foreach (string f in files)
-                    {
-                        if (!TryParseSeq(Path.GetFileName(f), out int seq)) return null;  // 還有舊格式 → 不用索引
-                        if (seq != expectedNextSeq) return null;                          // 有洞 / 重號
-                        expectedNextSeq++;
-                    }
-                    spans.Add(new DaySpan { Dir = dir, FirstSeq = first, Count = files.Length, Files = files });
-                }
-            }
-
-            oUsedIndex = anyFromIndex;
-            oTotal = expectedNextSeq - 1;
-            return spans;
+            if (!SameRoot(roomId, messagesRoot)) return null;
+            return Remap(SCP_TavernMsgIndex.TryGetPathsAfter(DataRoot, roomId, iAfterIndex0, out oTotal, out _), messagesRoot);
         }
 
         /// <summary>
-        /// 區塊職責：驗證「索引算出來的清單」與「全量列舉算出來的清單」逐筆相同。
-        /// 物理意義：索引是加速層，而加速層唯一該被問的問題是**它有沒有改變答案**。
-        ///          這裡把兩條路各跑一次直接對撞 —— 不是抽樣、不是看數量，是逐筆比路徑。
-        /// 數值影響：純讀，兩邊都不寫快取也不寫索引。慢（等於付一次全量），所以是手動觸發不是自動。
+        /// 區塊職責：驗證「**本檔**算出來的清單」與「Editor 全量列舉算出來的清單」逐筆相同。
+        /// 物理意義：SCP 那一側的 `tavern-index op=verify` 驗的是 SCP 的路徑；這裡驗的是**接回 Editor root 之後**那一份，
+        ///          也就是 Editor 讀取端實際拿到的東西。不是抽樣、不是看數量，是逐筆比路徑。
+        /// 數值影響：純讀，一個位元組都不寫。慢（等於付一次全量），所以是手動觸發不是自動。
         /// </summary>
         public static string Verify()
         {
             var sb = new StringBuilder();
             string roomsRoot = UCL_ChatTavernIO.GetRoomsRoot();
             if (!Directory.Exists(roomsRoot)) return "找不到 rooms 目錄";
-            int rooms = 0, withIndex = 0, mismatch = 0, noIndex = 0;
+            int rooms = 0, withIndex = 0, mismatch = 0, noIndex = 0, stale = 0;
             long totalFiles = 0;
 
             foreach (string roomDir in Directory.GetDirectories(roomsRoot))
             {
                 string roomId = Path.GetFileName(roomDir);
-                string root = Path.Combine(roomDir, "messages");
+                string root = UCL_ChatTavernIO_PerMsgFile.GetMessagesRoot(roomId);
                 if (!Directory.Exists(root)) continue;
                 rooms++;
 
@@ -342,9 +134,10 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 totalFiles += truth.Length;
 
                 // ② 索引路徑
-                string[] fromIndex = TryGetOrderedPaths(roomId, root, out _);
+                string[] fromIndex = TryGetOrderedPaths(roomId, root, out _, out int aEnumDays);
                 if (fromIndex == null) { noIndex++; continue; }
                 withIndex++;
+                if (aEnumDays > 0) stale++;
 
                 if (fromIndex.Length != truth.Length)
                 {
@@ -354,7 +147,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 }
                 for (int i = 0; i < truth.Length; i++)
                 {
-                    if (!string.Equals(fromIndex[i], truth[i], StringComparison.OrdinalIgnoreCase))
+                    // ⚠ Ordinal（區分大小寫與分隔符）：這一格驗的就是「兩條路逐字相同」，見 Remap
+                    if (!string.Equals(fromIndex[i], truth[i], StringComparison.Ordinal))
                     {
                         mismatch++;
                         sb.AppendLine($"  ✗ [{roomId}] seq {i + 1} 路徑不同：\n      索引 {fromIndex[i]}\n      實際 {truth[i]}");
@@ -365,79 +159,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
             var head = new StringBuilder();
             head.AppendLine($"房間 {rooms} / 訊息檔 {totalFiles}");
-            head.AppendLine($"  走索引 {withIndex} 房 / 無索引（走全量） {noIndex} 房");
+            head.AppendLine($"  走索引 {withIndex} 房（其中 {stale} 房有現場列舉的天 ＝ 索引落後）/ 無索引（走全量） {noIndex} 房");
             head.AppendLine(mismatch == 0
                 ? "  ✅ 索引與全量列舉**逐筆相同**（路徑逐一比對，非抽樣）"
-                : $"  🚨 有 {mismatch} 房不符 —— 索引不可信，請重建：");
+                : $"  🚨 有 {mismatch} 房不符 —— 索引不可信，請重建：`senate cmd tavern-index --arg op=rebuild`");
             return head.ToString() + sb.ToString();
-        }
-
-        /// <summary>刪掉全部房間的索引（下次讀取自動以全量列舉重建）。</summary>
-        public static int DeleteAll()
-        {
-            string roomsRoot = UCL_ChatTavernIO.GetRoomsRoot();
-            if (!Directory.Exists(roomsRoot)) return 0;
-            int n = 0;
-            foreach (string roomDir in Directory.GetDirectories(roomsRoot))
-            {
-                string p = Path.Combine(roomDir, IndexFileName);
-                try { if (File.Exists(p)) { File.Delete(p); n++; } }
-                catch (Exception e) { Debug.LogWarning($"[TavernMsgIndex] 刪除失敗 {p}：{e.Message}"); }
-            }
-            return n;
-        }
-
-        static bool TryParseSeq(string fileName, out int seq)
-        {
-            seq = 0;
-            if (fileName.Length != 13 || !fileName.EndsWith(".json", StringComparison.Ordinal)) return false;
-            return int.TryParse(fileName.Substring(0, 8), NumberStyles.None,
-                                CultureInfo.InvariantCulture, out seq) && seq > 0;
-        }
-
-        /// <summary>
-        /// 區塊職責：由**已經排序好的完整清單**重建索引並落盤。
-        /// 物理意義：呼叫端（全量列舉那條路）算完之後順手存一份，下次冷啟動就不必再算。
-        /// 邊界：清單裡只要有一個檔名不是新格式，就**不建索引**（舊格式房不適用本機制）。
-        /// </summary>
-        public static void Rebuild(string roomId, string messagesRoot, string[] orderedPaths)
-        {
-            try
-            {
-                var byDate = new List<DayEntry>();
-                var seen = new Dictionary<string, DayEntry>(StringComparer.Ordinal);
-                for (int i = 0; i < orderedPaths.Length; i++)
-                {
-                    string name = Path.GetFileName(orderedPaths[i]);
-                    if (!TryParseSeq(name, out int seq) || seq != i + 1) return;   // 尚未 migrate → 放棄
-                    string date = Path.GetFileName(Path.GetDirectoryName(orderedPaths[i]));
-                    if (!seen.TryGetValue(date, out var e))
-                    {
-                        e = new DayEntry { Date = date, FirstSeq = seq, Count = 0 };
-                        seen[date] = e; byDate.Add(e);
-                    }
-                    e.Count++;
-                }
-                // 空目錄也要入索引 —— 否則下次它會被當成「不在索引」而被列舉，
-                // 而列舉一個空目錄雖然便宜，卻會讓「有沒有命中索引」這個診斷訊號變髒。
-                foreach (string dir in Directory.GetDirectories(messagesRoot))
-                {
-                    string date = Path.GetFileName(dir);
-                    if (!seen.ContainsKey(date))
-                    {
-                        var e = new DayEntry { Date = date, FirstSeq = 0, Count = 0 };
-                        seen[date] = e; byDate.Add(e);
-                    }
-                }
-                foreach (var e in byDate)
-                    e.MtimeTicks = Directory.GetLastWriteTimeUtc(Path.Combine(messagesRoot, e.Date)).Ticks;
-                byDate.Sort((a, b) => string.CompareOrdinal(a.Date, b.Date));
-                Save(roomId, byDate);
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[TavernMsgIndex] 索引重建失敗（{roomId}）：{e.Message}");
-            }
         }
     }
 }

@@ -9,13 +9,13 @@
 //          一律 fee=0（Tim 2026-08-04：「系統信件不收費」）—— 系統通知你「你收到錢了」還跟你
 //          收郵資，是把通知成本轉嫁給被通知的人。
 // 設計取捨：
-//   - **檔案格式必須與 `Tools~/AgentCommands/registered_mail.py` 逐欄對齊**（同一批檔案兩端讀寫）。
-//     讀取端是 python：`registered_mail.due_mail()` / `wake_brief.py._inbox_lines()`。
-//     欄位或檔名慣例任一漂移 → 信寫成功卻永遠不會被投遞，且**兩端都不會報錯**
-//     （典型的「外觀 OK ≠ 真的 OK」）。改這裡務必同步看那支 py。
-//   - **不在 C# 端重造 ack / inbox / 郵資查詢**：那些 py 已經有了，第二套實作必漂。
-//     C# 只負責「寄」這一個動作 —— 因為只有 Editor 這端會在核准的當下知道要寄。
-// @doc-sync: Assets/Plugins/UCL_Core/Tools~/AgentCommands/registered_mail.py
+//   - **格式、讀取、投遞只有一份：SCP_Core `SCP_RegisteredMail`**（本檔的 Send 轉呼叫它）。
+//     讀取端＝同一支的 ListUnread／StampDelivered／Ack，投遞＝Senate 早安 brief 的「📮 掛號信」一節（TASK-0347），
+//     寄件／收件匣／ack／郵資的 CLI ＝ `senate cmd mail`（TASK-0333）。
+//     欄位或檔名慣例任一漂移 → 信寫成功卻永遠不會被投遞，且**不會報錯**（典型的「外觀 OK ≠ 真的 OK」）。
+//   - **不在本檔重造 ack / inbox / 郵資查詢**：那些在 SCP 那份，第二套實作必漂。
+//     本檔只負責「寄」這一個動作 —— 因為只有 Editor 這端會在核准的當下知道要寄。
+// @doc-sync: SCP_Core Runtime/Letters/SCP_RegisteredMail.cs
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -26,7 +26,7 @@ using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.Mail
 {
-    /// <summary>掛號信寫入端（C#）— 與 <c>Tools~/AgentCommands/registered_mail.py</c> 共用同一批檔案。</summary>
+    /// <summary>掛號信寫入端（Editor 側）— 轉呼叫 SCP_Core <c>SCP_RegisteredMail</c>（格式、讀取、投遞都在那一份）。</summary>
     public static class UCL_RegisteredMailIO
     {
         /// <summary>系統信件的寄件者 id — 沿用酒保（tavern-keeper），與酒館系統廣播同一個身分。</summary>

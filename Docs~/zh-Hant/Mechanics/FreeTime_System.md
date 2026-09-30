@@ -47,19 +47,21 @@ Tim 顯式說「**N token 績效獎金**」/「**N token QA 額外獎金**」/�
 
 ### 機制
 
-走 `Cmd_Treasury op=credit`：
+走 Senate `bank op=credit`（直接串 Server，不需要 Editor；TASK-0333）：
 ```bash
-senate ucmd run Treasury \
+senate cmd bank \
   --arg op=credit \
-  --arg account=<agent-bank-id> \
+  --arg account=<帳號 id> \
   --arg amount=<N> \
-  --arg source_kind=performance_bonus \
-  --arg source_ref=<task-ref> \
-  --arg source_description="<Tim 給的理由>" \
-  --arg actor=Tim
+  --arg kind=performance_bonus \
+  --arg ref=<task-ref> \
+  --arg description="<Tim 給的理由>" \
+  --arg caller=Tim
 ```
 
-→ ledger entry 落地，bank balance +N，Discord treasury_mirror 自動 broadcast。
+> ⚠ 欄名跟舊 Treasury 不同：`kind`／`ref`／`description`／`caller`（⛔ 不是 source_kind／source_ref／source_description／actor）—— `bank` 有參數預檢，帶錯會被擋下並說出理由。
+
+→ ledger entry 落地，bank balance +N。⚠ Senate `bank` **不會**自動廣播（銀行流水往 Discord 的鏡像在 Senate 版還沒有，見 TASK-0321）—— 要讓大家看到，另外在酒館說。
 
 ### 規則
 

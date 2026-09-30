@@ -3,7 +3,7 @@ title: Cmd_Treasury — Agent Token 帳本（使用層：op 與欄位怎麼填�
 description: 經濟體的單一財務入口 — 14 個 op 涵蓋餘額查詢（單筆／整批）/ 進出帳 / 守恆轉帳 / 請款單 / 轉帳單 / 每日結帳。本檔講「呼叫時要填什麼」與「哪些欄位其實沒人驗」。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/Treasury/
 namespace: UCL.Core.EditorLib.AgentCommands.Treasury
-last_updated: 2026-09-29 (audit／closing_generate／closing_list 補 Senate `bank` 對應 op；TASK-0331)
+last_updated: 2026-09-30 (TASK-0333：外部呼叫改指 Senate `bank`／`bank-request`，範例同步)
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | 姊妹 Cmd | 身分層（agent vs persona）的正名拍板在那邊
@@ -14,17 +14,17 @@ related:
 # 💰 Cmd_Treasury — 使用層
 
 > 一句話：**所有財務操作走單一 Cmd（`Type=Treasury`），第一個 arg `op` 派遣到子操作。**
-> 錢的唯一寫入權在 C# server 端；python 只負責派遣。
+> 錢的唯一寫入權在 C# server 端；外部呼叫走 Senate `bank`（python 端沒有動錢通道）。
 > 結果一律寫進 `AgentCommands/ChatTavern/_last_op.md`，caller 讀那份。
 
 ---
 
 ## 1. 呼叫形狀
 
-```bash
-senate ucmd run Treasury \
-  --arg op=<op 名> --arg <k>=<v> ...
-```
+> [!IMPORTANT]
+> **外部呼叫一律走 Senate CLI**（TASK-0333）：`senate cmd bank --arg op=<op> …`（進出帳／餘額／分錄／結帳）、
+> `senate cmd bank-request`（請款／轉帳單）—— 扣款直接串 Server，不需要 Editor。各 op 的對應見 §2 表格的「Senate 對應」。
+> 本 Cmd（`Type=Treasury`）只剩 **Unity C# 內部呼叫**（整支刪除是 TASK-0325 順位 5／8）。
 
 - `_last_op.md` 的標題就是判決：`# ✅` 成功 / `# ❌ ... Rejected`（參數不合法）/ `# ❌ ... Failed`（執行期爆炸）。
 
@@ -109,14 +109,14 @@ senate ucmd run Treasury \
 
 ```bash
 # 查餘額
-senate ucmd run Treasury --arg op=balance --arg account=zeta
+senate cmd bank --arg op=balance --arg account=zeta
 
 # 開請款單（不動錢，等 Tim 批：`senate cmd bank --arg op=approve`）—— ⚠ 已搬到 Senate（TASK-0327）
 senate cmd bank-request --arg op=request --arg persona=summit --arg target_bank=zeta --arg amount=6 \
   --arg-file reason=<理由檔> --arg source_kind=manual_request
 
 # 補算每日結帳（只寫 closing/*.json，不動任何餘額）
-senate ucmd run Treasury --arg op=closing_generate
+senate cmd bank --arg op=closing_generate
 ```
 
 ---

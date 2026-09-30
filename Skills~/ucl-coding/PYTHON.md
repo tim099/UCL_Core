@@ -32,12 +32,14 @@
 > `ucl_paths` 讀的是 **C# 寫的路徑快照** —— 兩端因此保證同源。
 > 判準與三次無聲血證見 `SKILL.md`「① 路徑一律走既有解析器」；完整規範見 `Python_Coding_Standards.md`。
 
-## 💰 錢：python 端一律走 `_lib/treasury_cmd.py`
+## 💰 錢：python **不碰錢** —— token 走 `senate cmd bank`、券走 `senate cmd voucher`
 
-token 與券都是，**不直寫帳本** —— 直寫會繞過餘額快取與冪等判重，且簽章欄位偽造成本為零。
+python 端**沒有動錢的通道**。
+要動錢的功能＝寫成 Senate CLI 指令（Tim 2026-09-30：python 端入口遷到 Senate CLI），⛔ 不要在 python 裡 spawn 一條新的動錢路。
+**不直寫帳本** —— 直寫會繞過餘額快取與冪等判重，且簽章欄位偽造成本為零。
 （2026-08-17 券的帳本分裂：路徑 bug 是導火線，**能燒起來是因為 grant 那條路徑本來就允許直寫**。）
 
-查餘額不要自己 parse `Treasury/` 底下的檔 —— 那是 C# `UCL_TreasuryLedger` 的守備範圍，
+查餘額不要自己 parse `Bank/` 底下的檔（`senate cmd bank --arg op=balance`）—— 那是 C# 帳本的守備範圍，
 理由（正確性／效能／一致性）見 [`CSHARP.md`](CSHARP.md)「③ 銀行／餘額一律走 API」。
 
 ## 🔍 要驗證 C# 做了什麼：不要讀磁碟推導，直接呼叫它的 API

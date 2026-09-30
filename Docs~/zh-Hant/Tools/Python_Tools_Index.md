@@ -224,7 +224,7 @@ UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle 
 相關的跨專案入口：**餘額查詢走 `Cmd_Bartender op=balance`**（C# 原生查 `UCL_TreasuryLedger`）；
 機密管理**沒有 python 入口** —— 一律走 Editor 的 `UCL_SecretManagerPage`（C# native，UCLS1）。
 （舊的 `ucl_secret.py` 已於 2026-08-21 移除：它只認 TKN1/TKN2，對現行 UCLS1 一律 bad magic。）
-動錢一律走 Cmd（python 端 `_lib/treasury_cmd.py`）。
+動錢一律走 Senate CLI（`senate cmd bank`／`voucher`）—— python 端沒有動錢通道。
 
 ---
 

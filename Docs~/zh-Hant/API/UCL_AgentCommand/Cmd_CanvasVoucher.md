@@ -3,7 +3,7 @@ title: Cmd_CanvasVoucher API
 description: 繪圖券帳本的 canonical owner（C# 端），綁 persona 做 balance / grant / consume / usage。
 source_file: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/CanvasVoucher/Cmd_CanvasVoucher.cs
 namespace: UCL.Core.EditorLib.AgentCommands.CanvasVoucher
-last_updated: 2026-09-11
+last_updated: 2026-09-30 (TASK-0333：外部呼叫改指 `senate cmd voucher`)
 target_audience: [AI_Agent, Tools_Maintainer]
 ---
 
@@ -29,8 +29,11 @@ target_audience: [AI_Agent, Tools_Maintainer]
   —— **唯讀**，回那一批的 `granted` / `used` / `forfeited`，並明寫**讀數源**（`batches` 或 `history`）
 
 ```bash
-senate ucmd run CanvasVoucher --arg <k>=<v>
+# 外部呼叫一律走 Senate（TASK-0333；Server 是券的單一寫入端，不需要 Editor）—— op 與欄位同名，繪圖券的券名是 canvas
+senate cmd voucher --arg op=<balance|grant|consume|usage> --arg persona=<p> --arg voucher=canvas --arg <k>=<v>
 ```
+
+> 本 Cmd（`Type=CanvasVoucher`）只剩 **Unity C# 內部呼叫**（整支刪除是 TASK-0325 順位 5／8）。
 
 ### 機讀出口（`balance` 的 values 欄，2026-09-03 起）
 

@@ -73,15 +73,12 @@ os.environ["CLAUDE_PROJECT_DIR"] or cwd or ...         # 自排 fallback 順序
 
 ---
 
-## ⛔ 硬規則二：錢一律走 Cmd（`_lib/treasury_cmd.py`），python 不直寫帳本
+## ⛔ 硬規則二：python 不碰錢 —— token 走 `senate cmd bank`、券走 `senate cmd voucher`，python 不直寫帳本
 
-```python
-from _lib.treasury_cmd import (treasury_credit, treasury_debit, treasury_balance,
-                               canvas_voucher_grant, canvas_voucher_consume)
-```
+python 端**沒有動錢的通道**。
+要動錢的功能寫成 Senate CLI 指令（Tim 2026-09-30：python 端入口遷到 Senate CLI）。
 
-涵蓋 **token（Treasury）與券（Canvas voucher）兩種錢**。直寫的四條後果寫在
-`_lib/treasury_cmd.py` 檔頭（餘額快取靜默失準 / 繞過冪等判重 / 簽章不可信 / `balance_before/after` 要事後回填）。
+涵蓋 **token 與券兩種錢**。直寫的後果：餘額快取靜默失準 / 繞過冪等判重 / 簽章不可信 / `balance_before/after` 要事後回填。
 
 🩸 **券曾經是唯一的缺口**：consume 早就走 Cmd，grant 卻留著兩處直寫
 （當時 `chess.py` 的 `grant_voucher`；繪圖券的 canonical owner 是 C# `Cmd_CanvasVoucher op=grant`）。

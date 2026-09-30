@@ -251,7 +251,7 @@ Step 1. 收尾兩件（寫 letter 前）：
             已經有更便宜解法的查詢問題」。
 
         (d) 消費時間（**可選** —— 本儀式唯一一個「自決做不做」的步驟，Tim 2026-08-01）：
-            python <UCL_Core>/Tools~/AgentCommands/spend_menu.py roll --persona <P> --account <bank>
+            senate cmd spend --arg op=roll --arg persona=<P>
             擲三項可消費清單；額度上限 = **當前餘額 10%**；
             折扣按骰出位置遞減 —— 第 1 項 50%、第 2 項 20%、第 3 項 10% off。
             折扣**不自動退**：照原價付，事後開請款單 `senate cmd bank-request --arg op=request`

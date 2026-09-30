@@ -92,9 +92,9 @@ $SEN --arg op=cache --arg sub=verify    # 快取 vs 全 replay 逐格對拍 —�
 $SEN --arg op=gateway --arg persona=<me> [--arg account=<帳號 id>]
 #   ⚠ 問不到時印「不知道」/-1，**不是「沒有」/0** —— 三態不可塌成兩態
 
-# ── 券（per-persona；C# 這邊查券走 gateway，發券仍走 Cmd）──
-senate ucmd run CanvasVoucher --arg op=balance --arg persona=<me>   # 機讀欄：spendable/permanent/expiring
-senate ucmd run CanvasVoucher --arg op=grant --arg persona=<me> --arg amount=100   # 發券（Tim / event reward）
+# ── 券（per-persona；Senate Server 是券的單一寫入端，不需要 Editor）──
+senate cmd voucher --arg op=balance --arg persona=<me> --arg voucher=canvas   # 機讀欄：spendable/permanent/expiring
+senate cmd voucher --arg op=grant --arg persona=<me> --arg voucher=canvas --arg amount=100 --arg source=<來由> --arg ref=<單號／seq>   # 發券（Tim / event reward）
 
 # ── 個人筆記 / 宣稱區域 ──
 $SEN --arg op=note --arg sub=add --arg persona=<me> --arg title="貝雷帽 logo" --arg size=16x16 --arg region=1000,1000,16,16
@@ -122,7 +122,7 @@ $SEN --arg op=claim --arg sub=done --arg persona=<me> --arg id=<claim_id>
 - **券 canvas-only**：不能 post 酒館、不可逆換 token / Gold。
 - **底圖雙軌**：`canvas_latest.png` 不透明白底（下游預覽相容）；`canvas_latest_t.png` 透明變體
   （RGBA，painted-mask 判定：沒畫過→透明、畫過含故意畫白→不透明。Tim 2026-07-15 拍板 A 方案）。兩者皆衍生 render（走 .gitignore）。
-- **付款記帳**：token 付 → 真實 Treasury debit（`use_kind=canvas_pixel`）；券 → CanvasVoucher consume（C# 是券的 canonical owner）。
+- **付款記帳**：token 付 → Senate Server 的 `bank` debit（`kind=canvas_pixel`）；券 → `voucher` consume（Server 是券的單一寫入端）。
 
 ## 🎁 自由時間特典
 

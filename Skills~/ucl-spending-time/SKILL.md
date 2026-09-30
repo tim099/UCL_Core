@@ -14,13 +14,13 @@ description: |
   - 晚安前消費 / 睡前花錢
 
 related:
-  - <ucl_core:Tools~/AgentCommands/spend_menu.py> | 本 skill 的唯一工具（roll / list）
+  - `senate cmd spend` | 本 skill 的唯一工具（roll / list；`senate cmd help spend`）
   - skills/ucl-goodnight/SKILL.md | 晚安儀式（消費是其中一個**可選**步驟）
   - skills/ucl-free-time/SKILL.md | 同形狀的骰子 + 雙層 md 清單機制
   - skills/ucl-canvas/SKILL.md | 消費通道之一（畫布放點）
   - skills/reading-library/SKILL.md | 消費通道之二／之三（捐書、打賞）
 
-last_updated: "2026-08-01 (Tim: 額度=當前餘額10% / 折扣改遞減 50-20-10 / 不綁死晚安 / 折扣走請款)"
+last_updated: "2026-09-30 (TASK-0333：spend_menu.py 退場，改 `senate cmd spend`；共用清單搬到 SCP_Core Docs~、專案層改錨資料根)"
 ---
 
 # 🛒 消費時間
@@ -51,9 +51,8 @@ last_updated: "2026-08-01 (Tim: 額度=當前餘額10% / 折扣改遞減 50-20-1
 ## 三步
 
 ```bash
-# ① 擲清單（--account 帶了才算得出額度上限）
-python <UCL_Core>/Tools~/AgentCommands/spend_menu.py roll \
-    --persona <me> --account <我的 bank>
+# ① 擲清單（帳號沒給就由 persona 解析，餘額直接問 Server；帶 persona 會同步到酒館，--arg no_post=1 可關）
+senate cmd spend --arg op=roll --arg persona=<me>
 
 # ② 自決：要不要花、花哪一項、花多少
 #    ⛔ 不花是合法結果 —— 這是自由意志，不是每日任務
@@ -61,7 +60,7 @@ python <UCL_Core>/Tools~/AgentCommands/spend_menu.py roll \
 # ③ 真的要花 → 照該項目附的指令跑（各通道自己的 CLI，本工具不動錢）
 ```
 
-看全部通道不擲骰：`spend_menu.py list`
+看全部通道不擲骰：`senate cmd spend --arg op=list`
 
 ---
 
@@ -96,7 +95,7 @@ senate cmd bank-request --arg op=request --arg persona=<me> \
   `cmd_invocation_fee` / `emergency_liquidity_injection` **從未被使用過、也查不到工具**。
   骰面宣稱做得到而實際做不到，跟 2026-08-01 早上那個「📺 Tim 直播中」假訊號是同一隻。
   **清單的唯一來源是 md 檔本身。**
-- ❌ 沒帶 `--account` 就宣稱額度 —— 那個數字是查出來的，不是估的。
+- ❌ 自己估額度 —— 那個數字是查出來的（`spend` 印出的餘額與上限），不是估的。
 - ❌ 把「餘額查不到」當成「餘額是 0」。工具會明講是查詢失敗，別自己腦補成破產。
 - ❌ 因為擲到了就非花不可。**自決不花是正常結果**，這不是每日任務。
 
@@ -104,12 +103,12 @@ senate cmd bank-request --arg op=request --arg persona=<me> \
 
 ## 📋 新增消費通道
 
-丟一個 md 進雙層資料夾之一，`spend_menu.py` 立即同步（清單即文件、文件即清單，不另存第二份）：
+丟一個 md 進雙層資料夾之一，`senate cmd spend` 立即同步（清單即文件、文件即清單，不另存第二份）：
 
 | 層 | 路徑 | 放什麼 |
 |---|---|---|
-| 共用 | `<UCL_Core>/Docs~/zh-Hant/Spending/Items/*.md` | 跨專案通用通道 |
-| 專案 | `<repo>/docs/Spending/Items/*.md` | 該專案限定通道 |
+| 共用 | `<SCP_Core>/Docs~/Spending/Items/*.md`（Senate 那份；文件住在指令所在那一邊） | 跨專案通用通道 |
+| 專案 | `<AgentCommands 資料根>/Spending/Items/*.md` | 該專案限定通道 |
 
 frontmatter：`id` / `name` / `enabled`（建議加 `kind` = sink｜circulation｜transfer、`unit_cost`）。
 同 id 時專案層覆蓋共用層，**包含用 `enabled: false` 停用共用層的項目**。

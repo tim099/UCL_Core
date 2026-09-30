@@ -32,13 +32,6 @@ using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands
 {
-    /// <summary>設定檔本體：只有一個欄位 —— secrets 資料夾相對 DataRoot 的名字。</summary>
-    public class UCL_SecretsPathConfig : UnityJsonSerializable
-    {
-        /// <summary>相對 DataRoot 的資料夾名（可含子路徑，一律用正斜線）。</summary>
-        public string m_SecretsDir = UCL_SecretsPath.DefaultDirName;
-    }
-
     public static class UCL_SecretsPath
     {
         /// <summary>設定檔名（放 DataRoot 底下）。</summary>
@@ -90,12 +83,16 @@ namespace UCL.Core.EditorLib.AgentCommands
             if (Path.IsPathRooted(aDir))
                 throw new Exception("[UCL_SecretsPath] 只能填**相對 DataRoot** 的名字，不是絕對路徑");
 
-            var aConfig = new UCL_SecretsPathConfig { m_SecretsDir = aDir };
+            // 🩸 TASK-0322：此前用 UnityJsonSerializable 序列化 `m_SecretsDir` 欄位 ⇒ 序列化器去掉 `m_`，
+            //   落盤成 `SecretsDir`；而讀取端（本檔 LoadDirName → SCP_SecretStore.ReadDirName）讀的是 `m_SecretsDir`
+            //   ⇒ 自己寫的值自己讀不到，一律退回預設 `Secret`（2026-08-21 建檔起就這樣，只因值剛好等於預設才沒人發現）。
+            //   ⇒ 鍵名改取 SCP 端同一個常數，⛔ 不再靠序列化器的命名規則「剛好一樣」。
+            var aJson = SCP.Core.Json.SCP_JsonData.NewObject();
+            aJson.Set(SCP.Core.Secret.SCP_SecretStore.ConfigKey, aDir);
             string aPath = ConfigPath;
             string aParent = Path.GetDirectoryName(aPath);
             if (!string.IsNullOrEmpty(aParent) && !Directory.Exists(aParent)) Directory.CreateDirectory(aParent);
-            File.WriteAllText(aPath, aConfig.SerializeToJson().ToJsonBeautify(),
-                new System.Text.UTF8Encoding(false));
+            File.WriteAllText(aPath, aJson.ToJson(), new System.Text.UTF8Encoding(false));
             ResetCache();
         }
     }

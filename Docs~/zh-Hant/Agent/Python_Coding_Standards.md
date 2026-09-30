@@ -4,7 +4,7 @@ description: UCL_Core Tools~ 底下 Python CLI 的硬規則 — 路徑一律走 
 tags: [python, coding-standards, paths, treasury]
 aliases: [python 規範, python coding, 寫 python 前]
 target_audience: [AI_Agent, Tools_Maintainer]
-last_updated: 2026-09-25
+last_updated: 2026-09-30 (硬規則四補血證：引號 heredoc 也擋不住 `\` 被收成一個 ⇒ 含反斜線的內容改用檔案工具直接寫；TASK-0349) | 2026-09-25
 ---
 
 # 🐍 Python 撰寫規範
@@ -122,6 +122,15 @@ return "
 | **最穩**：內容先用 `cat > file <<'EOF'` 落成檔案，python 只負責「讀檔＋插入」 | 引號與反斜線一層都不經過（連 raw string 的收尾陷阱也避開） |
 
 ⇒ 判準：**patch 腳本裡只要出現跳脫字元，就停下來數一次它會被誰解**（shell 一次、python 一次、目標語言一次）。
+
+🩸 **2026-09-30 calli（TASK-0349）一天四次，而且量到「引號 heredoc 也擋不住」**：
+agent 的 Bash 工具（Git Bash）裡，`cat <<'EOF'` 本體寫 `a\\nb`，落地位元組是 `61 5c 6e 62`（`a\nb`）——
+**`\\` 在工具那一層就被收成一個**，比 heredoc 的引號還早 ⇒ python 非 raw 字串 `'\\n'` 拿到的是 `'\n'` ＝ 真換行。
+（raw string 裡寫單一 `\n` 反而活下來：收完還是兩個字元。）⇒ 上表「最穩」那一列的 `cat > file <<'EOF'`
+**在內容本身含 `\\` 時同樣會被咬**。
+⇒ 修法優先序更新：**內容含反斜線 ⇒ 用 agent 的檔案工具（Write／Edit）直接寫檔**，⛔ 不經過任何 shell 層；
+python 只在內容沒有反斜線時才拿來做批次插入。症狀一樣是目標檔出現真換行（C# CS1010／字串跨行），
+而 `assert s.count(old)==1` 照樣通過 —— 本次四次裡有兩次是**舊字串**因此對不上而 assert 擋下，另兩次是**新字串**被咬、落了檔。
 
 ### 附帶一條：`assert s.count(old)==1` 通過 ≠ 修法套用完了
 

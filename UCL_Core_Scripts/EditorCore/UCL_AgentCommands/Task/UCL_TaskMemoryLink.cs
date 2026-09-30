@@ -12,7 +12,7 @@
 //
 // ⚠ 契約①（basecamp，工作記憶 `decision_contract-task-memory`）：
 //   **本檔只讀記憶側，絕不寫。** 記憶側的 `task_indices` / `status` 歸 python CLI 寫；
-//   Task 側的兩個欄位歸 Cmd_Task 寫。這條連結有兩個獨立寫入者（不同語言、不同 process），
+//   Task 側的兩個欄位歸任務寫入端（`senate cmd task`，TASK-0349）寫。這條連結有兩個獨立寫入者（不同語言、不同 process），
 //   互寫就是分散式寫入衝突 —— 而它會在併發時安靜地覆蓋。
 // 2026-08-24 summit（TASK-0015）
 #if UNITY_EDITOR
@@ -273,7 +273,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                 ab.Append(aMemSha.Length == 0
                     ? "\n    · ⚠ 記憶側沒寫 `archived_commit` —— 拿不到「退場當下那一版」的定位點"
                     : $"\n    · 記憶側 `archived_commit`：`{aMemSha}`");
-                // 契約①：Task 側那格由 Cmd_Task 寫，本檔只讀 —— 兩邊不一致只印不修。
+                // 契約①：Task 側那格由任務寫入端（`senate cmd task`）寫，本檔只讀 —— 兩邊不一致只印不修。
                 if (aSha.Length == 0)
                     ab.Append("\n    · ⚠ 本單的 `memory_archived_commit` 是空的"
                         + "（記憶側已退場而單子還不知道）⇒ `op=update --arg memory_archived_commit=<sha>`");

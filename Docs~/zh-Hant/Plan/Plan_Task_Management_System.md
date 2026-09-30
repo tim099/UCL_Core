@@ -139,6 +139,11 @@ AgentCommands/Tasks/ (Submodule -> github.com/tim099/Tasks)
 
 ## 5. 操作指令 (`Cmd_Task.cs` 13 個 OP)
 
+> [!NOTE]
+> **2026-09-30 起（TASK-0349）寫入端搬到 Senate**：下表的寫入 op 由 `senate cmd task` 執行（唯一寫入端是 Senate Server
+> 的 `task-write`，op 本體在 SCP_Core `SCP_TaskOps`）；Editor 的 `Cmd_Task` 只剩 list／show／kanban 三支讀取，
+> 寫入 op 轉交 senate。本節保留原設計的語意表，現行操作見 `Workflows/Task_Management_Workflow.md` §3。
+
 | 操作 `op` | 說明 | 關鍵參數 |
 |---|---|---|
 | `create` | 開立新任務 | `--arg title= --arg type= --arg priority= [--arg milestone=] [--arg memory_topic=] [--arg tags=] [--arg criteria=]` |

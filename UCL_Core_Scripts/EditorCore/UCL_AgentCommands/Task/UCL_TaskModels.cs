@@ -21,7 +21,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
     {
         // ⚠ `all` 不是任務種類 —— **篩選用**成員（同 UCL_TaskStatus 的約定，Tim 2026-08-28）。
         //   放第一位讓它成為 default(UCL_TaskType)（篩選的預設就是全部）。
-        //   兩個守衛擋它流進資料：Cmd_Task create 拒收、UCL_TaskIO.LoadFile 讀檔拒收。
+        //   兩個守衛擋它流進資料：寫入端 create 拒收（SCP_Core `SCP_TaskOps`，TASK-0349）、UCL_TaskIO.LoadFile 讀檔拒收。
         all,
         feature,
         improvement,
@@ -207,7 +207,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         //   `task-management-system/decision_contract-task-memory`）。
         // 物理意義：**錨點放 Task 檔而不是記憶側** —— 因為記憶會被歸檔或刪除，
         //   而 Task 檔一定還在（它是承諾紀錄）。
-        // ⚠ 契約①：這兩格**歸 Cmd_Task 寫**；記憶側的 `task_indices` / `status` 歸 CLI，
+        // ⚠ 契約①：這兩格**歸任務寫入端（`senate cmd task`）寫**；記憶側的 `task_indices` / `status` 歸 CLI，
         //   **兩邊不互寫** —— 這條連結有兩個獨立寫入者（不同語言、不同 process），
         //   互寫就是分散式寫入衝突，而它會在併發時安靜地覆蓋。
         // ⚠ 單值字串（basecamp 拍板 ①）：錨點必須唯一才叫「穩定」；

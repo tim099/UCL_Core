@@ -3,9 +3,10 @@
 //          letters/<persona>/cmd/goodnight_<step>.md 供 QA（Tim 2026-08-13 六題拍板）。
 // 物理意義：邏輯在 SCP_Core `SCP_Goodnight`（TASK-0305）—— Senate 的 `senate cmd goodnight-*` 呼叫同一份，
 //          Editor 不再有自己的一份。⚠ 主入口已是 `senate cmd goodnight-*`（不需要 Editor）；
-//          Senate 在「本人有進行中的觀影場要結算／收工閘 skip_reason 要寫進單子」且 Editor 活著時，
-//          會把 sleep／logout 整步轉派到這裡 —— 那兩件事只有 Editor 做得到：
-//          ① 單子寫入端（UCL_TaskReconcile.WriteSkip）② 帶結算的關場（UCL_SessionCloseFlow，含觀影付錢／收播）。
+//          Senate 在「本人有進行中的觀影場要結算」且 Editor 活著時，會把 sleep／logout 整步轉派到這裡 ——
+//          那件事只有 Editor 做得到：帶結算的關場（UCL_SessionCloseFlow，含觀影付錢／收播）。
+//          （收工閘 skip_reason 寫進單子那一段 TASK-0349 起走任務寫入端 `senate cmd task`，⛔ 不再是轉派的理由；
+//           轉派過來時本檔也經 `UCL_TaskReconcile.WriteSkip` 轉交同一個入口。）
 // 數值影響：權威狀態先落地、廣播 best-effort 殿後（順序不變式沿用）；廣播走 Cmd_Tavern in-process。
 #if UNITY_EDITOR
 using System;
@@ -87,14 +88,20 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                         return;   // WriteAndVerdict 已 throw
                     }
 
-                    // ② 收工閘顯式跳過：理由寫進那幾張單的時間線（單子寫入端只有 Editor 有 —— 這是 Senate 轉派過來的理由之一）
+                    // ② 收工閘顯式跳過：理由寫進那幾張單的時間線 —— TASK-0349 起轉交任務寫入端（`senate cmd task op=wrapup_skip`）。
+                    //   ⚠ 那一跳要等 senate ⇒ 在背景緒上等（⛔ 不在主執行緒同步等，會凍住 Editor），寫完再回主緒。
                     var aSkipLines = new StringBuilder();
                     if (aPre.NeedsTaskSkipWrite)
                     {
                         var aPending = TaskMgmt.UCL_TaskReconcile.PendingWrapups(aPersona);
-                        foreach (var t in aPending) TaskMgmt.UCL_TaskReconcile.WriteSkip(t, aPersona, aSkip);
+                        int aWrote = 0;
+                        await UniTask.SwitchToThreadPool();
+                        foreach (var t in aPending) if (TaskMgmt.UCL_TaskReconcile.WriteSkip(t, aPersona, aSkip)) aWrote++;
+                        await UniTask.SwitchToMainThread();
                         aSkipLines.AppendLine($"- ⚠ 收工閘**顯式跳過**（{aPending.Count} 張）：{aSkip}");
-                        aSkipLines.AppendLine("  理由已寫進那幾張單的時間線 —— 明天接回的人看得到我今天沒寫進度。");
+                        aSkipLines.AppendLine(aWrote == aPending.Count
+                            ? "  理由已寫進那幾張單的時間線 —— 明天接回的人看得到我今天沒寫進度。"
+                            : $"  ⚠ 只有 {aWrote}／{aPending.Count} 張寫進時間線（其餘見 Editor log 的 `[TaskReconcile]`）—— 理由至少還在這裡與下線廣播。");
                     }
 
                     // ③ 寫入（SCP）：刪 lock／now_status、組廣播本文

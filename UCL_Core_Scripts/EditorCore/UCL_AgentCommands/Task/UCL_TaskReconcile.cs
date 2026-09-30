@@ -3,10 +3,10 @@
 // 物理意義：晚安 check 的「Task 對帳」報告已搬進 SCP_Core `SCP_TaskReconcileReport`（TASK-0305）——
 //   Senate 的 goodnight-check 與 Editor 的 GoodNight step=check 呼叫同一份；收工閘的判準本體也早已在
 //   SCP_Core（`SCP_TaskReconcile.PendingWrapups`）。本檔只剩兩件只有 Editor 做得到的事：
-//   把 SCP 判出的單讀成 UCL_TaskEntry，以及把跳過理由寫進單子時間線（單子寫入端目前只有 Editor 有）。
+//   把 SCP 判出的單讀成 UCL_TaskEntry，以及把跳過理由轉交給任務寫入端（`senate cmd task op=wrapup_skip`）。
 //
-// ⚠ Senate 的 goodnight-sleep 在「收工閘帶 skip_reason」且 Editor 活著時會整步轉派到 Editor，
-//   就是為了走到這裡的 WriteSkip；Editor 沒開時那一段被跳過並在回傳檔明說（Tim 2026-09-26）。
+// ⚠ TASK-0349 之後 Senate 的 goodnight-sleep **自己**寫跳過理由（不再為這一段轉派 Editor）；
+//   只有「有進行中的觀影場」時整步轉派到 Editor 的 GoodNight，那條路才會走到這裡的 WriteSkip。
 // 2026-08-24 summit（TASK-0004）；2026-09-26 報告部分移出（TASK-0305）
 #if UNITY_EDITOR
 using System;
@@ -188,27 +188,28 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public static bool WriteSkip(UCL_TaskEntry e, string iPersona, string iReason)
         {
             if (e == null) return false;
-            string aNow = UCL_TaskIO.NowUtc();
-            // ⭐ TASK-0163：本函式就是那個「`⛔ [RMW-END]` 前哨貼不進來」的位置 ——
-            //   它把 `e` **當參數收**，於是 READ 發生在更上游（`Cmd_GoodNight` sleep 那一步
-            //   的 `foreach` 之前就把清單載好了），這裡沒有一個地方放得下那個標記。
-            //   ⇒ 走 `Mutate` 之後跨度由型別決定：拿 index 進去、在鎖內重讀，
-            //   呼叫端傳進來的 `e` 降級成「提示」（只用它的 index）。
-            //   📌 這一格是本次遷移的**原型**：前哨表達不出來的形狀，換成入口就消失了。
-            bool aWrote = UCL_TaskIO.Mutate(e.index, m =>
+            // ⭐ TASK-0349：寫入端是 Senate Server ⇒ 轉交 `senate cmd task op=wrapup_skip`（⛔ Editor 不再有寫入面）。
+            //   ⚠ 本函式同步等那顆 CLI —— 呼叫端（`Cmd_GoodNight` sleep）已經在背景緒上。
+            UCL_TaskSenateResult r;
+            try
             {
-                UCL_TaskIO.Touch(m, aNow);
-                return UCL_TaskWrite.Line($"{aNow}　`wrapup-skip`　{iPersona} 顯式跳過收工："
-                    + iReason.Replace("\r", " ").Replace("\n", " "));
-            });
-            // ⚠ 回 false ＝ 鎖內重讀時那張單不在了 ⇒ **跳過紀錄沒有落盤**。
-            //   ⛔ 不吞掉：這個函式存在的理由就是「跳過要留在別人看得到的地方」，
+                r = UCL_TaskSenateBridge.Run("wrapup_skip", iPersona, new Dictionary<string, string>
+                {
+                    ["index"] = e.index.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["reason"] = iReason ?? "",
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[TaskReconcile] TASK-{e.index:0000} 的 `wrapup-skip` 轉交 senate 失敗：{ex.Message}");
+                return false;
+            }
+            // ⚠ 沒寫成 ⇒ **出聲**：這個函式存在的理由就是「跳過要留在別人看得到的地方」，
             //   而一個沒寫成的跳過紀錄，跟「他根本沒跳過」長得一樣。
-            if (!aWrote)
-                Debug.LogError($"[TaskReconcile] TASK-{e.index} 的 `wrapup-skip` **沒有落盤**"
-                    + "（鎖內重讀時那張單不在了：被刪或被搬）⇒ 跳過的理由沒有留在單上，"
-                    + "而「跳過但留名」正是這道閘的設計。⇒ 去看那張單是不是剛被刪掉。");
-            return aWrote;
+            if (!r.Ok)
+                Debug.LogError($"[TaskReconcile] TASK-{e.index:0000} 的 `wrapup-skip` **沒有落盤**（senate exit {r.ExitCode}"
+                    + (r.Unknown ? "，結果不明 —— 先回讀那張單" : "") + "）⇒ 跳過的理由沒有留在單上。\n" + r.Output);
+            return r.Ok;
         }
 
         static List<string> RolesOrReporter(UCL_TaskEntry e, string iPersona)

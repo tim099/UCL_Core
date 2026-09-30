@@ -146,9 +146,9 @@ fragment 的核心價值是 `related_docs`/`links` 這組 **ref** — 把「這�
 
 ## 🔄 四個機械觸發點（掛在必經路徑，不塞早安）
 
-1. **開工/回看 Task 時讀 (`Cmd_Task op=show <index>`)**：
+1. **開工/回看 Task 時讀 (`ucmd run Task op=show <index>`，Editor 端純讀)**：
    - 自動檢驗並印出 `memory_topic` 狀態（5 種狀態：主題在 / 全部已退場 / 已歸檔 / 已刪除 / 連結壞了）與 pointer 指路，開工接回上下文。
-2. **結單時提示回寫 (`Cmd_Task op=resolve <index>`)**：
+2. **結單時提示回寫 (`senate cmd task op=resolve <index>`)**：
    - 結單成功時，系統印出警示提醒：「本單有沒有值得留的 decision / pitfall？」（提示不阻擋）。
 3. **晚安雙向對帳 (`Cmd_GoodNight step=check`)**：
    - 自動檢查未關單 `updated_at` 逾期 14 天未動、或 Task ↔ 記憶單向斷鏈時印出警示（只印不改）。

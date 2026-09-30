@@ -2,8 +2,9 @@
 // 物理意義：Cmd_Task 的 UI 對偶。母版是 UCL_BugReportAdminPage（Tim 2026-08-24 指定），
 //          抄它已經解掉的三件事：刷新節流、破壞性動作二段確認、警告不藏在篩選器後面。
 //
-// ⚠ 本頁**不是第二個寫入端**：所有寫入都走 `UCL_TaskIO`，而狀態機的判斷
-//   （blocker 未解不准 Done / 有 QA 就不能替他簽）走與 Cmd 相同的 `OpenBlockers` / `QaGateBlocked`。
+// ⚠ 本頁**不是第二個寫入端**：所有寫入都轉交 `senate cmd task`（`UCL_TaskSenateBridge`，TASK-0349；
+//   任務單唯一的寫入端是 Senate Server），狀態機的判斷（blocker 未解不准 Done / 有 QA 就不能替他簽）
+//   由寫入端的 `SCP_TaskOps` 判 —— 與 agent 打 `op=resolve` 同一份。Senate 後台另有同形的「任務與專案管理」頁。
 //   🩸 判準來自 2026-08-21 那一天的血證：同一條規則寫在兩個地方 ⇒ 兩份產線，
 //     兩邊都不報錯，而它們遲早各說各話（C# 說「查不到就絕不 mint」、python 說「查不到就 derive」，
 //     兩份都是我寫的）。⇒ 這頁只是**視圖 ＋ 呼叫**，不重新實作任何判斷。
@@ -17,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Cysharp.Threading.Tasks;
 using UCL.Core.EditorLib.AgentCommands.TaskMgmt;
 using UCL.Core.UI;
 using UnityEngine;
@@ -355,7 +357,7 @@ namespace UCL.Core.EditorLib.Page
         // 物理意義：列表列要能一眼掃完，所以討論不能佔用它的高度；
         //          而展開的那一張單是「我正在處理這件事」，那時討論才是主角。
         // 數值影響：讀取用已載入的 `e.comments`（LoadAll 時一併解析，不另外讀磁碟）；
-        //          送出走 `UCL_TaskIO.Save` ＋ `UCL_TaskNotify`（與 Cmd 同一條路，不是第二個寫入端）。
+        //          送出轉交 `senate cmd task op=comment`（任務寫入端＝Senate Server，與 agent 同一條路，不是第二個寫入端）。
         // ===========================================================
         void DrawComments(UCL_TaskEntry e)
         {
@@ -404,40 +406,15 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // ⚠ 寫入與通知都走與 Cmd 相同的兩支（`UCL_TaskIO.Mutate` / `UCL_TaskNotify`）——
-        //   後台頁不自己組 md、也不自己發酒館訊息（兩份格式會漂，而漂移是靜默的）。
-        // ⭐ TASK-0163：這裡曾經是**兩個人都沒數到的那一格** ——
-        //   遷移面被算成「`Task/` 目錄底下的 N 個呼叫端」，而本檔不在那個目錄裡
-        //   ⇒ 我與 @basecamp 各自 grep 那個目錄，兩份清單**都少了後台頁這兩處**。
-        //   📌 「射程由目錄決定」是枚舉盲區的一種：缺的那兩個不會出現在自己的清單上。
-        //   而它偏偏是最該進鎖的一格：**這裡是人在按鈕**，另一邊是 agent 的 cmd
-        //   ⇒ offload 之後這條競爭是「人 vs agent」，而人不會知道自己的留言被吃掉了。
+        // ⚠ 寫入與通知都走任務單唯一的寫入端（TASK-0349）：`UCL_TaskSenateBridge` → `senate cmd task` → Senate Server。
+        //   後台頁不自己組 md、也不自己發酒館訊息（兩份格式會漂，而漂移是靜默的）——
+        //   ⇒ 按下「送出留言」跟 agent 打 `op=comment` 走的是同一條路（配號、時間線、@ 通知都一樣）。
         void AddComment(UCL_TaskEntry e, string iAuthor, string iBody)
-        {
-            string aNow = UCL_TaskIO.NowUtc();
-            int aCommentId = 0;
-            bool aWrote = UCL_TaskIO.Mutate(e.index, m =>
+            => RunDelegated($"{e.Id} 留言", "comment", iAuthor, new Dictionary<string, string>
             {
-                aCommentId = UCL_TaskIO.NextCommentId(m);   // 配號在鎖內（鎖外算會撞號 ⇒ 一則留言靜默消失）
-                m.comments.Add(new UCL_TaskComment
-                { id = aCommentId, persona = iAuthor, at = aNow, body = iBody });
-                UCL_TaskIO.Touch(m, aNow);
-                return UCL_TaskWrite.Line($"{aNow}　`comment`　{iAuthor} 留言 #{aCommentId}（後台頁）");
-            });
-            if (!aWrote)
-            {
-                // ⛔ 失敗要在**畫面看得到的層**出聲：這裡是人在操作，而
-                //   「送出了但沒寫進去」與「送出成功」在 GUI 上長得一樣（草稿已經被清掉了）。
-                Debug.LogError($"[TaskManager] {e.Id} 的留言**沒有落盤**（鎖內重讀時那張單不在了："
-                    + $"被刪或被搬）⇒ 內容沒有進磁碟。草稿內文：\n{iBody}");
-                Refresh();
-                return;
-            }
-            var aFresh = UCL_TaskIO.Find(e.index) ?? e;   // 通知用落檔後那一份（參與者清單可能剛變）
-            UCL_TaskNotify.PostFireAndForget(aFresh, UCL_TaskNotify.Kind.Comment, iAuthor, "", iBody);
-            Refresh();
-            Debug.Log($"[TaskManager] {e.Id} 留言 #{aCommentId} by {iAuthor}（已請酒館通知；失敗會印 [TaskNotify]）");
-        }
+                ["index"] = e.index.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["body"] = iBody,
+            }, iBody);
 
         /// <summary>UTC ISO → 本地 `MM-dd HH:mm`。解析不了就**原樣回**（不假裝知道時間）。</summary>
         static string LocalTime(string iIso)
@@ -476,71 +453,89 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
-        // 區塊職責：狀態變更 —— **寫入一律走 UCL_TaskIO.Save**，後台頁不自己碰檔案格式
-        //   （兩個寫入端＝兩種格式漂移，而漂移是靜默的）。
-        // 物理意義：兩道閘與 Cmd 端**共用同一個判斷函式**，不在這裡重寫：
-        //   ① blocker 未解不准 done（`OpenBlockers`）—— UI 已先禁用按鈕，這裡是第二層
-        //     （UI 的禁用是給眼睛的，這一層是給資料的；只有前者的話，快捷路徑一開就破）
-        //   ② 單上有 QA 而按鈕是「別人」按的 ⇒ 後台頁的操作者是 Tim，
-        //     所以這裡帶 `qa_note` 等價於 RFC §2④ 的「附驗收紀錄」，並在時間線寫明是後台代簽。
+        // 區塊職責：狀態變更 —— 轉交任務寫入端（TASK-0349），後台頁不自己碰檔案。
+        // 物理意義：兩道閘由寫入端判（與 agent 同一份 `SCP_TaskOps`）：
+        //   ① blocker 未解不准 done —— UI 已先禁用按鈕，寫入端是第二層（UI 的禁用是給眼睛的，那一層是給資料的）
+        //   ② 單上有 QA 而按鈕是別人按的 ⇒ 帶 `qa_note=後台頁代簽（<作者>）`（RFC §2④「附驗收紀錄」），時間線與結單說明寫明代簽
+        //   ⚠ 推 in_progress／in_review 走 `op=update`、結單走 `op=resolve`（⛔ update 不准推 done／cancelled）。
         // ===========================================================
         void ApplyStatus(UCL_TaskEntry e, UCL_TaskStatus iStatus)
         {
-            // 守衛之二（見 UCL_TaskStatus 的 all 註解）：all 是篩選成員不是狀態 ——
-            // 少了這道，`status: all` 會落盤而且看起來像一張正常的單。
-            if (iStatus == UCL_TaskStatus.all)
+            // 守衛（見 UCL_TaskStatus 的 all 註解）：all／open 是篩選成員不是狀態
+            if (iStatus == UCL_TaskStatus.all || iStatus == UCL_TaskStatus.open)
             {
-                Debug.LogError($"[TaskManager] {e.Id} 拒寫 status=all —— all 是篩選用成員，不是任務狀態");
+                Debug.LogError($"[TaskManager] {e.Id} 拒寫 status={iStatus} —— 那是篩選用成員，不是任務狀態");
                 return;
             }
-            if (iStatus == UCL_TaskStatus.done)
+            string aAuthor = (m_Author ?? "").Trim();
+            if (aAuthor.Length == 0)
             {
-                var aBlockers = UCL_TaskIO.OpenBlockers(e);
-                if (aBlockers.Count > 0)
-                {
-                    Debug.LogError($"[TaskManager] {e.Id} 不能結單：還有 {aBlockers.Count} 個未解 blocker —— "
-                        + string.Join("；", aBlockers));
-                    Refresh();
-                    return;
-                }
-            }
-            string aNow = UCL_TaskIO.NowUtc();
-            // ⭐ TASK-0163：狀態變更的整段 RMW 進 `Mutate`，而 blocker／QA 兩項判定**在鎖內重做**
-            //   （上面那道 blocker 閘讀的是鎖前的快照 —— 人按下按鈕與真正落檔之間，
-            //   agent 那側可能剛掛上一個 blocker）。
-            var aFrom = e.status;
-            string aNote = "";
-            string aRace = null;
-            bool aWrote = UCL_TaskIO.Mutate(e.index, m =>
-            {
-                if (iStatus == UCL_TaskStatus.done)
-                {
-                    var aNowBlockers = UCL_TaskIO.OpenBlockers(m);
-                    if (aNowBlockers.Count > 0)
-                    {
-                        aRace = $"鎖內重讀時還有 {aNowBlockers.Count} 個未解 blocker（{string.Join("；", aNowBlockers)}）";
-                        return UCL_TaskWrite.Skip;
-                    }
-                }
-                var aQaNow = m.QaPersonas();
-                aNote = (iStatus == UCL_TaskStatus.done && aQaNow.Count > 0)
-                    ? $"（後台頁代簽 —— 單上的 QA 是 {string.Join(" / ", aQaNow)}）" : "";
-                aFrom = m.status;
-                m.status = iStatus;   // 成員名＝wire 字串（UCL_TaskStatus 的約定；frontmatter 落盤仍是字串）
-                if (iStatus == UCL_TaskStatus.done || iStatus == UCL_TaskStatus.cancelled) m.closed_at = aNow;
-                UCL_TaskIO.Touch(m, aNow);
-                return UCL_TaskWrite.Line($"{aNow}　`{iStatus}`　由後台頁操作（原狀態 {aFrom}）{aNote}");
-            });
-            if (!aWrote)
-            {
-                Debug.LogError($"[TaskManager] {e.Id} 的狀態**沒有變更**："
-                    + (aRace ?? "鎖內重讀時那張單不在了（被刪或被搬）")
-                    + " ⇒ 一個位元組都沒寫。⚠ 畫面會在 Refresh 之後顯示磁碟上的真實狀態。");
-                Refresh();
+                Debug.LogError($"[TaskManager] {e.Id} 沒有動作：作者是空的（時間線要記在誰名下，⛔ 不猜）");
                 return;
             }
+            string aIdx = e.index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (iStatus != UCL_TaskStatus.done && iStatus != UCL_TaskStatus.cancelled)
+            {
+                RunDelegated($"{e.Id} → {iStatus}", "update", aAuthor,
+                    new Dictionary<string, string> { ["index"] = aIdx, ["status"] = iStatus.ToString() }, null);
+                return;
+            }
+            var aArgs = new Dictionary<string, string>
+            {
+                ["index"] = aIdx, ["status"] = iStatus.ToString(), ["confirm"] = "1",
+                ["note"] = $"後台頁結單（{aAuthor}）",
+            };
+            var aQa = e.QaPersonas();
+            if (aQa.Count > 0 && !aQa.Any(q => string.Equals(q, aAuthor, StringComparison.OrdinalIgnoreCase)))
+                aArgs["qa_note"] = $"後台頁代簽（{aAuthor}；本單 QA：{string.Join(" / ", aQa)}）";
+            RunDelegated($"{e.Id} 結單 {iStatus}", "resolve", aAuthor, aArgs, null);
+        }
+
+        // ===========================================================
+        // 區塊職責：在背景跑一次 `senate cmd task`，完成後回主執行緒重讀磁碟。
+        // 物理意義：那一跳 process 要等 Server（＋酒館通知）—— 在主執行緒同步等會凍住整個 Editor
+        //          （連 AgentCommand watcher 一起卡死，Coding_Standards 外部工具骨架第①條）。
+        // ⚠ 同時只跑一筆：人連點兩下「送出留言」的後果是兩則一樣的留言。
+        // ⚠ 失敗要在**畫面看得到的層**出聲：草稿已經被清掉了，「送出了但沒寫進去」與「送出成功」在 GUI 上長得一樣
+        //   ⇒ 失敗時把草稿內文印進 LogError（那是它唯一還活著的地方）。
+        // ===========================================================
+        bool m_Busy;
+        string m_BusyLabel = "";
+
+        void RunDelegated(string iLabel, string iOp, string iAuthor, Dictionary<string, string> iArgs, string iDraft)
+        {
+            if (m_Busy)
+            {
+                Debug.LogWarning($"[TaskManager] 前一筆（{m_BusyLabel}）還沒完 ⇒ 「{iLabel}」這次沒有動作");
+                return;
+            }
+            m_Busy = true;
+            m_BusyLabel = iLabel;
+            RunDelegatedAsync(iLabel, iOp, iAuthor, iArgs, iDraft).Forget();
+        }
+
+        async UniTaskVoid RunDelegatedAsync(string iLabel, string iOp, string iAuthor, Dictionary<string, string> iArgs, string iDraft)
+        {
+            UCL_TaskSenateResult r = null;
+            string aError = null;
+            try
+            {
+                await UniTask.SwitchToThreadPool();
+                r = UCL_TaskSenateBridge.Run(iOp, iAuthor, iArgs);
+            }
+            catch (Exception ex) { aError = ex.Message; }
+            await UniTask.SwitchToMainThread();
+            m_Busy = false;
+            if (aError != null || r == null || !r.Ok)
+            {
+                string aWhy = aError ?? (r == null ? "沒有結果"
+                    : r.Unknown ? "**結果不明**（等不到寫入端回執）—— ⛔ 別直接再按一次，先重新整理看單子"
+                    : $"senate exit {r.ExitCode}（零寫入）\n{r.Output}");
+                Debug.LogError($"[TaskManager] 「{iLabel}」沒有成功：{aWhy}"
+                    + (string.IsNullOrEmpty(iDraft) ? "" : $"\n草稿內文（沒有進磁碟的那一份）：\n{iDraft}"));
+            }
+            else Debug.Log($"[TaskManager] 「{iLabel}」完成（寫入端：Senate Server；回傳檔 {r.PayloadPath}）");
             Refresh();
-            Debug.Log($"[TaskManager] {e.Id} {aFrom} → {iStatus}{aNote}");
         }
 
         static string Participants(UCL_TaskEntry e)

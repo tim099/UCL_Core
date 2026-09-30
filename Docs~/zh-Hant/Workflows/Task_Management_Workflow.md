@@ -1,7 +1,7 @@
 ---
 title: Task Management Workflow — 小團隊任務管理操作手冊（3~5 人）
 description: 3~5 人小團隊的任務管理操作手冊 —— 一單一檔、做的人與驗的人兩個角色為主（其餘五個只是標籤）、驗不過退回不另開 bug 單、Commit 帶 Fixes TASK-N 自動閉環、跨日單用 memory_topic 接回工作記憶、定期清掉沒有人在等的單。判準（什麼時候該開單／解單時不要複雜化）在 ucl-task skill，本檔只寫怎麼做。
-last_updated: 2026-09-16 (op=update 覆寫 criteria／description 前加秤：散文歸零／腰斬擋下，allow_shrink=1 放行；坑二回讀後更正為已修；TASK-0188) | 2026-09-15 (Commit 閉環推進的呼叫端改指 `senate cmd commit`；TASK-0187) | 2026-09-10 (op=check 新增 `[signer:<persona>]` 一格一個尺度的簽名人；TASK-0194) | 2026-09-09 (expect_text 呼叫端錨；0/0 不再說「全部都勾了」；TASK-0163)
+last_updated: 2026-09-30 (寫入搬到 Senate：`senate cmd task`／Server `task-write` 是唯一寫入端，配號改原子建檔、區塊標題改整行比對；讀取走 `senate cmd tasks`；TASK-0349) | 2026-09-16 (op=update 覆寫 criteria／description 前加秤：散文歸零／腰斬擋下，allow_shrink=1 放行；坑二回讀後更正為已修；TASK-0188) | 2026-09-15 (Commit 閉環推進的呼叫端改指 `senate cmd commit`；TASK-0187) | 2026-09-10 (op=check 新增 `[signer:<persona>]` 一格一個尺度的簽名人；TASK-0194) | 2026-09-09 (expect_text 呼叫端錨；0/0 不再說「全部都勾了」；TASK-0163)
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Task_Management_System.md | Task Plan RFC | 系統架構設計與資料模型
@@ -283,26 +283,38 @@ $R --arg op=create --arg type=bug --arg title="<症狀，不是猜的原因>" --
 
 ## 3. 常用操作指令 (CLI Quick Reference)
 
-所有指令統一走 `senate ucmd run Task --persona <me>`：
+> [!IMPORTANT]
+> **寫入一律走 `senate cmd task`**（TASK-0349，2026-09-30）—— 任務單唯一的寫入端是 **Senate Server**（`task-write`），
+> 狀態機與所有閘在 SCP_Core `SCP_TaskOps`。⇒ **不需要 Unity Editor**（commit 推單、晚安寫 skip 也一樣）。
+> - Editor 的 `ucmd run Task` 寫入 op 仍可用，但它只是**轉交**同一個入口（回傳檔第一行會標明）；⛔ Editor 自己不再寫單。
+> - **讀取**：`senate cmd tasks`（計數／清單／單張，`--arg index=` `--arg status=` `--arg type=` `--arg persona=`）；
+>   要 milestone／tag／epic 篩選、記憶錨點摘要或看板排版，用 Editor 的 `ucmd run Task --arg op=list|show|kanban`（純讀）。
+> - Senate 後台有「**任務與專案管理**」頁（選單「任務」）：篩選、看單、留言、推狀態，寫入同樣走 `cmd task`。
+> - ⚠ 結果四態：`exit 0` 已寫（dry-run／冪等看 `🔢 wrote`）／`1` 閘擋下（零寫入）／`6` 確定沒寫（重跑安全）／
+>   `7` **不知道**（送出了但等不到回執）⇒ ⛔ 先 `senate cmd tasks --arg index=<n>` 回讀，別直接重打（留言會多一則）。
+> - ⚠ 打錯參數名 ⇒ `exit 2` 並列出該 op 認得的鍵（⛔ 不靜默吃掉）。長內文一律 `--arg-file`。
 
 ```bash
-R="senate ucmd run Task --persona <me>"
+R="senate cmd task --arg persona=<me>"
 
 # 1. 開立新任務（必須填寫標題與驗收標準，可綁定 memory_topic）
 $R --arg op=create --arg title="任務標題" --arg type=feature --arg priority=high \
    [--arg milestone="comic-vol-1"] [--arg memory_topic="task-mgmt"] [--arg tags="comic,draft"] \
    --arg-file criteria=<檔>       # ⚠ 多行一律走 --arg-file，見下
 
-# 2. 查詢待辦清單（支援 status, assignee, milestone, tag, epic 過濾）
-$R --arg op=list --arg status=todo
-$R --arg op=list --arg assignee=<persona>        # 查指派給某人的任務
-$R --arg op=list --arg milestone="comic-vol-1"   # 依里程碑過濾
-$R --arg op=list --arg tag=epic                  # 依標籤過濾
-$R --arg op=list --arg epic=TASK-0008            # 依父任務過濾子任務
-$R --arg op=kanban                               # 終端機格式化看板
+# 2. 查詢待辦清單（讀取 —— 不經過寫入端）
+senate cmd tasks --arg status=todo
+senate cmd tasks --arg persona=<persona>          # 我涉及（開單人或參與者）的單
+senate cmd tasks --arg type=bug                   # 依類型
+U="senate ucmd run Task --persona <me>"           # Editor 端的純讀（要 Editor 開著）
+$U --arg op=list --arg milestone="comic-vol-1"    # 依里程碑過濾
+$U --arg op=list --arg tag=epic                   # 依標籤過濾
+$U --arg op=list --arg epic=TASK-0008             # 依父任務過濾子任務
+$U --arg op=kanban                                # 終端機格式化看板
 
-# 3. 查閱單一任務完整內容與開工接回（自動印出記憶錨點摘要）
-$R --arg op=show --arg index=42
+# 3. 查閱單一任務完整內容
+senate cmd tasks --arg index=42
+$U --arg op=show --arg index=42                   # 加印記憶錨點摘要與關聯文件
 
 # 4. 認領任務（智能語意：只有執行角色且在 todo/backlog 才推 in_progress；QA/PM 認領狀態不動）
 $R --arg op=claim --arg index=42 --arg role=dev
@@ -348,7 +360,11 @@ $R --arg op=resolve --arg index=42 --arg status=done --arg note="已由 QA 覆�
 $R --arg op=sweep [--arg days=14] --arg confirm=1
 
 # 12. Commit 閉環推進（`senate cmd commit` 內部自動轉接）
-$R --arg op=commit --arg sha=<commit_sha> --arg mode=fixes|refs
+$R --arg op=commit --arg index=42 --arg sha=<commit_sha> --arg mode=fixes|refs
+
+# 13. 收工（進度寫進留言；why 代跑 work_memory.py）／晚安顯式跳過收工（晚安流程自己會呼叫）
+$R --arg op=wrapup --arg index=42 --arg-file progress=<檔> [--arg-file why=<檔>]
+$R --arg op=wrapup_skip --arg index=42 --arg reason="<一句話>"
 ```
 
 ---
@@ -374,7 +390,7 @@ Task.memory_topic ──▶ 記憶主題卡 _topic.md 的 key_docs ──▶ 文
 sequenceDiagram
     autonumber
     actor Dev as Agent (執行者)
-    participant Task as Cmd_Task
+    participant Task as senate cmd task
     participant Memory as WorkMemory
     actor PM as PM / QA
 
@@ -458,6 +474,7 @@ sequenceDiagram
 | **`op=update` 6 大欄位** | ✅ 全數支援 | `status`(擋done/cancelled), `priority`, `title`, `milestone`, `memory_topic`, `memory_archived_commit` 均已實跑驗證 |
 | **`memory_topic` 記憶錨點** | ✅ 讀取端生效 | `op=show` 五種答案不同形（主題在 / 全部已退場 / 已歸檔 / 已刪除 / 連結壞了） |
 | **`op=check` 勾驗收標準** | ✅ 已上線（TASK-0119） | 七格活體：dry-run 零寫入／多筆勾銷序號不位移／全勾後再勾擋下且零寫入／非參與者與非 QA 兩種成因各擋一次（全 173 單檔零變動）／勾後回讀分母 |
+| **寫入端（配號／讀改寫）** | ✅ Senate Server 單一寫入端（TASK-0349） | 真 Server、8 顆 CLI 同時 `create` ⇒ 1〜8 各一號、計數檔 8；`priority=medium` 被擋 ⇒ 沒吃號（下一張拿 9）；selftest `TaskStoreCleanRoom`／`TaskOpsGatesCleanRoom`／`RealTaskRenderRoundTrip`（352 張重排：逐字 320、舊單形狀 32、真不符 0） |
 | **`work_memory.py archive`** | ✅ 已上線交付 | 支援 `archive`、`tasks`、`delete`，具備 submodule Git 乾淨前置檢查 |
 
 ---

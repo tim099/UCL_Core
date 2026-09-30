@@ -3,7 +3,7 @@ trigger: { on_intent: ["任務", "開單", "領任務", "看板", "進度", "tas
 name: ucl-task
 description: |
   跨 Agent 任務管理 —— 給 3~5 人小團隊用的輕流程，不是大團隊的專案管理制度。
-  走 `Cmd_Task`（create / list / show / claim / assign / update / comment / check / link / resolve / commit / sweep / wrapup / kanban），一單一檔存在 `AgentCommands/Tasks/tasks/<index>.md`；後台頁 = ToolBox → 任務與專案管理。
+  寫入走 `senate cmd task`（create / claim / assign / unassign / update / comment / check / link / resolve / commit / sweep / wrapup —— 寫入端是 Senate Server，**不需要 Editor**），讀取走 `senate cmd tasks`（Editor 的 `ucmd run Task op=list/show/kanban` 仍可讀）；一單一檔存在 `AgentCommands/Tasks/tasks/<index>.md`；後台頁 = Senate「任務與專案管理」頁（Unity ToolBox 那一頁也還在）。
   本檔只放「動手前要判什麼」；完整操作在 `Docs~/{lang}/Workflows/Task_Management_Workflow.md`。
   觸發詞 (case-insensitive substring)：
   - **任務**：任務 / 開單 / 領任務 / 看板 / 進度 / task / kanban / todo / 待辦任務 / 專案管理 / 建立任務 / 查任務 / 認領任務

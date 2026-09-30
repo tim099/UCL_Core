@@ -83,7 +83,7 @@ READ_BRIEF_ROOT = REPO_ROOT / "AgentCommands" / "WorkMemoryReadBriefs"
 UCL_CORE_ROOT = Path(__file__).resolve().parents[2]
 # 區塊職責: Task 單檔目錄 — 反向索引（task_indices → 那幾張單現在在哪一格）的讀取來源。
 # 物理意義: 契約①（decision_contract-task-memory）: 本檔**只讀 Task 側, 絕不寫**。
-#          Task 的 memory_topic / memory_archived_commit 歸 Cmd_Task（C#）寫;
+#          Task 的 memory_topic / memory_archived_commit 歸任務寫入端（`senate cmd task`，C#，TASK-0349）寫;
 #          記憶側的 task_indices / status 歸本檔寫。互寫＝兩個獨立寫入者的分散式衝突。
 # 數值影響: 純讀; 讀不到單檔不是錯誤, 是**一種要被印出來的答案**（見 _describe_task）。
 TASKS_ROOT = REPO_ROOT / "AgentCommands" / "Tasks" / "tasks"
@@ -892,8 +892,8 @@ def op_tasks(args) -> int:
         print(f"⚠ 回讀值與預期不符（預期 {after}）—— 有第二個寫入者, 或 frontmatter 解析漏了")
         return 1
     print("\n".join(describe_related_tasks(load_topic_card(args.topic))))
-    print("\n📌 契約①提醒：Task 側的 `memory_topic` 由 Cmd_Task 寫, **本工具不碰它**。"
-          "\n   要補另一半：`senate ucmd run Task --persona <me> --arg op=update --arg index=<n> "
+    print("\n📌 契約①提醒：Task 側的 `memory_topic` 由任務寫入端（`senate cmd task`）寫, **本工具不碰它**。"
+          "\n   要補另一半：`senate cmd task --arg persona=<me> --arg op=update --arg index=<n> "
           f"--arg memory_topic={args.topic}`")
     return 0
 
@@ -957,7 +957,7 @@ def op_archive(args) -> int:
           + (f"　commit `{reread.get('archived_commit')}`" if reread.get("archived_commit") else ""))
     if not args.undo:
         print("\n📌 契約①提醒：Task 側那一格**我不寫**。要讓回看單子的人接得回來, 對每一張關聯單跑：")
-        print(f"   `senate ucmd run Task --persona <me> --arg op=update --arg index=<n> --arg memory_archived_commit={sha or '<sha>'}`")
+        print(f"   `senate cmd task --arg persona=<me> --arg op=update --arg index=<n> --arg memory_archived_commit={sha or '<sha>'}`")
         print("   ⇒ 沒補這一格的話, `op=show` 會印「⚠ 指向一個不存在的主題」而不是「📦 已歸檔」——"
               "\n     兩者都不是謊, 但後者才是真的。")
     return 0
@@ -1000,8 +1000,8 @@ def op_delete(args) -> int:
                  f"{args.by or 'unknown'}；{n} 個檔的內容在 commit `{sha or '（拿不到 HEAD sha）'}`\n")
     print(f"🪦 已刪除 `{args.topic}`（{n} 個檔）並留墓碑：{TOMBSTONE_PATH.relative_to(REPO_ROOT)}")
     print(f"   內容在 commit `{sha or '?'}` —— **刪除可以, 失聯不行。**")
-    print(f"\n📌 對每一張關聯單補上墓碑指標（契約①：那一格歸 Cmd_Task 寫）：")
-    print(f"   `senate ucmd run Task --persona <me> --arg op=update --arg index=<n> --arg memory_archived_commit={sha or '<sha>'}`")
+    print(f"\n📌 對每一張關聯單補上墓碑指標（契約①：那一格歸任務寫入端 `senate cmd task` 寫）：")
+    print(f"   `senate cmd task --arg persona=<me> --arg op=update --arg index=<n> --arg memory_archived_commit={sha or '<sha>'}`")
     return 0
 
 

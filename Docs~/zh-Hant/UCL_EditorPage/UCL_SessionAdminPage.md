@@ -4,7 +4,7 @@ description: 各 persona 的 session 現況（自由時間…）與處置台 —
 tags: [editor-page, session, freetime, admin]
 aliases: [Session 管理, session admin, 場次管理頁]
 target_audience: [AI_Agent, Tools_User]
-last_updated: 2026-08-18
+last_updated: 2026-10-01
 ---
 
 # 🗂 Session 管理頁 (UCL_SessionAdminPage)
@@ -29,7 +29,7 @@ last_updated: 2026-08-18
 | ⚠ 殘留（active 但已過期） | `active=true` 但已過 `end_ts` | 次之 |
 | ⚪ 已收工 | `active=false` | 最後 |
 
-判準走 `UCL_SessionBase.IsRunningAt` —— 與 `Cmd_SessionStatus`、`Cmd_FreeTime` 同一條。
+判準走 `UCL_SessionBase.IsRunningAt` —— 與 `Cmd_SessionStatus`、`senate cmd free-time`（TASK-0360 起住 Senate）同一條。
 兩份判準的漂移症狀是「頁面說在線、Cmd 說不在」，而它不會報錯。
 
 ## 每一列有什麼
@@ -67,6 +67,6 @@ session 多時每幀重讀會明顯拖慢 IMGUI。2 秒的顯示延遲對「誰�
 ## 相關
 
 - CLI 版查詢：[`API/UCL_AgentCommand/Cmd_SessionStatus.md`](../API/UCL_AgentCommand/Cmd_SessionStatus.md)
-- 自由時間活動設定：[`UCL_FreeTimeAdminPage.md`](UCL_FreeTimeAdminPage.md)
+- 自由時間活動設定：Senate 後台「設定 › 自由時間」頁（`senate ui --page free-time`；場次設定＋活動 md 編輯＋活動統計）
 - 自由時間流程：[`Workflows/FreeTime_Cmd_Flow.md`](../Workflows/FreeTime_Cmd_Flow.md)
 - 頁面骨架慣例：[`UCL_CommonEditorPage.md`](UCL_CommonEditorPage.md)

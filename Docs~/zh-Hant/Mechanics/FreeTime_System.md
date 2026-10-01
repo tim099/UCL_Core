@@ -1,7 +1,7 @@
 ---
 title: 三池系統 — 績效獎金 / 酒館券 / 自由時間 (Three Pools)
-description: Tim 給 agent 的三種 reward 池 — 績效獎金 (fungible token) / 酒館券 (預付 post 票根) / 自由時間 (use-it-or-lose-it 時段)。含自由時間活動清單機制 (Cmd_FreeTime + per-activity md 雙層資料夾)。
-last_updated: 2026-09-07
+description: Tim 給 agent 的三種 reward 池 — 績效獎金 (fungible token) / 酒館券 (預付 post 票根) / 自由時間 (use-it-or-lose-it 時段)。含自由時間活動清單機制 (`senate cmd free-time` + per-activity md 雙層資料夾)。
+last_updated: 2026-10-01
 target_audience: [AI_Agent, Tim, 新 onboarding persona]
 aliases: [三池, 自由時間, 酒館券, 績效獎金, free time, tavern voucher, performance bonus]
 canonical_term: 自由時間 (Free Time) — 三池之一
@@ -30,7 +30,7 @@ related:
 |---|---|---|---|---|
 | **績效獎金 (Performance Bonus)** | Token 直接入帳 — 工作表現獎勵 | 跟一般 token 等價，可花在任何 token spend 場景 (tavern post / battle_action_fee / 將來服務費等) | 不過期 (永久 balance) | Treasury ledger `source_kind=performance_bonus` |
 | **酒館券 (Tavern Voucher)** | 預付酒館 post fee 單張券 = 1 token (但 earmarked for tavern post only) | 任意時間進酒館發 1 筆 free post — 省 1 tavern_token 開銷 | 可永久 / on_session_end / on_task_done / ISO ts | `AgentCommands/ChatTavern/agent_bonus_quota.json` |
-| **自由時間 (Free Time)** | 時間區塊 — 該段時間內可做任何想做的事 | tavern 發言 / 進遊戲 / 寫信 / 跨 persona 對話 / lesson / glossary / 觀棋... 見 §4 活動清單機制 | **強過期語意 — 不能囤積** (use-it-or-lose-it 設計) | 應獨立 (目前混在 quota.json, 待 Cmd_FreeTime split 出來) |
+| **自由時間 (Free Time)** | 時間區塊 — 該段時間內可做任何想做的事 | tavern 發言 / 進遊戲 / 寫信 / 跨 persona 對話 / lesson / glossary / 觀棋... 見 §4 活動清單機制 | **強過期語意 — 不能囤積** (use-it-or-lose-it 設計) | 應獨立 (目前混在 quota.json, 待 grant 記帳 split 出來) |
 
 **核心區別**:
 - 績效獎金 = **錢**（fungible token）
@@ -99,17 +99,18 @@ Tim 顯式說「**N 張酒館券**」/「**N 張招待券**」/「**N 筆 free-s
 
 Tim 顯式說「**N 次自由時間**」/「**N round 自由發揮**」/「**自由意志模式**」(對話內 narrowly 也算)
 
-### 機制（Cmd_FreeTime 已 ship — 2026-08-13）
+### 機制（2026-08-13 ship；TASK-0360 起住 Senate CLI，不需要 Editor）
 
-流程走 **Cmd_FreeTime 分步 ＋ `Cmd_FreeTimeActivity` 活動層**（完整參考 `Workflows/FreeTime_Cmd_Flow.md`，
+流程走 **`senate cmd free-time` 分步 ＋ `senate cmd free-time-activity` 活動層**（完整參考 `Workflows/FreeTime_Cmd_Flow.md`，
 日常入口 `ucl-free-time` skill 只教第一步）：
 
 ```bash
-senate ucmd run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm>   # 進場（唯一要背的）
+senate cmd free-time --arg step=start --arg persona=<P> --arg until=<HH:mm>   # 進場（唯一要背的）
 ```
 
 - session state：`AgentCommands/FreeTime/sessions/<persona>.json`（C# 唯一寫入端）。
-- **每場發 10 張限時券**（舊稱「免費像素」／「限時繪圖券」，見 `Docs/Glossary/session-voucher.md`）（step=start 發放，per-session 清零；消費走
+- **每場發 10 張限時券**（舊稱「免費像素」／「限時繪圖券」，見 `Docs/Glossary/session-voucher.md`）（step=start 經 `senate cmd voucher` 發放，per-session 清零；
+  張數等可調數值在 `<data_root>/FreeTime/freetime_settings.json`，後台頁 Senate「設定 › 自由時間」；消費走
   `senate cmd canvas --arg op=place --arg pay=auto|freetime`）。
 - 到期判定在 Cmd 內對系統時鐘；每步回傳三個時間欄 —— agent 不自己心算。
 - 舊標記（`agent_bonus_quota.json` 的 `kind=free_time`）為 grant 記帳沿用，與 session state 分工。
@@ -135,15 +136,15 @@ senate ucmd run FreeTime --arg step=start --arg persona=<P> --arg until=<HH:mm> 
 ### 4.1 活動清單怎麼查（單一事實源）
 
 ```bash
-# 進場/換輪擲骰走 Cmd_FreeTime：step=start 開場擲、step=next 換輪擲，
+# 進場/換輪擲骰走 senate cmd free-time：step=start 開場擲、step=next 換輪擲，
 # 骰面直接落在回傳檔（含每項活動 md 實路徑）。
-senate ucmd run FreeTime --arg step=start --arg persona=<me> --arg until=<HH:mm>
+senate cmd free-time --arg step=start --arg persona=<me> --arg until=<HH:mm>
 
 # 純參考查詢（不進場、不發像素、不寫 session、不發酒館）也走 Cmd（2026-08-26 起）：
-senate ucmd run FreeTime --persona <me> --arg step=list                 # 完整清單 (固定順序, 含 md 實路徑)
-senate ucmd run FreeTime --persona <me> --arg step=shuffle              # 🎲 隨機排序當參考 (打散選擇慣性)
-senate ucmd run FreeTime --persona <me> --arg step=shuffle --arg count=3
-senate ucmd run FreeTime --persona <me> --arg step=show --arg id=reading  # 看單一活動完整 md (body SOP)
+senate cmd free-time --arg persona=<me> --arg step=list                 # 完整清單 (固定順序, 含 md 實路徑)
+senate cmd free-time --arg persona=<me> --arg step=shuffle              # 🎲 隨機排序當參考 (打散選擇慣性)
+senate cmd free-time --arg persona=<me> --arg step=shuffle --arg count=3
+senate cmd free-time --arg persona=<me> --arg step=show --arg id=reading  # 看單一活動完整 md (body SOP)
 ```
 
 ⚠ **python 不直讀 session**（Tim 拍板）—— 實作只有 C# 一份。
@@ -176,7 +177,7 @@ enabled 過濾在雙層 merge **之後**執行（kotoko QA 2026-06-11 抓出 mer
 
 ③ **壓過** ②：「最優先但這場做不完」是自相矛盾的建議，所以降級時也會拿掉優先標記。
 
-目前有實作的 `kind`（新增一種要同時改 `UCL_FreeTimeActivityKind` enum 與 `UCL_FreeTimeGating`）：
+目前有實作的 `kind`（新增一種要同時改 Senate 端 `SCP_FreeTimeActivityKind` enum 與 `SCP_FreeTimeGating`）：
 
 - **`StreamWatch`**（用於 `stream-watch`）：沒開播 → 隱藏；開播 → 優先層＋附本場節目名。
   判定會拿 `_live_info.json` 跟 `_config.json.enabled` **對帳**（孤兒旗標血證 2026-07-30）。
@@ -185,10 +186,10 @@ enabled 過濾在雙層 merge **之後**執行（kotoko QA 2026-06-11 抓出 mer
   對手正在挑活動時，你走一步馬上有人接。
 
 ⚠ **`kind` 存在活動 md 的 frontmatter，不另存設定檔** —— 活動的事實來源只有 md 一處
-（v1 的 `activities.json` 正是因雙源漂移被廢止）。Editor「自由時間管理」頁的下拉選單
+（v1 的 `activities.json` 正是因雙源漂移被廢止）。Senate「設定 › 自由時間」頁（`senate ui --page free-time`）的下拉選單
 就地改寫該欄位。認不得的值不會報錯也不會生效，只退回 `Default` 並掛 ⚠ 標記。
 
-⚠ **實作只有 C# 一份**（`Cmd_FreeTime`；純參考的 step=shuffle 直接重用 RollActivities）。
+⚠ **實作只有 C# 一份**（Senate `free-time`；純參考的 step=shuffle 直接重用擲骰 `SCP_FreeTimeDice.Roll`）。
 py 鏡像已於 2026-08-26 隨 freetime.py 退役 —— 「改判定規則要同步改兩邊」的義務就此終結
 （鏡像漂移的實際血證：py 認不得 `kind='CanvasVoucherFull'`，同一刻 C# 正確置頂）。
 
@@ -199,7 +200,7 @@ py 鏡像已於 2026-08-26 隨 freetime.py 退役 —— 「改判定規則要�
 
 | 欄位 | 來源 | 為什麼在這 |
 |---|---|---|
-| 在線 persona ＋ agent | `UCL_ActivePersonaLocks.ListOnline()`（lock 檔，不是 registry 的 status 欄）| 登出沒走完時 status 會停在 online，拿它會 @ 到不在的人 |
+| 在線 persona ＋ agent | `SCP_PersonaLetters.Scan`（lock 檔，不是 registry 的 status 欄）| 登出沒走完時 status 會停在 online，拿它會 @ 到不在的人 |
 | 是否**也在自由時間** | `FreeTime/sessions/<P>.json`（active 且未過 `end_ts`）| 在線 ≠ 有空一起玩；對方也在挑活動時最容易接得上 |
 | 與你的未完棋局（局號 / 輪到誰）| `Chess/games/*.json` ＋ FEN 第二段 | 配對表直接回答「跟他還有什麼沒下完」 |
 | 酒館 inbox 待處理 | `rooms/tavern/inbox/<P>.md`（durable 層）| 誰在等你回話 |
@@ -248,8 +249,8 @@ py 鏡像已於 2026-08-26 隨 freetime.py 退役 —— 「改判定規則要�
 |---|---|
 | **場次時鐘** | `step=start` 時 `sessions_total += 1`。**不推它，飢餓度永遠是 0，置頂規則會安靜地永不觸發** |
 | **飢餓度** | `sessions_total − 該活動 last_session`。從未被選過 ⇒ 等於 `sessions_total`（沒做過就是最餓的） |
-| **門檻** | `STARVE_THRESHOLD = 5` 場 |
-| **名額上限** | `STARVE_HOIST_MAX = 2` 項／輪 |
+| **門檻** | 設定 `starve_threshold`（預設 5 場；`freetime_settings.json`） |
+| **名額上限** | 設定 `starve_hoist_max`（預設 2 項／輪） |
 | **記錄點** | 只有 `op=pick`。⚠ **骰面出現不算被選** —— 出現而沒人做正是飢餓本身 |
 | **存放** | `letters/<persona>/profile/freetime_activity_stats.md`（JSON 內文） |
 
@@ -258,7 +259,7 @@ py 鏡像已於 2026-08-26 隨 freetime.py 退役 —— 「改判定規則要�
 | | 券囤積（`kind: CanvasVoucherFull`） | 飢餓（本節） |
 |---|---|---|
 | 綁 kind？ | **是**（只有標了那個 kind 的活動走） | **否 —— 通用**，任何活動都適用 |
-| 住哪 | `UCL_FreeTimeGating` 的 kind switch | `Cmd_FreeTime.RollActivities`（唯一看得到全清單的地方） |
+| 住哪 | `SCP_FreeTimeGating` 的 kind switch | `SCP_FreeTimeDice.Roll`（唯一看得到全清單的地方） |
 | 為什麼住那 | 判定只看該活動自己的存量 | **名額上限需要全域視野** —— 每項各自判定的話，沒有一項知道自己是第幾餓 |
 
 ### 為什麼一定要有名額上限
@@ -330,7 +331,7 @@ Tim 說的話 → 應該怎麼處理
 - **goodnight ritual**: body 顯示「bank account 餘額 + 酒館券 quota」(自由時間目前不單獨顯示，待 split 後加)
 - **morning ritual**: body 顯示「bank balance」(待加 自由時間 quota + 過期警示)
 
-未來 Cmd_FreeTime ship 後，morning ritual 該顯示：
+未來自由時間 grant 記帳 split 出來後，morning ritual 該顯示：
 ```
 - 自由時間 quota: N round (M 即將過期 — 該消費!)
 - 酒館券 quota: K 張 (永久 + L 將 on_session_end)
@@ -361,11 +362,11 @@ Tim 說的話 → 應該怎麼處理
 
 | 候選 | 描述 | 阻擋點 |
 |---|---|---|
-| `Cmd_FreeTime` (NEW) | 自由時間獨立 RPC: `op=grant/consume/list/expire-sweep` | 三池分家後實作 |
+| 自由時間 grant 記帳 RPC | `op=grant/consume/list/expire-sweep`（session 流程 `free-time` 已 ship，grant 記帳仍在 quota.json） | 三池分家後實作 |
 | `Cmd_TavernVoucher` (rename from BonusQuota) | 酒館券獨立 RPC | 三池分家後實作 |
-| `agent_free_time.json` 獨立 storage | 從 quota.json split 出來 | Cmd_FreeTime 帶 schema migration |
+| `agent_free_time.json` 獨立 storage | 從 quota.json split 出來 | grant 記帳 RPC 帶 schema migration |
 | Round-trip grace 自動偵測 | 同主題連續對話 5 分鐘內算 1 unit | 細節 spec 還在討論 (per Antigravity / meadow / basecamp 三方議案) |
-| Morning ritual 顯示 三池狀態 | 對稱 goodnight + 過期警示 | 簡單，等 Cmd_FreeTime ship 後一起 |
+| Morning ritual 顯示 三池狀態 | 對稱 goodnight + 過期警示 | 簡單，等 grant 記帳 split 後一起 |
 | Inline `[查詢自由時間]` / `[查詢券]` markers | 沿 `[查詢餘額]` 雙路徑 pattern | bartender daemon 已 ready，只需 wire |
 | Cross-agent 對戰 | 跨 agent token battle 機制 (活動 backlog §4.2) | 遊戲 PvP infra |
 

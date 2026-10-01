@@ -1,7 +1,7 @@
 # FreeTime Activities — 自由時間活動資料夾（UCL_Core 共用層）
 
 > 本資料夾是自由時間「可做活動清單」的**跨專案共用層**（Tim 2026-06-11 拍板文件驅動 + 跨專案化）。
-> 每個 `*.md` = 一個活動，C# `Cmd_FreeTime` 掃描產生骰面與 list/shuffle/show 輸出 —
+> 每個 `*.md` = 一個活動，Senate `senate cmd free-time`（C#）掃描產生骰面與 list/shuffle/show 輸出 —
 > **新增或更新活動 = 直接增改 md 檔，工具即自動同步**，不需要再改任何 code / JSON。
 > （掃描端只有 C# 一份實作。）
 
@@ -26,16 +26,15 @@ name: 閱讀 (自選讀書)         # 顯示名 (shuffle 輸出主體)
 how: reading-library skill → 新 Library 的 work/media/persona/read_session 流程   # 一行操作提示
 enabled: true                # false = 暫時下架 (shuffle/list 跳過, 檔案保留)
 group: 知識沉澱               # 選填 — 分組，見下節 (缺欄位 = 不分組，自成骰面一項)
-min_minutes: 20              # 選填 — 建議所需分鐘 (Cmd_FreeTime 擲骰時剩餘時間不足 → 排尾標明「時間不夠」，不隱藏)
+min_minutes: 20              # 選填 — 建議所需分鐘 (free-time 擲骰時剩餘時間不足 → 排尾標明「時間不夠」，不隱藏)
 kind: Default                # 選填 — 特殊邏輯標記，見下節 (缺欄位 = Default)
-tool: <腳本>.py              # 選填 — 代跑用**腳本檔名** (空 = 本活動不走腳本代跑；改走 cmd_steps 或完全不支援)
-steps: move, board, lobby    # 選填 — 允許代跑的子命令白名單 (空 = 即使有 tool 也不放行)
-cmd_steps: add-book=book:add # 選填 — 把某個 step 改走 **in-process SCP cmd**（`<step>=<cmd>:<op>`）
-                             #        ⭐ 有這一格的 step **不經過腳本**；⛔ 宣告壞了不回退舊路（fail-closed）
+steps: move, board, lobby    # 選填 — 允許代跑的子命令白名單 (空 = 不放行)
+cmd_steps: add-book=book:add # 選填 — 把 step 路由到 **in-process SCP cmd**（`<step>=<cmd>:<op>`）；代跑**只有這條路**
+                             #        ⛔ 宣告壞了不回退（fail-closed）；在白名單裡卻沒有路由的 step 一律擋
+                             #        ⛔ 舊的 `tool:`（python 腳本）路已移除 —— 只宣告 tool 的活動 op=step 會擋並要你改成 cmd_steps
                              #        ⚠ 目標只能是 `senate cmd` 註冊表裡的 cmd —— `ucmd run <Type>` 路不進來
 cmd_persona_arg: reader      # 選填 — 走 cmd_steps 時身分塞進哪個 `--arg`
-persona_flag: --persona      # 選填 — **只有腳本那條路**用得到：這支腳本接身分的旗標名
-steps_need_persona: move     # 選填 — 這些 step 由 op=step 自動補身分；`step=--flag` 可覆寫單一 step 的旗標（同一支工具不一定一致）
+steps_need_persona: move     # 選填 — 這些 step 由 op=step 自動補身分；`step=<arg>` 可覆寫單一 step 的參數名（同一支 cmd 不一定一致）
 ---
 
 # 閱讀 (自選讀書)
@@ -52,7 +51,7 @@ steps_need_persona: move     # 選填 — 這些 step 由 op=step 自動補身�
 
 1. **子分支的選擇沒有落盤** —— `session.activity` 只存得到組別 id，
    帳面上分不出「活動實作 1 件」做的是 2D 畫布還是 3D 雕刻。
-2. **`tool` / `steps` 掛在 md 上** ⇒ 一組裡分支用不同工具時（`chess.py` vs `Cmd_Sculpture`），
+2. **代跑宣告（`steps`）掛在 md 上** ⇒ 一組裡分支用不同工具時（`chess.py` vs `Cmd_Sculpture`），
    **只有第一個分支接得到 `op=step` 代跑**，第二個分支的缺席沒有任何地方會喊。
 
 ### 骰面怎麼呈現分組
@@ -70,7 +69,7 @@ steps_need_persona: move     # 選填 — 這些 step 由 op=step 自動補身�
 
 **組項的時間不夠 ＝ 組內全員都不夠** —— 有一個做得成就不該把整組標成做不完。
 
-> ℹ 收合邏輯只有 C# `Cmd_FreeTime` 一份。（曾經的宣告差異「python freetime.py shuffle
+> ℹ 收合邏輯只有 C#（Senate `free-time`）一份。（曾經的宣告差異「python freetime.py shuffle
 > 不做組項收合」隨該工具 2026-08-26 退役而消滅 —— 純參考擲骰現在走 `step=shuffle`，同一份實作。）
 
 ## `kind` — 特殊邏輯標記（Tim 2026-08-17 拍板）
@@ -93,11 +92,11 @@ steps_need_persona: move     # 選填 — 這些 step 由 op=step 自動補身�
 
 ### 增改 kind 的手勢
 
-- **改既有活動**：Editor 開「自由時間管理」頁 → 下拉選活動 → 「特殊邏輯」／「分組」欄位改一改。
+- **改既有活動**：Senate 後台「設定 › 自由時間」頁（`senate ui --page free-time`）→ 選活動 → 「特殊邏輯」／「分組」欄位改一改。
   頁面會就地改寫本 md 的 `kind` 欄位（**不另存 override 設定** —— 活動的事實來源只有 md 一處）。
 - **手改 md 也可以**，但注意：**認不得的值不會報錯也不會生效**，只會退回 Default 並在
   骰面與管理頁掛上 ⚠ 標記。用下拉就打不出錯字，這正是它用 enum 而非自由字串的理由。
-- **新增一種 kind 要改 code**：`UCL_FreeTimeActivityKind` enum ＋ `UCL_FreeTimeGating` 的判定。
+- **新增一種 kind 要改 code**：Senate 端 `SCP_FreeTimeActivityKind` enum ＋ `SCP_FreeTimeGating` 的判定。
   兩邊都要動是刻意的 —— 一個沒有實作的標記會讓人以為那裡有一道邏輯，而它什麼都不做。
 
 ## 慣例
@@ -112,5 +111,5 @@ steps_need_persona: move     # 選填 — 這些 step 由 op=step 自動補身�
     而在回來之前「遊戲組怎麼只剩下棋」需要 md 自己回答。
   ⇒ 判準不是「暫時或永久」，是**刪掉之後那個問題還有沒有地方能答**。
 - 對齊 EOV `docs/Glossary/` 的 per-entry md + frontmatter 前例
-- 工具：`senate ucmd run FreeTime --persona <me> --arg step=shuffle|list|show`（freetime.py 已於 2026-08-26 退役）
+- 工具：`senate cmd free-time --arg persona=<me> --arg step=shuffle|list|show`（不需要 Editor）
 - 三池 spec：[`<UCL_Core>/Docs~/zh-Hant/Mechanics/FreeTime_System.md`](../../Mechanics/FreeTime_System.md) §4（2026-06-11 同步搬入 UCL_Core）

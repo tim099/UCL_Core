@@ -79,8 +79,7 @@ namespace UCL.Core.EditorLib.Page
 
             new ToolGroup("Fold.AgentOps", "ToolBox.Group.AgentOps",
                 new ToolEntry("ToolBox.TaskManager", () => UCL_TaskManagerPage.Create()),
-                new ToolEntry("ToolBox.Relationship", () => UCL_RelationshipPage.Create()),
-                new ToolEntry("ToolBox.FreeTimeAdmin", () => UCL_FreeTimeAdminPage.Create())),
+                new ToolEntry("ToolBox.Relationship", () => UCL_RelationshipPage.Create())),
 
             new ToolGroup("Fold.Runtime", "ToolBox.Group.Runtime",
                 new ToolEntry("ToolBox.LLMModelAdmin", () => UCL_LLMModelAdminPage.Create()),

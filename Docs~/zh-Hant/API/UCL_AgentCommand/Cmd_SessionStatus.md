@@ -14,7 +14,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 ## 1. 概覽
 
 - **CommandType**：`SessionStatus`
-- **判準來源**：`UCL_SessionService`（與 `UCL_SessionAdminPage`、`Cmd_FreeTime` 同一份）
+- **判準來源**：`UCL_SessionService`（與 `UCL_SessionAdminPage`、`senate cmd free-time`（TASK-0360 起住 Senate）同一份）
 
 **什麼時候用**：想知道「這個人現在在不在自由時間」、或某人的 session 是不是超時沒收工的殘留。
 

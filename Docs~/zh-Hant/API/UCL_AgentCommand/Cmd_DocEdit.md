@@ -3,7 +3,7 @@ title: Cmd_DocEdit API
 description: 文件編輯活動的一步 — 登記剛改完的那份 .md、驗收它真的動了、並指回自由時間流程。不搬內容、不寫檔。
 source_file: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/DocEdit/Cmd_DocEdit.cs
 namespace: UCL.Core.EditorLib.AgentCommands.DocEdit
-last_updated: 2026-08-18
+last_updated: 2026-10-01
 target_audience: [AI_Agent, Tools_Maintainer]
 ---
 
@@ -14,7 +14,7 @@ target_audience: [AI_Agent, Tools_Maintainer]
 ## 1. 為什麼存在
 
 `doc-reflection` / `letter-to-self` / `constitution` 三個自由時間活動原本是「**本質不是一步**」那一類：
-它們沒有單一 python CLI 入口（活動就是**編輯一個檔**），所以 `Cmd_FreeTimeActivity op=step`
+它們沒有單一 python CLI 入口（活動就是**編輯一個檔**），所以 `senate cmd free-time-activity op=step`
 代跑不到 —— 流程一進到編輯就斷在那裡。
 
 Tim 2026-08-18 拍板補這一支，讓它們也能「做完一步 → 回報 → 被指去下一步」。

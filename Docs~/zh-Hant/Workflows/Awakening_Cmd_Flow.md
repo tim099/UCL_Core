@@ -1,6 +1,6 @@
 ---
 title: Awakening Cmd 完整流程（早安四步＋晚安四步＋自由時間三步 — 參考文件）
-description: Cmd_GoodMorning／goodnight-*（Senate）／Cmd_FreeTime 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
+description: Cmd_GoodMorning／goodnight-*（Senate）／`senate cmd free-time`（TASK-0360 起住 Senate）分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
 last_updated: 2026-09-26 (晚安五步也改在 senate.exe 就地執行；只有觀影結算與收工閘 skip 寫單兩段要 Editor，沒開就跳過；TASK-0305) | 2026-09-26 (早安四步改在 senate.exe 就地執行、不需要 Editor；Editor 路改呼叫同一份 SCP_Core；TASK-0303) | 2026-09-15 (escape hatch 形狀的出處標為已退場工具；TASK-0187)
 target_audience: [AI_Agent, Developer]
 aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]

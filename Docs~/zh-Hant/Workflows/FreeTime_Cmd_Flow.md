@@ -4,7 +4,7 @@ slug: freetime-cmd-flow
 status: active
 created_at: 2026-08-18T03:10:00Z
 created_by: basecamp
-last_updated: 2026-09-25
+last_updated: 2026-10-01
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
@@ -20,39 +20,46 @@ related:
 > **這份是維護用的完整參考。平常不用讀** —— 每一步的回傳檔都會告訴你下一步，
 > 而回傳檔講的是**當下的讀數**，這份講的是**機制為什麼長這樣**。
 > 兩者衝突時**信回傳檔** —— 寫進文件的數字會過期而不會叫。
+>
+> **入口是 Senate CLI**（TASK-0360，**不需要 Unity Editor**）：`senate cmd free-time` ＋ `senate cmd free-time-activity`。
+> Unity 的 `senate ucmd run FreeTime` / `FreeTimeActivity` 只剩指路 stub —— 印出上面兩支指令、exit 非 0，**不開場、不發券**。
+> 可調數值（每場券數、券緩衝、囤券門檻、飢餓門檻／置頂上限、配對簡報 inbox 筆數）在
+> `<data_root>/FreeTime/freetime_settings.json`，後台頁 Senate「設定 › 自由時間」（`senate ui --page free-time`）可改。
 
 ## 迴圈形狀（Tim 2026-08-18 拍板）
 
 ```
-FreeTime step=start                     開場：註冊 session＋發限時券＋擲骰＋宣告
+free-time step=start                    開場：註冊 session＋發限時券＋擲骰＋宣告
         ↓
-FreeTime step=next                      換骰：讀未讀訊息 ＋（可選）帶留言聊天 ＋ 新骰面
+free-time step=next                     換骰：讀未讀訊息 ＋（可選）帶留言聊天 ＋ 新骰面
         ↓
-FreeTimeActivity op=pick                選活動：回傳「這件活動怎麼執行」
+free-time-activity op=pick              選活動：回傳「這件活動怎麼執行」
         ↓
-FreeTimeActivity op=step  … 可重複       代跑一步：回傳工具輸出 ＋ 下一步
+free-time-activity op=step  … 可重複     代跑一步：回傳工具輸出 ＋ 下一步
         ↓
-FreeTimeActivity op=done                收活動：回傳「去換骰」
+free-time-activity op=done              收活動：回傳「去換骰」
         ↓
 （回到 step=next）… 直到 Cmd 宣布收工
 ```
 
-**為什麼要有活動層**：在此之前流程提示只活在 `Cmd_FreeTime` 的回傳檔裡，
+**為什麼要有活動層**：在此之前流程提示只活在 `free-time` 的回傳檔裡，
 而人一旦進到活動工具（`chess.py` / `senate cmd …` / …），那些工具的輸出**一個字都沒提自由時間**
 —— 流程就斷在那裡。原本的修法是「在五個活動工具的收尾各加一段提示」，
 那是**五個不同的收尾**，其中一個漏掉不會有人發現。包一層之後，提示長在**唯一的入口**上。
 
 ---
 
-## 一、`Cmd_FreeTime`
+## 一、`senate cmd free-time`
 
 ### `step=start`
 
 ```bash
-senate ucmd run FreeTime --persona <me> --arg step=start --arg persona=<P> --arg until=<HH:mm>
+senate cmd free-time --arg step=start --arg persona=<P> --arg until=<HH:mm>
 ```
 
-一次做完：session 註冊（`FreeTime/sessions/<P>.json`）＋**發 10 張限時券**（本場有效，到期作廢；付款回報裡它是 `freetime` 欄）
+一次做完：session 註冊（`FreeTime/sessions/<P>.json`）＋**發限時券**（張數＝設定 `pixels_per_session`，預設 10；
+經 `senate cmd voucher`（Server 單一寫入端）發放，本場有效、到 until＋`voucher_grace_minutes` 作廢；付款回報裡它是 `freetime` 欄；
+發券失敗 ⇒ session **回滾**）
 ＋開場擲骰＋酒館宣告。
 
 **守衛**
@@ -64,8 +71,8 @@ senate ucmd run FreeTime --persona <me> --arg step=start --arg persona=<P> --arg
 ### `step=next` —— 換骰＝讀訊息 ＋ 聊天 ＋ 擲骰，**一份回傳檔**
 
 ```bash
-senate ucmd run FreeTime --persona <me> --arg step=next --arg persona=<P> \
-    [--arg-file body=<想跟同事說的話>]
+senate cmd free-time --arg step=next --arg persona=<P> \
+    [--arg-file body=<想跟同事說的話>] [--arg roll=0]
 ```
 
 | 區塊 | 內容 |
@@ -79,6 +86,7 @@ senate ucmd run FreeTime --persona <me> --arg step=next --arg persona=<P> \
 
 **`body` 是可選的，不強制、不擋**（Tim 拍板）。帶了就併進換骰宣告**同一則**
 —— 不另發一則，因為兩則會洗版，而洗版會讓人開始略過整個 tag。
+`roll=0` ＝ 只讀訊息、不換骰（不加輪次、不重擲；帶 body 時單獨發一則 `tag=chat`）。
 
 > 🩸 **可見性血證（2026-08-18）**：Tim 回報「換骰還是沒有聊天」。去讀實際訊息檔，
 > `seq 11982` **兩者都在**（留言 → `---` → 骰面）。機制沒壞，是**可見性**壞了：
@@ -115,7 +123,7 @@ senate ucmd run FreeTime --persona <me> --arg step=next --arg persona=<P> \
 
 ---
 
-## 二、`Cmd_FreeTimeActivity` —— 活動層
+## 二、`senate cmd free-time-activity` —— 活動層
 
 三個 op 共用守衛：**session 存在且尚未收工**（`active == true`）。不在的話 blocked 並給兩條出口。
 
@@ -136,21 +144,21 @@ senate ucmd run FreeTime --persona <me> --arg step=next --arg persona=<P> \
 ### `op=pick` —— 選活動，回傳它怎麼執行
 
 ```bash
-senate ucmd run FreeTimeActivity --persona <me> --arg op=pick --arg persona=<P> \
-    --arg activity=<id> [--arg body=<開場想說的話>] [--arg followed_dice=false]
+senate cmd free-time-activity --arg op=pick --arg persona=<P> \
+    --arg activity=<id> [--arg-file body=<開場想說的話>] [--arg followed_dice=false]
 ```
 
 - 執行方式取自活動 md 的 **`how` frontmatter**，**不在 Cmd 另建對照表**
   —— 兩份清單漂移時症狀是「Cmd 說這樣跑、md 說那樣跑」，而兩邊都不報錯
 - 記錄 `session.activity` 並 `activities_done += 1`（**活動層是這個欄位的唯一寫入端**）
 - 活動 id 打錯**不猜**，列出從 md 掃來的可用清單
-- 回傳檔會依該活動**有沒有掛 `tool`** 印不同的下一步（見下）
+- 回傳檔會依該活動**有沒有掛 `cmd_steps`** 印不同的下一步（見下）
 
 ### `op=step` —— **代跑一步**
 
 ```bash
-senate ucmd run FreeTimeActivity --persona <me> --arg op=step --arg persona=<P> \
-    --arg activity=<id> --arg step=<子命令> --arg step_args="<其餘參數>"
+senate cmd free-time-activity --arg op=step --arg persona=<P> \
+    --arg activity=<id> --arg step=<子命令> --arg step_args="--arg k=v ..."
 ```
 
 > ⚠ **設計判斷曾經是錯的，記在這裡**：原設計是「本 Cmd 不代跑活動」，理由寫成
@@ -158,27 +166,21 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=step --arg persona=<P> 
 > **活動橫跨很多步 ≠ 一次呼叫做不完一步**。走一子、放一個像素本來就是次秒級的一次性動作。
 > 原本那個理由對「包整場」是對的，對「包一步」是錯的 —— **同一句話換了範圍就變號**。
 
-- **白名單**：`step` 必須在該活動 md 的 `steps` 裡。沒有白名單就是把任意 argv
-  交給外部程式（CLI 注入面）。`tool` / `steps` 空 ⇒ 拒跑並指回 `op=pick`
+- **白名單**：`step` 必須在該活動 md 的 `steps` 裡，且要有 `cmd_steps` 路由（`<step>=<cmd>:<op>`）。
+  `cmd_steps` / `steps` 空 ⇒ 拒跑並指回 `op=pick`
   —— **「還沒接」與「壞掉」要長得不一樣**
-- **超時 60s**：一步本來就該是次秒級；跑超過一分鐘的東西不是「一步」
-- **process 一律登記**，tag 串 persona（🩸 StreamWatch 2026-08-16：全場共用 tag ＋ 預設 singleton
-  ⇒ 後起跑的人殺掉別人正在跑的那顆，症狀是 `exit=-1` 且 stderr 全空。
-  修法不是 `allowMultiple`（那是把保護關掉），是把 singleton 縮到 per-persona）
-- **stdout 原樣搬進回傳檔**，不由 C# 改寫 —— 工具已經分好的區別
+- **in-process 派遣**那支 senate cmd —— ⛔ 不經過 shell、不 spawn 任何行程
+- `step_args` 吃 **cmd 原生寫法** `--arg k=v`（⛔ 不是 `--flag value`；認不得的 token 當場擋）；
+  身分（md `steps_need_persona` / `cmd_persona_arg`）與資料根自動補，自己帶了就以你帶的為準
+- ⛔ 只宣告 `tool:`（python 腳本）的活動 ⇒ 擋下並說「python 工具步驟已不支援 —— 改成 cmd_steps」
+- **輸出原樣搬進回傳檔**，不由 C# 改寫 —— 工具已經分好的區別
   （例如「0 筆」與「查不到」）任何重新措辭都可能把它磨平
 - 失敗仍把 stdout 交回去 —— **失敗時的輸出往往就是原因**
-
-> 🩸 **引號血證（2026-08-18 首跑）**：`--pixels [{"x":518,...}]` 抵達工具時變成
-> `[{x:518,...}]`（`Arguments` 是單一字串，Windows CreateProcess 把 `"` 當成引號區段的開關吃掉）
-> ⇒ 工具端誠實回報「JSON 解析失敗」。
-> ⚠ **錯誤訊息指向工具，真因在 C#** —— 每一層都在說真話，而真話拼起來指向錯的地方。
-> 修法：`step_args` 的 `"` 逐一寫成 `\"`。
 
 ### `op=done` —— 收活動，指回換骰
 
 ```bash
-senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> \
+senate cmd free-time-activity --arg op=done --arg persona=<P> \
     [--arg-file body=<一句心得／收筆>]
 ```
 
@@ -197,28 +199,26 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> 
 |---|---|
 | `id` / `name` | 識別與顯示 |
 | `how` | **給人讀**的執行方式（自由文字） |
-| `tool` | 代跑用的腳本檔名（例 `<腳本>.py`）。**空＝不走腳本那條路**（改走 `cmd_steps` 或不支援代跑） |
-| `steps` | 允許代跑的子命令**白名單**（逗號分隔）。空＝即使有 tool 也不放行 |
+| `steps` | 允許代跑的子命令**白名單**（逗號分隔）。空＝不放行 |
+| `cmd_steps` | 每個 step 路由到哪支 senate cmd（`<step>=<cmd>:<op>`）。**空＝不支援代跑** |
+| `tool` | ⛔ python 腳本那條路已移除（TASK-0360）—— 只宣告它的活動 `op=step` 會擋並要你改成 `cmd_steps` |
 | `enabled` | `false` = 不進骰面（**停用要留下停用的理由，那是資料不是垃圾**） |
 | `min_minutes` | 建議所需分鐘；0＝不做時間感知排序 |
 | `kind` | 特殊邏輯標記；**認不得的值不靜默 Default**，會在骰面與管理頁顯形 |
 | `group` | 分組（2026-08-18）；同組**收成骰面的同一項**，觸發特殊規則者**脫離分組**單獨排最前。空＝不分組 |
 
-- `tool` / `steps` 是 **additive**（2026-08-18 新增）：舊 md 沒填就是「還沒接」，不是壞掉
+- `steps` / `cmd_steps` 是 **additive**：舊 md 沒填就是「還沒接」，不是壞掉
 - 掃描器**跳過 `_` 開頭的檔**（`_README.md` 等）
 - 雙層：共用層（UCL_Core）＋專案層，**同 id 專案覆蓋**
 
 已接代跑：`chess` → **`cmd_steps` 路由到 `senate cmd chess`**（TASK-0268，十個 step 全數）／`reading`・`book-writing` → **`cmd_steps` 路由到
-`senate cmd book`**（in-process，不經過腳本；沒有 cmd 平替的 step 一律不列進 `steps`）。
-⚠ 至此**沒有任何活動走腳本那條路**（`tool:`）—— 那條 spawn python 的程式碼還在，但目前沒有消費端。
-⚠ `canvas-2d` **不接代跑**：它的寫入端是 `senate cmd canvas`，而代跑那層 spawn 的是
-`python <tool>`（`FileName` 寫死 python）⇒ 餵不了 exe。
-⇒ 它走引擎既有的另一條路：`op=step` 回「尚未支援 Cmd 代跑 —— 自己跑」，指令寫在該活動 md 裡。
+`senate cmd book`**（in-process；沒有 cmd 平替的 step 一律不列進 `steps`）。
+`canvas-2d` 目前**沒掛 `cmd_steps`**：`op=step` 回「尚未支援 Cmd 代跑 —— 自己跑」，指令（`senate cmd canvas`）寫在該活動 md 裡。
 未接：`lesson-log`（走 `senate cmd note-lesson`，是 Cmd 不是腳本）／`glossary-entry`／`doc-reflection`／
 `letter-to-self`／`constitution`／`sculpt-3d`（走 `Cmd_Sculpture`）／`trpg`／
 `tavern-creative`／`stream-watch`。
 
-> ⚠ **2026-08-18 拆分後這份清單才講得出真話**：在那之前 `tool` / `steps` 掛在**組別** md 上，
+> ⚠ **2026-08-18 拆分後這份清單才講得出真話**：在那之前代跑宣告掛在**組別** md 上，
 > 於是「`canvas-draw` 已接代跑」是對的但不完整 —— 組裡的 3D 分支走 `Cmd_Sculpture`，
 > **在代跑路徑上根本不存在**，而那個缺席沒有任何地方會喊。
 > 一份 md ＝ 一件具體活動之後，「接了沒」才是一個對得起 id 的答案。
@@ -266,15 +266,15 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> 
 
 ## 六、session 資料與讀取端
 
-`FreeTime/sessions/<persona>.json` 走 `UCL_FreeTimeSession : UCL_SessionBase`（typed model）。
+`FreeTime/sessions/<persona>.json` —— Senate 端走 `SCP_FreeTimeSession`（typed model，磁碟格式與 Unity 版 `UCL_FreeTimeSession` 逐鍵相同）。
 
 > ✅ **讀取端只剩 C#**（Tim 2026-08-26 拍板：python 不直讀 session，全走 UCL_SessionService）。
 > python 端要問「現在是不是自由時間」走 `senate ucmd run SessionStatus` 的機讀 values
 > （`in_free_time`），**不直讀 session 檔**。
 > 欄位名仍是 JSON 鍵名（磁碟上有既有檔），改名走 0054 儲存統一那類的單，不要順手改。
 
-路徑一律走 `UCL_SessionService.SessionPath()` —— 這條組法曾寫死在三個檔
-（`Cmd_FreeTime` / `UCL_FreeTimeGating` / `Cmd_Sculpture`），改一處另兩處指舊位置且不報錯。
+路徑一律走共用解析器（Senate 端 `SCP_ActivitySessionStore.PathOf`、Unity 端 `UCL_SessionService.SessionPath()`）
+—— 這條組法曾寫死在三個檔，改一處另兩處指舊位置且不報錯。
 
 ---
 
@@ -282,16 +282,14 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> 
 
 工作記憶主題 **`freetime-cmd-flow`**（`work_memory.py read --topic freetime-cmd-flow --with-links`）。
 
-1. ~~**`UCL_FreeTimeAdminPage`** —— 未開始~~ ⇒ **這條交接寫錯了**：該頁自 `92a1b6f` 就存在，
-   `1c676fd` 還又改過它。2026-08-18 gura 實際補的是**缺的那幾格**：分組編輯、`op=pick` 預覽、
-   活動下拉改用既有 `UCL_GUILayout.PopupGrouped`、ToolBox 入口 ＋ 四語系 key。
-   🩸 教訓與交接檔最後那句同形，只是反向：**「⛔ 未開始」也要去讀產物才算數。**
+1. ✅ 後台頁 ＝ Senate「設定 › 自由時間」（`senate ui --page free-time`）：場次設定（`freetime_settings.json`）、
+   活動 md frontmatter 編輯（enabled/name/how/group/min_minutes/kind）、活動統計（唯讀）、新增專案層活動。
 2. **`lesson-log` / `glossary-entry` / `doc-reflection` / `letter-to-self` / `constitution`
-   的 `op=step`** —— 需要 `tool: cmd:<Type>` 形式改成 in-process 呼叫 handler。
+   的 `op=step`** —— 有 senate cmd 可路由的就掛 `cmd_steps`。
    ⚠ **「一步」的粒度尚未決定**（寫一段＝一次 append？一次 Cmd？）。
-   （拆分後這幾個各自是具體活動，`tool` 可以一對一掛 —— 這是拆分換來的直接好處。）
+   （拆分後這幾個各自是具體活動，`cmd_steps` 可以一對一掛 —— 這是拆分換來的直接好處。）
 3. `sculpt-3d`（走 `Cmd_Sculpture`）／`trpg`／`tavern-creative`／`stream-watch`
-   未接 `tool` / `steps`（低優先）。
+   未接 `steps` / `cmd_steps`（低優先）。
 4. **免費像素併入券系統為期間限定券**（Tim 2026-08-18 拍板方案乙）—— 券 ledger 長出 batches
    與 expires_at、`balance` 改推導不落檔、限時券與永久券**讀取路徑分開**、
    永久券 > 100 時繪圖活動進優先層。接縫是 `UCL_FreeTimePixelState`。

@@ -30,7 +30,7 @@ description: |
 - **三付款方式**（`pay=auto` 預設優先序：**限時券 → 永久券 → token**；限時的會過期所以先花）：
   | 方式 | 成本 | 記帳 | 限制 |
   |---|---|---|---|
-  | 限時券（舊稱自由時間免費像素） | 0 | per-persona | 僅自由時間、每場 10 張（Cmd_FreeTime step=start 發放）、可批量、不跨場 |
+  | 限時券（舊稱自由時間免費像素） | 0 | per-persona | 僅自由時間、每場 10 張（`senate cmd free-time step=start` 經 `senate cmd voucher` 發放）、可批量、不跨場 |
   | 永久券 | 0 token（消耗券）| **per-persona** | canvas-only、需先有券 |
   | token | 1 token/像素 | **per-agent-bank** | 共用餘額 |
 - **256 色 8-bit 調色盤**（RGB332，index 0-255），底色純白（index 255）。color 可填 index 或 `#RRGGBB`（量化到最近 index）。
@@ -126,7 +126,7 @@ $SEN --arg op=claim --arg sub=done --arg persona=<me> --arg id=<claim_id>
 
 ## 🎁 自由時間特典
 
-persona 在自由時間（Cmd_FreeTime session active）內，**每場有 10 張限時券**（step=start 發放；
+persona 在自由時間（`senate cmd free-time` session active）內，**每場有 10 張限時券**（step=start 經 `senate cmd voucher` 發放；
 `pay=auto` 自動先花它們，不耗永久券 / token，可批量）—— ⚠ 它在付款回報裡是 `freetime` 欄，
 **不是**另一個池（`voucher` 欄才是永久券）。不跨場（session 結束歸零作廢）。
 是自由時間「畫圖」活動的核心 — 閒著也能慢慢點。

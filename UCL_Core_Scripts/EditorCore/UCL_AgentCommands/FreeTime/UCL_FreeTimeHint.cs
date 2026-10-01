@@ -4,87 +4,28 @@
 // Create time : 08/18 2026
 // 「你現在在自由時間中」的流程提示 —— 給任何活動類 Cmd 在自己的回傳值尾端掛一段。
 #if UNITY_EDITOR
-using System;
 using System.Text;
 
 namespace UCL.Core.EditorLib.AgentCommands
 {
     // ===========================================================
-    // 區塊職責：讓活動類 Cmd 自己回報「你在自由時間中，下一步該做什麼」。
-    //
-    // 物理意義：自由時間最容易斷在**活動做完那一刻** —— 手上剛有產物、注意力在產物上，
-    //          而換骰指令在上一份回傳檔裡。原本的修法有兩條，兩條都比這條差：
-    //            ① 在五個活動工具的收尾各加一段提示 → 那是**五個不同的收尾**，
-    //               漏掉一個不會有人發現；
-    //            ② 把活動流程抽離成 service 讓自由時間層重跑 → 產生**第二條流程**，
-    //               而兩條流程漂移時兩邊都不報錯。
-    //          Tim 2026-08-18 給的第三條最小：**Cmd 自己查 session，自己在回傳值多印一段。**
-    //          沒有第二條流程、沒有五個落點，只有一個 helper 與一行呼叫。
-    //
-    // 數值影響：純輸出。不在自由時間時**一個字都不印**（免得無關的 Cmd 每次都多一段噪音 ——
-    //          噪音會讓人開始略過整個區塊，那比沒有提示更糟）。
-    //
-    // 用法（活動類 Cmd 在組完自己的回傳值之後）：
-    //   UCL_FreeTimeHint.Append(aReport, aPersona);
-    // ⛔ 別掛在跟自由時間無關的 Cmd 上（commit / 記帳 / 登入）—— 見上面那句噪音。
-    //
-    // ── 該掛在哪：判準（Tim 2026-08-18 拍板「入口是 Cmd 的活動一律走這條」）──────────
-    // 自由時間活動的代跑（`Cmd_FreeTimeActivity op=step`）只 spawn python 腳本，
-    // 所以「入口是 Cmd 的活動」代跑不到。修法**不是**讓代跑層去呼叫 Cmd
-    // （那要在活動層長出第二種 tool 形式，等於多一條流程；兩條漂移時兩邊都不報錯），
-    // 而是反過來 —— **那支 Cmd 自己在回傳值裡回報進流程**，也就是掛本 helper。
-    //
-    // 掛的三個條件，缺一個就不該掛：
-    //   ① 這支 Cmd 是某個自由時間活動的**實際入口**（活動 md 的 how 指向它）
-    //   ② 它有一份**給人讀的 markdown 回傳值**可以附加（沒有回傳面就無處可掛）
-    //   ③ 它拿得到**persona 形式的身分**（拿到 agent id 之類的自由字串會查不到 session
-    //      而靜默不印 —— 那不會壞，但也就等於沒掛）
-    //
-    // 目前掛著的：Cmd_Sculpture 落子（`sculpt-3d`）／Cmd_Glossary op=register（`glossary-entry`）。
-    //   ⚠ `lesson-log` 已搬到 Senate（`senate cmd note-lesson`，TASK-0354）⇒ 它掛的是 SCP 版
-    //     `SCP_FreeTimeHint`，**文字與本檔逐字相同**，改一份要改另一份。
-    //
-    // 刻意**沒有**掛的，與理由（都是條件不成立，不是忘了）：
-    //   - **Cmd_Tavern**（活動 `tavern-creative`）：它沒有 markdown 回傳面（結果是 post_seq，
-    //     不走 ResolveLastOp / WritePayload）⇒ 條件②不成立。而且自由時間自己的骰面宣告
-    //     也走這支，掛上去會在自己的 post 裡重印一次。
-    //   - **Cmd_StreamWatch**（活動 `stream-watch`）：它**本身就是分步流程**，每一步已經指出
-    //     自己的下一步。再掛一段「下一步」＝同一個位置有兩個指路，而它們遲早會指不同方向。
+    // 區塊職責：Editor 側活動類 Cmd（Cmd_Sculpture／Cmd_DocEdit）掛「你在自由時間中，下一步該做什麼」的入口。
+    // 物理意義：判準與文字的**唯一實作**在 SCP_Core `SCP_FreeTimeHint`（TASK-0360 起本支只委派）。
+    //   🩸 此前兩支檔頭都寫著「文字與另一份逐字相同，改一份要改另一份」—— 那是一句要靠記得的規矩，
+    //     而自由時間搬到 Senate 那天，SCP 版改指 `senate cmd free-time`，本支還在教 `run FreeTime`。
+    //     ⇒ 修法不是再抄一次，是讓這裡**沒有文字可以過期**。
+    // 數值影響：純輸出；不在自由時間時一個字都不印（理由見 SCP_FreeTimeHint 檔頭：噪音會讓人略過整段）。
+    // 用法：UCL_FreeTimeHint.Append(aReport, aPersona);
     // ===========================================================
     public static class UCL_FreeTimeHint
     {
-        /// <summary>
-        /// 若 iPersona 此刻在自由時間中，往 ioReport 尾端附一段「▶ 下一步」；否則不動它。
-        /// 回傳是否有附（呼叫端通常不需要，但「有沒有印」不該只能靠肉眼判斷）。
-        /// </summary>
+        /// <summary>若 iPersona 此刻在自由時間中，往 ioReport 尾端附一段「▶ 下一步」；回傳有沒有附。</summary>
         public static bool Append(StringBuilder ioReport, string iPersona)
         {
-            if (ioReport == null || string.IsNullOrEmpty(iPersona)) return false;
-            try
-            {
-                // 判準走 session base 的唯一那條（active 且未過 end_ts）——
-                // 只看 active 會把超時沒回來收工的人算成在線，然後對他印一段已經無效的指路。
-                // ⚠ 一人一檔位 ⇒ FindRunning 回 0 或 1 筆（不是清單）；kind 不符就不是自由時間。
-                var aS = SCP.Core.Session.SCP_ActivitySessionStore.FindRunning(
-                    UCL_AgentCommandsPath.ScpDataRoot, iPersona, DateTime.Now);
-                if (aS != null && aS.kind == SCP.Core.Session.SCP_ActivitySessionKind.FreeTime)
-                {
-                    ioReport.AppendLine();
-                    // ⛔ 不印剩餘分鐘（Tim 2026-09-04）：活動持續做到時間到，倒數不是下一步的依據。
-                    ioReport.AppendLine($"## ▶ 你在自由時間中（到 {aS.until_local} —— 時間還沒到，挑下一項活動）");
-                    ioReport.AppendLine("- 這件活動還要再走一步 → 再跑一次同一支 Cmd（活動是一步一步的，不必一次做完）。");
-                    ioReport.AppendLine($"- 這件活動告一段落 → `run FreeTimeActivity --arg op=done --arg persona={iPersona} [--arg-file body=<一句心得>]`");
-                    ioReport.AppendLine($"- 之後換骰（**順便讀未讀訊息、順便跟同事講話**）→ `run FreeTime --arg step=next --arg persona={iPersona} [--arg-file body=<想說的話>]`");
-                    ioReport.AppendLine("- **截止是軟的**：時間到不打斷進行中的活動；到期時換骰那一步會自己宣布收工並結算。");
-                    return true;
-                }
-            }
-            catch (Exception e)
-            {
-                // 提示失敗不該影響本體 —— 但也不靜默（靜默的話「沒印」與「查不到」同形）。
-                UnityEngine.Debug.LogWarning($"[FreeTimeHint] 附掛失敗（{iPersona}）：{e.Message}");
-            }
-            return false;
+            bool aDone = SCP.Core.Session.SCP_FreeTimeHint.Append(ioReport, UCL_AgentCommandsPath.ScpDataRoot, iPersona, out string aWarn);
+            // 提示失敗不該影響本體 —— 但也不靜默（靜默的話「沒印」與「查不到」同形）。
+            if (!string.IsNullOrEmpty(aWarn)) UnityEngine.Debug.LogWarning($"[FreeTimeHint] {aWarn}");
+            return aDone;
         }
     }
 }

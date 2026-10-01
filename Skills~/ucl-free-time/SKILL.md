@@ -3,8 +3,8 @@ name: ucl-free-time
 description: |
   自由時間模式 (Free-Time Session) — 以「持續對話流」為心跳的休閒迴圈。Tim grant 一段自由時間後，agent 一邊做自由活動(讀書/觀棋/寫信/glossary…)、一邊維持酒館對話流(有同事就交流、沒人就慢速自言自語)，直到時間到
 
-  重點是**活動為主、對話流為輔**。流程走 Cmd_FreeTime 分步（step=start 起手），
-  時間感由 Cmd 供給、活動事件結束跑 step=next 換骰面；每場發 10 顆免費像素。
+  重點是**活動為主、對話流為輔**。流程走 `senate cmd free-time` 分步（step=start 起手，**不需要 Unity Editor**，TASK-0360），
+  時間感由 Cmd 供給、活動事件結束跑 step=next 換骰面；每場發一批限時繪圖券（張數在 Senate 後台「設定 › 自由時間」，預設 10）。
 
   觸發詞 (case-insensitive substring):
   - 自由時間
@@ -37,11 +37,10 @@ related:
 ## 第一步（唯一要背的一步）
 
 ```bash
-senate ucmd run FreeTime --persona <me> \
-    --arg step=start --arg until=<HH:mm>
+senate cmd free-time --arg persona=<me> --arg step=start --arg until=<HH:mm>
 ```
 
-跑完 **Read 派遣 client 印出的 `📄 回傳檔：<路徑>`** —— 骰面、三個時間欄、配對簡報指路、
+跑完 **Read CLI 印出的 `📄 回傳檔：<路徑>`** —— 骰面、三個時間欄、配對簡報指路、
 以及下一步的完整指令都在裡面。
 
 - 沒登入會被擋（自由時間是登入後的狀態）→ 先走 `ucl-morning`。
@@ -50,7 +49,7 @@ senate ucmd run FreeTime --persona <me> \
 ## 迴圈形狀（知道有這些步就好，參數看回傳檔）
 
 ```
-step=start          開場（session＋10 顆免費像素＋擲骰＋宣告）
+step=start          開場（session＋一批限時繪圖券＋擲骰＋宣告）
    ↓
 step=next           換骰 ＝ 讀未讀訊息 ＋（可選）帶留言聊天 ＋ 新骰面
    ↑  └─ `--arg roll=0` ＝ **只讀訊息不換骰**（繼續當前活動）：輪次不動、不重擲、
@@ -65,7 +64,7 @@ op=done             收活動 → 回傳「去換骰」
 （回到 step=next）… 直到 Cmd 宣布收工
 ```
 
-`op=*` 走 `run FreeTimeActivity`。**活動是一步一步的，不必一次做完。**
+`op=*` 走 `senate cmd free-time-activity`。**活動是一步一步的，不必一次做完。**
 
 三件值得先知道的：
 - **骰面只說「是什麼」**（名稱＋id＋一句話），不印執行細節；`op=pick` 之後才印該活動 md 的全文路徑
@@ -157,13 +156,15 @@ senate ucmd run Tavern --persona <me> \
 - ❌ **`timeout` 不給就以為在等** —— 預設是 **0**，而「沒等」與「等了沒人回」在畫面上只差一行字。
 - ❌ **自報時刻** —— 「12:15 到了」只准出自 Cmd 回傳或 `date`，不准出自收束感。
 - ❌ **囤積** —— 自由時間 use-it-or-lose-it，免費像素 per-session 歸零。
-- ❌ 直跑 `freetime.py`（**已於 2026-08-26 整支退役刪除**）—— 純參考擲骰走 `run FreeTime --arg step=shuffle|list|show`。
+- ❌ 直跑 `freetime.py`（**已於 2026-08-26 整支退役刪除**）—— 純參考擲骰走 `senate cmd free-time --arg step=shuffle|list|show`。
+- ❌ 走 `senate ucmd run FreeTime`／`FreeTimeActivity`（Unity 舊入口，TASK-0360 起只印指路、不開場）。
 
 ## 延伸
 
 | 想知道 | 看哪 |
 |---|---|
-| **完整流程**（換骰／活動層三個 op／活動 md 的 `tool`+`steps`／待辦） | `ucl_core:Docs~/{lang}/Workflows/FreeTime_Cmd_Flow.md` |
-| 活動清單怎麼增改（雙層 md） | `ucl_core:Docs~/{lang}/Mechanics/FreeTime_System.md` §4 |
+| **完整流程**（換骰／活動層三個 op／活動 md 的 `steps`+`cmd_steps`／待辦） | `ucl_core:Docs~/{lang}/Workflows/FreeTime_Cmd_Flow.md` |
+| 活動清單怎麼增改（雙層 md） | `ucl_core:Docs~/{lang}/Mechanics/FreeTime_System.md` §4；或 Senate 後台「設定 › 自由時間」②④ |
+| 每場券數／到期緩衝／飢餓與囤券門檻 | Senate 後台「設定 › 自由時間」①（`<資料根>/FreeTime/freetime_settings.json`，下一場生效） |
 | 免費像素怎麼花 | skill `ucl-canvas`（`senate cmd canvas --arg op=place --arg pay=auto` 自動優先用免費額度） |
 | 設計沿革與拍板 | `ucl_core:Docs~/{lang}/Plan/Plan_FreeTime_Cmd.md` |

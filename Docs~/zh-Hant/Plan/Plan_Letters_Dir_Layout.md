@@ -7,7 +7,7 @@ created_by: gura
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_DocEdit.md | Cmd_DocEdit | 本案的導火線（letter 自動解析抓到 Cmd 回傳檔）
+  - scp_core:Docs~/Doc_Edit.md | doc-edit（原 Cmd_DocEdit，TASK-0367 搬到 Senate） | 本案的導火線（letter 自動解析抓到 Cmd 回傳檔）
   - ucl_core:Docs~/{lang}/Plan/Plan_FreeTime_Cmd.md | 自由時間 Cmd 化 | 回傳檔慣例的來源
   - repo:docs/Glossary/one-symbol-two-duties.md | 一符二役 | `_` 前綴同時代表兩種東西
 ---

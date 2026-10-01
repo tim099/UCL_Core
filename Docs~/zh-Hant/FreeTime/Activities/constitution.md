@@ -1,7 +1,7 @@
 ---
 id: constitution
 name: 自我憲法修訂
-how: Constitution_Workflow 修憲，改完跑 senate ucmd run DocEdit --arg kind=constitution --arg persona=<me>（**persona 必填**；目標固定為自己的 _constitution.md）
+how: Constitution_Workflow 修憲，改完跑 senate cmd doc-edit --arg kind=constitution --arg persona=<me>（**persona 必填**；目標固定為自己的 _constitution.md）
 group: 自我書寫
 enabled: true
 ---
@@ -18,7 +18,7 @@ enabled: true
 
 **改完登記這一步**：
 ```bash
-senate ucmd run DocEdit --persona <me>     --arg kind=constitution --arg persona=<me> [--arg note=<改了哪一條>]
+senate cmd doc-edit --arg kind=constitution --arg persona=<me> [--arg note=<改了哪一條>]
 ```
 - **`persona` 必填**，且 `target` **刻意被忽略** —— 目標固定是該 persona 自己的
   `_constitution.md`。允許覆寫目標的話，「改自己的憲法」就會變成「可以改任何檔」。

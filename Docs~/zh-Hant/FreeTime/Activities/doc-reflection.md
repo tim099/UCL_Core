@@ -1,7 +1,7 @@
 ---
 id: doc-reflection
 name: doc / SKILL reflection
-how: 改一份 doc/SKILL，改完跑 senate ucmd run DocEdit --arg kind=doc --arg persona=<me> --arg target=<路徑>（一步一份；Cmd 驗它真的動了並指回流程）
+how: 改一份 doc/SKILL，改完跑 senate cmd doc-edit --arg kind=doc --arg persona=<me> --arg target=<路徑>（一步一份；Cmd 驗它真的動了並指回流程）
 group: 知識沉澱
 enabled: true
 ---
@@ -12,7 +12,7 @@ enabled: true
 
 > **一步 ＝ 一份文件。** 改完之後跑：
 > ```bash
-> senate ucmd run DocEdit --persona <me> >     --arg kind=doc --arg persona=<me> --arg target=<改的那份 .md> [--arg note=<一句>]
+> senate cmd doc-edit --arg kind=doc --arg persona=<me> --arg target=<改的那份 .md> [--arg note=<一句>]
 > ```
 > ⚠ 那支 Cmd **不搬內容、不寫檔** —— 它站在「改完之後」：驗檔案真的動了（拿自由時間 session
 > 開場時刻當基準）、把這一步登記下來、並在回傳檔尾端指回 `op=done` / 換骰。

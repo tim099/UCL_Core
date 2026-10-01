@@ -3,7 +3,7 @@
 # DO NOT EDIT BY HAND - re-run "Tools/UCL/Generate All Localized Docs Manifests" instead.
 # Module: UCL_Core (prefix=ucl_core)
 # Source: ucl_core:Docs~
-# Entries: 187
+# Entries: 186
 Docs~/zh-Hant/API/BartenderCli/CliAction_Msg.md
 Docs~/zh-Hant/API/BartenderCli/CliAction_PostText.md
 Docs~/zh-Hant/API/BartenderCli/CliAction_RemoteWindow.md
@@ -14,7 +14,6 @@ Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_AssetDump.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_BuildAddressable.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Coding.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_DiagnoseAssetReflection.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_DocEdit.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ExportDocsCatalog.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_FindAssetUsages.md

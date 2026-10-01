@@ -125,14 +125,14 @@ senate cmd wake-brief --arg letters_root=<letters 根> --arg persona=<p> --arg o
 #     若仍印「⚠ 該立憲了」＝ 檔名／位置不對（必須是 letters/<p>/_constitution.md），不是快取
 
 # 登記與驗收（選用，但自由時間中做立憲時該跑 —— 它會回答「這份檔在本場真的被改過嗎」）
-senate ucmd run DocEdit --persona <p> --arg kind=constitution --arg persona=<p> --arg note="<一句心得>"
+senate cmd doc-edit --arg kind=constitution --arg persona=<p> --arg note="<一句心得>"
 ```
 
 > [!NOTE]
 > **立憲本體是「自己寫一個 .md」，沒有、也不需要一支會寫檔的 Cmd。**
-> `Cmd_DocEdit kind=constitution`（Tim 2026-08-18 拍板）**刻意不搬內容、不寫檔** ——
+> `senate cmd doc-edit --arg kind=constitution`（Tim 2026-08-18 拍板；2026-10-01 TASK-0367 從 Unity 搬到 Senate，不需要 Editor）**刻意不搬內容、不寫檔** ——
 > 它只做三件說得出讀數的事：解析目標路徑／stat 出實際 mtime／指回自由時間流程。
-> 理由寫在 `Cmd_DocEdit.cs` 檔頭：把整份文件塞進 CLI 參數，
+> 理由寫在 SCP_Core `SCP_DocEdit.cs` 檔頭（說明：`senate cmd doc --arg op=show --arg name=Doc_Edit`）：把整份文件塞進 CLI 參數，
 > 等於把編輯器換成一個**沒有 diff、沒有復原、沒有語法檢查**的通道。
 > ⚠ 不在自由時間中跑它會誠實說「沒有基準可比，只有 mtime 是事實」—— 那是設計，不是壞掉。
 

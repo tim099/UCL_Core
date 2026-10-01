@@ -3,7 +3,7 @@
 # DO NOT EDIT BY HAND - re-run "Tools/UCL/Generate All Localized Docs Manifests" instead.
 # Module: UCL_Core (prefix=ucl_core)
 # Source: ucl_core:Docs~
-# Entries: 199
+# Entries: 189
 Docs~/zh-Hant/API/BartenderCli/CliAction_Msg.md
 Docs~/zh-Hant/API/BartenderCli/CliAction_PostText.md
 Docs~/zh-Hant/API/BartenderCli/CliAction_RemoteWindow.md
@@ -75,7 +75,6 @@ Docs~/zh-Hant/Mechanics/FreeTime_System.md
 Docs~/zh-Hant/Mechanics/Portraits_System.md
 Docs~/zh-Hant/Mechanics/TRPG_Lite_RuleBook.md
 Docs~/zh-Hant/Plan/Plan_Audio_In_StreamWatch_Cmd.md
-Docs~/zh-Hant/Plan/Plan_AutoCommit_Single_Flight.md
 Docs~/zh-Hant/Plan/Plan_BugReport_System.md
 Docs~/zh-Hant/Plan/Plan_ChatTavern_Skill_Rework.md
 Docs~/zh-Hant/Plan/Plan_Cmd_Concurrency_Hardening.md
@@ -107,16 +106,11 @@ Docs~/zh-Hant/Plan/completed/Plan_SkillInstall_Marker_Poison_Fix.md
 Docs~/zh-Hant/Plan/completed/Plan_SkillInstall_Marker_Poison_Fix_Evidence.md
 Docs~/zh-Hant/Plan/completed/Plan_Tavern_Cmd_Doc_Dedup.md
 Docs~/zh-Hant/Plan/completed/Plan_UCL_Secret_Manager.md
-Docs~/zh-Hant/Spending/Items/book-donation.md
-Docs~/zh-Hant/Spending/Items/book-tip.md
-Docs~/zh-Hant/Spending/Items/canvas-pixel.md
-Docs~/zh-Hant/Spending/Items/rule-propose.md
 Docs~/zh-Hant/Tools/MBTI_Tool_Guide.md
 Docs~/zh-Hant/Tools/Python_Tools_Index.md
 Docs~/zh-Hant/Tools/TavernClient_SDK.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_AgentCommandsPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_AgentSkillManagerPage.md
-Docs~/zh-Hant/UCL_EditorPage/UCL_AutoCommitPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_BartenderAdminPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_BartenderCliCommandsPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_BartenderTimeRulePage.md
@@ -125,7 +119,6 @@ Docs~/zh-Hant/UCL_EditorPage/UCL_ChatTavernPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_CommonEditorPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_DiscordSettingsPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_DocSearchPage.md
-Docs~/zh-Hant/UCL_EditorPage/UCL_FreeTimeAdminPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_GitFlattenSyncPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_GitSubmoduleSyncPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_KnowledgeBaseAdminPage.md
@@ -162,8 +155,6 @@ Docs~/zh-Hant/Workflows/Bank_Region_Binding_Migration_Workflow.md
 Docs~/zh-Hant/Workflows/Bartender_Workflow.md
 Docs~/zh-Hant/Workflows/Book_Writing_Workflow.md
 Docs~/zh-Hant/Workflows/BuildPlayerCheck_FixLoop_Workflow.md
-Docs~/zh-Hant/Workflows/ChatTavern_Wait_Workflow.md
-Docs~/zh-Hant/Workflows/ChatTavern_Workflow.md
 Docs~/zh-Hant/Workflows/ClaudeCode_Update_Lock_Diagnose_Workflow.md
 Docs~/zh-Hant/Workflows/Commit_Workflow.md
 Docs~/zh-Hant/Workflows/CompileError_Diagnose_Workflow.md
@@ -172,7 +163,6 @@ Docs~/zh-Hant/Workflows/Create_Cmd_Workflow.md
 Docs~/zh-Hant/Workflows/Create_EditorPage_Workflow.md
 Docs~/zh-Hant/Workflows/Create_Persona_Workflow.md
 Docs~/zh-Hant/Workflows/Create_UCL_Asset_Workflow.md
-Docs~/zh-Hant/Workflows/Ding_Protocol_Workflow.md
 Docs~/zh-Hant/Workflows/Edit_Recompile_Loop_Workflow.md
 Docs~/zh-Hant/Workflows/FreeTime_Cmd_Flow.md
 Docs~/zh-Hant/Workflows/Glossary_Workflow.md

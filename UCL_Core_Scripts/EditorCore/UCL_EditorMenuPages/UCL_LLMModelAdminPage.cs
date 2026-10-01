@@ -725,7 +725,6 @@ namespace UCL.Core.EditorLib.Page
         //   🩸 2026-08-19 Tim 實測：試跑明明成功，畫面只剩「狀態與目錄已更新」——
         //     因為 RunOp 做完會呼叫 Refresh 對帳，而 Refresh 把報告區蓋掉了。
         //     操作結果與刷新訊息搶同一格 ⇒ 後到的贏，而畫面看起來像「什麼都沒跑出來」。
-        //     （同一個坑我在 UCL_AutoCommitPage 已經踩過一次，那裡的解法就是 quiet 參數。）
         async UniTask Refresh(bool iQuiet = false)
         {
             if (m_Busy) return;

@@ -4,7 +4,7 @@ slug: identity-account-unification
 status: **階段一施工中**（第 0 步／第 1a 步已完工並實測；1b 解析端與階段二的歸戶未動 —— §4.2 的人工拍板清單未拍完之前不動階段二）
 created_at: 2026-08-20T02:30:00Z
 created_by: kiara
-last_updated: 2026-09-29
+last_updated: 2026-10-01
 builders: [kiara（第 0 步／第 1a 步／換區重綁）]
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
@@ -410,7 +410,7 @@ persona 名同時是 Treasury 帳號的共 13 個，合計 **4,690** token —�
 | 步 | 做什麼 | 碰錢 | 驗收判準 |
 |---|---|---|---|
 | 0 | ✅ **已完成**（kiara 2026-08-20）：`UCL_CentralBankSettings.CurrencyId`（key `currency_id`、預設 `Ducat`、含檔名合法性守衛）＋ `UCL_BankAdminPage` 的「🪙 區域（貨幣）ID」面板（二段確認、寫入後讀回複驗） | ❌ | 編譯 errors=0；`CurrencyId` 讀回 `Ducat`（預設路徑）；`IsValidCurrencyId` 四格實測 `Florin`=True／`a/b`=False／空白=False／`..`=False。⏳ **值尚未設成 `Florin`** —— `Cmd_Invoke` 只呼叫 getter（實測 `getter=True`、args 被忽略）⇒ 無 CLI 寫入路徑，要在後台按一次（那一按同時也驗了面板） |
-| 1a | ✅ **已完成**（kiara 2026-08-20）：`UCL_LettersPath.BankDir/BankField` ＋ 接縫 `GetBankAccount`／`WriteBankAccount` ＋ `Cmd PersonaProfile` 三個 op（`get_bank`／`set_bank`／`migrate_bank`，後者**預設 dry_run**）＋ `UCL_AutoCommitPage` 收 `bank/` 群 ＋ **21 位綁定檔已落盤** | ❌ | 見下方「第 1a 步驗收讀數」 |
+| 1a | ✅ **已完成**：`UCL_LettersPath.BankDir/BankField` ＋ 接縫 `GetBankAccount`／`WriteBankAccount` ＋ PersonaProfile 三個 op（`get_bank`／`set_bank`／`migrate_bank`，後者**預設 dry_run**）＋ `senate cmd auto-commit` 收 `bank/` 群 ＋ **21 位綁定檔已落盤** | ❌ | 見下方「第 1a 步驗收讀數」 |
 | 1b | ⬜ Treasury 解析端接上：`Resolve()` 改讀綁定檔、⑥ 分支改 `Debug.LogError` ＋ 落央行 | ❌ | 21 位解析結果與現況**逐位相同**；故意刪一位的檔 ⇒ 出現 ErrorLog 且落央行；**Bar 那邊不受影響**（不同鍵） |
 | 2 | 建統一 `accounts` 表（§4.1 機械可導的部分）＋消費端逐支改讀它 | ❌ | 31＋48 兩邊的 id 全部有著落；mention 白名單集合**前後相同** |
 | 3 | `identities.json` 退場（agent 那半刪除、Discord/NPC 併入） | ❌ | Discord 顯示名前後相同（`UCL_DiscordIdentityResolver` 抽樣比對） |

@@ -4,7 +4,7 @@ slug: persona-registry-retirement
 status: **Phase 0-1 ＋ §8.1 已完工**（2026-08-19）；Phase 2 觀察期進行中，Phase 3-4 未動
 created_at: 2026-08-18T13:55:00Z
 created_by: calli
-last_updated: 2026-08-21
+last_updated: 2026-10-01
 builders: [summit（Phase 0／§8.5-8.7）, kiara（Phase 1／§8.1／消費端收斂／Phase 2 觀察）]
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
@@ -84,7 +84,7 @@ related:
 `_lib/ucl_paths.py`（`personas_dir()` / `persona_file()` 的唯一解析點）、
 `_lib/tavern_paths.py`（`PERSONAS_DIR` 委派上者）、
 `UCL_AwakeningService.cs`（`PersonasDir` / `ResolvePersonaFile`，C# 側唯一解析點）、
-`UCL_AgentCommandsPath.cs`、`UCL_AutoCommitPage.cs`（commit 範圍 `AwakenInit/` 前綴）、
+`UCL_AgentCommandsPath.cs`、
 `_lib/affinity_manager.py`（legacy，自己拼了 `REPO_ROOT/AgentCommands/AwakenInit/personas` —— **唯一一個沒走解析點的**）。
 
 ⇒ 好消息：**兩端各已有唯一解析點**，路徑遷移不必動 32 支。壞消息：`affinity_manager.py` 那條寫死的要一起收。
@@ -249,7 +249,7 @@ letters/<persona>/
 
 ### 4.2 Phase 1 的附帶落地（不在原分期表裡）
 
-- **遷移產物入版控**：`UCL_AutoCommitPage` 新增 `profile/` 群（kiara `277483e`，預設勾、在線者不勾）。
+- **遷移產物入版控**：`senate cmd auto-commit` 收 persona 信件庫的 `profile/` 群。
   理由：`profile/` 是**別人的讀取觸發**生成的，落地時該 persona 通常不在線 ⇒ 沒有人會 commit 它，
   而**身分現在住在那裡** —— 沒進版控等於「這個人是誰」只存在一台機器上。
 - **python 寫入端防護**：`awakening.save_registry` 加 `_freeze_legacy_identity()`（C# 對偶），

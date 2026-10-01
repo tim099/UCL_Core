@@ -74,8 +74,7 @@ namespace UCL.Core.EditorLib.Page
         {
             new ToolGroup("Fold.Git", "ToolBox.Group.Git",
                 new ToolEntry("ToolBox.GitFlattenSync", () => UCL_GitFlattenSyncPage.Create()),
-                new ToolEntry("ToolBox.GitSubmoduleSync", () => UCL_GitSubmoduleSyncPage.Create()),
-                new ToolEntry("ToolBox.AutoCommit", () => UCL_AutoCommitPage.Create())),
+                new ToolEntry("ToolBox.GitSubmoduleSync", () => UCL_GitSubmoduleSyncPage.Create())),
 
             new ToolGroup("Fold.AgentOps", "ToolBox.Group.AgentOps",
                 new ToolEntry("ToolBox.TaskManager", () => UCL_TaskManagerPage.Create()),

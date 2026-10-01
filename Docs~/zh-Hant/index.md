@@ -1,7 +1,7 @@
 ---
 title: UCL_Core 文件索引
 description: UCL_Core 框架的多語系文件入口 — 含 Agent Command 系統、UCL_Asset 資產系統、編輯器頁面、模組服務等四大主題分類
-last_updated: 2026-08-21
+last_updated: 2026-10-01
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 ---
 
@@ -101,7 +101,6 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [UCL_BartenderAdminPage](UCL_EditorPage/UCL_BartenderAdminPage.md) | 集中管理酒保報時、時間提醒與 daemon 執行狀態的 Editor 後台。 |
 | [UCL_DiscordSettingsPage](UCL_EditorPage/UCL_DiscordSettingsPage.md) | ⛔ **已移除（2026-09-28）** —— Discord 設定改在 Senate 後台（`senate ui --page discord-bot`）。 |
 | [UCL_PlurkAdminPage](UCL_EditorPage/UCL_PlurkAdminPage.md) | **Plurk 帳號管理** — 只分共用（公用）與個人；帳號 id ＝ secret 檔名 stem，憑證本體走 Secret Manager。解析三段（persona override → 共用預設 → unset）且回值帶 `Source`，**個人／共用由 Source 推導不另存欄位** |
-| [UCL_AutoCommitPage](UCL_EditorPage/UCL_AutoCommitPage.md) | **自動提交頁** — 機器生成檔分群→勾選→每群一筆 commit；含「⚙ Submodule 自動提交設定」可編輯區（設定 SOP 見 [AutoCommit_Config_Workflow](Workflows/AutoCommit_Config_Workflow.md)）|
 | [UCL_MissingReferencePage](UCL_EditorPage/UCL_MissingReferencePage.md) | **Missing Reference 排查／修復** — 掃出「欄位指著已刪除物件」與「缺腳本 Component」並可就地清空／移除。⚠ 乾淨的 null 與斷掉的引用在 Inspector 上都畫成 None，只有後者會炸；⛔ 不宣稱能修 Odin/PropertyEditor 那條 NRE |
 | [UCL_PropertyEditorProbe](UCL_EditorPage/UCL_PropertyEditorProbe.md) | **PropertyEditor 探針**（非頁面，static + Cmd_Invoke）— 查 Odin `UpdateOdinEditors → ClearEditorsAndRebuild` NRE 的觸發點；含 2026-09-15 破案紀錄（兇手是 `Preview` 視窗，**不是**資料壞掉）|
 | [UCL_CommonEditorPage](UCL_EditorPage/UCL_CommonEditorPage.md) | 編輯器頁面共通基底 |

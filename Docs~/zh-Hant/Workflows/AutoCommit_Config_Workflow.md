@@ -1,7 +1,7 @@
 ---
 title: 自動提交設定 — 把 repo 加入管理與設定分群規則
 description: 把一個 submodule（或任何 repo）加入 AutoCommit 管理的步驟、`.ucl_autocommit.json` 的欄位與判準、設定檔掀不動的地板、以及「怎麼確認真的照設定分群」的驗收法。
-last_updated: 2026-09-30 (入口改 `senate cmd auto-commit`／Senate「自動 Commit」頁，不分模式；規則下沉 SCP_Core；TASK-0340) | 2026-09-15
+last_updated: 2026-10-01
 target_audience: [AI_Agent, Tools_User]
 status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔宣告)
 ---
@@ -19,7 +19,6 @@ status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔
 > - 後台頁（掃描／勾選／執行 git／**設定編輯區**）：Senate「自動 Commit」（`senate ui --page auto-commit`）
 > - 提交規範速查（agent 入口）：skill `ucl-commit`
 > - 實作（SCP_Core）：`SCP_AutoCommitConfig`（設定模型）／`SCP_AutoCommitRules`（分群與地板）／`SCP_AutoCommit`（發現＋掃描＋提交）／`SCP_Cmd_AutoCommit`（Cmd）
-> - ⏳ Unity 端的 `UCL_AutoCommitPage` **準備退場**（TASK-0340）；`Cmd_AutoCommit` 已刪（TASK-0353）→ `senate cmd auto-commit`
 
 ---
 

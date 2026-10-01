@@ -27,8 +27,6 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.GitFlattenSync.Desc" => "把含 submodule 的 repo 展平成纯文件、同步到另一个 repo 的工作目录（来源只读、目标只写文件，两边 git 都不碰）。",
                 "ToolBox.GitSubmoduleSync" => "Git Submodule 同步",
                 "ToolBox.GitSubmoduleSync.Desc" => "批量对所有 submodule 切默认 branch / pull / push —— 一张状态表看谁 detached、谁 ahead，防止 submodule update 后分支跑掉。",
-                "ToolBox.AutoCommit" => "自动 Commit",
-                "ToolBox.AutoCommit.Desc" => "把 AgentCommands 自动生成的文件（酒馆消息 / Treasury / runtime state）分组、按钮触发各自成 commit，消息自动生成；ephemeral 文件永远排除。",
                 "ToolBox.Group.Diagnostics" => "🩺 诊断与修复",
                 "ToolBox.MissingReference" => "Missing Reference 排查",
                 "ToolBox.MissingReference.Desc" => "扫出「字段指着一个已被删除的对象」与「缺脚本的 Component」，逐条列出位置并可就地清空字段／移除 Component。⚠ 干净的 null 与断掉的引用在 Inspector 上都画成 None，只有后者会崩。",

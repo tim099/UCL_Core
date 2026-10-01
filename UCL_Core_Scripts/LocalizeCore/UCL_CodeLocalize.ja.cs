@@ -27,8 +27,6 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.GitFlattenSync.Desc" => "submodule を含む repo をプレーンなファイルへ展開し、別 repo の作業ディレクトリへ同期します（ソースは読み取りのみ、宛先はファイル書き込みのみ — どちらの git も触りません）。",
                 "ToolBox.GitSubmoduleSync" => "Git Submodule 同期",
                 "ToolBox.GitSubmoduleSync.Desc" => "全 submodule に対して既定 branch への checkout / pull / push を一括実行 — detached や ahead を一覧で把握し、submodule update 後のブランチずれを防ぎます。",
-                "ToolBox.AutoCommit" => "自動 Commit",
-                "ToolBox.AutoCommit.Desc" => "AgentCommands の自動生成ファイル（酒場メッセージ / Treasury / runtime state）をグループ分けし、ボタンで各グループを個別 commit（メッセージ自動生成）。ephemeral ファイルは常に除外。",
                 "ToolBox.Group.Diagnostics" => "🩺 診断と修復",
                 "ToolBox.MissingReference" => "Missing Reference 調査",
                 "ToolBox.MissingReference.Desc" => "「削除済みオブジェクトを指したままのフィールド」と「スクリプトが失われた Component」を列挙し、その場でフィールドのクリア／Component の削除ができる。⚠ 空の null と壊れた参照は Inspector 上ではどちらも None に見えるが、落ちるのは後者だけ。",

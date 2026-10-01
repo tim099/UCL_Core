@@ -34,10 +34,6 @@ namespace UCL.Core.EditorLib
             //      關掉讓它直接 fail，錯誤才會離開私有欄位（卡住的失敗最難抓）。
             //   ③ `-c core.quotepath=false` —— 預設 quotepath=true 會把非 ASCII 路徑印成
             //      八進位轉義（一個中文字＝三段反斜線碼），任何比對中文檔名的呼叫端都靜默失配。
-            //      此前只有 AutoCommit 自己釘（Cmd_AutoCommit :512），其他呼叫端裸奔 ——
-            //      calli 2026-08-26 移植 SCP_Git 時點名這格（seq 14385），護欄回釘在唯一出口上。
-            //      AutoCommit 自己那份重複帶同值無害，不逼它同步改。
-            // 簽名刻意不變 —— 既有呼叫端（SubmoduleSync / AutoCommit）一行都不用改。
             return UCL_ProcessCli.Run("git", "-c core.quotepath=false " + args, workDir, procTag, owner, timeoutMs,
                 env: new System.Collections.Generic.Dictionary<string, string>
                 {

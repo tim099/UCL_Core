@@ -47,7 +47,8 @@ namespace UCL.Core.EditorLib.AgentCommands
         public override string ArgsSchema =>
             "target_persona=<誰的場>（必填，不猜身分） | " +
             "confirm=1（必填 —— 這會寫別人的 session 檔，觀影場還會發薪） | " +
-            "reason=<一句話>（選填，預設 closed-by-cmd；會寫進 end_reason）";
+            "reason=<一句話>（選填，預設 closed-by-cmd；會寫進 end_reason） | " +
+            "allow_running=1（**只給晚安用**：reason 必須是 goodnight-sleep／goodnight-logout，才准關本人進行中的場並結算；TASK-0361）";
 
         public override string ExampleArgs => "target_persona=basecamp confirm=1";
 
@@ -66,6 +67,10 @@ namespace UCL.Core.EditorLib.AgentCommands
             string aReason = GetArg(args, "reason", "closed-by-cmd").Trim();
             string aConfirm = GetArg(args, "confirm", "").Trim();
             if (aReason.Length == 0) aReason = "closed-by-cmd";
+            // ⭐ TASK-0361：晚安在 Senate 就地做（解鎖／廣播），只把「關本人進行中的觀影場＋結算」交給這裡。
+            //   放行條件刻意綁死在 reason 上：旗標單獨出現（打錯、或別的呼叫端順手帶）⇒ 照舊擋進行中的場。
+            bool aGoodnightClose = GetArg(args, "allow_running", "").Trim() == "1"
+                                   && (aReason == "goodnight-sleep" || aReason == "goodnight-logout");
 
             // 不猜「現在是誰」—— 多 persona 環境猜錯會關掉別人的場，而那看起來完全正常。
             if (string.IsNullOrEmpty(aTarget))
@@ -97,7 +102,9 @@ namespace UCL.Core.EditorLib.AgentCommands
                           + $"　預定收工 {aSession.until_local}　active={aSession.active}");
 
             // ── 三態：進行中 ⇒ 擋而指路；已收工 ⇒ 冪等 no-op；殘留 ⇒ 這支的射程 ──
-            if (aRunning)
+            if (aRunning && aGoodnightClose)
+                aR.AppendLine($"- ⤷ 進行中的場，由晚安收工（reason=`{aReason}`，allow_running=1）—— 放行關場＋結算");
+            else if (aRunning)
             {
                 aR.AppendLine();
                 aR.AppendLine("## blocked —— 這場**還在進行中**，不從這裡關");

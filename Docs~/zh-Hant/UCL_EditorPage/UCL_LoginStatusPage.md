@@ -32,10 +32,12 @@ last_updated: 2026-09-27
 1. **Collision banner** — 同一個 `session_key` 出現多個 lock 時的警告。
    那代表同一次 session 開了兩個身分，是**分身**的前兆，不是顯示問題。
 2. **Active locks 表**（每列可操作）
-   - `登出`：走 `Cmd_GoodNight step=logout`（in-process，Tim 2026-08-13 拍板）——
+   - `登出`：走 `senate cmd goodnight-logout`（在背景執行緒等；TASK-0361 起 Editor 不碰 lock 檔）——
      **只解鎖、不寫收尾信**。要寫信走完整晚安流程。按下後有確認彈窗（取消／登出）。
    - `實際承載 agent`（可編輯 + 套用）：只影響 remote routing 與下次 morning 的 `--agent`，
      **不動顯示歸屬、不動 bank**。改錯不會把薪水發到別人帳上。
+     寫入走 `senate cmd persona-profile op=set_lock_actual_agent`（lock 與 profile 同一步、有審計）。
+   - `強制刪 lock`（最後手段，晚安跑不通時）：走 `senate cmd persona-profile op=force_release_lock`（有審計，不寫信不廣播）。
 3. **Persona 池**（多級排序）— 全部 persona 的 wake_count / agent / bank / 在線狀態。
 4. **手動登入表單** — 走 C# `UCL_AwakeningService`（與 `Cmd_GoodMorning` **同一份實作**），
    不再 spawn python。

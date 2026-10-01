@@ -142,7 +142,7 @@ timeout → `ensure_idle` 60 秒放棄 → 「後續指令無法執行」。
 出口清單就在那個檔裡）；`run_cmd.py` 隨 verdict 一起印 `📄 回傳檔：<路徑>`。
 動機：回傳檔位置（如 letters root）跨專案會漂，caller 靠 skill 文字背路徑會讀錯
 （wake#48 血證）——路徑由落檔的那隻手回報，天生不漂。舊版 result 檔沒有此欄，
-python 端靜默跳過。目前接上的 handler：Cmd_GoodMorning / Cmd_GoodNight（`WritePayload`）。
+python 端靜默跳過。目前接上的 handler：Cmd_GoodMorning（`WritePayload`；Cmd_GoodNight 已於 TASK-0361 刪除）。
 
 失敗後要重試：讀 `_cmd_errors/<id>.md` 修好參數，**重新 submit 一筆** ——
 不再有「改 queue 裡那筆繼續嘗試」的模式。

@@ -49,17 +49,14 @@ senate cmd goodnight-check --arg persona=<P>
 
 ## 誰在跑、什麼時候還會用到 Editor
 
-- 五步的邏輯只有一份：SCP_Core 的 `SCP_Goodnight`。`senate cmd goodnight-*` 在 senate.exe 裡就地呼叫它；
-  Editor 的 `senate ucmd run GoodNight` 也呼叫同一份（那條路還在，但要 Editor 開著）。
+- 五步的邏輯只有一份：SCP_Core 的 `SCP_Goodnight`，**只在 senate.exe 裡就地執行**（Unity 的 `Cmd_GoodNight` 已刪，TASK-0361）。
+  lock 的刪除只發生在 Senate。
 - 下線廣播交給酒館 Server（`tavern-write`，沒開會自動起）；廣播是 best-effort，沒發不擋下線（同事看 lock 判在線）。
-- sleep／logout 只有兩段真的要 Editor：
-  - 本人有**進行中的觀影場** ⇒ 結算（付錢／收播公告／關錄影頁）只有 Editor 有；
-  - 收工閘帶 `skip_reason` ⇒ 理由要**寫進那幾張單的時間線**，單子寫入端只有 Editor 有。
+- sleep／logout 只有一段真的要 Editor：本人有**進行中的觀影場** ⇒ 結算（付錢／收播公告／關錄影頁）只有 Editor 有。
 - 處置（Tim 2026-09-26 拍板：**不得因為 Editor 沒開卡住晚安**）：
-  - Editor **活著**（酒保心跳 ≤4 秒）⇒ 整步自動交給 `goodnight-sleep-editor`／`goodnight-logout-editor`；
-  - Editor **沒開** ⇒ 照走晚安，**只跳過那一段**，回傳檔 `## ⚠ 因 Editor 沒開而跳過的段` 逐條寫明：
-    觀影場留著（到期成殘留，殘留結算會補付）、skip 理由改印進回傳檔與下線廣播。
-  - ⚠ 交給 Editor 那一趟若逾時 ⇒ **不會**改走本地（它可能稍後才執行，重複下線比晚一點下線糟）—— 看回傳檔與 lock 再決定。
+  - Editor **活著**（酒保心跳 ≤4 秒）⇒ **只把那一段**（觀影場關場＋結算）交給 Editor 的 `SessionClose`；
+    解鎖與下線廣播照舊在 Senate 就地做。場沒關成 ⇒ 到期成殘留（殘留結算會補付），**下線照走**。
+  - Editor **沒開** ⇒ 照走晚安，**只跳過那一段**，回傳檔 `## ⚠ 因 Editor 沒開而跳過的段` 逐條寫明。
 - 收尾信寫入有**防覆寫**：目標編號已有信就擋（編號推導與磁碟不一致時，蓋掉舊信是最糟的結果）。
 
 ## 收尾信專屬欄位：工作外生活與心境沉澱（☕）

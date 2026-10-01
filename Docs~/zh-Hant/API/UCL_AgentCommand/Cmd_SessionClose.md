@@ -26,6 +26,8 @@ target_audience: [AI_Agent, Tools_Maintainer]
 - `target_persona=<誰的場>`（必填，**不猜身分**）
 - `confirm=1`（必填 —— 這會**寫別人的 session 檔**，觀影場還會**發薪**）
 - `reason=<一句話>`（選填，預設 `closed-by-cmd`；會寫進 `end_reason`）
+- `allow_running=1`（**只給晚安用**，TASK-0361）：reason 是 `goodnight-sleep`／`goodnight-logout` 時才放行關本人**進行中**的場並結算。
+  Senate 的晚安就地解鎖，只把這一段交過來；旗標單獨出現（reason 不對）照舊擋進行中的場。
 
 ```bash
 senate ucmd run SessionClose --arg target_persona=<誰> --arg confirm=1 --arg reason=<一句話>

@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
-using Cysharp.Threading.Tasks;                      // logout 走 Cmd_GoodNight in-process（UniTaskVoid/Forget）
+using Cysharp.Threading.Tasks;                      // logout 在背景緒等 `senate cmd goodnight-logout`（UniTaskVoid/Forget）
 using UCL.Core.EditorLib.AgentCommands;
 using UCL.Core.EditorLib.AgentCommands.Awakening;   // UCL_AwakeningService（morning 已遷 C#，Cmd_GoodMorning 同一份實作）
 using UCL.Core.JsonLib;
@@ -656,46 +656,18 @@ namespace UCL.Core.EditorLib.Page
                 Debug.LogWarning("[LoginStatus] 請先選擇實際 Agent 再套用");
                 return;
             }
-            string lockPath = AgentCommands.Awakening.UCL_AwakeningService.LockPath(persona);   // 唯一路徑實作（TASK-0105：letters/<p>/profile/_session.json）
-            if (!File.Exists(lockPath))
-            {
-                Debug.LogWarning($"[LoginStatus] 套用實際 Agent 失敗：lock 不存在（{persona} 沒在線）");
-                return;
-            }
-            if (!AgentCommands.UCL_PersonaProfile.Exists(persona))
-            {
-                Debug.LogWarning($"[LoginStatus] 套用實際 Agent 失敗：查無此 persona（{persona}）");
-                return;
-            }
-            try
-            {
-                var lockData = JsonData.ParseJson(File.ReadAllText(lockPath));
-                lockData["actual_agent"] = new JsonData(value);
-                AtomicWriteUtf8(lockPath, lockData.ToJsonBeautify());
-                // persona 側走 Senate 唯一寫入端（`senate cmd persona-profile`，TASK-0361；actor/reason 必填＋審計 jsonl）——
-                // 🩸 BUG-29 ②：這裡原本直讀直寫中央 json，繞過審計；那個檔 2026-08-21 起也不存在了。
-                if (!AgentCommands.UCL_PersonaProfileSenateBridge.SetField(persona, "actual_agent", value,
-                        "UCL_LoginStatusPage", "後台套用實際承載 agent", out string aErr))
+            // ⭐ TASK-0361（Tim 2026-10-01「lock 檔也一起收進 Senate」）：lock 與 profile 兩邊**同一步**由 Senate 改
+            //   （`senate cmd persona-profile op=set_lock_actual_agent`，有審計）。Editor 這側不再碰 lock 檔。
+            //   🩸 舊版在這裡直讀直寫 lock（`File.Copy` 覆寫，非原子），再另外寫 profile —— 兩步中間失敗就是半套。
+            var (aExit, aOut) = AgentCommands.UCL_PersonaProfileSenateBridge.Run("set_lock_actual_agent",
+                new Dictionary<string, string>
                 {
-                    Debug.LogWarning($"[LoginStatus] lock 已更新但 persona 側寫入失敗（{persona}）：{aErr}");
-                    LoadData();
-                    return;
-                }
-                Debug.Log($"[LoginStatus] {persona} actual_agent → {value}（顯示 Agent / bank 未變）");
-                LoadData();
-            }
-            catch (Exception exception)
-            {
-                Debug.LogWarning($"[LoginStatus] 套用實際 Agent 失敗：{exception.Message}");
-            }
-        }
-
-        static void AtomicWriteUtf8(string path, string content)
-        {
-            string tempPath = path + ".actual-agent.tmp";
-            File.WriteAllText(tempPath, content, new UTF8Encoding(false));
-            File.Copy(tempPath, path, true);
-            File.Delete(tempPath);
+                    ["persona"] = persona, ["value"] = value,
+                    ["actor"] = "UCL_LoginStatusPage", ["reason"] = "後台套用實際承載 agent",
+                });
+            if (aExit == 0) Debug.Log($"[LoginStatus] {persona} actual_agent → {value}（lock＋profile；顯示 Agent / bank 未變）");
+            else Debug.LogWarning($"[LoginStatus] 套用實際 Agent 失敗（{persona}，exit {aExit}）：{aOut}");
+            LoadData();
         }
 
         // 區塊職責：登出確認彈窗（取消／登出）—— 防誤按（Tim 2026-05-16）
@@ -719,9 +691,11 @@ namespace UCL.Core.EditorLib.Page
             );
         }
 
-        // 區塊職責：登出 — 走 Cmd_GoodNight step=logout（in-process，2026-08-13 Tim 拍板：
-        //          登出透過 CMD、可單獨跑、persona 顯式必填；不再 spawn awakening.py goodnight）
+        // 區塊職責：登出 — 走 `senate cmd goodnight-logout`（TASK-0361：Unity 的 Cmd_GoodNight 已刪，lock 只由 Senate 刪）。
+        //          （2026-08-13 Tim 拍板：登出透過 CMD、可單獨跑、persona 顯式必填）
         // 物理意義：logout = 不寫信的 cleanup（不偽造心得信，廣播標明未留信），與晚安全流程解耦。
+        // ⚠ 那顆 CLI 要在**背景執行緒**上等：本人有觀影場時它會排一筆 SessionClose 給本 Editor 結算，
+        //   主緒卡住的話那一筆永遠跑不到（互等到逾時）。
         void RunLogout(string persona, string agent)
         {
             if (m_AwakeningRunning)
@@ -730,16 +704,19 @@ namespace UCL.Core.EditorLib.Page
                 return;
             }
             m_AwakeningRunning = true;
-            var aArgs = new Dictionary<string, string> { { "step", "logout" }, { "persona", persona } };
-            RunLogoutAsync(aArgs, persona).Forget();
+            RunLogoutAsync(persona).Forget();
         }
 
-        async Cysharp.Threading.Tasks.UniTaskVoid RunLogoutAsync(Dictionary<string, string> iArgs, string iPersona)
+        async Cysharp.Threading.Tasks.UniTaskVoid RunLogoutAsync(string iPersona)
         {
             try
             {
-                await new Cmd_GoodNight().ExecuteAsync(iArgs, System.Threading.CancellationToken.None);
-                Debug.Log($"[LoginStatus] ✓ logout {iPersona} 完成（詳見 letters/{iPersona}/cmd/goodnight_logout.md）");
+                var (aExit, aOut) = await Cysharp.Threading.Tasks.UniTask.RunOnThreadPool(() =>
+                    AgentCommands.UCL_PersonaProfileSenateBridge.RunCmd("goodnight-logout",
+                        new Dictionary<string, string> { ["persona"] = iPersona }, 300));
+                await Cysharp.Threading.Tasks.UniTask.SwitchToMainThread();
+                if (aExit == 0) Debug.Log($"[LoginStatus] ✓ logout {iPersona} 完成（詳見 letters/{iPersona}/cmd/goodnight_logout.md）");
+                else Debug.LogError($"[LoginStatus] logout {iPersona} 失敗（exit {aExit}）：{aOut}");
             }
             catch (Exception e)
             {
@@ -768,15 +745,15 @@ namespace UCL.Core.EditorLib.Page
                     string.Format(UCL_CodeLocalize.Get("LoginStatus.Dialog.ForceRm.BodyFmt"), lockPath),
                     new ButtonData(UCL_CodeLocalize.Get("LoginStatus.Btn.ConfirmRemove"), () =>
                     {
-                        try
-                        {
-                            File.Delete(lockPath);
-                            Debug.Log($"[LoginStatus] lock removed: {lockPath}");
-                        }
-                        catch (Exception e)
-                        {
-                            Debug.LogError($"[LoginStatus] force remove failed: {e.Message}");
-                        }
+                        // ⭐ TASK-0361：刪 lock 由 Senate 執行（`persona-profile op=force_release_lock`，有審計；Editor 不碰 lock 檔）
+                        var (aExit, aOut) = AgentCommands.UCL_PersonaProfileSenateBridge.Run("force_release_lock",
+                            new Dictionary<string, string>
+                            {
+                                ["persona"] = persona, ["actor"] = "UCL_LoginStatusPage",
+                                ["reason"] = "後台強制刪 lock（最後手段：晚安跑不通）",
+                            });
+                        if (aExit == 0) Debug.Log($"[LoginStatus] lock removed（經 Senate）: {lockPath}");
+                        else Debug.LogError($"[LoginStatus] force remove failed（exit {aExit}）: {aOut}");
                         LoadData();
                     }, UCL.Core.UI.UCL_GUIStyle.GetButtonStyle(Color.red)),
                     new ButtonData(UCL_CodeLocalize.Get("Cancel"), () =>
@@ -784,22 +761,6 @@ namespace UCL.Core.EditorLib.Page
 
                     }));
 
-            //if (!EditorUtility.DisplayDialog(
-            //    "Force Remove Lock",
-            //    $"確定強制刪除 lock?\n\n{lockPath}\n\n注意: persona registry status 不會自動改成 offline, 需後續手動修正。建議優先用 Logout (走 goodnight ritual)。",
-            //    "確定 ✂", "取消"))
-            //{
-            //    return;
-            //}
-            //try
-            //{
-            //    File.Delete(lockPath);
-            //    Debug.Log($"[LoginStatus] lock removed: {lockPath}");
-            //}
-            //catch (Exception e)
-            //{
-            //    Debug.LogError($"[LoginStatus] force remove failed: {e.Message}");
-            //}
             //LoadData();
         }
 

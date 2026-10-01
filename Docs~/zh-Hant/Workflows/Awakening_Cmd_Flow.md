@@ -1,6 +1,6 @@
 ---
 title: Awakening Cmd 完整流程（早安四步＋晚安四步＋自由時間三步 — 參考文件）
-description: Cmd_GoodMorning／Cmd_GoodNight／Cmd_FreeTime 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
+description: Cmd_GoodMorning／goodnight-*（Senate）／Cmd_FreeTime 分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
 last_updated: 2026-09-26 (晚安五步也改在 senate.exe 就地執行；只有觀影結算與收工閘 skip 寫單兩段要 Editor，沒開就跳過；TASK-0305) | 2026-09-26 (早安四步改在 senate.exe 就地執行、不需要 Editor；Editor 路改呼叫同一份 SCP_Core；TASK-0303) | 2026-09-15 (escape hatch 形狀的出處標為已退場工具；TASK-0187)
 target_audience: [AI_Agent, Developer]
 aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]
@@ -162,16 +162,16 @@ senate cmd goodnight-sleep    --arg persona=<P> [--arg-file summary=<檔>] [--ar
 senate cmd goodnight-logout   --arg persona=<P> [--arg note=<附註>]          # 獨立 cleanup，不寫信
 ```
 
-> ⚠ 邏輯只有一份：SCP_Core `SCP_Goodnight`。Editor 的 `senate ucmd run GoodNight --arg step=<…>` 也呼叫它
-> （那條路還在，但要 Editor 開著）。下線廣播交給酒館 Server（`tavern-write`），best-effort。
+> ⚠ 邏輯只有一份：SCP_Core `SCP_Goodnight`，**只在 Senate 執行**（Unity 的 `Cmd_GoodNight` 已刪，TASK-0361）。
+> 下線廣播交給酒館 Server（`tavern-write`），best-effort。lock（`profile/_session.json`）的刪除只發生在這裡。
 >
-> 📌 **只有兩段要 Editor**（sleep／logout）：本人**進行中的觀影場**要結算（付錢／收播公告／關錄影頁），
-> 以及收工閘帶 `skip_reason` 時要把理由**寫進單子時間線**（單子寫入端只有 Editor）。
+> 📌 **只有一段要 Editor**（sleep／logout）：本人**進行中的觀影場**要結算（付錢／收播公告／關錄影頁）。
+> （收工閘 `skip_reason` 寫進單子那一段，TASK-0349 起走 `senate cmd task op=wrapup_skip`。）
 > Tim 2026-09-26 拍板：**不得因為 Editor 沒開卡住晚安** ⇒
-> - Editor **活著**（酒保心跳 `ChatTavern/bartender/_heartbeat.txt` ≤4 秒）⇒ 整步自動交給 `goodnight-sleep-editor`／`goodnight-logout-editor`；
-> - Editor **沒開** ⇒ 照走，只跳過那一段，回傳檔 `## ⚠ 因 Editor 沒開而跳過的段` 逐條寫明
->   （觀影場留著 → 到期成殘留、殘留結算補付；skip 理由改印進回傳檔與下線廣播）；
-> - 交給 Editor 那一趟逾時 ⇒ **不改走本地**（逾時＝不知道，Editor 可能稍後才執行 ⇒ 會重複下線）。
+> - Editor **活著**（酒保心跳 `ChatTavern/bartender/_heartbeat.txt` ≤4 秒）⇒ **只把那一段**（觀影場關場＋結算）交給 Editor 的
+>   `SessionClose`（`allow_running=1`，只對 `goodnight-*` reason 放行）；解鎖、作廢 token、下線廣播照舊在 Senate 就地做。
+>   判準是回讀 session 檔（`active=false`），⛔ 不是 Editor 說什麼；沒關成 ⇒ 到期成殘留、殘留結算補付，**下線照走**。
+> - Editor **沒開** ⇒ 照走，只跳過那一段，回傳檔 `## ⚠ 因 Editor 沒開而跳過的段` 逐條寫明。
 > ⛔ 判斷 Editor 在不在用**心跳**，不用「送出去等逾時」。
 >
 > 📌 收尾信「第二個寫者」的顧慮（TASK-0095 當年不做原生 letter 的理由）已經不成立：

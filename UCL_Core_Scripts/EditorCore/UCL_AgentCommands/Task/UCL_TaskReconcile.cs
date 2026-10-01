@@ -189,7 +189,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         {
             if (e == null) return false;
             // ⭐ TASK-0349：寫入端是 Senate Server ⇒ 轉交 `senate cmd task op=wrapup_skip`（⛔ Editor 不再有寫入面）。
-            //   ⚠ 本函式同步等那顆 CLI —— 呼叫端（`Cmd_GoodNight` sleep）已經在背景緒上。
+            //   ⚠ 本函式同步等那顆 CLI —— 呼叫端必須在背景緒上（原呼叫端 Cmd_GoodNight 已於 TASK-0361 刪除）。
             UCL_TaskSenateResult r;
             try
             {

@@ -29,6 +29,19 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// </summary>
         public static (int exitCode, string output) Run(string iOp, IDictionary<string, string> iArgs)
         {
+            var a = new Dictionary<string, string>(StringComparer.Ordinal) { ["op"] = iOp };
+            if (iArgs != null) foreach (var kv in iArgs) a[kv.Key] = kv.Value;
+            return RunCmd("persona-profile", a, OUTER_TIMEOUT_SEC);
+        }
+
+        /// <summary>
+        /// 跑任意一支 `senate cmd &lt;iCmd&gt;`（TASK-0361：登入狀態頁的登出改走 `goodnight-logout`）。
+        /// <para>⚠ 同步等 —— `goodnight-logout` 可能要等酒館 Server 與 Editor 的 SessionClose（觀影結算），
+        /// 呼叫端**必須在背景執行緒上呼叫**（否則 Editor 主緒卡住 ⇒ 它自己的 SessionClose 永遠跑不到 ⇒ 互等到逾時）。</para>
+        /// </summary>
+        public static (int exitCode, string output) RunCmd(string iCmd, IDictionary<string, string> iArgs, double iTimeoutSec)
+        {
+            string aLabel = iCmd + (iArgs != null && iArgs.TryGetValue("op", out string aOpV) ? " op=" + aOpV : "");
             var aTmps = new List<string>();
             var aOut = new StringBuilder();
             var aWatch = Stopwatch.StartNew();
@@ -39,13 +52,13 @@ namespace UCL.Core.EditorLib.AgentCommands
                 {
                     aProc.StartInfo.FileName = SENATE_EXE_NAME;
                     aProc.StartInfo.ArgumentList.Add("cmd");
-                    aProc.StartInfo.ArgumentList.Add("persona-profile");
-                    aProc.StartInfo.ArgumentList.Add("--arg"); aProc.StartInfo.ArgumentList.Add("op=" + iOp);
+                    aProc.StartInfo.ArgumentList.Add(iCmd);
                     aProc.StartInfo.ArgumentList.Add("--arg"); aProc.StartInfo.ArgumentList.Add("data_root=" + UCL_AgentCommandsPath.DataRoot);
                     if (iArgs != null)
                         foreach (var kv in iArgs)
                         {
                             if (kv.Value == null) continue;
+                            if (kv.Key == "op") { aProc.StartInfo.ArgumentList.Add("--arg"); aProc.StartInfo.ArgumentList.Add("op=" + kv.Value); continue; }
                             // 每個值一顆檔：內文含引號／換行／中文，在 argv 上是地雷（⛔ 不分「哪些夠短」）
                             string aTmp = Path.Combine(Path.GetTempPath(), "ucl_pp_arg_" + Guid.NewGuid().ToString("N") + ".txt");
                             File.WriteAllText(aTmp, kv.Value, new UTF8Encoding(false));
@@ -68,13 +81,13 @@ namespace UCL.Core.EditorLib.AgentCommands
                         return (-1, "叫不到 `senate`（PATH 上沒有它）⇒ **這一筆沒有寫**。persona 檔只由 Senate 寫（TASK-0361，⛔ 沒有本地退路）。"
                                     + "　出路：把 Senate 的 `publish` 加進 PATH。原始錯誤：" + e.Message);
                     }
-                    using (UCL_ProcessRegistryService.RegisterScope(aProc, TAG, $"persona 寫入委派（senate cmd persona-profile op={iOp}）",
+                    using (UCL_ProcessRegistryService.RegisterScope(aProc, TAG, $"Senate 寫入委派（senate cmd {aLabel}）",
                                                                     nameof(UCL_PersonaProfileSenateBridge)))
                     {
                         aProc.BeginOutputReadLine();
                         aProc.BeginErrorReadLine();
-                        if (!aProc.WaitForExit((int)(OUTER_TIMEOUT_SEC * 1000)))
-                            return (-2, $"`senate cmd persona-profile op={iOp}` 等了 {OUTER_TIMEOUT_SEC}s 還沒結束 —— 這是「**不知道**」不是「沒寫」。"
+                        if (!aProc.WaitForExit((int)(iTimeoutSec * 1000)))
+                            return (-2, $"`senate cmd {aLabel}` 等了 {iTimeoutSec}s 還沒結束 —— 這是「**不知道**」不是「沒寫」。"
                                         + "⛔ 不要直接重打，先回讀那個欄位。已收到的輸出：\n" + aOut);
                         aProc.WaitForExit();
                         aExit = aProc.ExitCode;
@@ -83,7 +96,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
             finally
             {
-                Debug.Log($"[PersonaProfile] ⏱ senate cmd persona-profile op={iOp} 🔢 hop_ms = {aWatch.ElapsedMilliseconds}（exit={aExit}）");
+                Debug.Log($"[PersonaProfile] ⏱ senate cmd {aLabel} 🔢 hop_ms = {aWatch.ElapsedMilliseconds}（exit={aExit}）");
                 foreach (string t in aTmps) { try { File.Delete(t); } catch (Exception) { } }
             }
             return (aExit, aOut.ToString());

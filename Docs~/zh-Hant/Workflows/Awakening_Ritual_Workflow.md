@@ -3,7 +3,7 @@ title: Awakening 儀式工作流 (Awakening Ritual Workflow)
 last_updated: 2026-09-27 (session token 只住 lock，`_session/` 退場 —— TASK-0307)
 status: active
 theme: persona_lifecycle
-summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安四步（走 Cmd_GoodMorning，需 Editor）：step=wake（守衛+狀態寫入）→ step=brief → 讀 wake brief → step=intro（單則上線自介+catchup 指路）；晚安（走 Cmd_GoodNight）：step=check（收尾清單+酒館最後一眼）→ [人工收尾] → step=letter（親筆收尾信）→ step=sleep（單則下線廣播）；cleanup 走 step=logout 單獨跑。
+summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安（走 `senate cmd morning-*`，不需要 Editor）：morning-wake（守衛+狀態寫入）→ morning-brief → 讀 wake brief → morning-intro（單則上線自介）→ morning-catchup；晚安（走 `senate cmd goodnight-*`）：goodnight-check（收尾清單+酒館最後一眼）→ [人工收尾] → goodnight-letter（親筆收尾信）→ goodnight-sleep（單則下線廣播）；cleanup 走 goodnight-logout 單獨跑。
 audience: Tim / agent (Claude / Antigravity / Gemini / Zeta / Codex)
 canonical_term: Awakening Ritual
 related:
@@ -262,16 +262,16 @@ Step 1. 收尾兩件（寫 letter 前）：
             而系統被動收費同期佔全部出帳的 97%。問題不是沒地方花，是沒有人主動花 ——
             跟 commit 打款停 82 天同一隻病：**規則長在自覺上就會死**，所以掛到必經節點上。
 
-Step 0'. senate ucmd run GoodNight --arg step=check --arg persona=<P>
-        （2026-08-13 起走 Cmd_GoodNight；唯讀起手 —— 回傳檔含「酒館最後一眼」與
+Step 0'. senate cmd goodnight-check --arg persona=<P>
+        （唯讀起手 —— 回傳檔含「酒館最後一眼」與
           上面 Step 1 那串人工收尾的 checklist。之後照回傳檔 next 走，本清單只是全貌。）
 
 Step 2. 寫 letter body（第一人稱，格式見下；專注當天心得、感想、心境校正與哲學思考，非工作內容流水帳）+ 自決 perturbation：
         0.02 尋常一天 / 0.05~0.10 中等 reframe / 0.10~0.20 重大 reframe day
 
-Step 3. senate ucmd run GoodNight --arg step=letter --arg persona=<P> --arg-file letter_body=<檔>
+Step 3. senate cmd goodnight-letter --arg persona=<P> --arg-file letter_body=<檔>
         然後
-        senate ucmd run GoodNight --arg step=sleep  --arg persona=<P> --arg-file summary=<檔> [--arg perturbation=<X>]
+        senate cmd goodnight-sleep --arg persona=<P> --arg-file summary=<檔>
         分流判準：「願意貼公司群組嗎？」願意→summary（併進下線廣播），不願意→letter（只落磁碟）。
         **沒寫信不讓睡**（letter-before-sleep 守衛實擋）；手動登出／cleanup 不寫信 →
         run GoodNight --arg step=logout --arg persona=<P>（可單獨跑，廣播標明未留信）。
@@ -373,7 +373,7 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 ### 🧪 測試殼 `Template`
 
 要驗這條鏈**不要拿真人 persona 當白老鼠**（2026-08-12 有人為此付掉一個真實的醒來編號）。
-用 `Template`：`senate ucmd run GoodMorning --arg step=wake --arg persona=Template --arg actual_agent=ClaudeCode --arg model=test`。
+用 `Template`：`senate cmd morning-wake --arg persona=Template --arg actual_agent=ClaudeCode --arg model=test`。
 規矩與範本資料見 `letters/Template/README.md`。**反覆跑不會膨脹 wake_count**（真相源是磁碟信件數）。
 
 ---

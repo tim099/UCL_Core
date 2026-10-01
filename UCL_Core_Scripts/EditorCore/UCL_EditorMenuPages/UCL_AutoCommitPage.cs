@@ -1,6 +1,6 @@
 // ⏳ **準備退場**（Tim 2026-09-30，TASK-0340）：已移植到 Senate「自動 Commit」頁（`senate ui --page auto-commit`）
 //    ＋ `senate cmd auto-commit`；規則與引擎在 SCP_Core（SCP_AutoCommitRules／SCP_AutoCommitConfig／SCP_AutoCommit）。
-//    ⚠ 本頁的提交路徑**沒有** Cmd_AutoCommit 那三道 BUG-30 守衛（呼叫前已 staged 擋／pathspec 提交／提交後對帳），
+//    ⚠ 本頁的提交路徑**沒有** Senate 版（SCP_AutoCommit）那三道 BUG-30 守衛（呼叫前已 staged 擋／pathspec 提交／提交後對帳），
 //      失敗時還整個 `git reset` —— 退場前別再往這裡加功能，要改去改 Senate 那一側。
 // 區塊職責：自動 Commit 頁 — 把「機器自動生成的檔」分群、一鍵各自成 commit
 // 物理意義：兩種掃描對象，同一套「分群→勾選→每群一筆 commit」機制：
@@ -58,7 +58,7 @@ using UCL.Core.UI;
 using UnityEditor;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
-// 分群規則已抽到 UCL_AutoCommitRules（單一真相源；Cmd_AutoCommit 共用）——
+// 分群規則已抽到 UCL_AutoCommitRules（單一真相源）——
 // 別名讓本頁既有的 `GroupDef` 寫法原樣可用，避免整頁改名生出無意義的 diff。
 using GroupDef = UCL.Core.EditorLib.AgentCommands.UCL_AutoCommitRules.GroupDef;
 
@@ -83,7 +83,7 @@ namespace UCL.Core.EditorLib.Page
             PersonaLetters = 1,
         }
 
-        // 規則本體在 UCL_AutoCommitRules（本頁與 Cmd_AutoCommit 共用同一份）。
+        // 規則本體在 UCL_AutoCommitRules（本頁不自持一份）。
         // 🩸 為什麼不是各留一份：這種規則的錯配等級是「檔進錯 commit」，
         //   而兩份規則漂掉之後，兩邊各自看起來都正常。
         GroupDef[] CurrentGroupDefs

@@ -282,7 +282,6 @@ sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 ## 10. 相關文件
 
 - [`UCL_CompileErrorTracker.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/UCL_CompileErrorTracker.cs) — Tracker 本體
-- [`Cmd_GetCompileErrors.cs`](../../../UCL_Core_Scripts/EditorCore/UCL_AgentCommands/CMD/Cmd_GetCompileErrors.cs) — Cmd 包裝（healthy 狀態才用）
 - `senate cmd unity-recompile` ／ `senate cmd unity-compile-status` — **主路徑**（Senate CLI，2026-09-07 起）
 - `check_compile.py` — ⛔ **已於 2026-09-10 整支刪除**（歷史見 `git log`）；`--fallback-log` 沒有替代品，`--editor-alive` 有（stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`）
 - [Workflows/Create_Cmd_Workflow](Create_Cmd_Workflow.md) — 新增 Cmd SOP

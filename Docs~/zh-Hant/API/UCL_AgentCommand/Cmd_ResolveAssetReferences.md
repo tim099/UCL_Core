@@ -112,5 +112,4 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 ## 7. 關聯文件
 - [UCL_AgentCommand API](./UCL_AgentCommand.md)
-- [Cmd_DebugLog API](./Cmd_DebugLog.md)
 - [Blueprint_Workflow](eov_docs:Workflows/Blueprint_Workflow.md)

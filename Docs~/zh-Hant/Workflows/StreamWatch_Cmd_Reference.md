@@ -246,7 +246,7 @@ sidecar 的判準是 **mtime 必須晚於本輪起跑**，不是 `File.Exists`�
 
 | reason | 出口 |
 |---|---|
-| `persona 不在線` | 先走 `GoodMorning step=wake` |
+| `persona 不在線` | 先走 `senate cmd morning-wake --arg persona=<P>` |
 | `未指定 media` | 回傳檔已列既有 work 清單；不確定**問 Tim** |
 | `bilibili 鍵需按 up 主分` / 泛名 | `media=bilibili-<up主slug>` ＋ `up=<up主名>` |
 | `已有進行中的觀影 session` | 跑 `cycle` 繼續（不疊開；過期殘留會自動收掉） |

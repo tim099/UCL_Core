@@ -1,7 +1,7 @@
 // 區塊職責：自動 commit 分群規則的 **Unity 端轉接層** —— 規則本體已下沉到 SCP_Core 的 `SCP_AutoCommitRules`。
 // 物理意義：⏳ **準備退場**（Tim 2026-09-30，TASK-0340）：自動 commit 移植到 Senate
 //          （「自動 Commit」頁＋`senate cmd auto-commit`），規則與引擎在 SCP_Core。
-//          本檔還留著，是因為 `UCL_AutoCommitPage` 與 `Cmd_AutoCommit` 退場前還在用它。
+//          本檔還留著，是因為 `UCL_AutoCommitPage` 退場前還在用它。
 //          ⭐ 它**不再持有規則表**，只把 SCP_Core 那兩張表轉成本端的 `GroupDef` ——
 //            🩸 理由：下沉之後規則一度有兩份（UCL 一份、SCP 一份），而這種規則的錯配等級是「檔進錯 commit」，
 //            只改其中一份的症狀是「同一個檔在 Unity 被分到 A 群、在 Senate 被分到 B 群」，兩邊各自看起來都正常。

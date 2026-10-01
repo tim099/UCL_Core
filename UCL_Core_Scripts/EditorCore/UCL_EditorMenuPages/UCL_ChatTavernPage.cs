@@ -952,7 +952,7 @@ namespace UCL.Core.EditorLib.Page
                             }
                             catch (System.Exception ex)
                             {
-                                Debug.LogWarning($"[UCL_ChatTavernPage] 創建 UCL_ChatTavernRoomAsset shell 失敗（roster 已建好，可手動跑 Cmd_SeedTavernRoomAssets 補）：{ex.Message}");
+                                Debug.LogWarning($"[UCL_ChatTavernPage] 創建 UCL_ChatTavernRoomAsset shell 失敗（roster 已建好，可用下方「+ 新房間」補）：{ex.Message}");
                             }
                             SelectedRoomId = m_NewRoomId;
                             m_NewRoomId = m_NewRoomName = m_NewRoomDesc = "";
@@ -1048,7 +1048,7 @@ namespace UCL.Core.EditorLib.Page
                             }
                             catch (System.Exception ex)
                             {
-                                Debug.LogWarning($"[UCL_ChatTavernPage] 創建 UCL_ChatTavernIdentityAsset shell 失敗（roster 已建好，可手動跑 Cmd_SeedTavernIdentityAssets 補）：{ex.Message}");
+                                Debug.LogWarning($"[UCL_ChatTavernPage] 創建 UCL_ChatTavernIdentityAsset shell 失敗（roster 已建好，可用下方「+ 新身分」補）：{ex.Message}");
                             }
                             SelectedIdentityId = m_NewIdentityId;
                             m_PendingShowCreateIdentity = false; // 延後到下個 Layout event 才收表單，避免本 frame Repaint 看到不同 layout 結構

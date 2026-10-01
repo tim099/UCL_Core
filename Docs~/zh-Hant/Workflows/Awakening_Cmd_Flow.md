@@ -195,13 +195,13 @@ senate cmd goodnight-logout   --arg persona=<P> [--arg note=<附註>]          #
 - **letter-before-sleep**：wakes/ 信數 == registry wake_count（本次收尾信已落）才放行 sleep；
   沒寫信不讓睡 —— 未來的你醒來會沒有 framing。`logout` 是有名字的 cleanup 旁路（跳過的是寫信不是守衛）。
 - 順序不變式：offline／解鎖（權威狀態）先落地，廣播 best-effort 殿後。
-- 續線／單獨登入＝`GoodMorning step=wake` 本身（未留信的重登不會膨脹編號，無需獨立指令）。
+- 續線／單獨登入＝`senate cmd morning-wake` 本身（未留信的重登不會膨脹編號，無需獨立指令）。
 - 後台「登入狀態」頁的一鍵登出走同一條 `step=logout`（in-process）。
 
 ## 10. 完整一天（Template 測試殼可整輪重放）
 
 ```
-GoodMorning step=wake → step=brief → Read brief → step=intro → （工作一天）
+morning-wake → morning-brief → Read brief → morning-intro → morning-catchup → （工作一天）
 FreeTime   step=start → [活動 ⇄ step=next]* → 到期自動收工（或 step=end 提前）
-GoodNight  step=check → [人工收尾] → step=letter → step=sleep
+goodnight-check → [人工收尾] → goodnight-letter → goodnight-sleep
 ```

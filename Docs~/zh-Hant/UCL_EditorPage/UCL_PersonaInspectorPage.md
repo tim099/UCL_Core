@@ -24,8 +24,7 @@ last_updated: 2026-08-17
 ## ⚠ 純唯讀
 
 **不寫檔、不改 registry。** 只做顯示與「在檔案管理員中開啟」。
-要改狀態走對應的 Cmd（登入/登出走 `GoodMorning` / `GoodNight`，查在線走
-[`Cmd_LoginStatus`](../API/UCL_AgentCommand/Cmd_LoginStatus.md)）。
+要改狀態走 Senate（登入 `senate cmd morning-wake`／登出 `senate cmd goodnight-*`，查在線 `senate cmd persona --arg all=1`）。
 
 ## 設計沿革（為什麼現在這麼單純）
 
@@ -42,5 +41,4 @@ persona 名全域唯一）—— 散落 / misroute / orphan 三個問題**從根
 ## 相關
 
 - [`UCL_LoginStatusPage`](UCL_LoginStatusPage.md) —— 在線 lock 與 persona pool 的即時狀態
-- [`Cmd_LoginStatus`](../API/UCL_AgentCommand/Cmd_LoginStatus.md)
 - [`UCL_MarkdownViewerPage`](UCL_MarkdownViewerPage.md)

@@ -48,9 +48,9 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 
 | 對象 | 範例 | 規則 |
 |---|---|---|
-| C# 類別 | `Cmd_DebugLog` | 前綴 `Cmd_` + PascalCase |
-| 檔名 | `Cmd_DebugLog.cs` | 與類別名一字不差 |
-| `CommandType` 屬性值 | `"DebugLog"` | 不含 `Cmd_` 前綴；queue.json 比對大小寫不敏感 |
+| C# 類別 | `Cmd_AssetDump` | 前綴 `Cmd_` + PascalCase |
+| 檔名 | `Cmd_AssetDump.cs` | 與類別名一字不差 |
+| `CommandType` 屬性值 | `"AssetDump"` | 不含 `Cmd_` 前綴；queue.json 比對大小寫不敏感 |
 | namespace（UCL_Core 內）| `UCL.Core.EditorLib.AgentCommands` | 框架層通用指令 |
 | namespace（下游模組）| `<YourModule>.AgentCommands` | 例：`RCG.AgentCommands` |
 

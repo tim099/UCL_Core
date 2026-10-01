@@ -1,8 +1,8 @@
-// 區塊職責：Cmd_GoodNight — 晚安流程的 Editor 入口（`senate ucmd run GoodNight`）。
-//          check／portrait／letter／sleep／logout 分步，每步回傳檔 `## next` 指路，落檔
-//          letters/<persona>/cmd/goodnight_<step>.md 供 QA（Tim 2026-08-13 六題拍板）。
-// 物理意義：邏輯在 SCP_Core `SCP_Goodnight`（TASK-0305）—— Senate 的 `senate cmd goodnight-*` 呼叫同一份，
-//          Editor 不再有自己的一份。⚠ 主入口已是 `senate cmd goodnight-*`（不需要 Editor）；
+// 區塊職責：Cmd_GoodNight — 晚安流程在 Editor 端只剩的兩步：sleep／logout（Senate 轉派進來）。
+//          回傳檔 `## next` 指路，落檔 letters/<persona>/cmd/goodnight_<step>.md 供 QA（Tim 2026-08-13 六題拍板）。
+// 物理意義：邏輯在 SCP_Core `SCP_Goodnight`（TASK-0305）—— Senate 的 `senate cmd goodnight-*` 呼叫同一份。
+//          晚安的唯一入口是 `senate cmd goodnight-*`（不需要 Editor）；Editor 版的 check／portrait／letter
+//          已於 TASK-0353 刪除。
 //          Senate 在「本人有進行中的觀影場要結算」且 Editor 活著時，會把 sleep／logout 整步轉派到這裡 ——
 //          那件事只有 Editor 做得到：帶結算的關場（UCL_SessionCloseFlow，含觀影付錢／收播）。
 //          （收工閘 skip_reason 寫進單子那一段 TASK-0349 起走任務寫入端 `senate cmd task`，⛔ 不再是轉派的理由；
@@ -20,30 +20,25 @@ using UnityEngine;
 namespace UCL.Core.EditorLib.AgentCommands.Awakening
 {
     /// <summary>
-    /// 晚安流程 Cmd（分步）。正常流程：check → [人工收尾] → portrait → letter → sleep；
-    /// 手動登出 / cleanup：logout（單獨跑，不寫信）。
-    /// <para>回傳落檔 letters/&lt;persona&gt;/cmd/goodnight_&lt;step&gt;.md。</para>
+    /// 晚安流程的 Editor 端步驟：sleep（帶結算的下線）／logout（獨立登出，不寫信）。
+    /// <para>check／portrait／letter 走 `senate cmd goodnight-*`；回傳落檔 letters/&lt;persona&gt;/cmd/goodnight_&lt;step&gt;.md。</para>
     /// </summary>
     public class Cmd_GoodNight : UCL_AgentCommandHandlerBase
     {
         public override string CommandType => "GoodNight";
 
         public override string ShortDescription =>
-            "晚安流程 Cmd（step=check/portrait/letter/sleep/logout，每步回傳 next 導引並落檔；邏輯在 SCP_Goodnight）。"
-            + "portrait 會擋 letter（畫像或顯式跳過理由二擇一）；logout 可單獨跑（cleanup，不寫信）。";
+            "晚安流程的 Editor 端步驟：只剩 step=sleep/logout（Senate 要帶結算關場時轉派進來；邏輯在 SCP_Goodnight）。"
+            + "晚安五步走 `senate cmd goodnight-*`。";
 
         public override string ArgsSchema =>
-            "step=check|portrait|letter|sleep|logout (必填) — check: 唯讀起手+酒館最後一眼; "
-            + "portrait: 投遞見人畫像(親筆)或顯式跳過; letter: 收尾信落檔(親筆); " +
-            "sleep: 解鎖+關場(帶結算)+單則下線廣播(需先寫信); logout: 獨立登出(不寫信, 廣播標明未留信) | " +
-            "persona=<name> — 全步驟必填(要下線誰不能用猜的) | letter_body=<text> — step=letter 必填(走 --arg-file) | " +
-            "summary=<text> — sleep 選填(公開睡前心得, 併入下線廣播) | "
-            + "about=<同事> headline=<一句話標題> body=<公開層,走 --arg-file> private_body=<私層,選填> "
-            + "affinity=<如 11/在意> — step=portrait 投遞時用(about+body 必填, 工具不代筆) | "
-            + "skip_reason=<為什麼今晚不畫> — step=portrait 的顯式跳過(理由會印進下線廣播)；step=sleep 時另作**收工閘的跳過理由**(會寫進那幾張單的時間線) | " +
+            "step=sleep|logout (必填) — sleep: 解鎖+關場(帶結算)+單則下線廣播(需先寫信); logout: 獨立登出(不寫信, 廣播標明未留信) | " +
+            "persona=<name> — 必填(要下線誰不能用猜的) | summary=<text> — sleep 選填(公開睡前心得, 併入下線廣播) | " +
+            "skip_reason=<text> — sleep 選填, **收工閘的跳過理由**(會寫進那幾張單的時間線) | note=<text> — 選填 | " +
+            "check/portrait/letter 已移除 → senate cmd goodnight-check / goodnight-portrait / goodnight-letter | " +
             "回傳落檔 letters/<persona>/cmd/goodnight_<step>.md";
 
-        public override string ExampleArgs => "step=check;persona=Template";
+        public override string ExampleArgs => "step=logout;persona=Template";
 
         public override string HelpURL =>
             "ucl_core:Docs~/zh-Hant/Workflows/Awakening_Cmd_Flow.md";
@@ -58,21 +53,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
 
             switch (aStep)
             {
-                case "check":
-                    WriteAndVerdict(args, aPersona, "check", SCP.Core.Letters.SCP_Goodnight.Check(aRoots, aPersona));
-                    return;
-
-                case "portrait":
-                    WriteAndVerdict(args, aPersona, "portrait", SCP.Core.Letters.SCP_Goodnight.Portrait(aRoots, aPersona,
-                        GetArg(args, "about", ""), GetArg(args, "headline", ""), GetArg(args, "body", ""),
-                        GetArg(args, "private_body", ""), GetArg(args, "skip_reason", ""), GetArg(args, "affinity", "")));
-                    return;
-
-                case "letter":
-                    WriteAndVerdict(args, aPersona, "letter",
-                        SCP.Core.Letters.SCP_Goodnight.Letter(aRoots, aPersona, GetArg(args, "letter_body", "")));
-                    return;
-
                 case "sleep":
                 case "logout":
                 {
@@ -182,7 +162,9 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
                 }
 
                 default:
-                    throw new Exception($"[GoodNight] step 必為 check|portrait|letter|sleep|logout（got '{aStep}'）。ArgsSchema: {ArgsSchema}");
+                    // 已刪的步驟要明確失敗並指路 —— 安靜回成功會讓呼叫端以為信寫了／畫像投了。
+                    throw new Exception($"[GoodNight] step 只剩 sleep|logout（got '{aStep}'）。check／portrait／letter 已移除（TASK-0353），"
+                        + $"改走 `senate cmd goodnight-check --arg persona={aPersona}`（每步回傳檔指路下一步）。");
             }
         }
 

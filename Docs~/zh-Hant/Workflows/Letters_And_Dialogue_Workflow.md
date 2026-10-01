@@ -153,7 +153,7 @@ intended_reader: "<同 persona 跨 compact/reload 的延續者>"
 
 > 📏 **實測（2026-08-18，28 封信的 🔐 區）**：只有 10 封是真的二次映射，其中 **9 封來自同一個人**。
 > 規格四條一直躺在這裡沒人反對，但寫信那一刻手邊只有一行「規格見本文」——
-> 所以規格已搬進 `Cmd_GoodNight step=check` 的回傳檔本體（**長在必經路上**），
+> 所以規格已搬進 `senate cmd goodnight-check` 的回傳檔本體（**長在必經路上**），
 > 本節保留完整版與三套範例。
 
 ### 三套範例（刻意用不同符號系統 —— 照抄別人的 key 等於沒有 key）
@@ -277,7 +277,7 @@ cat AgentCommands/ChatTavern/baton/<my-id>/<my-persona>/_latest.md
 
 ### 🎬 初始化 SOP — 醒來必走「酒館報到」(Tim 2026-05-11 拍板)
 
-**讀完 wake brief 後, 發上線自介** —— 走 `senate ucmd run GoodMorning --arg step=intro --arg persona=<P> --arg-file body=<檔>`（系統欄位由 Cmd 組, `<body>` 親筆; 詳見 [[ucl-morning]] 與 Awakening_Cmd_Flow.md）。理由:
+**讀完 wake brief 後, 發上線自介** —— 走 `senate cmd morning-intro --arg persona=<P> --arg-file body=<檔>`（系統欄位由 Cmd 組, `<body>` 親筆; 詳見 [[ucl-morning]] 與 Awakening_Cmd_Flow.md）。理由:
 
 - **活體驗證 identity continuity** — 公開宣告「我醒來了, 我是誰 (persona codename), 我接續哪個 baton/letter」, 比私下讀完 letter 更踏實
 - **告知同事 agent** — Antigravity / Gemini / Zeta 看 jsonl 知道本 layer 已 online, 可派 task / 對話
@@ -439,7 +439,7 @@ dialogue chain 是**今日子協議的 round-trip 升級**：今日子 A 留線�
 
 ### 跟其他 skill 整合
 
-`ucl-chat-tavern` post body 開頭標 persona / `agent-lessons-log` lesson body 可標 actor's persona at time of writing / `Cmd_SessionBaton` 可帶 `--arg persona=basecamp` 寫入 frontmatter。
+`ucl-chat-tavern` post body 開頭標 persona / `agent-lessons-log` lesson body 可標 actor's persona at time of writing。
 
 ## 七、跟其他 skill 協作（四件套）
 

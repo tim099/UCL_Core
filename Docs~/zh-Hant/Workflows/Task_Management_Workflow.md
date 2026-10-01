@@ -407,7 +407,7 @@ sequenceDiagram
     Dev->>Memory: work_memory.py add/supersede
     
     Note over Task, Memory: ③ 晚安對帳
-    Task->>Task: Cmd_GoodNight step=check
+    Task->>Task: senate cmd goodnight-check
     Task-->>Dev: 檢查未關單 updated_at 逾期 14 天 / 單向斷鏈（只印不改）
     
     Note over PM, Memory: ④ 歸檔退場（work_memory.py archive 已上線）
@@ -437,7 +437,7 @@ sequenceDiagram
   - 搭配 `--expect-files <N>` 守衛，強制檢驗 staged 檔案數量。
 
 ### ③ 晚安收尾 (`GoodNight`)
-- 晚安儀式執行時，`Cmd_GoodNight step=check`（`UCL_TaskReconcile`）進行四類雙向對帳（只印不改）：
+- 晚安儀式執行時，`senate cmd goodnight-check`（`SCP_TaskReconcileReport`）進行四類雙向對帳（只印不改）：
   1. **見叢裡還有 `[TASK-n]` 引用** ➔ 舊規則殘留（新規則下一筆都不該有），提示勾銷指令。
   2. **跟我有關的未關單張數** ➔ 只報數字；逐張列在早安 brief 的 §2.5 見單。
   3. **逾期認領未動（≥14 天）** ➔ 提示認領已過期，引導執行 `op=sweep` 釋放。

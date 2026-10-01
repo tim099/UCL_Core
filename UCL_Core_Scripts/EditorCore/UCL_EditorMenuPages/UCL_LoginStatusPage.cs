@@ -619,7 +619,7 @@ namespace UCL.Core.EditorLib.Page
                         var aBrief = UCL_AwakeningService.RunBrief(aPersona, nameof(UCL_LoginStatusPage), 120000, aScript);
                         if (aBrief.ok)
                             Debug.Log($"[LoginStatus:morning] ✓ wake+brief 完成:\n{aBrief.report}\n"
-                                      + "上線自介（step=intro）屬本人親筆，請該 persona 自己跑 run_cmd GoodMorning step=intro。");
+                                      + "上線自介（step=intro）屬本人親筆，請該 persona 自己跑 senate cmd morning-intro --arg persona=<P> --arg-file body=<檔>。");
                         else
                             Debug.LogError($"[LoginStatus:morning] brief 生成失敗（wake 已完成，登入有效）:\n{aBrief.report}");
                     }

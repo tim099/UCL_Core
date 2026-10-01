@@ -491,8 +491,8 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // 區塊職責：brief 生成測試 — 背景執行緒 spawn python（WaitForExit 會擋 UI），回主執行緒貼報告。
-        // 物理意義：走 UCL_AwakeningService.RunBrief —— 與 Cmd_GoodMorning step=brief **同一條觸發鏈**（R20），
-        //          此處測通 = Cmd 那條也通（同一份實作，差別只在入口）。
+        // 物理意義：走 UCL_AwakeningService.RunBrief —— 與 Senate 的 morning-brief **同一份實作**（SCP_Morning.Brief，R20），
+        //          此處測通 = morning-brief 那條也通（差別只在入口）。
         void RunAwakenBriefTest()
         {
             if (m_AwakenTestRunning) return;
@@ -892,7 +892,7 @@ namespace UCL.Core.EditorLib.Page
         //          有卡 → 顯示基本資訊並可跳 UCL_CommonEditPage 細編。
         // 數值影響：讀取不寫；「一鍵建立」寫一個新 asset .json（已存在一律不覆寫，避免蓋掉手工調過的卡）。
         // 設計取捨：不自動批次補全所有缺卡 —— 建卡等於宣告「這個 persona 要有臉」，該由人逐個決定；
-        //          批次需求走既有 Cmd_SeedTavernIdentityAssets 的同類做法，不在管理頁塞隱式大動作。
+        //          不在管理頁塞隱式的批次大動作。
         // ===========================================================
         void DrawPersonaCardPanel()
         {
@@ -1375,7 +1375,7 @@ namespace UCL.Core.EditorLib.Page
 
                 asset.Save();
                 asset.ClearAllCache();          // 清型別快取 → 下次 GetAllIDs 掃得到新卡
-                AssetDatabase.Refresh();        // 讓 Unity 看到新 .json（同 Cmd_SeedTavernIdentityAssets 收尾）
+                AssetDatabase.Refresh();        // 讓 Unity 看到新 .json
 
                 SetResult($"✅ 建立角色卡：`{iPersona}`（歸屬 {(string.IsNullOrEmpty(row.agent) ? "(未綁)" : row.agent)}）"
                     + $" → 模組 [{UCL_ModuleService.CurEditModuleID}]。接著可按「✏ 編輯角色卡」填頭像 / 顏色 / 口頭禪。");

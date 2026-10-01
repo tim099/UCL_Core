@@ -150,4 +150,3 @@ git -C <project> commit -m "[bump] UCL <hash>"
 - [Create_UCL_Asset_Workflow.md](../../Workflows/Create_UCL_Asset_Workflow.md) — 新增 UCL_Asset 子類的 SOP
 - [UCL_AgentCommand_Architecture.md](UCL_AgentCommand_Architecture.md) — Agent Command 系統架構
 - [Commit_Workflow.md](../../Workflows/Commit_Workflow.md) — 三層 submodule bump 流程
-- [Cmd_SeedTavernIdentityAssets](Cmd_SeedTavernIdentityAssets.md) — 從 identities.json roster 建 UCL_ChatTavernIdentityAsset 殼（搬遷前的前置 seed）

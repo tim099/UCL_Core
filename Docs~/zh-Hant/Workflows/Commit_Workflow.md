@@ -76,7 +76,7 @@ senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<lette
 senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters> --arg op=commit
 ```
 
-> ⏳ Unity 端的 `senate ucmd run AutoCommit`（`mode=agent|letters|submodules`）與 UCL 後台「自動提交」頁**準備退場**（TASK-0340）。
+> ⏳ Unity 端的 `senate ucmd run AutoCommit` 已刪（TASK-0353）→ `senate cmd auto-commit`；UCL 後台「自動提交」頁**準備退場**（TASK-0340）。
 > 規則、引擎與完整規格已下沉到 SCP_Core → `senate cmd doc --arg op=show --arg name=AutoCommit`。
 
 `/ucl-commit` 流程把它排在**手動 stage 之前**（skill 的執行順序 3.5）：

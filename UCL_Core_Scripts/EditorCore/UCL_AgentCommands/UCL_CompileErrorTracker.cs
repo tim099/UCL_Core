@@ -69,7 +69,7 @@ namespace UCL.Core.EditorLib
 
             // 區塊職責：首次安裝 / domain reload 後若還沒有 status 檔，寫一份 placeholder
             // 物理意義：[InitializeOnLoad] 是在「上一次成功編譯」之後才跑的 → 那次 compile 的事件早就錯過。
-            //          沒 placeholder 的話 `unity-compile-status` / Cmd_GetCompileErrors 會誤以為 Tracker 沒運作。
+            //          沒 placeholder 的話 `unity-compile-status` 會誤以為 Tracker 沒運作。
             //          有 placeholder 至少能告訴使用者「Tracker 已載入但還沒看到任何編譯」。
             // 數值影響：只在檔案不存在時寫，不會覆蓋既有資料
             try

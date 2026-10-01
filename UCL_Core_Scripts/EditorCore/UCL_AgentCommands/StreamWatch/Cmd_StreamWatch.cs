@@ -1076,7 +1076,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!UCL_AwakeningService.IsOnline(iPersona))
             {
                 Blocked(iArgs, aR, aPath, $"'{iPersona}' 不在線（無 session lock）",
-                        $"先跑 senate ucmd run GoodMorning --arg step=wake --arg persona={iPersona}");
+                        $"先跑 senate cmd morning-wake --arg persona={iPersona}");
                 throw new Exception($"[StreamWatch] step=start blocked：persona 不在線（詳見 {aPath}）");
             }
 
@@ -2163,7 +2163,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!UCL_AwakeningService.IsOnline(iPersona))
             {
                 Blocked(iArgs, aR, aPath, $"'{iPersona}' 不在線（無 session lock）",
-                        $"先跑 senate ucmd run GoodMorning --arg step=wake --arg persona={iPersona}");
+                        $"先跑 senate cmd morning-wake --arg persona={iPersona}");
                 throw new Exception($"[StreamWatch] step=join blocked：persona 不在線（詳見 {aPath}）");
             }
 

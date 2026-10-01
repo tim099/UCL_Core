@@ -119,7 +119,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
             {
                 aR.AppendLine("## blocked");
                 aR.AppendLine($"- reason: '{iPersona}' 不在線（無 session lock）—— 自由時間是登入後的狀態");
-                aR.AppendLine($"- exit: 先跑 senate ucmd run GoodMorning --arg step=wake --arg persona={iPersona}");
+                aR.AppendLine($"- exit: 先跑 senate cmd morning-wake --arg persona={iPersona}");
                 WritePayload(iArgs, aPath, aR.ToString());
                 throw new Exception($"[FreeTime] step=start blocked：persona 不在線（詳見 {aPath}）");
             }
@@ -361,7 +361,7 @@ namespace UCL.Core.EditorLib.AgentCommands.FreeTime
                     + "　⚠ 券**不記歷史**（2026-09-18 起）⇒ 批次過期被清掉之後這裡永久只答得出查無");
                 aR.AppendLine($"- 收工宣告: {(aSeq > 0 ? $"seq **{aSeq}**" : "未發（best-effort）")}");
                 aR.AppendLine("## ⏹ 已收工 —— 自由時間結束，**不要再跑 step=next**");
-                aR.AppendLine("- 回工作；或走晚安流程：senate ucmd run GoodNight --arg step=check --arg persona=" + iPersona);
+                aR.AppendLine("- 回工作；或走晚安流程：senate cmd goodnight-check --arg persona=" + iPersona);
                 aR.AppendLine("- 還想花錢再睡 →（可選）ucl-spending-time（不綁死晚安）。");
                 WritePayload(iArgs, aPath, aR.ToString());
                 Debug.Log($"[FreeTime] step={aStepName} 收工（{aEndReason}） → {aPath}");

@@ -82,7 +82,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 物理意義：**設定檔是加入的唯一憑據** —— 沒有設定檔就不收（不猜規則）。
         //          判準刻意不是「是不是 submodule」：那會把所有 persona 信件庫與別人的資料庫
         //          一起掃進來，而那些 repo 的分群規則不住這裡。
-        // ⚠ 這支是**唯一的發現實作**（Cmd_AutoCommit 與 UCL_AutoCommitPage 共用）。
+        // ⚠ 這支是**唯一的發現實作**（UCL_AutoCommitPage 用）。
         //   頁面自己再寫一份掃描的話，兩邊遲早對「有哪些 repo」給出不同答案，而兩邊都不報錯。
         // 註：`letters/<persona>/` 也會被下面兩支發現函式列出（可建設定檔、可啟用）。
         //     letters 模式的「跳過在線 persona」硬擋不涵蓋 `mode=submodules` 這條路，

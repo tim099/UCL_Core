@@ -19,7 +19,7 @@ status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔
 > - 後台頁（掃描／勾選／執行 git／**設定編輯區**）：Senate「自動 Commit」（`senate ui --page auto-commit`）
 > - 提交規範速查（agent 入口）：skill `ucl-commit`
 > - 實作（SCP_Core）：`SCP_AutoCommitConfig`（設定模型）／`SCP_AutoCommitRules`（分群與地板）／`SCP_AutoCommit`（發現＋掃描＋提交）／`SCP_Cmd_AutoCommit`（Cmd）
-> - ⏳ Unity 端的 `UCL_AutoCommitPage`／`Cmd_AutoCommit`（`senate ucmd run AutoCommit --arg mode=…`）**準備退場**（TASK-0340）
+> - ⏳ Unity 端的 `UCL_AutoCommitPage` **準備退場**（TASK-0340）；`Cmd_AutoCommit` 已刪（TASK-0353）→ `senate cmd auto-commit`
 
 ---
 

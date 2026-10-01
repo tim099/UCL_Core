@@ -1,7 +1,7 @@
 // 區塊職責：晚安的**收工閘**（PendingWrapups）與「顯式跳過」寫入（WriteSkip）—— Editor 端。
 //
 // 物理意義：晚安 check 的「Task 對帳」報告已搬進 SCP_Core `SCP_TaskReconcileReport`（TASK-0305）——
-//   Senate 的 goodnight-check 與 Editor 的 GoodNight step=check 呼叫同一份；收工閘的判準本體也早已在
+//   Senate 的 goodnight-check 呼叫它；收工閘的判準本體也早已在
 //   SCP_Core（`SCP_TaskReconcile.PendingWrapups`）。本檔只剩兩件只有 Editor 做得到的事：
 //   把 SCP 判出的單讀成 UCL_TaskEntry，以及把跳過理由轉交給任務寫入端（`senate cmd task op=wrapup_skip`）。
 //

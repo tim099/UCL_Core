@@ -442,14 +442,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             return aList;
         }
 
-        /// <summary>step 回傳值落檔路徑 —— persona 步驟放 letters/&lt;persona&gt;/cmd/（與 wake brief 同層同慣例），
-        /// 目錄本身即宣告「機器寫的、每次該步驟重跑即覆寫」（Tim 2026-08-13 拍板：每步回傳值落檔供 QA）。</summary>
-        // 落點走 UCL_LettersPath（版面唯一實作，Plan_Letters_Dir_Layout §8.2 批次⑤）——
-        // 原本在這裡自己 Combine 一次，那是「letters 底下版面」的第 N 種算法。
-        // ⚠ 對側契約：python 端等價入口 = `_lib/ucl_paths.py::letters_cmd_payload()`。
-        public static string StepPayloadPath(string iPersona, string iStep)
-            => UCL_LettersPath.CmdPayload(iPersona, "goodmorning", iStep);
-
         public class StepResult
         {
             public bool ok;

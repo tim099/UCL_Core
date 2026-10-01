@@ -126,7 +126,7 @@ description: |
 > **鍵名寫錯導致 0 群時，讀數跟成功時一模一樣。** 一定要放一顆探針再掃一次，
 > 看輸出有沒有印出 `→ [<群>] N 檔：<訊息>`。看到那行才算通。
 >
-> ⏳ Unity 端的 `senate ucmd run AutoCommit`（`mode=agent|letters|submodules`）與 UCL 後台頁**準備退場**（TASK-0340），
+> ⏳ Unity 端的 `senate ucmd run AutoCommit` 已刪（TASK-0353）；UCL 後台頁**準備退場**（TASK-0340），
 > 別再用：⚠ 那個後台頁的提交路徑**沒有** BUG-30 的守衛。
 
 - DebugLogs 保持 **untracked 但不 ignore** — Tim 要在 `git status` 看得到。

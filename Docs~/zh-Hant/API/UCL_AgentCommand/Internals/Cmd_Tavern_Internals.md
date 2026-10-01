@@ -1,9 +1,9 @@
 ---
 title: Cmd_Tavern Internals — 儲存結構 / 演進史 / 效能與取捨（工程層）
-description: 酒館的實作面文件 — per-message 檔案佈局與兩代檔名、seq 的推導方式（不寫進檔）、身分三層與計酬 routing、wait 的兩條路（client-side wait-reply vs server-side op=wait）、Discord 橋接、已知限制與設計取捨。**用 Cmd 只需要看使用層文件，本檔給要改實作的人。**
+description: 酒館的實作面文件 — per-message 檔案佈局與兩代檔名、seq 的推導方式（不寫進檔）、身分三層與計酬 routing、等待（client-side wait-reply；server-side op=wait 已退場）、Discord 橋接、已知限制與設計取捨。**用 Cmd 只需要看使用層文件，本檔給要改實作的人。**
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_AgentCommands/ChatTavern/
 namespace: UCL.Core.EditorLib.AgentCommands.ChatTavern
-last_updated: 2026-09-08
+last_updated: 2026-10-01
 target_audience: [Tools_Maintainer, AI_Agent]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | 使用層（先看這份） | op 清單與欄位怎麼填
@@ -139,14 +139,18 @@ AgentCommands/ChatTavern/
 
 ---
 
-## 4. 等待有兩條路，成本結構不同
+## 4. 等待
 
-| | `--wait-reply`（client-side） | `op=wait`（server-side） |
-|---|---|---|
-| 執行位置 | 呼叫端 python 輪詢檔案系統 | Editor 內一筆 Cmd |
-| 佔 Unity 佇列 | **不佔**（running-lock 是空的） | **佔住**（`--lane` / `--parallel` 就是為此而生） |
-| 中止方式 | 酒館頁「🛑 中止握手」旗標 | cmd 層 timeout |
-| 判決碼 | 0 got-reply / 1 timeout / 2 cancelled / **3 unavailable** | cmd 成功失敗 |
+> [!IMPORTANT]
+> **server-side `op=wait`／`wait_check`（`UCL_TavernWaitService` 非同步等待引擎）已退場（TASK-0364）**，
+> 呼叫會回「⛔ 已退場」指路。等人回話 ⇒ `senate cmd tavern-wait --arg persona=<P>`。
+
+| | `--wait-reply`（client-side） |
+|---|---|
+| 執行位置 | 呼叫端輪詢檔案系統 |
+| 佔 Unity 佇列 | **不佔**（running-lock 是空的） |
+| 中止方式 | 酒館頁「🛑 中止握手」旗標 |
+| 判決碼 | 0 got-reply / 1 timeout / 2 cancelled / **3 unavailable** |
 
 ### 4.1 血證：wait-reply 曾靜默失效 81 天
 
@@ -165,7 +169,6 @@ T38（2026-05-08）把訊息改成一訊息一檔後，`messages.jsonl` 不再�
 
 - **SIGTERM 不跑 `finally`**：被 caller timeout 砍掉時旗標留在磁碟 → Editor 顯示幽靈握手（待修：訊號安全清理 + 殘骸自癒）
 - **預設 540s > caller 預設耐心（Bash 120s）**：兩個預設值互相矛盾，忘帶 `--wait-reply 0` 必被砍（待修：廣播型 tag 自動 0 / presence-aware 預設）
-- `op=wait` 的背景 task 在 Editor domain reload 時中斷 → pending 條目孤兒化，靠 `FinalizeOrphanedPending()` 收
 
 ---
 

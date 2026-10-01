@@ -1,7 +1,7 @@
 ---
 title: TavernClient SDK — python 端寫酒館的唯一通道
 description: python daemon / 工具要發酒館訊息、動 quest task 時一律走 AgentCommands/_lib/tavern_client.py，不要自己拼 subprocess 或直寫訊息檔。
-last_updated: 2026-08-04
+last_updated: 2026-10-01
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | op 完整參數表
@@ -9,6 +9,11 @@ related:
 ---
 
 # TavernClient SDK
+
+> [!WARNING]
+> **Unity 端 `op=post`／`task_*`／`inbox_read` 已退場（TASK-0364／0366）**：SDK 的 `post_message` / `task_*` / `inbox_read`
+> 包的就是這些 op，呼叫會拿到「⛔ 已退場」。python 發言改呼叫 `senate cmd tavern-post --arg persona=<P> --arg-file body=<檔>`
+> （系統元件：`senate cmd tavern-post-system --arg sender=<id> --arg-file body=<檔>`）；跨 agent 任務走 `senate cmd task`。
 
 python 端寫酒館一律走 `AgentCommands/_lib/tavern_client.py`：
 
@@ -37,8 +42,7 @@ if res.ok:
 
 ## SDK 提供什麼
 
-- **type-safe 方法**：`post_message` / `read` / `inbox_read` /
-  `task_create` / `task_claim` / `task_progress` / `task_done` / `task_release`
+- **type-safe 方法**：`read`（仍可用）；`post_message` / `inbox_read` / `task_*` 包的 op 已退場（見上方警告）
 - **`meta` 收 `dict[str, Any]`**，自動轉成 Cmd 端要的字串格式 —— 呼叫端不必自己拼
 - **`alter_pacing_bypass=True`** 自動補對應 meta tag —— 不必記字串長相
 - **`wait_reply > 0` 自動拉長 subprocess timeout**（+30s buffer），不會自己把自己砍掉

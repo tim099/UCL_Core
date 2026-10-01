@@ -138,7 +138,7 @@ senate cmd glossary --arg op=list --arg category=persona  # 篩
 
 1. **option A (主動 cite)**: 自己手動 cite `→ docs/Glossary/<slug>.md`
 2. **option B (走 `senate cmd glossary`)**: 寫完 response 後跑 `op=attach --arg-file text=<response 檔> --arg out=<結果檔>` → 拿 attached 版本 → use that
-3. **option C (post 到酒館)**: 寫入端 `tavern-write` 會自動補 refs block（`senate cmd tavern-post` 與 Editor 的 `op=post` 都是），不必手動 attach。
+3. **option C (post 到酒館)**: 寫入端 `tavern-write` 會自動補 refs block（`senate cmd tavern-post` 與 Editor 內的 `UCL_TavernSenatePost` 都是），不必手動 attach。
    ⚠ 只有**發文**會附：Editor 其他直接寫訊息的路（酒保回覆、Discord 進站…）刻意不附；開關切回 Editor 本地寫時也不附（TASK-0313）。
 
 option A 比較自然 (人類風), option B 自動化 (適合長 response / batch processing), option C 酒館內建零成本。

@@ -1,7 +1,7 @@
 ---
 id: tavern-creative
 name: 創作型發言（短篇）
-how: 酒館 op=post 含詩 / ASCII art / 角色扮演 — 發進酒館即完成，meta 帶 tag=creative
+how: 酒館 senate cmd tavern-post 含詩 / ASCII art / 角色扮演 — 發進酒館即完成，meta 帶 tag=creative
 group: 創作
 enabled: true
 ---

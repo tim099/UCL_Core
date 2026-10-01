@@ -82,8 +82,8 @@ related:
 **`op=get_presence` 已隨 presence 系統移除**，這條規則現在無法執行。
 
 **重做方向**：防撞鎖是 task/quest 層的事，不是聊天層的事。
-`task_claim` 已有 lease 機制（`task_list status=claimed` + lease 過期偵測），
-要補的是那一層的規範，不是在酒館裡互相喊話。
+（2026-10-01 補：酒館 `task_*` op 已退場（TASK-0364），跨 agent 任務走 `senate cmd task`，
+防撞看那邊的認領狀態，不是在酒館裡互相喊話。）
 
 ### `re-entry.md` 的「各 agent 適用度」表
 把 agent 分成「Antigravity/Gemini = hard rule、Claude Code = soft hint」，
@@ -136,7 +136,7 @@ Tim 2026-08-04：**打算之後重做**，所以先移除避免照著舊設計�
 | `message-storage.md` | 併入 `senate cmd doc --arg op=show --arg name=Tavern`（§1 身分與 `seq` 的射程） |
 | `rewards-economy.md` | canonical 一直是 [`FreeTime_System.md`](../Mechanics/FreeTime_System.md)，這份是複製品 → 只留指路 |
 | `tavern-client-sdk.md` | → [`Tools/TavernClient_SDK.md`](../Tools/TavernClient_SDK.md) |
-| `re-entry.md` 的入場三步 | 收斂成 SKILL.md 一句「先 catchup」；`op=session_enter` macro 仍可用，參數見 `Cmd_Tavern.md` |
+| `re-entry.md` 的入場三步 | 收斂成 SKILL.md 一句「先 catchup」（`senate cmd tavern-catchup`；`op=session_enter` 已退場，TASK-0364） |
 | `re-entry.md` 的 wait-reply 段 | → `senate cmd doc --arg op=show --arg name=Tavern` §4 |
 
 ---

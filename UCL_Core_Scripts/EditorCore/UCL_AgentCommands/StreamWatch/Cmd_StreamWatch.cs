@@ -4566,41 +4566,17 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             try
             {
-                var aArgs = new Dictionary<string, string>
-                {
-                    { "op", "post" }, { "room", "tavern" }, { "persona", iPersona }, { "body", iBody },
-                    { "meta", $"{{\"tag\":\"stream-watch\",\"subtag\":\"{iSubtag}\",\"category\":\"chat\"}}" },
-                };
-                UCL_AgentCmdContexts.PropagateCmdId(iCmdArgs, aArgs);
-                var aPostCtx = UCL_AgentCmdContexts.FromArgs(iCmdArgs, "StreamWatch.TavernPost");
-                if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
-
-                // ⛔⛔ **發文一定要在主執行緒上跑**（TASK-0120 的邊界，理由不是效能）：
-                //   `Cmd_Tavern` 的 `op=post` **刻意沒有** offload，而它自己的區塊註解寫著為什麼 ——
-                //   「今天安全只因為全部跑在單一主緒上…兩條 lane 同時 post 會撞號，
-                //     而撞號之後那兩則訊息長得完全正常。⇒ 要 offload post 得先把 seq 配號上鎖」
-                //   （那是 TASK-0164）。⇒ 本 Cmd 的 step 現在跑在背景緒上，所以這裡**切回去**再呼叫。
-                //   🩸 不切的後果不是慢，是 seq 撞號，而它的失效樣子是兩則長得完全正常的訊息。
-                //   📌 順序：上鎖（0164）→ 才可以把這一段留在背景。⛔ 反過來就是拆掉唯一還活著的不變式
-                //     （跟 TASK-0163 ④ 完全同形）。
+                // TASK-0366：發文改走 Senate（`tavern-post`）。⭐ 舊規矩「發文一定要切回主執行緒」不再成立 ——
+                //   那是配號還在 Editor 時的不變式（兩條 lane 同時 post 會撞號，TASK-0120／0164）；
+                //   配號早已只在酒館 Server 一處（TASK-0341）⇒ 背景呼叫是安全的，而且不再佔主緒。
                 var aWatch = System.Diagnostics.Stopwatch.StartNew();
-                bool aWasBackground = System.Threading.Thread.CurrentThread.ManagedThreadId
-                                      != UCL_AgentCmdSlowLog.MainThreadId;
-                if (aWasBackground) await UniTask.SwitchToMainThread(iToken);
-                double aSwitchMs = aWatch.Elapsed.TotalMilliseconds;
-                try
-                {
-                    await new ChatTavern.Cmd_Tavern().ExecuteAsync(aArgs, iToken);
-                }
-                finally
-                {
-                    // 相位：這一格就是 2026-09-09 那 147.9s 說不出口的部分（見 UCL_AgentCmdSlowLog 的區塊註解）
-                    Phase(iCmdArgs, "tavern_post.switch_to_main", aSwitchMs);
-                    Phase(iCmdArgs, "tavern_post.nested_cmd", aWatch.Elapsed.TotalMilliseconds - aSwitchMs);
-                    // 回背景：後面還有寫檔與帳本掃描，那些不該再佔主緒
-                    if (aWasBackground) await UniTask.SwitchToThreadPool();
-                }
-                return aPostCtx?.LastPostSeq ?? 0;
+                ChatTavern.UCL_TavernSenatePost.Result aRes = await ChatTavern.UCL_TavernSenatePost.PostAsync(
+                    iPersona, "tavern", iBody,
+                    $"{{\"tag\":\"stream-watch\",\"subtag\":\"{iSubtag}\",\"category\":\"chat\"}}");
+                // 相位：這一格就是 2026-09-09 那 147.9s 說不出口的部分（見 UCL_AgentCmdSlowLog 的區塊註解）
+                Phase(iCmdArgs, "tavern_post.senate", aWatch.Elapsed.TotalMilliseconds);
+                if (!aRes.Posted) Debug.LogWarning($"[StreamWatch] 酒館發文：{aRes.Describe()}（不擋 session）");
+                return aRes.Seq;
             }
             catch (Exception e)
             {

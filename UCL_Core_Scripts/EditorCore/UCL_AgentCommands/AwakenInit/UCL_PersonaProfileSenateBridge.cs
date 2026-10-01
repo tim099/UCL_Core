@@ -38,8 +38,11 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// 跑任意一支 `senate cmd &lt;iCmd&gt;`（TASK-0361：登入狀態頁的登出改走 `goodnight-logout`）。
         /// <para>⚠ 同步等 —— `goodnight-logout` 可能要等酒館 Server 與 Editor 的 SessionClose（觀影結算），
         /// 呼叫端**必須在背景執行緒上呼叫**（否則 Editor 主緒卡住 ⇒ 它自己的 SessionClose 永遠跑不到 ⇒ 互等到逾時）。</para>
+        /// <para><paramref name="iDataRootArg"/>：本 Editor 的資料根用哪個參數名送。預設 `data_root`；
+        /// `tavern-post` 系列吃 `target_data_root`（以資料根選專案 —— `data_root` 會被 CLI 自動補設定檔那一格，拿來選專案會打架，TASK-0366）。</para>
         /// </summary>
-        public static (int exitCode, string output) RunCmd(string iCmd, IDictionary<string, string> iArgs, double iTimeoutSec)
+        public static (int exitCode, string output) RunCmd(string iCmd, IDictionary<string, string> iArgs, double iTimeoutSec,
+                                                           string iDataRootArg = "data_root")
         {
             string aLabel = iCmd + (iArgs != null && iArgs.TryGetValue("op", out string aOpV) ? " op=" + aOpV : "");
             var aTmps = new List<string>();
@@ -53,7 +56,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                     aProc.StartInfo.FileName = SENATE_EXE_NAME;
                     aProc.StartInfo.ArgumentList.Add("cmd");
                     aProc.StartInfo.ArgumentList.Add(iCmd);
-                    aProc.StartInfo.ArgumentList.Add("--arg"); aProc.StartInfo.ArgumentList.Add("data_root=" + UCL_AgentCommandsPath.DataRoot);
+                    aProc.StartInfo.ArgumentList.Add("--arg"); aProc.StartInfo.ArgumentList.Add(iDataRootArg + "=" + UCL_AgentCommandsPath.DataRoot);
                     if (iArgs != null)
                         foreach (var kv in iArgs)
                         {

@@ -150,25 +150,6 @@ namespace UCL.Core.EditorLib.Page
         // 數值影響：Sprite null 視為「沒配置 / Asset 不存在」，UI 顯示佔位 box
         readonly Dictionary<string, Sprite> m_AvatarCache = new Dictionary<string, Sprite>();
 
-        // ===== Quest Panel =====
-        // 物理意義：當房間有 events.jsonl → 顯示 task tree 面板（reducer 重放出當前 task states）
-        // 數值影響：cache 每 QuestRefreshIntervalSec 重算一次；點選展開狀態 per-task 持有
-        bool m_ShowQuestPanel = true;
-        Dictionary<string, UCL_QuestTaskState> m_QuestStatesCache;
-        string m_QuestExpandedTaskId = "";          // 點某 task → 展開 timeline；空 = 無展開
-        string m_QuestStatusFilter = "all";          // all / pending / claimed / in_progress / review / done / ready / stale
-        bool m_QuestFilterByMe = false;              // 只顯示 owner = m_SelectedIdentityId
-        Vector2 m_QuestScroll = Vector2.zero;
-        double m_LastQuestRefreshTime = 0;
-        const double QuestRefreshIntervalSec = 2.0;
-
-        // F3 — Quest 統計 7 計數 cache（跟 ComputeTaskStates 同 throttle）
-        // 物理意義：每幀 foreach states.Values 算 done/claimed/in_progress/... 等於 Cache 之上再每幀重做一次 7 條件分類；
-        //          反正 m_QuestStatesCache 自身有 throttle，計數陣列同步 cache 即可
-        // 數值影響：跟 m_QuestStatesCache 同生命週期；refresh 觸發時一起更新
-        int m_QuestCachedTotal, m_QuestCachedDone, m_QuestCachedClaimed, m_QuestCachedInProg,
-            m_QuestCachedReview, m_QuestCachedReady, m_QuestCachedBlocked, m_QuestCachedStale;
-
         // F2 — DrawMessagesView 標題列 ReadCurrentSeq 結果 cache
         // 物理意義：標題每幀讀檔 _seq.txt 顯示最新 seq → File.ReadAllText 60Hz IO 純為了畫個數字
         //          改成 throttle 0.5s 取一次，跟 PollIntervalSec=2.0 / HandshakeCheckIntervalSec=0.5 同精神
@@ -565,288 +546,8 @@ namespace UCL.Core.EditorLib.Page
                     }
                     return;
                 }
-                using (UCL_ChatTavernPerfOverlay.Sample("DrawQuestPanel")) DrawQuestPanel();
-                GUILayout.Space(4);
                 // 下方訊息區 — 不再自帶 scroll scope（外層頁面已有 scroll，雙 scroll 難操作）
                 using (UCL_ChatTavernPerfOverlay.Sample("DrawMessagesView")) DrawMessagesView();
-            }
-        }
-
-        // ===========================================================
-        // 區塊：Quest Panel — task tree 視覺化
-        // 物理意義：當房間有 events.jsonl → 顯示 reducer 算出的 task 狀態
-        //          沒 events.jsonl → 整個 panel 摺疊（不是 quest 房不展示）
-        // 數值影響：每 QuestRefreshIntervalSec 重算 ComputeTaskStates；點 task 展開 timeline
-        // ===========================================================
-        void DrawQuestPanel()
-        {
-            string roomDir = UCL_ChatTavernIO.GetRoomDir(SelectedRoomId);
-            string eventsPath = Path.Combine(roomDir, "events.jsonl");
-            if (!File.Exists(eventsPath))
-            {
-                using (new GUILayout.HorizontalScope("box"))
-                {
-                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Quest.NoEvents"),
-                        UCL_GUIStyle.LabelStyle);
-                }
-                return;
-            }
-
-            // throttle 重算
-            double now = EditorApplication.timeSinceStartup;
-            if (m_QuestStatesCache == null || now - m_LastQuestRefreshTime > QuestRefreshIntervalSec)
-            {
-                try
-                {
-                    m_QuestStatesCache = UCL_ChatTavernQuestIO.ComputeTaskStates(SelectedRoomId);
-                    m_LastQuestRefreshTime = now;
-                }
-                catch (System.Exception ex)
-                {
-                    Debug.LogWarning($"[ChatTavernPage] Quest reducer 失敗: {ex.Message}");
-                    m_QuestStatesCache = new Dictionary<string, UCL_QuestTaskState>();
-                }
-                // F3 — 計數同步 cache（每幀 foreach 7 條件改成 refresh 觸發一次）
-                m_QuestCachedTotal = m_QuestStatesCache.Count;
-                m_QuestCachedDone = m_QuestCachedClaimed = m_QuestCachedInProg = 0;
-                m_QuestCachedReview = m_QuestCachedReady = m_QuestCachedBlocked = m_QuestCachedStale = 0;
-                foreach (var s in m_QuestStatesCache.Values)
-                {
-                    if (s.is_stale) m_QuestCachedStale++;
-                    switch (s.status)
-                    {
-                        case "done": m_QuestCachedDone++; break;
-                        case "claimed": m_QuestCachedClaimed++; break;
-                        case "in_progress": m_QuestCachedInProg++; break;
-                        case "review": m_QuestCachedReview++; break;
-                        case "pending":
-                            if (UCL_ChatTavernQuestIO.IsReady(s, m_QuestStatesCache)) m_QuestCachedReady++;
-                            else m_QuestCachedBlocked++;
-                            break;
-                    }
-                }
-            }
-
-            using (new GUILayout.VerticalScope("box"))
-            {
-                // 標題列 + 折疊按鈕
-                using (new GUILayout.HorizontalScope())
-                {
-                    if (GUILayout.Button(m_ShowQuestPanel ? "▼" : "▶", UCL_GUIStyle.ButtonStyle, GUILayout.Width(28)))
-                    {
-                        m_ShowQuestPanel = !m_ShowQuestPanel;
-                    }
-                    // F3 — 直接用 cached 計數，每幀不再 foreach 7 條件分類
-                    GUILayout.Label($"🏛 <b>Quest Tasks</b>  total={m_QuestCachedTotal}  ✅{m_QuestCachedDone}  🚧{m_QuestCachedInProg}  🔍{m_QuestCachedReview}  🔒{m_QuestCachedClaimed}  🟢{m_QuestCachedReady}  ⏳{m_QuestCachedBlocked}" + (m_QuestCachedStale > 0 ? $"  🔴{m_QuestCachedStale}" : ""),
-                        UCL_GUIStyle.LabelStyle);
-                    GUILayout.FlexibleSpace();
-                    if (GUILayout.Button("🔄", UCL_GUIStyle.ButtonStyle, GUILayout.Width(32)))
-                    {
-                        m_QuestStatesCache = null; // 強制下幀重算
-                    }
-                }
-                if (!m_ShowQuestPanel) return;
-
-                // 我的 inbox 提示
-                DrawMyInboxHint();
-
-                // filter row
-                using (new GUILayout.HorizontalScope())
-                {
-                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Quest.FilterStatus"), UCL_GUIStyle.LabelStyle, GUILayout.Width(90));
-                    string[] statusOpts = { "all", "ready", "claimed", "in_progress", "review", "done", "pending", "stale" };
-                    int curIdx = System.Array.IndexOf(statusOpts, m_QuestStatusFilter);
-                    if (curIdx < 0) curIdx = 0;
-                    int newIdx = UCL_GUILayout.PopupSearchCache(curIdx, statusOpts, m_PickerDic, "QuestStatusFilter", GUILayout.Width(120));
-                    if (newIdx != curIdx) m_QuestStatusFilter = statusOpts[newIdx];
-                    GUILayout.Space(8);
-                    bool by = GUILayout.Toggle(m_QuestFilterByMe, UCL_CodeLocalize.Get("Tavern.Quest.OnlyMine"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
-                    if (by != m_QuestFilterByMe) m_QuestFilterByMe = by;
-                    GUILayout.FlexibleSpace();
-                }
-
-                // task table（scroll）
-                m_QuestScroll = GUILayout.BeginScrollView(m_QuestScroll, GUILayout.Height(UCL_GUIStyle.GetScaledSize(360)));
-                if (m_QuestStatesCache != null && m_QuestStatesCache.Count > 0)
-                {
-                    var sorted = new List<UCL_QuestTaskState>(m_QuestStatesCache.Values);
-                    sorted.Sort((a, b) =>
-                    {
-                        int sa = QuestStatusSortKey(a), sb = QuestStatusSortKey(b);
-                        if (sa != sb) return sa - sb;
-                        int pa = UCL_ChatTavernQuestIO.PriorityScore(a);
-                        int pb = UCL_ChatTavernQuestIO.PriorityScore(b);
-                        if (pa != pb) return pb - pa;
-                        return b.downstream_weight - a.downstream_weight;
-                    });
-                    foreach (var st in sorted)
-                    {
-                        if (!QuestPassesFilter(st)) continue;
-                        DrawQuestTaskRow(st);
-                    }
-                }
-                else
-                {
-                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Quest.NoTasks"), UCL_GUIStyle.LabelStyle);
-                }
-                GUILayout.EndScrollView();
-            }
-        }
-
-        bool QuestPassesFilter(UCL_QuestTaskState st)
-        {
-            // 我的 filter
-            if (m_QuestFilterByMe && st.owner != SelectedIdentityId) return false;
-            // status filter
-            if (m_QuestStatusFilter == "all") return true;
-            if (m_QuestStatusFilter == "stale") return st.is_stale;
-            if (m_QuestStatusFilter == "ready")
-                return st.status == "pending" && UCL_ChatTavernQuestIO.IsReady(st, m_QuestStatesCache);
-            if (m_QuestStatusFilter == "pending")
-                return st.status == "pending" && !UCL_ChatTavernQuestIO.IsReady(st, m_QuestStatesCache);
-            return st.status == m_QuestStatusFilter;
-        }
-
-        int QuestStatusSortKey(UCL_QuestTaskState s)
-        {
-            switch (s.status)
-            {
-                case "review": return 0;
-                case "in_progress": return 1;
-                case "claimed": return 2;
-                case "pending": return UCL_ChatTavernQuestIO.IsReady(s, m_QuestStatesCache) ? 3 : 4;
-                case "done": return 5;
-                default: return 6;
-            }
-        }
-
-        void DrawQuestTaskRow(UCL_QuestTaskState st)
-        {
-            bool expanded = m_QuestExpandedTaskId == st.id;
-            using (new GUILayout.VerticalScope("box"))
-            {
-                using (new GUILayout.HorizontalScope())
-                {
-                    string mark = QuestStatusEmoji(st);
-                    if (st.is_stale) mark = "🔴" + mark;
-                    GUILayout.Label(mark, UCL_GUIStyle.LabelStyle, GUILayout.Width(28));
-                    if (GUILayout.Button(st.id, UCL_GUIStyle.ButtonStyle, GUILayout.Width(150)))
-                    {
-                        m_QuestExpandedTaskId = expanded ? "" : st.id;
-                    }
-                    GUILayout.Label(string.IsNullOrEmpty(st.title) ? UCL_CodeLocalize.Get("Tavern.Quest.NoTitle") : st.title,
-                        UCL_GUIStyle.LabelStyle, GUILayout.MinWidth(120));
-                    GUILayout.FlexibleSpace();
-                    GUILayout.Label($"P:{st.priority}", UCL_GUIStyle.LabelStyle, GUILayout.Width(60));
-                    GUILayout.Label($"D:{st.downstream_weight}", UCL_GUIStyle.LabelStyle, GUILayout.Width(40));
-                    GUILayout.Label(string.IsNullOrEmpty(st.owner) ? "-" : st.owner,
-                        UCL_GUIStyle.LabelStyle, GUILayout.Width(140));
-                    GUILayout.Label(string.IsNullOrEmpty(st.role) ? "-" : st.role,
-                        UCL_GUIStyle.LabelStyle, GUILayout.Width(80));
-                }
-                if (!expanded) return;
-
-                // 展開：spec 摘要 + lifecycle timeline + 操作 hint
-                GUILayout.Space(2);
-                if (st.depends_on != null && st.depends_on.Count > 0)
-                {
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Quest.DependsOnFmt"), string.Join(", ", st.depends_on)), UCL_GUIStyle.LabelStyle);
-                }
-                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Quest.CreatedFmt"), st.created_at, st.age_days, st.reject_count),
-                    UCL_GUIStyle.LabelStyle);
-                if (!string.IsNullOrEmpty(st.lease_until))
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Quest.LeaseUntilFmt"), st.lease_until) + (st.is_stale ? UCL_CodeLocalize.Get("Tavern.Quest.StaleSuffix") : ""), UCL_GUIStyle.LabelStyle);
-                if (!string.IsNullOrEmpty(st.last_progress_summary))
-                    GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Quest.LastProgressFmt"), st.last_progress_summary), UCL_GUIStyle.LabelStyle);
-
-                // spec 預覽 — 走內嵌 UCL_MarkdownViewerPage（不離開 Unity 視窗）
-                string specPath = UCL_ChatTavernQuestIO.GetTaskSpecPath(SelectedRoomId, st.id);
-                if (File.Exists(specPath))
-                {
-                    if (GUILayout.Button(UCL_CodeLocalize.Get("Tavern.Quest.OpenSpec"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        OpenInMarkdownViewer(specPath);
-                    }
-                }
-
-                // timeline
-                GUILayout.Space(2);
-                GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Quest.LifecycleTitle"), UCL_GUIStyle.LabelStyle);
-                foreach (var ev in st.lifecycle)
-                {
-                    string detail = "";
-                    if (ev.data != null && ev.data.TryGetValue("summary", out var sm) && !string.IsNullOrEmpty(sm))
-                        detail = $" — {sm}";
-                    else if (ev.data != null && ev.data.TryGetValue("reason", out var rs) && !string.IsNullOrEmpty(rs))
-                        detail = $" — reason: {rs}";
-                    GUILayout.Label($"  • <b>seq={ev.seq}</b> [{ev.ts}] <i>{ev.type}</i> by {ev.actor}{detail}",
-                        UCL_GUIStyle.LabelStyle);
-                }
-
-                // hint
-                GUILayout.Space(2);
-                string hint = QuestActionHint(st);
-                if (!string.IsNullOrEmpty(hint))
-                    GUILayout.Label($"💡 {hint}", UCL_GUIStyle.LabelStyle);
-            }
-        }
-
-        string QuestStatusEmoji(UCL_QuestTaskState s)
-        {
-            switch (s.status)
-            {
-                case "done": return "✅";
-                case "review": return "🔍";
-                case "in_progress": return "🚧";
-                case "claimed": return "🔒";
-                case "pending":
-                    return UCL_ChatTavernQuestIO.IsReady(s, m_QuestStatesCache) ? "🟢" : "⏳";
-                default: return "⚪";
-            }
-        }
-
-        string QuestActionHint(UCL_QuestTaskState s)
-        {
-            switch (s.status)
-            {
-                case "pending":
-                    if (UCL_ChatTavernQuestIO.IsReady(s, m_QuestStatesCache))
-                        return $"task_claim task_id={s.id} claimer=<你>";
-                    return UCL_CodeLocalize.Get("Tavern.Quest.Hint.Blocked");
-                case "claimed":
-                case "in_progress":
-                    return $"task_progress / task_review_request / task_done task_id={s.id}";
-                case "review":
-                    return UCL_CodeLocalize.Get("Tavern.Quest.Hint.Review");
-                case "done":
-                    return UCL_CodeLocalize.Get("Tavern.Quest.Hint.Done");
-                default: return "";
-            }
-        }
-
-        void DrawMyInboxHint()
-        {
-            if (string.IsNullOrEmpty(SelectedIdentityId)) return;
-            string inboxPath = UCL_ChatTavernQuestIO.GetInboxPath(SelectedRoomId, SelectedIdentityId);
-            if (!File.Exists(inboxPath)) return;
-            // 簡單算行數（## 開頭 = 一筆 inbox entry）
-            int entries = 0;
-            try
-            {
-                foreach (var line in File.ReadAllLines(inboxPath))
-                {
-                    if (line.StartsWith("## ")) entries++;
-                }
-            }
-            catch { }
-            if (entries == 0) return;
-            using (new GUILayout.HorizontalScope("box"))
-            {
-                GUILayout.Label(string.Format(UCL_CodeLocalize.Get("Tavern.Inbox.HintFmt"), SelectedIdentityId, entries), UCL_GUIStyle.LabelStyle);
-                if (GUILayout.Button(UCL_CodeLocalize.Get("Tavern.Inbox.OpenBtn"), UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                {
-                    OpenInMarkdownViewer(inboxPath);
-                }
             }
         }
 
@@ -918,7 +619,7 @@ namespace UCL.Core.EditorLib.Page
 
                     // 「登錄人數」而非「在場人數」 — agent turn-based 不會主動 leave，
                     // 顯示的是「曾經 join 過的累計成員」，不代表現在活躍。
-                    // 真實活躍偵測需 last_active_at（Phase B；見 Quest_Workflow.md §12.6）
+                    // 真實活躍偵測需 last_active_at（Phase B）
                     string memberText = m_MembersCache != null
                         ? string.Format(UCL_CodeLocalize.Get("Tavern.Room.MemberCountFmt"), m_MembersCache.member_ids.Count)
                         : UCL_CodeLocalize.Get("Tavern.Room.NotJoined");
@@ -1418,51 +1119,34 @@ namespace UCL.Core.EditorLib.Page
             return (id, display, kind);
         }
 
-        // 區塊職責: 透過 Cmd_Tavern.Op_Post 統一發言 — 跟 agent 走 run_cmd.py 完全一樣的底層邏輯
-        // 物理意義: Tim 2026-05-12 拍板 — Page Send 不再 bypass Op_Post 直接 AppendMessage,
-        //          改建 args dict 走 Cmd_Tavern.ExecuteAsync, 自動繼承下列 7 道機制:
-        //          (1) alter pacing — meta alter-pacing-bypass=true 已 preset 跳過
-        //          (2) presence 更新 (sender 自動 status=active + current_room)
-        //          (3) @mention parser → 對方 inbox auto-write
-        //          (4) glossary auto-attach — body 命中 glossary 詞自動 append refs block
-        //          (5) Discord mirror (notify_discord webhook)
-        //          (6) WriteLastView _last_view.md 渲染
-        //          (7) auto-credit/auto-debit hook (work_post / token_parse)
-        // 數值影響: async void 適合 IMGUI button click context — 立刻 return GUI 繼續 redraw,
-        //          post 寫入跟 RefreshMessages 在 await 後處理; m_Input 立刻清空給使用者乾淨輸入區。
-        // Anti-pattern: 別在這裡再 AppendMessage / WriteLastView — Op_Post 全包了, 重複呼叫 = 雙重寫入
+        // 區塊職責: 頁面「送出」—— 走 Senate `tavern-post-system`（TASK-0366；`Cmd_Tavern op=post` 已退場）。
+        // 物理意義: 頁面選的是**顯示身分**（identity），不是 persona ⇒ 系統發言那條（點名 sender、不計酬，與改前同）。
+        //          組訊息（CLI 指令判定、詞典）與寫入（配號、@mention → inbox、Discord mirror 撈得到）都在 Senate／酒館 Server。
+        // 數值影響: async void 適合 IMGUI button click context —— 立刻 return GUI 繼續 redraw；
+        //          發文在背景執行緒（spawn senate，秒級），回來後 RefreshMessages；m_Input 立刻清空。
+        // Anti-pattern: 別在這裡再 AppendMessage —— 寫入端只有酒館 Server，重複呼叫 = 雙重寫入。
         async void DoSend()
         {
             var (idntId, idntName, _) = ResolveSelectedIdentity();
             if (string.IsNullOrEmpty(idntId)) { Debug.LogError(UCL_CodeLocalize.Get("Tavern.Err.NoIdentity")); return; }
             if (string.IsNullOrEmpty(SelectedRoomId)) { Debug.LogError(UCL_CodeLocalize.Get("Tavern.Err.NoRoom")); return; }
 
-            // 構造 args dict — schema 跟 senate ucmd run Tavern --arg key=val 完全對齊
-            var args = new Dictionary<string, string>
-            {
-                { "op", "post" },
-                { "room", SelectedRoomId },
-                { "sender", idntId },
-                { "body", m_Input },
-            };
-            if (m_ReplyTo.HasValue) args["reply_to"] = m_ReplyTo.Value.ToString();
-            if (!string.IsNullOrEmpty(m_MetaInput)) args["meta"] = m_MetaInput;
-            if (!string.IsNullOrEmpty(m_RefsInput)) args["refs"] = m_RefsInput;
+            string aBody = m_Input, aRoom = SelectedRoomId, aMeta = m_MetaInput, aRefs = m_RefsInput;
+            int? aReplyTo = m_ReplyTo;
 
             // 立刻清空輸入區 — 使用者按 Send 後馬上看到乾淨 input, 不必等 await
             m_Input = "";
             m_ReplyTo = null;
 
-            // 走 Cmd_Tavern.Op_Post 同一路徑 — 跟 agent 走 queue.json 觸發的完全一致
-            // 不走 queue.json 因為 Page 就在 Editor 內, 直接 invoke handler 省一次 watcher tick
             try
             {
-                var cmd = new UCL.Core.EditorLib.AgentCommands.ChatTavern.Cmd_Tavern();
-                await cmd.ExecuteAsync(args, default);
+                var aRes = await UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_TavernSenatePost.PostSystemAsync(
+                    idntId, null, aRoom, aBody, aMeta, aRefs, aReplyTo);
+                if (!aRes.Posted) Debug.LogError($"[ChatTavernPage] 送出：{aRes.Describe()}");
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"[ChatTavernPage] DoSend via Cmd_Tavern fail: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogError($"[ChatTavernPage] DoSend via Senate fail: {ex.Message}\n{ex.StackTrace}");
             }
 
             RefreshMessages();

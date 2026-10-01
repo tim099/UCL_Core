@@ -479,33 +479,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
             if (body == null)
                 throw new InvalidOperationException($"[{CommandType}] share 失敗：{error}");
 
-            // 經 registry 拿 Tavern handler —— 跟 queue 分發同一個 instance，同一條 Op_Post pipeline
-            var tavern = UCL_AgentCommandRegistry.Get("Tavern");
-            if (tavern == null)
-                throw new InvalidOperationException($"[{CommandType}] 找不到 Tavern handler —— registry 未註冊？");
-            var tavernArgs = new Dictionary<string, string>
-            {
-                ["op"] = "post",
-                ["room"] = GetArg(args, "room", "tavern").Trim(),
-                ["agent"] = agent,
-                ["persona"] = persona,
-                ["body"] = body,
-                ["meta"] = "{\"tag\":\"reading-note\",\"category\":\"reading\"}",
-            };
-            // caller 環境標記照原樣穿透 —— share 不該是繞過驗證的側門
-            if (args.TryGetValue("_caller_env_marker", out string cem) && !string.IsNullOrEmpty(cem))
-                tavernArgs["_caller_env_marker"] = cem;
-
-            // `_cmd_id` 隨子 args 穿透 —— 子 Cmd 的 seq 才回得到本筆 context（併行下唯一正確的路徑）
-            UCL_AgentCmdContexts.PropagateCmdId(args, tavernArgs);
-            var aPostCtx = UCL_AgentCmdContexts.FromArgs(args, "Library.share");
-            if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
-            await tavern.ExecuteAsync(tavernArgs, token);
-            int seq = aPostCtx?.LastPostSeq ?? 0;
+            // TASK-0366：發文走 Senate（`tavern-post`，組訊息＋寫入＋計酬都在那裡；計酬記在 persona 上）。
+            //   `agent` 仍必填（上方驗證）但不再送出 —— 顯示身分由 persona 推導（TASK-0350 起就以 persona 為準）。
+            ChatTavern.UCL_TavernSenatePost.Result aPost = await ChatTavern.UCL_TavernSenatePost.PostAsync(
+                persona, GetArg(args, "room", "tavern").Trim(), body,
+                "{\"tag\":\"reading-note\",\"category\":\"reading\"}");
+            int seq = aPost.Seq;
             if (seq <= 0)
                 throw new InvalidOperationException(
-                    $"[{CommandType}] 酒館發文未取得 seq —— post 可能被 Op_Post 拒絕（原因見 _last_op.md）。" +
-                    "心得檔不受影響，修好參數重新 share 即可。");
+                    $"[{CommandType}] 酒館發文{aPost.Describe()}。" +
+                    (aPost.Unknown
+                        ? "心得檔不受影響；⛔ **先回讀再決定要不要重新 share**（重發會重複計酬）。"
+                        : "心得檔不受影響，修好之後重新 share 即可。"));
 
             UCL_ReadingLibraryIO.RecordSharedSeq(mediaId, persona, chapterId, round, seq, out string recErr);
             string receiptNote = string.IsNullOrEmpty(recErr)

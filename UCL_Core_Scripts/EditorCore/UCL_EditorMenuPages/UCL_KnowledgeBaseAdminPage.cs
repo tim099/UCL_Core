@@ -19,7 +19,7 @@ namespace UCL.Core.EditorLib.Page
 {
     /// <summary>
     /// 知識庫後台管理頁 — 環境/模型狀態、依賴安裝、索引重建、檢索測試。
-    /// 全部操作委派給 knowledge_base.py (經 UCL_KnowledgeBaseRunner)，與 agent 走 Cmd_KnowledgeBase 同一支腳本。
+    /// 全部操作委派給 knowledge_base.py (經 UCL_KnowledgeBaseRunner)，與 agent 直接叫的是同一支腳本。
     /// </summary>
     // 知識庫 target 清單改為「執行期向 knowledge_base.py 的 `targets` op 動態抓」
     // (config-driven；加 target = 改 kb_targets.json，本頁零改動、下拉自動更新)。
@@ -223,7 +223,7 @@ namespace UCL.Core.EditorLib.Page
             EditorGUILayout.HelpBox(
                 "管理 Agent 知識庫：文檔 / 經驗庫的向量索引與語意檢索。" +
                 "計算全在 knowledge_base.py（嵌入後端 FlagEmbedding 的 bge-m3，可經 KB_EMBED_MODEL 換模型），" +
-                "本頁與 agent 走 Cmd_KnowledgeBase 同一支腳本。",
+                "本頁與 agent 直接叫的是同一支腳本。",
                 MessageType.Info);
 
             if (m_Busy)

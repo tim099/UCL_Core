@@ -737,41 +737,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Bartender
         }
 
         // ===========================================================
-        // 區塊：live 等待名冊 — 讀 server 端權威狀態 `_active_waits.json`
-        // 物理意義：被人 blocking 等著的 persona，戳她能解開一條卡住的鏈；只是累積了幾個 @ 的人，
-        //          晚三十秒戳沒有人被卡住。這是「誰最值得被戳」的最強訊號。
-        // 數值影響：只影響權重排序，不改變入池資格（見 ScanPool 內註解）。
-        // 邊界：只認 status=pending 且未過期的條目。過期判斷用 expires_at ——
-        //      Editor 崩潰 / domain reload 時背景 task 來不及收尾，條目會留在 pending，
-        //      靠時間自然失效比靠「一定有人收尾」可靠（本 repo 對 PID/旗標當存活訊號已有血證）。
-        // ⚠ 資料來源刻意是 C# 自己寫的 `_active_waits.json`（Tim 2026-08-04 定的方向：
-        //   系統性狀態由 server 端擁有）。**不要**改回讀 python 寫的檔 —— 那會讓
-        //   「誰在等誰」的真相源回到 client 端，而 client 是會被 kill 的那一端。
+        // 區塊：live 等待名冊 —— ⛔ 資料來源已移除（TASK-0364，2026-10-01）
+        // 物理意義：原本讀 Editor 非同步等待引擎的 `_active_waits.json`（「誰正被誰 blocking 等著」，加權 100）。
+        //          那套引擎（`op=wait`／`wait_check`）隨酒館任務板一起退場；Senate 的 `tavern-wait` 是同步等、不落名冊
+        //          ⇒ 「誰在等誰」**目前沒有權威來源**。這裡回空表 ＝ 不加權，⛔ 不猜一個名單。
+        // 數值影響：WaitedFor 一律 false ⇒ 權重只剩新 @ × 10（入池資格不變）。
+        //          要恢復「被等的人優先」得先讓 `tavern-wait` 落一份名冊 —— 那是另一張單的事。
         // ===========================================================
         static Dictionary<string, string> LoadLiveWaitTargets()
-        {
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            try
-            {
-                var now = DateTime.UtcNow;
-                foreach (var w in ChatTavern.UCL_ChatTavernIO.LoadActiveWaits().waits)
-                {
-                    if (w == null || string.IsNullOrEmpty(w.expect_from)) continue;
-                    if (!string.Equals(w.status, "pending", StringComparison.OrdinalIgnoreCase)) continue;
-                    var expires = ParseUtc(w.expires_at);
-                    if (expires == DateTime.MinValue || expires <= now) continue;
-                    // 同一人被多人等 → 留先登記的那個名字（權重不疊加，避免被等 N 次就霸榜）
-                    if (!map.ContainsKey(w.expect_from))
-                        map[w.expect_from] = string.IsNullOrEmpty(w.waiter)
-                            ? (string.IsNullOrEmpty(w.owner) ? "有人" : w.owner) : w.waiter;
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[RemoteNotify] 等待名冊讀取失敗（本輪不加權）: {e.Message}");
-            }
-            return map;
-        }
+            => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         // 區塊職責：沒有 pending 批次時，也要能因「她確實讀了酒館」而把累積的 @ 計數清掉。
         // 物理意義：舊行為只在**通知過**（有 pending）時才驗已讀並推進水位。所以「從沒被通知過、

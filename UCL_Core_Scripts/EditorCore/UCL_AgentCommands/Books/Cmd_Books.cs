@@ -162,30 +162,15 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
                                         string body, string tag, CancellationToken token)
         {
             if (GetArg(args, "no_notify", "").Trim().ToLowerInvariant() == "true") return "（未廣播：no_notify）";
-            var tavern = UCL_AgentCommandRegistry.Get("Tavern");
-            if (tavern == null) return "> [!WARNING]\n> 廣播失敗：找不到 Tavern handler（登記/帳不受影響）";
-            var tavernArgs = new Dictionary<string, string>
-            {
-                ["op"] = "post",
-                ["room"] = "tavern",
-                ["agent"] = "tavern-keeper",   // 系統通知 —— 不掛行為人（見區塊註解）
-                ["body"] = body,
-                // auto-broadcast 旗標保留（belt & suspenders）：就算日後有人把 sender 改回行為人，
-                // Sub-rule A 的例外仍然擋得住底薪回饋
-                ["meta"] = $"{{\"tag\":\"{tag}\",\"category\":\"chat\",\"auto-broadcast\":\"true\"}}",
-            };
-            if (args.TryGetValue("_caller_env_marker", out string cem) && !string.IsNullOrEmpty(cem))
-                tavernArgs["_caller_env_marker"] = cem;
             try
             {
-                // `_cmd_id` 隨子 args 穿透 —— 子 Cmd 的 seq 才回得到本筆 context（併行下唯一正確的路徑）
-                UCL_AgentCmdContexts.PropagateCmdId(args, tavernArgs);
-                var aPostCtx = UCL_AgentCmdContexts.FromArgs(args, "Books.share");
-                if (aPostCtx != null) aPostCtx.LastPostSeq = 0;
-                await tavern.ExecuteAsync(tavernArgs, token);
-                int seq = aPostCtx?.LastPostSeq ?? 0;
-                return seq > 0 ? $"- 📣 酒館廣播已發送（seq={seq}）"
-                    : "> [!WARNING]\n> 廣播被 Op_Post 拒絕（原因見上一則 _last_op）—— 登記/帳不受影響";
+                // TASK-0366：系統通知走 Senate `tavern-post-system`（sender＝酒保，沒有 persona ⇒ 不計酬 —— 見區塊註解）。
+                //   auto-broadcast 旗標保留（belt & suspenders）：就算日後有人把 sender 改回行為人，Sub-rule A 的例外仍擋得住底薪回饋。
+                ChatTavern.UCL_TavernSenatePost.Result aPost = await ChatTavern.UCL_TavernSenatePost.PostSystemAsync(
+                    "tavern-keeper", null, "tavern", body,
+                    $"{{\"tag\":\"{tag}\",\"category\":\"chat\",\"auto-broadcast\":\"true\"}}");
+                return aPost.Posted ? $"- 📣 酒館廣播已發送（seq={aPost.Seq}）"
+                    : $"> [!WARNING]\n> 廣播{aPost.Describe()} —— 登記/帳不受影響";
             }
             catch (Exception e)
             {

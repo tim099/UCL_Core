@@ -41,9 +41,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public static string GetMessagesDateDir(string roomId, DateTime utcDate)
             => Path.Combine(GetMessagesRoot(roomId), utcDate.ToString("yyyy-MM-dd"));
 
-        public static string GetEventsDateDir(string roomId, DateTime utcDate)
-            => Path.Combine(GetEventsRoot(roomId), utcDate.ToString("yyyy-MM-dd"));
-
         public static string GetBackupRoot(string roomId)
             => Path.Combine(UCL_ChatTavernIO.GetRoomDir(roomId), BackupDirName);
 
@@ -78,59 +75,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public static string BuildMessageFileNameFromSeq(int seq)
         {
             return $"{seq:D8}.json";
-        }
-
-        public static string BuildEventFileName(DateTime utcTime, string uuid6, string eventType)
-        {
-            string safeType = string.IsNullOrEmpty(eventType) ? "event" : eventType.Replace("/", "_").Replace("\\", "_");
-            return $"{utcTime:HHmmss_fff}_{uuid6}__{safeType}.json";
-        }
-
-        // ===========================================================
-        // 區塊職責：寫一筆 quest event 為獨立 .json 檔（取代既有 AppendEvent）
-        // ===========================================================
-        public static (UCL_QuestEvent record, string fullPath) WriteEventFile(string roomId, UCL_QuestEvent ev)
-        {
-            UCL_ChatTavernIO.EnsureRoomDir(roomId);
-
-            DateTime utcTime;
-            if (!string.IsNullOrEmpty(ev.ts) && DateTime.TryParse(
-                ev.ts, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
-                out var parsed))
-            {
-                utcTime = parsed;
-            }
-            else
-            {
-                utcTime = DateTime.UtcNow;
-                ev.ts = utcTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-            }
-
-            // event 沒 uuid 欄位（既有 schema），但檔名仍需要 — 內部生成不寫進 record
-            string uuid6 = GenerateUUID6();
-
-            string dateDir = GetEventsDateDir(roomId, utcTime);
-            Directory.CreateDirectory(dateDir);
-            string filename = BuildEventFileName(utcTime, uuid6, ev.type);
-            string fullPath = Path.Combine(dateDir, filename);
-
-            int retry = 0;
-            // ⚠ 同族第二格（@kiara 2026-09-21 QA ④ 指出）：這裡原本也是 check-then-write
-            //   （`while (File.Exists) retry` → `if (File.Exists) throw` → `WriteAllText`）。
-            //   嚴重度低於訊息那條 —— event 檔名帶隨機 uuid6，跨 process 撞檔要 uuid6 相同（機率事件）；
-            //   而訊息檔名是 seq，**兩端算到同一個號是必然不是機率**。
-            //   ⇒ 但修法完全相同（原子建檔），所以一起收掉：**撞檔由建檔失敗量到**，
-            //   重試換新 uuid6；其餘 IO 失敗（磁碟滿／路徑失效）原樣往上炸。
-            string json = SerializeEventNoSeq(ev);
-            while (retry < 10)
-            {
-                if (SCP.Core.Io.SCP_AtomicFile.TryCreateNew(fullPath, json)) return (ev, fullPath);
-                uuid6 = GenerateUUID6();
-                filename = BuildEventFileName(utcTime, uuid6, ev.type);
-                fullPath = Path.Combine(dateDir, filename);
-                retry++;
-            }
-            throw new IOException($"[Tavern T38] 寫 event file 失敗 — 10 次 retry 仍撞檔：{fullPath}");
         }
 
         // ===========================================================
@@ -768,24 +712,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
             sb.Append("}");
             return sb.ToString();
-        }
-
-        public static string SerializeEventNoSeq(UCL_QuestEvent e)
-        {
-            // 直接呼叫既有 SerializeEvent 然後拿掉 seq 欄位
-            // 簡化：用既有 SerializeEvent，然後 string replace
-            string raw = UCL_ChatTavernQuestIO.SerializeEvent(e);
-            // raw 開頭格式："{\"seq\":N,\"ts\":..."
-            // 拿掉 "seq":N, 部分（regex / manual scan）
-            int seqIdx = raw.IndexOf("\"seq\":", StringComparison.Ordinal);
-            if (seqIdx < 0) return raw;
-            int colon = raw.IndexOf(':', seqIdx);
-            int comma = raw.IndexOf(',', colon);
-            if (comma < 0) return raw;
-            // remove "seq":N, ；保留前綴 "{" 之後從 comma+1 起
-            string before = raw.Substring(0, seqIdx);                    // "{"
-            string after = raw.Substring(comma + 1);                     // "\"ts\":..."
-            return before + after;
         }
 
         // 既有 EscapeStr 私有；複製一份簡化版

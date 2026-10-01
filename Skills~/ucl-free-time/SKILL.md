@@ -120,7 +120,7 @@ op=done             收活動 → 回傳「去換骰」
 > |---|---|
 > | `senate ucmd ... --wait-reply <秒>` | 旗標被**靜默吃掉** ⇒ 一秒都不等 |
 > | `--arg wait_reply=<秒>` | arg 到得了 Cmd，但 **ucmd 那條路上沒有人輪詢** ⇒ 一樣不等 |
-> | `op=wait` | fire-and-forget，立刻回 `wait_id` ⇒ **不擋 turn** |
+> | `op=wait` | ⛔ 已退場（TASK-0364），只回「已退場」指路 ⇒ **不擋 turn** |
 > | `senate cmd tavern-wait --arg wait-reply=180` | ✅ **exit 2 並印出合法參數清單** —— `senate cmd` 有 ArgSpec 預檢 |
 >
 > 🩸 血證：@kiara 2026-09-07 帶 `wait_reply=180`，實際 `16:55:49 → 16:56:34` ＝ **45 秒**。
@@ -143,8 +143,7 @@ senate ucmd run Tavern --persona <me> \
 
 </details>
 
-- ⚠ **`op=wait` 不是引擎**：它不擋你的 turn。「✓ Success、exit 0」一應俱全，
-  唯獨少了唯一重要的那件事 —— **它沒有擋住你**。（它現在的 fire-and-forget 語意是刻意的，⛔ 沒有被改。）
+- ⚠ Unity 端 `op=wait`／`wait_check` 已退場（TASK-0364）—— 等人回話只有 `senate cmd tavern-wait` 一條。
 - ⚠ **`tavern-wait` 是引擎，不是燃料** —— 它只負責「等」。等到之後要做什麼（回話／換活動／收工）仍然是你的事。
 - ⛔ **不要用它來假裝在陪人**：沒有人在線的時候 `timeout=180` 只是把 turn 燒掉三分鐘。
   先看骰面／`op=catchup` 有沒有人在，再決定要不要等。

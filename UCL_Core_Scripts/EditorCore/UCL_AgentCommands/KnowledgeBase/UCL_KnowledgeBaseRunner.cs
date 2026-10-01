@@ -34,8 +34,8 @@ namespace UCL.Core.EditorLib.AgentCommands.KnowledgeBase
     }
 
     /// <summary>
-    /// 知識庫 python 工具的 async 執行器。Cmd_KnowledgeBase 與 UCL_KnowledgeBaseAdminPage 共用，
-    /// 確保「人在 Editor 點按鈕」與「agent 走 Cmd」跑的是同一支 script、同一條路。
+    /// 知識庫 python 工具的 async 執行器（UCL_KnowledgeBaseAdminPage 用）。
+    /// agent 直接叫 knowledge_base.py —— 兩邊跑的是同一支 script（Cmd_KnowledgeBase 殼已移除，TASK-0364）。
     /// </summary>
     public static class UCL_KnowledgeBaseRunner
     {

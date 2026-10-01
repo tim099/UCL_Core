@@ -9,9 +9,8 @@ knowledge_base.py — Agent 知識庫 / 長期記憶向量檢索工具 (skeleton
 
 架構定位 (Zeta/summit 2026-07-23, per Tim 拍板):
   - 本 script = 知識庫的「唯一真相來源」: 真正算向量、建索引、跑檢索都在這裡。
-  - Cmd_KnowledgeBase (C#) = 管理層自動化入口 (status/install/prefetch/reindex/search)，
-    agent 與 AdminPage 共用同一條 code path。
-  - UCL_KnowledgeBaseAdminPage (C#) = Cmd 之上的薄 UI。
+  - agent 直接叫本 script（Cmd_KnowledgeBase 那層 C# 殼已於 2026-10-01 移除，TASK-0364：agent 本來就都直接叫 python）。
+  - UCL_KnowledgeBaseAdminPage (C#) = 本 script 之上的薄 UI（經 UCL_KnowledgeBaseRunner）。
   嵌入後端走 FlagEmbedding 的真 BAAI/bge-m3，但介面與後端解耦 — 換模型不動上層。
 
   熱路徑 (search / embed) 刻意留純 Python: agent 直接呼叫最短路徑，
@@ -49,8 +48,7 @@ def install_hint() -> str:
         "⚠️ 知識庫尚未安裝（FlagEmbedding 後端缺席）。安裝方式（擇一）：\n"
         "  1.【推薦】Unity Editor → 控制台 →「🧠 知識庫管理」→ 按「📦 安裝 bge-m3 依賴」\n"
         "     （走腳本安裝，跨專案/機器可重現；裝完再按「⬇️ 預熱 bge-m3 權重」）\n"
-        "  2. CLI:   python <UCL_Core>/Tools~/AgentCommands/knowledge_base.py install --full\n"
-        "  3. Agent: senate ucmd run KnowledgeBase --persona <me> --arg op=install --arg full=true"
+        "  2. CLI / Agent: python <UCL_Core>/Tools~/AgentCommands/knowledge_base.py install --full"
     )
 
 

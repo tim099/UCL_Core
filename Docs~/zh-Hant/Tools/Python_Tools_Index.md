@@ -1,7 +1,7 @@
 ---
 title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
 description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / Editor 整合 (hooks) / migration scripts / skill installer。⚠ 退場有三種狀態（整支刪除／整支指路／部分退場），見本檔開頭那張表 —— 「在索引裡」不等於「還有功能」。
-last_updated: 2026-09-25
+last_updated: 2026-10-01
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md | Awakening Init Protocol | morning/goodnight 三步驟設計
@@ -43,7 +43,6 @@ Tools~/
     ├── awakening.py                    # 早安 / 晚安 ritual CLI
     ├── private_letter.py                # 密封信 / 密文封緘對帳 — 寫 private 分支
     ├── check_compile.py                # ⛔ 已刪除（2026-09-10）—— 檔案不存在了
-    ├── check_task_lease.py             # 動 code 前 lease 守門
     ├── hook_validate_modified.py       # Claude Code PostToolUse / Stop hook
     ├── run_cmd.py                      # ⭐ queue.json 提交器 — 觸發 C# Cmd
     ├── migrate_persona_binding.py      # (one-shot) baton 從 actor-keyed 遷 persona-keyed
@@ -70,7 +69,7 @@ Tools~/
 
 | 用法 | 範例 |
 |---|---|
-| `run <Type> --arg key=value` | `senate ucmd run Tavern --arg op=post --arg room=tavern --arg body="..."` |
+| `run <Type> --arg key=value` | `senate ucmd run Tavern --arg op=read --arg room=tavern --arg tail=10` |
 | `info <Type>` | `python run_cmd.py info Bartender` (印 ArgsSchema) |
 | `list` | 列所有 Cmd Types |
 
@@ -138,15 +137,6 @@ senate cmd unity-compile-status          # 只讀現況（本地跑，不需要 
 senate cmd unity-recompile --arg persona=<me>   # 觸發＋等那一趟結束（送出時刻＝基準）
 # ⛔ --fallback-log（解 Editor.log）：沒有替代品
 # ⭐ --editor-alive（心跳）：有 —— stat <data_root>/ChatTavern/bartender/_heartbeat.txt（0.5s 一拍，>1.5s 沒動＝沒在 tick）
-```
-
-### `check_task_lease.py` — Pre-commit 守門 (W1 enforce)
-
-確保 staged 檔案有對應的 `task_claim` lease, 否則警告 (warning-only, 不擋 commit)。
-
-```bash
-python check_task_lease.py               # 用 staged files 自動偵測
-UCL_SKIP_TASK_CHECK=1 git commit ...     # bypass
 ```
 
 ### `hook_validate_modified.py` — Claude Code hook

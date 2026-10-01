@@ -1,18 +1,17 @@
 ---
 title: UCL_KnowledgeBaseAdminPage — 知識庫後台管理頁
-description: Agent 長期記憶 / 文檔向量檢索的後台管理入口。環境檢查、依賴安裝、模型預熱、索引重建、檢索測試全在 Editor 內一鍵操作；計算委派 knowledge_base.py，與 agent 走 Cmd_KnowledgeBase 同一支腳本。
+description: Agent 長期記憶 / 文檔向量檢索的後台管理入口。環境檢查、依賴安裝、模型預熱、索引重建、檢索測試全在 Editor 內一鍵操作；計算委派 knowledge_base.py，與 agent 直接呼叫的是同一支腳本。
 source_root: Assets/UCL/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_KnowledgeBaseAdminPage.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-07-23
+last_updated: 2026-10-01
 target_audience: [Tools_User, Gameplay_Programmer]
 related:
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_KnowledgeBase.md | Cmd_KnowledgeBase 指令規格 | agent 端的 op 派遣式 Cmd 介面
   - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_DocSearchPage.md | 文檔關鍵字搜尋頁 | 關鍵字精確搜尋（知識庫則走語意向量檢索，互補）
 ---
 
 # 🧠 UCL_KnowledgeBaseAdminPage — 知識庫後台管理頁
 
-> 一句話：**Agent 知識庫（長期記憶 / 文檔語意檢索）的管理儀表板**。真正的向量計算全在 `knowledge_base.py`，本頁只是它之上的薄 UI；agent 透過 `Cmd_KnowledgeBase` 走的是**同一支腳本**。
+> 一句話：**Agent 知識庫（長期記憶 / 文檔語意檢索）的管理儀表板**。真正的向量計算全在 `knowledge_base.py`，本頁只是它之上的薄 UI；agent 直接呼叫的是**同一支腳本**。
 
 ---
 
@@ -22,12 +21,11 @@ related:
 
 ---
 
-## 2. 架構定位（三層，職責不重疊）
+## 2. 架構定位（兩個入口，職責不重疊）
 
 | 層 | 角色 | 說明 |
 |---|---|---|
-| `knowledge_base.py` | **唯一真相來源** | 真正算向量、建索引、跑檢索。位於 `<UCL_Core>/Tools~/AgentCommands/`（跨專案共用），index 快取落在**主專案** `AgentCommands/_vectors/` |
-| `Cmd_KnowledgeBase` | **管理層自動化入口** | agent 經 queue.json 呼叫；op 分派委派 python |
+| `knowledge_base.py` | **唯一真相來源**（agent 入口） | agent 直接 `python knowledge_base.py <sub>` 呼叫；真正算向量、建索引、跑檢索。位於 `<UCL_Core>/Tools~/AgentCommands/`（跨專案共用），index 快取落在**主專案** `AgentCommands/_vectors/` |
 | `UCL_KnowledgeBaseAdminPage` | **薄 UI** | 人在 Editor 點按鈕；經 `UCL_KnowledgeBaseRunner` 非同步 spawn python（不凍結 Editor），與 agent 同一條 code path |
 
 > **嵌入後端**：`FlagEmbedding` 跑真正的 `BAAI/bge-m3`（dense + sparse + colbert 三合一；skeleton 先用 dense）。model id 可經 `--model` / 環境變數 `KB_EMBED_MODEL` 覆蓋（介面與模型解耦）。

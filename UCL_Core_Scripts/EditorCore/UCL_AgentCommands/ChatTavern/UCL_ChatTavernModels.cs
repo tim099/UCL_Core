@@ -44,11 +44,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public string description;
         public string created_at;
 
-        // R6 — Quest task lifecycle 鏡像到聊天室開關
-        // 物理意義：true = 此房 task_create / task_claim / task_done 等事件不寫 system message 進 messages.jsonl
-        // 數值影響：JsonUtility 對缺欄位 deserialize 成 default(bool)=false → 既有 meta.json 不必動，預設行為 = 鏡像 on
-        public bool disable_quest_mirror;
-
         // R7 (T04 chat-flow-robust) — 房 owner agent
         // 物理意義：模糊「大小姐」routing 給此 agent；null/空 = 任何 agent 可接（broadcast）
         // 數值影響：純 routing hint；agent 看 SKILL Routing Rules 自律解析
@@ -93,53 +88,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         public string path;    // 相對 repo root，例如 "CardGame/Assets/Scripts/.../X.cs"
         public string anchor;  // 例如 "line=84" 或 "guid=abc..."（v2）
         public string label;   // 顯示用短描述（v2）
-    }
-
-    /// <summary>
-    /// 一筆 active wait — 對應 _active_waits.json 的一個條目。
-    /// 物理意義：op=wait 改成 fire-and-forget 後，handler 立刻寫一筆 pending 進來、返回；
-    ///           背景 UniTask 監看 _seq.txt，命中 / timeout 後改 status 並寫 _wait_&lt;id&gt;.md。
-    ///           agent 之後用 op=wait_check 查狀態。
-    /// </summary>
-    [Serializable]
-    public class UCL_ChatActiveWait
-    {
-        public string wait_id;        // 例 "20260508-005000-a1b2c3"
-        public string room_id;
-        public int since_seq;          // 等待 seq > since_seq 的新訊息
-        public int timeout_sec;
-        public string started_at;      // ISO 8601 UTC
-        public string expires_at;      // ISO 8601 UTC（started_at + timeout_sec）
-        public string status;          // "pending" | "fulfilled" | "timeout" | "cancelled"
-        public int result_first_seq;   // 0 = N/A；fulfilled 時為命中的第一個新 seq
-        public int result_count;       // 0 = N/A；fulfilled 時為新訊息數
-        public string finished_at;     // ISO 8601 UTC；status 進入終態時填
-        public string owner;           // 可選，發起 wait 的 identity_id
-
-        // ── 以下三欄為 2026-08-04 加入（Tim：系統性功能固化到 C# server 端）──
-        // 物理意義：wait 的完整語意本來散在 python 的 client-side polling（tavern_handshake.py）——
-        //          「等誰」「誰在等」只存在那個 process 的區域變數裡，磁碟上沒有任何紀錄。
-        //          於是 Editor 端想知道「現在誰被 blocking 等著」時無從得知，
-        //          酒保自動通知也就無法把「被等的人」加權（Tim 2026-08-04 要的權重 100）。
-        //          把它們寫進這裡＝wait 的意圖成為 server 端的一等公民，不再是 client 的私有狀態。
-        public string expect_from;     // 可選，只認這個 sender_id 的回覆（對應舊 --wait-reply-from）
-        public string waiter;          // 可選，發起 wait 的 persona（owner 的 persona 層，給「誰在等」顯示用）
-        public bool exclude_bartender; // 酒保的氛圍插話不算數（預設 true；等的就是酒保時自動關掉）
-
-        // 區塊職責：酒保插話的**可見性** —— 不打斷 wait，但要讓等待方知道發生過。
-        // 物理意義：python client 版把酒保插話當 weak reply 直接結束 wait，agent 才看得到它。
-        //          那是「為了讓人看見而砍掉正在做的事」。搬進 server 後改成：wait 照等，
-        //          插話次數記在這裡，等待方輪詢時看到計數變動就印出來 —— 兩件事都拿到。
-        // 數值影響：npc_cups 累加；達 UCL_TavernWaitNpc.RestHintDrinks 時等待方該自決收 turn。
-        public int npc_cups;           // 本次 wait 期間酒保插話累計杯數
-        public int npc_after_sec;      // 幾秒後才開始插話（0 = 用預設；測試/調校可調小）
-    }
-
-    /// <summary>active wait 清單（JsonUtility 序列化用包裝）。</summary>
-    [Serializable]
-    public class UCL_ChatActiveWaitList
-    {
-        public List<UCL_ChatActiveWait> waits = new List<UCL_ChatActiveWait>();
     }
 
     /// <summary>

@@ -24,7 +24,7 @@ description: |
 - **L11 [defensive cmd]**: cmd_type alias **必須雙層**（Python submit + C# Registry），stuck cmd 直寫 queue 會繞過 Python
 - **L12 [routing exception]**: Noisy log（戰鬥 log）category routing 設 **m_Exclusive=true**，additive 會「買一送一」洗 main（L2 default 仍適用一般 chat）
 - **L13 [push notification]**: turn-based agent 缺 push → per-agent **last_read_seq state** 補 Discord 紅點，首次跑要 baseline mark-read
-- **L14 [catchup audit]**: 判別他 agent 程序違規前必掃 **events/ + messages/** 兩 dir（只看 messages tail 會漏 task_create/done system events，會被反將）
+- **L14 [catchup audit]**: 判別他 agent 程序違規前必掃 **events/ + messages/** 兩 dir（只看 messages tail 會漏 events/ 的 system events —— 舊 quest 事件資料仍在，會被反將）
 - **L15 [bash blast radius]**: tavern post body 含 backtick / `~/` 永遠走 temp file + `$(cat)` 不直接夾 `--arg`；2026-05-15 Avada Kedavra 事件起源
 - **L16 [layer mixing]**: 「外觀 OK ≠ 真的 OK」家族 — Syntactic / Identity / Status / Content 四層各自需要對應 verify 工具，撞同類盲點 2 次 = pattern 不是巧合
 - **L17 [tool-survey first]**: 推薦方案前 MUST 先 ask/grep 用戶實際工具棧 (CLI vs GUI vs IDE) — 跳過 survey 直接進方案 = 用戶被迫驗證假設棧

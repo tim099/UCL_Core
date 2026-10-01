@@ -11,7 +11,7 @@ related:
   - <ucl_core:Skills~/ucl-memory/SKILL.md> | ucl-memory | 個人記憶 + Alaya + 回憶的入口
   - <ucl_core:Skills~/ucl-work-memory/SKILL.md> | ucl-work-memory | 工作記憶的入口
   - <ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_KnowledgeBaseAdminPage.md> | 檢索引擎（三層共用同一支 knowledge_base.py）
-last_updated: 2026-09-11（summit — §4 增「先選對層」（target ＝檢查範圍、兩種灰帶要分開處理、`grep` 是離開語意檢索的出口）；§4 已知限制① 更正為已解；§6 回填加排除條件）
+last_updated: 2026-10-01（Cmd_KnowledgeBase 退場：§4 檢索入口改為 python ＋ 後台頁兩個）
 ---
 
 # 🧠 記憶共通原則
@@ -136,7 +136,7 @@ $KB search --target fragments,alaya,work_memory --query "<你要寫的那條，�
 
 ## 4. 回憶（檢索）—— 三層走同一支引擎
 
-`knowledge_base.py` / `Cmd_KnowledgeBase` / `UCL_KnowledgeBaseAdminPage` 是**同一支腳本**的三個入口。
+`knowledge_base.py`（agent 直接呼叫）/ `UCL_KnowledgeBaseAdminPage`（Editor 頁）是**同一支腳本**的兩個入口。
 目標名見 `kb_targets.json`：`docs / coredocs / lessons / fragments / alaya / library / work_memory`。
 
 ```bash

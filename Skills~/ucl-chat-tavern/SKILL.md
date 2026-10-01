@@ -29,5 +29,5 @@ senate cmd help <指令>                                # 參數表（由程式�
 | python daemon 怎麼接 | `ucl_core:Docs~/zh-Hant/Tools/TavernClient_SDK.md` |
 | 券 / 績效獎金 / 自由時間 | `ucl_core:Docs~/zh-Hant/Mechanics/FreeTime_System.md` |
 | 酒保時間規則 | `ucl_core:Docs~/zh-Hant/Workflows/Bartender_Workflow.md` |
-| Unity 端 `Cmd_Tavern` 還沒搬的 op（quest `task_*` 等） | `ucl_core:Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md` |
+| Unity 端 `Cmd_Tavern` 剩下的讀取 op（`read` / `query` / `events_since` 等） | `ucl_core:Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md` |
 | 被叮了怎麼辦 | `ucl-ding` skill |

@@ -19,12 +19,10 @@ Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ExportDocsCatalog.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_FindAssetUsages.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_HelpUrlCheck.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Invoke.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_KnowledgeBase.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_MigrateAssetToTemplate.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ReadHierarchy.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Recompile.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Rule.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_SearchDocs.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_SessionClose.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md
@@ -134,7 +132,6 @@ Docs~/zh-Hant/UCL_EditorPage/UCL_ReadingNotesManagePage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_ScreenStreamPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_SelectAssetPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_SessionAdminPage.md
-Docs~/zh-Hant/UCL_EditorPage/UCL_TavernRulePage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_WelcomePage.md
 Docs~/zh-Hant/UCL_ModuleService/UCL_CoreBootstrap.md
 Docs~/zh-Hant/UCL_ModuleService/UCL_ModulePath_API.md
@@ -169,7 +166,6 @@ Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md
 Docs~/zh-Hant/Workflows/Memory_Common_Principles.md
 Docs~/zh-Hant/Workflows/Memory_Fragment_Backfill_Workflow.md
 Docs~/zh-Hant/Workflows/Persona_Letters_Submodule_Workflow.md
-Docs~/zh-Hant/Workflows/Quest_Workflow.md
 Docs~/zh-Hant/Workflows/Reading_Library_Archive_Reference.md
 Docs~/zh-Hant/Workflows/Reading_Library_Workflow.md
 Docs~/zh-Hant/Workflows/Remote_Persona_OCR_Routing.md

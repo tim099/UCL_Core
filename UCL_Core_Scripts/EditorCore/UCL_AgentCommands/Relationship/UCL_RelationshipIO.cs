@@ -1,7 +1,8 @@
-// 區塊職責：relationship 的磁碟層 —— 新結構讀寫。
+// 區塊職責：relationship 的磁碟層 —— **只讀**（Relationship 後台頁用）。
 // （舊 affinity 讀取與一次性遷移已於 2026-08-19 移除 —— 遷移完畢、來源資料已刪，史料見 git。）
-// 物理意義：letters/<persona>/relationship/ 底下的唯一寫入端；後台頁與 CLI 都走這裡。
-// 數值影響：純檔案 IO。遷移刻意**只新增不刪除、不覆寫既有檔** ⇒ 冪等，跑第二次寫 0 檔。
+// 物理意義：⛔ TASK-0361（Tim 2026-10-01「寫入端整合到 Senate，Unity 端不留」）：寫入（事件／看法／投影／釘主人）
+//          只在 SCP_Core `SCP_RelationshipStore`（`senate cmd relationship`）。本檔不留任何寫入方法。
+// 數值影響：純讀，一個位元組都不寫。
 // 設計沿革：Plan_Relationship_System.md（Tim 2026-08-18 拍板）。
 #if UNITY_EDITOR
 using System;
@@ -41,34 +42,16 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
         //      後綴只依賴 **exact 名字本身**，不依賴誰先被處理
         //      ⇒ 同一批資料在不同機器上得到同一組資料夾名（冪等、跨機器一致）。
         //
-        // 數值影響：可能建立資料夾與 `_target.txt`；iDryRun 時不寫，只回算出來的路徑。
+        // 數值影響：⛔ 純讀（TASK-0361）—— 只回算出來的路徑。原本找不到主人時會順手釘 `_target.txt`
+        //          （＝讀的時候也在寫）；寫入端（含釘主人）只在 Senate `SCP_RelationshipStore.TargetDir(iWrite:true)`。
         // ===========================================================
-        public static string TargetDir(string iPersona, string iTarget) => TargetDir(iPersona, iTarget, false);
-
-        public static string TargetDir(string iPersona, string iTarget, bool iDryRun)
+        public static string TargetDir(string iPersona, string iTarget)
         {
-            // 先正規化 —— 之後所有路徑都用收斂後的名字，兩種寫法自然落進同一個資料夾
             string aExact = CanonicalTarget(iTarget);
             string aBase = Path.Combine(PersonaDir(iPersona), Sanitize(aExact));
-
             string aOwner = ReadOwner(aBase);
-            if (aOwner == null)                                   // 資料夾還不存在／還沒釘 ⇒ 這個名字拿下它
-            {
-                if (!iDryRun) WriteOwner(aBase, aExact);
-                return aBase;
-            }
-            if (string.Equals(aOwner, aExact, StringComparison.Ordinal)) return aBase;   // 本來就是我的
-
-            // 名字只差大小寫（或同名不同寫法）⇒ 換一個專屬資料夾，兩邊都留著
-            string aAlt = aBase + "__" + UCL_RelationshipEvent.Sha1Hex(aExact, 4);
-            if (!iDryRun)
-            {
-                WriteOwner(aAlt, aExact);
-                Debug.LogWarning($"[Relationship] target 名只差大小寫：`{aOwner}` 已占用 "
-                    + $"{Path.GetFileName(aBase)}／`{aExact}` 改用 {Path.GetFileName(aAlt)}"
-                    + "（刻意分開保存，合併與否另案處理）。");
-            }
-            return aAlt;
+            if (aOwner == null || string.Equals(aOwner, aExact, StringComparison.Ordinal)) return aBase;
+            return aBase + "__" + UCL_RelationshipEvent.Sha1Hex(aExact, 4);   // 名字只差大小寫 ⇒ 專屬資料夾（Senate 那側同一條規則）
         }
 
         // ===========================================================
@@ -147,19 +130,10 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
             try { return File.ReadAllText(f, Encoding.UTF8).Trim(); } catch { return ""; }
         }
 
-        static void WriteOwner(string iDir, string iExact)
-        {
-            Directory.CreateDirectory(iDir);
-            File.WriteAllText(Path.Combine(iDir, OWNER_FILE), iExact + "\n", new UTF8Encoding(false));
-        }
         public static string EventsDir(string iPersona, string iTarget)
             => Path.Combine(TargetDir(iPersona, iTarget), EVENTS);
-        public static string EventsDir(string iPersona, string iTarget, bool iDryRun)
-            => Path.Combine(TargetDir(iPersona, iTarget, iDryRun), EVENTS);
         public static string OpinionsDir(string iPersona, string iTarget)
             => Path.Combine(TargetDir(iPersona, iTarget), OPINIONS);
-        public static string OpinionsDir(string iPersona, string iTarget, bool iDryRun)
-            => Path.Combine(TargetDir(iPersona, iTarget, iDryRun), OPINIONS);
         public static string CurrentPath(string iPersona, string iTarget)
             => Path.Combine(TargetDir(iPersona, iTarget), "_current.md");
 
@@ -169,123 +143,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
             if (string.IsNullOrEmpty(s)) return "_unknown";
             foreach (var c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
             return s.Trim();
-        }
-
-        // ===========================================================
-        // 區塊職責：寫一筆事件 —— 檔名 = 事件發生的時刻，**同名就是同一筆**。
-        // 物理意義：去重是檔案系統的性質，不是一段要維護的比對程式碼（Plan §2.2）。
-        //
-        // ⚠ 檔名改成純 at 之後（Tim 2026-08-18），「同名必同內容」不再由檔名保證，
-        //   而是由資料性質保證（實測兩專案 0 撞號）。**實測不會撞 ≠ 撞了可以靜默**：
-        //   同名時比對 reason —— 相同才算重複跳過；不同就 **另存 `-b` ＋ LogError**，
-        //   兩筆都留著讓人判斷。⇒ 最壞情況是多一個檔要人看，不是少一筆帳沒人知道。
-        //
-        // 數值影響：回 true = 真的寫了；false = 已存在且內容相同（重複）。dry run 只問不寫。
-        // ===========================================================
-        public static bool WriteEvent(UCL_RelationshipEvent e, bool iDryRun, out string oPath)
-        {
-            oPath = Path.Combine(EventsDir(e.persona, e.target, iDryRun), e.FileName());
-            if (File.Exists(oPath))
-            {
-                string aOldReason = ReadBody(oPath);
-                if (string.Equals(aOldReason, (e.reason ?? "").Trim(), StringComparison.Ordinal))
-                    return false;                       // 真重複 —— 遷移的正常路徑
-                // 同時戳但內容不同：不覆蓋、不丟棄，兩筆並存並且大聲喊
-                oPath = oPath.Substring(0, oPath.Length - 3) + "-b.md";
-                Debug.LogError($"[Relationship] ⚠ 同時戳但內容不同：{e.persona}→{e.target} @ {e.at}"
-                    + $"　⇒ 另存 {Path.GetFileName(oPath)}，兩筆都保留，請人工判斷哪一筆是對的。");
-                if (File.Exists(oPath)) return false;
-            }
-            if (iDryRun) return true;
-            Directory.CreateDirectory(Path.GetDirectoryName(oPath));
-            var sb = new StringBuilder();
-            sb.Append("---\n");
-            sb.Append($"at: {e.at}\n");
-            sb.Append($"persona: {e.persona}\n");
-            sb.Append($"target: {e.target}\n");
-            sb.Append($"source: {e.source}\n");
-            sb.Append("axis_deltas:\n");
-            foreach (var kv in e.axis_deltas)
-                sb.Append($"  {kv.Key}: {kv.Value.ToString("0.####", CultureInfo.InvariantCulture)}\n");
-            sb.Append($"surface_score_after: {e.surface_score_after}   # 歷史註記，不是事實來源\n");
-            sb.Append("---\n\n");
-            sb.Append(e.reason).Append('\n');
-            File.WriteAllText(oPath, sb.ToString(), new UTF8Encoding(false));
-            return true;
-        }
-
-        // 區塊職責：寫一則看法。
-        // ⚠ `at:` 一律**顯式輸出**，沒有時戳就寫 `null` —— 省略的話下一個工具會以為
-        //   「這個欄位還沒被填」而去猜一個時間，而猜出來的時間看起來跟真的一模一樣。
-        public static bool WriteOpinion(string iPersona, string iTarget, UCL_RelationshipOpinion o,
-            bool iDryRun, out string oPath)
-        {
-            oPath = Path.Combine(OpinionsDir(iPersona, iTarget, iDryRun), o.FileName());
-            if (File.Exists(oPath)) return false;
-            if (iDryRun) return true;
-            Directory.CreateDirectory(Path.GetDirectoryName(oPath));
-            var sb = new StringBuilder();
-            sb.Append("---\n");
-            sb.Append($"at: {(string.IsNullOrEmpty(o.at) ? "null   # 舊資料沒有時戳，不是漏填" : o.at)}\n");
-            sb.Append($"origin: [{string.Join(", ", o.origin)}]\n");
-            if (!string.IsNullOrEmpty(o.migrated_at)) sb.Append($"migrated_at: {o.migrated_at}\n");
-            sb.Append("---\n\n");
-            sb.Append(o.text).Append('\n');
-            File.WriteAllText(oPath, sb.ToString(), new UTF8Encoding(false));
-            return true;
-        }
-
-        // ===========================================================
-        // 區塊職責：由磁碟上的事件重算並寫出 `_current.md`。
-        // 物理意義：**存值是投影不是事實** —— 所以它任何時候都可以被刪掉重建。
-        // 數值影響：讀該 target 底下所有事件檔；`recomputable` 記錄「重算是否等於舊存值」。
-        // ===========================================================
-        public static UCL_RelationshipCurrent RebuildCurrent(string iPersona, string iTarget,
-            Dictionary<string, float> iOpening, bool iDryRun)
-        {
-            var aEvents = LoadEvents(iPersona, iTarget);
-            var aVec = UCL_RelationshipCurrent.Recompute(aEvents, iOpening);
-            var aCur = new UCL_RelationshipCurrent
-            {
-                target = iTarget,
-                emotion_vector = aVec,
-                surface_score = UCL_RelationshipAxes.SurfaceScore(aVec),
-                event_count = aEvents.Count,
-                opinion_count = CountOpinions(iPersona, iTarget),
-                last_updated = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                opening_balance = (iOpening != null && iOpening.Count > 0) ? iOpening : null,
-                recomputable = true,
-            };
-            aCur.tier = UCL_RelationshipAxes.Tier(aCur.surface_score);
-            if (iDryRun) return aCur;
-
-            Directory.CreateDirectory(TargetDir(iPersona, iTarget));
-            var sb = new StringBuilder();
-            sb.Append("---\n");
-            sb.Append($"target: {aCur.target}\n");
-            sb.Append("emotion_vector:\n");
-            foreach (var a in UCL_RelationshipAxes.Names)
-                sb.Append($"  {a}: {aCur.emotion_vector[a].ToString("0.####", CultureInfo.InvariantCulture)}\n");
-            sb.Append($"surface_score: {aCur.surface_score}\n");
-            sb.Append($"tier: {aCur.tier}\n");
-            sb.Append($"event_count: {aCur.event_count}\n");
-            sb.Append($"opinion_count: {aCur.opinion_count}\n");
-            sb.Append($"last_updated: {aCur.last_updated}\n");
-            sb.Append($"recomputable: {(aCur.recomputable ? "true" : "false")}\n");
-            if (aCur.opening_balance == null) sb.Append("opening_balance: null\n");
-            else
-            {
-                sb.Append("opening_balance:      # ⚠ 這一段沒有事件紀錄，由遷移反推填入\n");
-                foreach (var kv in aCur.opening_balance)
-                    sb.Append($"  {kv.Key}: {kv.Value.ToString("0.####", CultureInfo.InvariantCulture)}\n");
-            }
-            sb.Append("generated: mechanical   # 事實來源是 events/；本檔可刪除重建\n");
-            sb.Append("---\n\n");
-            sb.Append($"# {iPersona} → {iTarget}\n\n");
-            sb.Append($"`{aCur.tier}`　surface_score **{aCur.surface_score}**　"
-                      + $"事件 {aCur.event_count} 筆　看法 {aCur.opinion_count} 則\n");
-            File.WriteAllText(CurrentPath(iPersona, iTarget), sb.ToString(), new UTF8Encoding(false));
-            return aCur;
         }
 
         public static List<UCL_RelationshipEvent> LoadEvents(string iPersona, string iTarget)
@@ -334,34 +191,11 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
             return aOut;
         }
 
-        // 讀一個事件檔的正文（＝reason）。給撞號比對用。
-        static string ReadBody(string iPath)
-        {
-            try
-            {
-                var sb = new StringBuilder();
-                int aDash = 0;
-                foreach (var ln in File.ReadAllLines(iPath, Encoding.UTF8))
-                {
-                    if (aDash < 2 && ln.StartsWith("---", StringComparison.Ordinal)) { aDash++; continue; }
-                    if (aDash >= 2) sb.Append(ln).Append('\n');
-                }
-                return sb.ToString().Trim();
-            }
-            catch { return ""; }
-        }
-
-        public static int CountOpinions(string iPersona, string iTarget)
-        {
-            string d = OpinionsDir(iPersona, iTarget);
-            return Directory.Exists(d) ? Directory.GetFiles(d, "*.md").Length : 0;
-        }
-
         // ===========================================================
         // 區塊職責：讀 `_current.md`（存值投影）。
         // 物理意義：**事實來源是 events/**，本檔只是投影 —— 但投影裡有一樣東西是重算拿不到的：
         //          `opening_balance`（遷移反推的期初餘額，沒有對應事件）。
-        //          所以要顯示「跟其他工具一致的分數」就得讀它，不能只靠 RebuildCurrent(null)。
+        //          所以要顯示「跟其他工具一致的分數」就得讀它，不能只靠重算（寫入端與重建投影在 Senate `SCP_RelationshipStore`）。
         // 數值影響：純讀；檔不存在或欄位缺 → 回 null / 型別預設，不猜值。
         //          ⚠ 缺 emotion_vector 的舊檔會回一個全 0 的向量，那跟「真的全 0」長得一樣 ——
         //          呼叫端要看的話請一併看 event_count（0 筆事件才可能真的全 0）。

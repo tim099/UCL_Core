@@ -125,7 +125,7 @@ Plurk 的 `@` **只認 nick**。persona 名不是 Plurk 上的東西 ——
 每位一列：`persona`｜個人/共用｜解析結果（含理由）｜token 狀態｜下拉改成個人帳號。
 
 - 下拉選 `(未設定)` ＝ 清掉 override、回落共用
-- 寫入走 `UCL_PersonaProfile.SetField`（`actor` / `reason` 必填、有審計 jsonl），
+- 寫入走 Senate 唯一寫入端 `senate cmd persona-profile op=set`（Editor 經 `UCL_PersonaProfileSenateBridge`；`actor` / `reason` 必填、有審計 jsonl；TASK-0361），
   **不碰 `AwakenInit/personas/<name>.json`** —— 那個舊源 2026-08-19 起只出不進，寫了不會生效
 
 > 🩸 **2026-08-21 傍晚才真的成立**（basecamp 補記）：上面那句在 08-21 白天是**假的** ——

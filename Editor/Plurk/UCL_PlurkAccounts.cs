@@ -13,7 +13,7 @@
 //     而那種漂掉（欄位說個人、解析出共用）兩邊都不會報錯。
 //   · **刻意不做 agent 層**（email 有那層是因為信箱本來就綁 agent）。Plurk 帳號不是那種東西，
 //     它是「某個人的」或「大家共用的」。留一個沒人用的槽＝留一個會漂的地方。
-//   · persona override **寫在 persona profile**（`UCL_PersonaProfile.SetField`，actor/reason 必填），
+//   · persona override **寫在 persona profile**（`senate cmd persona-profile op=set`，actor/reason 必填），
 //     不寫 `AwakenInit/personas/<name>.json` —— 那個舊源 2026-08-19 起**只出不進，寫了不會生效**。
 // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/UCL_EditorPage/UCL_PlurkAdminPage.md（帳號解析三段表）
 // @doc-sync: Assets/Plugins/UCL_Core/Docs~/zh-Hant/Workflows/Plurk_Maintenance.md（§4 帳號與憑證）
@@ -479,13 +479,13 @@ namespace UCL.Core.EditorLib.Plurk
         }
 
         /// <summary>設某個 persona 的個人帳號（空值＝清掉 override、回落共用）。
-        /// 走 `UCL_PersonaProfile.SetField`（actor/reason 必填，寫入有審計）。</summary>
+        /// 走 `senate cmd persona-profile op=set`（`UCL_PersonaProfileSenateBridge`；actor/reason 必填，寫入有審計）。</summary>
         public static bool SetPersonaAccount(string iPersona, string iSecretId,
             string iActor, string iReason, out string oError)
         {
             oError = "";
             if (string.IsNullOrWhiteSpace(iPersona)) { oError = "persona 必填 —— 不猜身分"; return false; }
-            return UCL_PersonaProfile.SetField(iPersona, PersonaField, (iSecretId ?? "").Trim(),
+            return UCL_PersonaProfileSenateBridge.SetField(iPersona, PersonaField, (iSecretId ?? "").Trim(),
                 iActor, iReason, out oError);
         }
     }

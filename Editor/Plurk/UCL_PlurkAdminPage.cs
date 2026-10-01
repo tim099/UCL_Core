@@ -6,7 +6,7 @@
 //   · **本頁不顯示、不讀取任何 token**。它只處理 secret **id**；憑證本體住 `UCL_SecretManagerPage`。
 //   · 掃描與讀檔只在 `Reload()`（Init／重新整理／寫入後）—— **Draw 裡零 IO**
 //     （IMGUI 的 Layout 與 Repaint 是兩個 pass，Draw 裡碰磁碟會讓兩趟看到不同的東西）。
-//   · persona 寫入走 `UCL_PlurkAccounts.SetPersonaAccount` → `UCL_PersonaProfile.SetField`
+//   · persona 寫入走 `UCL_PlurkAccounts.SetPersonaAccount` → `senate cmd persona-profile op=set`
 //     （actor/reason 必填、有審計）。本頁不自己組 profile 路徑。
 // 設計取捨：
 //   · 體例參考 `UCL_SecretManagerPage`（掃檔 → 表格 → per-row 按鈕）與 `UCL_LLMModelAdminPage`

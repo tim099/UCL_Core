@@ -100,7 +100,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
         //
         // 🩸 量測支撐（兩專案全掃）：同一 (persona,target) 內 at 重複 **0 筆**；
         //   同一 persona 跨 target 同時戳 0 筆；跨專案同 (persona,target,at) 但 reason 不同 0 筆。
-        //   ⚠ 但「實測不會撞」不等於「撞了可以靜默」—— 撞號的處置見 UCL_RelationshipIO.WriteEvent。
+        //   ⚠ 但「實測不會撞」不等於「撞了可以靜默」—— 撞號的處置見 SCP_Core `SCP_RelationshipStore.WriteEvent`（寫入端在 Senate，TASK-0361）。
         // ===========================================================
         public string FileName() => FileNameOf(at);
 

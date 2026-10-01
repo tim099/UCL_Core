@@ -114,10 +114,10 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         /// <summary>
         /// 寫 persona override。空字串＝清除 override（回頭吃 agent 預設），不是寫入空信箱。
-        /// 走 §8.6 寫入接縫（patch 單欄＋actor/reason 必填＋審計＋快照刷新）。
+        /// 走 Senate 唯一寫入端（`senate cmd persona-profile op=set`：actor/reason 必填＋審計）。
         /// </summary>
         public static bool SavePersonaOverride(string persona, string email, string actor, string reason, out string error)
-            => UCL_PersonaProfile.SetField(persona, "email", email ?? "", actor, reason, out error);
+            => UCL_PersonaProfileSenateBridge.SetField(persona, "email", email ?? "", actor, reason, out error);
 
         /// <summary>
         /// 解析某 persona 該用的信箱。順序：persona.email → defaults[actual_agent] → fallback → 哨兵。

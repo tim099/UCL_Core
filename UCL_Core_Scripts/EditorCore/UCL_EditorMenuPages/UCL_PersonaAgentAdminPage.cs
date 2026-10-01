@@ -1313,17 +1313,11 @@ namespace UCL.Core.EditorLib.Page
                 pj["forked_at"] = string.IsNullOrEmpty(forkSource) ? JsonData.ParseJson("null") : new JsonData(now);
                 pj["created_at"] = new JsonData(now);
 
-                // 寫入走 §8.6 接縫（actor+reason 必填＋審計＋快照刷新；建檔記 "create"）
-                // agent（＝帳號 id）不進 profile：它住 `bank/<區域>.md`（一區一檔）。
-                // ⚠ 順序刻意先寫綁定再寫身分欄：先有帳號歸屬，錢才不會在半成品狀態落央行。
-                string aRegion = AgentCommands.Treasury.UCL_CentralBankSettings.CurrencyId;
-                if (!UCL_PersonaProfile.WriteBankAccount(name, aRegion, agent,
-                        "Tim@PersonaAgentAdminPage", "建 persona：登記本區帳號歸屬", out string aBindErr))
-                    throw new Exception($"帳號綁定寫入失敗（{aRegion}）：{aBindErr}");
-
-                if (!UCL_PersonaProfile.WriteRaw(name, pj, "Tim@PersonaAgentAdminPage",
-                        string.IsNullOrEmpty(forkSource) ? "建 persona" : $"fork from {forkSource}",
-                        "create", out string aCreateErr))
+                // 寫入走 Senate 唯一寫入端（`senate cmd persona-profile op=create`，TASK-0361）：
+                // agent（＝帳號 id）不進 profile —— 它住 `bank/<本專案區域>.md`（一區一檔），由 create 先寫；
+                // ⚠ 順序（先綁定再寫身分欄）在 Senate 那側保證：先有帳號歸屬，錢才不會在半成品狀態落央行。
+                if (!UCL_PersonaProfileSenateBridge.Create(name, agent, pj.ToJson(), "Tim@PersonaAgentAdminPage",
+                        string.IsNullOrEmpty(forkSource) ? "建 persona" : $"fork from {forkSource}", out string aCreateErr))
                     throw new Exception(aCreateErr);
 
                 string lineageStr = lineage.Count > 0 ? string.Join(" → ", lineage) + " → " + name : "（原生，無血統）";

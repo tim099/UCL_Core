@@ -672,9 +672,9 @@ namespace UCL.Core.EditorLib.Page
                 var lockData = JsonData.ParseJson(File.ReadAllText(lockPath));
                 lockData["actual_agent"] = new JsonData(value);
                 AtomicWriteUtf8(lockPath, lockData.ToJsonBeautify());
-                // persona 側走寫入接縫（actor/reason 必填＋審計 jsonl＋刷快照）——
+                // persona 側走 Senate 唯一寫入端（`senate cmd persona-profile`，TASK-0361；actor/reason 必填＋審計 jsonl）——
                 // 🩸 BUG-29 ②：這裡原本直讀直寫中央 json，繞過審計；那個檔 2026-08-21 起也不存在了。
-                if (!AgentCommands.UCL_PersonaProfile.SetField(persona, "actual_agent", value,
+                if (!AgentCommands.UCL_PersonaProfileSenateBridge.SetField(persona, "actual_agent", value,
                         "UCL_LoginStatusPage", "後台套用實際承載 agent", out string aErr))
                 {
                     Debug.LogWarning($"[LoginStatus] lock 已更新但 persona 側寫入失敗（{persona}）：{aErr}");

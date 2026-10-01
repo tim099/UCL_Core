@@ -164,7 +164,7 @@ namespace UCL.Core.EditorLib.Page
 
             if (m_Personas.Count == 0)
             {
-                GUILayout.Label("（還沒有任何 relationship 資料 —— 用 run_cmd run Relationship 寫第一筆事件）", SmallStyle);
+                GUILayout.Label("（還沒有任何 relationship 資料 —— 用 senate cmd relationship 寫第一筆事件）", SmallStyle);
                 return;
             }
 
@@ -226,7 +226,7 @@ namespace UCL.Core.EditorLib.Page
             {
                 GUILayout.Label($"⚠ 缺 `_current.md`：{aCurPath}", SmallStyle);
                 GUILayout.Label($"（事件 {m_Events.Count} 筆仍在 —— `_current.md` 是可重建的投影，"
-                    + "跑 run_cmd run Relationship 的 rebuild 就會長回來）", SmallStyle);
+                    + "跑 senate cmd relationship --arg op=rebuild 就會長回來）", SmallStyle);
                 return;
             }
 
@@ -364,7 +364,7 @@ namespace UCL.Core.EditorLib.Page
                 if (!aShow) return;
                 if (m_Events.Count == 0)
                 {
-                    GUILayout.Label("（還沒有任何事件 —— 有事發生時走 run_cmd run Relationship 記一筆）", SmallStyle);
+                    GUILayout.Label("（還沒有任何事件 —— 有事發生時走 senate cmd relationship 記一筆）", SmallStyle);
                     return;
                 }
                 var aPage = UCL_GUILayout.DrawSelectPage(

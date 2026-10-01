@@ -40,8 +40,9 @@ namespace UCL.Core.EditorLib.AgentCommands
     //   ③ 它拿得到**persona 形式的身分**（拿到 agent id 之類的自由字串會查不到 session
     //      而靜默不印 —— 那不會壞，但也就等於沒掛）
     //
-    // 目前掛著的：Cmd_NoteLesson（`lesson-log`）／Cmd_Sculpture 落子（`sculpt-3d`）／
-    //            Cmd_Glossary op=register（`glossary-entry`）。
+    // 目前掛著的：Cmd_Sculpture 落子（`sculpt-3d`）／Cmd_Glossary op=register（`glossary-entry`）。
+    //   ⚠ `lesson-log` 已搬到 Senate（`senate cmd note-lesson`，TASK-0354）⇒ 它掛的是 SCP 版
+    //     `SCP_FreeTimeHint`，**文字與本檔逐字相同**，改一份要改另一份。
     //
     // 刻意**沒有**掛的，與理由（都是條件不成立，不是忘了）：
     //   - **Cmd_Tavern**（活動 `tavern-creative`）：它沒有 markdown 回傳面（結果是 post_seq，

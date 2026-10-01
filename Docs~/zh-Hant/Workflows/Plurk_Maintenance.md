@@ -156,7 +156,7 @@ Plurk 的 `@` 只認 **nick** ⇒ 文案裡的 persona 名由 `LoadSlip` 自動�
 兩棵樹的表**各自新鮮、各自正確，而且不會發現對方存在** —— 要單一份得靠單一持有者（見 TASK-0122）。
 
 `op=whoami` 是單一帳號的身分診斷（印 id／nick／karma），順便寫回登記表。
-- 寫入個人 override 走 `Cmd PersonaProfile op=set`（actor／reason 必填、有審計）。
+- 寫入個人 override 走 `senate cmd persona-profile --arg op=set`（actor／reason 必填、有審計）。
   ⛔ **不可寫 `AwakenInit/personas/<name>.json`** —— 那個舊源 2026-08-19 起只出不進，寫了不會生效。
 
 ### 4.2 憑證檔契約

@@ -376,6 +376,7 @@ Tim 拍板手動，理由本案同意並補一條：
 
 > ✅ **退場已於 2026-08-19 執行完畢（summit）**，且 Tim 改拍「不留 stub、不留文件」：上表四項全數刪除
 > （8 軸權重與 trigger 對照表已確認搬進 `Relationship_System.md` §2/§5 後才刪）。史料見 git。
+> 📌 2026-10-01（TASK-0354）寫入搬到 Senate CLI，`Relationship_System.md` 改寫成 SCP_Core 的 `Relationship`（`senate cmd doc --arg op=show --arg name=Relationship`），UCL 那份刪除。
 | `UCL_AffinitySystemPage` | 保留到遷移驗收完成後再移除；移除時 ToolBox 入口與四語系 key 一起清 |
 
 ⚠ **兩個容易漏的**：

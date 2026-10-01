@@ -735,11 +735,12 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
         // 區塊職責：profile 快照 —— python 端的唯一資料來源（§8.7 A＋B 拍板）。
         // 物理意義：解析單端化 —— python 不再碰原始 persona json，改讀本快照：
-        //          Cmd_PersonaProfile 成功＝C# 剛解析完寫好（現場值，無標記）；
-        //          Cmd 跑不通（Editor 未開）＝python 讀既有快照並**在回傳值上標記**
-        //          `_source="snapshot"`＋`_snapshot_at`（Tim 五輪：標記長在值上不長在 log 裡）。
+        //          python 讀既有快照並**在回傳值上標記** `_source="snapshot"`＋`_snapshot_at`
+        //          （Tim 五輪：標記長在值上不長在 log 裡）。
+        //          ⚠ 2026-10-01（TASK-0354）`Cmd_PersonaProfile` 已退場、寫入搬到 `senate cmd persona-profile`，
+        //            而 Senate 那側**不刷新**本快照 ⇒ 它只在 domain reload 與 Editor 內的寫入（後台頁）之後重寫。
         // 數值影響：C# 只寫不讀（照路徑快照 .agentcommands_root.local 的成熟模式）；
-        //          reload／每次 Cmd／寫入端動作後重寫；tmp+replace 原子寫、UTF-8 無 BOM。
+        //          reload／Editor 內寫入端動作後重寫；tmp+replace 原子寫、UTF-8 無 BOM。
         //          快照是衍生快取不入版控（AgentCommands .gitignore）。
         // ===========================================================
         public static string SnapshotPath
@@ -929,7 +930,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             // ⇒ fail-loud。以前這裡會 patch 進中央 json，而那個檔已經不存在；靜默成功是最貴的回答。
             if (string.Equals(iField, "agent", StringComparison.Ordinal))
             {
-                oError = "`agent`（＝帳號 id）不由本入口寫 —— 走 `Cmd_PersonaProfile op=set_bank`"
+                oError = "`agent`（＝帳號 id）不由本入口寫 —— 走 `senate cmd persona-profile --arg op=set_bank`"
                        + "（一區一檔的綁定，有自己的審計與跨區借用判準）。";
                 return false;
             }

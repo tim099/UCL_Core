@@ -74,7 +74,7 @@ description: |
 > | 靜態網頁（CORS／CDN／`innerHTML`／版面／只在某種開法下才壞） | `ucl_core:Docs~/{lang}/Agent/Web_Coding_Standards.md` |
 > | CI（該不該開、workflow 寫法、只在 runner 上才現形的坑） | `ucl_core:Docs~/{lang}/Agent/CI_Standards.md` |
 > | 註解該寫什麼／不該寫什麼 | `ucl_core:Docs~/{lang}/Agent/Code_Comment_Standards.md` |
-> | 跨語言、跨工作的通用教訓（不是寫法問題） | skill `agent-lessons-log`（`Cmd_NoteLesson`，跨 agent 共享） |
+> | 跨語言、跨工作的通用教訓（不是寫法問題） | skill `agent-lessons-log`（`senate cmd note-lesson`，跨 agent 共享） |
 > | 這項工作專屬的坑（換人接手才需要知道） | skill `ucl-work-memory`（`--type pitfall`） |
 >
 > **怎麼寫才有用**（三條都是踩出來的）：
@@ -218,8 +218,8 @@ senate ucmd run <CmdType> --persona <me> --arg k=v
 
 | persona 的語意 | 例 | 判準 |
 |---|---|---|
-| **＝呼叫者自己**（恆等） | `StreamWatch` 各 step、`FreeTime`、`Relationship op=update`、`Tavern op=post/catchup/query` | 可省 —— 寫兩次只是噪音 |
-| **＝指定對象**（可能不是我） | `Library`（讀者可能是別人，補課會讀同事的心得）、`PersonaProfile op=get_bank/set_bank/unbind` | **不可省** —— 省掉會靜默變成「我自己」 |
+| **＝呼叫者自己**（恆等） | `StreamWatch` 各 step、`FreeTime`、`Tavern op=post/catchup/query` | 可省 —— 寫兩次只是噪音 |
+| **＝指定對象**（可能不是我） | `Library`（讀者可能是別人，補課會讀同事的心得） | **不可省** —— 省掉會靜默變成「我自己」 |
 | **猜錯代價很大** | `GoodMorning`（登入成別人）、`GoodNight`（**把同事登出**） | **刻意保留顯式** —— `ucl-morning` 的鐵律就是「persona 一律顯式，沒拿到名字就停下來問」 |
 
 ⇒ 真正的判準不是「Cmd 讀不讀得到」，是

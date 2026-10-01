@@ -3,7 +3,7 @@
 # DO NOT EDIT BY HAND - re-run "Tools/UCL/Generate All Localized Docs Manifests" instead.
 # Module: UCL_Core (prefix=ucl_core)
 # Source: ucl_core:Docs~
-# Entries: 205
+# Entries: 199
 Docs~/zh-Hant/API/BartenderCli/CliAction_Msg.md
 Docs~/zh-Hant/API/BartenderCli/CliAction_PostText.md
 Docs~/zh-Hant/API/BartenderCli/CliAction_RemoteWindow.md
@@ -73,7 +73,6 @@ Docs~/zh-Hant/Mechanics/Discord_Channel_Routing.md
 Docs~/zh-Hant/Mechanics/Discord_Tavern_Mirror.md
 Docs~/zh-Hant/Mechanics/FreeTime_System.md
 Docs~/zh-Hant/Mechanics/Portraits_System.md
-Docs~/zh-Hant/Mechanics/Relationship_System.md
 Docs~/zh-Hant/Mechanics/TRPG_Lite_RuleBook.md
 Docs~/zh-Hant/Plan/Plan_Audio_In_StreamWatch_Cmd.md
 Docs~/zh-Hant/Plan/Plan_AutoCommit_Single_Flight.md

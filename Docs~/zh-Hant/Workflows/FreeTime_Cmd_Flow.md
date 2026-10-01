@@ -214,7 +214,7 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> 
 ⚠ `canvas-2d` **不接代跑**：它的寫入端是 `senate cmd canvas`，而代跑那層 spawn 的是
 `python <tool>`（`FileName` 寫死 python）⇒ 餵不了 exe。
 ⇒ 它走引擎既有的另一條路：`op=step` 回「尚未支援 Cmd 代跑 —— 自己跑」，指令寫在該活動 md 裡。
-未接：`lesson-log`（走 `Cmd_NoteLesson`，是 Cmd 不是腳本）／`glossary-entry`／`doc-reflection`／
+未接：`lesson-log`（走 `senate cmd note-lesson`，是 Cmd 不是腳本）／`glossary-entry`／`doc-reflection`／
 `letter-to-self`／`constitution`／`sculpt-3d`（走 `Cmd_Sculpture`）／`trpg`／
 `tavern-creative`／`stream-watch`。
 
@@ -239,7 +239,7 @@ senate ucmd run FreeTimeActivity --persona <me> --arg op=done --arg persona=<P> 
 ## 四、活動類 Cmd 自己回報「你在自由時間中」
 
 `UCL_FreeTimeHint.Append(sb, persona)` —— 任何活動類 Cmd 在組完自己的回傳值之後掛一行。
-已接：`Cmd_NoteLesson`。
+已接：`senate cmd note-lesson`（SCP 版 `SCP_FreeTimeHint`，文字與 Editor 版逐字相同）／`Cmd_Sculpture`／`Cmd_Glossary op=register`。
 
 三條路徑裡選這條的理由：
 - ❌ 五個活動工具各加提示 → **五個不同的收尾**，漏一個沒人發現

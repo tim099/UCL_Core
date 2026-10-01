@@ -69,9 +69,6 @@ namespace UCL.Core.EditorLib.AgentCommands
                 { "chat_tavern", "Tavern" },
                 { "chat-tavern", "Tavern" },
                 { "TavernChat", "Tavern" },
-                { "Lessons", "NoteLesson" },
-                { "Lesson", "NoteLesson" },
-                { "note_lesson", "NoteLesson" },
             };
 
         /// <summary>取得 handler 實例（找不到回 null）。支援 TYPE_ALIASES 自動 rewrite 與 Cmd_ 前綴剝除。</summary>

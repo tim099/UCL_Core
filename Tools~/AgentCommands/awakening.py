@@ -513,7 +513,7 @@ def save_registry(reg: dict) -> None:
     物理意義: metadata（`_registry_meta.json`：agent_banks / system_accounts…）照舊寫；
               persona 那半邊**沒有落點**，本函式大聲說明它丟掉了什麼，而不是靜靜地成功。
     數值影響: identity 欄（見 _PHASE1_IDENTITY_FIELDS）出現在 payload ⇒ **停手並指路**，
-              因為那些欄有真正的寫入通道（Cmd_PersonaProfile op=set），走錯通道會靜默失效；
+              因為那些欄有真正的寫入通道（senate cmd persona-profile op=set），走錯通道會靜默失效；
               其餘（wake_count / status / last_active / availability…）是推導欄或死欄，丟掉即可，
               但**要印出來** —— 「寫了沒生效」與「寫成功」不可以長得一樣。
     """
@@ -543,8 +543,8 @@ def save_registry(reg: dict) -> None:
                 f"❌ [awakening] save_registry {headline}（{name}）—— 停手。\n"
                 f"{aLines}\n"
                 f"   persona 資料已整合到 letters/<persona>/profile/，中央 personas/ 退場（2026-08-21）。\n"
-                f"   身分欄要走：senate ucmd run PersonaProfile --arg op=set --arg persona={name} "
-                f"--arg field=<欄> --arg value=<值> --arg actor=<誰> --arg reason=<憑什麼>")
+                f"   身分欄要走：senate cmd persona-profile --arg op=set --arg persona={name} "
+                f"--arg field=<欄> --arg-file value=<值> --arg actor=<誰> --arg reason=<憑什麼>")
         keys = [k for k in pdata.keys() if k not in _SEAM_DERIVED_KEYS]
         if keys:
             dropped[name] = keys
@@ -567,7 +567,7 @@ def save_registry(reg: dict) -> None:
 #          具體受害場景：`rename-persona` 要改 forked_from / fork_lineage / vector_history
 #          三個 identity 欄 —— 對已遷的 persona，改名會「看起來成功但沒生效」。
 #
-# ⚠ 這裡刻意**只偵測、不代寫**：正確的寫入通道是 `Cmd PersonaProfile op=set`
+# ⚠ 這裡刻意**只偵測、不代寫**：正確的寫入通道是 `senate cmd persona-profile --arg op=set`
 #   （§8.6 actor+reason 必填＋審計）。python 自己去寫 profile/ 就是繞過審計，
 #   而繞過審計正是本案要消滅的東西（見 UCL_PersonaProfile 的四條鐵律）。
 #   ⇒ 撞到就**吵著停手**，把修法印出來，不留半套寫入。
@@ -670,13 +670,12 @@ def assert_legacy_write_effective(edits: dict, what: str) -> None:
     aLines += [
         "",
         "   正確通道（§8.6 actor+reason 必填、附審計）：",
-        "     senate ucmd run PersonaProfile \\",
-        "         --arg op=set --arg persona=<p> --arg field=<欄> --arg value=<值> \\",
+        "     senate cmd persona-profile \\",
+        "         --arg op=set --arg persona=<p> --arg field=<欄> --arg-file value=<值> \\",
         "         --arg actor=<誰> --arg reason=<憑什麼>",
         "",
-        "   ⚠ 結構值欄（identity_vector / vector_history / fork_lineage）目前 op=set 只收純量 ——",
-        "     那條路還沒開（見酒館討論）。需要改這幾欄請先問，不要繞路手改 profile/ 檔：",
-        "     繞過接縫＝繞過審計，本案的病就是這樣長出來的。",
+        "   ⚠ 結構值欄（identity_vector / vector_history / fork_lineage）的值要是合法 JSON 陣列（走 --arg-file）；",
+        "     不要繞路手改 profile/ 檔：繞過接縫＝繞過審計，本案的病就是這樣長出來的。",
         "",
         "   （什麼都沒有被寫入 —— 這是刻意的：半套寫入比停手難查。）",
     ]

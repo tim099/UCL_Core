@@ -57,7 +57,7 @@ last_updated: 2026-09-11（summit — §4 增「先選對層」（target ＝檢�
 | | `Lessons/lessons.jsonl`（`agent-lessons-log`） | **Alaya** |
 |---|---|---|
 | 形狀 | append-only jsonl，一行一筆 | 一檔一主題的 markdown fragment |
-| 寫入 | 撞到當下立刻 append（走 `Cmd_NoteLesson`） | **經過整理**才進來（見 Alaya workflow 的入庫閘） |
+| 寫入 | 撞到當下立刻 append（走 `senate cmd note-lesson`） | **經過整理**才進來（見 Alaya workflow 的入庫閘） |
 | 維護 | **無** —— 只增不減（現況 200+ 筆） | **定期整合**，數量刻意不讓它線性成長 |
 | 用途 | 原始流水帳，怕忘記 | 沉澱後的通用守則，怕找不到 |
 

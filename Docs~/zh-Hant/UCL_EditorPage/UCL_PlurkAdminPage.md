@@ -216,7 +216,7 @@ Tim 2026-08-21 實際照這篇跑完：<https://www.plurk.com/p/nrwtgh>
 | `ListSecretIds()` | `[]` |
 | `Resolve("summit")` → `Describe()` | `未設定 —— 沒有共用預設、也沒有個人 override` |
 | 頁面 `Create()` ＋ private `Reload()` | 皆 OK，無例外 |
-| **去路**：`PersonaProfile op=set plurk_account=plurk_roundtrip_probe` → `Resolve` | `個人帳號（plurk_roundtrip_probe）` |
+| **去路**：`senate cmd persona-profile --arg op=set --arg field=plurk_account --arg value=plurk_roundtrip_probe` → `Resolve` | `個人帳號（plurk_roundtrip_probe）` |
 | **歸路**：同上設回空 → `Resolve` | `未設定 —— …` |
 
 ⚠ round-trip 兩個方向都驗過 —— **多數守衛只擋去路不擋歸路**，而那種缺陷會活到真的要清設定的那天。

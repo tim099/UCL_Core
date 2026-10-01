@@ -1,7 +1,7 @@
 ---
 title: Bank 區域綁定遷移（半自動）—— 在新專案觸發
-description: 在一個新專案（或還沒設區域 ID 的專案）把 persona → 帳號的綁定導出成 letters/<persona>/bank/<區域ID>.md。機械的部分交給 Cmd_PersonaProfile op=migrate_bank（預設 dry_run），判斷的部分留給人。含前置檢查、逐步驗收讀數、卡住出口，以及「綁定值是 agent id 而錢可能還在舊帳號名下」的硬警告。
-last_updated: 2026-09-29
+description: 在一個新專案（或還沒設區域 ID 的專案）把 persona → 帳號的綁定導出成 letters/<persona>/bank/<區域ID>.md。機械的部分交給 senate cmd persona-profile op=migrate_bank（預設 dry_run，不需要 Editor），判斷的部分留給人。含前置檢查、逐步驗收讀數、卡住出口，以及「綁定值是 agent id 而錢可能還在舊帳號名下」的硬警告。
+last_updated: 2026-10-01 (TASK-0354：指令改走 Senate CLI `persona-profile`)
 target_audience: [AI_Agent, Developer]
 aliases: [區域銀行遷移, bank 綁定遷移, migrate_bank, 區域 ID 設定, Bar 專案遷移, currency_id]
 related:
@@ -29,8 +29,8 @@ related:
 
 | # | 檢查 | 怎麼驗 | 不綠會怎樣 |
 |---|---|---|---|
-| 1 | 本專案的 `UCL_Core` 含 bank 接縫 | `senate ucmd run PersonaProfile --persona <me> --arg op=get_bank --arg persona=Template` 不報「未知 op」 | 舊版沒有這三個 op；症狀是 Cmd 直接拋，不會靜默 |
-| 2 | Editor 開著 | 前一格能跑就代表通了 | 寫入走 Cmd（`R18` 不做降級路） |
+| 1 | 本專案的 senate.exe 含寫入端 | `senate cmd persona-profile --arg op=get_bank --arg persona=Template` 不報「認不得的指令」 | 舊版沒有這支；症狀是 CLI 直接擋，不會靜默 |
+| 2 | （不再需要 Editor 開著） | Step 1 的區域 ID 仍在 Editor 銀行後台設；其餘步驟走 CLI | —— |
 | 3 | 先行專案的 `bank/` 檔已 commit＋push＋本專案已 pull | `ls letters/<某人>/bank/` 看得到別的區域的 `.md` | 不影響本次遷移**正確性**（本專案讀自己的 `persona.agent`），但第 5 步的 commit 會混入未落地的別區檔 |
 | 4 | 知道其他專案用了哪些區域 ID | 問人，或看 `letters/<某人>/bank/` 的檔名 | **同名就毀了分區**：兩個專案寫同一個檔 ⇒ 互相覆寫，而症狀是「另一個專案的帳號」，一個完全合法的字串 |
 
@@ -57,17 +57,16 @@ Editor → **ToolBox → 銀行後台管理** → 「🪙 區域（貨幣）ID�
 - 📌 **就算沿用預設值也建議顯式存一次** —— 落盤的 `currency_id` 是宣告，預設值是猜測；
   兩者在讀取端長得一樣，但後者會在有人改了預設常數時無聲改變
 
-**驗收**：`run PersonaProfile --arg op=get_bank --arg persona=<任一人>` 的回報 `currency` ＝新 ID。
+**驗收**：`senate cmd persona-profile --arg op=get_bank --arg persona=<任一人>` 的回報 `currency` ＝新 ID。
 
 ### Step 2 — dry-run（工具印、**人讀**）
 
 ```bash
-senate ucmd run PersonaProfile --persona <me> \
-    --arg op=migrate_bank --arg actor="<me>@migrate" --arg reason="<為什麼跑這次遷移>"
+senate cmd persona-profile --arg op=migrate_bank --arg actor=<me>@migrate --arg-file reason=<檔：為什麼跑這次遷移>
 ```
 
-`dry_run` **預設 1**（只印不寫）。逐位清單印在 **Editor log**（`[PersonaProfile] migrate_bank …`），
-回報值只有統計（`pool` / `written` / `skipped_*` / `failed`）。
+`dry_run` **預設 1**（只印不寫）。逐位清單與統計（`pool` / `written` / `skipped_*` / `failed`）都印在 CLI 輸出。
+📌 每位「會寫入的值」＝這個人目前解析得到的帳號（本區沒有綁定就是借別區的那一個 —— 舊版讀的 `persona.agent` 本來就是這樣推導的）。
 
 **人要看的三件事**：
 
@@ -84,13 +83,13 @@ senate ucmd run PersonaProfile --persona <me> \
 
    ⇒ **這正是一區一檔存在的理由**：兩邊都對，只是屬於不同的區域。
    ⇒ 也是為什麼「跨區借用」只能當**過渡**：借來的值不只是舊的，**可能是錯的**（見 §4）。
-3. **`⛔ agent 為空`** 的人 —— 那些會被跳過（沒有可導出的來源），要人去身分後台補綁。
+3. **`⛔ 解析不到帳號`** 的人 —— 那些會被跳過（沒有可導出的來源），要人去身分後台補綁。
 
 ### Step 3 — 人工處置（**這步沒做完不要往下**）
 
 | 現象 | 處置 |
 |---|---|
-| `⛔ persona.agent 為空` | 到 **Persona & Agent 管理頁**換綁（`DoRebindClicked`，走 §8.6 接縫有審計）；或確認這個 persona 已退役 ⇒ 就讓它跳過 |
+| `⛔ 解析不到帳號` | 到 **Persona & Agent 管理頁**換綁（`DoRebindClicked`，走 §8.6 接縫有審計）；或確認這個 persona 已退役 ⇒ 就讓它跳過 |
 | `○ 本區已有綁定，且與 agent 不同` | **不要順手 `overwrite=1`** —— 先問「哪個是對的」。既有檔可能是人工設的（那就是真相），agent 欄可能是舊的 |
 | 這個專案的 pool 有別的專案沒有的人 | 正常（例：`kaguya` 只在 Bar）。它只會寫本專案的檔 |
 | 帳號名撞號／`-da-xiaojie` 那批 | **不在本流程處理** ⇒ 走 `Plan_Identity_Account_Unification` §4.2 的人工拍板清單 |
@@ -98,11 +97,11 @@ senate ucmd run PersonaProfile --persona <me> \
 ### Step 4 — 落檔（人下決定，工具執行）
 
 ```bash
-... run PersonaProfile --arg op=migrate_bank --arg dry_run=0 \
-    --arg actor="<me>@migrate" --arg reason="<拍板來源：誰說的、哪一天>"
+senate cmd persona-profile --arg op=migrate_bank --arg dry_run=0 \
+    --arg actor=<me>@migrate --arg-file reason=<檔：拍板來源：誰說的、哪一天>
 ```
 
-`overwrite=1` **只在 Step 3 判斷過**之後才加。部分失敗會**拋例外**（不吞 —— 批次的部分失敗最容易
+`overwrite=1` **只在 Step 3 判斷過**之後才加。部分失敗會 **exit 1**（不吞 —— 批次的部分失敗最容易
 被讀成全部成功）。
 
 **驗收讀數（四格，缺一格不算完）**：
@@ -175,7 +174,7 @@ letters 有自己 repo 的 persona 各自一筆（LY 實測 9 位），其餘在
 |---|---|---|
 | `未知 op 'migrate_bank'` | 本專案 UCL_Core 太舊 | 更新 submodule（前置條件第 1 格） |
 | `區域 ID 不合法` | ID 當不了檔名 | 換一個；別用路徑分隔或 `..` |
-| 全員 `⛔ agent 為空` | 讀到的是別棵資料樹 | 查 `AgentCommands` 掛載位置與 `data_root`；**空集合是靜默的**（§5.1 同族） |
+| 全員 `⛔ 解析不到帳號` | 讀到的是別棵資料樹 | 查 `AgentCommands` 掛載位置與 `data_root`；**空集合是靜默的**（§5.1 同族） |
 | `written` 少於預期 | 有人「本區已有綁定」被跳過 | 讀 Editor log 的 `○` 行；判斷後再決定要不要 `overwrite=1` |
 | 改了區域 ID 之後全員「沒有綁定」 | 舊檔沒改名 | 舊 `bank/<舊ID>.md` 改名成新 ID；或重跑本流程重新導出 |
 | Cmd 逾時 | 沒帶 `--persona` ⇒ 掉進 `queues/anonymous/` | 一律帶 `--persona <你>` |

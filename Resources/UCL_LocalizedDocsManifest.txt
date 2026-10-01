@@ -3,7 +3,7 @@
 # DO NOT EDIT BY HAND - re-run "Tools/UCL/Generate All Localized Docs Manifests" instead.
 # Module: UCL_Core (prefix=ucl_core)
 # Source: ucl_core:Docs~
-# Entries: 189
+# Entries: 187
 Docs~/zh-Hant/API/BartenderCli/CliAction_Msg.md
 Docs~/zh-Hant/API/BartenderCli/CliAction_PostText.md
 Docs~/zh-Hant/API/BartenderCli/CliAction_RemoteWindow.md
@@ -12,7 +12,6 @@ Docs~/zh-Hant/API/ProviderCore/UCL_StringProvider.md
 Docs~/zh-Hant/API/ProviderCore/UCL_StringValueProvider.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_AssetDump.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_BuildAddressable.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_CanvasVoucher.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Coding.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_DiagnoseAssetReflection.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_DocEdit.md
@@ -29,7 +28,6 @@ Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Rule.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_SearchDocs.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_SessionClose.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_SessionStatus.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Treasury.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_TypeInspect.md

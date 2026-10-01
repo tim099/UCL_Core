@@ -292,25 +292,6 @@ tested_at: {date_iso}
         
     return file_path
 
-# 區塊職責: persona → (sender bank id, agent) 反查 — 委派 awakening.load_registry()
-# 物理意義: 酒館 post 的 sender 是 bank id (e.g. Myth), caller 只報 persona (e.g. kiara)。
-#          registry 是 per-persona split 檔 (v3), 自己 parse 會跟 schema 漂移 —
-#          直接 lazy import 同目錄 awakening 借它的 loader (dice.py 同作法)。
-# 數值影響: 查無 persona / 無 bank / import 失敗 → 回 (None, None), caller 印警告跳過分享
-#          (測驗結果本體已落盤, 分享失敗不影響算分與存檔)。
-def _resolve_sender(persona: str):
-    try:
-        import awakening  # 同目錄 lazy import (含 registry path 解析 + sys.path 注入副作用)
-        reg = awakening.load_registry()
-        agent = (reg.get("personas", {}).get(persona) or {}).get("agent")
-        if not agent:
-            return None, None
-        return reg.get("agent_banks", {}).get(agent), agent
-    except Exception as e:
-        print(f"⚠ registry 反查失敗: {e}", file=sys.stderr)
-        return None, None
-
-
 # 區塊職責: 組酒館分享的訊息內文
 # 物理意義: 型別 / 五維度 / 8 認知功能是**測驗算出來的數據**, 工具代組沒有代筆問題;
 #          note 那段是本人對自己結果的看法 — 那才是親筆, 工具不生成、只轉載。
@@ -345,21 +326,16 @@ def build_share_body(persona: str, result: dict, wake_count: int, letter_rel: st
 
 
 # 區塊職責: 把測驗結果同步到酒館 (eval --persona 的預設副作用)
-# 物理意義: 走 awakening.tavern_post → Cmd_Tavern op=post 正規路徑, **絕不直寫 jsonl**;
+# 物理意義: 走 awakening.tavern_post → `senate cmd tavern-post`（身分由 Senate 從 persona 推導）, **絕不直寫 jsonl**;
 #          分享是廣播 (沒人要回), 所以 wait_reply=0 由 awakening.tavern_post 內部固定。
 # 數值影響: best-effort — 失敗只回 False 並印警告, 不改變 eval 的 exit code
 #          (算分與兩處存檔已完成, 讓整條指令因為公告失敗而報錯會誤導成「測驗沒跑成」)。
 def share_to_tavern(persona: str, result: dict, wake_count: int, letter_rel: str, note: str = "") -> bool:
-    sender, agent = _resolve_sender(persona)
-    if not sender:
-        print(f"⚠ 查不到 {persona} 的 bank（registry 無此 persona 或 agent 欄空白）→ 跳過酒館分享",
-              file=sys.stderr)
-        return False
     body = build_share_body(persona, result, wake_count, letter_rel, note)
     try:
         import awakening  # 同目錄 lazy import
         return awakening.tavern_post(
-            sender, persona, body,
+            None, persona, body,
             meta={"tag": "mbti", "category": "chat"},
             timeout=60.0,
         )

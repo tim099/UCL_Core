@@ -73,23 +73,16 @@ related:
 | op | 動錢? | 必填 | 一句話 |
 |---|---|---|---|
 | `balance` | ✗ | `account` | 查餘額（單一帳戶） |
-| `balances` | ✗ | — | 查**整批**餘額（可帶 `currency`／`out_path` 落一份 TSV 報表） |
+| ~~`balances`~~ | ✗ | — | ⛔ **已退場**（TASK-0368，2026-10-01）：唯一呼叫端是銀行後台的遷移鈕（已拆）⇒ 整批看 `senate cmd bank --arg op=accounts` |
 | `credit` | **✓ 進帳** | `account` `amount` `source_kind` | 加錢 |
 | `debit` | **✓ 出帳** | `account` `amount` `use_kind` | 扣錢（有帳戶隔離鐵律，見 §3） |
-| `transfer` | **✓ 守恆搬錢** | `from_account` `to_account` `amount` `use_kind` `source_kind` | A→B 原子雙分錄 |
+| ~~`transfer`~~ | ✗ | — | ⛔ **已退場**（TASK-0368，2026-10-01）：兩次呼叫＋手寫回捲，不是原子的 ⇒ `senate cmd bank --arg op=transfer`（Server 單一寫入端、冪等鍵） |
 | `audit` | ✗ | `account` | 列該帳戶的分錄明細（**新銀行**；可帶 `since_ts`）。Senate 對應：`senate cmd bank --arg op=entries --arg account=<id> [--arg since_ts=…]`（TASK-0331，逐筆對拍相同；⚠ 沒開戶的帳號會失敗，不回 0 筆） |
 | ~~`verify`~~ | ✗ | — | ⛔ **已退場**（TASK-0274）—— 新銀行分錄沒有 `balance_before/after` 可對，照跑會每筆誤報 DRIFT；改用 `closing_list`（驗結帳鏈）／`audit`（看明細） |
 | ~~`request`~~／~~`request_list`~~／~~`request_cancel`~~／~~`transfer_request`~~ | ✗ | — | ⛔ **已搬到 Senate**（TASK-0327，2026-09-28）⇒ `senate cmd bank-request --arg op=request\|transfer\|cancel\|list --arg persona=<你> …`（參數名相同）；審批照舊 `senate cmd bank --arg op=approve` |
-| `closing_generate` | ✗ | — | 補算所有「已完結但未結帳」的 UTC 日。Senate 對應：`senate cmd bank --arg op=closing_generate`（與每日結算同一支 `SCP_BankClosing`，TASK-0331） |
+| ~~`closing_generate`~~ | ✗ | — | ⛔ **已退場**（TASK-0368，2026-10-01）：它讓 Editor 變成結帳檔的第二個寫入端 ⇒ `senate cmd bank --arg op=closing_generate`（與每日結算同一支 `SCP_BankClosing`） |
 | `closing_list` | ✗ | — | 列已結帳日期 + 當前讀取基準。Senate 對應：`senate cmd bank --arg op=closing_list`（鏈斷掉時 exit 5，TASK-0331） |
 | `senate_cli` | ✗ | — | 查／設派給 Server 的 `senate` 執行檔；**指到不存在的檔＝寫錢那條路的反向對照** |
-
-> **`balances` 為什麼要存在**（2026-09-16，TASK-0223）：本檔頂端的硬規則禁止呼叫端自己重放 ledger、
-> 也禁止 parse `accounts/_balances.snapshot.txt`。那條禁令原本留了一個缺口 —— 單一帳戶有出口（`balance`），
-> **整批沒有** ⇒ 想畫一張表或做遷移的人，唯一走得通的路就是那條被禁的路。
-> `balances` 就是補這個缺口，它只是 `UCL_TreasuryLedger.GetAllBalances()` 的薄殼。
-> ⚠ `out_path` 落的報表是**某一刻的快照**（自帶 `generated_at` 與帳戶數）；⛔ 它不是第二份真相源，
-> 而且它跟 `balance`、跟舊快照檔**共用同一份快取** —— 三者一致**不是**三個證人。
 
 > **⭐ 2026-09-22（TASK-0274）起只有一本帳了。**
 > 此前 `audit` / `verify` 讀的是**凍結於 2026-09-18 的舊 `Treasury/`**（`UCL_TreasuryHistory`），
@@ -123,7 +116,7 @@ senate cmd bank --arg op=closing_generate
 
 ## 3. 兩條會 throw 的硬規則
 
-### 3.1 帳戶隔離鐵律（`debit` / `transfer` 的出款端）
+### 3.1 帳戶隔離鐵律（`debit` 的出款端）
 
 `callerAgentId` 不為空且 `!= "system"` 時，**必須等於 `account`**，否則 throw
 「不可動用對方帳戶」。
@@ -135,11 +128,7 @@ senate cmd bank --arg op=closing_generate
 ### 3.2 餘額不足
 
 `debit` 時餘額不足直接 throw（`policies.negative_balance_allowed`）。
-`transfer` 的 Debit 先行、Credit 後行；**Credit 罕見失敗會自動 rollback**
-（補一筆 `transfer_rollback` credit 回出款方）。連 rollback 都失敗時，
-`_last_op.md` 會印 `DANGLING DEBIT entry uuid=...` —— 那是要人工介入的訊號，不會被靜默吞掉。
-
-`transfer` 另有 `amount > 1000` 上限（`max_per_transfer`）。
+⛔ `transfer` 已退場（TASK-0368，2026-10-01） —— 守恆轉帳改走 `senate cmd bank --arg op=transfer`（回捲與冪等由 Server 那一支負責）。
 
 ---
 

@@ -51,5 +51,5 @@ senate ucmd run SessionClose --arg target_persona=<誰> --arg confirm=1 --arg re
 
 - 正常收工（進行中的場）→ 各 kind 自己的 `step=end`
 - 改 C# 的施工場 → [Cmd_Coding](./Cmd_Coding.md)
-- 場的現況查詢 → [Cmd_SessionStatus](./Cmd_SessionStatus.md)
+- 場的現況查詢 → `senate cmd sessions --arg op=show --arg target_persona=<p>`
 - [UCL_AgentCommand API](./UCL_AgentCommand.md)

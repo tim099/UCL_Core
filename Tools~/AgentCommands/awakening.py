@@ -1106,45 +1106,65 @@ def fork_persona(reg: dict, source: str, target: str,
 def tavern_post(sender_id: str | None, persona: str, body: str, meta: dict | None = None,
                 room: str = "tavern",
                 timeout: float | None = None) -> bool:
-    """Spawn run_cmd.py Tavern op=post. fail-swallow 不擋 ritual.
+    """酒館發文 —— 交給 `senate cmd tavern-post`（Senate 組訊息、酒館 Server 寫入）。fail-swallow 不擋主流程。
 
-    sender_id (2026-08-20, BUG-23/24)：**顯示身分，正確用法是傳 None** ——
-    傳 None 時 TavernClient 會整個丟掉這個參數，由 Cmd_Tavern 從 `persona` 推導
-    （`ResolveDisplaySenderId`：persona → 綁定的 agent），那是唯一的推導點。
-    顯式帶值 = 繞過推導，而繞過的結果不會報錯，只會署錯名字：
-      🩸 `chess.py` 帶 persona 名（BUG-23；TASK-0268 移植進 C# 後已不帶）／`spend_menu.py` 硬編碼某個 bank（BUG-24，全員同名）。
-    ⚠ 傳 `None` 不是 `""`：只有 None 會被丟棄，空字串會原樣帶成 `sender=`。
-    ⚠ 仍為位置參數而非直接移除，是因為尚有呼叫端未收束（見 BUG-23 描述的同族清單）；
-      收束完成後應整個移除此參數，讓還在傳的呼叫端當場 TypeError（fail-loud > 靜默接受）。
+    🩸 TASK-0368（2026-10-01）：本函式原本走 `AgentCommands/_lib/tavern_client.py` 的 TavernClient，
+       而它 spawn 的 `Tools~/AgentCommands/run_cmd.py` 早就刪了 ⇒ 每次回 `run_cmd.py not found`、`res.ok=False`，
+       只落一行 stderr 警告 ⇒ dice／mbti 的酒館同步**每一次都沒發**，
+       呼叫端只看到一個 ✗，看起來像偶發。現在改走 Senate CLI（不需要 Editor）。
 
-    timeout (2026-07-22 / 2026-08-12): 顯式短上限透傳給 TavernClient。best-effort 廣播應帶短
-    timeout，避免 Editor 卡住時阻塞到觸發外層呼叫者的 timeout（SIGTERM 143）。
-    2026-08-12 起 **ritual 的五個呼叫點全部顯式帶值**（goodnight=12s，morning / intro / rest /
-    relogin=30s，見兩顆常數的註解）—— 在那之前只有 goodnight 帶，其餘四處落在 client 預設 60s。
-    None → 仍沿用 TavernClient 預設 60s，留給非 ritual 的臨時 caller。
-    ⚠ 這裡的 timeout 是「等 Cmd 跑完」的上限，跟 `wait_reply`（等別人回話）是兩件事；
-      本函式一律 `wait_reply=0`，**ritual 廣播從不等回覆**。手動 run_cmd 走 post 才有 540s 預設等待。
+    sender_id：**已不使用**（顯示身分由 Senate 從 persona 推導，那是唯一的推導點）。
+       保留位置參數只是為了不讓既有呼叫端 TypeError；傳了非 None 會印一行提醒。
+    timeout：等酒館 Server 回執的秒數（None ⇒ 30）。
+
+    回傳 True ＝ 確定已發（exit 0）。三態照 tavern-post：
+      exit 6 ＝ **確定沒發**（補發安全）／exit 7 ＝ **不知道**（⛔ 別直接補發，先 `senate cmd tavern-query` 回讀）。
+      兩者都回 False，但 stderr 印的字不同 —— 處置相反，不能同形。
     """
-    try:
-        from _lib.tavern_client import TavernClient   # type: ignore
-        client = TavernClient()
-        res = client.post_message(
-            room=room,
-            sender=sender_id,
-            body=body,
-            persona=persona,
-            meta=meta or {},
-            wait_reply=0,
-            timeout=timeout,
-        )
-        if not res.ok:
-            print(f"⚠ tavern post 失敗 (主 ritual 不受影響): {res.error or res.stderr[:200]}",
-                  file=sys.stderr)
-            return False
-        return True
-    except Exception as e:
-        print(f"⚠ tavern post exception (主 ritual 不受影響): {e}", file=sys.stderr)
+    import subprocess
+    import tempfile
+
+    if sender_id is not None:
+        print("⚠ tavern_post 的 sender_id 已不使用（身分由 Senate 從 persona 推導）", file=sys.stderr)
+    exe = shutil.which("senate")
+    if not exe:
+        print("⚠ tavern post 失敗 (主流程不受影響): PATH 上找不到 `senate`", file=sys.stderr)
         return False
+    wait = 30 if timeout is None else max(1, int(timeout))
+    fd, body_path = tempfile.mkstemp(prefix="tavern_post_", suffix=".md")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(body)
+        cmd = [exe, "cmd", "tavern-post", "--arg", f"persona={persona}",
+               "--arg-file", f"body={body_path}", "--arg", f"room={room}",
+               "--arg", f"timeout={wait}"]
+        if meta:
+            cmd += ["--arg", "meta=" + json.dumps(meta, ensure_ascii=False)]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=wait + 30)
+        except subprocess.TimeoutExpired:
+            print("⚠ tavern post 不知道有沒有發 (等不到 senate 結束)：⛔ 別直接補發，先 "
+                  "`senate cmd tavern-query --arg kind=tail` 回讀", file=sys.stderr)
+            return False
+        if proc.returncode == 0:
+            return True
+        tail = (proc.stdout or "").strip().splitlines()[-3:]
+        if proc.returncode == 7:
+            print("⚠ tavern post 不知道有沒有發 (exit 7)：⛔ 別直接補發，先 "
+                  "`senate cmd tavern-query --arg kind=tail` 回讀；" + " | ".join(tail), file=sys.stderr)
+        else:
+            print(f"⚠ tavern post 確定沒發 (exit {proc.returncode}，主流程不受影響)：" + " | ".join(tail),
+                  file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"⚠ tavern post exception (主流程不受影響): {e}", file=sys.stderr)
+        return False
+    finally:
+        try:
+            os.remove(body_path)
+        except OSError:
+            pass
 
 
 # ─── Letter to future self ──────────────────────────────────────────────

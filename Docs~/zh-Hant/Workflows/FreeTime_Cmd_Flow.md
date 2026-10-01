@@ -269,8 +269,8 @@ senate cmd free-time-activity --arg op=done --arg persona=<P> \
 `FreeTime/sessions/<persona>.json` —— Senate 端走 `SCP_FreeTimeSession`（typed model，磁碟格式與 Unity 版 `UCL_FreeTimeSession` 逐鍵相同）。
 
 > ✅ **讀取端只剩 C#**（Tim 2026-08-26 拍板：python 不直讀 session，全走 UCL_SessionService）。
-> python 端要問「現在是不是自由時間」走 `senate ucmd run SessionStatus` 的機讀 values
-> （`in_free_time`），**不直讀 session 檔**。
+> python 端要問「現在是不是自由時間」走 `senate cmd sessions --arg op=show --arg target_persona=<p>` 的機讀 values
+> （`kind`＝FreeTime 且 `running`＝1），**不直讀 session 檔**。
 > 欄位名仍是 JSON 鍵名（磁碟上有既有檔），改名走 0054 儲存統一那類的單，不要順手改。
 
 路徑一律走共用解析器（Senate 端 `SCP_ActivitySessionStore.PathOf`、Unity 端 `UCL_SessionService.SessionPath()`）

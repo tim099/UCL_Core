@@ -159,7 +159,7 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             aR.AppendLine();
             aR.AppendLine("## next");
-            aR.AppendLine($"- 回讀：`senate ucmd run SessionStatus --persona {aActor} --arg persona={aTarget}`（SessionStatus 那支的 persona ＝查誰）");
+            aR.AppendLine($"- 回讀：`senate cmd sessions --arg op=show --arg target_persona={aTarget}`（讀同一份 session 檔；Unity 的 SessionStatus 已刪，TASK-0368）");
             aR.AppendLine("- ⚠ 回讀是必要的：本回傳檔說的是**我做了什麼**，不是**磁碟上現在長怎樣**。");
             Finish(args, aActor, aR, aKind, true, aSettled);
         }

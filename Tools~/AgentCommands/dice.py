@@ -65,30 +65,13 @@ def _validate(count: int, faces: int):
         raise ValueError(f"面數需在 2~{MAX_FACES}: {faces}")
 
 
-# ── 酒館同步 (registry 反查 sender + awakening.tavern_post — 各 py 工具共用的慣例) ──
-
-def _resolve_sender(persona: str):
-    try:
-        import awakening  # 同目錄 lazy import (registry path 解析 + sys.path 注入副作用)
-        reg = awakening.load_registry()
-        agent = (reg.get("personas", {}).get(persona) or {}).get("agent")
-        if not agent:
-            return None, None
-        return reg.get("agent_banks", {}).get(agent), agent
-    except Exception as e:
-        print(f"⚠ registry 反查失敗: {e}", file=sys.stderr)
-        return None, None
-
+# ── 酒館同步 (awakening.tavern_post → senate cmd tavern-post；身分由 Senate 從 persona 推導) ──
 
 def _tavern_post(persona: str, body: str) -> bool:
     """帶 persona 的骰結果同步發酒館; 失敗只警告 (骰子本體是主功能, post 是副作用)。"""
-    sender, _agent = _resolve_sender(persona)
-    if not sender:
-        print(f"⚠ persona {persona!r} 查無 bank, 跳過酒館 post", file=sys.stderr)
-        return False
     try:
         import awakening
-        return awakening.tavern_post(sender, persona, body,
+        return awakening.tavern_post(None, persona, body,
                                      meta={"tag": "free-time", "subtag": "dice-roll"})
     except Exception as e:
         print(f"⚠ 酒館 post exception (擲骰結果不受影響): {e}", file=sys.stderr)

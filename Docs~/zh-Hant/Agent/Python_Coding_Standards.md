@@ -81,7 +81,7 @@ python 端**沒有動錢的通道**。
 涵蓋 **token 與券兩種錢**。直寫的後果：餘額快取靜默失準 / 繞過冪等判重 / 簽章不可信 / `balance_before/after` 要事後回填。
 
 🩸 **券曾經是唯一的缺口**：consume 早就走 Cmd，grant 卻留著兩處直寫
-（當時 `chess.py` 的 `grant_voucher`；繪圖券的 canonical owner 是 C# `Cmd_CanvasVoucher op=grant`）。
+（當時 `chess.py` 的 `grant_voucher`；繪圖券的 canonical owner 現在是 Senate Server 的 `senate cmd voucher op=grant`）。
 2026-08-17 那次帳本分裂，**路徑 bug 是導火線，但能燒起來是因為那裡本來就允許直寫**。
 
 **查餘額也一樣**：不要自己掃 ledger。

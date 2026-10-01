@@ -74,7 +74,7 @@ secrets 資料夾**名稱**住設定檔，C# 與 python **共讀同一份**：
 | 要做什麼 | 走哪裡 |
 |---|---|
 | 從明文產出 `.enc` | `UCL_SecretManagerPage` →「🔐 明文加密」面板（選 `.txt` → passphrase／hint／label） |
-| Plurk 憑證（四欄直接產出，明文不落地） | `UCL_PlurkAdminPage` →「🔑 產生憑證」 |
+| Plurk 憑證（四欄直接產出，明文不落地） | Senate `senate ui --page plurk` →「產生憑證」 |
 | 解密安裝（產出明文供工具讀） | 該列的「解密安裝」→ `UCL_SecretInstallWindow` |
 | 看 hint（忘記 passphrase，救援路徑 A） | 該列的「顯示提示」（passphrase-free 讀 metadata） |
 | 手動貼明文（救援路徑 B） | 該列的「開資料夾」→ 直接貼 `<name>.txt` |

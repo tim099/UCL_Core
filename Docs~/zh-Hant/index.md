@@ -100,7 +100,6 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [UCL_AgentCommandsPage](UCL_EditorPage/UCL_AgentCommandsPage.md) ⭐ | Agent Command 主頁面（隊列管理 / 新增 / Run Pending / Export Catalog）|
 | [UCL_BartenderAdminPage](UCL_EditorPage/UCL_BartenderAdminPage.md) | 集中管理酒保報時、時間提醒與 daemon 執行狀態的 Editor 後台。 |
 | [UCL_DiscordSettingsPage](UCL_EditorPage/UCL_DiscordSettingsPage.md) | ⛔ **已移除（2026-09-28）** —— Discord 設定改在 Senate 後台（`senate ui --page discord-bot`）。 |
-| [UCL_PlurkAdminPage](UCL_EditorPage/UCL_PlurkAdminPage.md) | **Plurk 帳號管理** — 只分共用（公用）與個人；帳號 id ＝ secret 檔名 stem，憑證本體走 Secret Manager。解析三段（persona override → 共用預設 → unset）且回值帶 `Source`，**個人／共用由 Source 推導不另存欄位** |
 | [UCL_MissingReferencePage](UCL_EditorPage/UCL_MissingReferencePage.md) | **Missing Reference 排查／修復** — 掃出「欄位指著已刪除物件」與「缺腳本 Component」並可就地清空／移除。⚠ 乾淨的 null 與斷掉的引用在 Inspector 上都畫成 None，只有後者會炸；⛔ 不宣稱能修 Odin/PropertyEditor 那條 NRE |
 | [UCL_PropertyEditorProbe](UCL_EditorPage/UCL_PropertyEditorProbe.md) | **PropertyEditor 探針**（非頁面，static + Cmd_Invoke）— 查 Odin `UpdateOdinEditors → ClearEditorsAndRebuild` NRE 的觸發點；含 2026-09-15 破案紀錄（兇手是 `Preview` 視窗，**不是**資料壞掉）|
 | [UCL_CommonEditorPage](UCL_EditorPage/UCL_CommonEditorPage.md) | 編輯器頁面共通基底 |
@@ -141,8 +140,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | 🔒 [ClaudeCode_Update_Lock_Diagnose_Workflow](Workflows/ClaudeCode_Update_Lock_Diagnose_Workflow.md) | **Claude Code 自動更新卡住排查** — 「其他程式正在用這個檔案」（`WindowsApps\Claude_…`）的底層是 MSIX 部署錯誤 `0x80073D02`：**舊版套件的行程沒消失**。含事件日誌查法（`AppXDeploymentServer` 的 `658→404→400`，**事後仍查得到**）／`resmon`「關聯的控制代碼」抓持有者（**要現場，所以⛔先別關 Editor**）／為什麼「關掉 Unity Editor 就好了」不等於是 Unity（親代鏈與時間軸兩條讀數各否一次）／本專案已修掉的一個 process handle 洩漏（`fa53536f`，⛔ 吻合但未證實是真兇）|
 | 💰 [Treasury_Account_Consolidation_Workflow](Workflows/Treasury_Account_Consolidation_Workflow.md) | **帳號歸戶 SOP** — 錢落到哪個帳戶的六段解析規則 / 解析何時**不**介入（轉帳認字面）/ 人工標記 → 審批 → 核准才動錢 / 幽靈帳號銷戶三道閘 / 解析不出來時「搬走 vs 原地承認」的二選一 / SelfTest 六條不變式 / 七個實際踩過的地雷 |
 | 🪙 [Bank_Region_Binding_Migration_Workflow](Workflows/Bank_Region_Binding_Migration_Workflow.md) | **區域綁定遷移 SOP（半自動）** — 在新專案把 persona → 帳號的綁定導出成 `letters/<persona>/bank/<區域ID>.md` / 四格前置檢查（UCL_Core 版本・Editor・別區 ID 不可同名）/ **dry-run 先印給人看**再落檔 / 四格驗收讀數（含「別區的檔沒被動」）/ **硬警告：綁定值是 agent id，而錢可能還在舊帳號名下** —— 解析端在改名歸併前不可直接把它當帳號用（症狀是薪水靜默轉向餘額 0 的合法帳號）/ 六個卡住出口 |
-| 🌐 [Plurk_Posting_Workflow](Workflows/Plurk_Posting_Workflow.md) ⭐ | **對外發噗 SOP（v2：走 `Cmd Plurk`）** — `lint → preview → post`（post 需 `confirm=1`，預設 dry-run）／**五欄**交付單（含 `公開度`，沒填就擋、⛔ 不預設「所有人」）／排版三鐵律（不手動斷行・300 字元・表情以特徵為準）／超限拆則「是兩半還是兩篇」的判準／**機器只驗形式，公開度審查與 `confirm` 永遠是人的** |
-| 🔧 [Plurk_Maintenance](Workflows/Plurk_Maintenance.md) | **Plurk 串接維護指南** — 四個檔的分工（規則只有 C# 一份、python 只留唯讀診斷）／怎麼加 lint 規則與心情詞／帳號三段解析與憑證安裝／OAuth 1.0a 的三個坑／**端點與參數的驗證狀態（那份「仍未驗」清單的事實來源）**／audit 對帳／驗收怎麼做 |
+| 🌐 Plurk（Senate CLI） ⭐ | **對外發噗與噗浪社交** —— TASK-0362 起住 Senate（`senate cmd plurk`，不需要 Editor）：`senate cmd doc --arg op=show --arg name=Plurk`（指令總覽）／`Plurk_Posting`（發文 SOP）／`Plurk_Maintenance`（維護）／`Plurk_Admin_Page`（帳號管理頁 `senate ui --page plurk`） |
 
 
 ---

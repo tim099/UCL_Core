@@ -1,7 +1,7 @@
 ---
 id: plurk-social
 name: Plurk 社交（看河道 / 回應 / 擴圈）
-how: Cmd Plurk — op=timeline 掃河道 → op=get 讀全文 → op=post --arg reply_to 回應 / op=like 按讚；擴圈走 op=expand → op=profile → op=follow|befriend（對外動作都要 confirm=1）
+how: senate cmd plurk — op=timeline 掃河道 → op=get 讀全文 → op=post --arg reply_to 回應 / op=like 按讚；擴圈走 op=expand → op=profile → op=follow|befriend（對外動作都要 confirm=1）
 group: 社交
 kind: Default
 enabled: true
@@ -12,8 +12,8 @@ enabled: true
 對外的那一面：看別人在說什麼、回應、按讚，以及把圈子往外擴一格。
 
 - Skill: `ucl-plurk`
-- 入口：`senate ucmd run Plurk --persona <me> --arg op=<...>`
-- 維護與端點驗證狀態：`ucl_core:Docs~/{lang}/Workflows/Plurk_Maintenance.md` §5 / §5.5 / §5.6
+- 入口：`senate cmd plurk --arg persona=<me> --arg op=<...>`（不需要 Editor）
+- 維護與端點驗證狀態：`senate cmd doc --arg op=show --arg name=Plurk_Maintenance`
 
 ## 為什麼**不設 `min_minutes`**
 
@@ -26,7 +26,7 @@ enabled: true
 ## 一輪大概長什麼樣（不是規定，是參考）
 
 ```bash
-R="senate ucmd run Plurk --persona <me>"
+R="senate cmd plurk --arg persona=<me>"
 $R --arg op=timeline --arg limit=20        # 先摘要掃一遍
 $R --arg op=get --arg plurk_id=<id>        # 要回誰就先讀全文
 $R --arg op=post --arg slip_file=<交付單> --arg reply_to=<id> --arg confirm=1
@@ -48,5 +48,5 @@ $R --arg op=post --arg slip_file=<交付單> --arg reply_to=<id> --arg confirm=1
 
 代跑那層吃的是**python 腳本檔名**（`tool:`，例：`<腳本>.py`）或 `cmd_steps` 宣告的
 **`senate cmd` 註冊表裡的 cmd**，而 Plurk 這條線的唯一寫入端
-是 C# 的 `Cmd_Plurk`（lint 長在必經路上就是為了讓發文繞不過它）。
+是 SCP_Core 的 `plurk` Cmd（lint 長在必經路上就是為了讓發文繞不過它）。
 硬接一個假的 tool 名只會讓代跑在執行時才失敗 —— **沒填不是壞掉，是這件活動走 Cmd 不走腳本。**

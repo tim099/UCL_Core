@@ -24,7 +24,7 @@
     },
     {
       "name": "ucl-plurk",
-      "summary": "對外發噗（Plurk）—— 走 Cmd Plurk 的 lint/preview/post 三步（post 需 confirm=1，預設 dry-run）；五欄交付單（含公開度，沒填就擋）。規則本體在 C# UCL_PlurkLint；機器只驗形式，公開度審查與 confirm 永遠是人的。維護面另有 Plurk_Maintenance.md。",
+      "summary": "對外發噗（Plurk）—— 走 `senate cmd plurk`（TASK-0362 起住 Senate，不需要 Editor）：lint 驗形式 → post 帶 confirm=1 發出；公開度未填預設「所有人」。操作與規則在 `senate cmd doc --arg op=show --arg name=Plurk`；skill 只放四句判準。",
       "optional": false
     },
     {

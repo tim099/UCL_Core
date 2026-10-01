@@ -2,7 +2,7 @@
 // 物理意義：資料層在 sculpt.py（gura 的引擎：events 真相源＋增量快取＋等角渲染），本頁不重造渲染 ——
 //          只做「展品清單直讀 + spawn 引擎出圖 + 顯示 PNG」三件事，結構對齊 UCL_LibraryManagePage
 //          （讀 per-project JSON 顯示、操作 spawn UCL_Core 工具）。觀測免費（驗收管道零門檻），
-//          本頁純唯讀不碰錢 —— 落子仍走 Cmd_Sculpture。
+//          本頁純唯讀不碰錢 —— 落子走 `senate cmd sculpture`（TASK-0363 起收費在 Senate，Unity 的 Cmd_Sculpture 已刪）。
 // 數值影響：讀 AgentCommands/Sculpture/exhibits.json（展品 preset）與 _last_view.png；
 //          渲染 spawn python sculpt.py view（ProcessRegistry 登記，硬規則不裸 Process.Start）。
 // 版面（Tim 2026-08-14 要求，比照 UCL_ControlPanelPage）：三個 section 各自可折疊 ——
@@ -77,7 +77,7 @@ namespace UCL.Core.EditorLib.Page
         Texture2D m_ViewTex;
         DateTime m_ViewTexTime;
         bool m_Loaded;
-        // ── 2D→3D 貼圖預覽區（唯讀：只出預覽與現成指令，落子走 Cmd_Sculpture）──
+        // ── 2D→3D 貼圖預覽區（唯讀：只出預覽與現成指令，落子走 `senate cmd sculpture`）──
         string m_StampRegion = "1000,1000,9,6";   // 來源區域 x,y,w,h（2D 畫布座標）
         string m_StampAt = "10,10,10";            // 圖左上角貼在 3D 的哪一點
         string m_StampFacing = "z+";              // 貼片法線
@@ -607,7 +607,7 @@ namespace UCL.Core.EditorLib.Page
             }
             var (x, y, w, h) = aRegion.Value;
             m_StampCmdLine =
-                $"senate ucmd run Sculpture --arg op=stamp2d --arg persona={m_StampPersona} " +
+                $"senate cmd sculpture --arg op=stamp2d --arg persona={m_StampPersona} " +
                 $"--arg src_x1={x} --arg src_y1={y} --arg src_x2={x + w - 1} --arg src_y2={y + h - 1} " +
                 $"--arg at={m_StampAt} --arg facing={m_StampFacing} --arg thickness={m_StampThickness} " +
                 $"--arg expect_pixels={aOpaque}";

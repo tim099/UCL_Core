@@ -215,7 +215,7 @@ senate cmd free-time-activity --arg op=done --arg persona=<P> \
 `senate cmd book`**（in-process；沒有 cmd 平替的 step 一律不列進 `steps`）。
 `canvas-2d` 目前**沒掛 `cmd_steps`**：`op=step` 回「尚未支援 Cmd 代跑 —— 自己跑」，指令（`senate cmd canvas`）寫在該活動 md 裡。
 未接：`lesson-log`（走 `senate cmd note-lesson`，是 Cmd 不是腳本）／`glossary-entry`／`doc-reflection`／
-`letter-to-self`／`constitution`／`sculpt-3d`（走 `Cmd_Sculpture`）／`trpg`／
+`letter-to-self`／`constitution`／`sculpt-3d`（走 `senate cmd sculpture`）／`trpg`／
 `tavern-creative`／`stream-watch`。
 
 > ⚠ **2026-08-18 拆分後這份清單才講得出真話**：在那之前代跑宣告掛在**組別** md 上，
@@ -238,8 +238,8 @@ senate cmd free-time-activity --arg op=done --arg persona=<P> \
 
 ## 四、活動類 Cmd 自己回報「你在自由時間中」
 
-`UCL_FreeTimeHint.Append(sb, persona)` —— 任何活動類 Cmd 在組完自己的回傳值之後掛一行。
-已接：`senate cmd note-lesson`（SCP 版 `SCP_FreeTimeHint`，文字與 Editor 版逐字相同）／`Cmd_Sculpture`／`Cmd_Glossary op=register`。
+`SCP_FreeTimeHint.Append(sb, dataRoot, persona, out warn)` —— 任何活動類 Cmd 在組完自己的回傳值之後掛一行（Editor 版 `UCL_FreeTimeHint` 2026-10-01 隨最後兩個使用者搬走而刪除）。
+已接：`senate cmd note-lesson`／`senate cmd doc-edit`／`senate cmd sculpture`（TASK-0363）／`Cmd_Glossary op=register`。
 
 三條路徑裡選這條的理由：
 - ❌ 五個活動工具各加提示 → **五個不同的收尾**，漏一個沒人發現
@@ -288,7 +288,7 @@ senate cmd free-time-activity --arg op=done --arg persona=<P> \
    的 `op=step`** —— 有 senate cmd 可路由的就掛 `cmd_steps`。
    ⚠ **「一步」的粒度尚未決定**（寫一段＝一次 append？一次 Cmd？）。
    （拆分後這幾個各自是具體活動，`cmd_steps` 可以一對一掛 —— 這是拆分換來的直接好處。）
-3. `sculpt-3d`（走 `Cmd_Sculpture`）／`trpg`／`tavern-creative`／`stream-watch`
+3. `sculpt-3d`（走 `senate cmd sculpture`）／`trpg`／`tavern-creative`／`stream-watch`
    未接 `steps` / `cmd_steps`（低優先）。
 4. **免費像素併入券系統為期間限定券**（Tim 2026-08-18 拍板方案乙）—— 券 ledger 長出 batches
    與 expires_at、`balance` 改推導不落檔、限時券與永久券**讀取路徑分開**、

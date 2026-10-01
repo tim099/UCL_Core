@@ -606,6 +606,40 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
 
             // ===========================================================
+            // 區塊職責：有 persona 的發言，組訊息走 Senate 那一份（TASK-0350，併 TASK-0339）
+            // 物理意義：`sender_id`／`sender_name`／CLI 分流標記由 SCP_Core `SCP_TavernPostCompose.Build` 決定 ——
+            //          Senate 的四條發文路（morning-intro／tavern-post／goodnight／Gateway）呼叫同一支。
+            //          🩸 此前這裡有自己的一份：`sender_name` 取 bank 顯示名，而 0317 起本尊取 persona id
+            //          ⇒ 同一個人從 Editor 發與從 Senate 發，名字不一樣（0339：seq 20463 `zeta` vs 20466 `summit`）。
+            // 數值影響：
+            //   · 呼叫端顯式給的 sender 與 persona 推導的不同 ⇒ **以 persona 推導為準**（與 Senate 一致），
+            //     並回報 `sender_override_ignored`。顯式 sender 只在**沒帶 persona** 的發言（系統元件／頁面）上生效。
+            //   · projectRoot／glossaryRoot 刻意給空 ⇒ Build 不附詞典、原文返回；附註仍交給寫入端（下方請求鍵，TASK-0313）。
+            // 邊界：沒帶 persona（匿名／系統元件）不走這裡 —— Senate 側沒有那種發言，那不是第二份規則。
+            // ===========================================================
+            SCP.Core.Tavern.SCP_TavernPostDraft composeDraft = null;
+            if (!anonymousPost)
+            {
+                composeDraft = SCP.Core.Tavern.SCP_TavernPostCompose.Build(
+                    UCL_AgentCommandsPath.DataRoot.Replace('\\', '/'),
+                    UCL_LettersPath.Root.Replace('\\', '/'),
+                    "", "",
+                    Treasury.UCL_CentralBankSettings.CurrencyId,
+                    roomId, senderPersona, body,
+                    ParseMeta(metaStr) ?? new Dictionary<string, string>());
+                if (composeDraft.Error != null) { RejectLastOp(args, composeDraft.Error); return; }
+                foreach (string aNote in composeDraft.Notes) Debug.LogWarning($"[Tavern] {aNote}");
+                string aComposedId = composeDraft.Message.SenderId;
+                if (!string.IsNullOrEmpty(explicitSenderId) && explicitSenderId != aComposedId)
+                {
+                    string aIgnored = $"sender='{explicitSenderId}' 沒有採用 —— 帶了 persona={senderPersona} 時，顯示身分由 persona 推導（'{aComposedId}'），與 Senate 發文同一條規則";
+                    Debug.LogWarning($"[Tavern][TASK-0350] {aIgnored}");
+                    UCL_AgentCommandRunner.ReportOutputValue(args, "sender_override_ignored", aIgnored);
+                }
+                senderId = aComposedId;
+            }
+
+            // ===========================================================
             // T26 — Solo Alter 配對發言間隔自動延遲（per Tim P10 + Round 30 mode-aware 修正）
             // 物理意義：Alter 機制觸發後 agent 容易 self↔alter ping-pong 秒回失去慢速意義；
             //          純 SKILL.md 自律守不住；server 端自動延遲（不擋訊息）— agent 不必處理 reject + retry，
@@ -663,10 +697,12 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             //   🩸 實例：roster 裡 `cc` 那筆的 display_name 是 `crest-001`（一個 persona 名），
             //     遷移後 basecamp／meadow／ame 等 7 位都會署名成 crest-001 ——
             //     那不是「查不到」，是**查到了一個看起來完全正常的錯誤**。
-            string profileName = Treasury.UCL_BankAccountProfileIO.GetDisplayName(senderId);
-            string senderName = string.IsNullOrEmpty(profileName) ? senderId : profileName;
+            //   ⚠ 以上只剩**沒帶 persona** 的發言在用 —— 有 persona 的由本尊給（persona id，TASK-0317／0350）。
+            string profileName = composeDraft != null ? null : Treasury.UCL_BankAccountProfileIO.GetDisplayName(senderId);
+            string senderName = composeDraft != null ? composeDraft.Message.SenderName
+                              : (string.IsNullOrEmpty(profileName) ? senderId : profileName);
             // 沒有帳戶資料才警告（來源只剩一個，不會再有「另一邊有」這種狀況）。
-            if (string.IsNullOrEmpty(profileName))
+            if (composeDraft == null && string.IsNullOrEmpty(profileName))
             {
                 Debug.LogWarning($"[Tavern] post 的 sender '{senderId}' 沒有帳戶資料"
                     + " — 到銀行後台選到該 agent、在「顯示名稱」那一行補一筆（暫時會顯示成 id）");
@@ -679,6 +715,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             //          若有 m_AvatarSprite.m_ID → 用 persona avatar; 否則 fallback identity-level AvatarSprite
             // 數值影響：sender_avatar_sprite 寫進 message; UI / Discord bridge render 端讀此欄優先預設頭像
             // 安全性：persona card 不存在 / 載入失敗 → silent fallback identity (不擋 post 主流程)
+            // ⚠ TASK-0350 刻意**保留**：本尊（SCP_TavernPostCompose ③）不在訊息上蓋頭像，顯示端照 persona 去信件夾拿；
+            //   但 Unity `UCL_ChatTavernPage.DrawAvatar` 還是讀這一欄、空的就退回 agent 層頭像 ⇒ 拿掉它，
+            //   Editor 發的訊息在 Unity 頁上會失去 persona 頭像。等那個顯示端改讀 persona 之後再拆（不在本單射程）。
             string senderAvatarSprite = "";
             try
             {
@@ -723,11 +762,17 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             // 物理意義: 這句話是給酒保 CLI 的**指令**而不是對話 ⇒ 打上 tag 讓後續流程分流（詞典附註也據此跳過）。
             // 🩸 2026-08-19 血證: `cmd msg kiara <訊息>` 提到 persona 名被附上整段新詞區塊，
             //          那段變成指令的一部分 ⇒ 群發把整本詞典打進對方輸入框並按 Enter。
+            //   ⚠ 有 persona 的發言由本尊判（`SCP_TavernPostCompose` 已把 cli 標記打進它的 meta）—— 這裡只剩沒帶 persona 的那條。
             bool aIsCliCmd = false;
-            try { aIsCliCmd = Bartender.UCL_BartenderCliService.LooksLikeCliCommand(body); }
-            catch (Exception ex) { Debug.LogWarning($"[Tavern] CLI 指令判定失敗 (視同一般訊息): {ex.Message}"); }
+            if (composeDraft == null)
+            {
+                try { aIsCliCmd = Bartender.UCL_BartenderCliService.LooksLikeCliCommand(body); }
+                catch (Exception ex) { Debug.LogWarning($"[Tavern] CLI 指令判定失敗 (視同一般訊息): {ex.Message}"); }
+            }
 
-            var aMsgMeta = ParseMeta(metaStr);
+            var aMsgMeta = composeDraft != null
+                ? new Dictionary<string, string>(composeDraft.Message.Meta)
+                : ParseMeta(metaStr);
             // ===========================================================
             // 詞典附註 —— **Unity 端不碰詞典**（TASK-0313，Tim 2026-09-28）。
             // 物理意義: 本支只放一把一次性的請求鍵；寫入端 `senate cmd tavern-write` 看到它才補附註、補完拿掉它。
@@ -754,7 +799,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                 sender_persona = senderPersona,
                 sender_avatar_sprite = senderAvatarSprite,
                 kind = "chat",
-                body = body,
+                body = composeDraft != null ? composeDraft.Message.Body : body,
                 reply_to = int.TryParse(replyToStr, out var rt) ? rt : (int?)null,
                 meta = aMsgMeta,
                 refs = ParseRefs(refsStr),

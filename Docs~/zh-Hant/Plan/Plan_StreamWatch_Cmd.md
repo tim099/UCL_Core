@@ -10,7 +10,6 @@ related:
   - ucl_core:Docs~/{lang}/Plan/Plan_FreeTime_Cmd.md | 自由時間 Cmd 化 | 本案手法的姊妹案（分步＋每步回傳檔 next）
   - ucl_core:Docs~/{lang}/Workflows/Awakening_Cmd_Flow.md | 早晚安 Cmd 流程 | 「每步回傳檔指下一步」的母版
   - ucl_core:Skills~/ucl-stream-watch/SKILL.md | ucl-stream-watch | 現行入口（**全重寫，不基於舊版修改**）
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern | 發文走 in-process post
 ---
 
 # 觀影模式重做 — Spec

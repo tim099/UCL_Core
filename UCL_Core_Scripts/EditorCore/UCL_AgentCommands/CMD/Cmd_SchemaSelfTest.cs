@@ -158,19 +158,11 @@ namespace UCL.Core.EditorLib.AgentCommands
             }
 
             // 區塊職責：**明講驗不到的那一環** —— 報告的射程邊界。
-            // 物理意義：完整鏈是「來源改動 → 自動同步 → 產物更新 → 預檢跟上」。
-            //          本 Cmd 走完前三環；第四環在 Python 端，而且**只服務 Tavern**
-            //          （summit 2026-08-14 實測：非 Tavern 的 Cmd 缺參數時 client 完全不擋）。
-            //          不寫這段的話，一份「✅ 通過」會被讀成整條鏈都驗過了。
+            // 物理意義：本 Cmd 只驗「來源改動 → 自動同步 → 產物更新」；產物有沒有被呼叫端拿去擋參數是另一件事。
+            //          不寫這段的話，一份「✅ 通過」會被讀成呼叫端也會擋錯參數。
             sb.AppendLine("## 射程邊界（本 Cmd **驗不到**的部分）");
             sb.AppendLine();
-            sb.AppendLine("- **「產物 → Python 預檢跟上」這一環不在本 Cmd 射程內。** Python 端的**參數**預檢");
-            sb.AppendLine("  目前只服務 Tavern（`precheck_cmd_type` 那層才是全域的，它管的是 unknown type）。");
-            sb.AppendLine("- 要驗那一環，手動跑一次故意缺參數的 Tavern 呼叫，確認 client 端擋下且未進 queue：");
-            sb.AppendLine("  ```");
-            sb.AppendLine("  senate ucmd run Tavern --arg op=post --arg persona=<你>   # 缺 room/agent/body");
-            sb.AppendLine("  # 期望：✗ 預檢失敗、exit=2、輸出無 Submitted:");
-            sb.AppendLine("  ```");
+            sb.AppendLine("- `senate ucmd` 端**沒有**參數預檢（未知參數靜默取預設值）⇒ 產物正確不代表呼叫端會擋下打錯的參數。");
             sb.AppendLine("- 本 Cmd 通過**只代表**：來源與產物一致，且 ArgsSpec 有正確落進產物。");
 
             ChatTavern.UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);

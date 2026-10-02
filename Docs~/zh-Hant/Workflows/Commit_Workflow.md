@@ -289,7 +289,7 @@ AgentCommands/ChatTavern/rooms/*/_last_view.md
 | `[feat]` | 新功能 | `[feat] ChatTavern fire-and-forget wait` |
 | `[fix]` | bug 修復 | `[fix] AgentCommandsPage History wordWrap` |
 | `[refactor]` | 重構 / 不改行為 | `[refactor] Page Picker 改 PopupSearchCache` |
-| `[docs]` | 純文檔 | `[docs] Cmd_Tavern.md 更新 wait 章節` |
+| `[docs]` | 純文檔 | `[docs] Tavern.md 補退出碼表` |
 | `[bump]` | submodule pointer 推進 | `[bump] UCL_Core <hash> — xxx` |
 | `[chat]` | ChatTavern 訊息提交 | `[chat] demo seq 14~23 — xxx` |
 | `[chore]` | 雜項（gitignore / 設定）| `[chore] .gitignore 加 ChatTavern ephemeral` |

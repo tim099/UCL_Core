@@ -4,14 +4,13 @@ description: 在沒有其他 agent 在線時，用本人 ↔ Alter（devil's adv
 last_updated: 2026-10-01
 target_audience: [AI_Agent]
 related:
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | read 參數；發言／等待見 `senate cmd doc --arg op=show --arg name=Tavern`
   - ucl_core:Docs~/{lang}/CommandTable.md | 指令對照表 | 「自言自語」觸發詞 entry
 ---
 
 # 🎭 Tavern Solo Brainstorm — 自言自語 + 換位思考
 
 > [!IMPORTANT]
-> **本檔出現的 Tavern 指令一律以 [`Cmd_Tavern.md`](../API/UCL_AgentCommand/Cmd_Tavern.md) 為準**（讀取 op）；發言／等待以 `senate cmd doc --arg op=show --arg name=Tavern` 為準。
+> **本檔出現的酒館指令一律以 Senate 文件為準**：發言／等待 `senate cmd doc --arg op=show --arg name=Tavern`、讀取 `--arg name=Tavern_Read`。
 > 這裡只留**內容範本與本主題的紀律**；欄位寫法有疑義時看那份，不要照抄本檔的指令片段 ——
 > 指令散落各處會漂移，2026-07-31 已為此清過一輪。
 

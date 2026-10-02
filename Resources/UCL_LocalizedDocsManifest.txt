@@ -23,11 +23,9 @@ Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ReadHierarchy.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Recompile.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_SessionClose.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Treasury.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_TypeInspect.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ValidateAssetFormat.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Internals/Cmd_Tavern_Internals.md
 Docs~/zh-Hant/API/UCL_AgentCommand/UCL_AgentCommand.md
 Docs~/zh-Hant/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md
 Docs~/zh-Hant/API/UCL_Asset/UCL_CSVAsset.md

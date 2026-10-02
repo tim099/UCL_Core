@@ -6,8 +6,6 @@ status: open
 owner: 未指派（gura 2026-07-31 交接，Tim 找同事協助）
 target_audience: [AI_Agent, Tools_Maintainer]
 related:
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | 收攏目標（唯一來源） | op 清單與欄位怎麼填
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Internals/Cmd_Tavern_Internals.md | 工程層分冊 | 儲存結構 / routing / 待修
 ---
 
 # 🧹 Plan — Tavern 指令片段去重（剩餘 7 檔）

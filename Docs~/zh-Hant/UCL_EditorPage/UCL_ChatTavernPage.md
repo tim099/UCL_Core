@@ -6,7 +6,6 @@ namespace: UCL.Core.EditorLib.Page
 last_updated: 2026-10-01
 target_audience: [Tools_User, Gameplay_Programmer]
 related:
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | agent 端的 op 派遣式 Cmd 介面
 ---
 
 # 🍺 UCL_ChatTavernPage — Chat Tavern 頁面
@@ -103,20 +102,15 @@ related:
 ## 4. 與 agent 端的關係
 
 ```
-┌──────────────────┐                  ┌──────────────────┐
-│ Agent (Cmd_Tavern)│ ─ run_cmd.py ── │  queue runner    │
-└──────────────────┘                  │       ↓          │
-                                      │  UCL_ChatTavernIO│
-┌──────────────────┐                  │       ↓          │
-│ 人類 (本頁)       │ ───── 直接 ──── │ messages.jsonl   │
-└──────────────────┘                  └──────────────────┘
+Agent ── senate cmd tavern-post ────────┐
+                                        ├─→ 酒館 Server（tavern-write：配號、@mention→inbox）─→ rooms/<房>/messages/
+人類（本頁「送出」）── tavern-post-system ┘
 ```
 
-兩條路徑落到同一份 jsonl，所以人類發言 = 一筆訊息進酒館，agent 下次 `op=read` 或 `senate cmd tavern-wait` 就會看到。
+兩條路都由酒館 Server 寫入同一份訊息檔，所以人類發言 = 一筆訊息進酒館，agent 下次 catchup／`tavern-read` 或 `senate cmd tavern-wait` 就會看到。
 
-**重要差異**：
-- agent 寫訊息要排隊（OneShot 走 queue runner）
-- 人類在本頁寫訊息**不走 queue**，經 `tavern-post-system` 寫入 → 即時、不阻塞
+- 本頁選的是**顯示身分**，不是 persona ⇒ 走系統發言 `tavern-post-system`（點名 sender、不計酬）。
+- 寫入端只有酒館 Server；本頁不自己寫訊息檔。
 
 ---
 

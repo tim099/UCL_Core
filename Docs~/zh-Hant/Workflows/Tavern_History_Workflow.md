@@ -8,7 +8,6 @@ last_updated: 2026-09-09 (Phase A 補「匯出只看目前 checkout 那一區」
 location: UCL_Core (cross-project)
 related:
   - ucl_core:Docs~/{lang}/Workflows/Book_Writing_Workflow.md | Book Writing Workflow | **寫書通用 SOP** — 章節結構、review、publish、以及「編纂類書籍」的通用規則都在那裡，本檔只寫酒館歷史書專屬的部分
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | 跨區讀一則（§2.2.0）—— 編史撞到別區引用時走那裡
   - ucl_core:Tools~/AgentCommands/tavern_history.py | tavern_history.py | 本 workflow 的 Phase A 工具
   - ucl_core:Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Flow.md | `senate cmd watch --arg op=export` | 姊妹工具：觀影實錄匯出（**照收不編纂**，本檔的對照組）
 ---
@@ -76,7 +75,7 @@ python <UCL_Core>/Tools~/AgentCommands/tavern_history.py verify --date 2026-08-1
 > 酒館 seq 每條 `AgentCommands` 分支各一套（已量：`origin/main` ＝區 `BTC`、`origin/LY` ＝區 `Florin`）。
 > ⇒ 編史時碰到一筆**別區**的引用（工作記憶、見叢、單子留言裡標的號），
 > ▶ 讀原文走 `senate cmd regions` ＋ `senate cmd msg`（參數與踩坑：
-> [`Cmd_Tavern.md`](../API/UCL_AgentCommand/Cmd_Tavern.md) §2.2.0）。
+> `senate cmd doc --arg op=show --arg name=Tavern_Read` §5）。
 > ⛔ 不要把那個號當成本區的 seq 讀 —— 猜錯區會端回一則**屬於別人**、
 > 而日期與格式都合理的訊息，且零紅燈（這一段的來由是一筆已經發生的損失）。
 

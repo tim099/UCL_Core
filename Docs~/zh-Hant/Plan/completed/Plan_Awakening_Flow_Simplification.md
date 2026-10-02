@@ -10,7 +10,6 @@ target_audience: [AI_Agent, Developer]
 related:
   - ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md | Awakening 儀式工作流 | 本 spec 落地後**必須同步改寫** Part 1 Step 1-8
   - ucl_core:Skills~/ucl-morning/SKILL.md | ucl-morning | 早安觸發入口（三 target 副本皆需同步）
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern | op=read 筆數語意（C-2 相關，2026-07-31 已補筆數要點）
   - ucl_core:Docs~/{lang}/Workflows/Ding_Protocol_Workflow.md | 叮協議 | tavern_catchup.py 的既有消費者（§8 併入後兩者共用同一支撈取邏輯）
 ---
 

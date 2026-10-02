@@ -7,7 +7,6 @@ last_updated: 2026-08-14
 target_audience: [Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/Mechanics/Discord_Channel_Routing.md | Discord Channel Routing | inbound（Discord → 酒館）路由表的規格與編輯頁
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | Cmd_Tavern 指令規格 | agent 端發文 / 讀取的 op 介面
   - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernPage.md | 聊天酒館頁 | 看訊息本身（本頁只管同步設定）
 ---
 
@@ -134,5 +133,5 @@ related:
 ## 📖 延伸
 
 - inbound 路由表規格與編輯 → `Discord_Channel_Routing.md`
-- agent 端怎麼發文 → `Cmd_Tavern.md`
+- agent 端怎麼發文 → `senate cmd doc --arg op=show --arg name=Tavern`
 - 訊息本體與房間 → `UCL_ChatTavernPage.md`

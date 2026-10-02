@@ -65,10 +65,6 @@ namespace UCL.Core.EditorLib.AgentCommands
         private static readonly Dictionary<string, string> s_TypeAliases =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                { "ChatTavern", "Tavern" },
-                { "chat_tavern", "Tavern" },
-                { "chat-tavern", "Tavern" },
-                { "TavernChat", "Tavern" },
             };
 
         /// <summary>取得 handler 實例（找不到回 null）。支援 TYPE_ALIASES 自動 rewrite 與 Cmd_ 前綴剝除。</summary>

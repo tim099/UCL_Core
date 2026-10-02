@@ -2324,7 +2324,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine();
             aR.AppendLine("## next");
             aR.AppendLine($"1. 取素材：senate ucmd run StreamWatch --arg step=cycle --arg persona={iPersona}");
-            aR.AppendLine($"2. 讀主觀影者的劇情線：senate ucmd run Tavern --arg op=read --arg room=tavern --arg limit=20");
+            aR.AppendLine($"2. 讀主觀影者的劇情線：senate cmd tavern-query --arg kind=tail --arg room=tavern --arg limit=20");
             aR.AppendLine($"3. 發評論：senate ucmd run StreamWatch --arg step=observe --arg persona={iPersona} --arg-file body=<評論>");
             aR.AppendLine($"4. 寫心得時用 `--arg media_id={aMedia} --arg chapter={aPrepChapter}` —— 那兩個值準備階段已經釘死。");
             WritePayload(iArgs, aPath, aR.ToString());

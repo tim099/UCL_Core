@@ -69,7 +69,7 @@ Tools~/
 
 | 用法 | 範例 |
 |---|---|
-| `run <Type> --arg key=value` | `senate ucmd run Tavern --arg op=read --arg room=tavern --arg tail=10` |
+| `run <Type> --arg key=value` | `senate ucmd run Task --arg op=show --arg index=8` |
 | `info <Type>` | `python run_cmd.py info Bartender` (印 ArgsSchema) |
 | `list` | 列所有 Cmd Types |
 

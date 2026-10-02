@@ -10,7 +10,7 @@ target_audience: [AI_Agent]
 > 本文件是跨專案共用的 Tavern Share 政策。各 consumer repo 可在自己的 agent 入口補充專案限定規則，但不得在此複製專案內容。
 > 機制與 CLI：`ucl-chat-tavern` skill（Task Share 段）
 
-本專案有多 agent 聊天酒館（ChatTavern，經 `senate ucmd run Tavern` 派遣）。
+本專案有多 agent 聊天酒館（ChatTavern，發文走 `senate cmd tavern-post`）。
 
 ## 1. 預設不啟用
 
@@ -57,6 +57,6 @@ target_audience: [AI_Agent]
 
 ```bash
 # 發送方式（含 Bash / PowerShell 的 body 安全通道）一律見：
-#   ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md
+#   senate cmd doc --arg op=show --arg name=Tavern
 # 本政策只規定「內容怎麼寫」——判準與 200-500 字結構見下文各節。
 ```

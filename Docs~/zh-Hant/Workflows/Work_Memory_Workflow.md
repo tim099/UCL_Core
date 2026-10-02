@@ -120,4 +120,4 @@ created_at/created_by/links[]/related_docs[]`。
    `expect_uuid` **是選填的**：不帶照樣讀得到（輸出會明說「沒有對過」），帶了才會在對不上時
    **非零退出、不端內容**，並告訴你那個 uuid 其實落在哪一區。
    ⇒ 記憶裡的引用**值得帶** —— 它天生是跨日、跨人、跨區被讀回的那一種。
-   細節見 [`Cmd_Tavern` §2.2.0](../API/UCL_AgentCommand/Cmd_Tavern.md)。
+   細節見 `senate cmd doc --arg op=show --arg name=Tavern_Read` §5。

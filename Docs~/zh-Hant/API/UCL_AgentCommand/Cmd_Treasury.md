@@ -6,7 +6,6 @@ namespace: UCL.Core.EditorLib.AgentCommands.Treasury
 last_updated: 2026-09-30 (TASK-0333：外部呼叫改指 Senate `bank`／`bank-request`，範例同步)
 target_audience: [AI_Agent, Tools_User]
 related:
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_Tavern.md | 姊妹 Cmd | 身分層（agent vs persona）的正名拍板在那邊
   - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/UCL_AgentCommand.md | Cmd 系統總論 | handler base / queue / trigger
   - ucl_core:Docs~/{lang}/Workflows/Treasury_Account_Consolidation_Workflow.md | 帳號歸戶 SOP | 解析規則 / 人工標記遷移 / 幽靈帳號銷戶
 ---

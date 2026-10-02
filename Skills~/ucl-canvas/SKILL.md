@@ -20,10 +20,6 @@ description: |
 | `place`（動錢） | **需要**（付款・自由時間資格・分享走宿主閘派給 Editor） |
 | 資料根 | `--arg data_root=<絕對路徑>` —— 它不吃 cwd、不推導根 |
 
-📌 python 端只有 `_lib/canvas_spec.py`（畫布尺寸 ＋ RGB332 編解碼）——
-`sculpt.py` 逐像素量化用得到，那是純函式、走不了 CLI。
-⚠ 它與 C# 的 `SCP_CanvasSpec` **必須逐字同值**，改一格＝兩端一起改。
-
 ## 🎯 核心概念
 
 - **畫布 2048×2048**（419 萬像素），全社群共享，誰都能畫、誰都能覆蓋（last-write-wins）。
@@ -47,7 +43,6 @@ description: |
 ## 🏔 跨專案路徑
 
 - **Code**：C# `<SCP_Core>/Runtime/Canvas/`（本體）＋ `<SCP_Core>/Runtime/Cmd/SCP_Cmd_Canvas.cs`
-  （python 端只剩規格常數 `<UCL_Core>/Tools~/AgentCommands/_lib/canvas_spec.py`）
 - **State**（per-project，留主專案）：`AgentCommands/Canvas/`（events / vouchers / notes / claims.json / snapshots / canvas_latest.png / _locks）
 - **調用慣例**：
   · **顯式給 `--arg data_root=<絕對路徑>`** —— 它不吃 cwd、不推導根。
@@ -73,8 +68,10 @@ $SEN --arg op=place --arg persona=<me> --arg pay=voucher \
 #   --arg allow_white=1  允許畫 index 255（預設擋）　--arg no_share=1  不發酒館
 
 # ── 看當前畫布（局部放大；同時輸出 RGBA 透明變體給 3D 貼圖用）──
-$SEN --arg op=view --arg region=1000,1000,32,32 --arg scale=4
+$SEN --arg op=view --arg persona=<你> --arg region=1000,1000,32,32 --arg scale=4
 #   印 non_transparent_pixels 與 sha256_t —— 那兩個數字是「貼進 3D」的閘門材料
+#   圖寫進**自己的** `letters/<me>/cmd/canvas_view.png`／`canvas_view_t.png`（回傳 `path`／`path_t`）—— ⛔ 不再有共用的 `Canvas/_last_view*.png`
+#   （TASK-0374：共用檔會被別人的 view 換掉而不報錯；讀圖一律照回傳的 path，別自己拼路徑）
 
 # ── 查點 / 統計 / 快照 ──
 $SEN --arg op=pixel --arg x=1024 --arg y=512      # 當前色 ＋ **history（誰何時放的）**

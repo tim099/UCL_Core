@@ -108,7 +108,7 @@ namespace UCL.Core.EditorLib
         /// <summary>&lt;UCL_Core&gt;/Tools~/AgentCommands 絕對路徑 —— python 工具都住這裡。</summary>
         /// <remarks>
         /// 幾乎所有 CorePath 的用途其實都是「找 Tools~ 底下那支腳本」（persona_ocr_locate.py /
-        /// awakening.py / run_cmd.py / sculpt.py …）。各處自己 <c>Path.Combine(…, "Tools~",
+        /// awakening.py / run_cmd.py …）。各處自己 <c>Path.Combine(…, "Tools~",
         /// "AgentCommands", x)</c> 拼一次 = 又一組會漂移的平行路徑。走 <see cref="CoreTool"/>。
         /// </remarks>
         public static string CoreToolsDir =>

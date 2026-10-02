@@ -73,7 +73,7 @@ bool aOn = aJd != null && aJd.Contains("enabled") && aJd.GetBool("enabled");
 | migration 期間兩種形狀並存 | 舊陣列形 vs 新物件形（見 §3.3） |
 
 ⚠ 外部產物的形狀「不穩定」不等於「不該有 model」——
-`sculpt.py` 的 stdout 有明確契約，就該用 model 寫下來（見 §5 血證）。
+雕刻引擎的回報有明確契約，就該用 model 寫下來（見 §5 血證）。
 判準是「**這個形狀有沒有一個擁有者**」，不是「它從哪裡來」。
 
 ---

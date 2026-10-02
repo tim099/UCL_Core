@@ -94,8 +94,7 @@ namespace UCL.Core.EditorLib.Page
 
             new ToolGroup("Fold.Content", "ToolBox.Group.Content",
                 new ToolEntry("ToolBox.LibraryManage", () => UCL_LibraryManagePage.Create()),
-                new ToolEntry("ToolBox.ReadingNotesManage", () => UCL_ReadingNotesManagePage.Create()),
-                new ToolEntry("ToolBox.SculptureViewer", () => UCL_SculptureViewerPage.Create())),
+                new ToolEntry("ToolBox.ReadingNotesManage", () => UCL_ReadingNotesManagePage.Create())),
         };
 
         #endregion

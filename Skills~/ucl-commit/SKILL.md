@@ -138,7 +138,7 @@ description: |
   senate cmd commit --arg repo=<repo> --arg personas=<你> \
       --arg expect_files=3 --arg-file message=<訊息檔>
   ```
-  它把「我以為我在提交幾個檔」變成一個**必須先算過**的數字（同 `sculpt.py --expect-pixels` 的形狀）。
+  它把「我以為我在提交幾個檔」變成一個**必須先算過**的數字（同 `senate cmd sculpture` 貼圖的 `expect_pixels` 的形狀）。
   ⛔ 真的不想數就顯式打 `expect_files=any` —— 它會**大聲印出整份 staged 清單**並落一個讀數。
   📌 放棄本身沒有錯，錯的是**放棄得沒有痕跡**：「忘了帶」與「我想過了，這次不數」以前是同一個畫面。
   🩸 為什麼從選填改成必填：2026-09-10 gura 要提交 2 支 .cs，`expect_files=2` 擋下「實際 staged 5」——

@@ -9,12 +9,12 @@
     },
     {
       "name": "reading-library",
-      "summary": "閱讀心得圖書館 — 記章節摘要/人物/名詞 + 對人物看法改觀時 fork 新版本(同構 affinity opinion history); 含 bookmark/resume 續讀 + 推薦書單. 入口 senate ucmd run Library（唯一寫入端）, 資料 per-project.",
+      "summary": "閱讀心得圖書館 — senate cmd library 依設定與 persona 解析路徑；work/media/reader 保存章節 rounds、書籤與人物看法。",
       "optional": false
     },
     {
       "name": "reading-manga",
-      "summary": "閱讀漫畫心得 — Tim 逐張貼漫畫頁+標章節, agent 邊看邊賞析並落帳; 複用 reading-library 同一套 chapter/character(含外觀)/改觀 fork（入口 senate ucmd run Library）. 與 reading-library 同構, 媒材改視覺.",
+      "summary": "漫畫閱讀 — 每次一話、逐頁看圖；senate cmd library 依設定掃漫畫與保存 persona 的章節心得。",
       "optional": false
     },
     {

@@ -1,131 +1,77 @@
 ---
 name: reading-library
 on_intent: ["讀書", "閱讀", "閱讀心得", "書架", "library"]
-description: 新閱讀心得系統。新資料一律採 work → media → persona reader root；每位讀者在同一媒材下有一份進度、期待度與閱讀看法，章節 round 保存重讀歷史。Archive 僅供人工遷移參考。
+description: 閱讀心得流程。Senate 依設定與 persona 解析路徑，work → media → reader 保存進度、期待度、章節 rounds 與人物看法。
 ---
 
 # Reading Library
 
-所有日常閱讀資料只可寫入 `AgentCommands/BookNotes/Library/`。`Archive/` 唯讀，不得由新 CLI、頁面或日常流程消費。
+日常閱讀使用 `senate cmd library`，不需要 Unity Editor。指令由 Senate 設定解析資料根與信件庫根；讀者操作明確帶 `persona` 與 `media_id`。所有根目錄必須已存在，persona 必須有 `profile/`，設定不完整時先修設定再重跑。
 
-## 資料模型
+## 模型與落點
 
-```text
-work → media → reader_persona
-```
-
-每個 `media × persona` 的唯一 reader root：
+`work → media → reader`：同作品的漫畫、小說、動畫是獨立 media，進度與心得各自保存。
 
 ```text
-Library/media/<media-id>/readers/<persona>/
-  reader.json                 # 程式真相源
-  bookshelf.md                # 人可讀投影
-  chapters/<chapter-id>/
-    chapter.json              # rounds 索引
-    r<round>_<YYYY-MM-DD>.md  # 不覆寫的心得歷史
-  characters/<character-id>/
-    profile.json              # 已確認 facts
-    vN_<date>.md              # 主觀 view 的版本史
+<資料根>/BookNotes/Library/
+  works/<work-id>/work.json
+  media/<media-id>/media.json
+  media/<media-id>/readers/<persona>/
+    reader.json
+    bookshelf.md
+    chapters/<四位章號>/chapter.json
+    chapters/<四位章號>/r<round>_<YYYY-MM-DD>.md
+    characters/<character-id>/profile.json
+    characters/<character-id>/vN_<YYYY-MM-DD>.md
+<信件庫根>/<persona>/bookshelf/<media-id>.md
+<信件庫根>/<persona>/cmd/reading_recall_<media-id>.md
 ```
 
-`read_session` 是一次閱讀／重讀的**概念**，由章節 `round` 表示；不得再建立 `sessions/` 路徑或獨立 session 資料夾。
+`reader.json` 是當前進度與看法的真相源；閱讀卡與追回檔是可重建投影。信件庫可獨立於資料根，不自行拼出根目錄。使用 `op=paths` 取得實際落點。
 
-## 讀內部作品（同事寫的書 / 畫的漫畫）
+## 續讀與建檔
 
-| 類型 | 東西在哪 | media |
-|---|---|---|
-| 同事寫的書 | `AgentCommands/Books/<slug>/` | `book-<slug>` |
-| 同事畫的漫畫 | `AgentCommands/ArtGallery/Comic/<slug>/` | `comic-<slug>` |
-
-**同一部作品的小說版與漫畫版是兩個 media，進度與心得各自獨立**
-（改編不是原作的第二版）。漫畫版怎麼讀 → `reading-manga` skill 的
-「讀『我們自己畫的漫畫』」一節；漫畫展區的結構與鐵則由
-`repo:AgentCommands/ArtGallery/Manga_Adaptation_Workflow.md` 定義。
-
-## 自己寫書 → 那是另一條線（別在這裡找）
-
-本 skill 管的是**讀**（`BookNotes/Library/` 的 work → media → reader）。
-**自己寫的書、以及把書弄進圖書館（發表／捐書）走另一份 SOP**：
-
-| 想做的事 | 去哪 |
-|---|---|
-| 寫自己的書、章節結構、cross-persona review | `ucl_core:Docs~/{lang}/Workflows/Book_Writing_Workflow.md` |
-| 自由時間的「寫書」活動（三步最小流程） | `ucl_core:Docs~/{lang}/FreeTime/Activities/book-writing.md` |
-| 把別人的書付 token 調入館藏 | 同上 workflow 的 §捐書（`run Books --arg op=donate`） |
-
-⚠ **兩個落點是兩件事**：`senate cmd book --arg op=add` / `--arg op=log-chapter` 寫的是
-`BookNotes/<slug>/`（草稿）；**要入庫必須把扁平正文寫進 `Books/<slug>/<NNN>.txt`
-再跑 `run Books --arg op=publish`**（首次要帶 `--arg title=`、`--arg agent=`）。
-🩸 2026-08-23：只跑到草稿就公告「收筆」，書沒進藏書架而每一步都回 ✅。
-
-## 硬規則
-
-- 寫入前確認 `work_id`、`media_id`、`reader_persona`；沒有 persona 不得建立新紀錄。`unknown` 僅用於來源讀者無法判定的 legacy 遷移。
-- `reader.json` 是 status、anticipation、bookmark、current impression 與日期的唯一真相源；`bookshelf.md` 必須由工具同步，是可讀投影，不可成為第二真相源。
-- 同一章**重讀**時新增 `r2_...md` 並加入 `chapter.json.rounds`；不可覆寫既有 round。
-- ⚠ **同一話分兩場看完不是重讀** —— 第二場帶 `--arg append=1`（要指定哪一輪再加 `--arg round=<N>`，
-  預設最新那一輪）：正文**追加**在同一個 round 檔尾端、該筆 `segments` +1，**不開新 round**。
-  `r{N}` 是第 N 次**讀這一話**，不是第 N 次寫入。
-  🩸 這條 2026-09-05 之前只寫在 skill 上、實作沒有那條路 ⇒ 續看場照樣落成 `r2`，
-  而 r1+r2 在讀回視圖上跟「她重看過一次」**長得一模一樣**，誤讀不會有任何一層報錯（TASK-0121）。
-  現在 `op=recall` 會在該輪標「▸ 這一輪分 N 場寫完（續寫，不是重看）」—— 兩者才分得開。
-- 人物已確認的客觀資料寫 `profile.json`；讀者感受與推測寫版本化 `vN_<date>.md`。
-- 媒材必須獨立：`comic-`、`anim-`、`film-`、`series-`、`stream-` 等 media 不共用進度。
-- 新工具寫入時驗證 `reader.json.reader_persona` 與路徑 `<persona>` 相同，避免資料放錯讀者根目錄。
-
-## 追回既有閱讀進度
-
-要在隔一段時間後接回閱讀，先以**當前 persona 與 media id**生成完整追回檔：
+先讀追回檔，再接續既有進度：
 
 ```bash
-senate ucmd run Library --persona <me> \
-  --arg op=recall --arg persona=<persona> --arg media_id=<comic-|anim-|film-|... media-id>
+senate cmd library --arg op=recall --arg persona=<persona> --arg media_id=<media-id>
 ```
 
-（人的入口：閱讀心得管理頁的「📖 追回」，同一段服務層。）
+讀取回傳列出的檔案；`full=0` 只列 round 索引。媒材尚未登記時，先確認作品身分並建檔；預設期待度 3，可由本人明確指定 0–5：
 
-工具只讀 `Library/media/<media-id>/readers/<persona>/`，會驗證 JSON 身分與路徑相同；
-絕不讀 Archive 或其他 persona。產物為 letters 根底下的
-`<persona>/cmd/reading_recall_<media-id>.md`（**letters 根不寫死** —— 它可被 `tavern_paths.json`
-的 `letters_dir` override 或 `.agentcommands_root.local` pointer 搬走；實際位置以工具印出來的
-那行為準，或跑 `python <UCL_Core>/Tools~/AgentCommands/_lib/ucl_paths.py` 問），
-會在下次生成時覆寫，內含目前狀態、作品與媒材資料、書架投影、所有已讀章節 round 原文，
-以及角色 facts／view 版本。它是追讀用機械視圖，不能取代或手改原始筆記。
-
-## 每次閱讀完成後
-
-1. 新增本章 round 與更新 `chapter.json`。
-2. 更新 `reader.json` 的 bookmark、`last_read`、status、anticipation（若變動）與 `current_impression`。
-3. 同步 `bookshelf.md` 的 frontmatter、進度與最新看法
-   （工具會**自動轉發一份**到 `letters/<persona>/bookshelf/<media-id>.md`，見下節）。
-4. 漫畫依 `reading-manga` 發出 `reading-reflection`。
-
-## 閱讀卡轉發與早安 brief（2026-08-07）
-
-`SyncBookshelf` 每次同步時，除了寫 reader root 的 `bookshelf.md`，會**再送一份**到：
-
-```text
-letters/<persona>/bookshelf/<media-id>.md
+```bash
+senate cmd library --arg op=media_init --arg persona=<persona> \
+  --arg work_id=<work-id> --arg media_id=book-<work-id> --arg media_kind=book \
+  --arg-file title=<UTF-8 標題檔>
 ```
 
-- 與 `sketchbook/`（我對**人**的看法）成對 —— `bookshelf/` 是我對**書**的看法。
-- **投影的投影，不是第三個真相源。** 真相源永遠是 `reader.json`；
-  任何流程只准讀它、**不准回寫**。要改內容請改 `reader.json` 再 Sync。
-- 轉發失敗只印 warning，不連累已落盤的正本（正本先寫、副本後寫）。
-- ⚠ `letters/<persona>/` 是獨立 git submodule —— 每次同步會弄髒該 persona 的 repo。
-  目前觸發點是「該 persona 自己寫心得」，代價收斂在當事人身上。
+既有媒材的新讀者用 `op=register_reader`。身分與媒材 id 不猜測、不借用別人的 reader root。
 
-**早安 brief 的 §6.6 見書**會從該目錄**隨機端一張卡的全文**上來
-（見人答「我認識誰」，見書答「我讀到哪」）：
+## 完成一次閱讀
 
-- 只讀 `letters/<persona>/bookshelf/`，**不碰 `BookNotes/Library/`** —— brief 取材一律限於
-  該 persona 自己的信件目錄（與 §6.5 讀 sketchbook 同一條界線）。
-- 抽籤 **deterministic**（種子 = `persona:bookshelf:wake_count`）：同一次醒來重跑抽同一張，
-  否則「今天想起哪本」不可複驗、brief 的 git diff 也會無故翻動。
-- 沒有卡片就整節不出現（不印空殼）。
+```bash
+senate cmd library --arg op=note_chapter --arg persona=<persona> \
+  --arg media_id=<media-id> --arg chapter_id=0001 --arg-file body=<UTF-8 心得檔>
+```
 
-> ⛔ **一律走 `senate ucmd run Library`**（`op=media_init`／`note_chapter`／`bookmark`／`add_character`／
-> `revise_view`／`recall`／`paths`／`scan`／`share`／`authored_diff`）—— 它是這份 schema 的唯一寫入端。
-> ⚠ **不要手寫這些 JSON**：`reader.json` 與 `bookshelf.md` 的一致性、章節 round 不覆寫、
-> persona 與路徑相符這三格都由那支 Cmd 保證，手寫繞過的是**保證**不是**格式**。
-> ⛔ 而舊 schema 的 `--book` 與 branches 流程一律不用於新資料（它們只描述歷史，見 Archive Reference）。
+章號四位數，`0000` 代表序章。重讀建立新 round；同一章分場讀完用 `append=1`，可帶 `append_round=N`，省略時續寫最新 round。正文追加，保留既有內容。每次寫入同步閱讀卡與追回檔；依回傳確認正文與投影落點。
+
+`bookmark` 更新書籤、目前看法與狀態；`add_character` 登記已確認 facts 與主觀看法，`revise_view` 記錄改觀及原因。角色不以推測名字覆寫 facts。長文字一律使用 UTF-8 檔與 `--arg-file`。不得手改 JSON 或投影，也不建立額外 `sessions/` 目錄。
+
+## 來源與分享
+
+同事的書在 `<資料根>/Books/<slug>/`，漫畫在 `<資料根>/ArtGallery/Comic/<slug>/`；漫畫閱讀套用 `reading-manga`，每次專注一話。寫書與出版使用 `senate cmd book`，參閱 `Book_Writing_Workflow.md`。
+
+外部漫畫由閱讀心得管理頁設定，Senate 從唯一啟用專案的 `.comic_root.local` 讀取：
+
+```bash
+senate cmd library --arg op=comics
+```
+
+分享前先完成心得。`senate cmd library --arg op=share_body` 搭配 persona、media_id、chapter_id 與選填 round，只組出貼文正文。發布與稿費使用 `ucl-chat-tavern` 協議；Editor 的 `Library op=share` 可記錄分享回執，該入口需依派遣規範先確認 Editor 可用。
+
+## 查詢與審計
+
+`paths` 唯讀列出位置與存在狀態，persona/media_id 可選。`scan` 產出審計報告，候選由人判讀；`authored_diff` 比對寫書資料，`authored_migrate` 預設 dry-run，確認後才帶 `confirm=1`。
+
+完整參數以 `senate cmd library --help` 為準。日常資料不從 Archive 讀取或補寫；人工遷移參閱 `Reading_Library_Archive_Reference.md`。

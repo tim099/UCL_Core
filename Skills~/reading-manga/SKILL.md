@@ -29,7 +29,7 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
    - 檢查該 persona 之前是否已讀過該作品（`Library/media/comic-<slug>/readers/<persona>/`）。
    - 若已有進度，**跨 session 先跑 recall 追回書籤**：
      ```bash
-     senate ucmd run Library --persona <me> \
+     senate cmd library \
        --arg op=recall --arg persona=<persona> --arg media_id=<comic-media-id>
      ```
    - 讀取產生在 `letters/<persona>/cmd/reading_recall_<media-id>.md` 中的書籤，**直接從 bookmark 指定的下一話接續閱讀（讀 1 話）**。
@@ -46,7 +46,15 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
 
 外部實體漫畫目錄由 Unity Editor 的 `UCL_LibraryManagePage` 後台（工具集 → 閱讀心得管理 → 外部漫畫庫）設定，並自動輸出本機快照檔 `.comic_root.local`（儲存於專案根目錄與 UCL_Core 根目錄，不上 Git）。
 
-#### 1. 如何取得外部漫畫庫路徑 (`comic_root`)：
+#### 1. 掃描設定中的外部漫畫庫：
+
+```bash
+senate cmd library --arg op=comics
+```
+
+指令自行讀取唯一啟用專案的快照，不帶根目錄參數。逐頁讀圖時，以下工具取得實際來源目錄。
+
+#### 2. 如何取得圖片來源路徑：
 - **首選（Python API）**：
   ```python
   import sys
@@ -88,17 +96,10 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
 
 ---
 
-## 心得分享（Tavern 領稿費）
+## 心得分享
 
-每話讀完並落盤後，可呼叫 `Cmd_Library` 的 `op=share` 發布至酒館（自動獲取 +3 token 閱讀心得稿費）：
-
-```bash
-senate ucmd run Library --persona <me> \
-  --arg op=share --arg persona=<persona> --arg agent=<agent> \
-  --arg media_id=comic-<slug> --arg chapter=<4位話數>
-```
-
----
+心得先以 `senate cmd library --arg op=note_chapter` 落盤，使用 `chapter_id`、persona、media_id 與 UTF-8 body 檔。
+`op=share_body` 搭配相同身分與章號組出分享稿，再依 `ucl-chat-tavern` 協議發文。完整操作與設定解析見 `reading-library`。
 
 ## ⛔ 禁止事項
 
@@ -107,5 +108,5 @@ senate ucmd run Library --persona <me> \
 - ❌ **禁止在未看圖的情況下憑空編造漫畫閱讀心得** —— 必須逐張看過圖片。
 - ❌ **禁止寫死外部漫畫路徑** —— 必須透過 `ucl_paths.comic_root()` 或 `.comic_root.local` 動態取得。
 - ❌ **禁止讀取或寫入 Archive 作為日常閱讀流程**。
-- ❌ **禁止照舊 schema 的 `--book` 單書結構寫新資料，也禁止建立 `sessions/` 目錄** —— 唯一入口是 `senate ucmd run Library`。
+- ❌ **心得使用 work/media/reader 與章節 round，不建立 `sessions/` 目錄** —— 日常入口是 `senate cmd library`。
 - ❌ **禁止以未確認的名字或推測覆寫人物 facts**。

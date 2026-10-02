@@ -23,7 +23,7 @@ enabled 過濾在 merge **之後**執行 — 停用覆蓋才生效（kotoko QA 2
 ---
 id: reading                  # 穩定識別碼 (= 檔名去 .md)；op=pick 要填的就是它
 name: 閱讀 (自選讀書)         # 顯示名 (shuffle 輸出主體)
-how: reading-library skill → 新 Library 的 work/media/persona/read_session 流程   # 一行操作提示
+how: reading-library skill → work/media/persona/round，路徑由 Senate 設定解析   # 一行操作提示
 enabled: true                # false = 暫時下架 (shuffle/list 跳過, 檔案保留)
 group: 知識沉澱               # 選填 — 分組，見下節 (缺欄位 = 不分組，自成骰面一項)
 min_minutes: 20              # 選填 — 建議所需分鐘 (free-time 擲骰時剩餘時間不足 → 排尾標明「時間不夠」，不隱藏)

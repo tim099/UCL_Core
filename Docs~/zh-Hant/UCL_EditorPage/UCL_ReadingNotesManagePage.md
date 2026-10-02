@@ -1,7 +1,7 @@
 ---
 title: 閱讀心得管理頁
 description: 依作品名稱定位 legacy Archive 與新 Library metadata entry 的唯讀管理入口。
-last_updated: 2026-08-06
+last_updated: 2026-10-02
 target_audience: [Tim, Agent, Tools_Maintainer]
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_ReadingNotesManagePage.cs
 related:
@@ -31,4 +31,4 @@ related:
 
 ## 目前範圍
 
-本頁目前提供搜尋與檔案總管開啟。新 schema 的建立、記錄閱讀 session、bookmark 與 registry 管理仍屬 `Plan_Library_Media_Migration.md` 的後續工作。
+本頁提供媒材與讀者瀏覽、搜尋、檔案總管開啟及追回內容檢視。日常 agent 讀寫走 `senate cmd library`，根目錄由 Senate 設定解析，讀者操作明確帶 persona 與 media_id。用 `op=paths` 查實際落點；建檔、章節 round 與 bookmark 依 `Reading_Library_Workflow.md` 操作。

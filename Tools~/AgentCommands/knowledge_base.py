@@ -490,18 +490,38 @@ def resolve_target_sources(target: str):
     cfg = load_targets().get(target)
     if not cfg:
         return {"kind": "unknown", "base": "", "files": []}
-    files = []
+    # ⚠ 去重用「正規化後的真實路徑」，不是字串：Windows 不分大小寫，`Lessons/**` 與 `lessons/**`
+    #   兩條 glob 會回同一批檔、而字串不同 ⇒ set() 去不掉 ⇒ 每一塊被索引兩次、同分並列。
+    #   🩸 2026-10-02 量：lessons 4 個來源檔，實際只有 2 個（312 塊 ＝ 2×156）。保留第一次出現的那個寫法。
+    files = {}
     bases = []
     for g in cfg.get("globs", []):
         base, pat = _glob_base(g)
         bases.append(str(base))
         try:
-            files += [str(p) for p in base.glob(pat) if p.is_file()]
+            for p in base.glob(pat):
+                if p.is_file():
+                    files.setdefault(os.path.normcase(os.path.realpath(str(p))), str(p))
         except Exception:
             pass
     return {"kind": cfg.get("kind", "markdown"),
             "base": bases[0] if bases else "",
-            "files": sorted(set(files))}
+            "bases": bases,
+            "files": sorted(files.values())}
+
+
+def _chunk_id_prefix(fp: str, bases) -> str:
+    """塊 id 的前綴：相對於該 target 的 glob 根的路徑（找不到根就退回完整路徑）。
+
+    ⚠ 舊版只用檔名 ⇒ 同名檔撞 id（2026-10-02 量：library 883 個檔同名，`bookshelf.md` 一個就 133 份；
+    work_memory `_topic.md` 63 份）。id 只用在顯示與輸出，向量重用看的是 (file, text)，改它不會觸發重算。
+    """
+    for b in bases:
+        try:
+            return Path(fp).relative_to(b).as_posix()
+        except ValueError:
+            continue
+    return Path(fp).as_posix()
 
 
 def parse_targets(arg: str):
@@ -854,7 +874,8 @@ def _reindex_one(target: str, args):
         except Exception:
             continue
         for order, ct in enumerate(chunk_text(raw)):
-            chunks.append({"id": f"{Path(fp).name}#{order}", "file": fp, "ord": order, "text": ct})
+            chunks.append({"id": f"{_chunk_id_prefix(fp, src.get('bases', []))}#{order}",
+                           "file": fp, "ord": order, "text": ct})
 
     # ── 既有索引保護 ──────────────────────────────────────────────────
     # 區塊職責：判斷「這次是首建、還是覆蓋一份已經有向量的 live 索引」。

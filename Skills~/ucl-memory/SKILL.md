@@ -25,7 +25,8 @@ related:
   - <ucl_core:Docs~/{lang}/Workflows/Alaya_Collective_Memory_Workflow.md> | 集體潛意識 Alaya | 門檻/權重與維護
   - <ucl_core:Skills~/ucl-work-memory/SKILL.md> | ucl-work-memory | **工作類記憶歸那邊**
   - <ucl_core:Skills~/agent-lessons-log/SKILL.md> | lessons.jsonl | 原始流水帳（Alaya 的進料端）
-last_updated: "2026-08-17 v1.1 (Tim 拍板修 Alaya 門檻 — 一個人認為就整理, 人數改記為 recurrence 權重; v1.0 誤設「兩人以上才准進」。三層分工＋檢索形狀與分數帶為實跑量測)"
+requires_install: [py-flagembedding, model-bge-m3]
+last_updated: "2026-10-02 v1.2 (宣告 requires_install ＋ 知識庫後端缺席時走 senate cmd install op=check、問過使用者才裝，TASK-0375；前版 2026-08-17 v1.1 Alaya 門檻)"
 ---
 
 # UCL Memory — 個人記憶 / 集體潛意識 Alaya / 回憶
@@ -59,6 +60,12 @@ KB="python <UCL_Core>/Tools~/AgentCommands/knowledge_base.py"
 $KB search --target fragments,alaya --query "<把想不起的那件事寫成一句話>" --topk 8
 $KB search --target all            --query "<同上>" --topk 12    # 連文件/閱讀庫/工作記憶一起撈
 ```
+
+> ⚠ **回 `not_installed`／`backend_broken`（知識庫後端缺席）時**，先跑
+> `senate cmd install --arg op=check --arg skill=ucl-memory`：
+> **exit 3 ＝ 缺相依** → 把輸出裡的項目、大小、來源照實轉告使用者，**問過、同意了**才跑它印的那行安裝指令；
+> **exit 4 ＝ 量不到** → ⛔ 不要問要不要裝（不知道缺不缺），先處理它列的原因。
+> ⛔ 不要自己決定安裝。完整規則：`senate cmd doc --arg op=show --arg name=Install` §6。
 
 > [!IMPORTANT]
 > ### ⚠ 這是語意檢索 —— **輸入形狀是句子，不是關鍵字**

@@ -28,7 +28,6 @@ memory.py — Agent 記憶層 API（見樹／見叢／見林／見森／見根�
   - awakening.py 仍擁有：persona registry、lock、session token、bank、fork、收尾信寫入（write_letter）。
   - 交界處一律**傳純資料**（persona dict / body 字串），不互相 import ——
     本檔絕不 import awakening（會循環，也會把登入副作用拖進任何想讀一條碎片的入口）。
-    ⇒ 因此 `write_longterm_digest()` 只寫檔案不動 registry；registry 欄位由呼叫端（awakening）更新。
 
 路徑解析：走 `_lib/ucl_paths.py`（pointer-aware 資料根），**不自建第二套 resolver**。
   ⚠ legacy `AgentCommands/_config/tavern_paths.json` 的 `letters_dir` 細粒度覆寫仍 honor，
@@ -311,35 +310,6 @@ def consolidation_status(persona: str, p: dict,
     }
 
 
-def write_longterm_digest(persona: str, body: str, span_start: int, span_end: int) -> tuple:
-    """寫 T2 見林 digest + 重建 longterm/_index.md。回 (path, consolidated_at)。
-
-    ⚠ **不動 registry** —— 那是 awakening.py 的地盤。呼叫端拿回 consolidated_at 自己更新
-      persona.last_consolidated_wake/at。這個切法讓本檔可以被任何入口安全 import：
-      讀寫記憶不會順手改到登入狀態。
-    """
-    d = longterm_dir(persona)
-    d.mkdir(parents=True, exist_ok=True)
-    ts = utcnow_iso()
-    fm = (f"---\n"
-          f"type: longterm_memory_digest\n"
-          f"persona: {persona}\n"
-          f"span_wake: {span_start}-{span_end}\n"
-          f"consolidated_at: {ts}\n"
-          f"---\n\n")
-    path = d / f"wake_{span_start:03d}-{span_end:03d}.md"
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(fm + body + "\n")
-    # 重建 _index.md（掃全部 digest，append-friendly）
-    idx_lines = [f"# Long-term memory index — {persona}", ""]
-    for dg in sorted(d.glob("wake_*.md")):
-        idx_lines.append(f"- [{dg.name}]({dg.name}) — wake {read_frontmatter_field(dg, 'span_wake')} "
-                         f"@ {read_frontmatter_field(dg, 'consolidated_at')}")
-    with open(d / "_index.md", "w", encoding="utf-8") as f:
-        f.write("\n".join(idx_lines) + "\n")
-    return path, ts
-
-
 # ─── 見森 (T3) — rolling fold ───────────────────────────────────────────
 def list_forests(persona: str) -> list:
     d = forest_dir(persona)
@@ -537,20 +507,6 @@ def keys_append(persona: str, items: list) -> Path:
         for it in items:
             f.write(f"- [ ] {it}  <!-- {utcnow_iso()} -->\n")
     return p
-
-
-def keys_archive(persona: str, span_start: int, span_end: int) -> Path | None:
-    """見林寫入時把當期見叢歸檔成 keys/wake_<N>-<M>.md 並重開空的當期檔。
-    物理意義：叢的窗口與見林窗口同步開關 → 天然不會無限長。"""
-    p = keys_open_path(persona)
-    if not p.exists():
-        return None
-    ad = keys_archive_dir(persona)
-    ad.mkdir(parents=True, exist_ok=True)
-    dest = ad / f"wake_{span_start:03d}-{span_end:03d}.md"
-    dest.write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
-    p.unlink()
-    return dest
 
 
 # ─── 召回 (recall) — 語意檢索既有向量庫 ─────────────────────────────────

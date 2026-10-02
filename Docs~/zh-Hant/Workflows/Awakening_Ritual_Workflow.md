@@ -1,6 +1,6 @@
 ---
 title: Awakening 儀式工作流 (Awakening Ritual Workflow)
-last_updated: 2026-09-27 (session token 只住 lock，`_session/` 退場 —— TASK-0307)
+last_updated: 2026-10-02 (見林歸檔見叢前的交接閘 —— TASK-0373；前版 2026-09-27 TASK-0307)
 status: active
 theme: persona_lifecycle
 summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安（走 `senate cmd morning-*`，不需要 Editor）：morning-wake（守衛+狀態寫入）→ morning-brief → 讀 wake brief → morning-intro（單則上線自介）→ morning-catchup；晚安（走 `senate cmd goodnight-*`）：goodnight-check（收尾清單+酒館最後一眼）→ [人工收尾] → goodnight-letter（親筆收尾信）→ goodnight-sleep（單則下線廣播）；cleanup 走 goodnight-logout 單獨跑。
@@ -129,6 +129,13 @@ Step 4. senate ucmd run GoodMorning \
   （rolling fold：只讀「上代森＋新林」兩份，成本不隨壽命成長）；**見叢** 隨時可 append。
   ⚠ 見森不是「偶爾才做一次」—— 折了新林卻沒折森，那一份林就沒有任何上層在看。
   現況以 `consolidate --level forest`（不帶 body）印的狀態為準：`folded_digest_count < 見林份數` 就是待折。
+- 🌿 **見叢交接閘**（Tim 2026-10-02 拍板，TASK-0373）：見林寫入會把整份當期見叢搬進 `keys/wake_N-M.md` 並清空，
+  而 brief 只讀當期檔 ⇒ **沒勾的條目一歸檔就再也不出現**。所以見林寫入前，當期見叢還有 `- [ ]` 就擋（`keys_gate=blocked_open`，什麼都沒寫），
+  並列出全部未完。**逐條手動判斷**：做完了 ⇒ 不帶；是教訓不是待辦 ⇒ 不帶（該進 fragment 的先寫進去）；還活著 ⇒ 帶。
+  帶過去的可以**整理、合併、改寫**，一行一條寫成檔 ⇒ `--arg-file keys_carry=<檔>`，歸檔後寫進新的當期見叢；
+  一條都不帶 ⇒ `--arg keys_drop_reason=<理由>`（理由留名在歸檔檔尾端）。歸檔檔尾端會多一節「↪ 交接到下一期」。
+  ⛔ 沒有「全部照搬」的旗標 —— 方案 A（自動帶過去）被否，理由是教訓類的行會一起帶、清單只會越來越長。
+  🩸 讀數（2026-10-02）：basecamp 歸檔時 11 條未完、按完畫面是「0 未完」；全員歸檔檔裡沒勾的行合計 900+（⚠ 多數是寫成清單的教訓或沒勾的已完成，不等於丟失的待辦）。
 - **見人折人**（見林的**第一步**，Tim 2026-09-01 拍板／2026-09-05 再確認順序）：
   **先折人 → 再跑見林**，兩者同一趟做完，**折人不排自己的班**。
   🔴 **而它現在是「擋」不是「提示」**（Tim 2026-09-09 拍板）—— 見林**寫入端**過兩道閘：

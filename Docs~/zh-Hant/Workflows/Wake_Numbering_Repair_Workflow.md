@@ -209,4 +209,4 @@ Step 4 的批次取代若不設例外，會連 Step 2 剛寫的 `renumbered_from
 ## 相關
 
 - [`Awakening_Ritual_Workflow.md`](Awakening_Ritual_Workflow.md) — 早晚安儀式本體（見林濃縮在 morning 的記憶維護段）
-- `awakening.py consolidate` — 見林生成器（檔名格式來源；本次修復**未改動它**）
+- `senate cmd consolidate` — 見林生成器（檔名格式來源；本次修復**未改動它**）。⚠ 修復當時是 `awakening.py consolidate`，2026-10-02 起 py 那支的寫入已退場（TASK-0373）

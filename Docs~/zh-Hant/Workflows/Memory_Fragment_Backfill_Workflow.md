@@ -8,7 +8,7 @@ related:
   - 工具: <UCL_Core>/Tools~/AgentCommands/awakening.py（consolidate / root-index / keys / brief）
   - 設計討論: ChatTavern tavern #13786-13801（見森方案 v1→v7）
   - Skill: ucl-morning（Step 8 記憶接續）/ ucl-goodnight（見叢 append）
-last_updated: 2026-07-28 (初版 — Tim 拍板「讓 wake>30 的同事都能跑一遍，把之前遺漏的關鍵記憶找回」)
+last_updated: 2026-10-02 (見林寫入只走 senate；見叢交接閘 TASK-0373。初版 2026-07-28)
 ---
 
 # 🌱 關鍵記憶回溯補抽 Workflow
@@ -50,9 +50,9 @@ last_updated: 2026-07-28 (初版 — Tim 拍板「讓 wake>30 的同事都能跑
 senate cmd consolidate --arg letters_root=<letters 絕對路徑> --arg persona=<你的 persona>
 ```
 
-> 沒有 `senate.exe` 的環境才退回 python（2026-09-02 起它也不再寫 registry，
-> 原本「檔寫成功卻 exit=1」那條死路已拆掉）：
+> 沒有 `senate.exe` 的環境，python 只剩**看狀態**（不帶 `--digest-body`）：
 > `python <UCL_Core>/Tools~/AgentCommands/awakening.py consolidate --persona <你的 persona>`
+> ⛔ 見林**寫入**只走 `senate cmd consolidate`（2026-10-02，TASK-0373）—— python 帶 `--digest-body` 會 exit 2 指路，什麼都不寫。
 
 ## 🛠 Step-by-step
 
@@ -238,6 +238,7 @@ top3 是**三個不同 persona 各自寫的近似檔**（`lesson_multi-lock-expl
 ## 🔗 跑完之後（回到常規節奏）
 
 - **每次見林（consolidate）時抽新 fragment** → `consolidate` 寫完 digest 會自動提示，並歸檔當期見叢、提示見森門檻
+  （⚠ 當期見叢還有沒勾的會先被擋：逐條判斷後帶 `keys_carry` 或 `keys_drop_reason` —— 見 Awakening_Ritual_Workflow 記憶維護那節）
 - **見林 ≥ 3 份起、且之後每寫一份見林都折一代**：`consolidate --persona $P --level forest`（首折讀全部見林，之後只讀「上代森 + 新見林」2 份，成本恆定）
 - **morning 自動**：刷新見根索引 → 生成 wake brief → 印一行「讀這一份就好」
 

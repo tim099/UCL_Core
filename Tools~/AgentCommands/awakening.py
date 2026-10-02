@@ -1484,23 +1484,7 @@ def consolidation_status(persona: str, reg: dict,
     return _mem.consolidation_status(persona, reg["personas"].get(persona, {}), threshold)
 
 
-def write_longterm_digest(persona: str, body: str,
-                          span_start: int, span_end: int) -> Path:
-    """寫見林 digest（檔案側走 memory.py）。**不推進 registry 書籤** —— 書籤由磁碟算。
 
-    區塊職責：本檔只負責讓 digest 落盤。`last_consolidated_wake` 不在這裡寫。
-    物理意義：書籤的既成事實是 digest 檔名（`longterm/wake_<start>-<end>.md`）——
-             `consolidation_status()` 無條件跟 `latest_digest_span()` 對帳並取較大者，
-             而那個欄位真正的寫入通道在 C# 端（`SCP_PersonaProfile` ← `senate cmd consolidate`）。
-    數值影響：🩸 原本這裡寫完 digest 還會 `save_registry(reg)` 推進書籤，而那條通道
-             2026-08-21 起**已經不落 persona 檔**，且 registry 讀回的 persona 全部帶
-             identity 欄（實測 21/21）⇒ 守衛**必然** SystemExit。
-             於是「digest 已經在磁碟上」被回報成 exit 1，靠 exit code 判成敗的呼叫端
-             會重跑一次見林、同名覆寫那份 digest。
-             ⇒ 三本帳分開結算：記憶檔那本結清了，不准被一本沒有落點的快取拖下水。
-    """
-    path, _ts = _mem.write_longterm_digest(persona, body, span_start, span_end)
-    return path
 
 
 
@@ -1563,7 +1547,6 @@ render_root_index = _mem.render_root_index
 write_root_index = _mem.write_root_index
 keys_entries = _mem.keys_entries
 keys_append = _mem.keys_append
-keys_archive = _mem.keys_archive
 list_digests = _mem.list_digests
 list_forests = _mem.list_forests
 latest_forest = _mem.latest_forest
@@ -2019,43 +2002,21 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
         print(f"- 本段待濃縮 episodic letters ({len(st['pending_letters'])} 封):")
         for lp in st["pending_letters"]:
             print(f"  - {lp.relative_to(_REPO_ROOT)}")
-        print(f"\n→ 讀完上列信件後, 反思濃縮成 digest body 寫回:")
-        print(f"  awakening.py consolidate --persona {persona} --digest-body \"<跨夜主題/沉澱教訓/關係演變/未解線/一句精華>\" \\")
-        print(f"      [--span-start {st['span_start']} --span-end {st['span_end']}]")
+        print(f"\n→ 讀完上列信件後, 反思濃縮成 digest body 寫回（寫入只走 Senate）:")
+        print(f"  senate cmd consolidate --arg letters_root=<letters 根> --arg persona={persona} --arg-file digest_body=<檔> \\")
+        print(f"      --arg span_start={st['span_start']} --arg span_end={st['span_end']}")
         return 0
 
-    # write 模式
-    span_start = args.span_start if args.span_start is not None else st["span_start"]
-    span_end = args.span_end if args.span_end is not None else st["span_end"]
-    if span_end < span_start:
-        print(f"❌ span_end({span_end}) < span_start({span_start})", file=sys.stderr)
-        return 2
-    path = write_longterm_digest(persona, args.digest_body, span_start, span_end)
-    print(f"✅ 長期記憶 digest 寫入: {path.relative_to(_REPO_ROOT)}")
-    print(f"   span: wake {span_start}-{span_end}")
-    print(f"   見林書籤（last_consolidated_wake）由磁碟 digest 檔名供給 → {span_end}；"
-          f"registry 快取由 C# 端寫（本檔不寫）")
-    print(f"   index: {(longterm_dir(persona) / '_index.md').relative_to(_REPO_ROOT)}")
-
-    # 見林寫入後的三個連動（Tim 2026-07-28 拍板：fragment 在見林時抽）
-    # ① 見叢歸檔：當期交棒清單與見林窗口同步關閉 → 天然不會無限長
-    arch = keys_archive(persona, span_start, span_end)
-    if arch is not None:
-        print(f"   🌿 見叢已歸檔: {arch.relative_to(_REPO_ROOT)} (當期檔已重置)")
-    # ② 提示抽 fragment（內容要 agent 反思寫，工具只負責 schema 與索引）
-    print(f"\n   🌱 下一步 — 抽關鍵記憶 fragment（見林時抽，goodnight 保持輕）:")
-    print(f"      寫檔到 {fragments_dir(persona).relative_to(_REPO_ROOT)}/<type>_<slug>.md")
-    print(f"      type ∈ {FRAG_TYPE_ORDER}；同一教訓再踩到就**追加 origin + bump recurrence**，別開新檔")
-    print(f"      每個 origin 標 layer（Syntactic/Identity/Status/Content/Aggregate）+ 當次 context")
-    print(f"      寫完跑: awakening.py root-index --persona {persona}   # 機械重建見根索引")
-    # ③ 見森門檻檢查
-    fst = forest_status(persona)
-    if fst["eligible"]:
-        print(f"\n   🌲 見森: 見林已達 {fst['digest_count']} 份 (門檻 {fst['threshold']}) → 該折新世代:")
-        print(f"      awakening.py consolidate --persona {persona} --level forest")
-    else:
-        print(f"\n   🌲 見森: 見林 {fst['digest_count']}/{fst['threshold']} 份，未達折疊門檻")
-    return 0
+    # write 模式 —— 指路 stub（TASK-0373，2026-10-02）。
+    # 🩸 這條路繞過 Senate 那邊的兩道閘：折人閘（Tim 2026-09-09）與見叢交接閘（Tim 2026-10-02）——
+    #   後者擋的是「歸檔把沒勾的見叢一起清掉、之後再也不出現」，而這裡原本的歸檔（已刪）一聲不吭就清。
+    #   兩個寫入端各守各的閘＝閘只守住一半 ⇒ 寫入收成 Senate 一支，這裡只指路（同 morning／goodnight 的 stub）。
+    print("⛔ awakening.py consolidate 的見林**寫入**已退場 —— 什麼都沒寫。", file=sys.stderr)
+    print(f"   ⇒ senate cmd consolidate --arg letters_root=<letters 根> --arg persona={persona} --arg-file digest_body=<檔> "
+          f"[--arg span_start=… --arg span_end=…]", file=sys.stderr)
+    print("   （寫入前會過折人閘與見叢交接閘：當期見叢還有沒勾的，要帶 keys_carry 或 keys_drop_reason）",
+          file=sys.stderr)
+    return 2
 
 
 def cmd_root_index(args: argparse.Namespace) -> int:

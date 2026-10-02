@@ -169,7 +169,8 @@ namespace UCL.Core.EditorLib.AgentCommands.Books
                 ChatTavern.UCL_TavernSenatePost.Result aPost = await ChatTavern.UCL_TavernSenatePost.PostSystemAsync(
                     "tavern-keeper", null, "tavern", body,
                     $"{{\"tag\":\"{tag}\",\"category\":\"chat\",\"auto-broadcast\":\"true\"}}");
-                return aPost.Posted ? $"- 📣 酒館廣播已發送（seq={aPost.Seq}）"
+                // 已排隊／已排程時沒有 seq ⇒ 印 Describe()，⛔ 不印「已發送（seq=0）」（TASK-0372）。
+                return aPost.Posted ? (aPost.Seq > 0 ? $"- 📣 酒館廣播已發送（seq={aPost.Seq}）" : $"- 📣 酒館廣播{aPost.Describe()}")
                     : $"> [!WARNING]\n> 廣播{aPost.Describe()} —— 登記/帳不受影響";
             }
             catch (Exception e)

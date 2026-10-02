@@ -485,6 +485,18 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadingLibrary
                 persona, GetArg(args, "room", "tavern").Trim(), body,
                 "{\"tag\":\"reading-note\",\"category\":\"reading\"}");
             int seq = aPost.Seq;
+            // 已排隊（酒館 Server 不在，TASK-0372）／已排程（alter 延後）：會送出、只是還沒有 seq ⇒ ⛔ 不是失敗，
+            //   ⛔ 更不准叫人「重新 share」—— 那會讓排著的那一則送出時多一則、領兩次錢（排程那條原本就有這個洞，同一筆修）。
+            //   receipt（shared_seq）這一趟落不了，照實說。
+            if (seq <= 0 && aPost.Posted && (aPost.Queued || aPost.Scheduled))
+            {
+                Cmd_Library_Helpers.ResolveLastOp(args,
+                    $"# 📚 Library share\n\n- 📥 酒館發文{aPost.Describe()}（{mediaId} / {chapterId} r{round} by {persona}）\n" +
+                    "> [!WARNING]\n> 還沒有 seq ⇒ receipt（shared_seq）**這一趟沒落**。⛔ **不要重新 share**（會重複計酬）；" +
+                    "送出後若要補 receipt，回讀酒館拿 seq 再人工補進該 round。");
+                Debug.Log($"[{CommandType}] share → {mediaId}/{chapterId} r{round} queued/scheduled（還沒有 seq）");
+                return;
+            }
             if (seq <= 0)
                 throw new InvalidOperationException(
                     $"[{CommandType}] 酒館發文{aPost.Describe()}。" +

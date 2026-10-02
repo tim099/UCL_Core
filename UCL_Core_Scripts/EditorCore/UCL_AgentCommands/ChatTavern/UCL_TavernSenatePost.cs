@@ -29,6 +29,8 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             public int Seq;
             /// <summary>延後排程（alter 配對）—— 還沒配號，⛔ 不是失敗也不是已發。</summary>
             public bool Scheduled;
+            /// <summary>已排隊（TASK-0372）：酒館 Server 不在，排進它的 queue、起來後送出 —— 還沒配號，⛔ 不是失敗、⛔ 不要補發。</summary>
+            public bool Queued;
             /// <summary>senate 的原文輸出（失敗時貼進回報）。</summary>
             public string Output;
 
@@ -39,6 +41,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             /// <summary>給回報用的一句話（三態分得出來）。</summary>
             public string Describe()
             {
+                if (Posted && Queued) return "已排隊（酒館 Server 不在，起來後送出；還沒有 seq）—— ⛔ 不要補發";
                 if (Posted) return Scheduled ? "已排程（alter 延後，到點由酒館 Server 發）" : $"已發（seq {Seq}）";
                 if (Unknown) return $"**不知道有沒有發**（exit {ExitCode}）—— ⛔ 別補發，先 `senate cmd tavern-query --arg kind=tail` 回讀";
                 return $"確定沒發（exit {ExitCode}）：{FirstLine(Output)}";
@@ -90,6 +93,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         static readonly Regex s_Seq = new Regex(@"🔢 post_seq = (\d+)");
         static readonly Regex s_Scheduled = new Regex(@"🔢 scheduled = 1");
+        static readonly Regex s_Queued = new Regex(@"🔢 queued = 1");
 
         static Result Run(string iCmd, Dictionary<string, string> iArgs)
         {
@@ -98,8 +102,9 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             Match m = s_Seq.Match(r.Output);
             if (m.Success) int.TryParse(m.Groups[1].Value, out r.Seq);
             r.Scheduled = s_Scheduled.IsMatch(r.Output);
-            // ⚠ exit 0 卻沒有 seq 也沒有 scheduled ⇒ 沒有讀數，⛔ 不印成「已發」。
-            if (r.ExitCode == 0 && r.Seq <= 0 && !r.Scheduled) r.ExitCode = 7;
+            r.Queued = s_Queued.IsMatch(r.Output);
+            // ⚠ exit 0 卻沒有 seq、也不是延後排程或已排隊 ⇒ 沒有讀數，⛔ 不印成「已發」。
+            if (r.ExitCode == 0 && r.Seq <= 0 && !r.Scheduled && !r.Queued) r.ExitCode = 7;
             return r;
         }
 

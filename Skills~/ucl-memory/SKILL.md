@@ -6,7 +6,7 @@ description: |
   自由時間的心得、對某件事的看法、個人經驗、值得記住的事件。
   **集體潛意識 Alaya**（`AgentCommands/Alaya/fragments/`）＝非工作但**對所有人都成立**的通用經驗
   （原型案例：陪看時不要劇透未播出的劇情）。通用守則放集體、自己的血證放個人，兩邊 links 互指。
-  **回憶**＝走 `knowledge_base.py`（與 UCL_KnowledgeBaseAdminPage 同一支）語意檢索。
+  **回憶**＝走 `senate cmd kb`（Senate 版知識庫，模型常駐；舊的 `knowledge_base.py` 仍可用，讀同一批文件）語意檢索。
   ⚠ 輸入形狀是**句子不是關鍵字** —— 關鍵字查失敗的樣子跟「這條記憶不存在」一模一樣。
   記憶**不無限增長**：寫入前先搜、定期整合／關聯／回填。
 
@@ -26,7 +26,7 @@ related:
   - <ucl_core:Skills~/ucl-work-memory/SKILL.md> | ucl-work-memory | **工作類記憶歸那邊**
   - <ucl_core:Skills~/agent-lessons-log/SKILL.md> | lessons.jsonl | 原始流水帳（Alaya 的進料端）
 requires_install: [py-flagembedding, model-bge-m3]
-last_updated: "2026-10-02 v1.2 (宣告 requires_install ＋ 知識庫後端缺席時走 senate cmd install op=check、問過使用者才裝，TASK-0375；前版 2026-08-17 v1.1 Alaya 門檻)"
+last_updated: "2026-10-02 v1.3 (回憶改走 senate cmd kb，TASK-0378；v1.2 (宣告 requires_install ＋ 知識庫後端缺席時走 senate cmd install op=check、問過使用者才裝，TASK-0375；前版 2026-08-17 v1.1 Alaya 門檻)"
 ---
 
 # UCL Memory — 個人記憶 / 集體潛意識 Alaya / 回憶
@@ -56,12 +56,15 @@ last_updated: "2026-10-02 v1.2 (宣告 requires_install ＋ 知識庫後端缺�
 ## 🔍 §1 回憶（最常用的入口）
 
 ```bash
-KB="python <UCL_Core>/Tools~/AgentCommands/knowledge_base.py"
-$KB search --target fragments,alaya --query "<把想不起的那件事寫成一句話>" --topk 8
-$KB search --target all            --query "<同上>" --topk 12    # 連文件/閱讀庫/工作記憶一起撈
+senate cmd kb --arg op=search --arg target=fragments,alaya --arg query="<把想不起的那件事寫成一句話>" --arg topk=8
+senate cmd kb --arg op=search --arg target=all --arg query="<同上>" --arg topk=12    # 連文件/閱讀庫/工作記憶一起撈
+# 舊版仍可用（同一批文件、慢很多）：python <UCL_Core>/Tools~/AgentCommands/knowledge_base.py search --target … --query "…"
 ```
 
-> ⚠ **回 `not_installed`／`backend_broken`（知識庫後端缺席）時**，先跑
+> ⚠ `senate cmd kb` 第一次會拉起常駐嵌入程序（約 15 秒～1 分多），之後一句約 0.5 秒；閒置 30 分它自己退。
+> ⚠ 分數帶（下面那張表）是舊版量的；新版切塊依標題，分數尺度相近但還沒重量過。
+>
+> ⚠ **`senate cmd kb` 回 exit 3（缺相依）時**照它印的內容問使用者；舊版回 `not_installed`／`backend_broken` 時，先跑
 > `senate cmd install --arg op=check --arg skill=ucl-memory`：
 > **exit 3 ＝ 缺相依** → 把輸出裡的項目、大小、來源照實轉告使用者，**問過、同意了**才跑它印的那行安裝指令；
 > **exit 4 ＝ 量不到** → ⛔ 不要問要不要裝（不知道缺不缺），先處理它列的原因。
@@ -111,7 +114,7 @@ $KB search --target all            --query "<同上>" --topk 12    # 連文件/�
 **只想看自己的** → 用自己那份**單 persona 索引** `frag_<persona>`：
 
 ```bash
-$KB search --target frag_<persona>,alaya --query "<句子>" --topk 8
+senate cmd kb --arg op=search --arg target=frag_<persona>,alaya --arg query="<句子>" --arg topk=8
 ```
 
 它由 config 依磁碟自動展開（新 persona 一出現就有自己的 target，沒有要手維護的名單），
@@ -132,7 +135,7 @@ $KB search --target frag_<persona>,alaya --query "<句子>" --topk 8
 ### Step 1 — 先搜（不可跳）
 
 ```bash
-$KB search --target fragments,alaya --query "<你要寫的那條，寫成一句話>" --topk 5
+senate cmd kb --arg op=search --arg target=fragments,alaya --arg query="<你要寫的那條，寫成一句話>" --arg topk=5
 ```
 
 | 結果 | 動作 |

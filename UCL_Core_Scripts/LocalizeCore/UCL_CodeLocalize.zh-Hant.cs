@@ -209,7 +209,7 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Lang.NoneAvailable" => "(尚未發現 UCL_LanguageCodeAsset — 請先建立語言 Asset)",
                 "Welcome.Lang.OpenEditor" => "進階編輯…",
                 "Welcome.Agent.Title" => "🤖  Agent Commands(agent ↔ Editor 跨 process)",
-                "Welcome.Agent.Desc" => "AI agent 寫 queue.json、Editor Watcher 自動執行 — 含 ExportDocsCatalog / SearchDocs / FindAssetUsages / ValidateAssetFormat 等內建 Cmd。",
+                "Welcome.Agent.Desc" => "AI agent 寫 queue.json、Editor Watcher 自動執行 — 含 FindAssetUsages / ValidateAssetFormat 等內建 Cmd。",
                 "Welcome.Agent.Btn" => "打開 Agent Commands 頁",
                 "Welcome.Editor.Title" => "🪟  Editor Pages 框架",
                 "Welcome.Editor.Desc" => "UCL_GUIPageController + UCL_EditorPage — 一致風格的 IMGUI 頁面堆疊，支援搜尋下拉、HelpURL 跳轉、TopBar 客製。",

@@ -1,33 +1,31 @@
 ---
 title: 文件搜尋頁 (UCL_DocSearchPage)
-description: 在 Editor 內全文搜尋 UCL 文件庫 — 與 Cmd_SearchDocs 共用同一套計分與同義詞展開邏輯，差別在 IMGUI 呈現與進階控制，每筆結果可一鍵預覽 / 開檔 / 在檔案管理員定位。
+description: 在 Editor 內全文搜尋 UCL 文件庫（Docs/ 與 UCL_Core/Docs~/）— 計分與同義詞展開在 UCL_DocSearchEngine，本頁負責 IMGUI 呈現與進階控制，每筆結果可一鍵預覽 / 開檔 / 在檔案管理員定位。
 tags: [editor-page, docs, search]
 aliases: [文件搜尋, doc search, 搜文件]
 target_audience: [AI_Agent, Tools_User]
-last_updated: 2026-08-17
+last_updated: 2026-10-02
 ---
 
 # 🔍 文件搜尋頁 (UCL_DocSearchPage)
 
-> 一句話：**`Cmd_SearchDocs` 的 GUI 版** —— 同一套 `UCL_DocSearchEngine`，
-> 換成人看的介面，多了進階旋鈕與「找到之後怎麼打開」。
+> 一句話：**給人用的文件搜尋** —— 計分在 `UCL_DocSearchEngine`，
+> 本頁是介面，多了進階旋鈕與「找到之後怎麼打開」。
 
 ## 入口
 
 `UCL_WelcomePage` 的「🔍 文件搜尋」按鈕。
 
-## 跟 Cmd_SearchDocs 的關係
+## 跟 agent 查文件的分工
 
-**計分與同義詞展開共用 `UCL_DocSearchEngine` 同一份實作** —— 這是刻意的：
-兩份搜尋邏輯的漂移症狀是「agent 搜到的跟人搜到的不一樣」，而它不會報錯。
-
-差別只在外圍：
-
-| | Cmd_SearchDocs | 本頁 |
+| | 本頁 | `senate cmd doc` |
 |---|---|---|
-| 呈現 | 回傳檔（給 agent 讀） | IMGUI 清單 |
-| 進階控制 | 參數 | `mode` / `limit` / 同義詞路徑 / `includeArchived` 都在畫面上 |
-| 開檔 | 回路徑 | 每筆可**預覽 / 開啟 / 定位** |
+| 給誰 | 人（在 Editor 裡） | agent（不需要 Editor） |
+| 查哪裡 | 專案 `Docs/` ＋ `UCL_Core/Docs~/` | Senate `Docs/` ＋ SCP_Core `Docs~/` |
+| 計分 | frontmatter 加權＋章節內文＋同義詞 | 逐行全文比對 |
+
+> 兩邊查的是**不同的文件庫**，不是同一份東西的兩個入口。
+> agent 要查 Senate 指令的用法 → `senate cmd help <指令>` 會印出對應文件名，再 `senate cmd doc --arg op=show --arg name=<文件>`。
 
 ## 每筆結果的三個出口
 
@@ -48,6 +46,5 @@ last_updated: 2026-08-17
 
 ## 相關
 
-- [`Cmd_SearchDocs`](../API/UCL_AgentCommand/Cmd_SearchDocs.md)
 - [`UCL_MarkdownViewerPage`](UCL_MarkdownViewerPage.md)
 - [`UCL_CommonEditorPage`](UCL_CommonEditorPage.md)

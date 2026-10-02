@@ -1,5 +1,5 @@
 ﻿// 區塊職責：本檔提供「對 markdown 文件做模糊搜尋」的共用引擎，
-//          被 Cmd_SearchDocs（CLI / agent batch）與 UCL_WelcomePage（內嵌搜尋列）共用。
+//          使用者是 UCL_DocSearchPage（Editor 內的文件搜尋頁；歡迎頁的按鈕也是開它）。
 // 物理意義：把 query expansion + scoring + ranking 從 Cmd 邏輯獨立出來，
 //          上層元件只需負責「資料來源」與「結果呈現」，搜尋核心一致。
 // 數值影響：純函式集合，不寫檔不修改 entries。
@@ -48,7 +48,7 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// <list type="number">
     ///   <item>caller 先用 <see cref="UCL_DocCatalogScanner.ScanRoots"/> 取得 entries</item>
     ///   <item>用 <see cref="LoadSynonyms"/>（或自行構造）取得同義詞群</item>
-    ///   <item>用 <see cref="Search"/>（或 <see cref="SearchSimple"/>）對 entries 計分排序</item>
+    ///   <item>用 <see cref="SearchSimpleWithBody"/> 對 entries 計分排序（metadata＋章節內文）</item>
     /// </list>
     ///
     /// 計分權重：title=10 / aliases=8 / tags=6 / description=5 / filename=4。
@@ -56,73 +56,6 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// </summary>
     public static class UCL_DocSearchEngine
     {
-        // ===========================================================
-        // 公開 API
-        // ===========================================================
-
-        /// <summary>
-        /// 一般用法：給定 query 字串 + entries → 回傳 ranked hits（top-N，預設 unlimited）。
-        /// 若提供 <paramref name="preferredLang"/>（如 "zh-Hant"），路徑含該 lang 段的文件會額外加分排前。
-        /// </summary>
-        public static List<UCL_DocSearchHit> SearchSimple(
-            string query,
-            IEnumerable<UCL_DocCatalogEntry> entries,
-            List<List<string>> synonymGroups = null,
-            bool orMode = false,
-            int limit = 0,
-            string preferredLang = null)
-        {
-            if (string.IsNullOrWhiteSpace(query) || entries == null)
-            {
-                return new List<UCL_DocSearchHit>();
-            }
-            var rawTerms = query.Split(new[] { ' ', '　', '\t' }, StringSplitOptions.RemoveEmptyEntries)
-                                .Select(t => t.Trim()).Where(t => t.Length > 0).ToList();
-            if (rawTerms.Count == 0) return new List<UCL_DocSearchHit>();
-            var expandedSets = rawTerms.Select(t => ExpandTerm(t, synonymGroups)).ToList();
-            return Search(entries, expandedSets, orMode, limit, preferredLang);
-        }
-
-        /// <summary>
-        /// 進階用法：caller 自行準備好展開後的 term sets（每個 set = 一個原始 term + 其同義詞）。
-        /// </summary>
-        public static List<UCL_DocSearchHit> Search(
-            IEnumerable<UCL_DocCatalogEntry> entries,
-            List<HashSet<string>> expandedTermSets,
-            bool orMode = false,
-            int limit = 0,
-            string preferredLang = null)
-        {
-            var hits = new List<UCL_DocSearchHit>();
-            if (entries == null || expandedTermSets == null || expandedTermSets.Count == 0) return hits;
-            foreach (var e in entries)
-            {
-                if (e == null) continue;
-                var (score, matched) = ScoreEntry(e, expandedTermSets, orMode);
-                if (score > 0)
-                {
-                    // 區塊職責：path 含 preferredLang 段 → 加 lang bonus（讓當前語系版本排前）
-                    // 物理意義：UCL_Core 多語系文件結構為 Docs~/<lang>/... 共 4 份；同一份內容用同
-                    //          query 命中時應優先給使用者當前語系。EOV 端的 Docs/ 沒 lang 段，不受影響。
-                    // 數值影響：只加分不減分；其他語系版本仍會出現在結果中（用更多上下文 cover），
-                    //          只是排序往後。
-                    int bonus = ComputeLangBonus(e.RelativePath, preferredLang);
-                    if (bonus > 0)
-                    {
-                        score += bonus;
-                        if (matched != null && !matched.Contains("lang")) matched.Add("lang");
-                    }
-                    hits.Add(new UCL_DocSearchHit
-                    {
-                        Entry = e, Score = score, MatchedFields = matched,
-                    });
-                }
-            }
-            hits.Sort((a, b) => b.Score.CompareTo(a.Score));
-            if (limit > 0 && hits.Count > limit) hits = hits.Take(limit).ToList();
-            return hits;
-        }
-
         // 區塊職責：依 preferredLang 對某 entry 路徑算「語系加權」
         // 物理意義：路徑含 "/<preferredLang>/" → +5；含其他已知語系段（en/ja/zh-Hans/zh-Hant）→ 0
         //          無語系段（單一語言 doc）→ 0，不影響原排序
@@ -204,14 +137,12 @@ namespace UCL.Core.EditorLib.AgentCommands
         // P1：章節級搜尋 + snippet preview（給 UCL_DocSearchPage 用）
         // 物理意義：在 metadata 計分之外讀取檔案 body，依 markdown 標題切 section 各自計分；
         //          選分數最高的 section 提取 ±N 字元 context、把 query 變體用 rich-text 高亮。
-        //          Cmd_SearchDocs 維持走 Search/SearchSimple（純 metadata），不受影響。
         // 數值影響：每個 entry 多一次 ReadAllLines（200 篇 .md SSD 上 cold scan 仍可控）。
-        //          score = metaScore + bestSectionBodyScore + termsHitCount*2 + langBonus；
-        //          相較 SearchSimple 多了 body 加成，排序會略有差異。
+        //          score = metaScore + bestSectionBodyScore + termsHitCount*2 + langBonus。
         // ===========================================================
 
         /// <summary>
-        /// SearchSimple 的「body-aware」變體：
+        /// 給定 query 字串 + entries → ranked hits。metadata 計分之外，
         /// 額外讀取每個 entry 的檔案內容、依 H1~H6 切 section、章節級計分，
         /// 並產出最佳 section 的 snippet（含 IMGUI rich-text 高亮）。
         /// AND/OR 語義以「metadata 命中 ∪ body 命中」為準。

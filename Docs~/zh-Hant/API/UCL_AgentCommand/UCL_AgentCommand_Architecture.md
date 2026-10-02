@@ -582,8 +582,6 @@ foreach (var cmd in queue.Commands)
 - [UCL_AgentCommand](UCL_AgentCommand.md) — 資料模型
 - [Cmd_ResolveAssetReferences](Cmd_ResolveAssetReferences.md) — 資產解析
 - [Cmd_ExportCommandCatalog](Cmd_ExportCommandCatalog.md) — Cmd 目錄匯出
-- [Cmd_ExportDocsCatalog](Cmd_ExportDocsCatalog.md) — 全 Markdown 文件靜態索引（含 aliases 模糊搜尋）
-- [Cmd_SearchDocs](Cmd_SearchDocs.md) — 全 Markdown 即時搜尋（live scan + ranking + 同義詞展開；不依賴 catalog）
 
 ### 編輯器頁面
 - [UCL_AgentCommandsPage](../../UCL_EditorPage/UCL_AgentCommandsPage.md) — IMGUI UI

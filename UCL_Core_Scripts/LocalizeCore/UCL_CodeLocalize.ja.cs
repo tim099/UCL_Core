@@ -209,7 +209,7 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Lang.NoneAvailable" => "(UCL_LanguageCodeAsset 未検出 — 先に Language Asset を作成してください)",
                 "Welcome.Lang.OpenEditor" => "詳細編集…",
                 "Welcome.Agent.Title" => "🤖  Agent Commands (agent ↔ Editor クロスプロセス)",
-                "Welcome.Agent.Desc" => "AI agent が queue.json に書き込み、Editor Watcher が自動実行 — ExportDocsCatalog / SearchDocs / FindAssetUsages / ValidateAssetFormat などの組み込み Cmd を含む。",
+                "Welcome.Agent.Desc" => "AI agent が queue.json に書き込み、Editor Watcher が自動実行 — FindAssetUsages / ValidateAssetFormat などの組み込み Cmd を含む。",
                 "Welcome.Agent.Btn" => "Agent Commands ページを開く",
                 "Welcome.Editor.Title" => "🪟  Editor Pages フレームワーク",
                 "Welcome.Editor.Desc" => "UCL_GUIPageController + UCL_EditorPage — 統一スタイルの IMGUI ページスタック、検索可能ドロップダウン、HelpURL ジャンプ、TopBar カスタマイズ対応。",

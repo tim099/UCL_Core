@@ -44,7 +44,7 @@ last_updated: 2026-08-17
 - **inline**（`**` / `*` / 反引號 / 連結 / 圖片）由本頁的 `InlineFormat` 轉成 IMGUI rich-text tag
 
 > parser 與 UI 刻意解耦：**parser 不產生 UI tag**。
-> 混在一起的話，換一種呈現方式就得改 parser，而 parser 是 `Cmd_SearchDocs` 那邊也在用的。
+> 混在一起的話，換一種呈現方式就得改 parser。
 
 ## 效能
 

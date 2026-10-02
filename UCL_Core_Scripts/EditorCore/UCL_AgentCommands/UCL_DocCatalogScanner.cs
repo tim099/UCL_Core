@@ -4,7 +4,7 @@
 // Create time : 05/06 2026
 //
 // 區塊職責：本檔提供「掃描 markdown 資料夾並解析 YAML frontmatter」的共用 helper，
-//          被 Cmd_ExportDocsCatalog（產靜態索引）與 Cmd_SearchDocs（live 搜尋）兩支 Cmd 共用。
+//          使用者是 UCL_DocSearchPage（文件搜尋頁）與 UCL_ChatTavernPage（取 git root）。
 // 物理意義：把「path → DocEntry」的轉換從 Cmd 邏輯獨立出來，避免重複實作 frontmatter parser；
 //          新 Cmd 只要呼叫 ScanRoots 就能拿到結構化的 entry list，再各自決定如何渲染 / 過濾。
 // 數值影響：純讀取，不修改任何檔案；caller 自行決定後續輸出位置。

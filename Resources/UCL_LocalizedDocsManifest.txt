@@ -15,7 +15,6 @@ Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_BuildAddressable.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Coding.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_DiagnoseAssetReflection.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ExportDocsCatalog.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_FindAssetUsages.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_HelpUrlCheck.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Invoke.md
@@ -23,7 +22,6 @@ Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_MigrateAssetToTemplate.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ReadHierarchy.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Recompile.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_SearchDocs.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_SessionClose.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Tavern.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Treasury.md

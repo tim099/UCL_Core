@@ -1,6 +1,6 @@
 ﻿// 區塊職責：跨專案文件搜尋頁 — 對 Docs/ 與 UCL_Core/Docs~/ 做即時模糊搜尋。
-// 物理意義：跟 Cmd_SearchDocs 共用 UCL_DocSearchEngine 計分 / 同義詞展開邏輯，
-//          差別在於以 IMGUI 呈現結果、提供進階控制（mode / limit / synonyms 路徑 /
+// 物理意義：計分 / 同義詞展開邏輯在 UCL_DocSearchEngine，本頁負責
+//          以 IMGUI 呈現結果、提供進階控制（mode / limit / synonyms 路徑 /
 //          includeArchived），且每筆結果可一鍵開啟檔案或在檔案管理員定位。
 // 數值影響：cold scan 200+ 篇 markdown（SSD <200ms）；結果 cache 在 page 實例內，
 //          重繪不會重掃；點「開啟」按鈕走 OS 預設 .md 檢視器。
@@ -37,7 +37,7 @@ namespace UCL.Core.EditorLib.Page
         int m_Limit = 20;
         bool m_OrMode = false;
         bool m_IncludeArchived = false;
-        string m_SynonymsPath = "Docs/_synonyms.txt";   // 預設位置，與 Cmd_SearchDocs 一致
+        string m_SynonymsPath = "Docs/_synonyms.txt";   // 預設位置
         bool m_ShowAdvanced = false;
 
         // 區塊職責：頁內共用 GUIStyle 集中地（lazy 建立）— 避免每幀每 row new 一份

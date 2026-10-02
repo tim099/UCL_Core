@@ -209,7 +209,7 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Lang.NoneAvailable" => "(No UCL_LanguageCodeAsset found — please create language Asset first)",
                 "Welcome.Lang.OpenEditor" => "Advanced…",
                 "Welcome.Agent.Title" => "🤖  Agent Commands (agent ↔ Editor cross-process)",
-                "Welcome.Agent.Desc" => "AI agent writes queue.json, Editor Watcher auto-executes — built-ins include ExportDocsCatalog / SearchDocs / FindAssetUsages / ValidateAssetFormat.",
+                "Welcome.Agent.Desc" => "AI agent writes queue.json, Editor Watcher auto-executes — built-ins include FindAssetUsages / ValidateAssetFormat.",
                 "Welcome.Agent.Btn" => "Open Agent Commands Page",
                 "Welcome.Editor.Title" => "🪟  Editor Pages Framework",
                 "Welcome.Editor.Desc" => "UCL_GUIPageController + UCL_EditorPage — consistent IMGUI page stack with searchable dropdowns, HelpURL routing, TopBar customization.",

@@ -85,6 +85,9 @@ namespace UCL.Core.EditorLib.Page
                 new ToolEntry("ToolBox.ScreenStream", () => UCL_ScreenStreamPage.Create()),
                 new ToolEntry("ToolBox.ProcessAdmin", () => UCL_ProcessAdminPage.Create())),
 
+            new ToolGroup("Fold.Setup", "ToolBox.Group.Setup",
+                new ToolEntry("ToolBox.PackageInstall", () => UCL_PackageInstallPage.Create())),
+
             new ToolGroup("Fold.Diagnostics", "ToolBox.Group.Diagnostics",
                 new ToolEntry("ToolBox.MissingReference", () => UCL_MissingReferencePage.Create())),
 

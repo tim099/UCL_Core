@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import argparse
+import calendar
 import json
 import math
 import os
@@ -150,21 +151,22 @@ def read_daemon_stt_config():
 #          原本 agent 要另外 cat _last_op.md / op=read 第二次 I/O 才看得到;
 #          現在 --ocr 時順手把酒館「未讀 (排除自己) 訊息」接在字幕 sidecar 下方,
 #          一次 Read 同時拿到「畫面字幕 + 同事對話」, 省一次讀取又防漏看同事 @。
-# 數值影響: 來源 = rooms/tavern/_last_view.md (每次 post 即時重渲染, 純 local 讀, 零 Editor daemon 依賴);
-#          以 seq 游標做「已讀」過濾 (>since_seq), 以 @<persona>: 後綴做「排除自己」過濾。
+# 數值影響: 來源 = rooms/tavern/messages/<UTC 日期>/<seq>.json（訊息庫本體，一則一檔，純 local 讀）;
+#          以 seq 游標做「已讀」過濾 (>since_seq), 以 sender_persona 做「排除自己」過濾。
 #          截斷時取「最舊的未讀 N 筆」(chronological catch-up) 並把游標推到所顯示的最大 seq —
 #          保證下輪接著看更舊→更新, 0-gap 不跳過 (對齊 frame cursor 鐵律, 禁靜默截斷)。
+# 🩸 TASK-0388（2026-10-03 basecamp）：來源原本是 `_last_view.md`，由 Editor 的 Op_Post 每次發文後重渲染。
+#   發文搬到 Senate 後那條路退場（TASK-0366），檔案停在 09-29 23:16、最大 seq 22760 ——
+#   之後每一輪 since_seq 都大於檔內全部 seq ⇒ 同場段恆為「0 筆」，而 C# 把它印成「同場此刻沒有新發言」。
+#   10-02 第 8 話三位陪看者 35 則觀察，主觀影者一則都沒讀到。⇒ 改讀訊息庫本體，不讀任何人的渲染產物；
+#   訊息庫讀不到時 raise（呼叫端印「渲染失敗」）—— 來源壞了與沒人說話**不可同形**。
 # ===========================================================
-TAVERN_VIEW = DATA_ROOT / "ChatTavern" / "rooms" / "tavern" / "_last_view.md"
-# 每筆 message 起始行: [seq N] HH:MM:SS <Agent大小姐@persona>: <body 第一行>
-_TAVERN_MSG_RE = re.compile(r"^\[seq (\d+)\] (\d+:\d+:\d+) (.+?): ?(.*)$")
-# meta / refs 是渲染附帶的雜訊行 (Discord 附件 hash 等), 觀影 agent 不需要 → body 過濾掉
-# (但 Discord 附件的「本地路徑」例外: 抽出來在 sidecar 露出, agent 用 Read 工具直接看圖 — 見 _extract_tavern_images)
-_TAVERN_NOISE_RE = re.compile(r"^\s*-\s*(meta|refs):")
-# meta 行裡的 attachments JSON (含每張 Discord 附件的 local 本地路徑) — 反引號包住整段 `attachments=[...]`
-_TAVERN_ATTACH_RE = re.compile(r"attachments=(\[.*?\])`")
-# refs 行 fallback: '  - refs: [path](path)' 取小括號內本地路徑 (attachments JSON 解析不出時用)
-_TAVERN_REFS_RE = re.compile(r"^\s*-\s*refs:\s*\[[^\]]*\]\(([^)]+)\)")
+TAVERN_MSG_DIR = DATA_ROOT / "ChatTavern" / "rooms" / "tavern" / "messages"
+# since_seq < 1（還沒有游標）時只看最新這幾則 —— 對齊舊 _last_view 只渲染尾端的語意，不從五月倒起
+_TAVERN_NO_CURSOR_TAIL = 50
+# Cmd_Glossary 追加在尾端的「📖 本回提到的新詞」—— 工具寫的、不是說話的人寫的（同 tavern_history.py 的判準）
+_TAVERN_AUTO_ATTACH_RE = re.compile(r"[\r\n]+---[\r\n]+\s*📖\s*\*\*本回提到的新詞\*\*.*\Z", re.S)
+_TAVERN_IMG_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
 # 單筆 body 上限 (0 = 不截斷)。
 # ⚠ Tim 2026-08-16 拍板改成**不截斷**：「為了交流方便＆同步劇情細節，請顯示完整訊息，
 #   而非跟酒館 inbox 一樣只顯示片段」。
@@ -178,88 +180,109 @@ _TAVERN_REFS_RE = re.compile(r"^\s*-\s*refs:\s*\[[^\]]*\]\(([^)]+)\)")
 _TAVERN_BODY_CAP = 0
 
 
-def _extract_tavern_images(line: str, cur: dict):
-    """從一行 meta / refs 雜訊行抽 Discord 附件本地圖片路徑, append 進 cur['images'] (去重)。
+def _tavern_images(msg: dict) -> list:
+    """從一則訊息的 meta.attachments / refs 抽本地圖片路徑 (去重保序)。
 
-    物理意義: Discord 圖片同步進酒館後, 真正內容在 meta 行的 attachments JSON 的 `local` 欄
-              (退路: refs 行的 markdown 連結路徑)。原本這兩行被當雜訊丟棄, 觀影 agent 只看到
-              body 的「[Discord 附件 1 個] image.png」文字、看不到圖。抽出本地路徑後, sidecar
-              會列出來讓 agent 用 Read 工具直接看圖 (跟讀 montage 同一種 vision 能力)。
-    數值影響: 只收 image/* content_type 的附件 (略過非圖片附件如 .txt/.zip), 圖路徑去重保序。
+    物理意義: Discord 圖片同步進酒館後, 本地路徑在 meta.attachments 的 `local` 欄
+              (退路: refs 的 path)。sidecar 列出來讓 agent 用 Read 工具直接看圖。
+    數值影響: 只收圖片 (content_type image/* 或副檔名), 非圖片附件略過。
     """
-    # 首選: meta 行的 attachments JSON (有 content_type 可濾非圖片, 有 local 直給本地路徑)
-    m = _TAVERN_ATTACH_RE.search(line)
-    if m:
+    out = []
+    meta = msg.get("meta") if isinstance(msg.get("meta"), dict) else {}
+    atts = meta.get("attachments")
+    if isinstance(atts, str):
         try:
-            for a in json.loads(m.group(1)):
-                if not isinstance(a, dict):
-                    continue
-                local = a.get("local")
-                ctype = (a.get("content_type") or "").lower()
-                fname = (a.get("filename") or "").lower()
-                # content_type 缺失時退看副檔名, 避免漏圖
-                is_img = ctype.startswith("image/") or fname.endswith(
-                    (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"))
-                if local and is_img and local not in cur["images"]:
-                    cur["images"].append(local)
-            return
+            atts = json.loads(atts)
         except (json.JSONDecodeError, TypeError):
-            pass  # JSON 壞掉 → 落到 refs 退路
-    # 退路: refs 行的本地路徑 (attachments JSON 不可用時)
-    mr = _TAVERN_REFS_RE.match(line)
-    if mr:
-        p = mr.group(1).strip()
-        if p and p not in cur["images"]:
-            cur["images"].append(p)
+            atts = None
+    for a in atts if isinstance(atts, list) else []:
+        if not isinstance(a, dict):
+            continue
+        local = a.get("local")
+        ctype = (a.get("content_type") or "").lower()
+        fname = (a.get("filename") or "").lower()
+        if local and (ctype.startswith("image/") or fname.endswith(_TAVERN_IMG_EXT)) and local not in out:
+            out.append(local)
+    for r in msg.get("refs") if isinstance(msg.get("refs"), list) else []:
+        p = (r.get("path") if isinstance(r, dict) else None) or ""
+        if p.lower().endswith(_TAVERN_IMG_EXT) and p not in out:
+            out.append(p)
+    return out
+
+
+def _load_tavern_after(since_seq: int) -> list:
+    """讀訊息庫裡 seq > since_seq 的訊息 → [dict(seq, time, sender, persona, body, images)]，由舊到新。
+
+    物理意義: 日期夾由新往舊掃, 只列檔名（seq＝檔名）; 一個夾的最小 seq ≤ since_seq 就停 ——
+              一輪只碰今天、頂多昨天, 不 cold-parse 歷史。
+    數值影響: since_seq < 1（還沒有游標）⇒ 只取最新 _TAVERN_NO_CURSOR_TAIL 則。
+              訊息庫夾不存在 ⇒ raise（⛔ 不回空清單 —— 空清單會被讀成「沒人說話」）。
+    """
+    if not TAVERN_MSG_DIR.is_dir():
+        raise FileNotFoundError(f"酒館訊息庫不存在: {TAVERN_MSG_DIR}")
+    no_cursor = since_seq < 1
+    picked = []  # [(seq, path)]
+    for day in sorted((p for p in TAVERN_MSG_DIR.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True):
+        seqs = []
+        for f in day.glob("*.json"):
+            try:
+                seqs.append((int(f.stem), f))
+            except ValueError:
+                continue
+        if not seqs:
+            continue
+        picked.extend(t for t in seqs if no_cursor or t[0] > since_seq)
+        if no_cursor and len(picked) >= _TAVERN_NO_CURSOR_TAIL:
+            break
+        if not no_cursor and min(t[0] for t in seqs) <= since_seq:
+            break
+    picked.sort(key=lambda t: t[0])
+    if no_cursor:
+        picked = picked[-_TAVERN_NO_CURSOR_TAIL:]
+
+    msgs = []
+    for seq, f in picked:
+        try:
+            m = json.loads(f.read_text(encoding="utf-8"))
+        except Exception as e:
+            # 讀不動的那則仍佔一個位置, 不靜默消失（同 tavern_history.py 的判準）
+            m = {"body": f"⚠ 讀不動 {f.name}: {e}"}
+        persona = (m.get("sender_persona") or "").strip()
+        name = (m.get("sender_name") or m.get("sender_id") or "?").strip()
+        try:
+            # ts 是 UTC ISO（…Z）→ 本地 HH:MM:SS
+            t = time.strftime("%H:%M:%S", time.localtime(
+                calendar.timegm(time.strptime(m["ts"][:19], "%Y-%m-%dT%H:%M:%S"))))
+        except Exception:
+            t = "??:??:??"
+        body = _TAVERN_AUTO_ATTACH_RE.sub("", m.get("body") or "").replace("\r\n", "\n")
+        msgs.append({"seq": seq, "time": t,
+                     "sender": f"{name}@{persona}" if persona else name, "persona": persona,
+                     "body": body.split("\n"), "images": _tavern_images(m)})
+    return msgs
 
 
 def render_tavern_tail(self_persona: str, since_seq: int, limit: int):
-    """讀 tavern _last_view.md → 回 (section_md, max_shown_seq, shown_count, remaining_older)。
+    """讀 tavern 訊息庫 → 回 (section_md, max_shown_seq, shown_count, remaining_older, img_count)。
 
-    - self_persona: 排除自己發的訊息 (match sender 後綴 '@<persona>')。空字串=不排除。
-    - since_seq: 已讀游標, 只收 seq > since_seq 的未讀。-1=全收。
+    - self_persona: 排除自己發的訊息 (比 sender_persona)。空字串=不排除。
+    - since_seq: 已讀游標, 只收 seq > since_seq 的未讀。< 1 ⇒ 只看最新 _TAVERN_NO_CURSOR_TAIL 則。
     - limit: 單輪最多顯示幾筆; 截斷時取「最舊的未讀」(chronological), 游標推到所顯示最大 seq。
 
     回傳的 max_shown_seq 是「這輪實際顯示的最大 seq」(非全域 max), 供 session 推進游標時
     保證 0-gap — 沒顯示到的更舊未讀留待下輪 (對齊 frame cursor 接續鐵律)。
-    找不到檔 / 解析不出任何訊息 → (None, since_seq, 0, 0)。
+    訊息庫讀不到 ⇒ raise（呼叫端印「渲染失敗」, C# 讀成「通道沒回報」而不是 0 筆）。
     """
-    if not TAVERN_VIEW.exists():
-        return (None, since_seq, 0, 0, 0)
-    try:
-        raw = TAVERN_VIEW.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return (None, since_seq, 0, 0, 0)
-
-    # ----- 解析成 message blocks -----
-    # 區塊職責: 逐行掃, 命中 [seq N] 起始行開新 block, 其後非起始/非 noise 行併入 body。
-    msgs = []  # list of dict(seq, time, sender, body)
-    cur = None
-    for line in raw.splitlines():
-        m = _TAVERN_MSG_RE.match(line)
-        if m:
-            if cur is not None:
-                msgs.append(cur)
-            cur = {"seq": int(m.group(1)), "time": m.group(2),
-                   "sender": m.group(3).strip(), "body": [m.group(4)], "images": []}
-        elif cur is not None:
-            if _TAVERN_NOISE_RE.match(line):
-                # meta/refs 不進 body, 但先抽 Discord 附件本地圖片路徑 (agent 要 Read 看圖)
-                _extract_tavern_images(line, cur)
-                continue
-            cur["body"].append(line)
-    if cur is not None:
-        msgs.append(cur)
+    msgs = _load_tavern_after(since_seq)
     if not msgs:
         return (None, since_seq, 0, 0, 0)
 
-    # ----- 過濾: 未讀 (seq>since) + 排除自己 (@persona 後綴) -----
-    self_suffix = f"@{self_persona}" if self_persona else None
+    # ----- 過濾: 未讀 (seq>since) + 排除自己 -----
     unread = []
     for d in msgs:
         if d["seq"] <= since_seq:
             continue
-        if self_suffix and (d["sender"].endswith(self_suffix) or d["sender"] == self_persona):
+        if self_persona and d["persona"].lower() == self_persona.lower():
             continue
         unread.append(d)
     if not unread:
@@ -1070,7 +1093,7 @@ def op_make(args):
     # 物理意義: 觀影 agent 一次 Read sidecar 同時掌握「畫面字幕 + 同事對話」, 不必第二次 I/O。
     #          綁 --ocr 自動開 (Tim 拍板); --no-tavern 可關。OCR engine 掛掉導致 sidecar 沒寫時,
     #          仍補寫一份只含酒館段的 sidecar (fail-soft, 觀影仍看得到同事 @)。
-    # 數值影響: 純 local 讀 _last_view.md, 不碰 Editor daemon; max_shown_seq 印給 session 推進已讀游標。
+    # 數值影響: 純 local 讀訊息庫 messages/<日期>/*.json (TASK-0388), 不碰 Editor daemon; max_shown_seq 印給 session 推進已讀游標。
     # ===========================================================
     if args.ocr and not getattr(args, "no_tavern", False):
         try:

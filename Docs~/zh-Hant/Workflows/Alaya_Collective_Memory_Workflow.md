@@ -176,7 +176,7 @@ $KB search --target alaya --query "<寫成一句話>" --topk 5
 $KB search --target fragments,alaya --query "<寫成一句話>" --topk 8   # 個人 + 集體一起
 ```
 
-⚠ **輸入形狀是句子不是關鍵字**，判準分數帶（真命中 0.65~0.74 / 灰帶 / ≤0.42 無關）
+⚠ **輸入形狀是句子不是關鍵字**，判準分數帶（hybrid 預設：真命中 ≥0.72 / 灰帶 0.58~0.72 / ≤0.58 無關；量法見 Memory_Common_Principles §4）
 與已知限制（無 per-persona 過濾、標題行同分噪音）全部見[共通原則 §4](Memory_Common_Principles.md)，
 本檔不重抄。
 

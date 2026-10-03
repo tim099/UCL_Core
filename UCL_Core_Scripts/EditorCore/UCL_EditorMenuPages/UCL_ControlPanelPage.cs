@@ -79,7 +79,6 @@ namespace UCL.Core.EditorLib.Page
             GUILayout.Space(8);
             DrawPersonaAgentAdminSection();
             GUILayout.Space(8);
-            DrawKnowledgeBaseAdminSection();
 
             DrawLibraryManageSection();
             GUILayout.Space(8);
@@ -164,11 +163,6 @@ namespace UCL.Core.EditorLib.Page
         }
 
         // ===========================================================
-        // 區塊：知識庫後台管理入口（Tim 2026-07-23 拍板）
-        // 物理意義：push UCL_KnowledgeBaseAdminPage — Agent 長期記憶 / 文檔語意向量檢索的
-        //          依賴安裝、bge-m3 權重預熱、索引重建、檢索測試管理頁。
-        // ===========================================================
-        // ===========================================================
         // 區塊：Cmd 後台管理入口（Tim 2026-07-29 拍板）
         // 物理意義：push UCL_AgentCmdAdminPage — 已註冊 Cmd 清單 + **schema 同步**（手動刷新按鈕）。
         //          Python client 端的參數預檢讀 C# 反射生成的 commands_schema.json；
@@ -194,27 +188,6 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("已註冊 Agent Command 清單，以及 Python client 端預檢用的 commands_schema.json 同步狀態與手動刷新。"
                     + "新增／修改 Cmd 後請按同步（或跑 `senate ucmd run ExportCmdSchema`，兩者等價）。",
                     UCL_GUIStyle.LabelStyle);
-            }
-        }
-
-        void DrawKnowledgeBaseAdminSection()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                bool aShow;
-                // header：折疊鈕 + 標題 + **開啟管理頁（關鍵操作）提到折疊外層**
-                using (new GUILayout.HorizontalScope())
-                {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "KnowledgeBaseFold", 21, iDefaultValue: false);
-                    GUILayout.Label("<b>🧠 知識庫後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    if (GUILayout.Button("開啟知識庫後台管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.6f, 0.8f, 1f)), GUILayout.ExpandWidth(false)))
-                    {
-                        UCL_KnowledgeBaseAdminPage.Create();
-                    }
-                    GUILayout.FlexibleSpace();
-                }
-                if (!aShow) return;
-                GUILayout.Label("Agent 長期記憶 / 文檔語意向量檢索：依賴安裝、bge-m3 權重預熱、Docs / Lessons 索引重建、檢索測試。", UCL_GUIStyle.LabelStyle);
             }
         }
 

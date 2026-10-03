@@ -10,7 +10,7 @@ knowledge_base.py — Agent 知識庫 / 長期記憶向量檢索工具 (skeleton
 架構定位 (Zeta/summit 2026-07-23, per Tim 拍板):
   - 本 script = 知識庫的「唯一真相來源」: 真正算向量、建索引、跑檢索都在這裡。
   - agent 直接叫本 script（Cmd_KnowledgeBase 那層 C# 殼已於 2026-10-01 移除，TASK-0364：agent 本來就都直接叫 python）。
-  - UCL_KnowledgeBaseAdminPage (C#) = 本 script 之上的薄 UI（經 UCL_KnowledgeBaseRunner）。
+  - 後台頁已搬到 Senate「知識庫」頁（`senate ui --page kb`，走 `senate cmd kb`；TASK-0381）；Unity 的 UCL_KnowledgeBaseAdminPage／UCL_KnowledgeBaseRunner 於 2026-10-03 廢棄。
   嵌入後端走 FlagEmbedding 的真 BAAI/bge-m3，但介面與後端解耦 — 換模型不動上層。
 
   熱路徑 (search / embed) 刻意留純 Python: agent 直接呼叫最短路徑，

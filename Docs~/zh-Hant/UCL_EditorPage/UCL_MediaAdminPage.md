@@ -11,7 +11,7 @@ last_updated: 2026-08-11
 
 > 一句話：**stream-watch 觀影工具鏈「影音辨識層」的管理入口** — whisper STT 的安裝與設定、字幕 OCR (RapidOCR) 的參數，收攏在同一頁。錄影本體開關仍歸 ScreenStream 錄影頁；本頁只管「辨識」欄位。
 
-（Tim 2026-07-25 拍板；參考 [UCL_KnowledgeBaseAdminPage](UCL_KnowledgeBaseAdminPage.md) 結構。命名走「影音」抽象——先收 STT，字幕讀取 (OCR) 也整合本頁，換後端不必改頁名。）
+（Tim 2026-07-25 拍板；參考當時的知識庫後台頁（已廢棄、搬到 Senate）結構。命名走「影音」抽象——先收 STT，字幕讀取 (OCR) 也整合本頁，換後端不必改頁名。）
 
 ## 架構（對齊知識庫頁的分層哲學）
 
@@ -87,6 +87,5 @@ python <UCL_Core>/Tools~/AgentCommands/media_admin.py test-stt --sec 8 --model s
 
 ## 相關
 
-- [UCL_KnowledgeBaseAdminPage](UCL_KnowledgeBaseAdminPage.md) — 結構參考來源（薄 UI / python 真相源 / async runner）
 - EOV 專案 `.claude/skills/valor-stream-watch/STT.md` — STT 三層 fallback 架構與兩個啟動入口
 - `audio_transcribe.py`（專案端）— 擷取/轉錄實作本體

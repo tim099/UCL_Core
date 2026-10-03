@@ -10,8 +10,7 @@ related:
   - <ucl_core:Docs~/{lang}/Workflows/Work_Memory_Workflow.md> | 工作記憶（以工作主題為單位）
   - <ucl_core:Skills~/ucl-memory/SKILL.md> | ucl-memory | 個人記憶 + Alaya + 回憶的入口
   - <ucl_core:Skills~/ucl-work-memory/SKILL.md> | ucl-work-memory | 工作記憶的入口
-  - <ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_KnowledgeBaseAdminPage.md> | 檢索引擎（三層共用同一支 knowledge_base.py）
-last_updated: 2026-10-01（Cmd_KnowledgeBase 退場：§4 檢索入口改為 python ＋ 後台頁兩個）
+last_updated: 2026-10-03（UCL_KnowledgeBaseAdminPage 廢棄：§4 後台頁改在 Senate「知識庫」頁，TASK-0381）
 ---
 
 # 🧠 記憶共通原則
@@ -136,7 +135,8 @@ $KB search --target fragments,alaya,work_memory --query "<你要寫的那條，�
 
 ## 4. 回憶（檢索）—— 三層走同一支引擎
 
-`knowledge_base.py`（agent 直接呼叫）/ `UCL_KnowledgeBaseAdminPage`（Editor 頁）是**同一支腳本**的兩個入口。
+`senate cmd kb`（Senate 版，agent 與後台「知識庫」頁共用同一套實作）與舊的 `knowledge_base.py` 讀**同一份** `kb_targets.json`、同一批文件。
+Unity 的 `UCL_KnowledgeBaseAdminPage` 已於 2026-10-03 廢棄（TASK-0381），後台頁改在 Senate（`senate ui --page kb`）。
 目標名見 `kb_targets.json`：`docs / coredocs / lessons / fragments / alaya / library / work_memory`。
 
 ```bash

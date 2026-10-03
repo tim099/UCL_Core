@@ -217,10 +217,10 @@ Task.Run(() =>                                  // ① 不在主執行緒跑
 > **`WaitForExit(timeout)` 是預設，不是唯一合法解。**
 > 需要「可取消」時，自寫輪詢迴圈（每 N ms 檢查 `HasExited` + cancel token／進度條 Cancel）
 > 是**正確的**，不該為了統一而改掉 —— `WaitForExit` 沒有取消能力，換過去等於刪功能。
-> 現行三處刻意保留輪詢：`UCL_KnowledgeBaseRunner`、`UCL_MediaAdminRunner`（吃
+> 現行兩處刻意保留輪詢：`UCL_MediaAdminRunner`（吃
 > `CancellationToken`）、`UCL_BartenderDaemon`（進度條 Cancel）。
 >
-> 那三處**真正缺的從來不是逾時，是登記**：它們的 `Kill()` 只在 C# 的 `Process` 物件還活著時
+> 那兩處**真正缺的從來不是逾時，是登記**：它們的 `Kill()` 只在 C# 的 `Process` 物件還活著時
 > 有效，domain reload 一來就失去對象 —— 而它們看起來是「已經處理過逾時」的那種，
 > **最容易讓人以為安全**。補上 `RegisterScope` 之後防護才跨得過 domain reload。
 

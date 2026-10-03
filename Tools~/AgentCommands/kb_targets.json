@@ -28,6 +28,7 @@
     "fragments": {
       "desc": "見根 · 關鍵記憶片段 — letters/<persona>/fragments/*.md（每檔一主題，天然 embedding chunk；醒來想不起某事時語意檢索）",
       "kind": "markdown",
+      "half_life_days": 90,
       "_note": "glob 一律用 [!_]* 全收，**不要逐型列舉**。🩸 2026-08-16 實證：原本枚舉五型(lesson/unsolved/relation/identity/philosophy)，當天新增第六型 howto_ 之後，新碎片靜默不進索引 —— reindex 照樣印 `106 檔 → 718 chunks / status=ready` 綠燈，跟沒加那個檔一模一樣。缺的那一項不會出現在自己的清單上，而枚舉會乾淨地 exit 0。前綴 _ 排除的是機械產物(_root_index.md)，那份是索引不是記憶。",
       "globs": [
         "data:ChatTavern/baton/letters/*/fragments/[!_]*.md"
@@ -63,6 +64,7 @@
     "work_memory": {
       "desc": "工作記憶區 — AgentCommands/WorkMemory/<topic>/*.md（所有 agent 共用, 每工作主題的拍板/坑/現況/指路; 開工前語意查 knowhow）",
       "kind": "markdown",
+      "half_life_days": 90,
       "globs": [
         "data:WorkMemory/*/decision_*.md",
         "data:WorkMemory/*/knowhow_*.md",
@@ -79,6 +81,7 @@
       "id": "frag_per_persona",
       "desc_tpl": "個人碎片（單 persona 索引）— letters/{name}/fragments/*.md；載入與重建成本只跟自己的碎片量有關",
       "kind": "markdown",
+      "half_life_days": 90,
       "enumerate_dirs": "data:ChatTavern/baton/letters/*/fragments",
       "owner_dir_index": -2,
       "name_tpl": "frag_{name}",

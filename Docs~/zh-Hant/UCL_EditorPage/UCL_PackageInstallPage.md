@@ -1,11 +1,11 @@
 ---
 title: UCL_PackageInstallPage — 套件安裝頁
-description: 外部工具的偵測與安裝（目前：Unity 官方 CLI）—— 看裝了沒、哪一版，一鍵開官方安裝指令。入口在 ToolBox「環境安裝」組。
+description: 外部工具的偵測與安裝（目前：Unity 官方 CLI、Unity Pipeline 套件）—— 看裝了沒、哪一版，一鍵開官方安裝指令。入口在 ToolBox「環境安裝」組。
 source_files: |
   UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_PackageInstallPage.cs
   UCL_Core_Scripts/EditorCore/PackageInstall/UCL_UnityCliInstaller.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-10-03 (新頁；第一項 Unity CLI)
+last_updated: 2026-10-03 (新頁；Unity CLI＋Pipeline 套件)
 target_audience: [AI_Agent, Tools_Maintainer]
 tags: [editor-page, install, unity-cli]
 related:
@@ -53,7 +53,28 @@ related:
 - `Probe()` ⇒ `Found=False`（本機確實沒裝 CLI）、`WingetFound=True`、`SkippedEditors=[]`。
 - `IsUnityEditorExe`：Hub 安裝的 `…\6000.3.5f2\Editor\Unity.exe` ⇒ `True`；`WindowsApps\winget.exe` ⇒ `False`。
 - ⚠ 未驗：安裝鈕實跑（會真的下載安裝）、裝好之後的版本讀取、頁面實際繪製。
+- 同日 Tim 用 winget 裝好 CLI 之後：`Probe()` ⇒ `Found=True`、`WindowsApps\unity.exe`、`1.0.0-beta.12` ⇒ 「裝好之後的版本讀取」補驗。
+- Pipeline：`InstalledVersion()` ⇒ `0.8.0-exp.1`；頁面會組出的 `command editor_status --project-path …` 在 shell 原樣跑 ⇒ exit 0、`ready`；
+  已安裝時再跑 `pipeline install` ⇒ manifest／lock 的 md5 前後一致（不會亂改檔）。⚠ 頁面按鈕本身與繪製仍未實點。
 
-## 5. 之後要加東西
+## 5. Unity Pipeline 套件區塊（`com.unity.pipeline`）
 
-在本頁加一個 `Draw<X>Panel`，偵測／安裝邏輯放 `EditorCore/PackageInstall/` 的獨立類別。候選：`com.unity.pipeline` 套件（CLI 控制 Editor 的前提，會改 `Packages/manifest.json`）。
+CLI 連進正在跑的 Editor 的前提（Editor 內開 7800 埠）；沒裝時 `unity status` 回 `STATUS_NO_INSTANCES`。
+
+| 元件 | 做什麼 |
+|---|---|
+| 標題列 | 已解析到的版本（`PackageInfo.FindForPackageName`），沒裝顯示「未安裝」 |
+| 🔄 重新讀取 | 重讀版本（首幀讀一次，⛔ 不每幀讀） |
+| ⬇ 安裝 | 沒裝時出現：`unity pipeline install --project-path <專案根> --non-interactive` |
+| ⤴ 升級 | 已裝時出現：`unity pipeline upgrade …`（有新版才升） |
+| 🔌 測試連線 | `unity command editor_status`；不改檔 ⇒ 不跳確認 |
+
+- 三個動作都**透過上方的 Unity CLI** 執行 ⇒ CLI 沒找到時停用。
+- 安裝／升級**會改 `Packages/manifest.json` 與 `packages-lock.json`（進版控）**，確認彈窗會講；在背景跑（非互動），輸出原文顯示在本頁，成功後呼叫 `PackageManager.Client.Resolve()`（Editor 失焦時不一定會自己讀新 manifest）。
+- 版本由 CLI 決定 —— 不用 `Client.Add` 寫死名稱或版本（套件是實驗版，2026-10-03 為 `0.8.0-exp.1`）。
+- 為什麼連線測試用 `editor_status` 不用 `unity status`：前者經過 Editor 主執行緒（主執行緒凍 10 秒時它卡 10.39 秒），後者凍住時照回 `ready`。讀數見 `Plan_Unity_CLI_Evaluation.md` §5.1。
+- ⚠ 連線測試必須在背景執行緒等：`editor_status` 要 Editor 主執行緒回答，在主執行緒上同步等它是自己等自己。
+
+## 6. 之後要加東西
+
+在本頁加一個 `Draw<X>Panel`，偵測／安裝邏輯放 `EditorCore/PackageInstall/` 的獨立類別。

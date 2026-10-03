@@ -1,7 +1,7 @@
 ---
 title: Unity 官方 CLI 評估 —— 編譯排錯與 Editor 存活訊號能不能改走 `unity` CLI
 slug: unity-cli-evaluation
-status: draft（2026-10-03 只讀過官方文件，**本機沒有裝 CLI、沒有任何實測**；下一步是 §5 的 spike）
+status: draft（2026-10-03 上午讀官方文件；同日中午在 Bar 實測完，讀數見 §5 —— **心跳不能被取代；編譯觸發可以改走 Editor 端 `recompile`**）
 created_at: 2026-10-03T03:30:00Z
 created_by: basecamp
 last_updated: 2026-10-03
@@ -14,7 +14,8 @@ related:
 
 # Unity 官方 CLI 評估
 
-> 一句話：**可以用，但不取代心跳檔** —— 心跳照 TASK-0365 §E1 拆出來；CLI 先當第二條讀數，等 §5 三格量完再決定要不要接進 `unity-recompile`。
+> 一句話（2026-10-03 實測後）：**心跳不能被取代** —— 主執行緒凍 10 秒，`unity status` 每一筆都照回 `ready`；
+> **編譯觸發可以改走 CLI** —— 但要用 Editor 端的 `unity command recompile`＋`recompile_status`，⛔ 不是頂層的 `unity recompile`（失焦時回 `up_to_date`、沒編）。詳見 §5。
 
 ## 1. 背景
 
@@ -73,20 +74,49 @@ Senate 的專案頁與晚安流程每次刷新都要讀存活訊號，它們需�
 1. **心跳檔照 TASK-0365 §E1**：從酒保拆成獨立小元件、遷到 `<Unity 專案根>/Library/UCL/`。
 2. **`unity recompile` 當觸發端的候選**：它跟 `senate cmd unity-recompile` 做同一件事，而我們那支要經過自己的 AgentCommand 佇列（Editor 的 Cmd 系統要先載得起來）。
    - 可能的接法：`unity-recompile` 先試官方 CLI，exit `7`／沒裝時退回現行路徑；結果與 `unity-compile-status` 的讀檔對帳。
+   - ⚠ 實測後修正（§5.2）：要接的是 **`unity command recompile`＋輪詢 `recompile_status`**；頂層 `unity recompile` 在失焦時回 `up_to_date` 而沒編。
 3. **`unity status` 當第二條讀數**：只放在排錯流程裡 —— 心跳說停了，再問一次 CLI，用兩條讀數分辨「Editor 關了」「卡在編譯」「主執行緒凍住但 server 還在」。⛔ 不放進每次刷新都會跑的路徑。
 
-## 5. 下一步：spike（量完再決定）
+## 5. 實測讀數（2026-10-03，basecamp，Bar／Unity 6000.3.5f2／Windows）
 
-在這台 Windows、Bar 專案上裝 CLI 與 `com.unity.pipeline`，量下面幾格。
-📌 CLI 的安裝與版本偵測已做成 Editor 頁：工具集 →「🧰 環境安裝」→ 套件安裝（`UCL_PackageInstallPage`，2026-10-03）；Pipeline 套件還沒做進那頁。
+環境：Tim 用 winget 裝 CLI（`WindowsApps\unity.exe`，`1.0.0-beta.12`）；`unity pipeline install` 裝進 Bar ⇒ `com.unity.pipeline 0.8.0-exp.1`（**實驗版**，Tim：入版控）。
+裝之前 `unity status` ⇒ `STATUS_NO_INSTANCES`（沒有 Pipeline 就看不到任何 Editor）；裝完 ⇒ `port 7800／state ready`。
+取樣方法：一支 python 每 0.5 秒呼叫一次 CLI，同時讀 `_heartbeat.txt` 的年齡；主動作另開執行緒跑。腳本在當天的 scratchpad，⛔ 沒有入版控。
 
-- [ ] 編譯中、domain reload 中，`unity status --format json` 與 `unity recompile` 各回什麼（exit code＋輸出）
-- ~~Safe Mode 是否真的完全連不上~~ —— ⛔ 不量（Tim 2026-10-03：不開 Safe Mode）
-- [ ] 主執行緒凍住（例如一支 Cmd 卡 10 秒）時，`status` 回「活著」還是「連不上」—— 對照同時刻的心跳停跳台帳
-- [ ] 每次呼叫的耗時（`status`、`recompile` 各 10 次取中位數）
-- [ ] 反向對照：Editor 完全關閉時兩者都回「沒有 Editor」
+### 5.1 心跳：CLI 取代不了
 
-⚠ 裝套件會改 `Packages/manifest.json` 與 `packages-lock.json`（進版控）⇒ spike 前先問 Tim 要不要入版控，或只在本機試、試完還原。
+| 情境 | `_heartbeat.txt` 年齡 | `unity status` | `unity command editor_status` |
+|---|---|---|---|
+| 閒置（基準） | 0.0～0.5 s | `ready`，每次 **1.5～1.8 s**（多半是 CLI 啟動成本） | `ready`，約 1.6 s；內含自己的 `lastHeartbeat` |
+| 編譯＋domain reload（`senate cmd unity-recompile`，有原始碼變動） | 一度 2.54 s、4.04 s；台帳記 6.3 s＋6.9 s 兩段停跳 | **照回 `ready`**（同一刻） | —— |
+| 主執行緒 `Thread.Sleep(10000)`（`Cmd_Invoke`） | 一路爬到 **10.51 s**；台帳記 12.1 s 停跳 | **每一筆都回 `ready`**，1.3～1.7 s 回應 | 那一筆**卡了 10.39 s 才回來**，回來時 `lastHeartbeat` 已是新的 |
+
+⇒ `status` 的回應**不經過主執行緒**，量不到 Editor 卡住。
+⇒ `editor_status` 經過主執行緒：用「多久沒回應」能判斷卡住，但**回傳內容看不出來**，而且每次要 1.6 s、沒有停跳歷史。
+⇒ **心跳檔照 TASK-0365 §E1 保留**。`editor_status` 可以當排錯時的第二條讀數（加逾時：3 秒沒回＝主執行緒卡住）。
+
+### 5.2 編譯：要用 Editor 端的 `recompile`，不是頂層那支
+
+| 呼叫 | 檔案有變動、Editor 失焦時 | 讀數 |
+|---|---|---|
+| 頂層 `unity recompile` | ⚠ **回 `up_to_date`、沒編**（同一份內容變動，`senate cmd unity-recompile` 隨後抓到 `stale_sources=1` 並編譯） | 第一次曾回 `completed`（4.8 s），之後兩次都是 `up_to_date` —— 第一次為什麼會編，未查 |
+| `unity command recompile` → 輪詢 `recompile_status` | ✅ **兩次都真的編了**：`compiling→completed` 5.7 s；`triggered→compiling→completed` 15.9 s；台帳同時記到停跳 | 描述寫「works while unfocused/minimized」 |
+| 同上，故意放 `#error` | ✅ `failed=true`、`errors=["…UCL_UnityCliInstaller.cs(211,8): error CS1029: #error: …"]`（**有檔案＋行號＋錯誤碼**）；`console_status.groundTruth.compilationFailed=true` | 還原後再編一次 ⇒ `failed=false` |
+| 頂層 `unity recompile --focus` | 沒測 —— 它會**把 Editor 搶到前景**，不適合在使用者工作時用 | |
+
+⇒ `senate cmd unity-recompile` 的觸發端可以改成「`unity command recompile`＋輪詢 `recompile_status`」，不必經過我們自己的 AgentCommand 佇列；錯誤清單也拿得到。
+⚠ 但它只在 **CLI＋Pipeline 都裝了**的機器上成立（LY 那台還沒有）⇒ 接的時候要保留現行路徑當退路。
+
+### 5.3 順便量到的
+
+- CLI 透過 Pipeline 曝露約 200 支 Editor 指令。跟我們 ucmd 重疊的：`eval`／`eval_file`／`run_script`（≈ `Cmd_Invoke`，而且能跑任意 C#）、`console`／`console_status`（讀 Console）、`menu`（執行選單）、`set_autotick`（失焦時也讓 Editor 持續 tick）。⛔ 都還沒評估要不要換。
+- 我們的 `unity-compile-status` 在「還原成跟上一次編譯一模一樣的內容」時會誤報「1 個 .cs 比組件新」—— Unity 編完內容相同就不重寫 DLL，而新鮮度是用 mtime 比的。這是既有的限制，跟 CLI 無關。
+- 每次 CLI 呼叫都有約 1.5 s 的啟動成本 ⇒ ⛔ 不放進每次刷新都會跑的路徑（Senate 專案頁、晚安流程）。
+
+### 5.4 還沒量的
+
+- Editor 完全關閉時兩者各回什麼（反向對照）—— 要關 Editor，依「不驗需要關 Editor 的功能」暫緩。
+- 頂層 `unity recompile` 第一次為什麼會編。
 
 ## 6. 出處
 

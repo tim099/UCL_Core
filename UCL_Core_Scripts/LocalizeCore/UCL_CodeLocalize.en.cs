@@ -65,7 +65,7 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ProcessAdmin" => "Process Admin",
                 "ToolBox.ProcessAdmin.Desc" => "Inspect and manage external processes spawned from C# (identity verified by PID + name + start time — prevents wrong kills and zombie pile-ups).",
                 "ToolBox.PackageInstall" => "Package Install",
-                "ToolBox.PackageInstall.Desc" => "Detect and install external tools (currently: the official Unity CLI) — see whether it is installed and which version, and launch the official installer in one click",
+                "ToolBox.PackageInstall.Desc" => "Detect and install external tools (currently: the official Unity CLI and the Unity Pipeline package) — see whether it is installed and which version, and launch the official installer in one click",
                 "ToolBox.TaskManager" => "Tasks & Projects",
                 "ToolBox.TaskManager.Desc" => "Cross-agent task tickets (one file per task) — commitments others wait on become Tasks; personal accountability stays in the keys file. Closing is blocked while any blocker is open; in_progress goes stale after 14 days.",
                 "ToolBox.Relationship" => "Relationship",

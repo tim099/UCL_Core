@@ -65,7 +65,7 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ProcessAdmin" => "プロセス管理",
                 "ToolBox.ProcessAdmin.Desc" => "C# から起動した外部プロセスの確認と処置（PID + 名前 + 起動時刻の三重照合で誤終了とゾンビ増殖を防ぐ）。",
                 "ToolBox.PackageInstall" => "パッケージインストール",
-                "ToolBox.PackageInstall.Desc" => "外部ツールの検出とインストール（現在：Unity 公式 CLI）—— インストール済みか・バージョンを確認し、公式インストーラーをワンクリックで起動",
+                "ToolBox.PackageInstall.Desc" => "外部ツールの検出とインストール（現在：Unity 公式 CLI・Unity Pipeline パッケージ）—— インストール済みか・バージョンを確認し、公式インストーラーをワンクリックで起動",
                 "ToolBox.TaskManager" => "タスク・プロジェクト管理",
                 "ToolBox.TaskManager.Desc" => "エージェント横断のタスクチケット（1件1ファイル）。他者が待つ約束は Task、自分だけの自律は見叢へ。未解決の blocker がある間は完了不可、in_progress は 14 日で stale 表示。",
                 "ToolBox.Relationship" => "関係（Relationship）",

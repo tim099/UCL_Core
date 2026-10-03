@@ -1,6 +1,7 @@
 // 區塊職責：套件安裝頁 —— 把「這個專案的工作流要用到、但不在 Unity 專案裡」的外部工具收成一頁：
 //          看得到裝了沒、是哪一版、一鍵開官方安裝指令。
-// 物理意義：第一項是 Unity 官方 CLI（`unity`，Tim 2026-10-03 指派）。每一項一個折疊區塊，
+// 物理意義：目前兩項（Tim 2026-10-03 指派）：Unity 官方 CLI（`unity`，系統層）與 Unity Pipeline 套件
+//          （`com.unity.pipeline`，專案層，CLI 連進 Editor 的前提）。每一項一個折疊區塊，
 //          偵測與安裝邏輯住在各自的 installer 類別（本頁只畫 GUI、不碰 process 細節）。
 // 數值影響：開頁時偵測一次（唯讀）；安裝／更新只在使用者按下按鈕並在確認彈窗按「執行」之後才發生，
 //          而且是在獨立的 PowerShell 視窗裡跑（本頁不等它、不讀它的輸出）。
@@ -38,10 +39,27 @@ namespace UCL.Core.EditorLib.Page
         UnityCliProbeResult m_CliResult;   // 最近一次偵測結果
         string m_CliActionLine = "";       // 最近一次按鈕動作的回報（開了哪個視窗／為什麼沒開）
 
+        // ── Unity Pipeline 套件的畫面狀態 ──
+        bool m_PipelineVersionRead;        // 首幀讀一次（Package Manager API；⛔ 不每幀讀）
+        string m_PipelineVersion;          // 已解析到的版本；null＝沒裝
+        bool m_PipelineBusy;               // 安裝／升級／連線測試進行中 —— 期間三顆鈕停用
+        string m_PipelineBusyLabel = "";   // 進行中的是哪一件（畫面顯示用）
+        string m_PipelineResultTitle = ""; // 最近一次動作的一行結論
+        string m_PipelineResultBody = "";  // 最近一次動作的 CLI 原文輸出（不解讀）
+
         protected override void ContentOnGUI()
         {
             if (!m_CliProbed) StartCliProbe();
+            if (!m_PipelineVersionRead) ReadPipelineVersion();
             DrawUnityCliPanel();
+            GUILayout.Space(8);
+            DrawPipelinePanel();
+        }
+
+        void ReadPipelineVersion()
+        {
+            m_PipelineVersionRead = true;
+            m_PipelineVersion = UCL_UnityPipelineInstaller.InstalledVersion();
         }
 
         // 區塊職責：發一次背景偵測，完成後寫回畫面狀態
@@ -203,6 +221,124 @@ namespace UCL.Core.EditorLib.Page
                 new ButtonData("執行", () => { m_CliActionLine = iLaunch(); },
                     UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 0.85f, 0.5f))),
                 new ButtonData("取消"));
+        }
+
+        // ===========================================================
+        // 區塊：Unity Pipeline 套件（com.unity.pipeline）
+        // 物理意義：CLI 連進 Editor 的前提。安裝／升級**改的是本專案的 Packages/manifest.json**（進版控），
+        //          所以確認彈窗會把這件事講在最前面。
+        // ===========================================================
+
+        void DrawPipelinePanel()
+        {
+            using (new GUILayout.VerticalScope("box"))
+            {
+                bool aShow;
+                using (new GUILayout.HorizontalScope())
+                {
+                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "PipelineFold", 21, iDefaultValue: true);
+                    string aSummary = m_PipelineVersion == null
+                        ? "<color=orange>未安裝</color>"
+                        : $"<color=lime>{m_PipelineVersion}</color>";
+                    GUILayout.Label("<b>🔌 Unity Pipeline 套件</b>　" + aSummary, RichLabelStyle, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("🔄 重新讀取", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        m_PipelineVersionRead = false;   // 下一幀重讀
+                    }
+                    if (GUILayout.Button("📖 官方文件", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                    {
+                        Application.OpenURL(UCL_UnityPipelineInstaller.DocUrl);
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aShow) return;
+
+                GUILayout.Label($"`{UCL_UnityPipelineInstaller.PackageName}`：在 Editor 內開 7800 埠，讓 Unity CLI 連進正在跑的 Editor" +
+                                "（`unity status`、`unity command recompile`…）。⚠ 官方標為實驗版；安裝／升級會改本專案的 " +
+                                "Packages/manifest.json 與 packages-lock.json（進版控）。",
+                    WrapLabelStyle);
+                GUILayout.Space(4);
+
+                bool aCliReady = m_CliResult.Found && !m_CliProbing;
+                using (new UnityEditor.EditorGUI.DisabledScope(m_PipelineBusy || !aCliReady))
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (m_PipelineVersion == null)
+                    {
+                        if (GUILayout.Button("⬇ 安裝（unity pipeline install）", UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 0.85f, 0.5f)),
+                                GUILayout.ExpandWidth(false)))
+                        {
+                            ConfirmPipeline("安裝 Unity Pipeline 套件？", "pipeline install", "安裝",
+                                () => UCL_UnityPipelineInstaller.InstallAsync(m_CliResult.ExePath));
+                        }
+                    }
+                    else
+                    {
+                        if (GUILayout.Button("⤴ 升級（unity pipeline upgrade）", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            ConfirmPipeline("升級 Unity Pipeline 套件？", "pipeline upgrade", "升級",
+                                () => UCL_UnityPipelineInstaller.UpgradeAsync(m_CliResult.ExePath));
+                        }
+                    }
+                    using (new UnityEditor.EditorGUI.DisabledScope(m_PipelineVersion == null))
+                    {
+                        // 連線測試不改任何檔 ⇒ 不跳確認
+                        if (GUILayout.Button("🔌 測試連線（editor_status）", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
+                        {
+                            RunPipeline("測試連線", () => UCL_UnityPipelineInstaller.PingAsync(m_CliResult.ExePath)).Forget();
+                        }
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+                if (!aCliReady && !m_CliProbing)
+                {
+                    GUILayout.Label("（要先裝好上方的 Unity CLI —— 本區的動作都是透過 CLI 執行）", WrapLabelStyle);
+                }
+                if (m_PipelineBusy)
+                {
+                    GUILayout.Label($"⏳ {m_PipelineBusyLabel}中…（背景執行，不會卡住 Editor）", WrapLabelStyle);
+                }
+                if (!string.IsNullOrEmpty(m_PipelineResultTitle))
+                {
+                    GUILayout.Label(m_PipelineResultTitle, WrapLabelStyle);
+                    GUILayout.Label(m_PipelineResultBody, WrapLabelStyle);
+                }
+            }
+        }
+
+        // 確認彈窗 —— 會改 manifest 的動作才走這裡
+        void ConfirmPipeline(string iTitle, string iSubCommand, string iLabel,
+            System.Func<UniTask<UnityPipelineRunResult>> iRun)
+        {
+            UCL_OptionPage.Create(iTitle,
+                $"\"{m_CliResult.ExePath}\" {iSubCommand} --project-path \"{UCL_RepoPath.UnityProjectRoot}\" --non-interactive\n\n" +
+                "· 會修改本專案的 Packages/manifest.json 與 packages-lock.json（進版控 —— 記得一起提交）\n" +
+                "· 版本由 CLI 決定（官方標為實驗版）；完成後本頁會請 Package Manager 重新解析\n" +
+                "· 在背景執行，結果顯示在本頁",
+                new ButtonData("執行", () => RunPipeline(iLabel, iRun).Forget(),
+                    UCL_GUIStyle.GetButtonStyle(new Color(0.5f, 0.85f, 0.5f))),
+                new ButtonData("取消"));
+        }
+
+        // 區塊職責：跑一個 Pipeline 動作，寫回結論與原文輸出，最後重讀已安裝版本
+        async UniTaskVoid RunPipeline(string iLabel, System.Func<UniTask<UnityPipelineRunResult>> iRun)
+        {
+            if (m_PipelineBusy) return;
+            m_PipelineBusy = true;
+            m_PipelineBusyLabel = iLabel;
+            try
+            {
+                var aRes = await iRun();
+                m_PipelineResultTitle = aRes.Ok
+                    ? $"✅ {iLabel}完成（{aRes.Seconds:0.0} 秒）"
+                    : $"❌ {iLabel}失敗：exit {aRes.ExitCode}（{aRes.Seconds:0.0} 秒）";
+                m_PipelineResultBody = aRes.Output ?? "";
+            }
+            finally
+            {
+                m_PipelineBusy = false;
+                m_PipelineVersionRead = false;   // 裝完／升完版本可能變了 —— 下一幀重讀
+            }
         }
 
         GUIStyle m_WrapLabelStyle;

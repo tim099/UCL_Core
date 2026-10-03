@@ -65,7 +65,7 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.ProcessAdmin" => "Process 管理",
                 "ToolBox.ProcessAdmin.Desc" => "查看与处置 C# 开出去的外部 process（PID + 名称 + 启动时间三重身份验证，防误杀、防僵尸潮）。",
                 "ToolBox.PackageInstall" => "套件安装",
-                "ToolBox.PackageInstall.Desc" => "外部工具的检测与安装（目前：Unity 官方 CLI）—— 看装了没、哪一版，一键打开官方安装命令",
+                "ToolBox.PackageInstall.Desc" => "外部工具的检测与安装（目前：Unity 官方 CLI、Unity Pipeline 套件）—— 看装了没、哪一版，一键打开官方安装命令",
                 "ToolBox.TaskManager" => "任务与项目管理",
                 "ToolBox.TaskManager.Desc" => "跨 agent 任务单（一单一档）—— 跨人承诺建 Task、个人自律留见丛。blocker 未解不给结单，in_progress 超过 14 天自动标 stale。",
                 "ToolBox.Relationship" => "关系（Relationship）",

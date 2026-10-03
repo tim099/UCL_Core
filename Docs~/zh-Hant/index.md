@@ -98,7 +98,7 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 |---|---|
 | 👋 [UCL_WelcomePage](UCL_EditorPage/UCL_WelcomePage.md) ⭐ | **歡迎/總覽頁** — 首次安裝自動彈出，介紹 UCL_Core 主要功能與快速跳轉按鈕；可從選單 `UCL → Welcome` 隨時開啟 |
 | [UCL_AgentCommandsPage](UCL_EditorPage/UCL_AgentCommandsPage.md) ⭐ | Agent Command 主頁面（隊列管理 / 新增 / Run Pending / Export Catalog）|
-| [UCL_PackageInstallPage](UCL_EditorPage/UCL_PackageInstallPage.md) | 外部工具的偵測與安裝（目前：Unity 官方 CLI）—— 看裝了沒、哪一版，一鍵開官方安裝指令。入口在 ToolBox「環境安裝」組。 |
+| [UCL_PackageInstallPage](UCL_EditorPage/UCL_PackageInstallPage.md) | 外部工具的偵測與安裝（目前：Unity 官方 CLI、Unity Pipeline 套件）—— 看裝了沒、哪一版，一鍵開官方安裝指令。入口在 ToolBox「環境安裝」組。 |
 | [UCL_BartenderAdminPage](UCL_EditorPage/UCL_BartenderAdminPage.md) | 集中管理酒保報時、時間提醒與 daemon 執行狀態的 Editor 後台。 |
 | [UCL_DiscordSettingsPage](UCL_EditorPage/UCL_DiscordSettingsPage.md) | ⛔ **已移除（2026-09-28）** —— Discord 設定改在 Senate 後台（`senate ui --page discord-bot`）。 |
 | [UCL_MissingReferencePage](UCL_EditorPage/UCL_MissingReferencePage.md) | **Missing Reference 排查／修復** — 掃出「欄位指著已刪除物件」與「缺腳本 Component」並可就地清空／移除。⚠ 乾淨的 null 與斷掉的引用在 Inspector 上都畫成 None，只有後者會炸；⛔ 不宣稱能修 Odin/PropertyEditor 那條 NRE |

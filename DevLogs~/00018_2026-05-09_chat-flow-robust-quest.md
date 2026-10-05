@@ -111,12 +111,6 @@ Convention：`<base><id>.png` from UCL_Core repo Templates~ 路徑
 ### R6.5 Queue-idle work-log embed cards
 單 POST 含 ≤10 embeds — 每 done task 一張卡：author（含 actor 頭像）+ ✅ title + 💁 R6.1 summary + ⏱ duration / 🆔 task_id / 📋 plan fields。
 
-### R6.6 Hybrid C# spawn — 即時 + 兜底（穩定性最高）
-- C# `Op_Post` 後 `Process.Start("python notify_discord.py --mode tavern", fire-and-forget)` → ~1s broadcast
-- Stop hook 仍跑 `--mode all` 兜底
-- 共用 `_tavern_state.json` last_seen_seq → idempotent 防 double-send
-- async drain stdout/stderr 防 buffer block child
-
 ### Multi-webhook broadcast
 `webhook_urls` (list) → 每筆 POST 到所有 URL；任一 OK = OK。配 ENV `PROMPTQUEUE_DISCORD_WEBHOOK` / `_discord_webhook.txt` 三來源 resolution。CLI helpers：`--add-webhook` / `--add-tavern-webhook` / `--list-webhooks` / `--list-tavern`。
 

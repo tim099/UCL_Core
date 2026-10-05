@@ -4,7 +4,7 @@ slug: persona-registry-retirement
 status: **Phase 0-1 ＋ §8.1 已完工**（2026-08-19）；Phase 2 觀察期進行中，Phase 3-4 未動
 created_at: 2026-08-18T13:55:00Z
 created_by: calli
-last_updated: 2026-10-01
+last_updated: 2026-10-05
 builders: [summit（Phase 0／§8.5-8.7）, kiara（Phase 1／§8.1／消費端收斂／Phase 2 觀察）]
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
@@ -71,7 +71,7 @@ related:
 | `Cmd_LoginStatus.cs` / `UCL_LoginStatusPage.cs` | 登入狀態頁 pool 列表 | `layer_role` `last_active` `status` `wake_count` |
 | `UCL_PersonaInspectorPage.cs` | 全欄位檢視（含 vector_history / last_session_keys） | 幾乎全部 |
 | `UCL_PersonaAgentAdminPage.cs` | 建 persona／fork／換綁 agent／同步角色卡 | 幾乎全部（**寫入端**） |
-| `UCL_ChatTavernPersonaCardAsset.cs` / `UCL_ChatTavernAdminPage.cs` | 角色卡 ↔ persona 對應、孤兒卡偵測 | 檔名 + `layer_role` |
+| `UCL_ChatTavernPersonaCardAsset.cs` | 角色卡 ↔ persona 對應、孤兒卡偵測 | 檔名 + `layer_role` |
 | `UCL_ChatTavernIO.cs` | persona pool id 集合（inbox 分流） | **只要檔名**，不讀內容 |
 | `UCL_RelationshipIO.cs` | 關係對象名的次要來源 | 只要檔名 |
 
@@ -241,8 +241,7 @@ letters/<persona>/
   **沒有任何 python 讀取端還直指 legacy。**
 - **C# 端剩下的命中都有主**：`UCL_BankAdminPage`（§4.1 刻意擋著，跟正向鏈退場一起收）、
   `UCL_PersonaAgentAdminPage`（建人／改名的**寫入**落點）、
-  `UCL_PersonaInspectorPage`（只用路徑開檔案總管，不讀欄位）、
-  `UCL_ChatTavernAdminPage`（pool 名單 —— 即 Phase 3 卡點②，`PoolNames` 依 summit 拍板不動）。
+  `UCL_PersonaInspectorPage`（只用路徑開檔案總管，不讀欄位）。
 
 ⚠ 這個手法抓不到反射／字串拼接／外部腳本（§5.2 已載明）—— 它證明的是「寫在 code 裡的路徑」，
 不是「執行期沒人碰」。後者的判準仍是 Phase 2 觀察期。

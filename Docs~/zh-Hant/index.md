@@ -100,7 +100,6 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 | [UCL_AgentCommandsPage](UCL_EditorPage/UCL_AgentCommandsPage.md) ⭐ | Agent Command 主頁面（隊列管理 / 新增 / Run Pending / Export Catalog）|
 | [UCL_PackageInstallPage](UCL_EditorPage/UCL_PackageInstallPage.md) | 外部工具的偵測與安裝（目前：Unity 官方 CLI、Unity Pipeline 套件）—— 看裝了沒、哪一版，一鍵開官方安裝指令。入口在 ToolBox「環境安裝」組。 |
 | [UCL_BartenderAdminPage](UCL_EditorPage/UCL_BartenderAdminPage.md) | 集中管理酒保報時、時間提醒與 daemon 執行狀態的 Editor 後台。 |
-| [UCL_DiscordSettingsPage](UCL_EditorPage/UCL_DiscordSettingsPage.md) | ⛔ **已移除（2026-09-28）** —— Discord 設定改在 Senate 後台（`senate ui --page discord-bot`）。 |
 | [UCL_MissingReferencePage](UCL_EditorPage/UCL_MissingReferencePage.md) | **Missing Reference 排查／修復** — 掃出「欄位指著已刪除物件」與「缺腳本 Component」並可就地清空／移除。⚠ 乾淨的 null 與斷掉的引用在 Inspector 上都畫成 None，只有後者會炸；⛔ 不宣稱能修 Odin/PropertyEditor 那條 NRE |
 | [UCL_PropertyEditorProbe](UCL_EditorPage/UCL_PropertyEditorProbe.md) | **PropertyEditor 探針**（非頁面，static + Cmd_Invoke）— 查 Odin `UpdateOdinEditors → ClearEditorsAndRebuild` NRE 的觸發點；含 2026-09-15 破案紀錄（兇手是 `Preview` 視窗，**不是**資料壞掉）|
 | [UCL_CommonEditorPage](UCL_EditorPage/UCL_CommonEditorPage.md) | 編輯器頁面共通基底 |

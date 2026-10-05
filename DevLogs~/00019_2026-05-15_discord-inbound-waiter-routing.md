@@ -55,8 +55,6 @@ Discord channel → discord.py 2.x gateway (MESSAGE_CREATE)
 discord_inbound_bot.py (Python daemon, 跑 Unity Editor child process)
     ↓ subprocess run_cmd.py op=post (走 Cmd_Tavern 單一寫者)
 ChatTavern messages (sender_id=discord:<uid>, meta.source=discord)
-    ↓
-notify_discord.py tavern_mirror → 跳過 (防迴圈)
 ```
 
 進程模型：`RCG_DiscordInboundDaemon` ([InitializeOnLoadMethod]) tick 5s → spawn python child → child 連 gateway → on_message 走 run_cmd.py 寫 tavern。Editor 退出 / domain reload → graceful kill child。連 3 fail → 60s backoff 防 crash loop。
@@ -157,16 +155,6 @@ return raw[:limit]
 
 → work_session.py / waiter_session.py / discord_inbound_bot.py 三個 Python caller 全部受惠。
 
-#### E3. Echo Loop (Discord → tavern → mirror → Discord)
-
-`notify_discord.py` 的 `exclude_meta_source=["discord"]` filter 走 `meta.get("source")`。E2 修之前 meta 被切爛 → `meta.source` 取不到 → filter 失效 → mirror 又把 inbound 推回 Discord → 同條訊息 Discord 端出現兩次。
-
-修：加 **`exclude_sender_prefix=["discord:"]`** 副防線。即使 meta 完整性壞掉，純看 sender_id 開頭擋。雙閘門設計：
-1. **主防線** `exclude_meta_source: ["discord"]` （E2 修了之後可靠）
-2. **副防線** `exclude_sender_prefix: ["discord:"]` （prefix match，不依賴 meta）
-
-任一 hit 就 skip → 任何未來 ParseMeta 或寫入端 bug 也擋得住。
-
 #### E4. Discord sender_id 顯示為 raw uid
 
 `Cmd_Tavern.Op_Post` 完全忽略 bot 傳的 `--arg sender_name`，走 `identities.json find(id=sender_id)` lookup；miss 時 fallback sender_id 當 display name → tavern 顯示 `discord:383604378185105408` 不是 `Tim`。
@@ -239,8 +227,8 @@ Get-CimInstance Win32_Process -Filter "name='python.exe' AND CommandLine LIKE '%
 
 ### 2. `notify_config.json` 新增兩個 mirror filter 欄位
 
-- `exclude_meta_source: ["discord"]` (E2 / E3 fix)
-- `exclude_sender_prefix: ["discord:"]` (E3 副防線)
+- `exclude_meta_source: ["discord"]` (E2 fix)
+- `exclude_sender_prefix: ["discord:"]` (副防線)
 
 預設值已寫進 DEFAULT_CONFIG，新 project 自動有。既有 project 不會自動加 — 沒設等同空 list（不 filter）。建議手動補。
 

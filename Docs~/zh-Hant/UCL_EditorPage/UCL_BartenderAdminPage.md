@@ -3,14 +3,13 @@ title: UCL_BartenderAdminPage — 酒保管理頁
 description: 集中管理酒保報時、時間提醒、daemon 狀態與 runtime-only 遠端視窗協作的 Editor 後台。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/UCL_BartenderAdminPage.cs
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-09-29 (關鍵字留言區塊移除 —— 功能廢棄，Tim 拍板) | 2026-09-28 (執行狀態不再顯示跨日檢查日期 —— 每日結算已搬到 Senate Server，TASK-0315) | 2026-08-19 (新增酒館 CLI：cmd help / remote-window / msg 群發，含白名單與二次確認)
+last_updated: 2026-10-05
 target_audience: [AI_Agent, Developer, Designer]
 aliases: [bartender admin, 酒保後台, 酒保報時, time rules]
 tags: [chat-tavern, bartender, editor]
 related:
   - ucl_core:UCL_Core_Scripts/EditorCore/UCL_AgentCommands/Bartender/UCL_BartenderDaemon.cs | UCL_BartenderDaemon | 酒保常駐掃描與發話實作
   - ucl_core:UCL_Core_Scripts/EditorCore/UCL_AgentCommands/Bartender/UCL_BartenderIO.cs | UCL_BartenderIO | triggers/time_rules/state 的唯一讀寫點
-  - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernAdminPage.md | UCL_ChatTavernAdminPage | Discord 雙向同步管理頁；與本頁的酒保自動廣播分工
   - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_BartenderTimeRulePage.md | UCL_BartenderTimeRulePage | 時間規則編輯子頁（2026-08-03 自本頁抽離, 顯式存檔）
 ---
 

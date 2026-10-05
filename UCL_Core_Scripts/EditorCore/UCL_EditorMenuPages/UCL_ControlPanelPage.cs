@@ -72,8 +72,6 @@ namespace UCL.Core.EditorLib.Page
 
             DrawChatTavernSystemSection();
             GUILayout.Space(8);
-            DrawTavernAdminSection();
-            GUILayout.Space(8);
             GUILayout.Space(8);
             DrawBartenderAdminSection();
             GUILayout.Space(8);
@@ -215,33 +213,6 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Label("身分兩層管理：建立 agent（帳號層，同時登記對應 bank／可帶種子額度）、建立 persona（人格層，"
                     + "可選 fork 來源複製 identity_vector 與血統）、persona 換綁 agent（只改歸屬，vector／wake_count 保留）。",
                     UCL_GUIStyle.LabelStyle);
-            }
-        }
-
-        // ===========================================================
-        // 區塊：酒館後台管理入口（Tim 2026-07-15 拍板）
-        // 物理意義：push UCL_ChatTavernAdminPage —— 訊息檔名 migration／渲染筆數參數／底層檔案。
-        //          ⛔ 2026-09-28（TASK-0316）起不再有 Discord 的東西（Unity 端 Discord In／Out 全面退場，改在 Senate）。
-        // ===========================================================
-        void DrawTavernAdminSection()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                bool aShow;
-                // header：折疊鈕 + 標題 + **開啟管理頁（關鍵操作）提到折疊外層**
-                using (new GUILayout.HorizontalScope())
-                {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "TavernAdminFold", 21, iDefaultValue: true);
-                    GUILayout.Label("<b>🍺 酒館後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    if (GUILayout.Button("開啟酒館後台管理頁", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
-                    {
-                        UCL_ChatTavernAdminPage.Create();
-                    }
-                    GUILayout.FlexibleSpace();
-                }
-
-                if (!aShow) return;
-                GUILayout.Label("訊息檔名 migration、渲染筆數參數、底層檔案。⛔ Discord 設定已移到 Senate 後台（senate ui --page discord-bot／discord-webhooks／discord-relay）。", UCL_GUIStyle.LabelStyle);
             }
         }
 

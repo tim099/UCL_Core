@@ -3,7 +3,7 @@
 # DO NOT EDIT BY HAND - re-run "Tools/UCL/Generate All Localized Docs Manifests" instead.
 # Module: UCL_Core (prefix=ucl_core)
 # Source: ucl_core:Docs~
-# Entries: 183
+# Entries: 172
 Docs~/zh-Hant/API/BartenderCli/CliAction_Msg.md
 Docs~/zh-Hant/API/BartenderCli/CliAction_PostText.md
 Docs~/zh-Hant/API/BartenderCli/CliAction_RemoteWindow.md
@@ -60,8 +60,6 @@ Docs~/zh-Hant/FreeTime/Activities/sculpt-3d.md
 Docs~/zh-Hant/FreeTime/Activities/stream-watch.md
 Docs~/zh-Hant/FreeTime/Activities/tavern-creative.md
 Docs~/zh-Hant/FreeTime/Activities/trpg.md
-Docs~/zh-Hant/Mechanics/Discord_Channel_Routing.md
-Docs~/zh-Hant/Mechanics/Discord_Tavern_Mirror.md
 Docs~/zh-Hant/Mechanics/FreeTime_System.md
 Docs~/zh-Hant/Mechanics/Portraits_System.md
 Docs~/zh-Hant/Mechanics/TRPG_Lite_RuleBook.md
@@ -84,6 +82,7 @@ Docs~/zh-Hant/Plan/Plan_ScreenStream_Recording_Mode.md
 Docs~/zh-Hant/Plan/Plan_StreamWatch_Cmd.md
 Docs~/zh-Hant/Plan/Plan_StreamWatch_Hotspot_And_Optimizations.md
 Docs~/zh-Hant/Plan/Plan_Task_Management_System.md
+Docs~/zh-Hant/Plan/Plan_Unity_CLI_Evaluation.md
 Docs~/zh-Hant/Plan/Plan_Voucher_Wallet_Migration.md
 Docs~/zh-Hant/Plan/Plan_Worldlines_Parallel_Memory.md
 Docs~/zh-Hant/Plan/SerializeReference_Symmetry_Plan.md
@@ -105,10 +104,8 @@ Docs~/zh-Hant/UCL_EditorPage/UCL_AgentSkillManagerPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_BartenderAdminPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_BartenderCliCommandsPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_BartenderTimeRulePage.md
-Docs~/zh-Hant/UCL_EditorPage/UCL_ChatTavernAdminPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_ChatTavernPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_CommonEditorPage.md
-Docs~/zh-Hant/UCL_EditorPage/UCL_DiscordSettingsPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_DocSearchPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_GitFlattenSyncPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_GitSubmoduleSyncPage.md
@@ -120,6 +117,7 @@ Docs~/zh-Hant/UCL_EditorPage/UCL_MissingReferencePage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_ModuleEditPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_ModulePlayListPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_ModuleServiceEditPage.md
+Docs~/zh-Hant/UCL_EditorPage/UCL_PackageInstallPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_PersonaInspectorPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_ProcessAdminPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_PropertyEditorProbe.md

@@ -3,7 +3,7 @@ title: 建立新的 UCL_CommonEditorPage 子類工作流
 description: 步驟化 SOP — 從零開出一頁可被 GUIPageController 推送的 Editor 頁面。涵蓋繼承關係、必/選 override、入口點掛接、**區塊折疊與排版守則（按鈕靠左、單排、關鍵操作提到折疊外）**、狀態快取分層、樣式選用、與 12 條實戰地雷。
 source_root: Assets/Plugins/UCL_Core/UCL_Core_Scripts/EditorCore/UCL_EditorMenuPages/
 namespace: UCL.Core.EditorLib.Page
-last_updated: 2026-09-15
+last_updated: 2026-10-05
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [Create EditorPage, UCL_CommonEditorPage workflow, 寫新 editor 頁, editor page 排版, 折疊守則]
 tags: [workflow, editor, ui, imgui, layout, fold]
@@ -158,7 +158,7 @@ protected override void TopBarButtons()
 ### 4.2 標準 header 寫法（照抄這個）
 
 ```csharp
-void DrawTavernAdminSection()
+void DrawBartenderAdminSection()
 {
     using (new GUILayout.VerticalScope("box"))
     {
@@ -166,18 +166,18 @@ void DrawTavernAdminSection()
         // header 一排：折疊鈕 → 標題 → 關鍵操作按鈕 → FlexibleSpace 收尾
         using (new GUILayout.HorizontalScope())
         {
-            aShow = UCL_GUILayout.Toggle(m_FoldDic, "TavernAdminFold", 21, iDefaultValue: true);
-            GUILayout.Label("<b>🍺 酒館後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-            if (GUILayout.Button("開啟酒館後台管理頁", UCL_GUIStyle.GetButtonStyle(Color.cyan), GUILayout.ExpandWidth(false)))
+            aShow = UCL_GUILayout.Toggle(m_FoldDic, "BartenderAdminFold", 21, iDefaultValue: false);
+            GUILayout.Label("<b>🍺 酒保後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            if (GUILayout.Button("開啟酒保管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.9f, 0.75f, 0.45f)), GUILayout.ExpandWidth(false)))
             {
-                UCL_ChatTavernAdminPage.Create();
+                UCL_BartenderAdminPage.Create();
             }
             GUILayout.FlexibleSpace();      // ← 一律最後
         }
         if (!aShow) return;                 // ← 收合就結束，內容不繪製
 
         // 折疊內：說明文字、低頻設定、明細列表
-        GUILayout.Label("Discord mirror 同步進度、persona 頭像 override、底層 config / state 檔案管理。",
+        GUILayout.Label("管理酒保報時、時間提醒、關鍵字留言、跨日檢查與目前掃描游標。",
             UCL_GUIStyle.LabelStyle);
     }
 }
@@ -266,7 +266,7 @@ readonly UCL_ObjectDictionary m_FoldDic = new UCL_ObjectDictionary();  // 折疊
 ```
 
 > [!CAUTION]
-> **血證（UCL_ChatTavernAdminPage, Tim QA 2026-07-29）**：折疊狀態原本跟 PopupSearchCache 共用同一個
+> **血證（Tim QA 2026-07-29）**：折疊狀態原本跟 PopupSearchCache 共用同一個
 > `UCL_ObjectDictionary`。`LoadData()` 內為了刷新下拉選項而呼 `m_Dic.Clear()`，**把折疊值一併清掉** →
 > 下一幀 `Toggle(..., iDefaultValue: true)` 讀不到既存值 → 退回預設 = **強制展開**。
 >
@@ -337,7 +337,7 @@ void LoadData()
 ### 6.2 ⚠ assembly 邊界：跨組件開頁要走反射
 
 > [!CAUTION]
-> **血證（2026-07-28）**：`UCL_ChatTavernAdminPage`（在 `UCL_Core` 組件）想加一顆鈕開 `UCL_SecretManagerPage`
+> **血證（2026-07-28）**：一個在 `UCL_Core` 組件裡的頁面想加一顆鈕開 `UCL_SecretManagerPage`
 > （在 `UCL_CoreEditor` 組件）。但 `UCL_CoreEditor.asmdef` **references `UCL_Core`** → 反向直接引用 = **循環依賴**，編不過。
 >
 > 解法：以型別全名反射開頁，找不到就 log warning + 按鈕 no-op（下游專案沒裝該模組也不會編不過）：
@@ -501,7 +501,6 @@ GUIStyle HeadingStyle => m_HeadingStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle
 | 頁面 | 看點 |
 |---|---|
 | `UCL_ControlPanelPage` | **本文 §4 折疊 + 關鍵操作提到外層的標準示範**；section 化、按鈕靠左單排 |
-| `UCL_ChatTavernAdminPage` | 五區塊折疊 + `m_FoldDic`/`m_Dic` 分層（§5.1 血證來源）+ 動態發現清單（stream 增刪）+ core 項目擋刪 + 二段確認 |
 | `UCL_ScreenStreamPage` | mtime 感知 reload + 欄位級 3-way merge（防外部併發改寫被蓋）+ 底圖疊比例框的視覺化預覽 |
 | `UCL_MediaAdminPage` | 薄 UI + 重活全委派外部 CLI（async spawn 不凍結 Editor）+ 「套用後回讀驗證」 |
 | `UCL_DocSearchPage` | 搜尋輸入列 Enter 觸發 + 折疊進階選項 + 結果列動作按鈕 |

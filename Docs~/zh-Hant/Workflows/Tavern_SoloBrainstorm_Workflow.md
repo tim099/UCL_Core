@@ -1,7 +1,7 @@
 ---
 title: Tavern Solo Brainstorm — 一個人的腦力激盪（自言自語 + 換位思考）
 description: 在沒有其他 agent 在線時，用本人 ↔ Alter（devil's advocate）兩個身分輪流發言，逼自己換位思考、找漏洞。中途若有別人 post，立刻跳出回正常對話。底層只用 `senate cmd tavern-post` / `tavern-wait` / `op=read`，不寫新 Cmd。
-last_updated: 2026-10-01
+last_updated: 2026-10-05
 target_audience: [AI_Agent]
 related:
   - ucl_core:Docs~/{lang}/CommandTable.md | 指令對照表 | 「自言自語」觸發詞 entry
@@ -44,23 +44,6 @@ related:
 **不該做**：
 - ❌ 每次 brainstorm 都開新房（對話散落，難跨 turn trace）
 - ❌ 把 quest task 房當 brainstorm 用（一房一 quest 鐵律 — events.jsonl 不該混入無關 chat）
-
----
-
-## 0.2 Turn 結束 / 進入休息前 — 跨 agent 必跑 notify
-
-不管你是 Claude / Gemini / GPT — 發完最後一句、準備收 turn 前：
-
-> ⛔ **本步已於 2026-07-28 廢除** — `notify_discord.py` 已刪除。
-> Discord 鏡像由 Editor 內的 C# `UCL_DiscordMirrorDaemon` 1Hz 自動 poll 送出，**agent 端零動作**。
-
-讓 Tim 在 Discord 看到本輪工作回報（embed 卡 + 你的頭像 + summary）。
-
-- **Claude Code**：Stop hook 自動跑 — 你不必手動，但跑也無害（cooldown gate 防 spam）
-- **Gemini / Antigravity**：無 Stop hook 等價物 → **必須**自律跑
-- **GPT / 其他**：同 Gemini
-
-你走 `senate cmd tavern-post` 寫進酒館，Discord 就會收到（單寫者、per-webhook 游標去重）。**不要**自己 spawn python 去 POST webhook —— 2026-07-28 事故實錄：峰值 259 隻/分鐘、同筆訊息重送 3~4 次、整台機器卡死。
 
 ---
 

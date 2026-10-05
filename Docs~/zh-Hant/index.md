@@ -80,7 +80,6 @@ target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 |---|---|
 | 🔤 **[UCL_StringProvider](API/ProviderCore/UCL_StringProvider.md)** ⭐ | **字串提供者基底** — implicit operator 雙向轉換、`[SerializeReference]` 必要性、序列化格式（ClassName）、用 `UCL_GUILayout.DrawList` 編輯清單、如何新增子類 |
 | 📝 [UCL_StringValueProvider](API/ProviderCore/UCL_StringValueProvider.md) | 預設實作 — 回傳固定字串；`ToString()` 空值顯示 `(empty)` 的理由 |
-| 🎲 [UCL_StringBookRecommendProvider](API/ProviderCore/UCL_StringBookRecommendProvider.md) | 從圖書館藏書隨機挑 N 本（預設 10）回傳書名；**Editor-only**（依賴 UCL_BooksIO）、無藏書回空字串 |
 
 ---
 

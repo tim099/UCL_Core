@@ -9,7 +9,6 @@ aliases: [string provider, 字串提供者, StringProvider]
 tags: [provider, serialize-reference, json]
 related:
   - ucl_core:Docs~/{lang}/API/ProviderCore/UCL_StringValueProvider.md | UCL_StringValueProvider | 預設實作（回傳固定字串）
-  - ucl_core:Docs~/{lang}/API/ProviderCore/UCL_StringBookRecommendProvider.md | UCL_StringBookRecommendProvider | 子類實例（隨機推薦藏書，Editor-only）
   - ucl_core:UCL_Core_Scripts/InterfaceCore/UCL_PolymorphicHelper.cs | UCL_PolymorphicHelper | 多型判定 SSOT（[SerializeReference] 是唯一觸發訊號）
 ---
 
@@ -25,8 +24,7 @@ related:
 
 ```
 UCL_StringProvider        (abstract)  ← 使用端宣告這個型別
-├── UCL_StringValueProvider           ← 預設實作：回傳 Inspector 指定的固定字串
-└── UCL_StringBookRecommendProvider   ← 隨機推薦 N 本藏書（Editor-only，住在 Books 旁邊）
+└── UCL_StringValueProvider           ← 預設實作：回傳 Inspector 指定的固定字串
 ```
 
 ## 2. 怎麼用

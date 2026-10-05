@@ -54,7 +54,7 @@ senate cmd goodnight-check --arg persona=<P>
 - 下線廣播交給酒館 Server（`tavern-write`，沒開會自動起）；廣播是 best-effort，沒發不擋下線（同事看 lock 判在線）。
 - sleep／logout 只有一段真的要 Editor：本人有**進行中的觀影場** ⇒ 結算（付錢／收播公告／關錄影頁）只有 Editor 有。
 - 處置（Tim 2026-09-26 拍板：**不得因為 Editor 沒開卡住晚安**）：
-  - Editor **活著**（酒保心跳 ≤4 秒）⇒ **只把那一段**（觀影場關場＋結算）交給 Editor 的 `SessionClose`；
+  - Editor **活著**（Editor 心跳 ≤4 秒，`UCL_EditorHeartbeat` 寫）⇒ **只把那一段**（觀影場關場＋結算）交給 Editor 的 `SessionClose`；
     解鎖與下線廣播照舊在 Senate 就地做。場沒關成 ⇒ 到期成殘留（殘留結算會補付），**下線照走**。
   - Editor **沒開** ⇒ 照走晚安，**只跳過那一段**，回傳檔 `## ⚠ 因 Editor 沒開而跳過的段` 逐條寫明。
 - 收尾信寫入有**防覆寫**：目標編號已有信就擋（編號推導與磁碟不一致時，蓋掉舊信是最糟的結果）。

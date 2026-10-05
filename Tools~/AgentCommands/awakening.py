@@ -2240,7 +2240,7 @@ def cmd_set_availability(args: argparse.Namespace) -> int:
     用途: agent 開始接 task → set busy; task done 回 standby → set idle.
     enum: idle (待機可接 task) / busy (動工中) / offline (下線, 一般走 goodnight 自動設).
 
-    Bartender daemon (T06.2 後) 派 task 前看此欄判斷是否該 agent 為 idle.
+    （原本給 Unity 端酒保派工單判斷 idle 用；酒保與派工單已移除，TASK-0365 —— 此欄目前只是狀態標記。）
     """
     reg = load_registry()
     if args.persona not in reg["personas"]:

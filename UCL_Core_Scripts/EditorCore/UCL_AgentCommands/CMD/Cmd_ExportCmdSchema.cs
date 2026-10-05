@@ -79,7 +79,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             sb.AppendLine($"- source_hash：`{r.SourceHash}`");
             sb.AppendLine();
             sb.AppendLine("Python 端 (`tavern_cmd.py`) 會讀這份產物做參數預檢；hash 不符時自動降級為不預檢。");
-            // _last_op.md 是 client 讀 cmd 結果的共用管道（Cmd_Bartender 亦然），
+            // _last_op.md 是 client 讀 cmd 結果的共用管道，
             // 實作住在 ChatTavern 子命名空間 → 此處完整限定，不為了一行加 using。
             UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
 

@@ -9,7 +9,7 @@
 //          回傳檔 letters/<persona>/cmd/streamwatch_<step>.md（路徑經 ReportOutputFile 進 result outputs）。
 // ⚠ 阻塞紀律（Tim 2026-08-15 指示 + WorkMemory/unitask-editor-async）：
 //   縮圖牆是外部 process，**一律 await Task.Run 包起來**，不得在主執行緒輪詢 WaitForExit。
-//   照抄 UCL_BartenderDaemon.RunBalanceQuery 會自動繼承它的同步性（那支因 out 參數不可能 async）。
+//   用 out 參數回傳的寫法天生不可能 async —— 照抄那種寫法會自動繼承它的同步性。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -2892,8 +2892,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         // ===========================================================
         // 區塊：縮圖牆合成 —— **非阻塞**（Tim 2026-08-15 指示）
         // 物理意義：外部 process 的等待丟 thread pool，await 回來自動落主執行緒。
-        // ⚠ 不可照抄 UCL_BartenderDaemon.RunBalanceQuery —— 那支用 out 參數 ⇒ 不可能 async，
-        //   內部 while+WaitForExit 是主執行緒輪詢（2026-07-26 加的是可取消，不是非阻塞）。
+        // ⚠ 不可用 out 參數＋內部 while+WaitForExit 的寫法 —— 那是主執行緒輪詢、不可能 async
+        //   （「可取消」不等於「非阻塞」）。
         // ⚠ async 化讓 out 參數消失 ⇒ 回 tuple；**呼叫端漏接 err 就是靜默失敗**，所以失敗必落回傳檔。
         // ===========================================================
         static async UniTask<(bool ok, string stdout, string err)> RunMontageAsync(

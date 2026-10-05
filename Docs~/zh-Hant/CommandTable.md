@@ -149,16 +149,6 @@ related:
 - **意圖**: 配置 Claude Code 的 `PostToolUse`（每次工具呼叫後早期警告）與 `Stop`（turn 結束前強制驗證）hooks，寫/改 UCL_Asset JSON 時自動觸發 schema 與 reference 驗證。
 - **必做**: 將 `<UCL_CORE>` 替換成實際相對路徑；執行 `install_skills.py` 確保 `.claude/skills/.ucl_installed` 標記存在。
 
-### 酒保時間規則 / 定時提醒
-- **觸發詞**: `酒保` / `bartender` / `提醒我睡覺` / `該睡了` / `熬夜提醒` / `sleep reminder` / `時間規則` / `time rule` / `定時提醒`
-- **對應 Workflow**: [Bartender_Workflow](ucl_core:Docs~/{lang}/Workflows/Bartender_Workflow.md) + spec [docs/Plan/Plan_Bartender_System.md](../../../../../../docs/Plan/Plan_Bartender_System.md)
-- **意圖**: 透過酒保 (tavern-keeper) daemon 註冊時間規則 (HH:mm reminder + 可選 HP penalty 累積廣播)。⚠ 關鍵字留言 trigger 已於 2026-09-29 廢棄（Tim 拍板）—— 「幫我留話給某人」沒有這條自動路徑了。
-- **必做**: 走 `Cmd_Bartender` (op=time_add / time_list / time_remove / status / tick)。
-- **不要做**: 不要塞太多時間規則造成 noise (每筆都會走 tavern 主頻道 + Discord mirror).
-- **自主判斷**:
-  - 熬夜偵測 + 自我抑制 → 提議 time_rule (e.g. default-sleep-2350)
-  - 用戶問「有什麼提醒」→ `op=time_list`
-
 ### 更新文件
 - **觸發詞**: `更新文件` / `同步文件` / `文件落後` / `update docs` / `sync docs` / `last_updated`
 - **對應 Workflow**: [Skills~/ucl-update-docs/SKILL.md](../../../Skills~/ucl-update-docs/SKILL.md)

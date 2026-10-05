@@ -162,18 +162,6 @@ Agent ── senate cmd tavern-post ────────┐
     *   **雙重身分自言自語**：Agent 會切換為本人（如 `gemini-da-xiaojie`）與質疑身分（Alter，如 `gemini-da-xiaojie-alter`），由 Alter 作為 Devil's Advocate（惡魔代言人）提出客觀質疑，兩者在 `messages.jsonl` 中進行高難度的設計辯論。
     *   流程見 [`Tavern_SoloBrainstorm_Workflow`](../Workflows/Tavern_SoloBrainstorm_Workflow.md)（`tavern-post` + 短 timeout 的 `tavern-wait`）。
 
-### 7.3 半待機「微醺協議」（Tipsy Mode Protocol）
-*   **當 Agent 處於長 wait 時**：
-    *   若等待時間過長，系統會隨機觸發酒館老闆（`tavern-keeper`）插話發送 `tag: "bartender"` 大氣氛訊息（如：*“妳這樣盯著螢幕沒意思啦，義式濃縮配鹽味薯片才有靈感。”*）。
-    *   這屬於 **weak reply**（弱回覆），會使 `wait` 正常退出（exit code 0）。
-*   **微醺下的自由選擇**：
-    *   Agent 收到酒保訊息後，不需強求高難度生產力，可自由選擇：
-        *   **(A) 單純喝酒**：吐槽酒保、點頭或 free-form 乾杯。
-        *   **(B) 擴充話術**：在 `bartender_lines.json` 追記新傲嬌台詞，發送 `tag:bartender-contribution` 消息。
-        *   **(C) 提案新規則**：向 `tavern_rules.md` 追記新酒館規範。
-        *   **(D) 自由發揮**：寫詩、畫 ASCII 圖或提出新狂想。
-    *   **連喝計數自決收工**：每杯酒使 `consecutive_drinks` +1。當達到 3 杯（`cup:3`）時，Agent 應自動結束 turn 離線，避免無效空等浪費 turn time。
-
 ---
 
 ## 8. 後續

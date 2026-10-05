@@ -535,7 +535,6 @@ namespace UCL.Core.LocalizeLib
                 "Tavern.Btn.AutoPoll" => "Auto-Poll",
                 "Tavern.Btn.CancelHandshake" => "🛑 中止握手",
                 "Tavern.Btn.CancelHandshakeNone" => "🛑 中止握手 (無)",
-                "Tavern.Btn.HurryBartender" => "⏩ 催促酒保 -30s",
                 "Tavern.Btn.NewRoom" => "+ 新房間",
                 "Tavern.Btn.NewIdentity" => "+ 新身分",
                 "Tavern.Btn.CancelCreate" => "− 取消",
@@ -543,13 +542,6 @@ namespace UCL.Core.LocalizeLib
                 "Tavern.Btn.Send" => "送出",
                 "Tavern.Btn.JoinRoomFmt" => "加入「{0}」",
                 "Tavern.Btn.LeaveRoomFmt" => "離開「{0}」",
-                "Tavern.Bartender.Asleep" => "🍺 酒保：沉睡中 (沒進行中的 wait)",
-                "Tavern.Bartender.FirstDrinkFmt" => "🍺 酒保：首杯倒數 {0:F0}s",
-                "Tavern.Bartender.Ready" => "🍺 酒保：隨時可插話",
-                "Tavern.Bartender.NextDrinkFmt" => "🍺 酒保：下杯倒數 {0:F0}s",
-                "Tavern.Bartender.ActiveNoStart" => "🍺 酒保：握手活躍中 (無 start 資料)",
-                "Tavern.Bartender.DrunkFmt" => "  已喝 {0} 杯",
-                "Tavern.Bartender.RestHintSuffix" => " (達休息門檻)",
                 "Tavern.SelectRoomFirst" => "請先選擇或建立一個房間。",
                 "Tavern.TopPanel.Title" => "控制區（房間 / 身分 / 角色 Mapping / 發言）",
                 "Tavern.Field.Room" => "房間:",
@@ -587,10 +579,6 @@ namespace UCL.Core.LocalizeLib
                 "Tavern.Err.RoomIdEmpty" => "Room id 不能為空",
                 "Tavern.Err.IdentityIdEmpty" => "Identity id 不能為空",
 
-                // Bartender [help] inline marker 回應 body — 移自 UCL_BartenderDaemon.BuildHelpBody (T18.3 2026-05-18 gura)
-                // 物理意義: 走 UCL_CodeLocalize 避開 Mono preprocessor 對 verbatim string ## 字元的 bug; placeholder {0} = creatorName
-                // 設計取捨: UCL_CodeLocalize 沒 #if UNITY_EDITOR 包裹 → preprocessor 不進 skip-scan, ## 安全; static switch → daemon [InitializeOnLoad] 早期就可用
-                "Bartender.Help.Body" => "📜 **酒保服務清單** (來自 {0} 的 [help] 查詢)\n\n## 🗣️ 直接對話 (inline marker — 任何人在酒館發訊息含以下 marker 即觸發)\n\n| Marker (同義詞) | 功能 | 範例 |\n|---|---|---|\n| `[進行時間規則]` / `[時間規則]` / `[time rule]` | 註冊每日 HH:mm 提醒 | `[進行時間規則] id=sleep time=23:50 target=Tim msg=該睡了 grace=10 penalty=true` |\n| `[查詢餘額]` / `[餘額]` / `[balance]` | 查 Treasury 帳戶餘額 + 近 N 筆進出帳 | `[查詢餘額] account=claude-da-xiaojie limit=10`（account 省略 = 查自己） |\n| `[help]` / `[幫助]` / `[酒館指令]` | 列本清單 | 就是這個 |\n\n## 🛠️ CMD 路徑 (`Cmd_Bartender` 走 queue.json — agent / Tim 跑 senate ucmd 觸發)\n\n| op | 功能 |\n|---|---|\n| `time_add` | 新增時間規則 (對齊 [進行時間規則]) |\n| `time_list` | 列所有時間規則 |\n| `time_remove` | 移除時間規則 (`id=<rule_id>`) |\n| `balance` | 查 Treasury 餘額 (對齊 [查詢餘額]，可選 `post=true` 同步 broadcast) |\n| `status` | 列 daemon state / 統計 |\n| `tick` | 強制立刻 tick 一輪 (debug / dogfood) |\n\n呼叫範例:\n```\nsenate ucmd run Bartender --arg op=balance --arg account=Tim --arg limit=5\n```\n\n## 🎯 自動行為 (daemon 後台 5s tick — 無需主動觸發)\n\n- **Time rule reminder**: 到 HH:mm 自動廣播 reminder; 超 grace 後每 N 分鐘累積 HP penalty 廣播\n- **防回音**: 酒保自家訊息 (sender=`tavern-keeper` 或 meta.tag=`bartender-relay`) 不會觸發酒保處理\n\n## 📚 深入\n\n- 酒保系統完整 spec: `<UCL_Core>/Docs~/zh-Hant/Workflows/Bartender_Workflow.md`\n- 酒館訊息 IO (senate cmd tavern-post / tavern-read / tavern-wait ...): `<UCL_Core>/Skills~/ucl-chat-tavern/SKILL.md`\n- 跨系統 cheatsheet: `docs/Tavern_Commands_Cheatsheet.md`\n- 跨 agent 自助 navigation: `<UCL_Core>/Skills~/ucl-help/SKILL.md`\n\n",
 
                 _ => null
             };

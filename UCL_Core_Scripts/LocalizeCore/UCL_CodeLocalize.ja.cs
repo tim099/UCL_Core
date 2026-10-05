@@ -535,7 +535,6 @@ namespace UCL.Core.LocalizeLib
                 "Tavern.Btn.AutoPoll" => "Auto-Poll",
                 "Tavern.Btn.CancelHandshake" => "🛑 ハンドシェイク中止",
                 "Tavern.Btn.CancelHandshakeNone" => "🛑 ハンドシェイク中止（なし）",
-                "Tavern.Btn.HurryBartender" => "⏩ 酒場主を急かす -30s",
                 "Tavern.Btn.NewRoom" => "+ 新規部屋",
                 "Tavern.Btn.NewIdentity" => "+ 新規アイデンティティ",
                 "Tavern.Btn.CancelCreate" => "− キャンセル",
@@ -543,13 +542,6 @@ namespace UCL.Core.LocalizeLib
                 "Tavern.Btn.Send" => "送信",
                 "Tavern.Btn.JoinRoomFmt" => "「{0}」に参加",
                 "Tavern.Btn.LeaveRoomFmt" => "「{0}」から退出",
-                "Tavern.Bartender.Asleep" => "🍺 酒場主: 就寝中（進行中の wait なし）",
-                "Tavern.Bartender.FirstDrinkFmt" => "🍺 酒場主: 初杯まで {0:F0}s",
-                "Tavern.Bartender.Ready" => "🍺 酒場主: いつでも割り込み可",
-                "Tavern.Bartender.NextDrinkFmt" => "🍺 酒場主: 次杯まで {0:F0}s",
-                "Tavern.Bartender.ActiveNoStart" => "🍺 酒場主: ハンドシェイク活性中（start データなし）",
-                "Tavern.Bartender.DrunkFmt" => "  {0} 杯飲了",
-                "Tavern.Bartender.RestHintSuffix" => "（休憩しきい値到達）",
                 "Tavern.SelectRoomFirst" => "先に部屋を選択または作成してください。",
                 "Tavern.TopPanel.Title" => "コントロール（部屋 / 身分 / キャラ Mapping / 発言）",
                 "Tavern.Field.Room" => "部屋:",
@@ -587,10 +579,6 @@ namespace UCL.Core.LocalizeLib
                 "Tavern.Err.RoomIdEmpty" => "Room id は空にできません",
                 "Tavern.Err.IdentityIdEmpty" => "Identity id は空にできません",
 
-                // Bartender [help] inline marker レスポンス body — UCL_BartenderDaemon.BuildHelpBody から移動 (T18.3 2026-05-18 gura)
-                // 物理的理由: UCL_CodeLocalize 経由で Mono preprocessor の verbatim string ## 文字バグを回避; placeholder {0} = creatorName
-                // 設計トレードオフ: UCL_CodeLocalize に #if UNITY_EDITOR ラッパーがないため preprocessor の skip-scan に入らず ## は安全; static switch → daemon [InitializeOnLoad] 早期から利用可
-                "Bartender.Help.Body" => "📜 **酒場主サービス一覧** ({0} の [help] 照会より)\n\n## 🗣️ 直接対話 (inline marker — 酒場で以下の marker を含むメッセージを発すると発火)\n\n| Marker (同義語) | 機能 | 例 |\n|---|---|---|\n| `[進行時間規則]` / `[時間規則]` / `[time rule]` | 毎日 HH:mm のリマインダーを登録 | `[time rule] id=sleep time=23:50 target=Tim msg=寝る時間です grace=10 penalty=true` |\n| `[查詢餘額]` / `[餘額]` / `[balance]` | Treasury 口座残高 + 直近 N 件の入出金を照会 | `[balance] account=claude-da-xiaojie limit=10`（account 省略 = 自分を照会） |\n| `[help]` / `[幫助]` / `[酒館指令]` | この一覧を表示 | まさにこれ |\n\n## 🛠️ CMD 経路 (`Cmd_Bartender` は queue.json 経由 — agent / Tim が senate ucmd で発火)\n\n| op | 機能 |\n|---|---|\n| `time_add` | 時間規則を追加 (=[進行時間規則]) |\n| `time_list` | 全時間規則を一覧 |\n| `time_remove` | 時間規則を削除 (`id=<rule_id>`) |\n| `balance` | Treasury 残高を照会 (=[查詢餘額]、任意で `post=true` で broadcast) |\n| `status` | daemon state / 統計を一覧 |\n| `tick` | 今すぐ 1 周 tick を強制 (debug / dogfood) |\n\n呼び出し例:\n```\nsenate ucmd run Bartender --arg op=balance --arg account=Tim --arg limit=5\n```\n\n## 🎯 自動動作 (daemon バックグラウンド 5s tick — 手動発火不要)\n\n- **Time rule reminder**: HH:mm に自動で reminder を broadcast; grace 超過後は N 分ごとに HP penalty を累積 broadcast\n- **エコー防止**: 酒場主自身のメッセージ (sender=`tavern-keeper` または meta.tag=`bartender-relay`) は酒場主の処理対象になりません\n\n## 📚 詳細\n\n- 酒場主システム完全 spec: `<UCL_Core>/Docs~/zh-Hant/Workflows/Bartender_Workflow.md`\n- 酒場メッセージ IO (senate cmd tavern-post / tavern-read / tavern-wait ...): `<UCL_Core>/Skills~/ucl-chat-tavern/SKILL.md`\n- システム横断 cheatsheet: `docs/Tavern_Commands_Cheatsheet.md`\n- agent 横断セルフナビゲーション: `<UCL_Core>/Skills~/ucl-help/SKILL.md`\n\n",
 
                 _ => null
             };

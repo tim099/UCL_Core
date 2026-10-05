@@ -60,7 +60,7 @@ os.environ["CLAUDE_PROJECT_DIR"] or cwd or ...         # 自排 fallback 順序
 | 工具 | 推導方式 | 後果 |
 |---|---|---|
 | `chess.py`（已移植 C#，TASK-0268） | 要求同時有 `AgentCommands/` **與 `CardGame/`**，否則 `parents[6]` | 全部棋局檔寫進 **repo 外**、不在版控裡；C# 讀 repo 內的舊快照，於是**兩邊的骰面對同一局講出相反的話** |
-| `UCL_BartenderDaemon`（C#，同族） | `Application.dataPath/../..` | 跳到 repo 上一層，**剛好命中一棵舊資料樹** → 餘額查詢回報 `453`，真實帳本是 `1330`。**差 877，而且完全沒有錯誤訊息** |
+| `UCL_BartenderDaemon`（C#，同族；當時 Unity 端的酒保，現已搬到 Senate） | `Application.dataPath/../..` | 跳到 repo 上一層，**剛好命中一棵舊資料樹** → 餘額查詢回報 `453`，真實帳本是 `1330`。**差 877，而且完全沒有錯誤訊息** |
 | `hook_validate_modified.py` | `Path("CardGame")/"AgentCommands"` | 報告寫進不存在的目錄；寫檔會自動建目錄 ⇒ **憑空長出假資料夾**，人去正確位置找只會找不到 |
 
 **共同形狀**：每一層單獨看都合理，fallback 也「保守」，但**沒有任何一層負責說「我找不到」**。

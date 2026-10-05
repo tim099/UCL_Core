@@ -173,11 +173,7 @@ namespace UCL.Core.EditorLib.Page
                     Refresh().Forget();
                 }
             }
-            // 裝完模型的下一個動作十之八九是去指定它 —— 兩頁互跳，不必經 ToolBox 繞一圈
-            if (GUILayout.Button("🍺 酒保設定", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-            {
-                UCL_BartenderAdminPage.Create();
-            }
+            // 酒保設定已搬到 Senate「酒保」頁（TASK-0365）—— Unity 端酒保廢棄，這裡不再有跳轉鈕
         }
 
         protected override void ContentOnGUI()

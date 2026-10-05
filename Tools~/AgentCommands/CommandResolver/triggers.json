@@ -295,28 +295,6 @@
       ]
     },
     {
-      "entry_id": "entry_5dcaf0",
-      "display_name": "酒保時間規則 / 定時提醒",
-      "tags": [],
-      "phrases": [
-        "酒保",
-        "bartender",
-        "提醒我睡覺",
-        "該睡了",
-        "熬夜提醒",
-        "sleep reminder",
-        "時間規則",
-        "time rule",
-        "定時提醒"
-      ],
-      "workflow_path": "ucl_core:Docs~/{lang}/Workflows/Bartender_Workflow.md",
-      "intent": "透過酒保 (tavern-keeper) daemon 註冊時間規則 (HH:mm reminder + 可選 HP penalty 累積廣播)。⚠ 關鍵字留言 trigger 已於 2026-09-29 廢棄（Tim 拍板）—— 「幫我留話給某人」沒有這條自動路徑了。",
-      "lang": [
-        "zh",
-        "en"
-      ]
-    },
-    {
       "entry_id": "entry_b53163",
       "display_name": "更新文件",
       "tags": [],

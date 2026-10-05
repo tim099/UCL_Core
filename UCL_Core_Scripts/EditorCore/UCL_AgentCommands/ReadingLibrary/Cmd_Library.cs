@@ -8,8 +8,8 @@
 //   - 為什麼是 C# 而非 Python：發文要走 Cmd_Tavern 同一條路徑才不會漏 mirror / inbox 路由 /
 //     mention 解析 / 計酬判定。Python 端得 spawn run_cmd 再刮 stdout 拿 seq，那段跨行程接縫
 //     在 Editor 內是 in-process 呼叫，直接消失。(Tim 2026-08-06 拍板「透過 CMD 串接 C#」)
-//   - 為什麼 op 名用底線：Cmd 參數是 Dictionary<string,string>，op 值與既有 Cmd_Bartender
-//     (time_add / time_list) 同慣例；不引入第二套命名風格。
+//   - 為什麼 op 名用底線：Cmd 參數是 Dictionary<string,string>，op 值一律底線（time_add 這類）
+//     的慣例；不引入第二套命名風格。
 //   - 為什麼身分三件套一律必填無預設：`bookmark --reader` 的預設值 2026-08-05 覆蓋掉另一位
 //     persona 的長書籤。多讀者環境裡預設值是裝填好的槍，這裡一顆都不裝。
 #if UNITY_EDITOR

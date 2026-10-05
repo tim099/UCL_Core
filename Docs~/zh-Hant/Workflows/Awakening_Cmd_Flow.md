@@ -167,7 +167,7 @@ senate cmd goodnight-logout   --arg persona=<P> [--arg note=<附註>]          #
 > 📌 **只有一段要 Editor**（sleep／logout）：本人**進行中的觀影場**要結算（付錢／收播公告／關錄影頁）。
 > （收工閘 `skip_reason` 寫進單子那一段，TASK-0349 起走 `senate cmd task op=wrapup_skip`。）
 > Tim 2026-09-26 拍板：**不得因為 Editor 沒開卡住晚安** ⇒
-> - Editor **活著**（酒保心跳 `ChatTavern/bartender/_heartbeat.txt` ≤4 秒）⇒ **只把那一段**（觀影場關場＋結算）交給 Editor 的
+> - Editor **活著**（Editor 心跳 `ChatTavern/bartender/_heartbeat.txt` ≤4 秒，寫入端 `UCL_EditorHeartbeat`）⇒ **只把那一段**（觀影場關場＋結算）交給 Editor 的
 >   `SessionClose`（`allow_running=1`，只對 `goodnight-*` reason 放行）；解鎖、作廢 token、下線廣播照舊在 Senate 就地做。
 >   判準是回讀 session 檔（`active=false`），⛔ 不是 Editor 說什麼；沒關成 ⇒ 到期成殘留、殘留結算補付，**下線照走**。
 > - Editor **沒開** ⇒ 照走，只跳過那一段，回傳檔 `## ⚠ 因 Editor 沒開而跳過的段` 逐條寫明。

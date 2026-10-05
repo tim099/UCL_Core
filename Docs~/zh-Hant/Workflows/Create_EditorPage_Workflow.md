@@ -158,7 +158,7 @@ protected override void TopBarButtons()
 ### 4.2 標準 header 寫法（照抄這個）
 
 ```csharp
-void DrawBartenderAdminSection()
+void DrawAgentCmdAdminSection()
 {
     using (new GUILayout.VerticalScope("box"))
     {
@@ -166,18 +166,18 @@ void DrawBartenderAdminSection()
         // header 一排：折疊鈕 → 標題 → 關鍵操作按鈕 → FlexibleSpace 收尾
         using (new GUILayout.HorizontalScope())
         {
-            aShow = UCL_GUILayout.Toggle(m_FoldDic, "BartenderAdminFold", 21, iDefaultValue: false);
-            GUILayout.Label("<b>🍺 酒保後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-            if (GUILayout.Button("開啟酒保管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.9f, 0.75f, 0.45f)), GUILayout.ExpandWidth(false)))
+            aShow = UCL_GUILayout.Toggle(m_FoldDic, "AgentCmdAdminFold", 21, iDefaultValue: false);
+            GUILayout.Label("<b>🧾 Cmd 後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
+            if (GUILayout.Button("開啟 Cmd 後台管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.95f, 0.8f)), GUILayout.ExpandWidth(false)))
             {
-                UCL_BartenderAdminPage.Create();
+                UCL_AgentCmdAdminPage.Create();
             }
             GUILayout.FlexibleSpace();      // ← 一律最後
         }
         if (!aShow) return;                 // ← 收合就結束，內容不繪製
 
         // 折疊內：說明文字、低頻設定、明細列表
-        GUILayout.Label("管理酒保報時、時間提醒、關鍵字留言、跨日檢查與目前掃描游標。",
+        GUILayout.Label("已註冊 Agent Command 清單，以及 commands_schema.json 同步狀態與手動刷新。",
             UCL_GUIStyle.LabelStyle);
     }
 }

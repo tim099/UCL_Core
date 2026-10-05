@@ -50,7 +50,7 @@ UCL_ProcessRegistryService.Register(proc, "my_daemon", "說明這顆在做什麼
 UCL_ProcessRegistryService.Unregister(pid, "my_daemon");
 ```
 
-已接入：`UCL_ScreenStreamDaemon`（tag=`screenstream_daemon`）。其他 spawn 點（Bartender / Tavern / KnowledgeBase / MediaAdmin runner…）可逐步接入。
+已接入：`UCL_ScreenStreamDaemon`（tag=`screenstream_daemon`）。其他 spawn 點（Tavern / KnowledgeBase / MediaAdmin runner…）可逐步接入。
 
 ## Python 端對偶 Service（process_registry.py）
 

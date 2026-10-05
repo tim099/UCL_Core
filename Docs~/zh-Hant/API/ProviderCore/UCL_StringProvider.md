@@ -11,7 +11,6 @@ related:
   - ucl_core:Docs~/{lang}/API/ProviderCore/UCL_StringValueProvider.md | UCL_StringValueProvider | 預設實作（回傳固定字串）
   - ucl_core:Docs~/{lang}/API/ProviderCore/UCL_StringBookRecommendProvider.md | UCL_StringBookRecommendProvider | 子類實例（隨機推薦藏書，Editor-only）
   - ucl_core:UCL_Core_Scripts/InterfaceCore/UCL_PolymorphicHelper.cs | UCL_PolymorphicHelper | 多型判定 SSOT（[SerializeReference] 是唯一觸發訊號）
-  - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_BartenderTimeRulePage.md | UCL_BartenderTimeRulePage | 第一個消費端（時間規則的多行提醒內文）
 ---
 
 # 🔤 UCL_StringProvider — 字串提供者

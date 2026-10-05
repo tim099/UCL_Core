@@ -132,18 +132,9 @@ namespace UCL.Core.EditorLib.Page
         //          Python crash 後還顯示活躍超久
         bool m_HandshakeActive = false;
         double m_HandshakeStartUnix = 0;          // _handshake_start.txt 內容（Python time.time() float）
-        double m_BartenderLastDrinkUnix = 0;      // _bartender_state.json sessions 中最近一筆 last_drink_at（unix）
-        int m_BartenderConsecutiveDrinks = 0;
         double m_LastHandshakeCheckTime = 0;
         const double HandshakeCheckIntervalSec = 0.5;
         const double HandshakeStaleSec = 2.0;
-        // 跟 Python 端常數對齊（run_cmd.py BARTENDER_TRIGGER_SEC default=450；cooldown 90s；rest hint 3 杯）— 純顯示用，不影響觸發邏輯
-        // 物理意義：IMGUI 端顯示酒保倒數要跟 Python 真實觸發時間吻合，否則使用者看到「10s」但實際 450s 才會 fire 會困惑
-        // 數值影響：450s ≈ 7.5 min；慢速模式 wait=480s 內不會被酒保打斷（per SKILL.md 設計）
-        // 想覆蓋：建議 Python 端設 UCL_BARTENDER_TRIGGER_SEC env var；本常數要動就要兩邊一起改
-        const double BartenderTriggerSec = 450.0;
-        const double BartenderCooldownSec = 90.0;
-        const int BartenderRestHintDrinks = 3;
 
         // Avatar 快取：sender_id → Sprite（lazy 載入 UCL_ChatTavernIdentityAsset.m_AvatarSprite）
         // 物理意義：訊息列表對每筆 sender_id 顯示頭像；同 sender 多筆訊息共用一張 Sprite，避免每幀重複載入
@@ -169,7 +160,6 @@ namespace UCL.Core.EditorLib.Page
         static GUIStyle s_BodyStyleNonChat;          // wrap + italic（join/leave/system 用）
         static GUIStyle s_RichTextLabelStyle;        // richText label（token 餘額顯示用）— 原每幀 new
         static GUIStyle s_InputHintStyle;            // input bar「以 X 身分發言」淡藍提示 — 原每幀 new
-        static GUIStyle s_BartenderWarnStyle;        // 酒保連喝計數警示（橘紅）— 原每幀 new
         static System.Text.StringBuilder s_MetaBuilder;  // DrawMessageRow meta拼接 reuse；Clear() 不釋放 capacity
 
         // ===== Treasury Balance Cache =====
@@ -217,10 +207,11 @@ namespace UCL.Core.EditorLib.Page
             }
         }
 
-        // 區塊職責：throttle 過的握手活躍 + bartender 狀態檢查
-        // 物理意義：每 HandshakeCheckIntervalSec 秒做一次 File IO 抓三個檔的狀態 — handshake_active
-        //          (mtime → 活躍)、handshake_start (content → wait_start unix)、bartender_state (last_drink_at)
-        // 數值影響：寫 m_HandshakeActive / m_HandshakeStartUnix / m_BartenderLastDrinkUnix / m_BartenderConsecutiveDrinks
+        // 區塊職責：throttle 過的握手活躍檢查
+        // 物理意義：每 HandshakeCheckIntervalSec 秒做一次 File IO 抓兩個檔的狀態 — handshake_active
+        //          (mtime → 活躍)、handshake_start (content → wait_start unix)
+        //          （酒保倒酒倒數那一格已隨 Unity 端酒保廢棄移除，TASK-0365）
+        // 數值影響：寫 m_HandshakeActive / m_HandshakeStartUnix
         void UpdateHandshakeActive()
         {
             double now = EditorApplication.timeSinceStartup;
@@ -256,114 +247,6 @@ namespace UCL.Core.EditorLib.Page
                         m_HandshakeStartUnix = v;
                 }
                 catch { /* race ok */ }
-            }
-
-            // bartender state — pick MAX last_drink_at across sessions（顯示用，誰都行）
-            string statePath = Path.Combine(tavernDir, "_bartender_state.json");
-            m_BartenderLastDrinkUnix = 0;
-            m_BartenderConsecutiveDrinks = 0;
-            if (File.Exists(statePath))
-            {
-                try
-                {
-                    string json = File.ReadAllText(statePath);
-                    // 簡易解析（避免引入 JsonUtility/Newtonsoft 麻煩 — 只抓兩欄）
-                    var lastDrinks = System.Text.RegularExpressions.Regex.Matches(json, "\"last_drink_at\"\\s*:\\s*\"([^\"]+)\"");
-                    foreach (System.Text.RegularExpressions.Match mt in lastDrinks)
-                    {
-                        if (System.DateTime.TryParse(mt.Groups[1].Value, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var dt))
-                        {
-                            double unix = (dt - new System.DateTime(1970,1,1, 0,0,0, System.DateTimeKind.Utc)).TotalSeconds;
-                            if (unix > m_BartenderLastDrinkUnix) m_BartenderLastDrinkUnix = unix;
-                        }
-                    }
-                    var drinks = System.Text.RegularExpressions.Regex.Matches(json, "\"consecutive_drinks\"\\s*:\\s*(\\d+)");
-                    foreach (System.Text.RegularExpressions.Match mt in drinks)
-                    {
-                        if (int.TryParse(mt.Groups[1].Value, out var v) && v > m_BartenderConsecutiveDrinks)
-                            m_BartenderConsecutiveDrinks = v;
-                    }
-                }
-                catch { /* race ok */ }
-            }
-        }
-
-        // 區塊職責：頂部酒保資訊條 — 顯示活躍 / 倒數 / 連喝計數 + 「催促酒保 -30s」按鈕
-        // 物理意義：給使用者一目了然「酒保下次插話還要多久」 — 數值用 Python 端 wait_start + bartender_state 算
-        // 數值影響：點催促按鈕 → 寫 _handshake_hurry.flag（Python 端 poll loop 偵測到 → wait_start / cooldown 各 -30s）
-        void DrawBartenderInfoBar()
-        {
-            UpdateHandshakeActive();
-            using (new GUILayout.HorizontalScope("box"))
-            {
-                if (!m_HandshakeActive)
-                {
-                    GUILayout.Label(UCL_CodeLocalize.Get("Tavern.Bartender.Asleep"), UCL_GUIStyle.LabelStyle);
-                    GUILayout.FlexibleSpace();
-                    return;
-                }
-
-                double nowUnix = (System.DateTime.UtcNow - new System.DateTime(1970,1,1, 0,0,0, System.DateTimeKind.Utc)).TotalSeconds;
-                double countdown = -1;
-                string statusText;
-                if (m_HandshakeStartUnix > 0)
-                {
-                    double elapsed = nowUnix - m_HandshakeStartUnix;
-                    if (elapsed < BartenderTriggerSec)
-                    {
-                        countdown = BartenderTriggerSec - elapsed;
-                        statusText = string.Format(UCL_CodeLocalize.Get("Tavern.Bartender.FirstDrinkFmt"), countdown);
-                    }
-                    else
-                    {
-                        // 已過 trigger 門檻，算 cooldown
-                        double cooldownLeft = m_BartenderLastDrinkUnix > 0
-                            ? BartenderCooldownSec - (nowUnix - m_BartenderLastDrinkUnix)
-                            : 0;
-                        if (cooldownLeft <= 0)
-                        {
-                            statusText = UCL_CodeLocalize.Get("Tavern.Bartender.Ready");
-                        }
-                        else
-                        {
-                            countdown = cooldownLeft;
-                            statusText = string.Format(UCL_CodeLocalize.Get("Tavern.Bartender.NextDrinkFmt"), countdown);
-                        }
-                    }
-                }
-                else
-                {
-                    statusText = UCL_CodeLocalize.Get("Tavern.Bartender.ActiveNoStart");
-                }
-
-                GUILayout.Label(statusText, UCL_GUIStyle.LabelStyle);
-
-                // 連喝計數
-                if (m_BartenderConsecutiveDrinks > 0)
-                {
-                    string drinkLabel = string.Format(UCL_CodeLocalize.Get("Tavern.Bartender.DrunkFmt"), m_BartenderConsecutiveDrinks);
-                    if (m_BartenderConsecutiveDrinks >= BartenderRestHintDrinks)
-                        drinkLabel += UCL_CodeLocalize.Get("Tavern.Bartender.RestHintSuffix");
-                    // static cache 取代每幀 new GUIStyle；達警示門檻才換橘紅樣式
-                    EnsureMessageStyles();
-                    var style = m_BartenderConsecutiveDrinks >= BartenderRestHintDrinks
-                        ? s_BartenderWarnStyle : UCL_GUIStyle.LabelStyle;
-                    GUILayout.Label(drinkLabel, style);
-                }
-
-                GUILayout.FlexibleSpace();
-
-                // 催促按鈕 — 寫 hurry flag，Python 偵測後 wait_start / cooldown 各 -30s
-                using (new EditorGUI.DisabledScope(countdown <= 0))
-                {
-                    if (GUILayout.Button(UCL_CodeLocalize.Get("Tavern.Btn.HurryBartender"), UCL_GUIStyle.GetButtonStyle(new Color(1f, 0.85f, 0.3f)), GUILayout.ExpandWidth(false)))
-                    {
-                        UCL_ChatTavernIO.EnsureTavernDir();
-                        string flagPath = Path.Combine(UCL_ChatTavernIO.GetTavernDir(), "_handshake_hurry.flag");
-                        File.WriteAllText(flagPath, System.DateTime.UtcNow.ToString("o"));
-                        Debug.Log($"[Tavern] 催促酒保 → wrote {flagPath}");
-                    }
-                }
             }
         }
 
@@ -491,7 +374,7 @@ namespace UCL.Core.EditorLib.Page
                 EnsureAutoInit();
                 HandleAutoPoll();
 
-                // Perf overlay 區塊：toggle bar 永遠顯示（小體積）；overlay 詳細表只在 ShowOverlay=true 時開 //加上BartenderInfoBar
+                // Perf overlay 區塊：toggle bar 永遠顯示（小體積）；overlay 詳細表只在 ShowOverlay=true 時開
                 using (new GUILayout.HorizontalScope())
                 {
                     bool show = GUILayout.Toggle(UCL_ChatTavernPerfOverlay.ShowOverlay, "⏱ Perf", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false));
@@ -507,7 +390,6 @@ namespace UCL.Core.EditorLib.Page
                     }
                     
 
-                    using (UCL_ChatTavernPerfOverlay.Sample("DrawBartenderInfoBar")) DrawBartenderInfoBar();
                     GUILayout.FlexibleSpace();
                 }
                 UCL_ChatTavernPerfOverlay.DrawOverlay();
@@ -1413,11 +1295,10 @@ namespace UCL.Core.EditorLib.Page
             s_NameStyleBold = new GUIStyle(UCL_GUIStyle.LabelStyle) { fontStyle = FontStyle.Bold };
             s_BodyStyleWrap = new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true };
             s_BodyStyleNonChat = new GUIStyle(UCL_GUIStyle.LabelStyle) { wordWrap = true, fontStyle = FontStyle.Italic };
-            // 2026-07-28 卡頓修復順手件：以下三個原本在 DrawIdentityPicker / DrawInputBar /
-            // DrawBartenderInfoBar 內每幀 new GUIStyle（RequiresConstantRepaint 下 = 穩定 GC 壓力）
+            // 2026-07-28 卡頓修復順手件：以下兩個原本在 DrawIdentityPicker / DrawInputBar
+            // 內每幀 new GUIStyle（RequiresConstantRepaint 下 = 穩定 GC 壓力）
             s_RichTextLabelStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { richText = true };
             s_InputHintStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { normal = { textColor = new Color(0.7f, 0.85f, 1f) } };
-            s_BartenderWarnStyle = new GUIStyle(UCL_GUIStyle.LabelStyle) { normal = { textColor = new Color(1f, 0.5f, 0.3f) } };
         }
 
         // 區塊職責：在 Editor 內以 UCL_MarkdownViewerPage 開啟 .md 檔

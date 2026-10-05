@@ -6,7 +6,7 @@
 // ⭐ TASK-0278（2026-09-22）：保管費的門檻／費率／央行豁免同樣只在 `SCP_BankPolicy`，
 //   扣繳整段在 Senate 端跑（`SCP_Demurrage`／Senate Server 的每日結算）。
 //   ⇒ 底下那段經濟模型的敘述**仍然成立**（它講的是錢往哪流），只是實作換了宿主。
-// 物理意義：保管費原本是 UCL_BartenderDaemon 裡兩個 const（threshold=1000 / rate=5%），
+// 物理意義：保管費原本是寫死在程式裡的兩個 const（threshold=1000 / rate=5%），
 //          改參數要改 code、要重編、Tim 動不了。Tim 2026-08-01 要求後台可調 → 落 JSON。
 //          更根本的一件事同時發生：**保管費不再蒸發，改存央行**。
 //          原本 Debit 之後 token 直接消失（純 sink）；現在對央行帳戶補一筆等額 Credit

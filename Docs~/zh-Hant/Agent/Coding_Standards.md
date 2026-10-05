@@ -217,11 +217,10 @@ Task.Run(() =>                                  // ① 不在主執行緒跑
 > **`WaitForExit(timeout)` 是預設，不是唯一合法解。**
 > 需要「可取消」時，自寫輪詢迴圈（每 N ms 檢查 `HasExited` + cancel token／進度條 Cancel）
 > 是**正確的**，不該為了統一而改掉 —— `WaitForExit` 沒有取消能力，換過去等於刪功能。
-> 現行兩處刻意保留輪詢：`UCL_MediaAdminRunner`（吃
-> `CancellationToken`）、`UCL_BartenderDaemon`（進度條 Cancel）。
+> 現行刻意保留輪詢的是 `UCL_MediaAdminRunner`（吃 `CancellationToken`）。
 >
-> 那兩處**真正缺的從來不是逾時，是登記**：它們的 `Kill()` 只在 C# 的 `Process` 物件還活著時
-> 有效，domain reload 一來就失去對象 —— 而它們看起來是「已經處理過逾時」的那種，
+> 這種寫法**真正缺的從來不是逾時，是登記**：它的 `Kill()` 只在 C# 的 `Process` 物件還活著時
+> 有效，domain reload 一來就失去對象 —— 而它看起來是「已經處理過逾時」的那種，
 > **最容易讓人以為安全**。補上 `RegisterScope` 之後防護才跨得過 domain reload。
 
 - **身分 = PID + process name + start time**，不是只有 PID —— PID 會被 OS 回收再發，
@@ -239,7 +238,7 @@ Task.Run(() =>                                  // ① 不在主執行緒跑
 - **一次性工具型（首選範本）** `UCL_GitFlattenSyncPage` — tag `git_flatten_sync`，
   上方六件事做齊的一份完整實作
 - **`RegisterScope` 用法** `UCL_AgentSkillManagerPage` / `UCL_LoginStatusPage` /
-  `UCL_LibraryManagePage` / `UCL_BartenderDaemon`（2026-08-06 全面補登記那批）
+  `UCL_LibraryManagePage`（2026-08-06 全面補登記那批）
 - **fire-and-forget** `UCL_ExplorerUtil` — tag `explorer_open`
 
 > [!TIP]

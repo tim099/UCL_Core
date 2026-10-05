@@ -16,7 +16,6 @@ tags: [imgui, editor-page, reflection]
 related:
   - ucl_core:Docs~/{lang}/API/UCL_GUILayout/UCL_GUILayout_Overview.md | UCL_GUILayout_Overview | 整體 API 速查
   - ucl_core:Docs~/{lang}/API/UCL_GUIStyle/UCL_GUIStyle_Overview.md | UCL_GUIStyle_Overview | 樣式與 DPI 縮放
-  - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_BartenderTimeRulePage.md | UCL_BartenderTimeRulePage | 實例：整頁只用一行 DrawObjectData
 ---
 
 # 🪞 DrawObjectData — 自動繪製物件介面
@@ -68,7 +67,7 @@ public interface UCLI_ShortName { string GetShortName(); }
 | 一般欄位 | `欄位名(ShortName)` —— **附加**在欄位名後面 |
 | **List 元素** | `({索引}) {ShortName}` —— **取代**整個元素標籤 |
 
-實例（`UCL_BartenderTimeRule`）：
+示意（一筆「HH:mm 排程規則」資料類別）：
 
 ```csharp
 public string GetShortName() => this.ToString();
@@ -87,7 +86,7 @@ public override string ToString() => $"[{time_hhmm}]:{id}";
 public interface UCLI_IsEnable { bool IsEnable { get; set; } }
 ```
 
-實例（`UCL_BartenderTimeRule` 把它接到既有欄位，不新增狀態）：
+示意（同一個排程規則類別，把它接到既有欄位，不新增狀態）：
 
 ```csharp
 public bool IsEnable { get => enabled; set => enabled = value; }

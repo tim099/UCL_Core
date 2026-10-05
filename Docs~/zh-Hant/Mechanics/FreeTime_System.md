@@ -367,7 +367,7 @@ Tim 說的話 → 應該怎麼處理
 | `agent_free_time.json` 獨立 storage | 從 quota.json split 出來 | grant 記帳 RPC 帶 schema migration |
 | Round-trip grace 自動偵測 | 同主題連續對話 5 分鐘內算 1 unit | 細節 spec 還在討論 (per Antigravity / meadow / basecamp 三方議案) |
 | Morning ritual 顯示 三池狀態 | 對稱 goodnight + 過期警示 | 簡單，等 grant 記帳 split 後一起 |
-| Inline `[查詢自由時間]` / `[查詢券]` markers | 沿 `[查詢餘額]` 雙路徑 pattern | bartender daemon 已 ready，只需 wire |
+| Inline `[查詢自由時間]` / `[查詢券]` markers | 酒館訊息內的 inline 查詢指令（同 `[help]` 那種） | 要在 Senate 酒保（`senate cmd bartender`）加 handler |
 | Cross-agent 對戰 | 跨 agent token battle 機制 (活動 backlog §4.2) | 遊戲 PvP infra |
 
 ---

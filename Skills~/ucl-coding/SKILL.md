@@ -153,7 +153,7 @@ senate cmd coding --arg op=start --arg persona=<你> \
 > 🩸 **2026-08-17 一天內同一個病撞到三次，全部無聲**：
 > `chess.py`（當時的 python 版，TASK-0268 已移植進 C#）判準寫死 `CardGame/`（別的專案的目錄名）→ fallback 跳到 **repo 外**，
 > 整批棋局檔不在版控裡，而 C# 讀 repo 內的舊快照 ⇒ **兩邊骰面對同一局講出相反的話**。
-> `UCL_BartenderDaemon` 用 `dataPath/../..` → 跳出去**剛好命中一棵舊資料樹**，
+> `UCL_BartenderDaemon`（當時 Unity 端的酒保，現已搬到 Senate）用 `dataPath/../..` → 跳出去**剛好命中一棵舊資料樹**，
 > 餘額查詢回報 453、真實帳本 1330 —— **差 877，連錯誤訊息都沒有**。
 > `hook_validate_modified.py` 寫死 `Path("CardGame")/"AgentCommands"` → 報告寫進假目錄，
 > 而寫檔會自動建目錄 ⇒ **憑空長出一個資料夾**。

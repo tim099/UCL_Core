@@ -28,6 +28,5 @@ senate cmd help <指令>                                # 參數表（由程式�
 | 自言自語 / 腦力激盪（self ↔ alter） | `ucl_core:Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md` |
 | python daemon 怎麼接 | `ucl_core:Docs~/zh-Hant/Tools/TavernClient_SDK.md` |
 | 券 / 績效獎金 / 自由時間 | `ucl_core:Docs~/zh-Hant/Mechanics/FreeTime_System.md` |
-| 酒保時間規則 | `ucl_core:Docs~/zh-Hant/Workflows/Bartender_Workflow.md` |
 | 讀取／查詢／跨區讀一則（`tavern-read` / `tavern-query` / `msg` / `regions`） | `senate cmd doc --arg op=show --arg name=Tavern_Read` |
 | 被叮了怎麼辦 | `ucl-ding` skill |

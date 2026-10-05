@@ -1,13 +1,10 @@
 ﻿// 區塊職責：控制台 (Control Panel) IMGUI 頁面 — 集中控制專案內各項重要設定。
-// 物理意義：給人類開發者一個總控台統一開關各子系統；目前第一塊功能是「聊天酒館系統」總開關。
+// 物理意義：給人類開發者一個總控台統一開關各子系統。
 //          設計成可擴充 — 之後新增其他設定 (e.g. Discord / 排程 / 渲染) 各自再加一個 section method。
 // 設計取捨 (Tim 2026-05-28 拍板)：
 //   - 仿 UCL_ChatTavernPage 提升為 EditorMenu 外部主要按鈕 (ShowInPageMenu => false)
-//   - 酒館系統開關預設關閉，存 PlayerPrefs (走 UCL_ChatTavernSystemControl 單一真相源)
-//   - 關閉 → 停止酒館各自動廣播 + 背景程序 (Bartender daemon)
-//   - Discord 雙向同步 (outbound mirror / inbound relay) 是獨立開關, 不受酒館系統總開關影響
-//     (Tim 2026-07-28 拍板: 各自獨立關注點)
-//   - 打開 → SetEnabled 內由 OFF→ON 自動 fire 重啟，讓 daemon 重新初始化
+//   - 2026-10-05（TASK-0365）：Unity 端酒保整個廢棄（搬到 Senate 酒館 Server、後台在 Senate「酒保」頁），
+//     「聊天酒館系統」總開關（它只管酒保 daemon）與「酒保後台」入口一起拿掉。
 //   - 各 section 可折疊 (Tim 2026-07-29 要求, 比照 UCL_ChatTavernAdminPage)：**關鍵操作
 //     (開關 / 重啟 / 開啟管理頁 / Discord 兩顆同步開關) 一律畫在折疊外層 header**，
 //     收合後仍可一鍵操作；折疊內只放說明文字與低頻設定。折疊狀態走專用 m_FoldDic
@@ -70,11 +67,6 @@ namespace UCL.Core.EditorLib.Page
         {
             GUILayout.Space(8);
 
-            DrawChatTavernSystemSection();
-            GUILayout.Space(8);
-            GUILayout.Space(8);
-            DrawBartenderAdminSection();
-            GUILayout.Space(8);
             DrawPersonaAgentAdminSection();
             GUILayout.Space(8);
 
@@ -108,29 +100,6 @@ namespace UCL.Core.EditorLib.Page
                 }
                 if (!aShow) return;
                 GUILayout.Label("圖書館管理頁負責既有 Books / Library 操作；閱讀心得入口可依作品名稱列出 Archive 與新 Library 的手動開啟路徑，不會讓新流程讀取 Archive。", UCL_GUIStyle.LabelStyle);
-            }
-        }
-
-        // ===========================================================
-        // 區塊職責：酒保後台入口。
-        // 物理意義：把報時、時間規則與關鍵字留言的日常控制收在專頁，控制台只負責導流。
-        // 數值影響：按鈕只開頁；不會在控制台靜默改動任何酒保規則。
-        // ===========================================================
-        void DrawBartenderAdminSection()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                bool aShow;
-                using (new GUILayout.HorizontalScope())
-                {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "BartenderAdminFold", 21, iDefaultValue: false);
-                    GUILayout.Label("<b>🍺 酒保後台</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    if (GUILayout.Button("開啟酒保管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.9f, 0.75f, 0.45f)), GUILayout.ExpandWidth(false)))
-                        UCL_BartenderAdminPage.Create();
-                    GUILayout.FlexibleSpace();
-                }
-                if (!aShow) return;
-                GUILayout.Label("管理酒保報時、時間提醒、關鍵字留言、跨日檢查與目前掃描游標。報時可獨立關閉，不影響酒館或 Discord 同步。", UCL_GUIStyle.LabelStyle);
             }
         }
 
@@ -212,63 +181,6 @@ namespace UCL.Core.EditorLib.Page
                 if (!aShow) return;
                 GUILayout.Label("身分兩層管理：建立 agent（帳號層，同時登記對應 bank／可帶種子額度）、建立 persona（人格層，"
                     + "可選 fork 來源複製 identity_vector 與血統）、persona 換綁 agent（只改歸屬，vector／wake_count 保留）。",
-                    UCL_GUIStyle.LabelStyle);
-            }
-        }
-
-        // ===========================================================
-        // 區塊：聊天酒館系統總開關
-        // 物理意義：讀 UCL_ChatTavernSystemControl.IsEnabled 顯示當前狀態；toggle 變動 → SetEnabled。
-        //          OFF→ON 由 SetEnabled 內部自動重啟 daemon；另提供「重啟系統」按鈕手動重觸發。
-        // 數值影響：寫 PlayerPrefs "UCL.ChatTavern.System.Enabled"；fire OnSystemRestart 通知 daemon。
-        // ===========================================================
-        void DrawChatTavernSystemSection()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                bool enabled = UCL_ChatTavernSystemControl.IsEnabled;
-                bool aShow;
-                // ---- header：折疊鈕 + 標題 + 狀態燈 + **關鍵操作（開關 / 重啟）提到折疊外層** ----
-                // 物理意義：收合後仍要能一鍵開關與重啟 —— 常用操作不該被折疊藏起來（AdminPage 同款模式）。
-                using (new GUILayout.HorizontalScope())
-                {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "TavernSystemFold", 21, iDefaultValue: false);
-                    GUILayout.Label("<b>聊天酒館系統</b>", UCL_GUIStyle.LabelStyle, GUILayout.Width(140));
-                    var stateStyle = new GUIStyle(UCL_GUIStyle.LabelStyle);
-                    stateStyle.normal.textColor = enabled ? new Color(0.4f, 1f, 0.4f) : new Color(1f, 0.5f, 0.4f);
-                    GUILayout.Label(enabled ? "● 運行中" : "○ 已停止", stateStyle, GUILayout.ExpandWidth(false));
-                    
-
-                    // 開關 toggle — 變動才寫，避免每幀 PlayerPrefs IO
-                    bool newEnabled = GUILayout.Toggle(
-                        enabled,
-                        enabled ? " 系統啟用中（按一下關閉）" : " 系統已關閉（按一下啟用）",
-                        UCL_GUIStyle.ButtonStyle,
-                        GUILayout.ExpandWidth(false));
-                    if (newEnabled != enabled)
-                    {
-                        UCL_ChatTavernSystemControl.SetEnabled(newEnabled);
-                        Debug.Log($"[ControlPanel] 聊天酒館系統 → {(newEnabled ? "啟用 (自動重啟)" : "關閉")}");
-                    }
-                    // 手動重啟 — 只有系統啟用時才有意義 (停止狀態重啟無作用)
-                    // 採 GUI.enabled 手動 save/restore (對齊 UCL_EditorMenuPage)，避免依賴 EditorGUI.DisabledScope
-                    bool oldGUIEnabled = GUI.enabled;
-                    GUI.enabled = enabled;
-                    if (GUILayout.Button("重啟系統", UCL_GUIStyle.ButtonStyle, GUILayout.ExpandWidth(false)))
-                    {
-                        UCL_ChatTavernSystemControl.Restart();
-                        Debug.Log("[ControlPanel] 手動重啟聊天酒館系統");
-                    }
-                    GUI.enabled = oldGUIEnabled;
-                    GUILayout.FlexibleSpace();
-                }
-                if (!aShow) return;
-
-                GUILayout.Space(2);
-                GUILayout.Label(
-                    "控制酒保自動廣播（關鍵字觸發 / 時間規則 / 跨日保管費）與酒館背景子程序。\n" +
-                    "關閉後酒館停止一切自動廣播與背景程序；打開時自動重啟系統。\n" +
-                    "註：Discord 雙向同步是獨立開關（見「🍺 酒館後台」區塊），不受本開關影響。",
                     UCL_GUIStyle.LabelStyle);
             }
         }
@@ -380,7 +292,6 @@ namespace UCL.Core.EditorLib.Page
                 GUILayout.Space(4);
 
                 // ---- 安全護欄檢查 ----
-                bool tavernOn = UCL_ChatTavernSystemControl.IsEnabled;
                 bool validInput = m_PathDraftMode switch
                 {
                     AgentCommandsPathMode.GlobalAbsolute => !string.IsNullOrEmpty((m_PathDraftAbsolute ?? "").Trim()) && Path.IsPathRooted(m_PathDraftAbsolute.Trim()),
@@ -390,7 +301,6 @@ namespace UCL.Core.EditorLib.Page
                 string blockReason = null;
                 if (!validInput) blockReason = m_PathDraftMode == AgentCommandsPathMode.GlobalAbsolute
                     ? "請填入有效的絕對路徑 (rooted)" : "請填入相對路徑";
-                else if (tavernOn) blockReason = "聊天酒館系統目前是啟用中 — 請先到上面把系統關閉再改路徑 (避免 daemon 寫到舊路徑半途)";
 
                 // ---- 套用按鈕 + 重新載入 ----
                 // 用 GUI.enabled 手動 save/restore 取代 UnityEditor.EditorGUI.DisabledScope (對齊 UCL_EditorMenuPage)
@@ -407,7 +317,7 @@ namespace UCL.Core.EditorLib.Page
                         m_LastApplyMessage =
                             $"✅ 已套用 — 新資料根: {UCL_AgentCommandsPath.DataRoot}\n" +
                             "PlayerPrefs + pointer 檔 (.agentcommands_root.local) 已同步。\n" +
-                            "⚠ 建議重啟 Editor 讓所有常駐 daemon (Bartender / Discord inbound) 乾淨重讀新路徑。" +
+                            "⚠ 建議重啟 Editor 讓常駐的 Editor 元件（心跳等）乾淨重讀新路徑。" +
                             (overridden ? "\n📂 舊路徑既有資料不會自動搬移,如需保留請手動複製 (Migrate 工具列在後續 Phase)。" : "");
                     }
                     GUI.enabled = oldEnabled;

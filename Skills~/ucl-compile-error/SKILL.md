@@ -49,7 +49,7 @@ senate cmd unity-compile-status
 | `--watch` | `senate cmd unity-recompile --arg persona=<me>`（送出時刻＝基準，等那一趟結束） |
 | `--strict-fresh` | 同上 —— `unity-recompile` 天生只收「晚於基準」的那一份 |
 | **`--fallback-log`**（`.compile_status.json` 不存在時解 Editor.log） | ⛔ **沒有替代品**。`unity-compile-status` 在狀態檔不存在時說「**沒有讀數**」而不是 0 errors ⇒ 那個情境的答案是「沒有量到」 |
-| **`--editor-alive`**（心跳停跳偵測） | ⭐ **有替代品，而且更便宜**：直接 stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`（酒保 daemon 每 0.5s 寫一拍；>1.5s 沒動＝沒在 tick）。⚠ 2026-09-10 本欄原寫「沒有替代品」，那是**窄報** —— 被刪的是 python 包裝，那支的實作本來就只是 stat 這個檔 |
+| **`--editor-alive`**（心跳停跳偵測） | ⭐ **有替代品，而且更便宜**：直接 stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`（`UCL_EditorHeartbeat` 每 0.5s 寫一拍；>1.5s 沒動＝沒在 tick）。⚠ 2026-09-10 本欄原寫「沒有替代品」，那是**窄報** —— 被刪的是 python 包裝，那支的實作本來就只是 stat 這個檔 |
 
 > 🩸 **⛔ `check_compile.py --watch` 曾給假綠燈（TASK-0154）—— 那支已於 2026-09-10 整支退場。**
 > 血證留著，因為**這個形狀會換工具重來**：
@@ -69,7 +69,7 @@ senate cmd unity-compile-status
 
 - 基準怎麼來：預設問 git 拿**未提交的 `.cs`**（root + 髒 submodule，整個 process 只算一次）。
   指定 `--since-file <path>` / `--since <epoch|ISO>` 則跳過 git，直接比那一個時間。
-- 併讀 `_heartbeat_stalls.jsonl`（酒保心跳的停跳台帳）：STALE 時會多印一行
+- 併讀 `_heartbeat_stalls.jsonl`（Editor 心跳的停跳台帳）：STALE 時會多印一行
   「改動後心跳停跳 N 次」/「改動後沒有任何停跳紀錄」—— **後者代表編譯很可能連開始都還沒有**。
 - 逃生門：`--no-freshness` 關掉檢查（＝退回 2026-08-05 之前的行為）。
 
@@ -87,7 +87,7 @@ senate cmd unity-compile-status
 ## 💓 「Editor 在不在 tick」 — ⭐ **這一格沒有消失：stat 心跳檔就是答案**
 
 ```bash
-# 心跳檔（酒保 daemon hook 在 EditorApplication.update，每 0.5s 寫一拍）
+# 心跳檔（UCL_EditorHeartbeat hook 在 EditorApplication.update，每 0.5s 寫一拍）
 stat -c %y <data_root>/ChatTavern/bartender/_heartbeat.txt   # 或 ls -la
 #   距今 <= 1.5s ⇒ Editor 在 tick／> 1.5s ⇒ 沒在 tick／檔案不存在 ⇒ 判不出來（daemon 沒跑過）
 # 最近的停跳台帳（心跳只答「此刻」，這個答「什麼時候凍過、凍多久」）：

@@ -19,7 +19,7 @@ tags: [compile, debug, agent_commands, workflow]
 > ⛔ python `check_compile.py` **已於 2026-09-10 整支刪除**（Tim 拍板）—— 檔案不存在了。
 > ⚠ 那兩格**沒有搬過去**，而它們的處置**不一樣**（2026-09-10 更正一次窄報）：
 > · `--fallback-log`（解 Editor.log）—— **真的沒有替代品**（全庫零實作解 Unity 的 `Editor.log`）。
-> · `--editor-alive`（心跳）—— **有**：stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`（0.5s 一拍，>1.5s 沒動＝沒在 tick）。
+> · `--editor-alive`（心跳）—— **有**：stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`（`UCL_EditorHeartbeat` 寫，0.5s 一拍，>1.5s 沒動＝沒在 tick）。
 >   原本寫「兩格都沒有」是窄報 —— 被刪那支的實作本來就只是 stat 這個檔，**死的是包裝不是資料源**。
 > ⇒ 狀態檔不存在時，`unity-compile-status` 說的是「**沒有讀數**」而不是 0 errors；Editor 在不在，改看 `unity-recompile` 是否逾時。
 

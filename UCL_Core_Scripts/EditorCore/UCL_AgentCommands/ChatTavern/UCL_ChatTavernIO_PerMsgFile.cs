@@ -85,7 +85,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         //          只對沒見過的新檔 read+parse; 消失的檔（刪除 / 歸檔）從 cache 剔除.
         //          → freshness 不犧牲: 跨 process（Python）新寫的檔照樣被列舉命中.
         // 數值影響：LoadAllMessages 由 O(全部檔 read+parse) 降到 O(新增檔). 無變動時 0 次讀檔.
-        //          直接救 BartenderDaemon 每 5s 全讀 8000+ 檔卡頓 + DeriveSeq 每寫一筆全讀.
+        //          直接救當時每 5s 全讀 8000+ 檔的輪詢卡頓 + DeriveSeq 每寫一筆全讀.
         // 設計取捨：
         //   - 只快取 parse 結果（immutable）, 不快取「檔案清單」（每 call 重列 → 跨 process fresh）.
         //   - 壞檔記 badPaths, 不重複 read+parse（也不重複洗 error log）.

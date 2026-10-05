@@ -190,4 +190,3 @@ try { return Process.GetProcessById((int)processId).ProcessName ?? ""; }   // �
 |---|---|
 | 這份文件的原始單 | `AgentCommands/Tasks/tasks/0204.md` |
 | 修掉那個 handle 洩漏的 commit | `UCL_Core fa53536f` |
-| Bartender 遠端視窗控制本身 | [`Bartender_Workflow`](Bartender_Workflow.md) |

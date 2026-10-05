@@ -46,7 +46,6 @@ Tools~/
     ├── hook_validate_modified.py       # Claude Code PostToolUse / Stop hook
     ├── run_cmd.py                      # ⭐ queue.json 提交器 — 觸發 C# Cmd
     ├── migrate_persona_binding.py      # (one-shot) baton 從 actor-keyed 遷 persona-keyed
-    ├── migrate_time_rules_add_tz.py    # (one-shot) bartender time_rules 補 tz 欄位
     ├── _lib/
     │   └── json_io.py                  # JSON 讀寫公用 helper
     └── CommandResolver/                # 口語指令 → Cmd Type 解析子套件
@@ -70,7 +69,7 @@ Tools~/
 | 用法 | 範例 |
 |---|---|
 | `run <Type> --arg key=value` | `senate ucmd run Task --arg op=show --arg index=8` |
-| `info <Type>` | `python run_cmd.py info Bartender` (印 ArgsSchema) |
+| `info <Type>` | `python run_cmd.py info Tavern` (印 ArgsSchema) |
 | `list` | 列所有 Cmd Types |
 
 **機制**:
@@ -126,7 +125,7 @@ python private_letter.py --persona <P> list | show <path> | sync | restore | res
 > 主入口已換成 Senate CLI：`senate cmd unity-recompile`（觸發＋等那一趟）／
 > `senate cmd unity-compile-status`（只讀）。⛔ **本支已於 2026-09-10 整支刪除**（檔案不存在了）——
 > 上面那句「尚未退場」是**過期字面**，2026-09-10 更正。
-> ⚠ 未移的兩格處置不同：`--fallback-log` 沒有替代品；`--editor-alive` 有（stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`）。
+> ⚠ 未移的兩格處置不同：`--fallback-log` 沒有替代品；`--editor-alive` 有（stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`，寫入端是 `UCL_EditorHeartbeat`）。
 > ⛔ **`--watch` 已知會回上一次的快照且不印 STALE（TASK-0154）—— 別用它。**
 
 讀 Editor 端 `Library/Bee/build.txt` 等檔, 印 markdown / json 編譯錯誤 + warning 報告。
@@ -136,7 +135,7 @@ python private_letter.py --persona <P> list | show <path> | sync | restore | res
 senate cmd unity-compile-status          # 只讀現況（本地跑，不需要 Editor，含 ErrorLog 交叉對帳）
 senate cmd unity-recompile --arg persona=<me>   # 觸發＋等那一趟結束（送出時刻＝基準）
 # ⛔ --fallback-log（解 Editor.log）：沒有替代品
-# ⭐ --editor-alive（心跳）：有 —— stat <data_root>/ChatTavern/bartender/_heartbeat.txt（0.5s 一拍，>1.5s 沒動＝沒在 tick）
+# ⭐ --editor-alive（心跳）：有 —— stat <data_root>/ChatTavern/bartender/_heartbeat.txt（UCL_EditorHeartbeat 寫，0.5s 一拍，>1.5s 沒動＝沒在 tick）
 ```
 
 ### `hook_validate_modified.py` — Claude Code hook
@@ -174,7 +173,6 @@ Host project 同步 `<UCL_Core>/Skills~/*` 到 `<project-root>/.claude/skills/`�
 | 腳本 | 用途 | 狀態 |
 |---|---|---|
 | `migrate_persona_binding.py` | baton 從 actor-keyed 遷 persona-keyed | shipped 2026-05-? |
-| `migrate_time_rules_add_tz.py` | bartender time_rules 補 tz 欄位 | shipped |
 
 跑過後保留作為 audit, 不該再 invoke。
 
@@ -211,7 +209,7 @@ UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle 
 
 → 跨專案搬 UCL_Core 時這些**不會跟著**, 各 project 自己有自己版本。
 
-相關的跨專案入口：**餘額查詢走 `Cmd_Bartender op=balance`**（C# 原生查 `UCL_TreasuryLedger`）；
+相關的跨專案入口：**餘額查詢走 `senate cmd bank --arg op=balance`**；
 機密管理**沒有 python 入口** —— 一律走 Editor 的 `UCL_SecretManagerPage`（C# native，UCLS1）。
 （舊的 `ucl_secret.py` 已於 2026-08-21 移除：它只認 TKN1/TKN2，對現行 UCLS1 一律 bad magic。）
 動錢一律走 Senate CLI（`senate cmd bank`／`voucher`）—— python 端沒有動錢通道。

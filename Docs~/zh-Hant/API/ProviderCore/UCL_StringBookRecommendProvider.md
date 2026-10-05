@@ -10,7 +10,6 @@ tags: [provider, books, editor-only]
 related:
   - ucl_core:Docs~/{lang}/API/ProviderCore/UCL_StringProvider.md | UCL_StringProvider | 抽象基底
   - ucl_core:UCL_Core_Scripts/EditorCore/UCL_AgentCommands/Books/UCL_BooksIO.cs | UCL_BooksIO | 藏書唯一讀取點（本 provider 不自己掃目錄）
-  - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_BartenderTimeRulePage.md | UCL_BartenderTimeRulePage | 典型消費端（每日推薦書單）
 ---
 
 # 🎲 UCL_StringBookRecommendProvider — 隨機推薦藏書
@@ -48,7 +47,7 @@ related:
 
 > [!NOTE]
 > 空的圖書館**不是錯誤、不印 warning** —— 沒有藏書是合法狀態，
-> 不該讓提醒訊息長出一段雜訊。壞檔的回報責任在 `op=donations`（它會列進 WARNING 區）。
+> 不該讓使用端的訊息長出一段雜訊。壞檔的回報責任在 `op=donations`（它會列進 WARNING 區）。
 
 ## 4. ⚠ 兩個必須知道的取捨
 
@@ -68,7 +67,7 @@ related:
 
 - 放進 `ProviderCore` 會讓 runtime 層反過來依賴 Editor 層（層級倒置，且 build 會編不過）。
 - **後果**：以此 provider 存下的資料在 **build 後的 runtime 還原不回來**（型別不存在）。
-  目前唯一消費端是酒保時間規則（Editor-only 工具），符合前提。
+  目前沒有 runtime 消費端，符合前提。
   日後若有 runtime 消費端，要先把藏書讀取搬到 runtime 層才能沿用。
 
 ## 5. 實測（2026-08-07，藏書 23 本）

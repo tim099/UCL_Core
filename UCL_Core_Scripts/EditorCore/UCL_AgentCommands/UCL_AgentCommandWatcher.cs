@@ -71,7 +71,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             //   被一起推到 delayCall 是搭便車。而 delayCall 是**單次 schedule**，
             //   domain reload 後若沒有觸發它的那一拍（Editor 在背景、沒人動它），它就不會來 ——
             //   於是 update 永遠不訂閱，**整條 AgentCommand 通道靜默死亡**。
-            //   ⚠ 同 repo 早有這一課：UCL_BartenderDaemon 檔頭第 5 行寫著
+            //   ⚠ 同 repo 早有這一課：當時的酒保 daemon 檔頭寫著
             //   「用 EditorApplication.update（非 delayCall）—— 持續 tick，不靠單次 schedule」，
             //   而它的心跳在事故現場照跳，watcher 卻死了 —— 兩者差別只有註冊方式。
             //   血證（2026-08-13 basecamp wake#57，同日重現三次）：reload 後 `Registered.` 一次都沒出現、

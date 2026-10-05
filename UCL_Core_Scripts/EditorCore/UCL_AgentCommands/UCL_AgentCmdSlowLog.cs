@@ -39,7 +39,7 @@
 //   ⛔ 而一個永遠給同一個答案的欄位比沒有欄位更貴：它看起來像讀數。
 //
 // ⛔ 本檔零行為變更：不改任何 handler 的執行緒歸屬（offload 是另一張單）。量具壞掉不准影響 cmd 本業，
-//    所以每一個對外入口都自己 try 起來（形狀沿用已驗過的 UCL_BartenderIO.AppendSlowTick）。
+//    所以每一個對外入口都自己 try 起來（形狀沿用已驗過的慢 tick 相位台帳）。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -272,7 +272,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         // 物理意義：`elapsed_ms` 只回答「這支慢」，相位回答「**慢在哪一格**」——
         //   而 2026-09-07 的讀數說那個答案往往不在 handler 裡：AutoCommit offload 之後，
         //   1.3-1.5s 的斷拍搬到了 handler 的**前後**（Runner 的前奏與收尾）。
-        //   形狀沿用已驗過的 `UCL_BartenderIO.AppendSlowTick`（那份的相位讓「哪一格慢」不必靠人夾區間）。
+        //   形狀沿用已驗過的慢 tick 相位台帳（相位讓「哪一格慢」不必靠人夾區間）。
         // 數值影響：純記憶體；相位只在該筆 cmd 落行時一起寫出去。
         // ===========================================================
         /// <summary>
@@ -502,7 +502,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         // ===========================================================
         // 區塊職責：追加一行，並把檔案行數壓在上界內（原子寫）
         // 物理意義：先讀既有行、加一行、超界丟最舊、寫 tmp 再 move ——
-        //          形狀沿用 UCL_BartenderIO.AppendSlowTick（已在 repo 活了一個月的那份）。
+        //          形狀沿用已驗過的慢 tick 相位台帳。
         //          ⚠ 不用 File.AppendAllText：那條路沒有上界，診斷檔遲早長到沒人願意讀。
         //
         // 🩸 **上界要分 kind 各算，不可以共用一個。** 第一版我寫成共用 400 行 —— 而 stall 那條路徑
@@ -607,7 +607,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             => string.IsNullOrEmpty(s) || s.Length <= iMax ? s : s.Substring(0, iMax) + "…";
 
         /// <summary>JSON 字串值逃脫 —— 控制字元直接寫進檔案會讓整份診斷檔變成壞 JSON，
-        /// 而診斷檔壞掉的代價是**下次卡住時沒有證據**（同 UCL_BartenderIO.EscapeJsonString 的理由）。</summary>
+        /// 而診斷檔壞掉的代價是**下次卡住時沒有證據**。</summary>
         static string Esc(string s)
         {
             if (string.IsNullOrEmpty(s)) return "";

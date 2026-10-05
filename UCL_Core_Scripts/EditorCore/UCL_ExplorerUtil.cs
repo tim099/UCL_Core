@@ -4,13 +4,12 @@
 // 數值影響：純 spawn 外部 process，不讀寫專案任何檔案。
 //
 // 為什麼要有這一支（2026-08-05 summit）：
-//   本 core 內原本有三份各自為政的實作，機制全都不一樣 ——
+//   本 core 內原本有三份各自為政的實作（第三份隨圖書館管理頁退場），機制全都不一樣 ——
 //     · UCL_AgentCommandRunner.Menu_OpenQueueFolder   → Process.Start + RevealInFinder fallback
 //     · UCL_PersonaInspectorPage.OpenInExplorer       → explorer.exe /select（檔）／Process.Start（夾）
-//     · UCL_LibraryManagePage.OpenInExplorer          → Application.OpenURL("file://…")
-//   三份行為不同、log tag 不同、對「路徑不存在」的處理也不同。要接第四個呼叫端時，
+//   兩份行為不同、log tag 不同、對「路徑不存在」的處理也不同。要接第四個呼叫端時，
 //   再抄一份就是造第四套 —— 所以先把它收攏在這裡，新呼叫端一律走本支。
-//   ⚠ 上面三份**尚未**遷移過來（那是獨立的清理，不混在功能單裡）。本支目前只有新呼叫端在用。
+//   ⚠ 上面兩份**尚未**遷移過來（那是獨立的清理，不混在功能單裡）。本支目前只有新呼叫端在用。
 //
 // 已知坑（三份複本各自踩過，收攏在這裡一次寫清）：
 //   · EditorUtility.RevealInFinder(dir) 在 Windows 是「開父夾並選取該夾」，不是「進入該夾」——

@@ -213,7 +213,7 @@ senate ucmd run <CmdType> --persona <me> --arg k=v
 ### `--arg persona=` 什麼時候是多餘的（Tim 2026-08-20 提問，實測定案）
 
 `--persona <me>` 會**戳進 args**，所以 `GetArg(args,"persona")` / `RequireId(args,"persona")`
-一律拿得到值 —— 實測 `Cmd_Library op=recall` 不帶 `--arg persona=` 照樣成功。
+一律拿得到值 —— 實測 `ucmd run` 不帶 `--arg persona=` 照樣成功。
 ⇒ **技術上全部可省。但「能省」不等於「該省」**：
 
 | persona 的語意 | 例 | 判準 |

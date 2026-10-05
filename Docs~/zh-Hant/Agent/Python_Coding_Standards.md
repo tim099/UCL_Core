@@ -37,7 +37,7 @@ CORE_DIR  = _ucl_paths().ucl_core_dir()   # UCL_Core 掛載位置
 | repo 根 | `repo_root()` |
 | AgentCommands 資料根 | `data_root()` |
 | UCL_Core 自身 | `ucl_core_dir()` |
-| persona / registry / letters / comic 等子路徑 | `persona_file()` / `registry_path()` / `letters_root()` / `comic_root()`… |
+| persona / registry / letters 等子路徑 | `persona_file()` / `registry_path()` / `letters_root()` … |
 | **letters 底下的版面**（信 vs Cmd 回傳檔） | `letters_persona_dir()` / `letters_cmd_dir()` / `letters_cmd_payload(persona, cmd, step)` |
 
 > ⚠ **letters 底下不要自己接字串**（`letters_root() / persona / f"_{cmd}_{step}.md"`）。

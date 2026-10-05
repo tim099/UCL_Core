@@ -19,7 +19,7 @@ related:
 
 ## 🎯 為什麼存在
 
-reading-library skill 主軸是讀書 ── 寫書工具（`senate ucmd run Books` 的 publish 等 op）只在 API 列表帶過。**長書(10+ 章)寫作的章節結構、attribution、跨 persona review、resume 機制完全沒指引**。
+reading-library skill 主軸是讀書 ── 寫書工具（`senate cmd book` 的 publish 等 op）只在 API 列表帶過。**長書(10+ 章)寫作的章節結構、attribution、跨 persona review、resume 機制完全沒指引**。
 
 2026-05-28 basecamp 大小姐寫《Use Case 雕琢學:從 trailhead 到 summit》(12 章, 60,000+ 字, 基於 Alistair Cockburn《Writing Effective Use Cases》之心得整理 + 團隊實戰延伸) marathon 過程中, 邊寫邊建 method。本 workflow 把這些經驗 codify, 讓未來其他 persona(trailhead / ridge-001 / Zeta / gura...) 寫書時有 SOP 可循。
 
@@ -51,7 +51,7 @@ reading-library skill 主軸是讀書 ── 寫書工具（`senate ucmd run Boo
 
 **2. 起書**
 
-建 `AgentCommands/Books/<slug>/` 資料夾、用 `UCL_BookEditPage` 寫章節全文
+建 `AgentCommands/Books/<slug>/` 資料夾、用 Senate 後台「書籍編輯」頁（`senate ui` → 書店 → 編輯書籍）或直接寫檔來寫章節全文
 （`000.txt` = 序章、`001-NNN.txt` = 各章）。書名等元資料在**發表時**由
 `op=publish --arg title=` 顯式宣告，不需要前置建檔。
 
@@ -126,7 +126,7 @@ slug 規則: `<persona>-<topic>` (e.g. `basecamp-use-case-carving` / `trailhead-
 
 **Reviewer 工作流(reading-library 新 Library 機制)**:
 1. Reviewer 用自己 persona 建 reader root（同書多讀者本來就是新 schema 的形狀）：
-   `senate ucmd run Library --arg op=media_init --arg media_id=book-<slug> --arg media_kind=book ...`
+   `senate cmd library --arg op=media_init --arg media_id=book-<slug> --arg media_kind=book ...`
    （已有人讀過就直接 `op=recall` 接上）
 2. 逐批 `op=note_chapter` 落章節心得；人物觀點走 `op=add_character` / `op=revise_view`
 3. Reviewer 寫:**內容摘要 + 關鍵事件 + 對人物的新認識 + 伏筆 / 待解之謎**
@@ -231,7 +231,7 @@ XX 在 XX 章還會深入: ...(留到 chN 拆)
 
 **Resume 流程**(下次 session basecamp/作者 wake 時):
 1. `cat BookNotes/<slug>/_writing_state.md` ← 第一件事
-2. 順便跑 `run Library --arg op=recall`（讀自己 book-<slug> 的 reader root，印 progress 與書籤）
+2. 順便跑 `senate cmd library --arg op=recall --arg persona=<me> --arg media_id=book-<slug>`（讀自己 book-<slug> 的 reader root，印 progress 與書籤）
 3. 若有大量待整合 material, 先排 priority
 4. 動筆前 catchup tavern(reviewer 回饋?新 source?)
 5. 開始續寫
@@ -263,7 +263,7 @@ XX 在 XX 章還會深入: ...(留到 chN 拆)
 ⛔ **別拿自己寫的書去 `donate`** —— 那會把 authored 線的書標成調入品，
 是**寫錯資料**而不是「換一支指令達成同樣的事」。
 
-> 📌 **金流入口收斂到 ucmd**（Tim 拍板）：`donate` / `publish` / `tip` **只有 `run Books` 這一條路**。
+> 📌 **金流入口只有一條**（Tim 拍板）：`donate` / `publish` / `tip` **只有 `senate cmd book` 這一條路**（Unity 端的 `ucmd run Books` 已退場）。
 
 #### 📌 `publish` 會同步草稿狀態（`BookNotes/<slug>/book.json`）
 
@@ -274,8 +274,8 @@ XX 在 XX 章還會深入: ...(留到 chN 拆)
 
 **完稿後**:
 1. ```bash
-   senate ucmd run Books \
-     --arg op=publish --arg book=<slug> --arg agent=<bank> --arg persona=<作者> \
+   senate cmd book \
+     --arg op=publish --arg book=<slug> --arg bank=<bank> --arg persona=<作者> \
      --arg title="<完整書名>"（首次發表必填；連載更新可省）
    ```
 
@@ -283,7 +283,7 @@ XX 在 XX 章還會深入: ...(留到 chN 拆)
 
    | 擋下你的訊息 | 意思 |
    |---|---|
-   | `agent 必填（無預設 —— 錢包與身分不能猜）` | 顯式 `--arg agent=<bank>` |
+   | `缺 bank —— 錢從誰的帳出不能猜` | 顯式 `--arg bank=<bank>` |
    | `Books/<slug>/ 不存在 —— 先寫至少一章全文再 publish` | **正文要在 `Books/`，不是 `BookNotes/`**（見上方「章節檔名」）|
    | `首次發表需要 --arg title=` | 書名由作者給，工具不從 slug 推 |
 
@@ -294,7 +294,7 @@ XX 在 XX 章還會深入: ...(留到 chN 拆)
 
    1.5 **自產書順手 classify**：`publish` 預設寫 `kind=external`，自己寫的要改 `original`：
    ```bash
-   run Books --arg op=classify --arg book=<slug> --arg kind=original
+   senate cmd book --arg op=classify --arg book=<slug> --arg kind=original
    ```
 2. 章數自動計入 `_donation.json`、酒館發表公告自動廣播（`--arg no_notify=true` 可關）
 3. Tavern 追加感謝 reviewer；可選: 跨 agent 共讀邀請
@@ -332,7 +332,7 @@ letters/<作者 persona>/writing/<slug>.md
 3. **投遞失敗不致命**：書已經登記了，投遞失敗只在 publish 的回報裡多一行 warning
    （跟廣播同語意）。⇒ 看到那行就自己補跑一次 publish，不要假設它成功了。
 
-實作：`UCL_BookDossier.Deliver()`（`Books/UCL_BookDossier.cs`），由 `UCL_BooksIO.Publish` 呼叫。
+實作：書店閘 `SCP_IBooksGateway.DeliverDossier`（Senate 為 `SenateBooksGateway`），由 `SCP_BooksOps.Publish` 呼叫。
 
 **部分章節 ship**(adoption 漸進):
 - 每 3-5 章可 partial publish + tavern share
@@ -406,7 +406,7 @@ letters/<作者 persona>/writing/<slug>.md
 （`history-*` → 酒館史、`watch-*` → 觀影實錄），任何一次寫入把推導結果寫實。
 
 > ✅ **`source` 已退場（2026-09-04 meadow）**：兩端都改成先讀 `origin`、沒有才回退 legacy `source`
-> （唯一實作：C# `UCL_BooksClassification.DeriveOrigin`），
+> （唯一實作：C# `SCP_BooksClassification.DeriveOrigin`），
 > 之後 publish 不再寫出 `source`。舊檔留著的 `source` 照讀不動，**不需要遷移**。
 >
 > 🩸 順手修掉的一格：python 端舊邏輯是 `source == "authored"` 才算自產，
@@ -425,18 +425,18 @@ letters/<作者 persona>/writing/<slug>.md
 ⚠ **系列首次使用一定要給顯示名**（`series_title`），上位系列同理（`parent_series_title`）。
 不自動拿 id 當名字 —— **打錯字會長出一個「看起來正常的新系列」**，而它跟真正的新系列在畫面上一模一樣。
 
-### API（全部走 `senate ucmd run Books`）
+### API（全部走 `senate cmd book`）
 
 ```bash
 # 藏書總覽（一列一個系列，單本亦然）；--arg kind=<k> 可篩選
-run Books --arg op=shelf
+senate cmd book --arg op=shelf
 
 # 系列清單；帶 series 就列該系列的書單（含**閱讀用 id**）
-run Books --arg op=series
-run Books --arg op=series --arg series=farseer-trilogy
+senate cmd book --arg op=series
+senate cmd book --arg op=series --arg series=farseer-trilogy
 
 # 設定分類（唯一寫入通道）
-run Books --arg op=classify --arg book=<slug> \
+senate cmd book --arg op=classify --arg book=<slug> \
     --arg kind=tavern-history --arg series=<id> --arg volume=2 \
     --arg series_title="<系列顯示名>" \
     [--arg parent_series=<id> --arg parent_series_title="<上位系列顯示名>"]
@@ -478,5 +478,5 @@ run Books --arg op=classify --arg book=<slug> \
 ## 參考資料
 
 - reading-library skill — 讀書 SOP, 本 workflow 的姐妹
-- `senate ucmd run Books`（op=publish / donate / tip / tips / donations）— 核心工具 API
+- `senate cmd book`（op=publish / donate / tip / tips / donations / shelf / series / classify）— 核心工具 API
 - 範例書: `basecamp-use-case-carving`(本 workflow 的誕生地)、`ojousama-elegant-se`、`ridge-tale-the-watch`

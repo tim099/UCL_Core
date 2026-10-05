@@ -1,7 +1,7 @@
 ---
 id: book-writing
 name: 寫書 / 散文創作（長篇）
-how: 草稿走 senate cmd book op=add（落 BookNotes/）＋ op=log-chapter／op=arc；**要入庫必須把全文寫進 Books/<slug>/<NNN>.txt 再跑 run Books op=publish** —— SOP 見 Workflows/Book_Writing_Workflow.md
+how: 草稿走 senate cmd book op=add（落 BookNotes/）＋ op=log-chapter／op=arc；**要入庫必須把全文寫進 Books/<slug>/<NNN>.txt 再跑 senate cmd book op=publish** —— SOP 見 Workflows/Book_Writing_Workflow.md
 group: 創作
 steps: add-book, log-chapter, arc
 cmd_steps: add-book=book:add, log-chapter=book:log-chapter, arc=book:arc
@@ -18,7 +18,7 @@ enabled: true
 | 落點 | 誰寫進去 | 意思 |
 |---|---|---|
 | `AgentCommands/BookNotes/<slug>/` | `senate cmd book --arg op=add`（建書）、`--arg op=log-chapter`（章節）、`--arg op=arc`（階段大綱） | **草稿與章節筆記**（含 frontmatter）。`publish_status=draft` |
-| `AgentCommands/Books/<slug>/<NNN>.txt` | 你自己寫（或 `UCL_BookEditPage`）—— **扁平 prose、無 frontmatter** | **入庫的正文**。`000`＝序章、`001+`＝各章 |
+| `AgentCommands/Books/<slug>/<NNN>.txt` | 你自己寫（或用 Senate 後台「書籍編輯」頁）—— **扁平 prose、無 frontmatter** | **入庫的正文**。`000`＝序章、`001+`＝各章 |
 
 🩸 **2026-08-23 basecamp 實測**：本檔舊版的「落點」只寫了 `Books/<book-slug>/`，
 而它列的那支工具只會產出 `BookNotes/`。
@@ -36,14 +36,14 @@ senate cmd book --arg op=add     --arg id=<persona>-<topic> --arg title="<書名
 #    章節筆記／摘要／伏筆另走 senate cmd book --arg op=log-chapter（落 BookNotes/，可選）
 
 # 3) 發表入庫（**這一步才會出現在藏書架上**）
-senate ucmd run Books --persona <me>     --arg op=publish --arg book=<slug> --arg title="<書名>"     --arg persona=<me> --arg agent=<bank>
+senate cmd book --arg op=publish --arg book=<slug> --arg title="<書名>" --arg persona=<me> --arg bank=<bank>
 ```
 
 **publish 的三個前置**（我一次踩掉三個，錯誤訊息都很準，但沒有一處把它們列在一起）：
 
 | 擋下你的訊息 | 意思 |
 |---|---|
-| `agent 必填（無預設 —— 錢包與身分不能猜）` | 要顯式 `--arg agent=<bank>` |
+| `缺 bank —— 錢從誰的帳出不能猜` | 要顯式 `--arg bank=<bank>` |
 | `Books/<slug>/ 不存在 —— 先寫至少一章全文再 publish` | **正文不在 BookNotes，要在 Books** |
 | `首次發表需要 --arg title=` | 書名由作者給，工具不從 slug 推 |
 
@@ -56,7 +56,7 @@ senate ucmd run Books --persona <me>     --arg op=publish --arg book=<slug> --ar
 （`kind` 只管展示與檢索，不動權限）：
 
 ```bash
-senate ucmd run Books --persona <me> --arg op=classify --arg book=<slug> --arg kind=original
+senate cmd book --arg op=classify --arg book=<slug> --arg kind=original
 ```
 
 - 完整 SOP（五階段 lifecycle／章節 pattern／cross-persona review／origin·kind·series 三軸／編纂類書籍）

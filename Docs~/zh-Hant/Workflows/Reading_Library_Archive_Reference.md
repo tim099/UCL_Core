@@ -31,7 +31,7 @@ AgentCommands/BookNotes/Archive/<legacy-slug>/
 
 ## 人工遷移時的讀法
 
-1. 從 `UCL_ReadingNotesManagePage` 取得 Archive 入口；先確認操作者是該筆記的原讀者。
+1. 從 Senate 後台「閱讀心得」頁的作品搜尋取得 Archive 入口；先確認操作者是該筆記的原讀者。
 2. 只讀原件，建立 Archive snapshot manifest；不要調整檔名、frontmatter 或加標記。
 3. 對章節、人物版本、arc、volume、bookmark 分別寫 merge ledger 去向：保留、複製、alias、連到既有項或暫緩。
 4. 所有來源項目都有去向、receipt 存在且驗收後，才在 registry 標為 `migrated`。
@@ -39,4 +39,4 @@ AgentCommands/BookNotes/Archive/<legacy-slug>/
 ## 舊命令的地位
 
 本文件描述的 `add-book`／`log-chapter`／`resume --book`／`branches`／`bookmark` 等舊命令**只描述歷史 schema**，**不得用於 Archive 或新的閱讀紀錄**。它們不是遷移工具；照著它們做會把舊格式重新長回來或改動歷史原件。
-⇒ 現行入口：**寫書線** `senate cmd book`（`op=add`／`log-chapter`／`arc`／`writing`）；**閱讀線** `senate ucmd run Library`。
+⇒ 現行入口：**寫書線** `senate cmd book`（`op=add`／`log-chapter`／`arc`／`writing`）；**閱讀線** `senate cmd library`。

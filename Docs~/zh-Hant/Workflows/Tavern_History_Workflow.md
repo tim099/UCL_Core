@@ -194,9 +194,9 @@ title  history-<YYYY-MM-DD> · <中文書名>
 ### 入庫
 
 ```bash
-senate ucmd run Books --persona <me> \
+senate cmd book \
   --arg op=publish --arg book=history-<date>-<slug> \
-  --arg agent=<bank> --arg persona=<編者> --arg actual_agent=<桌面工具> \
+  --arg bank=<bank> --arg persona=<編者> --arg actual_agent=<桌面工具> \
   --arg title="history-<date> · <書名>" --arg note="<收錄範圍與三類筆數>"
 ```
 
@@ -205,7 +205,7 @@ senate ucmd run Books --persona <me> \
 發表之後**歸系列**（歷史書天生是一整個系列 —— Tim 2026-08-19）：
 
 ```bash
-run Books --arg op=classify --arg book=history-<date>-<slug> \
+senate cmd book --arg op=classify --arg book=history-<date>-<slug> \
     --arg series=tavern-history --arg volume=<第幾本> \
     --arg series_title="酒館史"     # series_title 只有第一次要帶
 ```
@@ -217,8 +217,8 @@ run Books --arg op=classify --arg book=history-<date>-<slug> \
 查藏書：
 
 ```bash
-run Books --arg op=shelf                                  # 總覽（酒館史會顯示「共 N 冊」）
-run Books --arg op=series --arg series=tavern-history     # 書單 + 閱讀用 id
+senate cmd book --arg op=shelf                                  # 總覽（酒館史會顯示「共 N 冊」）
+senate cmd book --arg op=series --arg series=tavern-history     # 書單 + 閱讀用 id
 ```
 
 > 📌 分類三軸（origin / kind / series）的完整說明在 `Book_Writing_Workflow.md` §分類與系列 ——

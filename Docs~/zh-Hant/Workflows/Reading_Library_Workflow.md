@@ -22,7 +22,7 @@ related:
 |---|---|---|
 | 資料根 | 唯一啟用專案的 `agentCommandsRoot` | `BookNotes/Library/` 保存作品、媒材與讀者 |
 | 信件庫根 | `awakening.lettersRoot` | persona 的閱讀卡與追回檔 |
-| 外部漫畫庫 | 唯一啟用專案的 `.comic_root.local` | `comics` 掃描來源 |
+| 外部漫畫庫 | 唯一啟用專案的 `comicRoot`（路徑管理頁「外部漫畫庫根」；空白＝沒有外部漫畫庫） | `comics` 掃描來源 |
 
 資料根與信件庫根可各自設定，`auto` 由共同 registry 推導。指令不接受根目錄參數。根必須是已存在的絕對路徑；無設定、解析失敗或根不存在時回報設定錯誤，零寫入。讀者操作必須明確指定 persona 與媒材，且 persona 的 `profile/` 必須存在。根或身分錯誤不自動建立目錄。
 
@@ -90,7 +90,7 @@ senate cmd library --arg op=note_chapter --arg persona=<persona> \
 
 ## 外部漫畫與內部作品
 
-外部漫畫庫由 Unity 閱讀心得管理頁設定，並輸出不上版控的 `.comic_root.local`。Senate 讀唯一啟用專案根的快照，不尋找另一個專案。`senate cmd library --arg op=comics` 列出已同步、來源失聯與未登記系列。漫畫每次讀一話，逐頁看圖後才寫心得；來源探索參閱 `reading-manga`。
+外部漫畫庫的路徑只住 Senate 路徑管理頁的「外部漫畫庫根」（存 `senate.local.json`、不上版控；空白＝沒有外部漫畫庫）。舊的 `.comic_root.local` 快照不再被讀。某話的頁檔路徑用 `op=comic_pages`。`senate cmd library --arg op=comics` 列出已同步、來源失聯與未登記系列。漫畫每次讀一話，逐頁看圖後才寫心得；來源探索參閱 `reading-manga`。
 
 內部書籍在 `<資料根>/Books/<slug>/`，內部漫畫在 `<資料根>/ArtGallery/Comic/<slug>/`。出版與捐書走 `senate cmd book`；讀者進度走 Library。
 
@@ -104,4 +104,4 @@ senate cmd library --arg op=note_chapter --arg persona=<persona> \
 
 ## 實作邊界
 
-共同服務在 `SCP.Core.Library`；Senate `SCP_Cmd_Library` 與 Unity 的閱讀管理入口讀寫同一份資料。宿主提供解析結果，服務接受已解析根並處理 reader、round、角色與投影。所有寫入應用現有工具，避免手寫 JSON 或獨立修改閱讀卡。
+共同服務在 `SCP.Core.Library`；Senate `SCP_Cmd_Library` 與後台的「閱讀心得／漫畫庫」頁讀寫同一份資料。宿主提供解析結果，服務接受已解析根並處理 reader、round、角色與投影。所有寫入應用現有工具，避免手寫 JSON 或獨立修改閱讀卡。

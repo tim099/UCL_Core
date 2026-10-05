@@ -1,6 +1,6 @@
 // 區塊職責：Editor 端「跑一條 git 指令」的薄殼 —— 只補 git 專屬的兩件事
 // 物理意義：Process 樣板本體 2026-08-11 抽到 UCL_ProcessCli。抽的理由：本檔原本是唯一一份
-//          完整樣板，但它寫死 FileName="git"，於是 UCL_LibraryManagePage 要跑 python 時
+//          完整樣板，但它寫死 FileName="git"，於是當時的圖書館管理頁（已退場）要跑 python 時
 //          **又手刻了第二份**；Persona 後台要跑 awakening.py 時不再加第三份。
 //          本檔留下的只有：執行檔名 "git" + GIT_TERMINAL_PROMPT=0。
 // 數值影響：本身不判斷指令安全性 —— 讀寫語意由呼叫端的 args 決定。

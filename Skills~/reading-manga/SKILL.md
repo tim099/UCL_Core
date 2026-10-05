@@ -17,7 +17,7 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
 - **讀者 Root**：讀者資料寫入 `media/<media-id>/readers/<persona>/`，不得建立 `sessions/` 目錄。
 - **Round 歷史不覆寫**：首次讀用 `r1_<date>.md`，重讀同話依序 `r2_<date>.md`，保留閱讀版本史。
 - **人設 facts 與觀點分離**：人物客觀 facts 與讀者主觀 view 必須分離；不以未確認的猜測覆寫 facts。
-- **狀態同步與分享**：每話完成後更新 `reader.json` 的 progress 與 `current_impression`，並可透過 `Cmd_Library op=share` 發送酒館心得領取稿費。
+- **狀態同步與分享**：每話完成後更新 `reader.json` 的 progress 與 `current_impression`，並可透過 `senate cmd library --arg op=share` 發送酒館心得領取稿費（詳見 `reading-library`）。
 
 ---
 
@@ -35,7 +35,7 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
    - 讀取產生在 `letters/<persona>/cmd/reading_recall_<media-id>.md` 中的書籤，**直接從 bookmark 指定的下一話接續閱讀（讀 1 話）**。
    - *同 session 連續閱讀時免跑 recall。*
 2. **首次閱讀新作品**：
-   - 若為 Library 尚未建檔之作品，先於 `UCL_LibraryManagePage` 後台點擊「📥 初始化 Library Media」或走 `op=media_init` 建檔。
+   - 若為 Library 尚未建檔之作品，先走 `senate cmd library --arg op=media_init`（`media_id=comic-<slug>`、`media_kind=comic`）建檔；或在 `senate ui` 的「漫畫庫」頁對未建檔作品按「初始化」（先預覽、確認才寫）。
    - 從第 1 話（`0001`）或序章（`0000`）開始閱讀(不一定有序章)
 
 ---
@@ -44,7 +44,7 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
 
 ### A. 讀「外部實體漫畫庫」（`comic_root`，如 `D:/comic`）
 
-外部實體漫畫目錄由 Unity Editor 的 `UCL_LibraryManagePage` 後台（工具集 → 閱讀心得管理 → 外部漫畫庫）設定，並自動輸出本機快照檔 `.comic_root.local`（儲存於專案根目錄與 UCL_Core 根目錄，不上 Git）。
+外部實體漫畫目錄的路徑**只住 Senate 的路徑管理頁**（`senate ui` → 路徑管理 → 「外部漫畫庫根」，存 `senate.local.json`，不上 Git；空白＝沒有外部漫畫庫）。指令與頁面都讀這一格，不需要、也不要自己找路徑。
 
 #### 1. 掃描設定中的外部漫畫庫：
 
@@ -52,35 +52,34 @@ description: 漫畫閱讀心得流程。支援內部同仁創作（ArtGallery）
 senate cmd library --arg op=comics
 ```
 
-指令自行讀取唯一啟用專案的快照，不帶根目錄參數。逐頁讀圖時，以下工具取得實際來源目錄。
+列出系列與三態（🟢已建檔／🟡來源失聯／⚪未建檔）。沒設定外部根時會明說（若舊 `.comic_root.local` 快照有值也會點名，提示去路徑管理頁填）。`senate ui` 的「漫畫庫」頁看同一份資料。
 
-#### 2. 如何取得圖片來源路徑：
-- **首選（Python API）**：
-  ```python
-  import sys
-  from pathlib import Path
-  sys.path.insert(0, "<UCL_Core>/Tools~/AgentCommands")
-  from _lib.ucl_paths import comic_root
+#### 2. 取得「這一話有哪些頁、實際在哪」：
 
-  root = comic_root()  # 自動讀取 UCL_LibraryManagePage 寫出的 .comic_root.local 快照，回傳 Path("D:/comic")
-  ```
-- **備援（直接讀本機快照）**：讀取專案根目錄或 `<UCL_Core>/` 下的 `.comic_root.local`（內容為 `comic_root=<路徑>`）。
-- **未設定時**：若 `comic_root` 為 None，提示使用者於 Unity Editor 打開 `UCL_LibraryManagePage` 設定漫畫目錄。
+```bash
+senate cmd library --arg op=comic_pages --arg media_id=comic-<slug>                        # 列這部有哪些話
+senate cmd library --arg op=comic_pages --arg media_id=comic-<slug> --arg chapter_id=0001  # 列該話頁檔絕對路徑
+```
 
-#### 2. 目錄結構與定位：
-- 標準結構為 `<comic_root>/<作品目錄>/<4位話數>/<3位頁數.jpg>`（例如 `D:/comic/Arakawa-under-the-bridge 01/0001/001.jpg` 或 `D:/comic/Hunter x Hunter 01/0001/001.jpg`）。
-- 根據當前話數找到對應的章節資料夾（例如 `0001`）。
+- 只要 `media_id`，不需要 persona；**不用自己拼路徑、不用 python**。
+- 外部漫畫標準結構是 `<漫畫庫根>/<作品目錄>/<4位話數>/<3位頁數.jpg>`，指令幫你列好、依檔名排序。
+- 頁檔在磁碟上不存在會標「缺檔」並計入 `missing_pages`——那不是「這話只有幾頁」，是有頁掉了，回報給 Tim，別略過。
+- 找不到該話或作品時，錯誤訊息會帶上可用的話範圍／掃到幾個系列。
 
 #### 3. 逐頁看圖（嚴禁憑空腦補）：
-- 使用 `view_file` 工具打開該話資料夾下的圖片（`001.jpg`、`002.jpg`...）。
+- 使用 `view_file` 工具打開上一步列出的圖片路徑。
 - **必須真正看過每一頁的畫面、分鏡、人物神態與台詞後，再撰寫心得**。
 
 #### 4. 心得落盤（一話一檔）：
-- 在 `Library/media/comic-<slug>/readers/<persona>/chapters/<4位話數>/` 建立：
-  - `chapter.json`（宣告話數 title 與 rounds 清單）
-  - `r1_<date>.md`（包含 frontmatter：`chapter_id`、`round`、`reading_date`、`source_pages`，以及該話專屬的親筆畫面觀察與感悟）
-- 更新 `reader.json` 的 `progress`（`current_chapter_id`、`last_read`、`bookmark_note`）與 `current_impression`。
-- 同步 `bookshelf.md` 投影。
+
+```bash
+senate cmd library --arg op=note_chapter --arg persona=<persona> --arg media_id=comic-<slug> \
+  --arg chapter_id=0001 --arg display_number="第 1 話" --arg-file body=<UTF-8 心得檔>
+```
+
+- 一話一個 `chapter_id`；重讀同話自動開新 round，同一話分場讀完用 `--arg append=1`。
+- 指令會同步 `reader.json` 進度與 `bookshelf.md` 投影；⛔ 不手改 JSON 或投影，也不要自己建 `chapters/` 檔案。
+- 書籤與目前看法用 `op=bookmark` 更新。
 
 ---
 
@@ -89,7 +88,7 @@ senate cmd library --arg op=comics
 同事改編／原創的漫畫在 `AgentCommands/ArtGallery/Comic/<slug>/`，分鏡稿與畫稿放在一起，可圖文對讀。
 
 1. **先讀 `Comic/<slug>/README.md`** —— 話數表、鐵則、視覺母題、人設索引。
-2. **一話一檔：`Chapters/NNN.md`** —— 分鏡稿為展文，畫稿以 `![NNN_pNN](../RawImages/NNN_pNN.png)` 嵌入，**逐張看圖**。
+2. **一話一檔：`Chapters/NNN.md`** —— 分鏡稿為展文，畫稿以 `![NNN_pNN](../RawImages/NNN_pNN.png)` 嵌入，**逐張看圖**。`senate cmd library --arg op=comic_pages --arg media_id=comic-<slug> --arg chapter_id=<4位話數>` 會直接列出分鏡稿路徑與每張畫稿的絕對路徑（缺的標「缺檔」）。
 3. **`Characters/`** —— 人物 facts 以文字人設為準，外型以圖版人設為準。
 4. **獨有寫作角度**：分鏡與成品落差、鐵則兌現度、形象一致性。
 5. **心得落盤**：心得照常寫進 `Library/media/comic-<slug>/readers/<persona>/chapters/<4位話數>/`（一話一檔）；**不要**把心得寫回 `ArtGallery/Comic/`。
@@ -106,7 +105,7 @@ senate cmd library --arg op=comics
 - ❌ **禁止一次暴讀整卷/整本** —— 每次專注消化 1 話。
 - ❌ **禁止多話合併寫在同一話目錄** —— 每一話必須有獨立的 `chapters/<4位話數>/`。
 - ❌ **禁止在未看圖的情況下憑空編造漫畫閱讀心得** —— 必須逐張看過圖片。
-- ❌ **禁止寫死外部漫畫路徑** —— 必須透過 `ucl_paths.comic_root()` 或 `.comic_root.local` 動態取得。
+- ❌ **禁止寫死外部漫畫路徑** —— 路徑只從 `senate cmd library --arg op=comic_pages`／`op=comics` 取得（設定只住路徑管理頁）。
 - ❌ **禁止讀取或寫入 Archive 作為日常閱讀流程**。
 - ❌ **心得使用 work/media/reader 與章節 round，不建立 `sessions/` 目錄** —— 日常入口是 `senate cmd library`。
 - ❌ **禁止以未確認的名字或推測覆寫人物 facts**。

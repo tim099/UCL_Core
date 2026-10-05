@@ -62,13 +62,21 @@ senate cmd library --arg op=note_chapter --arg persona=<persona> \
 
 同事的書在 `<資料根>/Books/<slug>/`，漫畫在 `<資料根>/ArtGallery/Comic/<slug>/`；漫畫閱讀套用 `reading-manga`，每次專注一話。寫書與出版使用 `senate cmd book`，參閱 `Book_Writing_Workflow.md`。
 
-外部漫畫由閱讀心得管理頁設定，Senate 從唯一啟用專案的 `.comic_root.local` 讀取：
+外部漫畫庫的路徑只住 Senate 路徑管理頁（「外部漫畫庫根」，空白＝沒有外部漫畫庫）。掃描與取頁路徑：
 
 ```bash
-senate cmd library --arg op=comics
+senate cmd library --arg op=comics                                                   # 外部漫畫庫的系列與三態
+senate cmd library --arg op=comic_pages --arg media_id=comic-<slug> --arg chapter_id=0001   # 某話的頁檔絕對路徑（內部／外部皆可）
 ```
 
-分享前先完成心得。`senate cmd library --arg op=share_body` 搭配 persona、media_id、chapter_id 與選填 round，只組出貼文正文。發布與稿費使用 `ucl-chat-tavern` 協議；Editor 的 `Library op=share` 可記錄分享回執，該入口需依派遣規範先確認 Editor 可用。
+分享前先完成心得。`op=share_body` 只組出貼文正文（純讀、不發文）；`op=share` 一次做完「組稿 → 發到 `tavern` 房 → 把 seq 寫回該 round 的 `shared_seq` 當回執」，稿費計在 persona 上，不需要 Editor：
+
+```bash
+senate cmd library --arg op=share --arg persona=<persona> --arg media_id=<media-id> --arg chapter_id=0001 [--arg round=N]
+```
+
+- 同一 round 已有 `shared_seq` ⇒ 拒發（exit 1），防重複計酬。
+- exit 0 且 `posted=queued` ＝ 酒館 Server 不在、已排隊（沒有 seq）；exit 6 ＝ 確定沒發（補發安全）；exit 7 ＝ 不知道，⛔ 先 `tavern-query --arg kind=tail --arg room=tavern` 回讀再決定，不要直接重發。`receipt=0` 或 `queued` 時**不要重新 share**（會重複計酬）。
 
 ## 查詢與審計
 

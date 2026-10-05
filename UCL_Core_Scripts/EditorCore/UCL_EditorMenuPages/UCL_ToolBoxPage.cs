@@ -94,10 +94,6 @@ namespace UCL.Core.EditorLib.Page
             new ToolGroup("Fold.Docs", "ToolBox.Group.Docs",
                 new ToolEntry("ToolBox.DocSearch", () => UCL_DocSearchPage.Create()),
                 new ToolEntry("ToolBox.LocalizeEdit", () => UCL_EditorPage.Create<UCL_LocalizeEditPage>())),
-
-            new ToolGroup("Fold.Content", "ToolBox.Group.Content",
-                new ToolEntry("ToolBox.LibraryManage", () => UCL_LibraryManagePage.Create()),
-                new ToolEntry("ToolBox.ReadingNotesManage", () => UCL_ReadingNotesManagePage.Create())),
         };
 
         #endregion

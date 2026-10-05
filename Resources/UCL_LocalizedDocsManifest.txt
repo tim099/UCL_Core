@@ -115,7 +115,6 @@ Docs~/zh-Hant/UCL_EditorPage/UCL_PackageInstallPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_PersonaInspectorPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_ProcessAdminPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_PropertyEditorProbe.md
-Docs~/zh-Hant/UCL_EditorPage/UCL_ReadingNotesManagePage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_ScreenStreamPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_SelectAssetPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_SessionAdminPage.md

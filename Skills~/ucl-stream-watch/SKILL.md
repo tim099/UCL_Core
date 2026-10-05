@@ -37,7 +37,7 @@ senate ucmd run StreamWatch --persona <P>     --arg step=prepare --arg title=<�
 
 | 做什麼 | 為什麼 |
 |---|---|
-| **媒材 id 查既有、不發明** | 命中 1 筆才用；0 筆要 `--arg media_id=` 明示（新作品先走 `Cmd_Library op=media_init`）；**≥2 筆停下來列清單** —— 猜一個等於替 Tim 選了平行宇宙 |
+| **媒材 id 查既有、不發明** | 命中 1 筆才用；0 筆要 `--arg media_id=` 明示（新作品先走 `senate cmd library --arg op=media_init`）；**≥2 筆停下來列清單** —— 猜一個等於替 Tim 選了平行宇宙 |
 | 列出**心得庫現況**（誰已寫過哪幾章） | 這就是防漂移的那一眼；本場章號已有心得 ⇒ 提醒「這是重看？要開 r2」 |
 | 定 **reference_reader**（接續基準） | 給陪同者追進度用；未指定＝取章數最多者，**並列時停下來要人挑** |
 | 產 **補課地圖**（第 1..N-1 話各由誰的心得補） | 預設取基準者自己的；**他缺的那幾集由主觀影者指定用誰的**（`--arg catchup_map=`），沒指定就列出候選並擋下 |

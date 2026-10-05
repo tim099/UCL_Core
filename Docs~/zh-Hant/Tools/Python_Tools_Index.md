@@ -32,7 +32,7 @@ related:
 > ⚠ 而檔頭有「退場」字樣**不等於整支退場** —— 撈關鍵字會把第三種算成第二種（實測踩過）。
 >
 > ⛔ 已經沒有 python 入口的三條：**提交走 `senate cmd commit`**、
-> **閱讀線走 `senate ucmd run Library`**、**寫書線走 `senate cmd book`**。
+> **閱讀線走 `senate cmd library`**、**寫書線走 `senate cmd book`**。
 
 ## 📂 目錄結構
 

@@ -237,8 +237,7 @@ Task.Run(() =>                                  // ① 不在主執行緒跑
 - **常駐型** `UCL_ScreenStreamDaemon`（pre-spawn `KillAllByTag` + `Register` + 結束時 `Unregister`）
 - **一次性工具型（首選範本）** `UCL_GitFlattenSyncPage` — tag `git_flatten_sync`，
   上方六件事做齊的一份完整實作
-- **`RegisterScope` 用法** `UCL_AgentSkillManagerPage` / `UCL_LoginStatusPage` /
-  `UCL_LibraryManagePage`（2026-08-06 全面補登記那批）
+- **`RegisterScope` 用法** `UCL_AgentSkillManagerPage` / `UCL_LoginStatusPage`
 - **fire-and-forget** `UCL_ExplorerUtil` — tag `explorer_open`
 
 > [!TIP]

@@ -21,7 +21,7 @@ using System.Threading;
 using Cysharp.Threading.Tasks;
 using UCL.Core.JsonLib;
 using UCL.Core.EditorLib.AgentCommands.Treasury;
-using UCL.Core.EditorLib.AgentCommands.ReadingLibrary;
+using SCP.Core.Library;
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
@@ -251,7 +251,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             bool aOk;
             bool aCreated = false;
             string aErr = null;
-            try { aOk = UCL_ReadingLibraryIO.RegisterReader(iMediaId, iPersona, out aCreated, out _, out aErr); }
+            try { aOk = SCP.Core.Library.SCP_LibraryInit.RegisterReader(new SCP.Core.Paths.SCP_LettersRoot(UCL_LettersPath.Root), UCL_AgentCommandsPath.DataRoot, iMediaId, iPersona, out aCreated, out _, out aErr); }
             catch (Exception e) { aOk = false; aErr = e.Message; }
 
             if (aOk && aCreated)
@@ -268,12 +268,12 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             var aOut = new List<string>();
             try
             {
-                string aDir = Path.Combine(UCL_ReadingLibraryIO.ReaderRoot(iMediaId, iPersona), "chapters");
+                string aDir = Path.Combine(SCP_LibraryStore.ReaderRoot(UCL_AgentCommandsPath.DataRoot, iMediaId, iPersona), "chapters");
                 if (!Directory.Exists(aDir)) return aOut;
                 foreach (var d in Directory.GetDirectories(aDir))
                 {
                     string aName = Path.GetFileName(d);
-                    if (UCL_ReadingLibraryIO.IsValidChapterId(aName)) aOut.Add(aName);
+                    if (SCP_LibraryStore.IsValidChapterId(aName)) aOut.Add(aName);
                 }
                 aOut.Sort(StringComparer.Ordinal);
             }
@@ -297,10 +297,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (string.IsNullOrEmpty(iKey)) { oNote = "（空鍵，不解析）"; return; }
             try
             {
-                string aMediaJson = Path.Combine(UCL_ReadingLibraryIO.MediaRoot(iKey), "media.json");
+                string aMediaJson = Path.Combine(SCP_LibraryStore.MediaRoot(UCL_AgentCommandsPath.DataRoot, iKey), "media.json");
                 if (File.Exists(aMediaJson))
                 {
-                    var aMj = UCL_ReadingLibraryIO.LoadJson(aMediaJson, out string aErr);
+                    var aMj = SCP_LibraryIO.LoadJson(aMediaJson, out string aErr);
                     string aWid = (aMj != null && aMj.Contains("work_id")) ? aMj.GetString("work_id", "") : "";
                     if (!string.IsNullOrEmpty(aWid))
                     {
@@ -310,7 +310,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     }
                 }
                 var aOwn = new List<string>();
-                foreach (var m in UCL_ReadingLibraryIO.ListMediaEntries())
+                foreach (var m in SCP_LibraryCatalog.ListMediaEntries(UCL_AgentCommandsPath.DataRoot))
                     if ((m.WorkId ?? "") == iKey) aOwn.Add(m.MediaId);
                 if (aOwn.Count == 1)
                 {
@@ -330,7 +330,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     if (aByAlias.Count == 1)
                     {
                         oLibMediaId = aByAlias[0];
-                        foreach (var m in UCL_ReadingLibraryIO.ListMediaEntries())
+                        foreach (var m in SCP_LibraryCatalog.ListMediaEntries(UCL_AgentCommandsPath.DataRoot))
                             if (m.MediaId == oLibMediaId)
                             {
                                 if (!string.IsNullOrEmpty(m.WorkId)) oWorkId = m.WorkId;
@@ -365,7 +365,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aQ = iQuery.Trim().ToLowerInvariant();
             try
             {
-                foreach (var m in UCL_ReadingLibraryIO.ListMediaEntries())
+                foreach (var m in SCP_LibraryCatalog.ListMediaEntries(UCL_AgentCommandsPath.DataRoot))
                 {
                     string aId = m.MediaId ?? "";
                     string aWork = m.WorkId ?? "";
@@ -491,7 +491,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (!string.IsNullOrEmpty(aMediaArg))
             {
                 aMediaId = aMediaArg;
-                bool aExists = Directory.Exists(UCL_ReadingLibraryIO.MediaRoot(aMediaId));
+                bool aExists = Directory.Exists(SCP_LibraryStore.MediaRoot(UCL_AgentCommandsPath.DataRoot, aMediaId));
                 // ── TASK-0076 第③刀：把幽靈準備檔的**產地**封起來 ──────────────────
                 // 🩸 這裡原本只印一句「⚠ 閱讀庫尚不存在」就照樣落檔 ⇒ 給錯的 id（例如給了 work slug）
                 //    會生出一份 `prepared/<不是 media_id 的東西>.json`，而它跟正牌準備檔**長得一樣**。
@@ -506,7 +506,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         aSb.Append($"。ℹ 以它查到的候選：{string.Join(" / ", aCandFix.Select(c => $"`{c}`"))}　←　妳要的多半是其中一個（給的若是 **work slug**，真正的 media_id 通常帶 `anim-`/`film-`/`series-`/`stream-` 前綴）");
                     Blocked(iArgs, aR, aPath, aSb.ToString(),
                             $"senate ucmd run StreamWatch --arg step=prepare --arg persona={iPersona} --arg media_id=<閱讀庫既有的 media_id> --arg episode={aEpisodeIn}"
-                            + "；真的是新作品 ⇒ 先 `Cmd_Library op=media_init`（媒材 id 由那邊生成），本步不代建");
+                            + "；真的是新作品 ⇒ 先 `senate cmd library --arg op=media_init`（媒材 id 由那邊生成），本步不代建");
                     throw new Exception($"[StreamWatch] step=prepare blocked：media_id `{aMediaId}` 不存在於閱讀庫（詳見 {aPath}）");
                 }
                 aR.AppendLine($"- 明示 `media_id={aMediaId}`（閱讀庫**已存在** —— 落檔前驗過，不是事後對帳）");
@@ -520,7 +520,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 else
                 {
                     string aWhy = aCand.Count == 0
-                        ? $"閱讀庫查不到「{aTitleIn}」—— 新作品請先 `Cmd_Library op=media_init`（媒材 id 由那邊生成），再帶 --arg media_id=<id> 回來"
+                        ? $"閱讀庫查不到「{aTitleIn}」—— 新作品請先 `senate cmd library --arg op=media_init`（媒材 id 由那邊生成），再帶 --arg media_id=<id> 回來"
                         : $"「{aTitleIn}」命中 {aCand.Count} 筆，**不猜** —— 用 --arg media_id=<上面其中一個> 指定";
                     Blocked(iArgs, aR, aPath, aWhy,
                             $"senate ucmd run StreamWatch --arg step=prepare --arg persona={iPersona} --arg media_id=<id> --arg episode={aEpisodeIn}");
@@ -532,7 +532,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             aR.AppendLine();
             aR.AppendLine("## ② 心得庫現況（**這就是防漂移的那一眼**）");
             var aReaders = new List<string>();
-            try { aReaders = UCL_ReadingLibraryIO.ListReaders(aMediaId) ?? new List<string>(); } catch { }
+            try { aReaders = SCP_LibraryStore.ListReaderPersonas(UCL_AgentCommandsPath.DataRoot, aMediaId) ?? new List<string>(); } catch { }
             var aChaptersOf = new Dictionary<string, List<string>>();
             foreach (var r in aReaders) aChaptersOf[r] = ReaderChapters(aMediaId, r);
             if (aReaders.Count == 0)
@@ -736,8 +736,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aWorkId = "";
             try
             {
-                var aMediaJson = UCL_ReadingLibraryIO.LoadJson(
-                    Path.Combine(UCL_ReadingLibraryIO.MediaRoot(aMediaId), "media.json"), out string aMErr);
+                var aMediaJson = SCP_LibraryIO.LoadJson(
+                    Path.Combine(SCP_LibraryStore.MediaRoot(UCL_AgentCommandsPath.DataRoot, aMediaId), "media.json"), out string aMErr);
                 if (aMediaJson != null && aMediaJson.Contains("work_id")) aWorkId = aMediaJson.GetString("work_id", "");
             }
             catch { }
@@ -845,7 +845,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         aR.AppendLine();
                         continue;
                     }
-                    string aDir = Path.Combine(UCL_ReadingLibraryIO.ReaderRoot(aMediaId, aSrc), "chapters", aCh);
+                    string aDir = Path.Combine(SCP_LibraryStore.ReaderRoot(UCL_AgentCommandsPath.DataRoot, aMediaId, aSrc), "chapters", aCh);
                     var aRounds = Directory.Exists(aDir)
                         ? Directory.GetFiles(aDir, "r*.md").OrderBy(f => f).ToList() : new List<string>();
                     if (aRounds.Count == 0)
@@ -867,7 +867,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 基準者的接續點（下次從哪接）—— 進場前最後一眼
             try
             {
-                var aReader = UCL_ReadingLibraryIO.LoadReader(aMediaId, aRef, out string aErr);
+                var aReader = SCP_LibraryIO.LoadReader(UCL_AgentCommandsPath.DataRoot, aMediaId, aRef, out string aErr);
                 if (aReader != null && aReader.Contains("progress"))
                 {
                     var aProg = aReader["progress"];
@@ -1318,7 +1318,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 var aOwnNow = new List<string>();
                 try
                 {
-                    foreach (var m in UCL_ReadingLibraryIO.ListMediaEntries())
+                    foreach (var m in SCP_LibraryCatalog.ListMediaEntries(UCL_AgentCommandsPath.DataRoot))
                         if ((m.WorkId ?? "") == aResolvedWork) aOwnNow.Add(m.MediaId);
                 }
                 catch { }
@@ -1356,9 +1356,9 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 var aPrep2 = LoadPrepared(aLibMediaId);
                 string aCh2 = aPrep2 != null ? aPrep2.chapter_id : "";
                 aR.AppendLine($"5. 收工後寫心得（**id 已填好，不要自己打字**）："
-                    + $"`senate ucmd run Library --arg op=note_chapter --arg persona={iPersona} "
-                    + $"--arg media_id={aLibMediaId} --arg chapter={(string.IsNullOrEmpty(aCh2) ? "<四位數話號>" : aCh2)} "
-                    + "--arg title=<話名> --arg-file body=<心得>`"
+                    + $"`senate cmd library --arg op=note_chapter --arg persona={iPersona} "
+                    + $"--arg media_id={aLibMediaId} --arg chapter_id={(string.IsNullOrEmpty(aCh2) ? "<四位數話號>" : aCh2)} "
+                    + "--arg chapter_title=<話名> --arg-file body=<心得>`"
                     + (string.IsNullOrEmpty(aCh2) ? "　（章號查不到 ⇒ 走過 step=prepare 就會自動帶）" : ""));
             }
             else if (aProgressMediaHits != null && aProgressMediaHits.Count == 1)
@@ -1370,8 +1370,8 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 var aPrepHit = LoadPrepared(aHit, out _);
                 aR.AppendLine($"5. ⚠ `ResolveWatchTarget` **沒有解析出 media**，但上面「既有進度」那段以 work 後綴比對命中 "
                     + $"**`{aHit}`** ⇒ 以它為準（兩段同源，TASK-0076）："
-                    + $"`senate ucmd run Library --arg op=note_chapter --arg persona={iPersona} --arg media_id={aHit} "
-                    + $"--arg chapter={(aPrepHit != null ? aPrepHit.chapter_id : "<四位數話號>")} --arg title=<話名> --arg-file body=<心得>`");
+                    + $"`senate cmd library --arg op=note_chapter --arg persona={iPersona} --arg media_id={aHit} "
+                    + $"--arg chapter_id={(aPrepHit != null ? aPrepHit.chapter_id : "<四位數話號>")} --arg chapter_title=<話名> --arg-file body=<心得>`");
             }
             else if (aProgressMediaHits != null && aProgressMediaHits.Count > 1)
             {
@@ -1381,7 +1381,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             else
             {
                 aR.AppendLine($"5. ⚠ 這部片在閱讀庫**還沒有 media**（`ResolveWatchTarget` 與「既有進度」兩段都零命中）"
-                    + " ⇒ 寫心得前先 `Cmd_Library op=media_init`（媒材 id 由那邊生成，這是唯一需要人取 id 的情況）。");
+                    + " ⇒ 寫心得前先 `senate cmd library --arg op=media_init`（媒材 id 由那邊生成，這是唯一需要人取 id 的情況）。");
             }
             WritePayload(iArgs, aPath, aR.ToString());
             Debug.Log($"[StreamWatch] step=start 完成 session={aSessionId} media={iMedia} → {aPath}");
@@ -1770,7 +1770,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (!aS.note_written)
                 {
                     // ⚠ 接續點**走閱讀心得那條路**（Tim 2026-08-16）——「接續觀影跟接續閱讀走一樣的流程」。
-                    //   不另建格式：Cmd_Library 的 media/reader/chapter 模型本來就是為分段觀看設計的
+                    //   不另建格式：閱讀庫（senate cmd library）的 media/reader/chapter 模型本來就是為分段觀看設計的
                     //   （它有 `time_range`「手動切段留下的事實」與 `display_number`）。
                     //   ⇒ StreamWatch 不重造第四套，只把 session 的事實預填進指令。
                     aR.AppendLine("⚠ **本場未寫接續點** —— 不擋結算，但下次續看接不回進度。");
@@ -1786,13 +1786,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         var aPrepS = LoadPrepared(aLibId);
                         if (aPrepS != null) aChId = aPrepS.chapter_id;
                     }
-                    string aMidArg = string.IsNullOrEmpty(aLibId) ? "<閱讀庫 media_id — 先跑 Cmd_Library op=media_init>" : aLibId;
+                    string aMidArg = string.IsNullOrEmpty(aLibId) ? "<閱讀庫 media_id — 先跑 senate cmd library op=media_init>" : aLibId;
                     string aChArg = string.IsNullOrEmpty(aChId) ? "<四位數話號>" : aChId;
-                    aR.AppendLine($"   1. 心得：`senate ucmd run Library --arg op=note_chapter --arg persona={iPersona} "
-                        + $"--arg media_id={aMidArg} --arg chapter={aChArg} --arg title=<話名> --arg display_number=<第 N 話> "
+                    aR.AppendLine($"   1. 心得：`senate cmd library --arg op=note_chapter --arg persona={iPersona} "
+                        + $"--arg media_id={aMidArg} --arg chapter_id={aChArg} --arg chapter_title=<話名> --arg display_number=<第 N 話> "
                         + "--arg-file body=<心得>`"
                         + (string.IsNullOrEmpty(aLibId) ? "" : "　←　**id 已自動填**，不要自己打字"));
-                    aR.AppendLine($"   2. 書籤：`senate ucmd run Library --arg op=bookmark --arg persona={iPersona} "
+                    aR.AppendLine($"   2. 書籤：`senate cmd library --arg op=bookmark --arg persona={iPersona} "
                         + $"--arg media_id={aMidArg} --arg note=<下次從哪接> --arg impression=<當前看法>`");
                     aR.AppendLine("   3. 人物：`op=add_character` / `op=revise_view`（改觀要寫 `change_reason`）");
                     aR.AppendLine("   ⚠ **一話一 round，場次中斷續寫同一個 round**；`r2` 只留給真正的重看。");
@@ -1802,7 +1802,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     //   ⇒ 規則旁邊一定要放**做得到它的那道指令**，否則規則只是一句願望。
                     aR.AppendLine("      ⇒ **同一話的第二場**：上面第 1 條加 `--arg append=1`"
                         + "（追加在同一個 round 尾端、`segments` +1，不開新 round）。");
-                    aR.AppendLine("   ⇒ 下次續看：`senate ucmd run Library --arg op=recall --arg persona="
+                    aR.AppendLine("   ⇒ 下次續看：`senate cmd library --arg op=recall --arg persona="
                         + iPersona + " --arg media_id=<同上>`");
                     aR.AppendLine();
                 }
@@ -3569,7 +3569,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 }
             }
             catch { }
-            foreach (var aKind in UCL_ReadingLibraryIO.MediaKinds)
+            foreach (var aKind in SCP_LibraryIO.MediaKinds)
                 if (iKey.StartsWith(aKind + "-", StringComparison.Ordinal))
                     return iKey.Substring(aKind.Length + 1);
             return iKey;
@@ -3643,7 +3643,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 if (aWorkSlug != iWork)
                     aSb.AppendLine($"- ℹ️ `{iWork}` 是 **media_id** 不是 work —— 下面用它的 work `{aWorkSlug}` 組指令");
                 aSb.AppendLine("- ⇒ 寫心得前要先建媒材（`media_kind` 前綴須與 `media_id` 同字）：");
-                aSb.AppendLine($"  `senate ucmd run Library --arg op=media_init --arg persona={iPersona} "
+                aSb.AppendLine($"  `senate cmd library --arg op=media_init --arg persona={iPersona} "
                     + $"--arg work_id={aWorkSlug} --arg media_id=<anim|film|series|stream>-{aWorkSlug} "
                     + "--arg media_kind=<同上> --arg title=<作品中文名>`");
             }
@@ -3652,7 +3652,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aSb.AppendLine($"- ✅ 妳讀過這部（{aHits.Count} 個媒材）：");
                 foreach (var h in aHits) aSb.AppendLine(h);
                 aSb.AppendLine("- ⚠ **開看前先追回** —— 否則等於從零開始看續篇：");
-                aSb.AppendLine($"  `senate ucmd run Library --arg op=recall --arg persona={iPersona} --arg media_id=<上面那個>`");
+                aSb.AppendLine($"  `senate cmd library --arg op=recall --arg persona={iPersona} --arg media_id=<上面那個>`");
                 aSb.AppendLine("  → 產物落 `letters/<persona>/cmd/reading_recall_<media-id>.md`，**Read 它**再開看。");
                 aSb.AppendLine("- ℹ 媒材進度各自獨立（改編不是原作的第二版）；跨媒材時仍值得先 recall 一次。");
             }
@@ -4601,7 +4601,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 
         // ⚠ **只剩一個呼叫端**：`reader.json`（閱讀庫的結構，不是本 Cmd 擁有的）。
         //   本 Cmd 自己的四份檔（session / prepared / hotspots / 台帳）已全部走 typed model。
-        //   這裡刻意**不**為 reader.json 另立一個 model —— 那份結構的主人是 `UCL_ReadingLibraryIO`，
+        //   這裡刻意**不**為 reader.json 另立一個 model —— 那份結構的主人是 `SCP_Library*`（SCP_Core），
         //   在這裡再定義一份就是第二份真相。等那邊 typed 化之後，這三行連同呼叫端一起改走它。
         static string ReadStr(JsonData iJd, string iKey) => iJd != null && iJd.Contains(iKey) ? iJd[iKey].ToString() : "";
 

@@ -109,7 +109,7 @@ senate cmd tavern-post --arg persona=<me> --arg "status=改 <哪個系統/哪些
 改任何 C# 之前進 Coding 施工場，而**進場時要宣告這一場要動哪一塊**（絕對路徑）：
 
 ```bash
-senate cmd coding --arg data_root=<AgentCommands 根> --arg op=start --arg persona=<你> \
+senate cmd coding --arg op=start --arg persona=<你> \
     --arg status="在改 <哪一部分>" \
     --arg scope="D:/Unity/LY/Assets/Plugins/UCL_Core" \
     --arg tasks=<單號>          # 綁單：單子進 in_review 就自動收場
@@ -122,7 +122,7 @@ senate cmd coding --arg data_root=<AgentCommands 根> --arg op=start --arg perso
 - ⛔ **不宣告 `scope` ＝ 整個 kind 全域獨佔（誰都擋）** —— 那是安全側，不是「可以先不填」。
   不填的代價落在別人身上：他們被擋下時看到的理由會是「他沒有宣告，這一格你補不了」。
 - ⚠ 路徑打錯會**當場 exit 2**，不會靜默退化 —— 這是刻意的（靜默退化＝你拿到一個沒要的全域鎖）。
-- 看現在誰在場上、各自的範圍：`senate cmd coding --arg data_root=<根>`（列**全部**，不是只列第一個）。
+- 看現在誰在場上、各自的範圍：`senate cmd coding`（列**全部**，不是只列第一個）。
 
 ### ⚠ 兩格範圍判準的射程（⛔ 不要讀成「有閘就安全」）
 

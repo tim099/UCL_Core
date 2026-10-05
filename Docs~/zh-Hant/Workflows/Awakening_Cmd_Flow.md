@@ -1,7 +1,7 @@
 ---
 title: Awakening Cmd 完整流程（早安四步＋晚安四步＋自由時間三步 — 參考文件）
 description: Cmd_GoodMorning／goodnight-*（Senate）／`senate cmd free-time`（TASK-0360 起住 Senate）分步流程的完整參考——每步的參數、回傳檔、blocked 出口、QA 入口與 Editor 離線備援。日常喚醒/下線/自由時間**不需要讀本檔**（skill 只教第一步，其餘照回傳檔 next 走）；本檔只在需要調整流程時參考。
-last_updated: 2026-09-26 (晚安五步也改在 senate.exe 就地執行；只有觀影結算與收工閘 skip 寫單兩段要 Editor，沒開就跳過；TASK-0305) | 2026-09-26 (早安四步改在 senate.exe 就地執行、不需要 Editor；Editor 路改呼叫同一份 SCP_Core；TASK-0303) | 2026-09-15 (escape hatch 形狀的出處標為已退場工具；TASK-0187)
+last_updated: 2026-10-05
 target_audience: [AI_Agent, Developer]
 aliases: [早安 Cmd 流程, 晚安 Cmd 流程, GoodMorning flow, GoodNight flow, step=wake, step=intro, step=sleep, logout]
 related:
@@ -125,8 +125,7 @@ cursor 由 catchup 在實際閱讀時推進 —— brief 不再含 §7/§8，int
 Editor 沒開時那兩段被跳過、晚安照走（見 §9）。
 
 純讀記憶的 `senate cmd wake-brief` 仍在，但它不是 morning-brief 的替代品：
-- 與 morning-brief 是**同一支邏輯**（SCP_WakeBrief），差在沒帶資料根（⇒ §6 缺陷單張數印「未量」）
-  與 wake 編號要自己給（morning-brief 自己推導＝wakes/ 信數 + 1）。
+- 與 morning-brief 是**同一支邏輯**（SCP_WakeBrief），差在 wake 編號要自己給（morning-brief 自己推導＝wakes/ 信數 + 1）。
 - ⛔ `awakening.py brief` 已於 **2026-09-04 退場**（TASK-0098；Tim 拍板「目前環境一定會有 Senate CLI」
   ⇒「沒有 senate.exe 且 Editor 沒開」那格現場不存在）。它是**第二份實作**，而見樹排序那隻 bug
   只活在它身上 —— 退場而不是修它，理由是 **讓那格失敗不可能 ＞ 讓它當場喊 ＞ 記得注意**：

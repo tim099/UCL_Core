@@ -97,7 +97,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         static Result Run(string iCmd, Dictionary<string, string> iArgs)
         {
-            var (aExit, aOut) = UCL_PersonaProfileSenateBridge.RunCmd(iCmd, iArgs, OUTER_TIMEOUT_SEC, "target_data_root");
+            var (aExit, aOut) = UCL_PersonaProfileSenateBridge.RunCmd(iCmd, iArgs, OUTER_TIMEOUT_SEC, iSendTargetDataRoot: true);
             var r = new Result { ExitCode = aExit, Output = aOut ?? "" };
             Match m = s_Seq.Match(r.Output);
             if (m.Success) int.TryParse(m.Groups[1].Value, out r.Seq);

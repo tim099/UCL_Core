@@ -87,10 +87,10 @@ description: |
 >
 > ```bash
 > # 先掃（預設 op=scan，純讀不動 index）—— 看清分群再決定。一次掃完全部 repo，沒有 mode
-> senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters>
+> senate cmd auto-commit
 >
 > # 真的提交（逐群一筆 commit；子 repo 在前、父層最後；不 push、不 bump 父層）
-> senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters> --arg op=commit
+> senate cmd auto-commit --arg op=commit
 > #   只做某幾個 repo：--arg only=AgentCommands,kotoko　只做某幾群：--arg groups=chat,keys
 > ```
 >
@@ -196,7 +196,6 @@ git -C <repo> add <files>          # stage 自己來
 senate cmd commit \
     --arg repo=<該層 repo 路徑> \
     --arg personas=<你>[,<協作者>…] \
-    --arg letters_root=<letters 根> --arg data_root=<AgentCommands 根> \
     --arg expect_files=<N> \
     --arg-file message=<訊息檔> \
     [--arg-file announce_body=<開場白檔>]

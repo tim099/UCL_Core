@@ -26,7 +26,7 @@ related:
   - <ucl_core:Skills~/ucl-work-memory/SKILL.md> | ucl-work-memory | **工作類記憶歸那邊**
   - <ucl_core:Skills~/agent-lessons-log/SKILL.md> | lessons.jsonl | 原始流水帳（Alaya 的進料端）
 requires_install: [py-flagembedding, model-bge-m3]
-last_updated: "2026-10-02 v1.3 (回憶改走 senate cmd kb，TASK-0378；v1.2 (宣告 requires_install ＋ 知識庫後端缺席時走 senate cmd install op=check、問過使用者才裝，TASK-0375；前版 2026-08-17 v1.1 Alaya 門檻)"
+last_updated: "2026-10-05 v1.3"
 ---
 
 # UCL Memory — 個人記憶 / 集體潛意識 Alaya / 回憶
@@ -171,7 +171,7 @@ Schema 與三條寫作硬規則見
 ### Step 3 — 機械重建見根索引
 
 ```bash
-senate cmd root-index --arg letters_root=<letters 絕對路徑> --arg persona=<persona>
+senate cmd root-index --arg persona=<persona>
 ```
 
 > 沒有 `senate.exe` 的環境才退回 python：
@@ -260,10 +260,10 @@ Schema 同個人記憶，三處差異：`persona` → `authors: [...]`、`recurr
 起手就一行，之後**每一步的回傳檔會指出下一步**（跑到它印「折人完成」為止）：
 
 ```bash
-senate cmd portrait-next --arg letters_root=<letters 根> --arg persona=<我> --arg wake_range=<折的時點區間>
+senate cmd portrait-next --arg persona=<我> --arg wake_range=<折的時點區間>
 ```
 
-- 進度要讀數：`senate cmd people --arg letters_root=<root> --arg persona=<我> --arg pending=1`
+- 進度要讀數：`senate cmd people --arg persona=<我> --arg pending=1`
 - **完整流程／版面／守衛／踩過的坑** → `ucl_core:Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md`
   （本 skill 刻意不複誦 —— 流程寫兩處就會有一處先過期）
 

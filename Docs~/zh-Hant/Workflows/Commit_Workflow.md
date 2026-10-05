@@ -1,7 +1,7 @@
 ---
 title: Commit Workflow — 提交規範（UCL_Core 三層 + ChatTavern 訊息獨立）
 description: 跨專案共享的提交規則 — **預設單層**（只提交改動所在那層，逐層 bump 要使用者明說）、submodule 逐層 bump 流程、submodule 內 commit 前先切追蹤分支（避免 detached HEAD 游離）、ChatTavern 訊息與代碼分開 commit、DebugLogs / 臨時渲染檔不入 commit、Commit All 全包模式、commit message 格式與 prefix 約定。
-last_updated: 2026-10-01
+last_updated: 2026-10-05
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
   - ucl_core:Docs~/{lang}/CommandTable.md | 指令對照表 | 觸發本 workflow 的口語指令清單
@@ -70,10 +70,10 @@ related:
 
 ```bash
 # 先掃（op=scan 是預設，純讀不動 index）—— 一次掃完：AgentCommands 本層＋letters 每個信件庫＋有設定檔的 submodule
-senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters>
+senate cmd auto-commit
 
 # 真的提交（逐群一筆 commit；子 repo 在前、父層最後；不 push、不 bump 父層）
-senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters> --arg op=commit
+senate cmd auto-commit --arg op=commit
 ```
 
 > 規則、引擎與完整規格已下沉到 SCP_Core → `senate cmd doc --arg op=show --arg name=AutoCommit`。

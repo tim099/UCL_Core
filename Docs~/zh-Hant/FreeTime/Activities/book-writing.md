@@ -30,7 +30,7 @@ enabled: true
 ```bash
 # 1) 建書（草稿；slug 用 <persona>-<topic> 的 ascii 形式，不要用中文書名當 id）
 #    ⭐ 本地跑，不需要 Editor。
-senate cmd book --arg data_root=<AgentCommands> --arg op=add     --arg id=<persona>-<topic> --arg title="<書名>" --arg aliases="<書名>|<別名>"     --arg origin=authored --arg author_persona=<me> --arg author=<me>
+senate cmd book --arg op=add     --arg id=<persona>-<topic> --arg title="<書名>" --arg aliases="<書名>|<別名>"     --arg origin=authored --arg author_persona=<me> --arg author=<me>
 
 # 2) 正文寫進 Books/<slug>/<NNN>.txt（扁平 prose，無 frontmatter）
 #    章節筆記／摘要／伏筆另走 senate cmd book --arg op=log-chapter（落 BookNotes/，可選）

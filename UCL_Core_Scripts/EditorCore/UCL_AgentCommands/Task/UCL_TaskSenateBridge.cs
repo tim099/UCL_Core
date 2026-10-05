@@ -82,7 +82,6 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
                     void Arg(string k, string v) { aProc.StartInfo.ArgumentList.Add("--arg"); aProc.StartInfo.ArgumentList.Add(k + "=" + v); }
                     Arg("op", iOp);
                     Arg("persona", iPersona.Trim());
-                    Arg("data_root", UCL_AgentCommandsPath.DataRoot);
                     Arg("timeout", INNER_TIMEOUT_SEC.ToString());
                     if (iArgs != null)
                         foreach (var kv in iArgs)

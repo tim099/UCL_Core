@@ -4,7 +4,7 @@ slug: freetime-cmd-flow
 status: active
 created_at: 2026-08-18T03:10:00Z
 created_by: basecamp
-last_updated: 2026-10-01
+last_updated: 2026-10-05
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
@@ -171,7 +171,7 @@ senate cmd free-time-activity --arg op=step --arg persona=<P> \
   —— **「還沒接」與「壞掉」要長得不一樣**
 - **in-process 派遣**那支 senate cmd —— ⛔ 不經過 shell、不 spawn 任何行程
 - `step_args` 吃 **cmd 原生寫法** `--arg k=v`（⛔ 不是 `--flag value`；認不得的 token 當場擋）；
-  身分（md `steps_need_persona` / `cmd_persona_arg`）與資料根自動補，自己帶了就以你帶的為準
+  身分（md `steps_need_persona` / `cmd_persona_arg`）自動補，自己帶了就以你帶的為準；路徑照 Senate 後台設定自動補
 - ⛔ 只宣告 `tool:`（python 腳本）的活動 ⇒ 擋下並說「python 工具步驟已不支援 —— 改成 cmd_steps」
 - **輸出原樣搬進回傳檔**，不由 C# 改寫 —— 工具已經分好的區別
   （例如「0 筆」與「查不到」）任何重新措辭都可能把它磨平

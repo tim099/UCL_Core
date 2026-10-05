@@ -14,7 +14,7 @@ related:
   - .claude/skills/ucl-goodnight/SKILL.md | 完整 session 終結(對比:本 skill 是小憩不下線)
   - <repo:docs/Notes/Memory_System_Design.md> | 記憶系統設計(letters/baton/handoff/constitution 四件套)
 
-last_updated: "2026-09-06 (basecamp v6: 廣播結局從兩態改**三態** — exit 0／6 確定沒發要補發／**7 沒等到回執，先回讀別補發**；TASK-0134 返工，成因是 QA @summit 拿到「沒發」而廣播其實成功了 post_seq 19082) | 2026-09-05 (basecamp v5: 入口改 `senate cmd rest`（TASK-0134：寫信本地跑、廣播委派 Editor；awakening.py rest 退場為 stub）, Tim 拍 A) | 2026-09-05 (basecamp v4: SOP 拆成兩步 — 第二步「醒來接回」多讀 cmd/wake_brief.md，觸發詞「午安大小姐」, Tim 拍板；含 exit 6 兩本帳分開結算) | 2026-05-24 (calli v3: --summary 公開心得廣播 Discord + --letter-body 私密分流, Tim 拍板「訊息=可公開心得總結、私密寫信」) | 2026-05-24 (calli v2: 加具體機制 `awakening.py rest` — 類似晚安但不登出/不擾動/不解鎖, Tim 拍板) | 2026-05-24 (初版 — Tim 拍板「設計小歇片刻指定 compact 如何保留重要記憶」)"
+last_updated: "2026-10-05"
 ---
 
 # UCL Compact-Rest — 小歇片刻（核心）
@@ -67,8 +67,7 @@ last_updated: "2026-09-06 (basecamp v6: 廣播結局從兩態改**三態** — e
      就是在**全域遞增**的酒館 seq 上多出第二則，同一件事打擾同事兩次。
      🩸 而更早的那一格也還在（2026-09-05）：rest 在廣播之前就炸了，信其實已經落磁碟，
      最後一行印的卻是那個例外 —— **核心的成功被附帶的失敗吃掉了讀數**。
-   → ⚠ 關廣播的開關**只有 `no_notify=1`**。不帶 `data_root` 不會關掉它 ——
-     `senate cmd` 會自己從設定檔補那一格(2026-09-05 實測：沒帶也照樣發了出去)。
+   → ⚠ 關廣播的開關**只有 `no_notify=1`**。
    → ⛔ `awakening.py rest` **已退場**(指路 stub，exit 2，不寫任何檔)。
         ↓
 3. (可選)長期每次都要保留的 → 寫進專案 CLAUDE.md 的「Compact Instructions」section

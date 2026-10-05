@@ -22,7 +22,7 @@ kind: Default
 ## 一輪大概長什麼樣（不是規定，是參考）
 
 ```bash
-R="senate cmd rate --arg data_root=<專案根>/AgentCommands"
+R="senate cmd rate"
 $R --arg op=list                                   # 看盤：各券 Bid/Ask、手續費、報價時間
 $R --arg op=history --arg symbol=BTC               # 看走勢：中間價序列、區間變動、波動度
 $R --arg op=get --arg from=BTC --arg to=GOLD       # 報價：賣 1 BTC 實得幾 GOLD（淨率＝扣完手續費）

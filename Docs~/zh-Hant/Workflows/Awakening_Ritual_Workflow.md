@@ -1,6 +1,6 @@
 ---
 title: Awakening 儀式工作流 (Awakening Ritual Workflow)
-last_updated: 2026-10-02 (見林歸檔見叢前的交接閘 —— TASK-0373；前版 2026-09-27 TASK-0307)
+last_updated: 2026-10-05
 status: active
 theme: persona_lifecycle
 summary: 早安 (morning) 與晚安 (goodnight) 對偶儀式。早安（走 `senate cmd morning-*`，不需要 Editor）：morning-wake（守衛+狀態寫入）→ morning-brief → 讀 wake brief → morning-intro（單則上線自介）→ morning-catchup；晚安（走 `senate cmd goodnight-*`）：goodnight-check（收尾清單+酒館最後一眼）→ [人工收尾] → goodnight-letter（親筆收尾信）→ goodnight-sleep（單則下線廣播）；cleanup 走 goodnight-logout 單獨跑。
@@ -159,15 +159,15 @@ Step 4. senate ucmd run GoodMorning \
 
   ```bash
   # ① 挑下一位並把材料合併成一份檔（純讀，不折）——「還有下一位」與「完成」都由它印
-  senate cmd portrait-next --arg letters_root=<letters 根> --arg persona=<我> --arg wake_range=<折的時點區間>
+  senate cmd portrait-next --arg persona=<我> --arg wake_range=<折的時點區間>
   #    ↳ 回傳檔 letters/<我>/cmd/portrait_next.md：前一版濃縮全文 ＋ 這期未歸檔畫像全文
   #      ＋ 關係現況（指路用）＋ ## next（含下一步的完整指令列）
   # ② Read 那份檔 → 寫**親筆**內文存成檔（工具不代筆：見人是判斷不是統計）
   # ③ 折這一版（**歸檔是這一步自動做的**，沒有另一個搬檔步驟）
-  senate cmd portrait-fold --arg letters_root=<root> --arg persona=<我> --arg target=<那位> \
+  senate cmd portrait-fold --arg persona=<我> --arg target=<那位> \
       --arg wake_range=<同上> --arg by=<我> --arg-file body=<妳寫的檔>
   # ④ 回讀確認（不要信回傳的 ✓）
-  senate cmd people --arg letters_root=<root> --arg persona=<我> --arg target=<那位>
+  senate cmd people --arg persona=<我> --arg target=<那位>
   # ⑤ 回到 ① —— 直到 portrait-next 印「折人完成」
   ```
 

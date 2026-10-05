@@ -109,7 +109,6 @@ def _refresh_via_cmd() -> dict | None:
         # ⚠ region 拿不到就**不帶**（不填預設）：那只會讓 `agent`（帳號 id）欄缺席，
         #   而缺席與「值是空的」在對側是分開的兩件事。⛔ 不要在這裡補一個猜的區域。
         args = [str(_PATHS.senate_exe()), "cmd", "persona",
-                "--arg", f"letters_root={_PATHS.letters_root()}",
                 "--arg", "all=1", "--arg", "json=1"]
         region = _project_region()
         if region:

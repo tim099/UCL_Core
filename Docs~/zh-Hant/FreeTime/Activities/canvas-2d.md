@@ -13,7 +13,7 @@ enabled: true
 
 - Skill: `ucl-canvas`
 - CLI（**唯一寫入端**）:
-  `senate cmd canvas --arg data_root=<專案根>/AgentCommands --arg op=place --arg persona=<me> --arg x= --arg y= --arg color=`
+  `senate cmd canvas --arg op=place --arg persona=<me> --arg x= --arg y= --arg color=`
   ⭐ 它會**擋下量化到 index 255 的顏色**（＝與「沒人畫過」同色），並在放完自己回讀逐顆比。
   ⚠ 本活動**沒有 `tool:` / `steps:`**：代跑那層 spawn 的是 `python <tool>`，餵不了 exe。
   　⇒ `op=step` 會回「尚未支援 Cmd 代跑 —— 照本檔的方式自己跑」，而上面那一行就是要跑的東西。

@@ -35,9 +35,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Voucher
         /// <summary>繪圖券的券 id。⚠ 這只是**一個** id，⛔ 不代表本層只認得它。</summary>
         public const string VoucherCanvas = "canvas";
 
-        /// <summary>券檔的根（`letters/`）—— 委派唯一擁有者，⛔ 本層不自己拼路徑。</summary>
-        public static string LettersRoot => UCL_LettersPath.Root;
-
         /// <summary>現地區域 ＝ 貨幣 id（與銀行同一格設定，⛔ 不另立一份）。</summary>
         public static string Region => UCL_CentralBankSettings.CurrencyId;
 
@@ -181,7 +178,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Voucher
                 };
                 aPsi.ArgumentList.Add("cmd");
                 aPsi.ArgumentList.Add("voucher");
-                aPsi.ArgumentList.Add("--arg"); aPsi.ArgumentList.Add("letters_root=" + LettersRoot);
                 foreach (string aArg in iArgs)
                 {
                     aPsi.ArgumentList.Add("--arg");

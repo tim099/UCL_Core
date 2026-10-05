@@ -1,7 +1,7 @@
 ---
 title: Bank 區域綁定遷移（半自動）—— 在新專案觸發
 description: 在一個新專案（或還沒設區域 ID 的專案）把 persona → 帳號的綁定導出成 letters/<persona>/bank/<區域ID>.md。機械的部分交給 senate cmd persona-profile op=migrate_bank（預設 dry_run，不需要 Editor），判斷的部分留給人。含前置檢查、逐步驗收讀數、卡住出口，以及「綁定值是 agent id 而錢可能還在舊帳號名下」的硬警告。
-last_updated: 2026-10-01 (TASK-0354：指令改走 Senate CLI `persona-profile`)
+last_updated: 2026-10-05
 target_audience: [AI_Agent, Developer]
 aliases: [區域銀行遷移, bank 綁定遷移, migrate_bank, 區域 ID 設定, Bar 專案遷移, currency_id]
 related:
@@ -174,7 +174,7 @@ letters 有自己 repo 的 persona 各自一筆（LY 實測 9 位），其餘在
 |---|---|---|
 | `未知 op 'migrate_bank'` | 本專案 UCL_Core 太舊 | 更新 submodule（前置條件第 1 格） |
 | `區域 ID 不合法` | ID 當不了檔名 | 換一個；別用路徑分隔或 `..` |
-| 全員 `⛔ 解析不到帳號` | 讀到的是別棵資料樹 | 查 `AgentCommands` 掛載位置與 `data_root`；**空集合是靜默的**（§5.1 同族） |
+| 全員 `⛔ 解析不到帳號` | 讀到的是別棵資料樹 | 查 Senate 後台「路徑管理」指的是哪一棵資料樹；**空集合是靜默的**（§5.1 同族） |
 | `written` 少於預期 | 有人「本區已有綁定」被跳過 | 讀 Editor log 的 `○` 行；判斷後再決定要不要 `overwrite=1` |
 | 改了區域 ID 之後全員「沒有綁定」 | 舊檔沒改名 | 舊 `bank/<舊ID>.md` 改名成新 ID；或重跑本流程重新導出 |
 | Cmd 逾時 | 沒帶 `--persona` ⇒ 掉進 `queues/anonymous/` | 一律帶 `--persona <你>` |

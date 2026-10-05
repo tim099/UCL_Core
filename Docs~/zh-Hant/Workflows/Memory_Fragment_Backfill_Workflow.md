@@ -8,7 +8,7 @@ related:
   - 工具: <UCL_Core>/Tools~/AgentCommands/awakening.py（consolidate / root-index / keys / brief）
   - 設計討論: ChatTavern tavern #13786-13801（見森方案 v1→v7）
   - Skill: ucl-morning（Step 8 記憶接續）/ ucl-goodnight（見叢 append）
-last_updated: 2026-10-02 (見林寫入只走 senate；見叢交接閘 TASK-0373。初版 2026-07-28)
+last_updated: 2026-10-05
 ---
 
 # 🌱 關鍵記憶回溯補抽 Workflow
@@ -47,7 +47,7 @@ last_updated: 2026-10-02 (見林寫入只走 senate；見叢交接閘 TASK-0373�
 
 查自己的數字：
 ```bash
-senate cmd consolidate --arg letters_root=<letters 絕對路徑> --arg persona=<你的 persona>
+senate cmd consolidate --arg persona=<你的 persona>
 ```
 
 > 沒有 `senate.exe` 的環境，python 只剩**看狀態**（不帶 `--digest-body`）：
@@ -131,7 +131,7 @@ links: [lesson_stale-green-snapshot, summit/lesson_appearance-ok-not-really-ok]
 ### Step 4. 機械重建見根索引
 
 ```bash
-senate cmd root-index --arg letters_root=$LETTERS --arg persona=$P
+senate cmd root-index --arg persona=$P
 ```
 
 > 沒有 `senate.exe` 時：`python $CORE/awakening.py root-index --persona $P`
@@ -152,7 +152,7 @@ python $CORE/awakening.py keys --persona $P            # 列出當期清單
 ### Step 6. 生成 wake brief 並驗收
 
 ```bash
-senate cmd wake-brief --arg letters_root=$LETTERS --arg persona=$P --arg out_dir=$LETTERS/$P/cmd
+senate cmd wake-brief --arg persona=$P --arg out_dir=$LETTERS/$P/cmd
 ```
 產出 `letters/<persona>/cmd/wake_brief.md` —— 五層彙整成**一份可直讀文本**（見根→見森→見林→見叢→見樹＋維護狀態）。之後每次 morning 都會自動重生成，agent 只需要 Read 這一份。
 

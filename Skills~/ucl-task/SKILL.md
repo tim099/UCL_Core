@@ -79,7 +79,7 @@ description: |
 > **動工的時機就是開場的時機。** 不要等到「快要打字了」才想起來 —— 那一刻通常已經在打字了。
 
 ```bash
-senate cmd coding --arg data_root=<AgentCommands 根> --arg op=start --arg persona=<你> \
+senate cmd coding --arg op=start --arg persona=<你> \
     --arg status="在改 <哪一部分>" \
     --arg scope="<這一場要動的最大範圍，絕對路徑>" \
     --arg tasks=<你正在動工的單號>

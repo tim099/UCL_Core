@@ -1611,7 +1611,7 @@ def cmd_rest(args: argparse.Namespace) -> int:
     print("       --arg-file letter_body=<私密記憶檔> --arg-file summary=<公開心得檔>", file=sys.stderr)
     print("   · exit 0 ＝信＋廣播都成；**exit 6 ＝信寫了、廣播沒發**（去酒館補發，記憶那半不受影響）",
           file=sys.stderr)
-    print("   · 只寫信不廣播：--arg no_notify=1（⚠ 不帶 data_root **不會**關掉廣播，CLI 會自己補）",
+    print("   · 只寫信不廣播：--arg no_notify=1",
           file=sys.stderr)
     print("   · 醒來接回讀兩份：letters/<P>/_latest.md ＋ letters/<P>/cmd/wake_brief.md", file=sys.stderr)
     print("   完整 SOP：skill `ucl-compact-rest`", file=sys.stderr)
@@ -2003,7 +2003,7 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
         for lp in st["pending_letters"]:
             print(f"  - {lp.relative_to(_REPO_ROOT)}")
         print(f"\n→ 讀完上列信件後, 反思濃縮成 digest body 寫回（寫入只走 Senate）:")
-        print(f"  senate cmd consolidate --arg letters_root=<letters 根> --arg persona={persona} --arg-file digest_body=<檔> \\")
+        print(f"  senate cmd consolidate --arg persona={persona} --arg-file digest_body=<檔> \\")
         print(f"      --arg span_start={st['span_start']} --arg span_end={st['span_end']}")
         return 0
 
@@ -2012,7 +2012,7 @@ def cmd_consolidate(args: argparse.Namespace) -> int:
     #   後者擋的是「歸檔把沒勾的見叢一起清掉、之後再也不出現」，而這裡原本的歸檔（已刪）一聲不吭就清。
     #   兩個寫入端各守各的閘＝閘只守住一半 ⇒ 寫入收成 Senate 一支，這裡只指路（同 morning／goodnight 的 stub）。
     print("⛔ awakening.py consolidate 的見林**寫入**已退場 —— 什麼都沒寫。", file=sys.stderr)
-    print(f"   ⇒ senate cmd consolidate --arg letters_root=<letters 根> --arg persona={persona} --arg-file digest_body=<檔> "
+    print(f"   ⇒ senate cmd consolidate --arg persona={persona} --arg-file digest_body=<檔> "
           f"[--arg span_start=… --arg span_end=…]", file=sys.stderr)
     print("   （寫入前會過折人閘與見叢交接閘：當期見叢還有沒勾的，要帶 keys_carry 或 keys_drop_reason）",
           file=sys.stderr)
@@ -2056,7 +2056,7 @@ def cmd_brief(args: argparse.Namespace) -> int:
     """⛔ 指路 stub——wake brief 的生產端 2026-09-04 起只有一份（C#）。"""
     print("⛔ awakening.py brief 已退場（2026-09-04，TASK-0098）——本檔不再生成 wake brief。", file=sys.stderr)
     print("   單一入口（不需 Editor，senate.exe 就地跑完）：", file=sys.stderr)
-    print("   senate cmd wake-brief --arg letters_root=<letters 根> --arg persona=<P> [--arg out_dir=<落檔目錄>]", file=sys.stderr)
+    print("   senate cmd wake-brief --arg persona=<P> [--arg out_dir=<落檔目錄>]", file=sys.stderr)
     print("   早安流程裡那一步由 Cmd 自己跑：senate cmd morning-brief --arg persona=<P>", file=sys.stderr)
     print("   ⚠ 不留備援的理由：兩份實作就是兩套說明，而漂掉的樣子是「日期很正常、只是順序反了」（本單原症狀）。", file=sys.stderr)
     return 2

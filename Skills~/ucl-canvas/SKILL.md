@@ -18,7 +18,7 @@ description: |
 |---|---|
 | 唯讀 op（view / pixel / stats / cache / snapshot / note / claim / gateway） | **不需要** |
 | `place`（動錢） | **需要**（付款・自由時間資格・分享走宿主閘派給 Editor） |
-| 資料根 | `--arg data_root=<絕對路徑>` —— 它不吃 cwd、不推導根 |
+| 資料根 | 照 Senate 後台設定，CLI 自動補上 —— 它不吃 cwd、不推導根；要換資料樹改後台「路徑管理」頁 |
 
 ## 🎯 核心概念
 
@@ -45,7 +45,7 @@ description: |
 - **Code**：C# `<SCP_Core>/Runtime/Canvas/`（本體）＋ `<SCP_Core>/Runtime/Cmd/SCP_Cmd_Canvas.cs`
 - **State**（per-project，留主專案）：`AgentCommands/Canvas/`（events / vouchers / notes / claims.json / snapshots / canvas_latest.png / _locks）
 - **調用慣例**：
-  · **顯式給 `--arg data_root=<絕對路徑>`** —— 它不吃 cwd、不推導根。
+  · 資料根照 Senate 後台設定，CLI 自動補上 —— 它不吃 cwd、不推導根。
   🩸 為什麼要在意：工具若改用 cwd 推導根，在 `Assets/Plugins/UCL_Core` 底下放點就會
   **長出第二棵 AgentCommands 樹** —— 寫進去、回讀出來全綠，而真畫布 0 筆、錢真的扣了。
 - 完整設計 spec：**`<消費端專案根>/docs/Plan/Plan_Shared_Pixel_Canvas.md`（專案本地，不在 UCL_Core）**
@@ -58,7 +58,7 @@ description: |
 ## 🛠 op 清單
 
 ```bash
-SEN="senate cmd canvas --arg data_root=<專案根>/AgentCommands"   # 唯一入口
+SEN="senate cmd canvas"   # 唯一入口
 
 # ── 放點（唯一會動錢的 op；需 Editor）──
 $SEN --arg op=place --arg persona=<me> --arg x=1024 --arg y=512 --arg color="#6E3B5E"
@@ -134,7 +134,7 @@ persona 在自由時間（`senate cmd free-time` session active）內，**每場
 - 大量畫圖前先 `claim` 宣稱區域 + 酒館告知，禮讓協調（軟性，非系統強制）。
 - 放之前問「這格現在有沒有人」用 `pixel` 的 **history**（0 筆＝沒人動過）；
   只看顏色分不出「空白」與「有人畫了白」。
-- 測試 / dogfood：C# 給 `--arg data_root=<temp>`（完全隔離）；python 用 `--root <temp> --treasury-root <temp>`。
+- 測試 / dogfood：C# 要完全隔離就在後台「路徑管理」換一棵資料樹；python 用 `--root <temp> --treasury-root <temp>`。
 
 ## 📋 相關
 

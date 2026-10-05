@@ -699,8 +699,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         static int DelegateAppendToServer(string roomId, UCL_ChatMessage msg)
         {
-            string aDataRoot = UCL_AgentCommandsPath.DataRoot;
-
             // msg_json 很長（正文＋meta）⇒ 走 `--arg-file`，⛔ 不塞 argv。
             //   argv 有長度上限，而超過的失效樣子是「指令被截斷」，不是「太長」。
             string aTmp = Path.Combine(Path.GetTempPath(),
@@ -727,8 +725,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
                     aProc.StartInfo.FileName = aExeName;
                     aProc.StartInfo.ArgumentList.Add("cmd");
                     aProc.StartInfo.ArgumentList.Add("tavern-write");
-                    aProc.StartInfo.ArgumentList.Add("--arg");
-                    aProc.StartInfo.ArgumentList.Add("data_root=" + aDataRoot);
                     aProc.StartInfo.ArgumentList.Add("--arg");
                     aProc.StartInfo.ArgumentList.Add("room=" + roomId);
                     aProc.StartInfo.ArgumentList.Add("--arg");

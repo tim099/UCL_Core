@@ -1,7 +1,7 @@
 ---
 title: Persona 信件庫 Submodule 化工作流（Persona Letters Submodule Workflow）
 description: 把 persona 信件庫（`ChatTavern/baton/letters/<persona>`）從純資料夾升級為獨立 git repo 並掛回 submodule 的完整 SOP。涵蓋外洩防線（session_token / 個人信箱不得入 history）、初始落檔 commit、submodule add、clone-local 配置（remote / hooksPath）、換手對帳（CRLF 假紅燈）、以及每一步「看起來成功」的失敗判準。
-last_updated: 2026-09-10
+last_updated: 2026-10-05
 target_audience: [AI_Agent, Tools_Maintainer]
 aliases: [信件庫 submodule, persona repo 安裝, letters submodule, 信件檔案庫落檔]
 tags: [workflow, persona, letters, git, submodule, security]
@@ -107,8 +107,6 @@ git diff --cached | grep -nE "[A-Za-z0-9._%-]+@[A-Za-z0-9.-]+\.(com|net|org|tw)"
 senate cmd commit \
     --arg repo=<persona-repo 絕對路徑> \
     --arg personas=<操刀者>,<信件著作 persona> \
-    --arg letters_root=<AgentCommands>/ChatTavern/baton/letters/<信件著作 persona> \
-    --arg data_root=<AgentCommands> \
     --arg expect_files=<N> \
     --arg-file message=<訊息檔>
 ```

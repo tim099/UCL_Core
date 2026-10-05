@@ -259,7 +259,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
             var aExtra = new System.Collections.Generic.List<string>
             {
                 "wallet_persona=" + iWalletPersona,
-                "letters_root=" + UCL_LettersPath.Root,
             };
             System.Collections.Generic.Dictionary<string, string> aValues =
                 PostRaw("pay", iAccount, iAmount, iKind, iRef, iDescription, iCaller, iCmdId, iIdemKey, aExtra);

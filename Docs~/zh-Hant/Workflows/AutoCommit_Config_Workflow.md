@@ -1,7 +1,7 @@
 ---
 title: 自動提交設定 — 把 repo 加入管理與設定分群規則
 description: 把一個 submodule（或任何 repo）加入 AutoCommit 管理的步驟、`.ucl_autocommit.json` 的欄位與判準、設定檔掀不動的地板、以及「怎麼確認真的照設定分群」的驗收法。
-last_updated: 2026-10-01
+last_updated: 2026-10-05
 target_audience: [AI_Agent, Tools_User]
 status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔宣告)
 ---
@@ -62,7 +62,7 @@ status: v1.0 (Tim 2026-08-21 拍板：分群規則可由各 repo 自帶設定檔
 建立出來的設定是停用的（`Enabled: false`）。開啟方式：Senate 頁把 `Enabled` 打勾後存檔，或直接改檔案。
 
 ```bash
-senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters> --arg only=<repo 顯示名>
+senate cmd auto-commit --arg only=<repo 顯示名>
 ```
 
 回傳值要看 **`repos`**、**`disabled_repos`** 與 **`blocked_repos`**：
@@ -109,7 +109,7 @@ senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<lette
 
 ```bash
 echo '{"probe":true}' > <repo>/<某個群的前綴下>/_probe.json
-senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters> --arg only=<repo 顯示名>
+senate cmd auto-commit --arg only=<repo 顯示名>
 ```
 
 輸出應該印出群名與訊息：
@@ -125,7 +125,7 @@ senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<lette
 ### Step 4 — 提交
 
 ```bash
-senate cmd auto-commit --arg data_root=<AgentCommands> --arg letters_root=<letters> --arg only=<repo 顯示名> --arg op=commit
+senate cmd auto-commit --arg only=<repo 顯示名> --arg op=commit
 ```
 
 逐群一筆 commit，**純 git commit**（無 trailer／無公告／不領薪），**不 push、不 bump 父層**。

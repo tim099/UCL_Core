@@ -149,10 +149,6 @@ namespace UCL.Core.EditorLib.Page
                     UCL_ControlPanelPage.Create();
                 }
 #endif
-                if (GUILayout.Button("UCL_LoginStatusPage", UCL_GUIStyle.ButtonStyle))
-                {
-                    UCL_EditorPage.Create<UCL_LoginStatusPage>();
-                }
 
                 // 區塊職責：「Page 選擇器」— 列出所有 ShowInPageMenu==true 的 UCL_CommonEditorPage 子類
                 // 物理意義：給臨時新增 / 不想為每頁加按鈕的場景一個共用入口；

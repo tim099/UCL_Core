@@ -326,16 +326,15 @@ def build_share_body(persona: str, result: dict, wake_count: int, letter_rel: st
 
 
 # 區塊職責: 把測驗結果同步到酒館 (eval --persona 的預設副作用)
-# 物理意義: 走 awakening.tavern_post → `senate cmd tavern-post`（身分由 Senate 從 persona 推導）, **絕不直寫 jsonl**;
-#          分享是廣播 (沒人要回), 所以 wait_reply=0 由 awakening.tavern_post 內部固定。
+# 物理意義: 走 senate_post.tavern_post → `senate cmd tavern-post`（身分由 Senate 從 persona 推導）, **絕不直寫 jsonl**。
 # 數值影響: best-effort — 失敗只回 False 並印警告, 不改變 eval 的 exit code
 #          (算分與兩處存檔已完成, 讓整條指令因為公告失敗而報錯會誤導成「測驗沒跑成」)。
 def share_to_tavern(persona: str, result: dict, wake_count: int, letter_rel: str, note: str = "") -> bool:
     body = build_share_body(persona, result, wake_count, letter_rel, note)
     try:
-        import awakening  # 同目錄 lazy import
-        return awakening.tavern_post(
-            None, persona, body,
+        import senate_post  # 同目錄 lazy import
+        return senate_post.tavern_post(
+            persona, body,
             meta={"tag": "mbti", "category": "chat"},
             timeout=60.0,
         )

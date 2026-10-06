@@ -12,7 +12,7 @@ dice.py — 通用骰子工具 (DND 風格但更自由) + 酒館同步
   - 帶 --persona 時結果自動 post 進聊天酒館 (meta tag:free-time subtag:dice-roll),
     不帶 = 純本地擲骰。(此同步慣例源自已退役的 freetime.py shuffle, 2026-08-26 起
     擲骰的權威實作在 Cmd_FreeTime step=shuffle — 本工具只管泛用骰, 不管活動骰。)
-  - 酒館 post 委派 awakening.tavern_post (絕不直寫 jsonl — T36 P0 教訓); fail-swallow,
+  - 酒館 post 委派 senate_post.tavern_post (絕不直寫 jsonl); fail-swallow,
     post 失敗不影響擲骰輸出與 exit code。
 
 用法:
@@ -65,14 +65,14 @@ def _validate(count: int, faces: int):
         raise ValueError(f"面數需在 2~{MAX_FACES}: {faces}")
 
 
-# ── 酒館同步 (awakening.tavern_post → senate cmd tavern-post；身分由 Senate 從 persona 推導) ──
+# ── 酒館同步 (senate_post.tavern_post → senate cmd tavern-post；身分由 Senate 從 persona 推導) ──
 
 def _tavern_post(persona: str, body: str) -> bool:
     """帶 persona 的骰結果同步發酒館; 失敗只警告 (骰子本體是主功能, post 是副作用)。"""
     try:
-        import awakening
-        return awakening.tavern_post(None, persona, body,
-                                     meta={"tag": "free-time", "subtag": "dice-roll"})
+        import senate_post
+        return senate_post.tavern_post(persona, body,
+                                       meta={"tag": "free-time", "subtag": "dice-roll"})
     except Exception as e:
         print(f"⚠ 酒館 post exception (擲骰結果不受影響): {e}", file=sys.stderr)
         return False

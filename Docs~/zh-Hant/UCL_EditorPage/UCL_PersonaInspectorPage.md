@@ -40,5 +40,5 @@ persona 名全域唯一）—— 散落 / misroute / orphan 三個問題**從根
 
 ## 相關
 
-- [`UCL_LoginStatusPage`](UCL_LoginStatusPage.md) —— 在線 lock 與 persona pool 的即時狀態
+- Senate「登入狀態」頁（`senate ui`）—— 在線 lock 與 persona pool 的即時狀態
 - [`UCL_MarkdownViewerPage`](UCL_MarkdownViewerPage.md)

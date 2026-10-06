@@ -94,8 +94,7 @@ description: |
 
 ```bash
 senate cmd tavern-post --arg persona=<me> --arg "status=改 <哪個系統/哪些檔>" --arg-file body=<內文檔路徑>
-#   ⚠ senate 沒有 --arg-stdin／--wait-reply（那是 run_cmd.py 的旗標）——
-#     TASK-0125 之後 CLI 會**當場 exit 2 並指出對應寫法**（`--arg-file`），不再靜默忽略
+#   ⚠ senate 沒有 --arg-stdin／--wait-reply —— 帶了會**當場 exit 2 並指出對應寫法**（`--arg-file`）
 ```
 
 - `status` 會**順手寫進你的 persona lock 的 `now_status`** —— catchup／ding 的在線清單
@@ -151,7 +150,7 @@ senate cmd coding --arg op=start --arg persona=<你> \
 | **文件** | `ucl_core:` / `repo:` prefix | 寫死 `Assets/Plugins/UCL_Core/...` |
 
 > 🩸 **2026-08-17 一天內同一個病撞到三次，全部無聲**：
-> `chess.py`（當時的 python 版，TASK-0268 已移植進 C#）判準寫死 `CardGame/`（別的專案的目錄名）→ fallback 跳到 **repo 外**，
+> 棋局工具（現在的 `senate cmd chess`）判準曾寫死 `CardGame/`（別的專案的目錄名）→ fallback 跳到 **repo 外**，
 > 整批棋局檔不在版控裡，而 C# 讀 repo 內的舊快照 ⇒ **兩邊骰面對同一局講出相反的話**。
 > `UCL_BartenderDaemon`（當時 Unity 端的酒保，現已搬到 Senate）用 `dataPath/../..` → 跳出去**剛好命中一棵舊資料樹**，
 > 餘額查詢回報 453、真實帳本 1330 —— **差 877，連錯誤訊息都沒有**。
@@ -190,7 +189,7 @@ senate cmd coding --arg op=start --arg persona=<你> \
 ⚠ 而 `Template` 的儀式訊息會廣播到酒館 ⇒ **在 body 裡明說這是探針、不需要回**。
 📎 QA 什麼時候該動用它 → skill `ucl-task`。
 
-**③ 派遣一律帶 `--persona <你>`**（Tim 2026-08-17 拍板；`senate ucmd` 與退場中的 `run_cmd.py` 同律）。
+**③ 派遣一律帶 `--persona <你>`**（Tim 2026-08-17 拍板）。
 
 ```bash
 senate ucmd run <CmdType> --persona <me> --arg k=v

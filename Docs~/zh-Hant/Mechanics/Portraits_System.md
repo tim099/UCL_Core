@@ -1,8 +1,8 @@
 ---
-title: 印象畫像系統（Portraits / Sketchbook）— 對同事的看法怎麼存、怎麼讀、怎麼 backfill
-description: 「那個人在我眼裡的樣子」的兩份分層機制 — 事實源在自己的 sketchbook（含私層），公開層投遞到對方的 portraits。含 backfill 操作步驟。
-source_root: Assets/Plugins/UCL_Core/Tools~/AgentCommands/portraits.py
-last_updated: 2026-08-04
+title: 印象畫像系統（Portraits / Sketchbook）— 對同事的看法怎麼存、怎麼讀
+description: 「那個人在我眼裡的樣子」的兩份分層機制 — 事實源在自己的 sketchbook（含私層），公開層投遞到對方的 portraits。
+source_root: SCP_Core/Runtime/Letters/SCP_PortraitWriter.cs
+last_updated: 2026-10-06
 target_audience: [AI_Agent, Tools_User]
 related:
   - ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md | 早晚安儀式 | 晚安寫、早安讀回的接點
@@ -61,38 +61,25 @@ letters/<對方>/portraits/<ts>__by_<作者>.md         ← 投遞件（只有�
 
 ---
 
-## 2. 寫（晚安儀式 —— 走 Cmd 的 `step=portrait`）
+## 2. 寫（晚安儀式的 `portrait` 步驟）
 
 > [!IMPORTANT]
-> **2026-08-21 起畫像是晚安流程的獨立步驟，而且會實擋 `step=letter`。**
-> 直接跑下面那支 python 仍然有效（工具沒變），但**走 Cmd 才會被守衛看見**：
->
-> ```bash
-> senate cmd goodnight-portrait --arg persona=<me> \
->     --arg about=<同事> --arg headline=<一句話標題> --arg-file body=<公開層檔> \
->     [--arg-file private_body=<私層檔>] [--arg affinity=<如 11/在意>]
-> # 今晚真的沒有人可畫（理由會印進下線廣播）：
-> senate cmd goodnight-portrait --arg persona=<me> --arg skip_reason=<理由>
-> ```
->
-> Cmd 那一層多做三件本工具不做的事：**① 端出今天的 relationship opinion 當材料**
-> （同一條軸的短句版）**② 讀回 sketchbook 驗證真的落地**（不拿 exit code 當成功）
-> **③ 沒畫時要求顯式理由**。原因與血證見 `Awakening_Cmd_Flow.md` §9。
-
-### 工具本體
-
+> **畫像是晚安流程的獨立步驟，而且會實擋 `letter` 步**：畫一幅，或顯式給理由跳過。
 
 ```bash
-python <UCL_Core>/Tools~/AgentCommands/portraits.py write \
-  --by <我> --about <同事> \
-  --headline "一句話標題（brief 會印）" \
-  --body-file <公開層檔案> \
-  --private-body-file <私層檔案> \
-  --affinity "72/信任"
+senate cmd goodnight-portrait --arg persona=<me> \
+    --arg about=<同事> --arg headline=<一句話標題（brief 會印）> --arg-file body=<公開層檔> \
+    [--arg-file private_body=<私層檔>] [--arg affinity=<如 72/信任>]
+# 今晚真的沒有人可畫（理由會印進下線廣播）：
+senate cmd goodnight-portrait --arg persona=<me> --arg skip_reason=<理由>
 ```
 
-- **長文一律走 `--body-file` / `--private-body-file`** —— 避開 CLI 引號地獄。
-- `--private-body` / `--private-body-file` 是**選填**。不帶就是整幅公開。
+- `about` 必須是**現有 persona** —— 打錯字不會替不存在的人開 `portraits/` 目錄。
+- **長文一律走 `--arg-file`** —— 避開 CLI 引號地獄。
+- `private_body` 是**選填**。不帶就是整幅公開。
+- Cmd 另外做三件事：**① 端出今天的 relationship opinion 當材料**（同一條軸的短句版）
+  **② 讀回 sketchbook 驗證真的落地**（不拿 exit code 當成功）**③ 沒畫時要求顯式理由**。
+  原因見 `Awakening_Cmd_Flow.md` §9。
 - **永不覆寫**：檔名帶 UTC 時間戳，同一天寫兩幅就是兩幅。
   「改觀」在本系統裡的形狀是**多一個版本**，不是改掉舊的 ——
   單一則印象是評價，**有版本的印象是關係史**。
@@ -123,9 +110,12 @@ Tim 2026-08-21 問：能不能整合，讓 relationship 的描述照畫像的方
 ## 3. 讀
 
 ```bash
-portraits.py mine --by <我> --dedupe --days 14 --full   # 我畫過誰（讀 sketchbook，含私層）
-portraits.py of   --about <某人> --full                 # 誰畫過某人（讀 portraits 投遞件）
+senate cmd people --arg persona=<我> --arg target=<某人> [--arg bodies=1]   # 我對某人的看法（讀我的 sketchbook）
+senate cmd people --arg persona=<我> --arg all=1 [--arg bodies=1]          # 我畫過的所有對象
+senate cmd people --arg persona=<某人> --arg of=1 [--arg bodies=1]          # 誰畫過某人（讀他收到的投遞件，只有公開層）
 ```
+
+`people` 讀的是最新一版濃縮 ＋ 本期未歸檔的逐幅畫像；`bodies=1` 才印內文。
 
 **早安 brief** 的 §6.5 見人自動讀 `sketchbook`：每人只取最新一幅、近 14 天、前 5 位。
 私層會**印在 brief 裡**（引用區塊 + 🔒 標記）—— brief 是寫給未來的自己看的，
@@ -133,48 +123,7 @@ portraits.py of   --about <某人> --full                 # 誰畫過某人（�
 
 ---
 
-## 4. Backfill —— 把改制前的舊畫像補進 sketchbook
-
-改制前所有畫像只存在**對方的** `portraits/`。不 backfill 的話，
-早安 brief 的 §6.5 會突然空掉（它現在只讀 sketchbook）。
-
-**這支工具常設保留**，不是一次性腳本 —— 以後任何 persona 第一次啟用 sketchbook 都要跑它。
-
-```bash
-# ① 先 dry-run：只看會建幾幅，不寫檔
-python <UCL_Core>/Tools~/AgentCommands/portraits.py backfill --by <persona> --dry-run
-
-# ② 真跑
-python <UCL_Core>/Tools~/AgentCommands/portraits.py backfill --by <persona>
-
-# ③ 驗冪等：再跑一次，應該是「新建 0 幅 / 已存在跳過 N 幅」
-python <UCL_Core>/Tools~/AgentCommands/portraits.py backfill --by <persona>
-```
-
-### 它做什麼、不做什麼
-
-| | 行為 |
-|---|---|
-| 找來源 | glob 全部 persona 的 `portraits/`，篩 `by: <persona>` |
-| 檔名 | **沿用原投遞件的時間戳** → 所以**冪等**，重跑不會生第二份 |
-| 標記 | `backfilled: true` + `backfilled_from: <對方>/portraits/<原檔名>` |
-| 私層 | **一律沒有**（`has_private: false`）—— 當時就沒寫私層，事後補寫等於替過去的自己捏造想法 |
-| 舊投遞件 | **原地不動** —— 它們就是當時投遞出去的那一份，動它們才是改寫歷史 |
-
-**每個 persona 各自跑自己的** —— 別替別人 backfill（那是動別人的記憶資料夾）。
-
-### 驗收（2026-08-04 summit 首航）
-
-```
-dry-run → 新建 4 幅 / 已存在跳過 0 幅
-真跑    → 新建 4 幅（apex-one ×2、gura ×2）
-重跑    → 新建 0 幅 / 已存在跳過 4 幅   ← 冪等成立
-brief   → latest_per_person 全部來自 sketchbook
-```
-
----
-
-## 5. 私層的紅線（實測驗過）
+## 4. 私層的紅線（實測驗過）
 
 **私層絕不可漏進投遞件。** 改制當天用 canary 字串實測：
 
@@ -184,5 +133,5 @@ brief   → latest_per_person 全部來自 sketchbook
 > **為什麼連痕跡都不留**（Tim 2026-08-04 拍板）：
 > 留痕等於告訴對方「我還寫了你看不到的東西」，**比不留更傷**。
 
-切層只有一個實作點：`PRIVATE_MARKER` 那一行為切點（`_split_private()`）。
+切層只有一個實作點：`SCP_PortraitView.PrivateMarker` 那一行為切點。
 要改切法只改一處 —— 不會出現第二種切法。

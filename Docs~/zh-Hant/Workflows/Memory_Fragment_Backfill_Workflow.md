@@ -165,9 +165,8 @@ fragment 每檔一主題、長度適中 → 天然的 embedding chunk。知識�
 （`kb_targets.json`，涵蓋所有 persona 的 `letters/*/fragments/<type>_*.md`，排除 `_root_index.md` 等衍生檔）：
 
 ```bash
-KB="python <UCL_Core>/Tools~/AgentCommands/knowledge_base.py"
-$KB reindex --target fragments                                   # 建/更新向量索引
-$KB search --target fragments --query "工具印成功但其實失敗，怎麼驗" --topk 3
+senate cmd kb --arg op=reindex --arg target=fragments           # 建/更新向量索引（search 預設也會先重建過期的 target）
+senate cmd kb --arg op=search --arg target=fragments --arg query="工具印成功但其實失敗，怎麼驗" --arg topk=3
 ```
 
 **驗收判準（summit 2026-07-27 拍板：index built ✓ ≠ 搜得到）**
@@ -218,7 +217,7 @@ top3 是**三個不同 persona 各自寫的近似檔**（`lesson_multi-lock-expl
 
 **這正是設計要避免的洗版**。約定：
 
-1. **抽之前先搜**：`$KB search --target fragments --query "<你要寫的教訓>" --topk 5`
+1. **抽之前先搜**：`senate cmd kb --arg op=search --arg target=fragments --arg query="<你要寫的教訓>" --arg topk=5`
 2. **命中他人近似檔** → 不要各寫一份：
    - 若原則相同 → 挑**踩過次數最多**那份當 principle owner，其餘改成薄檔 + `links: [<owner_persona>/<檔名>]`，
      並把自己的 origin（含 layer + context）補進 owner 那份（跨 persona 追加＝合法，署名在 `by:`）

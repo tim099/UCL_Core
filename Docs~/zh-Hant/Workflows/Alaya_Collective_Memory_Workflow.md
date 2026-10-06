@@ -107,14 +107,14 @@ Schema 與個人記憶**完全相同**（見[共通原則 §2](Memory_Common_Pri
 2. `links` 加上那位的個人 fragment —— **那份清單就是「這條有多普遍」的證據**
 
 > [!IMPORTANT]
-> ### ⚠ v1 的權重是**給人看的**，檢索端還沒接
-> `knowledge_base.py` 目前的排序**只看語意相似度，不讀 `recurrence`**。
-> 所以「增加被回憶到的權重」在 v1 的落實方式是：
+> ### ⚠ 權重是**給人看的**，檢索端沒接
+> `senate cmd kb` 的排序**只看檢索分數（dense＋sparse，`decay=1` 時再扣時間衰減），不讀 `recurrence`**。
+> 所以「增加被回憶到的權重」的落實方式是：
 > - `recurrence` 寫在 frontmatter，**進 embedding**（chunk `#0` 實測可命中）
 > - 人在讀檢索結果時，**同分或近分的多筆以 `recurrence` 高者優先讀**
 >
-> 檢索端真的依 `recurrence` 加權**尚未實作** —— 這是 v1 明確的缺口，不是「已經在做只是看不見」。
-> 誰要接：`knowledge_base.py` 的排序階段讀 frontmatter 的 `recurrence` 當乘數。
+> 檢索端依 `recurrence` 加權**尚未實作** —— 這是明確的缺口，不是「已經在做只是看不見」。
+> 誰要接：`senate cmd kb` 的排序階段讀 frontmatter 的 `recurrence` 當乘數。
 
 ### 為什麼低門檻是對的（原本的兩人門檻錯在哪）
 
@@ -147,7 +147,7 @@ Schema 與個人記憶**完全相同**（見[共通原則 §2](Memory_Common_Pri
 
 | 既有節點 | Alaya 動作 | 誰做 |
 |---|---|---|
-| **寫個人 fragment 前的「先搜」** | 順手 `--target fragments,alaya` 一起搜 —— 命中 Alaya 就 link 過去，不重寫守則 | 寫的人 |
+| **寫個人 fragment 前的「先搜」** | 順手 `target=fragments,alaya` 一起搜 —— 命中 Alaya 就 link 過去，不重寫守則 | 寫的人 |
 | **撈到另一個當事人時**（先搜的副產物） | 該筆 `recurrence` +1、`links` 加上對方 —— **加權重，不是補資格** | 發現的人 |
 | **見林**（≈ 每 10 wake，個人記憶整理時） | 檢查自己新抽的碎片有沒有該升級的 / 該 link 的 | 該 persona |
 | **回憶查到灰帶**（共通原則 §6 回填） | 回填查詢詞 + 複驗 | 查的人 |
@@ -171,13 +171,12 @@ Alaya 特有的第四個動作：
 ## 5. 檢索（回憶）
 
 ```bash
-KB="python <UCL_Core>/Tools~/AgentCommands/knowledge_base.py"
-$KB search --target alaya --query "<寫成一句話>" --topk 5
-$KB search --target fragments,alaya --query "<寫成一句話>" --topk 8   # 個人 + 集體一起
+senate cmd kb --arg op=search --arg target=alaya --arg query="<寫成一句話>" --arg topk=5
+senate cmd kb --arg op=search --arg target=fragments,alaya --arg query="<寫成一句話>" --arg topk=8   # 個人 + 集體一起
 ```
 
 ⚠ **輸入形狀是句子不是關鍵字**，判準分數帶（hybrid 預設：真命中 ≥0.72 / 灰帶 0.58~0.72 / ≤0.58 無關；量法見 Memory_Common_Principles §4）
-與已知限制（無 per-persona 過濾、標題行同分噪音）全部見[共通原則 §4](Memory_Common_Principles.md)，
+與已知限制（`topk` 截斷、標題行同分噪音）全部見[共通原則 §4](Memory_Common_Principles.md)，
 本檔不重抄。
 
 `kb_targets.json` 的 `alaya` 目標：
@@ -196,9 +195,9 @@ $KB search --target fragments,alaya --query "<寫成一句話>" --topk 8   # 個
 
 | 缺什麼 | 現在怎麼過 | 為什麼 v1 不做 |
 |---|---|---|
-| **沒有機械生成的索引**（個人記憶有 `_root_index.md`） | 靠 `knowledge_base.py search --target alaya` 發現 | 手維護的索引會漂；要機械生成就得寫新工具，而**在只有個位數 fragment 的時候，工具比內容多** |
+| **沒有機械生成的索引**（個人記憶有 `_root_index.md`） | 靠 `senate cmd kb --arg op=search --arg target=alaya` 發現 | 手維護的索引會漂；要機械生成就得寫新工具，而**在只有個位數 fragment 的時候，工具比內容多** |
 | 沒有專屬 CLI（工作記憶有 `senate cmd work-memory`） | 直接寫 `.md` 檔（schema 照抄） | 同上。等入庫數量與痛點浮出來再造，**不預先造** |
-| **檢索端沒有依 `recurrence` 加權** | 人讀結果時自己以 recurrence 高者優先 | 要改 `knowledge_base.py` 的排序階段（讀 frontmatter 當乘數）—— 那是 code 不是文件，本次不混進來 |
+| **檢索端沒有依 `recurrence` 加權** | 人讀結果時自己以 recurrence 高者優先 | 要改 `senate cmd kb` 的排序階段（讀 frontmatter 當乘數）—— 那是 code 不是文件 |
 
 > **這一節存在的理由**：前代機制的文件從來沒寫過自己缺什麼，
 > 於是「它其實沒在跑」這件事花了 2.7 個月沒人發現。

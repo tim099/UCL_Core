@@ -4,9 +4,7 @@ description: |
   Unity compile error 排查。當改完 .cs 後懷疑編譯有錯、agent 改了腳本要驗收、或使用者問「編譯有錯嗎」「CS0103 / CS0117 / CS1503 / CS0246」「assembly / asmdef」相關問題時用本 skill。
   主入口是 Senate CLI：`senate cmd unity-recompile`（觸發＋等到那一趟編譯結束）／
   `senate cmd unity-compile-status`（只讀現況，不需要 Editor）。
-  ⛔ python `check_compile.py` **已於 2026-09-10 整支刪除**（檔案不存在了）——
-  `--fallback-log` / `--editor-alive` 那兩格**沒有搬過去** —— ⚠ 而它們的處置**不一樣**，見下面兩節：
-  `--fallback-log` 真的沒有替代品；**`--editor-alive` 有**（它量的資料源一直在，死的只是 python 包裝）。
+  ⚠ 狀態檔不存在時只說「沒有讀數」（不解 Editor.log）；問「Editor 在不在 tick」直接 stat 心跳檔，見下。
 trigger: { on_files: ["*.cs"], on_intent: ["編譯錯", "compile error", "CS0103", "CS0117", "CS1503", "CS0246", "asmdef", "assembly"] }
 ---
 
@@ -18,7 +16,7 @@ trigger: { on_files: ["*.cs"], on_intent: ["編譯錯", "compile error", "CS0103
 
 完整 SOP + 8 大常見錯誤類型對照 → `ucl_core:Docs~/zh-Hant/Workflows/CompileError_Diagnose_Workflow.md`
 
-## 速查指令（主入口＝Senate CLI，2026-09-07 起）
+## 速查指令（主入口＝Senate CLI）
 
 ```bash
 # ⭐ 改完 .cs 之後就走這條：觸發重編 ＋ 等到**那一趟**結束才印
@@ -37,54 +35,22 @@ senate cmd unity-compile-status
 （Unity 那側 LangVersion 9、nullable 沒開；Senate 那側 nullable 開著且警告當錯誤）。
 **兩個宿主的尺不同形，而且不可以合成一把。**
 
-### ⛔ python 那支已退場（2026-09-10，Tim 拍板）—— 而**兩格能力沒有搬過去**
+### 讀數邊界
 
-`check_compile.py` **已整支刪除**（2026-09-10）—— 檔案不存在了，跑它會得到 `No such file`。
-⛔ 先前一度改成 exit 2 的指路 stub，同日 Tim 判定直接刪 —— 保留 stub 的唯一理由是「回 0 會讓呼叫端把『什麼都沒做』讀成『檢查通過』」，
-而 `No such file` 是**非零退出＋一句話說清楚**，同樣不會被讀成綠燈（TASK-0154：沒發生的事看起來像綠燈）。
-
-| 舊用法 | 現在走哪 |
-|---|---|
-| `--errors-only` / `--format json` / `--max` | `senate cmd unity-compile-status`（本地跑，含 ErrorLog 交叉對帳） |
-| `--watch` | `senate cmd unity-recompile --arg persona=<me>`（送出時刻＝基準，等那一趟結束） |
-| `--strict-fresh` | 同上 —— `unity-recompile` 天生只收「晚於基準」的那一份 |
-| **`--fallback-log`**（`.compile_status.json` 不存在時解 Editor.log） | ⛔ **沒有替代品**。`unity-compile-status` 在狀態檔不存在時說「**沒有讀數**」而不是 0 errors ⇒ 那個情境的答案是「沒有量到」 |
-| **`--editor-alive`**（心跳停跳偵測） | ⭐ **有替代品，而且更便宜**：直接 stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`（`UCL_EditorHeartbeat` 每 0.5s 寫一拍；>1.5s 沒動＝沒在 tick）。⚠ 2026-09-10 本欄原寫「沒有替代品」，那是**窄報** —— 被刪的是 python 包裝，那支的實作本來就只是 stat 這個檔 |
-
-> 🩸 **⛔ `check_compile.py --watch` 曾給假綠燈（TASK-0154）—— 那支已於 2026-09-10 整支退場。**
-> 血證留著，因為**這個形狀會換工具重來**：
-> 它的結束條件只有 `in_progress=false`，而**觸發還沒開始時它已經是 false**
-> ⇒ 直接返回上一次的快照。2026-09-07 實測：送出 recompile 後立刻 `--watch`，
-> 印出的是 **三天前**（`2026-09-04T17:14`）那份，Errors: 0，**而且沒印 STALE 橫幅**
-> —— 不帶 `--watch` 時同一支工具有印。
-> ⇒ 那條路在最需要它的一刻給綠燈，且沒有任何可疑跡象。
-> `unity-recompile` 的基準是**我送出的那一刻**（取在 `Submit` 之前），所以那個洞在新結構裡不存在。
-
-## 🚨 新鮮度守衛（2026-08-05 起預設開啟）
-
-**這支工具現在會先回答「這份狀態涵蓋你的改動嗎」，再回答「有沒有錯」。**
-
-狀態早於你最近一次 `.cs` 改動時，輸出最上方會蓋 `🚨 STALE` 橫幅，並且
-**不會印「✅ Clean compile」**（改印「無法判定」）。`--format json` 也帶 `stale` / `staleness` 欄位。
-
-- 基準怎麼來：預設問 git 拿**未提交的 `.cs`**（root + 髒 submodule，整個 process 只算一次）。
-  指定 `--since-file <path>` / `--since <epoch|ISO>` 則跳過 git，直接比那一個時間。
-- 併讀 `_heartbeat_stalls.jsonl`（Editor 心跳的停跳台帳）：STALE 時會多印一行
-  「改動後心跳停跳 N 次」/「改動後沒有任何停跳紀錄」—— **後者代表編譯很可能連開始都還沒有**。
-- 逃生門：`--no-freshness` 關掉檢查（＝退回 2026-08-05 之前的行為）。
-
-> 🩸 2026-08-05 血證（summit）：`.compile_status.json` 寫在 `08:57:00`，我最後一筆 `.cs` 編輯在
-> `08:57:06` —— 工具把那份**早於我改動 6 秒**的快照當結論報出來，報的是紅燈 CS0103，我相信了，
-> 然後花 40 分鐘查一隻不存在的 bug。**對時間戳才看得出來。**
-> 這隻跟下面 2026-05-22 那筆是同一枚硬幣：那筆的解法寫「改用 `check_compile.py` 二次確認」，
-> 而當時 `check_compile.py` 自己也沒有新鮮度概念 —— 今天補的就是另外那一半。
+- **狀態檔不存在** ⇒ `unity-compile-status` 印「**沒有讀數**」（`compile_verdict=no_reading`，exit 2），⛔ 不印 0 errors、也不解 Editor.log —— 答案是「沒有量到」。
+- **`unity-recompile` 逾時** ⇒ `compile_verdict=timeout`（exit 4），⛔ 不退回印上一趟的快照。
+- **`stale_sources`**（兩支都印）：有幾個 `.cs` 比磁碟上的組件新；沒量到印 `unmeasured`，不寫 0。
+  Unity 沒東西要編時也會寫一份新狀態（errors=0、晚於基準），跟真的編過同形 ⇒ `clean` 但 `stale_sources>0` 時別收工。
+- 等待條件**不能只看 `in_progress=false`** —— 觸發還沒開始時它已經是 false，會直接回上一次的快照。
+  `unity-recompile` 以**送出那一刻**（檔案 mtime）為基準，只收晚於它的那一份。
+- 狀態早於你最近一次 `.cs` 改動 ⇒ 那份不是你的結論。**對時間戳才看得出來。**
 
 > [!WARNING]
 > 停跳台帳證明「Editor 凍過」，**不證明「編譯過」** —— domain reload / 資產匯入 /
 > 主執行緒長工 / Editor 關閉期間都會停跳。而且停跳只有在**恢復的那一拍**才寫得出來：
 > 進行中的凍結沒有紀錄，Editor 死掉不再回來則永遠不寫。**沒有條目 ≠ 沒有停跳。**
 
-## 💓 「Editor 在不在 tick」 — ⭐ **這一格沒有消失：stat 心跳檔就是答案**
+## 💓 「Editor 在不在 tick」 — stat 心跳檔
 
 ```bash
 # 心跳檔（UCL_EditorHeartbeat hook 在 EditorApplication.update，每 0.5s 寫一拍）
@@ -94,19 +60,12 @@ stat -c %y <data_root>/ChatTavern/bartender/_heartbeat.txt   # 或 ls -la
 #   <data_root>/ChatTavern/bartender/_heartbeat_stalls.jsonl
 ```
 
-🩸 **這一節 2026-09-10 原本寫著「沒有替代品」—— 那是我自己寫的窄報，同一天被自己推翻。**
-被刪的 `check_compile.py --editor-alive` 實作是「**純 stat 一個檔，不送 Cmd**」
-（它的註解自己寫了為什麼不送：Cmd 探針要 2.13s 空閒／13.13s 編譯中）
-⇒ **死的是包裝，資料源一直在**。而窄報之所以活得久，是因為
-**「這格沒救了」聽起來像謹慎，它不會讓寫的人付出任何代價** —— 代價是別人不再去打開那個檔看一眼。
-
-⚠ 舊那支多做的一件事沒了：它會**併印最近停跳**。要那一半就自己讀 `_heartbeat_stalls.jsonl`。
-⚠ 另一條路仍然成立、但比較貴：**`senate cmd unity-recompile` 是否逾時**（逾時會印 `delegate_failure = timeout`，
+⚠ 另一條路也成立、但比較貴：**`senate cmd unity-recompile` 是否逾時**（逾時會印 `delegate_failure = timeout`，
 且**刻意不去讀上一輪的回傳檔** —— 逾時代表它沒被更新，讀到的會是上一輪那份「格式完整、數字合理」的舊快照）。
 ⇒ 那是**送一支 Cmd 去探**，Editor 忙的時候要等到逾時。**能 stat 就不要送 Cmd。**
 
 用途：**「現在叫 Editor 做事會不會等」**。編譯 / domain reload 期間整個 update 迴圈不跑 → 心跳自然停。
-比送一支 Cmd 探針快得多（探針要 2s 空閒 / 13s 編譯中）。順帶印最近一次停跳（時間 + 停多久）。
+比送一支 Cmd 探針快得多（探針要 2s 空閒 / 13s 編譯中）。要「什麼時候凍過、凍多久」就讀 `_heartbeat_stalls.jsonl`。
 
 > [!CAUTION]
 > **它答的是「此刻活不活」，不是「我的改動編了沒」——這兩題差很遠。**
@@ -118,22 +77,21 @@ stat -c %y <data_root>/ChatTavern/bartender/_heartbeat.txt   # 或 ls -la
 > 編譯連開始都沒有；而探針一路印綠燈。
 > **要問「我的改動編了沒」跑 `senate cmd unity-recompile`（它拿送出時刻當基準，等到那一趟結束才印；
 > 另有 `stale_sources` 答「有幾個 .cs 比組件新」），不是看心跳。**
-> ⚠ 原文寫的是 `--errors-only` —— 那是被刪那支的旗標（2026-09-10 更正）。
 
 ## 順序
 
-1. 跑上面的 `--errors-only`
-2. 0 errors → 收工（runtime 錯是另一回事，看專案的 `DebugLogs/Errors_latest.log`）
+1. 跑 `senate cmd unity-recompile --arg persona=<me>`
+2. 0 errors 且 `stale_sources=0` → 收工（runtime 錯是另一回事，看專案的 `DebugLogs/Errors_latest.log`）
 3. 有錯 → 對照 workflow 文件的「8 大常見錯誤類型」找模式
-4. 改完 → `--watch` 等下一輪驗收
+4. 改完 → 再跑一次 `unity-recompile` 驗收
 
 ## 不要做
 
 - 在編譯還有錯時跑 runtime（沒意義）
 - 用 `Recompile` AgentCommand 取代本工具（compile error 時 Cmd 本身可能掛）
 - 只看 `Simulation_*.log` 不看 `.compile_status.json`（前者混雜 Warning 雜訊）
-- **只信任何 client 一次回報的 `errors=N` 就收工**（舊的 `run_cmd.py recompile` 子命令是原始血證） — 它可能讀到 stale / intermediate `.compile_status.json` 而 **under-report `errors=0`**。改完 .cs **務必**用 `senate cmd unity-recompile` 二次確認（它等的是你那一趟）。
-  > 🩸 2026-05-22 血證:apex-two 的 `item.Data.name`(CS1061)被 `recompile` 子命令漏報成 `errors=0`,而 `Errors_latest.log`(runtime 層)也乾淨 → basecamp 誤判成「domain reload 沒生效」,繞一大圈才靠 `check_compile.py` 確診。**compile 層 ≠ runtime 層 ≠ recompile-cmd 回報層**,三層別混(對應「跨層次驗證」family)。
+- **只信任何 client 一次回報的 `errors=N` 就收工** — 它可能讀到 stale / intermediate `.compile_status.json` 而 **under-report `errors=0`**。改完 .cs **務必**用 `senate cmd unity-recompile` 確認（它等的是你那一趟）。
+  **compile 層 ≠ runtime 層 ≠ Cmd 回報層**，三層別混（對應「跨層次驗證」family）。
 
 ## 🧪 runtime 行為驗證（不跑遊戲）— Cmd_Invoke reflection
 
@@ -155,7 +113,7 @@ compile 0 error 只證「語法／型別對」，不證「邏輯對」。要驗*
 - SelfTest 的斷言 `throw` → Cmd_Invoke 轉 `throw` → Cmd 標 Failed + log 有 `FAILED`。
 - Editor.log 路徑：`%LOCALAPPDATA%/Unity/Editor/Editor.log`（Win）。
 
-🩸 血證（2026-07-22）：`UCL_SecretCrypto` 全切 C#（AES-256-CBC+HMAC+PBKDF2）後，靠 `run Invoke member=SelfTest` 驗到「4 round-trip 案例 + 錯密碼拒絕 + 竄改偵測」全過——ground-truth 是 Editor.log 回的 `OK (System.String) = OK: UCLS1 self-test passed...` 字串，不是 run_cmd 的 Success（後者是「跨層次驗證」family 要防的假綠）。不必寫測試場景、不必 Python 鏡像。
+🩸 血證（2026-07-22）：`UCL_SecretCrypto` 全切 C#（AES-256-CBC+HMAC+PBKDF2）後，靠 `run Invoke member=SelfTest` 驗到「4 round-trip 案例 + 錯密碼拒絕 + 竄改偵測」全過——ground-truth 是 Editor.log 回的 `OK (System.String) = OK: UCLS1 self-test passed...` 字串，不是 `senate ucmd run` 的 Success（後者是「跨層次驗證」family 要防的假綠）。不必寫測試場景、不必 Python 鏡像。
 
 > 適用面：任何「純函式／可 static 觸發」的 C# 邏輯（crypto / parser / resolver / 資料轉換…）。有 Unity 生命週期依賴（MonoBehaviour / 場景物件）的才需要真的跑遊戲。
 

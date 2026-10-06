@@ -37,7 +37,7 @@ string aCore = UCL_EditorPath.CorePath;   // e.g. "Assets/Plugins/UCL_Core"（�
 ### Python (Tools~/AgentCommands 內的腳本)
 自我定位，**不要**從 CWD 或寫死路徑推：
 ```python
-# run_cmd.py 範式：從 __file__ 往上走找 git root，UCL_Core 固定在 parents[2]
+# __file__-walk 範式（參考實作 _lib/ucl_paths.py）：從 __file__ 往上走找 git root，UCL_Core 固定在 parents[2]
 GIT_ROOT = _find_git_root_by_walk(Path(__file__)) or Path(__file__).resolve().parents[2]
 ```
 - `Tools~/AgentCommands/<tool>.py` → `parents[0]=AgentCommands`、`parents[1]=Tools~`、`parents[2]=UCL_Core 根`。
@@ -133,7 +133,8 @@ UCL_DocsModule.SourceToken   // → "ucl_core:Docs~"（{Prefix}:{DocsSubfolder}�
 - `UCL_EditorPath.cs`（`CorePath` / `ToCoreRelative` / `ToCoreRelativeUrl`）
 - `UCL_DocsModule.cs`（`SourceToken`）、`UCL_DocsModuleManifestGenerator.cs`（`# Source:` token 化）
 - `UCL_CoreDocsBootstrap.cs`（`ucl_core:` / `repo:` prefix resolver 註冊）
-- `Tools~/AgentCommands/run_cmd.py`（python `__file__`-walk 範式）
+- `Tools~/AgentCommands/_lib/ucl_paths.py`（python `__file__`-walk 範式；`ucl_core_dir()` / `repo_root()`）
+- 派 Unity 指令不經 python：`senate ucmd run <CmdType> --persona <me> --arg k=v`
 
 ## 📬 letters 底下的路徑：走 `UCL_LettersPath` / `ucl_paths`
 

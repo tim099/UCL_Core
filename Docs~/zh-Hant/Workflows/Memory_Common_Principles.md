@@ -110,8 +110,7 @@ links: [<同層 id>, <persona>/<id>, alaya/<id>, workmem:<topic>]
 ### ① 先搜再寫
 
 ```bash
-KB="python <UCL_Core>/Tools~/AgentCommands/knowledge_base.py"
-$KB search --target fragments,alaya,work_memory --query "<你要寫的那條，寫成一句話>" --topk 5
+senate cmd kb --arg op=search --arg target=fragments,alaya,work_memory --arg query="<你要寫的那條，寫成一句話>" --arg topk=5
 ```
 
 命中既有的（分數 ≥ 0.72，hybrid 預設；dense 時是 0.65）→ **不要另開檔**：追加 `origins` + `recurrence` +1，或建 peer link。
@@ -135,18 +134,17 @@ $KB search --target fragments,alaya,work_memory --query "<你要寫的那條，�
 
 ## 4. 回憶（檢索）—— 三層走同一支引擎
 
-`senate cmd kb`（Senate 版，agent 與後台「知識庫」頁共用同一套實作）與舊的 `knowledge_base.py` 讀**同一份** `kb_targets.json`、同一批文件。
-Unity 的 `UCL_KnowledgeBaseAdminPage` 已於 2026-10-03 廢棄（TASK-0381），後台頁改在 Senate（`senate ui --page kb`）。
-目標名見 `kb_targets.json`：`docs / coredocs / lessons / fragments / alaya / library / work_memory`。
+`senate cmd kb`（agent 與後台「知識庫」頁 `senate ui --page kb` 共用同一套實作）讀 UCL_Core 的 `Tools~/AgentCommands/kb_targets.json`。
+目標名見 `kb_targets.json`：`docs / coredocs / lessons / fragments / alaya / library / work_memory`（另有逐 persona 展開的 `frag_<persona>`）。
 
 ```bash
-$KB search --target fragments --query "<句子>" --topk 5      # 個人記憶
-$KB search --target alaya     --query "<句子>" --topk 5      # 集體潛意識
-$KB search --target work_memory --query "<句子>" --topk 5    # 工作記憶
-$KB search --target all       --query "<句子>" --topk 10     # 全都撈
+senate cmd kb --arg op=search --arg target=fragments   --arg query="<句子>" --arg topk=5    # 個人記憶
+senate cmd kb --arg op=search --arg target=alaya       --arg query="<句子>" --arg topk=5    # 集體潛意識
+senate cmd kb --arg op=search --arg target=work_memory --arg query="<句子>" --arg topk=5    # 工作記憶
+senate cmd kb --arg op=search --arg target=all         --arg query="<句子>" --arg topk=10   # 全都撈
 ```
 
-### ⚠ 先選對層 —— `--target` 就是一個檢查範圍，而範圍外的結果跟「不存在」同形
+### ⚠ 先選對層 —— `target` 就是一個檢查範圍，而範圍外的結果跟「不存在」同形
 
 上面 §1 那張三層表說的是**東西該放哪**。它同時是「**該查哪個 target**」的預測 ——
 因為一條記憶會在哪，照判準是可推的：
@@ -175,7 +173,7 @@ $KB search --target all       --query "<句子>" --topk 10     # 全都撈
 | 命中**這一層裡**語意鄰近的碎片，正解也在這一層但排名靠後 | 查詢詞與正文用字不同 | **回填**（§6） |
 | 命中**別的專案／別的受詞**，或整排都是「沾到邊」 | **target 圈錯層** | ⛔ 先**換 target**，⛔ 不要回填 —— 回填會把工作類內容硬拉進碎片層 |
 
-⚠ **`--target all` 的成本要先知道**：它把共用大索引一起載（實測單 persona 索引查詢 54ms、
+⚠ **`target=all` 的成本要先知道**：它把共用大索引一起載（實測單 persona 索引查詢 54ms、
 `fragments` 共用索引 4.3s，而 `all` 第一次**超過 120 秒**還沒回來）⇒
 **丟背景跑**，別把它當成「順手再查一次」。
 
@@ -222,7 +220,7 @@ $KB search --target all       --query "<句子>" --topk 10     # 全都撈
    ⚠ 2026-09-11 更正：本條在此之前寫著「不能」而那個能力已經在線 ——
    **一份說「做不到」的文件比說「做得到」的文件難被推翻**（沒有人會去試它），
    所以它躺著的時間是可觀的。原句劃掉不刪，留著這一格是為了記住這個方向的錯。
-   ⛔ 而 `frag_*` **不進 `--target all`**（與 `fragments` 蓋同一批檔案，一起進會同一段文字算兩次）。
+   ⛔ 而 `frag_*` **不進 `target=all`**（與 `fragments` 蓋同一批檔案，一起進會同一段文字算兩次）。
    ⚠ 用共用 `fragments` 撈自己的東西時，下面那個 `topk` 截斷仍然成立：
    ⚠ **代價**：`topk` 是**過濾前**的截斷 —— 自己的碎片排在 41 名就永遠看不到，而那個缺席不會叫。
 2. **標題行會變成獨立 chunk 產生同分噪音。** `## 一句話` 這種短標題被切成一個 chunk，

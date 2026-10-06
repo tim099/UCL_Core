@@ -1,218 +1,51 @@
 ---
-title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
-description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 Editor 整合 (hooks) / migration scripts / skill installer。⚠ 退場有三種狀態（整支刪除／整支指路／部分退場），見本檔開頭那張表 —— 「在索引裡」不等於「還有功能」。
-last_updated: 2026-10-01
+title: UCL_Core Python Tools 索引
+description: UCL_Core/Tools~ 下現存的 Python 工具：每支是做什麼的、誰在呼叫、對應的 Senate 指令。Agent 日常操作一律走 senate cmd，這裡列的是還沒有 C# 版或刻意留在 python 的部分。
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
-related:
-  - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Init_Protocol.md | Awakening Init Protocol | morning/goodnight 三步驟設計
-  - ucl_core:Docs~/{lang}/Plan/Plan_Work_Session_Mechanism.md | Work Session Mechanism | 上班 session 全 spec
-  - ucl_core:Docs~/{lang}/API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md | Agent Command | run_cmd.py 觸發的 C# Cmd 端 architecture
 ---
 
 # 🐍 UCL_Core Python Tools 索引
 
-> 一句話: UCL_Core 的 Python 工具集中在 `Tools~/AgentCommands/`, 跨專案共用; 真正 project-specific 的 Python tool 放主專案 `AgentCommands/Tools/` (見最末段對照)。
+> 一句話：**agent 日常操作走 `senate cmd`（`senate cmd` 列全部）**。這裡只列 `Tools~/` 還在的 python，以及它們為什麼還在。
+> 清單以磁碟為準：`ls <UCL_Core>/Tools~ <UCL_Core>/Tools~/AgentCommands`。
 
-> [!WARNING]
-> **本索引不完整**：UCL_Core 現有 **53 支** .py（頂層 36 ＋ 子目錄 17；2026-09-10 `find` 實測），
-> 本檔只列到 21 支（`memory.py` / `knowledge_base.py` … 皆未列入）。
-> ⇒ 查不到某支工具**不代表它不存在** —— 直接 `ls <UCL_Core>/Tools~/AgentCommands/`
-> 是比本索引可信的來源。
->
-> ## ⚠ 而「在這份索引裡」與「還有功能」是兩件事 —— 退場有**兩種狀態**
->
-> | 狀態 | 長相 | 例 |
-> |---|---|---|
-> | **整支刪除** | 檔案不存在（`ls` 撈不到） | `check_compile.py`／`run_cmd.py` |
-> | **部分退場** | 本體還在，**只有某幾個子指令** exit 2 | `bili_meta.py`（387 行） |
->
-> 🩸 這兩種在「只列檔名」的索引裡**長得一模一樣**，而處置完全不同：
-> 第一種要改指路、**第二種你要先確認你要的那個子指令還在不在**。
-> ⇒ 判準：**先跑一次看它印什麼**（兩種都會自己說），⛔ 別用「檔案在不在」推「功能在不在」。
-> ⚠ 而檔頭有「退場」字樣**不等於整支退場** —— 撈關鍵字會把第三種算成第二種（實測踩過）。
->
-> ⛔ 已經沒有 python 入口的：**提交走 `senate cmd commit`**、
-> **閱讀線走 `senate cmd library`**、**寫書線走 `senate cmd book`**、
-> **工作記憶走 `senate cmd work-memory`**、**密封信走 `senate cmd sealed-letter`**。
+## 已經在 Senate 的（沒有 python 入口）
 
-## 📂 目錄結構
+早安／晚安／小歇（`morning-*`／`goodnight-*`／`rest`）、見叢／見根／見林（`keys`／`root-index`／`consolidate`）、
+畫像（`goodnight-portrait`／`people`，誰畫過我＝`people --arg of=1`）、知識庫檢索（`kb`）、工作記憶（`work-memory`）、
+密封信（`sealed-letter`）、提交（`commit`）、閱讀與寫書（`library`／`book`）、模型（`llm`）、
+Unity 編譯（`unity-recompile`／`unity-compile-status`）、派 Unity 指令（`senate ucmd run`）。
 
-```
-Tools~/
-├── install_skills.py                   # Skill 安裝器 — host project 同步 .claude/skills
-└── AgentCommands/
-    ├── check_compile.py                # ⛔ 已刪除（2026-09-10）—— 檔案不存在了
-    ├── hook_validate_modified.py       # Claude Code PostToolUse / Stop hook
-    ├── run_cmd.py                      # ⭐ queue.json 提交器 — 觸發 C# Cmd
-    ├── _lib/
-    │   └── json_io.py                  # JSON 讀寫公用 helper
-    └── CommandResolver/                # 雜項小工具（名稱沿用）
-        ├── fetch_sheet.py              # GoogleSheet fetch (translate)
-        ├── channel_status.py           # Discord channel 狀態查
-        ├── inbox_ack.py                # tavern inbox ack 助手
-        ├── _resolver_cache/            # fetch_sheet 的 cache 目錄
-        └── __init__.py
-```
+## 現存的 python
 
-## ⭐ 核心工具
+| 檔 | 做什麼 | 誰在用 |
+|---|---|---|
+| `Tools~/install_skills.py` | 把 `Skills~` 同步到宿主專案的 agent skill 目錄 | Unity `UCL_AgentSkillManagerPage`（改走 `senate cmd skill`：TASK-0423） |
+| `Tools~/git_flatten_sync.py` | Git 扁平同步 | Tim 手動 |
+| `llm_admin.py` | ollama 模型管理 | Unity `UCL_LLMModelAdminPage`（Senate 已有 `senate cmd llm`；Unity 頁改走它：TASK-0423） |
+| `media_admin.py` | 影音套件與權重 | Unity `UCL_MediaAdminPage`（遷 Senate：TASK-0392） |
+| `audio_transcribe.py`／`subtitle_ocr.py`／`screenstream_daemon.py`／`screenstream_montage.py`／`screenstream_audio_viz.py`／`process_registry.py`／`tavern_history.py`／`bili_meta.py` | 觀影（語音轉字幕、OCR、串流、剪輯） | Unity 觀影頁 —— 觀影整個重做，不移植 |
+| `dice.py` | 擲骰（結果可同步酒館） | TRPG 活動（目前 `enabled: false`） |
+| `mbti.py` | MBTI 測評 | `Docs~/zh-Hant/Tools/MBTI_Tool_Guide.md` |
+| `senate_post.py` | python 工具發酒館的唯一出口（呼叫 `senate cmd tavern-post`） | `dice.py`／`mbti.py` |
+| `helpurl_check.py` | 掃 C# 的 HelpURL，報死連結 | 手動（`--strict`） |
+| `hook_validate_modified.py` | Claude Code PostToolUse／Stop hook | 目前沒有專案掛上 |
+| `CommandResolver/`（`channel_status.py`／`fetch_sheet.py`／`inbox_ack.py`／`inbox_ts_backfill.py`） | 雜項小工具 | `inbox_ack` 已由 `senate cmd tavern-inbox-ack` 取代 |
+| `_lib/`（`ucl_paths.py`／`json_io.py`／`persona_profile.py`／`seam.py`） | 上面幾支共用的路徑與 JSON helper | python 工具 |
+| `kb_targets.json` | 知識庫目標清單（不是程式） | `senate cmd kb` 讀這一份 |
 
-### `run_cmd.py` — Cmd queue 提交器
+⚠ 寫新的 python 工具之前先問：它能不能是一支 `senate cmd`？要發酒館走 `senate_post.py`，⛔ 不直寫 jsonl。
 
-**這是最常用的 entry point**。Agent 透過此工具觸發 Unity Editor 內 C# Cmd 處理。
+## 專案自己的 python（放主專案 `AgentCommands/Tools/`）
 
-| 用法 | 範例 |
-|---|---|
-| `run <Type> --arg key=value` | `senate ucmd run Task --arg op=show --arg index=8` |
-| `info <Type>` | `python run_cmd.py info Tavern` (印 ArgsSchema) |
-| `list` | 列所有 Cmd Types |
+依賴專案邏輯的工具不放 UCL_Core（例：`debuglog_query.py`、`screenshot.py`），跨專案時不會跟著走。
+動錢一律走 `senate cmd bank`／`voucher`；機密走 Editor 的 `UCL_SecretManagerPage` —— python 端都沒有通道。
 
-**機制**:
-1. 寫 entry 到 `AgentCommands/queue.json`
-2. Touch `AgentCommands/pending.trigger`
-3. Unity Editor 的 `UCL_AgentCommandWatcher` 偵測 trigger → 跑對應 Cmd handler
-4. 等 entry 從 queue 消失 (預設 timeout 120s) → 完成
+## 🪟 Windows 找不到 Python
 
-詳見 [API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md)。
+Agent／Codex 出現「找不到 Python」（Exit Code 9009／跳出 Microsoft Store）時依序查：
 
----
-
-## 🛠 Editor 整合
-
-### `check_compile.py` — ⛔ **已刪除（2026-09-10，Tim 拍板）**
-
-> 主入口已換成 Senate CLI：`senate cmd unity-recompile`（觸發＋等那一趟）／
-> `senate cmd unity-compile-status`（只讀）。⛔ **本支已於 2026-09-10 整支刪除**（檔案不存在了）——
-> 上面那句「尚未退場」是**過期字面**，2026-09-10 更正。
-> ⚠ 未移的兩格處置不同：`--fallback-log` 沒有替代品；`--editor-alive` 有（stat `<data_root>/ChatTavern/bartender/_heartbeat.txt`，寫入端是 `UCL_EditorHeartbeat`）。
-> ⛔ **`--watch` 已知會回上一次的快照且不印 STALE（TASK-0154）—— 別用它。**
-
-讀 Editor 端 `Library/Bee/build.txt` 等檔, 印 markdown / json 編譯錯誤 + warning 報告。
-
-```bash
-# ⛔ 整支已刪除（2026-09-10）—— 檔案不存在了
-senate cmd unity-compile-status          # 只讀現況（本地跑，不需要 Editor，含 ErrorLog 交叉對帳）
-senate cmd unity-recompile --arg persona=<me>   # 觸發＋等那一趟結束（送出時刻＝基準）
-# ⛔ --fallback-log（解 Editor.log）：沒有替代品
-# ⭐ --editor-alive（心跳）：有 —— stat <data_root>/ChatTavern/bartender/_heartbeat.txt（UCL_EditorHeartbeat 寫，0.5s 一拍，>1.5s 沒動＝沒在 tick）
-```
-
-### `hook_validate_modified.py` — Claude Code hook
-
-兩種模式:
-- `--mode post` — PostToolUse hook, best-effort 記 modified file 到 state
-- `--mode stop` — Stop hook, 強制驗 UCL_Asset 格式 (blocking)
-
-### `install_skills.py` — Skill 安裝器
-
-Host project 同步 `<UCL_Core>/Skills~/*` 到 `<project-root>/.claude/skills/`。
-首次接 UCL_Core 後跑一次, 之後 UCL_Core bump 後手動再跑。
-
-移除相關（2026-08-12）：
-
-- `--uninstall` 的候選集是 **`Skills~` 現存 ∪ 已裝目錄** —— 已從 `Skills~` 退場的 skill
-  只存在於已裝端, 只從源端濾會讓 `--include <退場的> --uninstall` 變成**靜默 no-op**（exit 0、`removed=[]`）。
-- 顯式 `--include` 點名的 skill 沒被移除 → **exit 2** 並印出原因（未安裝 / 無 marker 被擋）。
-- `--force-remove-unmarked` 才會刪**沒有 `.ucl_source`** 的目錄（預設視為使用者手放的 skill, 不動）。
-  與 `--force-overwrite` 刻意分兩顆旗標: 前者是覆蓋內容, 後者是刪除來源不明目錄。
-- 全量同步（無 `--include/--exclude`）會自動掃掉**有 marker** 的 orphan 目錄; 無 marker 者永遠不自動刪,
-  改由 `UCL_AgentSkillManagerPage` 的 Matrix 底部區塊顯示 + 二次確認移除。
-
----
-
-## 🛠 Misc
-
-### `_latest.md`（見樹指標）的維護
-
-沒有獨立腳本 —— 責任長在兩個必經點上：寫信端 `senate cmd goodnight-letter` / `rest`（SCP_Core）每次覆寫 pointer，
-早安生成 brief 時 `SCP_WakeLetters.SyncLatestPointer()` 再對一次帳，不一致就修並在 brief 標一行。
-
-
----
-
-## 📂 子套件
-
-### `_lib/json_io.py` — 公用 JSON helper
-
-讀寫 JSON 跨 tools 共用 wrapper, 處理 BOM / encoding / atomic write 等邊角。
-
-### `CommandResolver/` — 雜項小工具
-
-| 檔 | 用途 |
-|---|---|
-| `fetch_sheet.py` | GoogleSheet fetch (translation 用) |
-| `channel_status.py` | Discord channel 狀態查 |
-| `inbox_ack.py` | tavern inbox ack 助手 |
-
----
-
-## 🔎 Project-specific tools 對照 (放主專案 `AgentCommands/Tools/`)
-
-UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle / treasury):
-
-| Tool | 用途 |
-|---|---|
-| `debuglog_query.py` | DebugLog 查 (5 ops: tail / component / errors / search / summary)　⚠ **依賴 `DebugLogs~/` 目錄，Bar 專案沒有該目錄 ⇒ 在 Bar 無資料可讀**（CardGame 端仍活） |
-| `screenshot.py` | 單張截圖（串流 daemon 已搬 UCL_Core `screenstream_*.py`） |
-
-→ 跨專案搬 UCL_Core 時這些**不會跟著**, 各 project 自己有自己版本。
-
-相關的跨專案入口：**餘額查詢走 `senate cmd bank --arg op=balance`**；
-機密管理**沒有 python 入口** —— 一律走 Editor 的 `UCL_SecretManagerPage`（C# native，UCLS1）。
-（舊的 `ucl_secret.py` 已於 2026-08-21 移除：它只認 TKN1/TKN2，對現行 UCLS1 一律 bad magic。）
-動錢一律走 Senate CLI（`senate cmd bank`／`voucher`）—— python 端沒有動錢通道。
-
----
-
-## ❓ Localize 工具 (2026-05-18 gura 搜尋結果)
-
-掃了 UCL_Core/Tools~ 跟主專案 `AgentCommands/Tools/` — **沒有任何 Python tool 對 localize asset 操作**。
-
-候選工具僅 C# Editor 端:
-- `UCL_LocalizeEditPage` (UCL_Core/EditorMenuPages) — 編輯既有 key, 不寫入新檔
-- `UCL_LocalizeEditOnGUI` — page sub-widget
-- `RCG_LocalizeAsset` (主專案 Scripts/Editor) — Google Sheet 同步下載
-
-→ 若要走 「Python 工具寫入 Localize Asset」路線, 是 **0 → 1 開新工具** 不是「通用化既有工具」。
-
-若 Tim 想動工, 推薦設計:
-- 新建 `Tools~/AgentCommands/localize_edit.py`
-- subcommand: `add <asset_id> <key> <value>` / `remove <asset_id> <key>` / `list <asset_id>`
-- 寫入 `<.BuiltinModules>/.../UCL_LocalizeAsset/<asset_id>.json` 或 LocalizeDatas/<asset>/<lang>.txt
-- 對齊既有 UCL_LocalizeAsset C# 端 parse 規則 (line-range 格式)
-
----
-
-## 🪟 Windows 環境 Python 與 Codex 排查指南 (Troubleshooting)
-
-在 Windows 環境下，若 Agent / Codex CLI 出現「找不到 Python」或執行失敗（Exit Code 9009 / 自動彈出 Microsoft Store），請依序排查以下常見陷阱：
-
-### 1. ⚠️ 微軟「應用程式執行別名 (App Execution Aliases)」幽靈攔截（最常見）
-* **現象**：在終端輸入 `python` / `py` 時跳出 Microsoft Store，或在 Codex 等子行程中回報找不到直譯器。
-* **原因**：Windows 10/11 預設開啟了指向微軟商店的別名捷徑，會優先於實際安裝的 Python 攔截呼叫。
-* **解決方式**：
-  1. 按 `Win + I` 打開 Windows 設定 ➔ 進入「應用程式 (Apps)」➔「進階應用程式設定」➔「應用程式執行別名 (Manage app execution aliases)」。
-  2. 將以下 4 個開關全數切換為 **「關閉 (Off)」**：
-     - `Python (default) - python.exe`
-     - `Python (default) - python3.exe`
-     - `Python install manager - pymanager.exe`
-     - `Python install manager - py.exe`
-  3. 重啟終端或 Codex 即可正常識別真實的 Python 直譯器。
-
-### 2. 🌐 系統環境變數 (System PATH) 缺失
-* **現象**：一般終端可執行，但在沙盒、服務或不同權限子行程中找不到 Python。
-* **解決方式**：確認 Python 安裝目錄（如 `C:\Python312` 與 `C:\Python312\Scripts`）已加入 **「系統變數 (System PATH)」**，而非僅使用者變數 (User PATH)。
-
-### 3. 📜 PowerShell 腳本執行原則阻擋
-* **解決方式**：以管理員或當前使用者權限放寬限制：
-  ```powershell
-  Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-  ```
-
----
-
-## 📚 相關文件
-
-- [Plan/Plan_Awakening_Init_Protocol.md](../Plan/Plan_Awakening_Init_Protocol.md) — Awakening 三步驟 spec
-- [Plan/Plan_Work_Session_Mechanism.md](../Plan/Plan_Work_Session_Mechanism.md) — Work Session 全 spec
-- [API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command C# 端 architecture
-- [Workflows/Commit_Workflow.md](../Workflows/Commit_Workflow.md) — Commit 規範 (含 submodule 三層 bump)
+1. **應用程式執行別名**（最常見）：設定 →「應用程式」→「進階應用程式設定」→「應用程式執行別名」，
+   把 `python.exe`／`python3.exe`／`pymanager.exe`／`py.exe` 四個關掉，重開終端。
+2. **PATH**：Python 安裝目錄（如 `C:\Python312` 與 `C:\Python312\Scripts`）要在**系統** PATH，不是只在使用者 PATH —— 沙盒與服務子行程只看系統那份。
+3. **PowerShell 執行原則**：`Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`。

@@ -9,7 +9,7 @@ target_audience: [AI_Agent, Developer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_BugReport_System.md | Plan_BugReport_System | 一單一檔與 index 配發母版
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | `Fixes TASK-x` / `Refs TASK-x` 自動閉環掛點
-  - ucl_core:Docs~/{lang}/Workflows/Awakening_Cmd_Flow.md | 早安/晚安 Cmd 流程 | 見叢連動與晚安對帳掛點
+  - senate cmd doc --arg op=show --arg name=Goodnight | 晚安（Senate） | 見叢連動與晚安對帳掛點
   - ucl_core:Skills~/ucl-work-memory/SKILL.md | Work Memory Skill | 工作記憶操作指南
 ---
 
@@ -142,7 +142,7 @@ AgentCommands/Tasks/ (Submodule -> github.com/tim099/Tasks)
 > [!NOTE]
 > **2026-09-30 起（TASK-0349）寫入端搬到 Senate**：下表的寫入 op 由 `senate cmd task` 執行（唯一寫入端是 Senate Server
 > 的 `task-write`，op 本體在 SCP_Core `SCP_TaskOps`）；Editor 的 `Cmd_Task` 只剩 list／show／kanban 三支讀取，
-> 寫入 op 轉交 senate。本節保留原設計的語意表，現行操作見 `Workflows/Task_Management_Workflow.md` §3。
+> 寫入 op 轉交 senate。本節保留原設計的語意表，現行操作見 `senate cmd doc --arg op=show --arg name=Task_Management`。
 
 | 操作 `op` | 說明 | 關鍵參數 |
 |---|---|---|

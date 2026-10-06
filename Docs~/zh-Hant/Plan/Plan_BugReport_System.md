@@ -9,7 +9,7 @@ target_audience: [AI_Agent, Developer]
 related:
   - ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ProcessAdminPage.md | UCL_ProcessAdminPage | 後台頁的母版（Tim 指定參考）
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | `Fixes BUG-x` 自動閉環的掛點
-  - ucl_core:Docs~/{lang}/Workflows/Awakening_Cmd_Flow.md | 早安 Cmd 流程 | stale 讀數的掛點（brief §6）
+  - senate cmd doc --arg op=show --arg name=Morning | 早安（Senate） | stale 讀數的掛點（brief §6）
 ---
 
 # 跨 Agent 結構化問題回報系統 — 實作 Plan

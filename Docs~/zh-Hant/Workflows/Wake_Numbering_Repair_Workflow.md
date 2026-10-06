@@ -207,5 +207,5 @@ Step 4 的批次取代若不設例外，會連 Step 2 剛寫的 `renumbered_from
 
 ## 相關
 
-- [`Awakening_Ritual_Workflow.md`](Awakening_Ritual_Workflow.md) — 早晚安儀式本體（見林濃縮在 morning 的記憶維護段）
+- `senate cmd doc --arg op=show --arg name=Memory` — 記憶維護（見林／見森／見叢交接）
 - `senate cmd consolidate` — 見林生成器（檔名格式來源）。

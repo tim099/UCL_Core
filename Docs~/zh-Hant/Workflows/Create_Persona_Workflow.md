@@ -7,7 +7,7 @@ aliases: [Create Persona, 新增 Persona, 建立新 Persona, 建立角色卡]
 tags: [workflow, persona, tavern, asset, image-gen]
 related:
   - ucl_core:Docs~/{lang}/Workflows/Create_UCL_Asset_Workflow.md | Create UCL_Asset Workflow | 基礎 Asset 建立規範
-  - ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md | Awakening Ritual Workflow | 早安/晚安喚醒生命週期
+  - senate cmd doc --arg op=show --arg name=Morning | 早安（Senate） | 喚醒生命週期（晚安見 Goodnight）
 ---
 
 # 🎭 UCL_Core 建立新 Persona 工作流
@@ -133,5 +133,5 @@ graph TD
 ## 2. 相關文件
 
 - [Create_UCL_Asset_Workflow](Create_UCL_Asset_Workflow.md) — 基礎 UCL_Asset 建立與驗收規範
-- [Awakening_Ritual_Workflow](Awakening_Ritual_Workflow.md) — Persona 喚醒生命週期
+- `senate cmd doc --arg op=show --arg name=Morning`／`Goodnight` — Persona 喚醒生命週期
 - [Cmd_MigrateAssetToTemplate](../API/UCL_AgentCommand/Cmd_MigrateAssetToTemplate.md) — 搬移資產到 Templates~ 的詳細指令規格

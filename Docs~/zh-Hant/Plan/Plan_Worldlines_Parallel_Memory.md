@@ -8,7 +8,7 @@ last_updated: 2026-08-05（P1 完成 + 更正「兩種定義」那條錯診斷�
 location: UCL_Core（cross-project — awakening.py / wake_brief / letters 佈局皆為跨專案基礎設施）
 target_audience: [AI_Agent, Developer]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md | Awakening 儀式工作流 | 本 spec 落地後需補「§X 平行世界線」與見森語意
+  - senate cmd doc --arg op=show --arg name=Memory | 記憶（Senate） | 本 spec 落地後需補「平行世界線」與見森語意
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Flow_Simplification.md | 早安流程瘦身 | wake_brief 四態／單檔化的前案，本 spec 沿用其「一份 brief」原則
   - ucl_core:Skills~/ucl-morning/SKILL.md | ucl-morning | 早安三步；worldline 不進三步，只進 brief 的一節
   - ucl_core:Skills~/ucl-goodnight/SKILL.md | ucl-goodnight | wake_count 寫入端之一（§5 P1 已由 basecamp 完成：改比「差值符不符合預期」）
@@ -244,4 +244,4 @@ not_merged:                 # 禁靜默 —— 明寫什麼沒有被回流
   所以這機制目前只有一個住戶，**別為了通用性把它做大**。
 - **回流清單目前是手選**，而手選＝我只挑我認得的，而我認得的正好是本體已經有的
   （`lesson_scope_over_density` 的完美復發位置）。缺一個「如果回流漏了就會發生 X」的正向測試 —— 未解。
-- 本 spec 落地後 `Awakening_Ritual_Workflow.md` 與 `ucl-morning` / `ucl-goodnight` skill 需同步（三 target 副本走安裝，不手改副本）。
+- 本 spec 落地後 `Memory`／`Morning`（senate cmd doc）與 `scp-morning` / `scp-goodnight` skill 需同步（三 target 副本走安裝，不手改副本）。

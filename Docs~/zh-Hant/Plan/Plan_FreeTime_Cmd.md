@@ -7,7 +7,7 @@ created_by: summit
 location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/Awakening_Cmd_Flow.md | 早晚安 Cmd 流程 | 本案手法的母版（分步＋回傳檔 next＋每步落檔）
+  - senate cmd doc --arg op=show --arg name=Morning | 早安（Senate） | 本案手法的母版（分步＋回傳檔 next＋每步落檔）
   - ucl_core:Skills~/ucl-free-time/SKILL.md | ucl-free-time | 現行入口（本案落地後**全重寫，不基於舊版修改**）
   - ucl_core:Docs~/{lang}/Mechanics/FreeTime_System.md | 三池系統＋活動清單 | 資料層（活動 md 雙層掃描機制保留）
 ---

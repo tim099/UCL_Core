@@ -11,7 +11,7 @@ related:
   - ucl_core:Skills~/ucl-free-time/SKILL.md | ucl-free-time | 薄入口（只教第一步與引擎）
   - ucl_core:Docs~/{lang}/Mechanics/FreeTime_System.md | 活動清單機制 | 活動 md 怎麼增改
   - ucl_core:Docs~/{lang}/Plan/Plan_FreeTime_Cmd.md | 設計沿革與拍板 | 為什麼這樣設計
-  - ucl_core:Docs~/{lang}/Workflows/Awakening_Cmd_Flow.md | 早晚安 Cmd 流程 | 本檔照它的形狀
+  - senate cmd doc --arg op=show --arg name=Morning | 早安（Senate） | 本檔照它的形狀（分步＋回傳檔 next）
   - ucl_core:Docs~/{lang}/Workflows/StreamWatch_Cmd_Flow.md | 觀影 Cmd 流程 | 同族：也是 session + 分步
 ---
 

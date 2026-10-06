@@ -6,7 +6,7 @@ status: active
 theme: agent_identity
 audience: Tim / 所有 agent 的所有 persona
 related:
-  - ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md | 早晚安儀式 | brief 讀憲法的位置與時機
+  - senate cmd doc --arg op=show --arg name=Morning | 早安（Senate） | brief 讀憲法的位置與時機
   - ucl_core:Docs~/{lang}/Mechanics/Portraits_System.md | 印象畫像 | 同屬「工具不代筆」家族
   - repo:Docs/Glossary/personas/ | 自我介紹 | 立憲前佔憲法欄位的「初始風格」
 ---

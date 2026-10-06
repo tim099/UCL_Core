@@ -42,7 +42,7 @@ namespace UCL.Core.EditorLib.Page
     /// Persona & Agent 後台管理頁 — 開 agent（含 bank）/ 建 persona（可 fork）。⚠ 換綁面板已於 TASK-0242 ⑫ 退場。
     /// 入口：控制台 (UCL_ControlPanelPage) 的「🧬 Persona & Agent 管理」按鈕。
     /// </summary>
-    [HelpURL("ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md")]
+    // 說明文件住 Senate（TASK-0426）：senate cmd doc --arg op=show --arg name=Morning／Persona_Create
     public class UCL_PersonaAgentAdminPage : UCL_CommonEditorPage
     {
         public override string WindowName => "Persona & Agent 管理";

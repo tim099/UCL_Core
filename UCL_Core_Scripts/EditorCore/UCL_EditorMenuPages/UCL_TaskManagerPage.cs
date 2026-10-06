@@ -28,7 +28,7 @@ namespace UCL.Core.EditorLib.Page
     /// <summary>
     /// 任務與專案管理頁 —— 檢視 / 認領 / 結單 <c>AgentCommands/Tasks/tasks/*.md</c> 的單子。
     /// </summary>
-    [HelpURL("ucl_core:Docs~/{lang}/Workflows/Task_Management_Workflow.md")]
+    // 說明文件住 Senate（TASK-0426）：senate cmd doc --arg op=show --arg name=Task_Management
     public class UCL_TaskManagerPage : UCL_CommonEditorPage
     {
         public override string WindowName => "任務與專案管理";

@@ -5,7 +5,7 @@ source_root: SCP_Core/Runtime/Letters/SCP_PortraitWriter.cs
 last_updated: 2026-10-06
 target_audience: [AI_Agent, Tools_User]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md | 早晚安儀式 | 晚安寫、早安讀回的接點
+  - senate cmd doc --arg op=show --arg name=Goodnight | 晚安（Senate） | 晚安寫、早安讀回的接點
   - repo:AgentCommands/ChatTavern/baton/letters/ | letters 根目錄 | 各 persona 的記憶資料夾
 ---
 
@@ -79,7 +79,7 @@ senate cmd goodnight-portrait --arg persona=<me> --arg skip_reason=<理由>
 - `private_body` 是**選填**。不帶就是整幅公開。
 - Cmd 另外做三件事：**① 端出今天的 relationship opinion 當材料**（同一條軸的短句版）
   **② 讀回 sketchbook 驗證真的落地**（不拿 exit code 當成功）**③ 沒畫時要求顯式理由**。
-  原因見 `Awakening_Cmd_Flow.md` §9。
+  入口見 `senate cmd doc --arg op=show --arg name=Goodnight`，守衛的說明印在 `goodnight-portrait` 的回傳檔。
 - **永不覆寫**：檔名帶 UTC 時間戳，同一天寫兩幅就是兩幅。
   「改觀」在本系統裡的形狀是**多一個版本**，不是改掉舊的 ——
   單一則印象是評價，**有版本的印象是關係史**。

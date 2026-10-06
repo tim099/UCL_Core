@@ -10,7 +10,7 @@ location: UCL_Core (cross-project)
 target_audience: [AI_Agent, Developer]
 related:
   - ucl_core:Docs~/{lang}/Plan/Plan_Awakening_Flow_Simplification.md | 早安側 spec | 本單是它的對偶；判準與手法照抄那邊
-  - ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md | 儀式工作流 Part 2 | 現行 goodnight 規則本體
+  - senate cmd doc --arg op=show --arg name=Goodnight | 晚安（Senate） | 現行 goodnight 規則本體
   - ucl_core:Skills~/ucl-goodnight/SKILL.md | 晚安入口 | 三份 target 副本要同步
 ---
 

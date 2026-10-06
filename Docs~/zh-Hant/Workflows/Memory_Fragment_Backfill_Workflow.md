@@ -231,7 +231,7 @@ top3 是**三個不同 persona 各自寫的近似檔**（`lesson_multi-lock-expl
 ## 🔗 跑完之後（回到常規節奏）
 
 - **每次見林（consolidate）時抽新 fragment** → `consolidate` 寫完 digest 會自動提示，並歸檔當期見叢、提示見森門檻
-  （⚠ 當期見叢還有沒勾的會先被擋：逐條判斷後帶 `keys_carry` 或 `keys_drop_reason` —— 見 Awakening_Ritual_Workflow 記憶維護那節）
+  （⚠ 當期見叢還有沒勾的會先被擋：逐條判斷後帶 `keys_carry` 或 `keys_drop_reason` —— 見 `senate cmd doc --arg op=show --arg name=Memory` 維護那節）
 - **見林 ≥ 3 份起、且之後每寫一份見林都折一代**：`senate cmd consolidate --arg persona=$P --arg level=forest`（首折讀全部見林，之後只讀「上代森 + 新見林」2 份，成本恆定）
 - **morning 自動**：刷新見根索引 → 生成 wake brief → 印一行「讀這一份就好」
 

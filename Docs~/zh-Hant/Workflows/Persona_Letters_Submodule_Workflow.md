@@ -8,7 +8,7 @@ tags: [workflow, persona, letters, git, submodule, security]
 related:
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 單層 vs 逐層 bump、`senate cmd commit` 提交規範
   - ucl_core:Docs~/{lang}/Workflows/Create_Persona_Workflow.md | Create Persona Workflow | persona 本體（registry / 角色卡）的建立
-  - ucl_core:Docs~/{lang}/Workflows/Awakening_Ritual_Workflow.md | Awakening Ritual Workflow | 信件庫的產生端（早晚安儀式）
+  - senate cmd doc --arg op=show --arg name=Goodnight | 晚安（Senate） | 信件庫的產生端（收尾信）
 ---
 
 # 📦 Persona 信件庫 Submodule 化工作流

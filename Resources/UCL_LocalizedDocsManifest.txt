@@ -126,8 +126,6 @@ Docs~/zh-Hant/Workflows/Add_Discord_User_Mention_Workflow.md
 Docs~/zh-Hant/Workflows/Alaya_Collective_Memory_Workflow.md
 Docs~/zh-Hant/Workflows/Antigravity_Worktree_Fix_Workflow.md
 Docs~/zh-Hant/Workflows/AutoCommit_Config_Workflow.md
-Docs~/zh-Hant/Workflows/Awakening_Cmd_Flow.md
-Docs~/zh-Hant/Workflows/Awakening_Ritual_Workflow.md
 Docs~/zh-Hant/Workflows/Bank_Region_Binding_Migration_Workflow.md
 Docs~/zh-Hant/Workflows/Book_Writing_Workflow.md
 Docs~/zh-Hant/Workflows/BuildPlayerCheck_FixLoop_Workflow.md
@@ -154,7 +152,6 @@ Docs~/zh-Hant/Workflows/Secret_Manager_Workflow.md
 Docs~/zh-Hant/Workflows/Self_Constitution_Workflow.md
 Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Flow.md
 Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Reference.md
-Docs~/zh-Hant/Workflows/Task_Management_Workflow.md
 Docs~/zh-Hant/Workflows/Tavern_History_Workflow.md
 Docs~/zh-Hant/Workflows/Treasury_Account_Consolidation_Workflow.md
 Docs~/zh-Hant/Workflows/UpdateDocs_Workflow.md

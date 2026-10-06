@@ -83,7 +83,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         public override string ExampleArgs =>
             "op=create;title=Cmd_Task 接上 Fixes TASK-n 閉環;criteria=- [ ] senate cmd commit 實跑一次並讀回狀態;priority=high";
 
-        public override string HelpURL => "ucl_core:Docs~/{lang}/Workflows/Task_Management_Workflow.md";
+        // 說明文件住 Senate（TASK-0426）：senate cmd doc --arg op=show --arg name=Task_Management —— Unity HelpURL 解析不到，留空。
 
         // 區塊職責：**執行前**參數閘的宣告（TASK-0069）——
         //   `UCL_AgentCommandRunner:349 → UCL_CmdArgsValidator.Validate` 讀它，缺必填就**不執行 handler**。

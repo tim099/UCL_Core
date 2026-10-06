@@ -34,7 +34,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         /// severity 標傷害形狀。歷史 BUG-1~50 凍結在 AgentCommands/BugReports/reports/。</summary>
         bug,
         /// <summary>主 Task（傘）—— 大項目的收納單位，子單以 `epic_id` 指回來（Tim 2026-08-28 拍板入詞彙表；
-        /// 前身是 `tags=[epic]` 慣例，型別化後篩選與看板可直取）。開法見 Task_Management_Workflow §1.6。</summary>
+        /// 前身是 `tags=[epic]` 慣例，型別化後篩選與看板可直取）。開法見 `senate cmd doc --arg op=show --arg name=Task_Management`。</summary>
         epic,
     }
 

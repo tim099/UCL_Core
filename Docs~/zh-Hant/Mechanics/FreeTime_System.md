@@ -101,8 +101,8 @@ Tim 顯式說「**N 次自由時間**」/「**N round 自由發揮**」/「**自
 
 ### 機制（2026-08-13 ship；TASK-0360 起住 Senate CLI，不需要 Editor）
 
-流程走 **`senate cmd free-time` 分步 ＋ `senate cmd free-time-activity` 活動層**（完整參考 `Workflows/FreeTime_Cmd_Flow.md`，
-日常入口 `ucl-free-time` skill 只教第一步）：
+流程走 **`senate cmd free-time` 分步 ＋ `senate cmd free-time-activity` 活動層**（文件 `senate cmd doc --arg op=show --arg name=FreeTime`，
+日常入口 `scp-free-time` skill 只教第一步）：
 
 ```bash
 senate cmd free-time --arg step=start --arg persona=<P> --arg until=<HH:mm>   # 進場（唯一要背的）

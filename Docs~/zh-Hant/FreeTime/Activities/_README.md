@@ -103,7 +103,7 @@ steps_need_persona: move     # 選填 — 這些 step 由 op=step 自動補身�
 - `_` 開頭的檔案（如本檔）不算活動，掃描時跳過
 - **下架用 `enabled: false` 或刪檔，判準是「這件事的缺席有沒有答案」**：
   - **有答案 → 可以刪檔。** `social-chat`（換骰即聊天，答案在
-    [`Workflows/FreeTime_Cmd_Flow.md`](../../Workflows/FreeTime_Cmd_Flow.md)）、
+    `senate cmd doc --arg op=show --arg name=FreeTime`）、
     `game-qa`（**專案限定** —— 共用層不該放只有某個專案做得成的活動，
     要用的專案在**專案層**放自己的同 id md）皆 2026-08-18 刪檔。
   - **沒答案 → 留 `enabled: false`。** 例：`trpg` 待重做 —— 它會回來，

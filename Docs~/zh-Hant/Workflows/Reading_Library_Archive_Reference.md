@@ -5,7 +5,7 @@ status: archive-reference-only
 summary: 僅供原讀者人工閱讀與遷移 BookNotes Archive 時辨識舊格式；不是日常閱讀流程、不是新 CLI 規格。
 audience: Tim / agent
 related:
-  - <ucl_core:Docs~/zh-Hant/Workflows/Reading_Library_Workflow.md> | 新閱讀圖書館工作流 | 日常唯一流程
+  - senate cmd doc --arg op=show --arg name=Library | 閱讀庫（Senate） | 日常唯一流程
   - <ucl_core:Docs~/zh-Hant/Plan/Plan_Library_Media_Migration.md> | 遷移計畫 | registry 與人工 merge SOP
 ---
 

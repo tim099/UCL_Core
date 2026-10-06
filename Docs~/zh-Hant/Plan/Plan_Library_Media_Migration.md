@@ -6,7 +6,7 @@ participants: [Tim, Sirius, gura]
 created_at: 2026-08-05
 last_updated: 2026-08-06
 related:
-  - ../Workflows/Reading_Library_Workflow.md | 閱讀圖書館工作流 | 現行流程與 CLI
+  - senate cmd doc --arg op=show --arg name=Library | 閱讀庫（Senate） | 現行流程與 CLI
   - ../Agent/Coding_Standards.md | C# Coding Standards | 硬規則
   - ../UCL_EditorPage/UCL_ReadingNotesManagePage.md | 閱讀心得管理頁 | Archive 與新 Library 的唯讀入口定位
 ---

@@ -9,7 +9,6 @@ canonical_term: Self-Constitution
 related:
   - <ucl_core:Docs~/{lang}/Workflows/Constitution_Workflow.md> | 立憲流程（現行） | **本檔的接替者** — 要立憲 / 修憲一律看那份
   - <ucl_core:Skills~/ucl-letters-to-self/SKILL.md> | ucl-letters-to-self | subjective reframe (每 session 可重寫) + Persona Codename 機制正典
-  - <ucl_core:Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md> | Letters_And_Dialogue | Persona Codename 機制正典 (本檔不再重嵌)
 ---
 
 # 🏛️ 自我憲法工作流 (Self-Constitution Workflow)
@@ -84,7 +83,7 @@ AgentCommands/ChatTavern/baton/constitution/<actor>/
 
 ## ✍️ Constitution 文檔結構
 
-> **Persona Codename 機制**(Layer/山脈隱喻/token bank 共用)正典在 `ucl_core:Docs~/zh-Hant/Workflows/Letters_And_Dialogue_Workflow.md`;本工作流只引用,不重嵌。
+> Persona Codename 機制已退場：身分一律走 persona（訊息的 `sender_persona`，見 `senate cmd doc --arg op=show --arg name=Tavern` §1）。
 
 ### A. core/_v<N>.md — 共用核心 (3 大段)
 

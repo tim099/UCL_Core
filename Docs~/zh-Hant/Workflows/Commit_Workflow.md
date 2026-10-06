@@ -125,7 +125,7 @@ senate cmd auto-commit --arg op=commit
 | **其他 repo**（第一個是 `Chess`） | 該 repo 根的 `.ucl_autocommit.json` | ✅ 由該 repo 自己宣告；後台頁可改可存 |
 
 設定檔那一層跟另外兩層**同一趟掃**；**沒有設定檔的 submodule 不收**（不猜規則）。
-完整步驟（加入管理／欄位判準／地板／驗收）→ [`AutoCommit_Config_Workflow.md`](AutoCommit_Config_Workflow.md)。
+完整步驟（加入管理／欄位判準／地板／驗收）→ `senate cmd doc --arg op=show --arg name=AutoCommit` §3。
 
 ⚠ 設定檔為什麼不算「被亂改的規則」：它**入版控、由它管的那個 repo 擁有、改動在 diff 裡看得見**，
 而當年那句針對的是執行期參數（不留痕跡、事後查不到誰改的）。

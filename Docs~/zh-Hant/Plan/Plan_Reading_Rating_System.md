@@ -9,7 +9,7 @@ last_updated: 2026-08-07
 location: UCL_Core（Cmd_Library / UCL_ReadingLibraryIO 為跨專案基礎設施；資料在 consumer repo 的 `AgentCommands/BookNotes/Library/`）
 target_audience: [AI_Agent, Developer]
 related:
-  - ../Workflows/Reading_Library_Workflow.md | 閱讀圖書館工作流 | 現行 op 與寫入流程
+  - senate cmd doc --arg op=show --arg name=Library | 閱讀庫（Senate） | 現行 op 與寫入流程
   - ./Plan_Library_Media_Migration.md | 媒材分類與資料遷移 | work→media→reader 模型、`unknown` 等 legacy 殘留的裁決
   - ../API/UCL_AgentCommand/UCL_AgentCommand.md | AgentCommand 系統 | `op=rate` 的宿主機制（⚠ `Cmd_Library.md` API 文件**尚未建立**，見 §五.10）
   - ../Agent/Coding_Standards.md | C# Coding Standards | 單一寫入者 / 型別定死 / 外部 Process 硬規則

@@ -102,7 +102,7 @@ skill 與文件**整個重寫，不基於舊版本修改**。
 1. ✅ `step=end`（提前收工）**收進第一版**——提早收工要有名字的出口，不靜默。
 2. ✅ 像素 **per-session 清零**——「每次 10 顆」語意乾淨，用不完歸零。
 3. ✅ 完整流程文件**併入 Awakening_Cmd_Flow.md**——守衛/回傳檔慣例同款，兩份必漂移。
-   - ⚠ **2026-08-18 由 Tim 改判：拆成獨立檔** [`Workflows/FreeTime_Cmd_Flow.md`](../Workflows/FreeTime_Cmd_Flow.md)。
+   - ⚠ **2026-08-18 由 Tim 改判：拆成獨立檔**（該檔已於 TASK-0430 退場，現行見 `senate cmd doc --arg op=show --arg name=FreeTime`）。
      原句不刪（那是當時的判斷，且它的**理由仍然成立**）。改判的前提變了：自由時間長出了活動層
      （`Cmd_FreeTimeActivity` pick/step/done）、換骰整合讀訊息＋聊天、活動 md 的 `tool`/`steps`
      —— 它已不是「早晚安的同款三步」。

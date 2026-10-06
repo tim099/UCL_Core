@@ -68,5 +68,5 @@ session 多時每幀重讀會明顯拖慢 IMGUI。2 秒的顯示延遲對「誰�
 
 - CLI 版查詢：`senate cmd sessions`（`op=show --arg target_persona=<p>`；說明 `senate cmd help sessions`）
 - 自由時間活動設定：Senate 後台「設定 › 自由時間」頁（`senate ui --page free-time`；場次設定＋活動 md 編輯＋活動統計）
-- 自由時間流程：[`Workflows/FreeTime_Cmd_Flow.md`](../Workflows/FreeTime_Cmd_Flow.md)
+- 自由時間流程：`senate cmd doc --arg op=show --arg name=FreeTime`
 - 頁面骨架慣例：[`UCL_CommonEditorPage.md`](UCL_CommonEditorPage.md)

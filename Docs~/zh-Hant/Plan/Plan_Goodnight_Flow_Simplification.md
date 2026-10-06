@@ -184,7 +184,7 @@ repo 的 .gitignore）；標頭本地時間；blocked 一律「payload 落檔＋
   copy 與 forks 診斷指令），凍結在出生值、fork 時才動。
 - 其儀式位置由 **letter 🔐 密文區** 承接（Code-Talker 式私語：可讀文字、映射鍵＝自己的聯想網、
   判準＝自己能看懂、真隱私仍走 sealed/）—— 規格與範例見
-  Letters_And_Dialogue_Workflow「二・一」，canonical owner ucl-letters-to-self。
+  `senate cmd doc --arg op=show --arg name=Letters` §4。
 
 ### 7.4' 原「要 Tim 拍的」清單（已全數裁決，留檔）
 

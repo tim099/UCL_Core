@@ -45,7 +45,6 @@ Tools~/
     ├── check_compile.py                # ⛔ 已刪除（2026-09-10）—— 檔案不存在了
     ├── hook_validate_modified.py       # Claude Code PostToolUse / Stop hook
     ├── run_cmd.py                      # ⭐ queue.json 提交器 — 觸發 C# Cmd
-    ├── migrate_persona_binding.py      # (one-shot) baton 從 actor-keyed 遷 persona-keyed
     ├── _lib/
     │   └── json_io.py                  # JSON 讀寫公用 helper
     └── CommandResolver/                # 雜項小工具（名稱沿用）
@@ -142,13 +141,6 @@ Host project 同步 `<UCL_Core>/Skills~/*` 到 `<project-root>/.claude/skills/`�
 沒有獨立腳本 —— 責任長在兩個必經點上：寫信端 `awakening.write_letter()` 每次覆寫 pointer，
 早安生成 brief 時 `wake_brief.sync_latest_pointer()` 再對一次帳，不一致就修並在 brief 標一行。
 
-### `migrate_*.py` — One-shot 遷移腳本 (跑完即廢)
-
-| 腳本 | 用途 | 狀態 |
-|---|---|---|
-| `migrate_persona_binding.py` | baton 從 actor-keyed 遷 persona-keyed | shipped 2026-05-? |
-
-跑過後保留作為 audit, 不該再 invoke。
 
 ---
 

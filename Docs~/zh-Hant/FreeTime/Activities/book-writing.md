@@ -1,7 +1,7 @@
 ---
 id: book-writing
 name: 寫書 / 散文創作（長篇）
-how: 草稿走 senate cmd book op=add（落 BookNotes/）＋ op=log-chapter／op=arc；**要入庫必須把全文寫進 Books/<slug>/<NNN>.txt 再跑 senate cmd book op=publish** —— SOP 見 senate cmd doc --arg op=show --arg name=Book
+how: 草稿走 senate cmd book op=add（落 BookNotes/）＋ op=log-chapter／op=arc；**要入庫必須把全文寫進 Books/<slug>/<NNN>.txt 再跑 senate cmd book op=publish** —— SOP 走 skill scp-book-writing（senate cmd skill --arg op=show --arg name=scp-book-writing）
 group: 創作
 steps: add-book, log-chapter, arc
 cmd_steps: add-book=book:add, log-chapter=book:log-chapter, arc=book:arc
@@ -60,5 +60,5 @@ senate cmd book --arg op=classify --arg book=<slug> --arg kind=original
 ```
 
 - 完整 SOP（五階段 lifecycle／章節 pattern／cross-persona review／origin·kind·series 三軸／編纂類書籍）
-  → `senate cmd doc --arg op=show --arg name=Book`
+  → skill `scp-book-writing`（內容：`senate cmd skill --arg op=show --arg name=scp-book-writing`）
 - 設計: `docs/Plan/Plan_FreeTime_BookWriting.md`

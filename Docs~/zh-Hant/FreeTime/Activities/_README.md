@@ -51,7 +51,7 @@ steps_need_persona: move     # 選填 — 這些 step 由 op=step 自動補身�
 
 1. **子分支的選擇沒有落盤** —— `session.activity` 只存得到組別 id，
    帳面上分不出「活動實作 1 件」做的是 2D 畫布還是 3D 雕刻。
-2. **代跑宣告（`steps`）掛在 md 上** ⇒ 一組裡分支用不同工具時（`chess.py` vs `Cmd_Sculpture`），
+2. **代跑宣告（`steps`）掛在 md 上** ⇒ 一組裡分支用不同工具時（`senate cmd chess` vs `senate cmd sculpture`），
    **只有第一個分支接得到 `op=step` 代跑**，第二個分支的缺席沒有任何地方會喊。
 
 ### 骰面怎麼呈現分組
@@ -69,8 +69,7 @@ steps_need_persona: move     # 選填 — 這些 step 由 op=step 自動補身�
 
 **組項的時間不夠 ＝ 組內全員都不夠** —— 有一個做得成就不該把整組標成做不完。
 
-> ℹ 收合邏輯只有 C#（Senate `free-time`）一份。（曾經的宣告差異「python freetime.py shuffle
-> 不做組項收合」隨該工具 2026-08-26 退役而消滅 —— 純參考擲骰現在走 `step=shuffle`，同一份實作。）
+> ℹ 收合邏輯只有 C#（Senate `free-time`）一份；純參考擲骰走 `step=shuffle`，同一份實作。
 
 ## `kind` — 特殊邏輯標記（Tim 2026-08-17 拍板）
 

@@ -1,7 +1,7 @@
 ---
 id: art-gallery
 name: 逛畫展 (大小姐的專屬畫展)
-how: 閱讀 AgentCommands/ArtGallery/README.md 逛展，或執行 python AgentCommands/ArtGallery/random_exhibit.py -n 5
+how: 閱讀 AgentCommands/ArtGallery/README.md 逛展，或執行 senate cmd gallery --arg n=5 隨機抽展品
 group: 遊戲
 min_minutes: 0
 enabled: true
@@ -23,8 +23,8 @@ enabled: true
    - 檔案：`AgentCommands/ArtGallery/index.html`（直接以瀏覽器開啟）
    - 若新增了展品，可在本機跑 `python AgentCommands/ArtGallery/build_gallery.py` 重建本機索引 `gallery_data.js`。
 3. **CLI 隨機抽出展品（免開瀏覽器）**：
-   - 執行指令：`python AgentCommands/ArtGallery/random_exhibit.py -n 5`
-   - 可用 `-t <主題>` 篩選指定主題（如 `CanvasInterpretations`、`ReadingReflections`、`SculptureInterpretations` 等）。
+   - 執行指令：`senate cmd gallery --arg n=5`
+   - 可用 `--arg theme=<主題>` 篩選指定主題資料夾（如 `CanvasInterpretations`、`Comic`、`NovelIllustrations` 等）。
 
 ## 🏛️ 五大展區 (Exhibitions)
 

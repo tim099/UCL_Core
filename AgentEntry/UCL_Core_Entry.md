@@ -14,7 +14,6 @@
 
 | 主題 | 位置 |
 |---|---|
-| **口語指令 → 指令表查找** | [`Docs~/zh-Hant/CommandTable.md`](Docs~/zh-Hant/CommandTable.md) |
 | **AgentCommand 系統**（queue / trigger / handler） | [`Docs~/zh-Hant/API/UCL_AgentCommand/`](Docs~/zh-Hant/API/UCL_AgentCommand/) |
 | **Agent skills**（酒館 / 早晚安 / commit / 記憶區…） | [`Skills~/_manifest.json`](Skills~/_manifest.json) + `Skills~/<name>/SKILL.md` |
 | **Workflows**（建頁 / 建 Cmd / 建 Asset / 翻譯 / 編譯排錯…） | [`Docs~/zh-Hant/Workflows/`](Docs~/zh-Hant/Workflows/) |

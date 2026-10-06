@@ -48,15 +48,11 @@ Tools~/
     ├── migrate_persona_binding.py      # (one-shot) baton 從 actor-keyed 遷 persona-keyed
     ├── _lib/
     │   └── json_io.py                  # JSON 讀寫公用 helper
-    └── CommandResolver/                # 口語指令 → Cmd Type 解析子套件
-        ├── resolver.py                 # 主解析器
-        ├── normalize.py                # 字串正規化
-        ├── sync_command_table.py       # 同步 CommandTable.md 到 cache
+    └── CommandResolver/                # 雜項小工具（名稱沿用）
         ├── fetch_sheet.py              # GoogleSheet fetch (translate)
         ├── channel_status.py           # Discord channel 狀態查
         ├── inbox_ack.py                # tavern inbox ack 助手
-        ├── test_resolver.py            # resolver 自測
-        ├── _resolver_cache/            # cache 目錄
+        ├── _resolver_cache/            # fetch_sheet 的 cache 目錄
         └── __init__.py
 ```
 
@@ -184,17 +180,13 @@ Host project 同步 `<UCL_Core>/Skills~/*` 到 `<project-root>/.claude/skills/`�
 
 讀寫 JSON 跨 tools 共用 wrapper, 處理 BOM / encoding / atomic write 等邊角。
 
-### `CommandResolver/` — 口語指令解析子套件
+### `CommandResolver/` — 雜項小工具
 
 | 檔 | 用途 |
 |---|---|
-| `resolver.py` | 主解析器 — 使用者輸入 → 對應 Cmd Type / workflow |
-| `normalize.py` | 字串正規化 (去全形、trim) |
-| `sync_command_table.py` | CommandTable.md → resolver cache 同步 |
 | `fetch_sheet.py` | GoogleSheet fetch (translation 用) |
 | `channel_status.py` | Discord channel 狀態查 |
 | `inbox_ack.py` | tavern inbox ack 助手 |
-| `test_resolver.py` | resolver 自測 |
 
 ---
 
@@ -268,5 +260,4 @@ UCL_Core 不放這些 — 它們依賴 project-specific 邏輯 (e.g. EOV battle 
 - [Plan/Plan_Awakening_Init_Protocol.md](../Plan/Plan_Awakening_Init_Protocol.md) — Awakening 三步驟 spec
 - [Plan/Plan_Work_Session_Mechanism.md](../Plan/Plan_Work_Session_Mechanism.md) — Work Session 全 spec
 - [API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md) — Agent Command C# 端 architecture
-- [CommandTable.md](../CommandTable.md) — 口語指令對照表
 - [Workflows/Commit_Workflow.md](../Workflows/Commit_Workflow.md) — Commit 規範 (含 submodule 三層 bump)

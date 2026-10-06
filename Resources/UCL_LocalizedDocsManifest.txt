@@ -39,7 +39,6 @@ Docs~/zh-Hant/Agent/Python_Coding_Standards.md
 Docs~/zh-Hant/Agent/Tavern_Share_Policy.md
 Docs~/zh-Hant/Agent/Web_Coding_Standards.md
 Docs~/zh-Hant/Architecture/Polymorphism_In_UCL.md
-Docs~/zh-Hant/CommandTable.md
 Docs~/zh-Hant/FreeTime/Activities/_README.md
 Docs~/zh-Hant/FreeTime/Activities/art-gallery.md
 Docs~/zh-Hant/FreeTime/Activities/book-writing.md
@@ -143,7 +142,6 @@ Docs~/zh-Hant/Workflows/Create_Persona_Workflow.md
 Docs~/zh-Hant/Workflows/Create_UCL_Asset_Workflow.md
 Docs~/zh-Hant/Workflows/Edit_Recompile_Loop_Workflow.md
 Docs~/zh-Hant/Workflows/FreeTime_Cmd_Flow.md
-Docs~/zh-Hant/Workflows/Glossary_Workflow.md
 Docs~/zh-Hant/Workflows/Hardcoded_Localize.md
 Docs~/zh-Hant/Workflows/HelpURL_Workflow.md
 Docs~/zh-Hant/Workflows/Hook_Setup_Workflow.md
@@ -159,7 +157,6 @@ Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Flow.md
 Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Reference.md
 Docs~/zh-Hant/Workflows/Task_Management_Workflow.md
 Docs~/zh-Hant/Workflows/Tavern_History_Workflow.md
-Docs~/zh-Hant/Workflows/Tavern_SoloBrainstorm_Workflow.md
 Docs~/zh-Hant/Workflows/Treasury_Account_Consolidation_Workflow.md
 Docs~/zh-Hant/Workflows/UpdateDocs_Workflow.md
 Docs~/zh-Hant/Workflows/Validate_UCL_Asset_Workflow.md

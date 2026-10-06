@@ -197,7 +197,6 @@ def write_last_op_md(content: str, mode: str, sheet_id: str, gid: int,
     md.append("")
     md.append("## 建議動作")
     md.append("- agent 把上方 content 當作 Tim 在 Discord/CLI 直接打的下一句 prompt 處理")
-    md.append("- 若內容看起來像指令（commit / 進酒館 / 拉等）→ 走 resolver 二次 dispatch")
     md.append("- 若內容是描述 / 任務 → 直接著手")
     md.append(f"- 預設 echo_before_act：先在主對話 echo content，等 Tim 5s 不撤回才動手")
 

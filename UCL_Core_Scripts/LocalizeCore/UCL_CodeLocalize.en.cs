@@ -190,9 +190,6 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Localize.Btn" => "Open Localize Editor",
                 "Welcome.Lang.Label" => "🌐 Language:",
 
-                "Welcome.CommandTable.Label" => "📋 Commands:",
-                "Welcome.CommandTable.Desc" => "SOP reference guide matching natural language triggers to their corresponding workflows.",
-                "Welcome.CommandTable.Btn" => "📄 Preview Command Table",
 
                 "Welcome.Lang.NoneAvailable" => "(No UCL_LanguageCodeAsset found — please create language Asset first)",
                 "Welcome.Lang.OpenEditor" => "Advanced…",

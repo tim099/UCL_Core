@@ -190,9 +190,6 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Localize.Btn" => "Localize エディタを開く",
                 "Welcome.Lang.Label" => "🌐 言語：",
 
-                "Welcome.CommandTable.Label" => "📋 コマンド対照：",
-                "Welcome.CommandTable.Desc" => "AI Agent の口語コマンド・トリガー語と対応する Workflow をまとめた参照マニュアル。",
-                "Welcome.CommandTable.Btn" => "📄 コマンド表をプレビュー",
 
                 "Welcome.Lang.NoneAvailable" => "(UCL_LanguageCodeAsset 未検出 — 先に Language Asset を作成してください)",
                 "Welcome.Lang.OpenEditor" => "詳細編集…",

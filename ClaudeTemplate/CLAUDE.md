@@ -19,7 +19,7 @@
 ## Claude Code 專屬
 
 ### UCL_Core 共享規則（`@` inline 載入）
-本專案以 `UCL_Core` 為 git submodule，跨專案 agent 機制（口語指令處理 / CommandTable 查找 / AgentCommand 系統等）由 UCL_Core 集中管理。
+本專案以 `UCL_Core` 為 git submodule，跨專案 agent 機制（AgentCommand 系統等）由 UCL_Core 集中管理。
 下一行的 `@` 語法是 **Claude Code 專屬**的 inline 載入 —— 改 UCL_Core 端規則，下次 session 自動同步。
 （`<UCL_Core>` 依專案掛載位置替換，例如 `Assets/Plugins/UCL_Core` / `Assets/UCL/UCL_Core`。）
 

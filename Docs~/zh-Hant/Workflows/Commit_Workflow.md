@@ -4,7 +4,6 @@ description: 跨專案共享的提交規則 — **預設單層**（只提交改�
 last_updated: 2026-10-05
 target_audience: [AI_Agent, Tools_User, Gameplay_Programmer]
 related:
-  - ucl_core:Docs~/{lang}/CommandTable.md | 指令對照表 | 觸發本 workflow 的口語指令清單
 ---
 
 # 📦 Commit Workflow — 提交規範
@@ -190,7 +189,7 @@ Git submodule 在父 repo 眼裡只是個 commit hash，但 submodule 自身仍�
 如果一次堆了多個 UCL_Core commit（例如分批改不同主題），**bump 只做一次**，bump message 列出所有 sub-commit 的摘要。例：
 
 ```
-[bump] UCL_Core <head-hash> — Page Picker / MarkdownViewer related-bar / ChatTavern / CommandTable
+[bump] UCL_Core <head-hash> — Page Picker / MarkdownViewer related-bar / ChatTavern
 
 5 個 commit：
 - 6b03b75 UCL_EditorMenuPage Page Picker + ShowInPageMenu opt-in
@@ -309,9 +308,7 @@ AgentCommands/ChatTavern/rooms/*/_last_view.md
 ## 8. 何時觸發本 workflow
 
 - 使用者下達口語化提交指令（例：「commit 一下」/ 「提交」/ 「幫我 commit」）
-- agent 看到應走 [`CommandTable.md`](../CommandTable.md) 的「commit」entry → 讀本檔 → 依本檔規範分批 stage / commit
 
-詳見 [`CommandTable.md`](../CommandTable.md) 的 commit entry。
 
 ---
 

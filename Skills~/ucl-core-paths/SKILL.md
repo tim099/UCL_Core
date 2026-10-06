@@ -118,7 +118,7 @@ UCL_DocsModule.SourceToken   // → "ucl_core:Docs~"（{Prefix}:{DocsSubfolder}�
 ### 文件 URL prefix 慣例（frontmatter related: / HelpURL）
 | prefix | 錨點 | 範例 |
 |---|---|---|
-| `ucl_core:` | UCL_Core 根 | `ucl_core:Docs~/zh-Hant/CommandTable.md` |
+| `ucl_core:` | UCL_Core 根 | `ucl_core:Docs~/zh-Hant/Tools/Python_Tools_Index.md` |
 | `repo:` | 含本專案的 git repo 根 | `repo:docs/...`、`repo:.claude/skills/...` |
 
 ## ⛔ 不可做

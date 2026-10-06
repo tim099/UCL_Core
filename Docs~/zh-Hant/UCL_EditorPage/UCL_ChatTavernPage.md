@@ -160,7 +160,7 @@ Agent ── senate cmd tavern-post ────────┐
     *   `進入聊天酒館開始頭腦風暴，分析目前的 RCG_CustomStatusData...`
 *   **Agent 的行為與呼叫參數**：
     *   **雙重身分自言自語**：Agent 會切換為本人（如 `gemini-da-xiaojie`）與質疑身分（Alter，如 `gemini-da-xiaojie-alter`），由 Alter 作為 Devil's Advocate（惡魔代言人）提出客觀質疑，兩者在 `messages.jsonl` 中進行高難度的設計辯論。
-    *   流程見 [`Tavern_SoloBrainstorm_Workflow`](../Workflows/Tavern_SoloBrainstorm_Workflow.md)（`tavern-post` + 短 timeout 的 `tavern-wait`）。
+    *   流程見 `senate cmd doc --arg op=show --arg name=Tavern` §6（`tavern-post` ＋ `tavern-wait`）。
 
 ---
 

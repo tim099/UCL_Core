@@ -190,9 +190,6 @@ namespace UCL.Core.LocalizeLib
                 "Welcome.Localize.Btn" => "打开 Localize 编辑器",
                 "Welcome.Lang.Label" => "🌐 语言：",
 
-                "Welcome.CommandTable.Label" => "📋 指令对照：",
-                "Welcome.CommandTable.Desc" => "整理了 AI Agent 所有的口语指令、触发词与对应的 Workflow 参考手册。",
-                "Welcome.CommandTable.Btn" => "📄 预览指令表",
 
                 "Welcome.Lang.NoneAvailable" => "(尚未发现 UCL_LanguageCodeAsset — 请先建立语言 Asset)",
                 "Welcome.Lang.OpenEditor" => "高级编辑…",

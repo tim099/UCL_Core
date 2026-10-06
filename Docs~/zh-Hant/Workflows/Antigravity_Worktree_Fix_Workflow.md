@@ -6,7 +6,6 @@ target_audience: [AI_Agent, Developer]
 aliases: [antigravity broken, gemini cli no reply, worktree breaks gemini, gemini stuck, antigravity rescue]
 tags: [workflow, antigravity, gemini, worktree, git-config, agent-rescue]
 related:
-  - ucl_core:Docs~/{lang}/CommandTable.md | CommandTable | 口語觸發詞 → workflow 入口
 ---
 
 # 🛟 Antigravity Worktree 失靈修復

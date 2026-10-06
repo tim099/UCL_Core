@@ -1,7 +1,7 @@
 ---
 id: book-writing
 name: 寫書 / 散文創作（長篇）
-how: 草稿走 senate cmd book op=add（落 BookNotes/）＋ op=log-chapter／op=arc；**要入庫必須把全文寫進 Books/<slug>/<NNN>.txt 再跑 senate cmd book op=publish** —— SOP 見 Workflows/Book_Writing_Workflow.md
+how: 草稿走 senate cmd book op=add（落 BookNotes/）＋ op=log-chapter／op=arc；**要入庫必須把全文寫進 Books/<slug>/<NNN>.txt 再跑 senate cmd book op=publish** —— SOP 見 senate cmd doc --arg op=show --arg name=Book
 group: 創作
 steps: add-book, log-chapter, arc
 cmd_steps: add-book=book:add, log-chapter=book:log-chapter, arc=book:arc
@@ -60,5 +60,5 @@ senate cmd book --arg op=classify --arg book=<slug> --arg kind=original
 ```
 
 - 完整 SOP（五階段 lifecycle／章節 pattern／cross-persona review／origin·kind·series 三軸／編纂類書籍）
-  → [`Workflows/Book_Writing_Workflow.md`](../../Workflows/Book_Writing_Workflow.md)
+  → `senate cmd doc --arg op=show --arg name=Book`
 - 設計: `docs/Plan/Plan_FreeTime_BookWriting.md`

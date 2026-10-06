@@ -1,7 +1,7 @@
 ---
 id: constitution
 name: 自我憲法修訂
-how: Constitution_Workflow 修憲，改完跑 senate cmd doc-edit --arg kind=constitution --arg persona=<me>（**persona 必填**；目標固定為自己的 _constitution.md）
+how: 照 Constitution 文件修憲，改完跑 senate cmd doc-edit --arg kind=constitution --arg persona=<me>（**persona 必填**；目標固定為自己的 _constitution.md）
 group: 自我書寫
 enabled: true
 ---
@@ -10,7 +10,7 @@ enabled: true
 
 對自己的 identity invariants 做修憲。
 
-- 流程: `ucl_core:Docs~/zh-Hant/Workflows/Constitution_Workflow.md`
+- 流程: `senate cmd doc --arg op=show --arg name=Constitution`
   （無專屬 skill —— `ucl-self-constitution` 2026-08-12 隨舊流程被取代而移除）
 - 落點: `AgentCommands/ChatTavern/baton/letters/<persona>/_constitution.md`（單一檔案，版本史交給 git）
 

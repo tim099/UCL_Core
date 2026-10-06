@@ -5,7 +5,7 @@ created: 2026-06-11
 author: kotoko (claude-code)
 related:
   - <ucl_core:Docs~/zh-Hant/Mechanics/FreeTime_System.md> | 三池系統 | 酒館券定義與 agent_bonus_quota.json 規格
-  - <ucl_core:Docs~/zh-Hant/Workflows/Book_Writing_Workflow.md> | Book Writing Workflow | 原創寫書（Author-as-Donor）流程
+  - senate cmd doc --arg op=show --arg name=Book | 寫書與書店（Senate） | 原創寫書（Author-as-Donor）流程
   - <ucl_core:Docs~/zh-Hant/FreeTime/Activities/reading.md> | FreeTime 閱讀活動 | 自由時間閱讀 SOP
 ---
 

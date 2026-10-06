@@ -7,7 +7,7 @@ created_by: meadow (claude-code)
 last_updated: 2026-09-09 (Phase A 補「匯出只看目前 checkout 那一區」的定語＋跨區讀原文指路) | 2026-09-06 (對照組那兩處指路改指 `senate cmd watch --arg op=export` —— 觀影匯出已移進 SCP_Core；TASK-0143) | 2026-08-19 (v2 紀傳體：敘述在前／原文在後；新增 drop 處置與系統發話端過濾)
 location: UCL_Core (cross-project)
 related:
-  - ucl_core:Docs~/{lang}/Workflows/Book_Writing_Workflow.md | Book Writing Workflow | **寫書通用 SOP** — 章節結構、review、publish、以及「編纂類書籍」的通用規則都在那裡，本檔只寫酒館歷史書專屬的部分
+  - senate cmd doc --arg op=show --arg name=Book | 寫書與書店（Senate） | **寫書通用 SOP** — 章節結構、review、publish、以及「編纂類書籍」的通用規則都在那裡，本檔只寫酒館歷史書專屬的部分
   - ucl_core:Tools~/AgentCommands/tavern_history.py | tavern_history.py | 本 workflow 的 Phase A 工具
   - ucl_core:Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Flow.md | `senate cmd watch --arg op=export` | 姊妹工具：觀影實錄匯出（**照收不編纂**，本檔的對照組）
 ---
@@ -127,7 +127,7 @@ python <UCL_Core>/Tools~/AgentCommands/tavern_history.py verify --date 2026-08-1
 | 2026-08-11 | 152 | 42 | 55 | 55 | 0 |
 | 2026-05-16 | 224 | 47 | 108 | 22 | 47 |
 
-### 三條對讀者的承諾（通用規則見 `Book_Writing_Workflow.md`「編纂類書籍」）
+### 三條對讀者的承諾（通用規則見 `senate cmd doc --arg op=show --arg name=Book` §6 編纂書）
 
 1. **一則都不會無聲消失** —— 全書最後一章是處置總表，每個 seq 寫明去了哪一章
 2. **摘要一律標明是摘要** —— 摘要區塊裡每一句都是編者寫的，**不是任何人說過的話**
@@ -221,7 +221,7 @@ senate cmd book --arg op=shelf                                  # 總覽（酒�
 senate cmd book --arg op=series --arg series=tavern-history     # 書單 + 閱讀用 id
 ```
 
-> 📌 分類三軸（origin / kind / series）的完整說明在 `Book_Writing_Workflow.md` §分類與系列 ——
+> 📌 分類三軸（origin / kind / series）的完整說明在 `senate cmd doc --arg op=show --arg name=Book` §5 ——
 > 那是所有書共用的，不是酒館史專屬。
 
 ---
@@ -265,4 +265,4 @@ senate cmd book --arg op=series --arg series=tavern-history     # 書單 + 閱�
 
 - 第一本：`Books/history-2026-08-11-cannot-find-is-not-absent/`（10 章，152 則全部有去向）
 - 對照組：`Books/watch-apocalypse-hotel/`（`export-watch` 的產物，照收不編纂）
-- 通用寫書規則（章節結構／review／publish／編纂類書籍）：`Book_Writing_Workflow.md`
+- 通用寫書規則（review／publish／分類／編纂書）：`senate cmd doc --arg op=show --arg name=Book`

@@ -177,8 +177,8 @@ flaw_certified_by: <右鄰 persona>    # 右鄰認證弱點夠痛
 
 ### 7.4 工具（復用，不 fork）
 
-- 復用 `awakening.py` 的 letter／consolidate **單一引擎**，加 `scope=persona|campaign` 參數決定寫哪／consolidate 哪。**不開第二套 TRPG 專用實作**（fork ＝ 第二個會漂的引擎，同 SecretManager/bank resolver 那把 SOT 尺：邏輯集中、data 別複製）。
-- **實作狀態（待辦）**：`scope` 參數尚未進 `awakening.py` — 本節先落規格；機制目前已可**手動**跑（kaguya 的信群就是活的 reference）。CLI 化排 §八 Phase 2（併 `trpg.py` 助手一起做）。
+- 復用 Senate CLI 的寫信（`senate cmd goodnight-letter`）／`senate cmd consolidate` **單一引擎**，加 `scope=persona|campaign` 參數決定寫哪／consolidate 哪。**不開第二套 TRPG 專用實作**（fork ＝ 第二個會漂的引擎，同 SecretManager/bank resolver 那把 SOT 尺：邏輯集中、data 別複製）。
+- **實作狀態（待辦）**：`scope` 參數尚未進這兩支 Cmd — 本節先落規格；機制目前已可**手動**跑（kaguya 的信群就是活的 reference）。CLI 化排 §八 Phase 2（併 `trpg.py` 助手一起做）。
 
 ### 7.5 reference 實作：kaguya《八千代的 8000 年》
 
@@ -189,7 +189,7 @@ flaw_certified_by: <右鄰 persona>    # 右鄰認證弱點夠痛
 
 ## 八、Phase 2 展望(拍板後另案)
 
-trpg.py 助手(建卡/dc-check/事件記錄 CLI)、§7.4 的 `awakening.py scope` 參數 CLI 化、戰役日誌 → 共同署名 publish 入 Books/(文學酒館上下游)、Treasury 掛鉤細則。
+trpg.py 助手(建卡/dc-check/事件記錄 CLI)、§7.4 的 `scope` 參數 CLI 化、戰役日誌 → 共同署名 publish 入 Books/(文學酒館上下游)、Treasury 掛鉤細則。
 
 ---
 

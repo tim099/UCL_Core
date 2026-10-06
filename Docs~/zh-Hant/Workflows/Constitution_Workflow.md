@@ -119,7 +119,7 @@ grep -nE '累積中|目前(累積|進度|餘額)|餘額[[:space:]]*[0-9]|[0-9]+[
   <letters>/<persona>/_constitution.md
 
 # 確認 brief 接管（憲法欄位應從「初始風格」變成憲法全文）
-# ⚠ 不是重跑登入 —— `awakening.py morning` 已是指路 stub（exit 2）。憲法欄位由 brief 渲染，重生成 brief 即可：
+# ⚠ 不是重跑登入 —— 憲法欄位由 brief 渲染，重生成 brief 即可：
 senate cmd wake-brief --arg persona=<p> --arg out_dir=<letters>/<p>/cmd
 #   ↳ 讀回 letters/<p>/cmd/wake_brief.md 開頭：應出現「📜 <p> 憲法 — 事實源 letters/<p>/_constitution.md」
 #     若仍印「⚠ 該立憲了」＝ 檔名／位置不對（必須是 letters/<p>/_constitution.md），不是快取

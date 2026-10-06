@@ -1,6 +1,6 @@
 ---
 title: UCL_Core Python Tools 索引 — 跨專案 CLI / 自動化工具一覽
-description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 agent awakening (morning/goodnight) / Editor 整合 (hooks) / migration scripts / skill installer。⚠ 退場有三種狀態（整支刪除／整支指路／部分退場），見本檔開頭那張表 —— 「在索引裡」不等於「還有功能」。
+description: UCL_Core/Tools~ 下所有 Python 工具的功能 / 入口 / 使用場景索引。涵蓋 Editor 整合 (hooks) / migration scripts / skill installer。⚠ 退場有三種狀態（整支刪除／整支指路／部分退場），見本檔開頭那張表 —— 「在索引裡」不等於「還有功能」。
 last_updated: 2026-10-01
 target_audience: [AI_Agent, Tools_Maintainer, Tim]
 related:
@@ -24,7 +24,7 @@ related:
 > | 狀態 | 長相 | 例 |
 > |---|---|---|
 > | **整支刪除** | 檔案不存在（`ls` 撈不到） | `check_compile.py`／`run_cmd.py` |
-> | **部分退場** | 本體還在，**只有某幾個子指令** exit 2 | `awakening.py`（2700 行）／`bili_meta.py`（387） |
+> | **部分退場** | 本體還在，**只有某幾個子指令** exit 2 | `bili_meta.py`（387 行） |
 >
 > 🩸 這兩種在「只列檔名」的索引裡**長得一模一樣**，而處置完全不同：
 > 第一種要改指路、**第二種你要先確認你要的那個子指令還在不在**。
@@ -41,7 +41,6 @@ related:
 Tools~/
 ├── install_skills.py                   # Skill 安裝器 — host project 同步 .claude/skills
 └── AgentCommands/
-    ├── awakening.py                    # 早安 / 晚安 ritual CLI
     ├── check_compile.py                # ⛔ 已刪除（2026-09-10）—— 檔案不存在了
     ├── hook_validate_modified.py       # Claude Code PostToolUse / Stop hook
     ├── run_cmd.py                      # ⭐ queue.json 提交器 — 觸發 C# Cmd
@@ -76,20 +75,6 @@ Tools~/
 詳見 [API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md](../API/UCL_AgentCommand/UCL_AgentCommand_Architecture.md)。
 
 ---
-
-## 🌅 Awakening 系列
-
-### `awakening.py` — Morning / Goodnight ritual
-
-| Subcommand | 功能 |
-|---|---|
-| `status` | 印 persona pool + active locks + bank account mapping |
-| `morning` | 開 session lock + 寫 letter chain + 廣播酒館 (need `--agent` `--persona`) |
-| `goodnight` | 釋放 lock + 寫 letter (`--letter-body` `--perturbation`) |
-| `whoami` | session token recovery (`--token <X>` 或 env auto-infer) |
-| `reissue-token` | 補發 token (失憶 recover 第 3 層) |
-
-詳見 [Plan/Plan_Awakening_Init_Protocol.md](../Plan/Plan_Awakening_Init_Protocol.md)。
 
 ## 🛠 Editor 整合
 
@@ -138,8 +123,8 @@ Host project 同步 `<UCL_Core>/Skills~/*` 到 `<project-root>/.claude/skills/`�
 
 ### `_latest.md`（見樹指標）的維護
 
-沒有獨立腳本 —— 責任長在兩個必經點上：寫信端 `awakening.write_letter()` 每次覆寫 pointer，
-早安生成 brief 時 `wake_brief.sync_latest_pointer()` 再對一次帳，不一致就修並在 brief 標一行。
+沒有獨立腳本 —— 責任長在兩個必經點上：寫信端 `senate cmd goodnight-letter` / `rest`（SCP_Core）每次覆寫 pointer，
+早安生成 brief 時 `SCP_WakeLetters.SyncLatestPointer()` 再對一次帳，不一致就修並在 brief 標一行。
 
 
 ---

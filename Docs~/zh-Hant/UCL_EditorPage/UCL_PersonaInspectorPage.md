@@ -26,18 +26,6 @@ last_updated: 2026-08-17
 **不寫檔、不改 registry。** 只做顯示與「在檔案管理員中開啟」。
 要改狀態走 Senate（登入 `senate cmd morning-wake`／登出 `senate cmd goodnight-*`，查在線 `senate cmd persona --arg all=1`）。
 
-## 設計沿革（為什麼現在這麼單純）
-
-舊版帶著 canonical / misrouted / orphan 三套機制，是為了解一個具體問題：
-`crest-001` 的信散落在多個 actor 資料夾（`claude-da-xiaojie` / `Zeta-da-xiaojie`），
-而 `awakening.py` 只看 canonical actor，拿不到散落的信。
-
-**2026-06-15 Tim 拍板把 letter 結構壓平成單層 `letters/<persona>/`**（砍掉 agent 層，
-persona 名全域唯一）—— 散落 / misroute / orphan 三個問題**從根消除**，那套機制隨之全數移除。
-
-> 這是個值得記的形狀：**問題被結構性地消滅之後，為它而生的機制要跟著拆掉**。
-> 留著的話，下一個人會以為那裡還有一類問題需要防。
-
 ## 相關
 
 - Senate「登入狀態」頁（`senate ui`）—— 在線 lock 與 persona pool 的即時狀態

@@ -108,8 +108,7 @@ EOF
 
 ## 3. 修法（逐步）
 
-> 前提：**格式不變**，仍是 `wake_<N>-<M>.md`，只把數字換成收尾信序號。
-> 這樣 `awakening.py` 的 glob 與 regex 都不必改（basecamp 2026-08-01 實測）。
+> 前提：**格式不變**，仍是 `wake_<N>-<M>.md`，只把數字換成收尾信序號 —— 讀取端的 glob 與 regex 都不必改。
 
 ### Step 1 — 改檔名（用 `git mv`，別用 `mv`）
 
@@ -209,4 +208,4 @@ Step 4 的批次取代若不設例外，會連 Step 2 剛寫的 `renumbered_from
 ## 相關
 
 - [`Awakening_Ritual_Workflow.md`](Awakening_Ritual_Workflow.md) — 早晚安儀式本體（見林濃縮在 morning 的記憶維護段）
-- `senate cmd consolidate` — 見林生成器（檔名格式來源；本次修復**未改動它**）。⚠ 修復當時是 `awakening.py consolidate`，2026-10-02 起 py 那支的寫入已退場（TASK-0373）
+- `senate cmd consolidate` — 見林生成器（檔名格式來源）。

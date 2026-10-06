@@ -50,9 +50,9 @@ GIT_ROOT = _find_git_root_by_walk(Path(__file__)) or Path(__file__).resolve().pa
 ```bash
 # 有序候選 → 第一個命中即用；找不到才 fallback glob（且排除 Library/）
 for c in "Assets/Plugins/UCL_Core" "Assets/UCL/UCL_Core" "CardGame/Assets/UCL/UCL_Core" "UCL_Core"; do
-  [ -f "$c/Tools~/AgentCommands/awakening.py" ] && UCL_CORE="$c" && break
+  [ -f "$c/AgentEntry/UCL_Core_Entry.md" ] && UCL_CORE="$c" && break
 done
-[ -z "$UCL_CORE" ] && UCL_CORE=$(find . -path ./Library -prune -o   -path "*/Tools~/AgentCommands/awakening.py" -print 2>/dev/null | head -1 | sed 's|/Tools~.*||')
+[ -z "$UCL_CORE" ] && UCL_CORE=$(find . -path ./Library -prune -o   -path "*/AgentEntry/UCL_Core_Entry.md" -print 2>/dev/null | head -1 | sed 's|/AgentEntry/.*||')
 echo "UCL_CORE=$UCL_CORE"          # 之後一律用 "$UCL_CORE/Tools~/AgentCommands/<tool>.py"
 ```
 
@@ -62,17 +62,17 @@ echo "UCL_CORE=$UCL_CORE"          # 之後一律用 "$UCL_CORE/Tools~/AgentComm
 # 有序候選 → 第一個命中即用
 $UCL_CORE = $null
 foreach ($c in @("Assets/Plugins/UCL_Core","Assets/UCL/UCL_Core","CardGame/Assets/UCL/UCL_Core","UCL_Core")) {
-    if (Test-Path "$c/Tools~/AgentCommands/awakening.py") { $UCL_CORE = $c; break }
+    if (Test-Path "$c/AgentEntry/UCL_Core_Entry.md") { $UCL_CORE = $c; break }
 }
 # fallback：受限 glob，排除 Library
 if (-not $UCL_CORE) {
-    $hit = Get-ChildItem -Recurse -Filter awakening.py -ErrorAction SilentlyContinue |
-           Where-Object { $_.FullName -notmatch '[\\/]Library[\\/]' -and $_.FullName -match 'Tools~' } |
+    $hit = Get-ChildItem -Recurse -Filter UCL_Core_Entry.md -ErrorAction SilentlyContinue |
+           Where-Object { $_.FullName -notmatch '[\\/]Library[\\/]' -and $_.Directory.Name -eq 'AgentEntry' } |
            Select-Object -First 1
-    if ($hit) { $UCL_CORE = (Resolve-Path -Relative $hit.Directory.Parent.Parent.FullName) }
+    if ($hit) { $UCL_CORE = (Resolve-Path -Relative $hit.Directory.Parent.FullName) }
 }
 # 解析失敗必須明確報錯 —— 不可靜默 fallback 到別的檔
-if (-not $UCL_CORE) { throw "UCL_Core 解析失敗：找不到 Tools~/AgentCommands/awakening.py" }
+if (-not $UCL_CORE) { throw "UCL_Core 解析失敗：找不到 AgentEntry/UCL_Core_Entry.md" }
 "UCL_CORE=$UCL_CORE"    # 之後一律用 "$UCL_CORE/Tools~/AgentCommands/<tool>.py"
 ```
 

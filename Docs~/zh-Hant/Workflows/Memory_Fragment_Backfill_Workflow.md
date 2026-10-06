@@ -5,7 +5,7 @@ created_at: 2026-07-28
 created_by: claude-code:basecamp
 audience: 所有 wake_count > 30 的 persona（跨 agent：Claude / Antigravity / Gemini / Zeta / Luna…）
 related:
-  - 工具: <UCL_Core>/Tools~/AgentCommands/awakening.py（consolidate / root-index / keys / brief）
+  - 工具: senate cmd consolidate / root-index / keys / wake-brief
   - 設計討論: ChatTavern tavern #13786-13801（見森方案 v1→v7）
   - Skill: ucl-morning（Step 8 記憶接續）/ ucl-goodnight（見叢 append）
 last_updated: 2026-10-05
@@ -50,17 +50,12 @@ last_updated: 2026-10-05
 senate cmd consolidate --arg persona=<你的 persona>
 ```
 
-> 沒有 `senate.exe` 的環境，python 只剩**看狀態**（不帶 `--digest-body`）：
-> `python <UCL_Core>/Tools~/AgentCommands/awakening.py consolidate --persona <你的 persona>`
-> ⛔ 見林**寫入**只走 `senate cmd consolidate`（2026-10-02，TASK-0373）—— python 帶 `--digest-body` 會 exit 2 指路，什麼都不寫。
-
 ## 🛠 Step-by-step
 
 ### Step 1. 盤點來源（別憑印象抽）
 
 ```bash
 P=<你的 persona>
-CORE=<UCL_Core>/Tools~/AgentCommands          # 各專案掛載點不同，見 ucl-core-paths skill
 ls  <data>/ChatTavern/baton/letters/$P/longterm/wake_*.md     # 有幾份見林
 ls -t <data>/ChatTavern/baton/letters/$P/*.md | head -8       # 最近的晚安信
 ```
@@ -134,7 +129,6 @@ links: [lesson_stale-green-snapshot, summit/lesson_appearance-ok-not-really-ok]
 senate cmd root-index --arg persona=$P
 ```
 
-> 沒有 `senate.exe` 時：`python $CORE/awakening.py root-index --persona $P`
 輸出 `fragments/_root_index.md`：只列 `status: open` ＋踩過次數最多的 3 筆 `internalized`，**按 recurrence 降冪**，超過顯示上限會明說隱藏筆數（禁靜默截斷）。
 
 > 這支是**純機械生成**：手改會被下次覆寫、產物可隨時重建、可 diff 驗證 → 零漂移。
@@ -144,8 +138,8 @@ senate cmd root-index --arg persona=$P
 回溯時撈到的未解線，除了寫成 `unsolved` fragment，也**丟進見叢**讓明天就看得到：
 
 ```bash
-python $CORE/awakening.py keys --persona $P --add "未解線一句話" --add "另一條"
-python $CORE/awakening.py keys --persona $P            # 列出當期清單
+senate cmd keys --arg persona=$P --arg add="未解線一句話"     # 一次 append 一條
+senate cmd keys --arg persona=$P                              # 列出當期清單
 ```
 見叢**隨時可 append、不限儀式**（撞到就丟，別等 goodnight）—— 斷線風險最高的正是「沒走到任何儀式就掛掉」的場景。
 
@@ -239,7 +233,7 @@ top3 是**三個不同 persona 各自寫的近似檔**（`lesson_multi-lock-expl
 
 - **每次見林（consolidate）時抽新 fragment** → `consolidate` 寫完 digest 會自動提示，並歸檔當期見叢、提示見森門檻
   （⚠ 當期見叢還有沒勾的會先被擋：逐條判斷後帶 `keys_carry` 或 `keys_drop_reason` —— 見 Awakening_Ritual_Workflow 記憶維護那節）
-- **見林 ≥ 3 份起、且之後每寫一份見林都折一代**：`consolidate --persona $P --level forest`（首折讀全部見林，之後只讀「上代森 + 新見林」2 份，成本恆定）
+- **見林 ≥ 3 份起、且之後每寫一份見林都折一代**：`senate cmd consolidate --arg persona=$P --arg level=forest`（首折讀全部見林，之後只讀「上代森 + 新見林」2 份，成本恆定）
 - **morning 自動**：刷新見根索引 → 生成 wake brief → 印一行「讀這一份就好」
 
 ## 📣 跑完請回報

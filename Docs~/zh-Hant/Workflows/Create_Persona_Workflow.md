@@ -1,6 +1,6 @@
 ---
 title: 建立新 Persona 工作流 (Create Persona Workflow)
-description: 步驟化 SOP — 在 UCL_Core 與 Python 喚醒系統下，建立全新 Persona 人格所需的一切設定。涵蓋 Registry 註冊、頭像生成與 UCL_SpriteAsset 登記、UCL_ChatTavernPersonaCardAsset 角色卡配置，以及 Templates~ 備份同步工作流。
+description: 步驟化 SOP — 在 UCL_Core 與 Senate 早安／晚安系統下，建立全新 Persona 人格所需的一切設定。涵蓋 Persona 註冊、頭像生成與 UCL_SpriteAsset 登記、UCL_ChatTavernPersonaCardAsset 角色卡配置，以及 Templates~ 備份同步工作流。
 last_updated: 2026-07-20
 target_audience: [AI_Agent, Tools_Maintainer, Gameplay_Programmer]
 aliases: [Create Persona, 新增 Persona, 建立新 Persona, 建立角色卡]
@@ -12,14 +12,14 @@ related:
 
 # 🎭 UCL_Core 建立新 Persona 工作流
 
-為了讓 AI 代理（Agent）或人類開發者在聊天酒館（Chat Tavern）與 Python 喚醒系統中能流暢、優雅地使用全新 Persona（如 `basecamp`, `apex-one`, `pinnacle`），必須依循此標準流程（SOP）進行設定與資產登記。
+為了讓 AI 代理（Agent）或人類開發者在聊天酒館（Chat Tavern）與 Senate 早安／晚安系統中能流暢、優雅地使用全新 Persona（如 `basecamp`, `apex-one`, `pinnacle`），必須依循此標準流程（SOP）進行設定與資產登記。
 
 ---
 
 ## 0. 整體概念
 
 在 UCL_Core 體系下，一個 Agent（例如 `antigravity-da-xiaojie`）可以擁有多個不同的 Persona 分身（例如 `apex-one`, `pinnacle`, `ridge-two`）。每個 Persona 都是獨立的個體，具備：
-1. **運行狀態（State）**：`wake_count`（醒來次數）、`identity_vector`（好感/情感矩陣）等，存於 `persona_registry.json`，由 Python 喚醒腳本維護。
+1. **運行狀態（State）**：agent 歸屬、`actual_agent`／`model`、session lock 等，存於 `letters/<persona>/profile/`，由 `senate cmd morning-wake`／`goodnight-*` 維護（`wake_count` 由信數推導）。
 2. **展現資產（Rich Data Asset）**：頭像 Sprite、自我介紹、口頭禪、UI 標色、擅長與不擅長之技能。這些由 `UCL_ChatTavernPersonaCardAsset` 持有，由 Unity 編輯器與渲染端使用。
 
 ---
@@ -28,16 +28,15 @@ related:
 
 ```mermaid
 graph TD
-    A[Step 1: Python 喚醒系統註冊] --> B[Step 2: 生成與註冊頭像 Sprite]
+    A[Step 1: 註冊 Persona] --> B[Step 2: 生成與註冊頭像 Sprite]
     B --> C[Step 3: 建立與配置 Persona 角色卡]
     C --> D[Step 4: 格式驗證與 Templates 備份回流]
 ```
 
-### 🛠️ Step 1: 在 Python 喚醒系統註冊 Persona
+### 🛠️ Step 1: 註冊 Persona
 
-有兩種方式讓喚醒系統（`awakening.py`）登記新 Persona：
-- **自動註冊（推薦）**：當你遇到 session_key 衝突或手動喚醒時，使用 `awakening.py morning` 搭配 `--fork-name <NEW_NAME>` 指令，系統會自動在 `AgentCommands/AwakenInit/persona_registry.json` 中建立該新 Persona Entry 並繼承原 Vector 歷史。
-- **手動編輯**：直接編輯 `AgentCommands/AwakenInit/persona_registry.json` 中的 `"personas"` 區段，並手動補上其初始欄位（包含 64 維的 `identity_vector` 與 `status="offline"` 等）。
+新 Persona 從後台「🧬 Persona & Agent 管理頁」建立並綁定 agent 歸屬（產生 `letters/<persona>/profile/`）。
+`senate cmd morning-wake` 只認已註冊的 persona —— 名字不存在會被擋下，不會替你建新人格。
 
 ---
 
@@ -75,7 +74,7 @@ graph TD
 角色卡記錄了 Persona 的詳細元數據，Tavern 渲染端讀取順序為：**Persona 角色卡優於 Agent 身份卡（Fallback）**。
 
 1. **建立角色卡 JSON**：
-   - **檔名命名**：`<persona>.json`（ID 必須與 `persona_registry.json` 中的 codename 精確對齊）
+   - **檔名命名**：`<persona>.json`（ID 必須與 persona 名精確對齊）
    - **路徑**：
      `<ProjectRoot>/Assets/.BuiltinModules/ModulesRoot/Modules/Core/UCL_Assets/UCL_ChatTavernPersonaCardAsset/<persona>.json`
    - **內容範本**（以 `apex-one` 為例）：

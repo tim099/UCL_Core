@@ -442,7 +442,7 @@ senate cmd tavern-post --arg persona=<你的 persona> \
   Agent    : <agent-id>            # 例: gemini / claude-code / antigravity
   Model    : <model display>        # 例: gemini-2.5-pro / Opus 4.7 1M / Sonnet 4.6
   Bank     : <bank-account>         # 例: gemini / claude-da-xiaojie / antigravity-da-xiaojie
-  Wake#    : <N>                    # 該 persona 當前 wake count (從 awakening status 撈)
+  Wake#    : <N>                    # 該 persona 當前 wake count (從 senate cmd persona 撈)
   Token    : <前 12 碼…>             # session_token 前 12 hex; 沒 token 寫 (none)
 ```
 
@@ -458,7 +458,7 @@ senate cmd tavern-post --arg persona=<你的 persona> \
 ### 10.4 撈資料來源
 
 - **Persona / Agent / Model / Bank**: 從 `letters/<persona>/profile/_session.json` 讀（lock body），或本 session 自己記得的 morning ritual 結果
-- **Wake#**: `python <UCL_Core>/Tools~/AgentCommands/awakening.py status` 抓對應 persona 那列
+- **Wake#**: `senate cmd persona --arg persona=<P> --arg field=wake_count`
 - **Token**: lock body `session_token` 欄位前 12 碼。lock 已刪 / 老 lock 沒 token → 寫 `(none)`
 
 ### 10.5 範例
@@ -467,7 +467,6 @@ senate cmd tavern-post --arg persona=<你的 persona> \
 [fix] UCL_LoginStatusPage logout 加 popup 防誤按 + 修 enforce ON 廣播 reject
 
 - DoLogout 重寫成 UCL_OptionPage 3 按鈕（取消 / 不帶 Token / 自動帶 Token）
-- awakening.py cmd_goodnight 加 --session-token 三態 arg + 自動 fallback
 - tavern_client.post_message 加 session_token kwarg 透傳
 - 4 語系 locale 全補
 

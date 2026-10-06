@@ -72,38 +72,6 @@ namespace UCL.Core.EditorLib.AgentCommands
             catch { return ""; }
         }
 
-        /// <summary>整份覆寫預設表 + fallback。後台是唯一設定入口，所以這裡不做增量合併。</summary>
-        public static bool SaveDefaults(Dictionary<string, string> defaults, string fallback, out string error)
-        {
-            error = "";
-            try
-            {
-                var sb = new StringBuilder();
-                sb.AppendLine("{");
-                sb.AppendLine("  \"_schema_version\": 1,");
-                sb.AppendLine("  \"_description\": \"agent 預設信箱（key = actual_agent，封閉集合）。persona 層 override 寫在 letters/<persona>/profile/email.md（2026-08-21 起）。唯一設定入口是 UCL_PersonaAgentAdminPage。\",");
-                sb.AppendLine("  \"defaults\": {");
-                int i = 0;
-                foreach (var kv in defaults)
-                {
-                    string comma = (++i < defaults.Count) ? "," : "";
-                    sb.AppendLine($"    {Quote(kv.Key)}: {Quote(kv.Value ?? "")}{comma}");
-                }
-                sb.AppendLine("  },");
-                sb.AppendLine($"  \"fallback\": {Quote(fallback ?? "")}");
-                sb.AppendLine("}");
-                string dir = Path.GetDirectoryName(RegistryPath);
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                File.WriteAllText(RegistryPath, sb.ToString(), new UTF8Encoding(false));
-                return true;
-            }
-            catch (Exception e)
-            {
-                error = e.Message;
-                return false;
-            }
-        }
-
         /// <summary>讀 persona 檔的 override（沒有欄位或空字串都算沒設）——
         /// 走 UCL_PersonaProfile 唯一讀取入口（Phase 0 接縫；email 屬 IDENTITY_FIELDS，§8.3）。</summary>
         public static string LoadPersonaOverride(string persona)
@@ -111,13 +79,6 @@ namespace UCL.Core.EditorLib.AgentCommands
             try { return UCL_PersonaProfile.GetString(persona, "email", ""); }
             catch { return ""; }
         }
-
-        /// <summary>
-        /// 寫 persona override。空字串＝清除 override（回頭吃 agent 預設），不是寫入空信箱。
-        /// 走 Senate 唯一寫入端（`senate cmd persona-profile op=set`：actor/reason 必填＋審計）。
-        /// </summary>
-        public static bool SavePersonaOverride(string persona, string email, string actor, string reason, out string error)
-            => UCL_PersonaProfileSenateBridge.SetField(persona, "email", email ?? "", actor, reason, out error);
 
         /// <summary>
         /// 解析某 persona 該用的信箱。順序：persona.email → defaults[actual_agent] → fallback → 哨兵。

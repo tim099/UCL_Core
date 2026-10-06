@@ -1,13 +1,10 @@
-// 區塊職責：GoodMorning 流程的 static 邏輯層（Plan_Awakening_Flow_Simplification §8.8 R14）——
-//          Cmd_GoodMorning 與 UCL_PersonaAgentAdminPage 測試區共用同一份實作，兩入口零複製。
-// 物理意義：P1 先落「唯讀半套」：身分解析（persona→agent→bank）、
-//          在線守衛判定（lock 檔為真相源）、wake_count 推導（wakes/ 信件數 = 真相源）、
-//          全 persona 對帳、brief 生成觸發鏈（就地呼叫 SCP_WakeBrief，不 spawn 任何 process）。
-//          P2 才加寫入半套（registry patch-write / lock / token / memo）。
-// 數值影響：本檔全部唯讀（RunBrief 例外 —— 它就地呼叫 SCP_WakeBrief.Write，寫檔者是本 process）。
-// 對帳義務：wake 信計數規則 ^(\d{6})_.*\.md$ 與 letters 路徑解析**逐字對齊 awakening.py**
-//          （list_wake_letters / _resolve_data_path）——兩端規則漂移 = wake 編號分裂，
-//          改任一端務必同步改另一端並跑後台「對帳」按鈕全綠。
+// 區塊職責：Awakening 的 static 工具層（Editor 側）—— 身分解析（persona→agent→bank）、在線判定（lock 檔為真相源）、
+//          wake 信計數（wakes/ 信件數＝真相源）、晚安／後台共用的路徑與時間工具。
+// 物理意義：早安的寫入與 brief 生成都在 SCP_Core（SCP_Morning／SCP_WakeBrief，TASK-0303）；
+//          全 persona 對帳與後台測試區隨 UCL_PersonaAgentAdminPage 退場（TASK-0424）—— 對帳讀數改走
+//          `senate cmd persona --arg all=1 --arg json=1 --arg region=<區>` 與 `senate cmd bank-audit`。
+// 數值影響：本檔的寫入只剩晚安那一側與 now_status／frontmatter 小工具。
+// 對帳義務：wake 信計數規則 ^(\d{6})_.*\.md$ 與 SCP_Core 的 wakes/ 計數同規則 —— 兩端漂移＝wake 編號分裂。
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -195,111 +192,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
         public static bool IsOnline(string iPersona) => File.Exists(LockPath(iPersona));
 
         // ===========================================================
-        // 區塊：全 persona 對帳 — P1 驗收核心（C# 推導 vs registry 快取 vs lock 實況）
-        // 物理意義：delta 四分支語意沿用 awakening.py cmd_morning（=1 正常 / =0 兩種可能 /
-        //          >1 快取落後 / <0 快取超前要人工看）——這裡是唯讀對帳，只報症狀不改值。
-        // ===========================================================
-        public static string AuditReport()
-        {
-            var aSb = new StringBuilder();
-            var aMeta = UCL_RegistryMeta.LoadFromFile(RegistryMetaPath);
-            aSb.AppendLine($"# 🧪 Awakening 對帳（C# 唯讀掃描） ts=`{NowLocal()}`（本地時間）");
-            aSb.AppendLine();
-            aSb.AppendLine($"- DataRoot: `{DataRoot}`");
-            aSb.AppendLine($"- LettersDir: `{LettersDir}`（session token 只住各 persona 的 lock，TASK-0307）");
-            aSb.AppendLine($"- agent_banks: {aMeta.agent_banks.Count} 筆");
-            aSb.AppendLine();
-            aSb.AppendLine("| Persona | 帳號（agent id） | 綁定來源 | wakes/ 信數 | 下次編號 | status | lock | profile 缺席欄 |");
-            aSb.AppendLine("|---|---|---|---|---|---|---|---|");
-
-            // 📌 2026-08-21 起「快取 wake_count vs 信數」那兩欄**沒有意義了** —— wake_count 已改成
-            //    由 wakes/ 信數推導（中央 persona json 退場），兩邊同源 ⇒ 永遠相等的比對是裝飾。
-            //    （這正是 summit 那條「恆亮警告」的鏡像：一個恆綠的對帳欄同樣不帶資訊。）
-            //    改對帳**真的還會分岔的東西**：本區有沒有帳號綁定、profile 有哪些欄缺席。
-            int aWarn = 0;
-            string aRegion = Treasury.UCL_CentralBankSettings.CurrencyId;
-            var aPool = UCL_PersonaProfile.PoolNamesSorted();
-            aSb.AppendLine($"（pool 判準＝`letters/<persona>/profile/` 存在，共 {aPool.Count} 位；區域＝{aRegion}）\n");
-            foreach (var aName in aPool)
-            {
-                var aJd = UCL_PersonaProfile.GetRaw(aName, false);
-                if (aJd == null)
-                {
-                    aSb.AppendLine($"| `{aName}` | ✗ 讀不出來（profile/ 壞了？） | | | | | | |");
-                    aWarn++; continue;
-                }
-                var aP = new UCL_PersonaData(); aP.DeserializeFromJson(aJd); aP.name = aName;
-                string aAcc = aJd.GetString("agent", "");
-                UCL_PersonaProfile.GetBankAccount(aName, aRegion, out string aBankSrc, out _);
-                int aLetters = WakeLetterCount(aName);
-                var aLock = ReadLock(aName);
-                var aSrcs = UCL_PersonaProfile.GetFieldSources(aName);
-                var aAbsent = new List<string>();
-                if (aSrcs != null)
-                    foreach (var kv in aSrcs) if (kv.Value == UCL_PersonaProfile.SRC_ABSENT) aAbsent.Add(kv.Key);
-                if (string.IsNullOrEmpty(aAcc)) aWarn++;
-                aSb.AppendLine($"| `{aName}` | {(string.IsNullOrEmpty(aAcc) ? "⚠ 無綁定" : aAcc)} | {aBankSrc} | "
-                             + $"{aLetters} | {aLetters + 1} | {aJd.GetString("status", "?")} | "
-                             + $"{(aLock != null ? "🔒 " + aLock.session_key : "")} | {aAbsent.Count} |");
-            }
-            aSb.AppendLine();
-            aSb.AppendLine(aWarn == 0
-                ? $"✅ {aPool.Count} 位都有本區（{aRegion}）帳號綁定，資料讀得出來。"
-                : $"⚠ {aWarn} 筆需要人工看一眼（無綁定的人，錢會落央行）。");
-            return aSb.ToString();
-        }
-
-        // ===========================================================
-        // 區塊：brief 生成觸發鏈 — **就地呼叫 SCP_WakeBrief（C#）**，Cmd 與後台頁共用
-        // 物理意義：2026-09-01 起 brief 的生產端搬進 SCP_Core（TASK-0097）—— 不再 spawn python。
-        //          ⇒ 少一個 process、少一組編碼／環境變數的坑，而且 §6.5 見人與 `cmd people`
-        //            從此**是同一支邏輯**（兩處各組一次的症狀不是報錯，是兩邊都不紅的兩個答案）。
-        //          Editor 未開時的備援仍是 `senate cmd wake-brief`（原生，不需要 Editor）。
-        // 數值影響：回傳含 brief 絕對路徑＋行數 —— 路徑必須進 Cmd 回傳值（Tim 2026-08-13 拍板）。
-        //          ⚠ 新鮮度判定**照舊保留**：它擋的是「檔在但不是這次產生的」，
-        //            而那隻病與生產端是誰無關（wake#49 讀到前一天那份 1271 行的血證）。
-        // ===========================================================
-        public const string PROC_TAG = "awakening_service_brief";
-
-        /// <summary>
-        /// awakening.py 絕對路徑解析。
-        /// <para>⚠ 2026-09-01 起 <see cref="RunBrief"/> **不再用它**（brief 生產端已搬進 SCP_Core）。
-        /// 留著是因為還有別的呼叫端；哪天真的零呼叫端就直接刪，不留 stub。</para>
-        /// ⚠ **只能在主執行緒呼叫**（內部走 UCL_EditorPath.CorePath =
-        /// AssetDatabase.FindAssets）——背景緒要用時，先在主執行緒解析好再把結果傳進去
-        /// （RunBrief 的 iScriptPath 參數就是為此存在；快取暖了之後背景緒僥倖能跑，冷啟動必炸）。
-        /// </summary>
-        public static string ResolveAwakeningScriptPath()
-        {
-            string aCoreRel = UCL_EditorPath.CorePath;
-            if (string.IsNullOrEmpty(aCoreRel)) return null;
-            string aScript = Path.GetFullPath(Path.Combine(
-                UCL_RepoPath.UnityProjectRoot, aCoreRel, "Tools~/AgentCommands/awakening.py"));
-            return File.Exists(aScript) ? aScript : null;
-        }
-
-        // ⛔ `ResolveBankBalanceArg` 已移除（Tim 2026-08-21）：帳號與餘額改由 Cmd_GoodMorning 的
-        //    回傳檔印（C# 端＝真相源），python brief 不再複述它自己查不到的數。
-        //    原本存在的理由是避開「python 全掃 14,985 檔帳本」的 112s（wake#49 撞 120s timeout）；
-        //    現在連印都不印，那個成本從結構上消失，而不是被一層快取繞過。
-        //    🩸 它同時是一隻 bug 的載體：它用**正向鏈** `ResolveBankAccount` 解帳號，
-        //    解出 `claude-da-xiaojie`（`Treasury/accounts/` 裡**不存在**）並印「餘額 0」，
-        //    而錢實際在 `claude-code`。查無此帳戶與沒錢印成同一個字，就沒有人會去追。
-        /// <summary>
-        /// 生成 brief（就地呼叫 <see cref="SCP.Core.Letters.SCP_WakeBrief"/>，不 spawn 任何 process）。
-        /// </summary>
-        /// <param name="iTimeoutMs">保留參數 —— 已無 process 可逾時，留著是為了不動呼叫端簽章。</param>
-        /// <param name="iScriptPath">保留參數 —— 同上（python 腳本路徑已不再需要）。</param>
-        public static (bool ok, string report, string briefPath, int briefLines) RunBrief(
-            string iPersona, string iCallerName, int iTimeoutMs = 120000, string iScriptPath = null)
-        {
-            // TASK-0303：本體搬進 SCP_Core（`SCP_Morning.Brief`）—— Senate 的 morning-brief 與這裡呼叫同一份，
-            //   新鮮度判定（mtime 晚於本次起點）也在那一份裡。iTimeoutMs／iScriptPath 只為不動呼叫端簽章。
-            var aRes = SCP.Core.Letters.SCP_Morning.Brief(MorningRoots(), iPersona);
-            return (aRes.Ok, aRes.Report, aRes.BriefPath, aRes.BriefLines);
-        }
-
-        // ===========================================================
         // 區塊：晚安／後台共用的路徑與時間工具。
         // ⚠ 登入的寫入（lock〔含 session_token〕／memo／profile）已經不在本檔 —— 在 SCP_Core `SCP_Morning.Wake`（TASK-0303）。
         //   本檔剩下的寫入是晚安那一側（StepCheck／WriteWakeLetter…）；token 隨 lock 刪除失效（TASK-0307）。
@@ -469,30 +361,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Awakening
             LettersRoot = LettersDir.Replace('\\', '/'),
             ProjectRoot = UCL_RepoPath.RepoRoot.Replace('\\', '/'),
         };
-
-        /// <summary>brief 檔內容摘要（QA 欄位/格式用）：frontmatter 全文＋各段標題行。</summary>
-        public static string SummarizeBrief(string iBriefPath, int iMaxLines = 80)
-        {
-            if (string.IsNullOrEmpty(iBriefPath) || !File.Exists(iBriefPath)) return "(brief 檔不存在)";
-            var aOut = new StringBuilder();
-            var aLines = File.ReadAllLines(iBriefPath);
-            bool aInFrontmatter = false;
-            int aEmitted = 0;
-            for (int i = 0; i < aLines.Length && aEmitted < iMaxLines; i++)
-            {
-                string aLine = aLines[i];
-                if (i == 0 && aLine.Trim() == "---") { aInFrontmatter = true; aOut.AppendLine(aLine); aEmitted++; continue; }
-                if (aInFrontmatter)
-                {
-                    aOut.AppendLine(aLine); aEmitted++;
-                    if (aLine.Trim() == "---") aInFrontmatter = false;
-                    continue;
-                }
-                if (aLine.StartsWith("#")) { aOut.AppendLine($"[L{i + 1}] {aLine}"); aEmitted++; }
-            }
-            aOut.AppendLine($"（共 {aLines.Length} 行；上面是 frontmatter 全文＋段落標題索引）");
-            return aOut.ToString();
-        }
     }
 }
 #endif

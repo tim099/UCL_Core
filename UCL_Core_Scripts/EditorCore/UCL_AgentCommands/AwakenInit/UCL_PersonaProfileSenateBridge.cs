@@ -119,18 +119,6 @@ namespace UCL.Core.EditorLib.AgentCommands
             return aExit == 0;
         }
 
-        /// <summary>建一個新 persona（`op=create`）：本區綁定 ＋ 身分欄。<paramref name="iFieldsJson"/> 是 JSON 物件。</summary>
-        public static bool Create(string iPersona, string iAccount, string iFieldsJson, string iActor, string iReason, out string oError)
-        {
-            var (aExit, aOutText) = Run("create", new Dictionary<string, string>
-            {
-                ["persona"] = iPersona ?? "", ["account"] = iAccount ?? "", ["fields"] = iFieldsJson ?? "",
-                ["actor"] = iActor ?? "", ["reason"] = iReason ?? "",
-            });
-            oError = aExit == 0 ? "" : FirstFailLine(aOutText);
-            return aExit == 0;
-        }
-
         /// <summary>從 CLI 輸出挑出 `✗` 那一行（沒有就回全文）—— 給頁面顯示用。</summary>
         static string FirstFailLine(string iOutput)
         {

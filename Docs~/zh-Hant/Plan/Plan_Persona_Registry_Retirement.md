@@ -461,6 +461,8 @@ bank 資訊**各專案不同**，不隨 persona 走。而且不再是「persona 
 ##### Tim 2026-08-20 拍板：綁定以身分後台的操作為準
 
 > **「persona 綁定 bank 請以 `UCL_PersonaAgentAdminPage` 操作的 API 為準。」**
+>
+> （那頁已於 TASK-0424 退場；綁定的現行寫入端是 `senate cmd persona-profile --arg op=set_bank`。）
 
 那頁的換綁 `DoRebindClicked()` 寫的是 **`persona.agent`**（走 §8.6 寫入接縫，actor+reason＋審計＋
 刷快照），bank 則由 `agent_banks[agent]` 決定；建 agent 時 `DoCreateAgent()` 寫 `agent_banks`。

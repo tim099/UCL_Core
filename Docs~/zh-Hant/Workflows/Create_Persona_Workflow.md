@@ -35,7 +35,7 @@ graph TD
 
 ### 🛠️ Step 1: 註冊 Persona
 
-新 Persona 從後台「🧬 Persona & Agent 管理頁」建立並綁定 agent 歸屬（產生 `letters/<persona>/profile/`）。
+新 Persona 用 `senate cmd persona-create` 建立並綁定 agent 歸屬（產生 `letters/<persona>/profile/`；說明 `senate cmd doc --arg op=show --arg name=Persona_Create`）。建好之後的設定在 Senate 後台「persona 管理」頁（`senate ui --page persona`）。
 `senate cmd morning-wake` 只認已註冊的 persona —— 名字不存在會被擋下，不會替你建新人格。
 
 ---

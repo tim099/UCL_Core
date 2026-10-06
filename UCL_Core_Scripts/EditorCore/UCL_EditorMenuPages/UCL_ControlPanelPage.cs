@@ -67,7 +67,6 @@ namespace UCL.Core.EditorLib.Page
         {
             GUILayout.Space(8);
 
-            DrawPersonaAgentAdminSection();
             GUILayout.Space(8);
 
             DrawAgentCmdAdminSection();
@@ -128,33 +127,6 @@ namespace UCL.Core.EditorLib.Page
                 if (!aShow) return;
                 GUILayout.Label("已註冊 Agent Command 清單，以及 Python client 端預檢用的 commands_schema.json 同步狀態與手動刷新。"
                     + "新增／修改 Cmd 後請按同步（或跑 `senate ucmd run ExportCmdSchema`，兩者等價）。",
-                    UCL_GUIStyle.LabelStyle);
-            }
-        }
-
-        // ===========================================================
-        // 區塊：Persona & Agent 管理入口（Tim 2026-07-29 拍板）
-        // 物理意義：push UCL_PersonaAgentAdminPage — 建 agent（含對應 bank）/ 建 persona（可選 fork 來源）/
-        //          persona 換綁 agent。以前這些只能手改 AwakenInit 下的 json 或走 awakening.py CLI。
-        // ===========================================================
-        void DrawPersonaAgentAdminSection()
-        {
-            using (new GUILayout.VerticalScope("box"))
-            {
-                bool aShow;
-                using (new GUILayout.HorizontalScope())
-                {
-                    aShow = UCL_GUILayout.Toggle(m_FoldDic, "PersonaAgentAdminFold", 21, iDefaultValue: false);
-                    GUILayout.Label("<b>🧬 Persona & Agent</b>", UCL_GUIStyle.LabelStyle, GUILayout.ExpandWidth(false));
-                    if (GUILayout.Button("開啟 Persona & Agent 管理頁", UCL_GUIStyle.GetButtonStyle(new Color(0.7f, 0.9f, 1f)), GUILayout.ExpandWidth(false)))
-                    {
-                        UCL_PersonaAgentAdminPage.Create();
-                    }
-                    GUILayout.FlexibleSpace();
-                }
-                if (!aShow) return;
-                GUILayout.Label("身分兩層管理：建立 agent（帳號層，同時登記對應 bank／可帶種子額度）、建立 persona（人格層，"
-                    + "可選 fork 來源複製 identity_vector 與血統）、persona 換綁 agent（只改歸屬，vector／wake_count 保留）。",
                     UCL_GUIStyle.LabelStyle);
             }
         }

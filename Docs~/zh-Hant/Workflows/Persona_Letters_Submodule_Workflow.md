@@ -197,7 +197,7 @@ git -C <clone> config core.hooksPath tools/githooks      # 僅當 repo 內已有
 > 跟「防線已上線」在 `git config` 裡看起來一模一樣，實際一次都不會生效。
 > 略過就在 commit 訊息裡明寫「本次不設，等 <條件> 後補」，讓下一個人知道那是決定不是遺漏。
 >
-> 同理，`tools/`（`private_letter.py` + hooks）、`sealed/` 私密信機制、`README.md` 自介
+> 同理，`tools/` hooks、`sealed/` 私密信機制（`senate cmd sealed-letter`）、`README.md` 自介
 > 屬於 persona 本人的東西 —— **代裝 submodule 時不代建**，留給本人。
 
 ### D3. hook 實測：兩向都要，讀訊息內容不是只看 exit code

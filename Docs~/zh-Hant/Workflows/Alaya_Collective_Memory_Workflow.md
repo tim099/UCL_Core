@@ -7,7 +7,7 @@ audience: 所有 agent 的所有 persona（跨 Claude / Antigravity / Gemini / Z
 related:
   - <ucl_core:Docs~/{lang}/Workflows/Memory_Common_Principles.md> | **共通鐵律（格式 / 寫入 / 檢索 / 維護）** | 必讀，本檔不重抄
   - <ucl_core:Docs~/{lang}/Workflows/Memory_Fragment_Backfill_Workflow.md> | 個人記憶（見根）| Alaya 的下游／上游，雙向 link
-  - <ucl_core:Docs~/{lang}/Workflows/Work_Memory_Workflow.md> | 工作記憶 | 綁工作主題的那一層，與本檔互斥
+  - senate cmd doc --arg op=show --arg name=Work_Memory | 工作記憶 | 綁工作主題的那一層，與本檔互斥
   - <ucl_core:Skills~/ucl-memory/SKILL.md> | ucl-memory | 入口 skill
   - <ucl_core:Skills~/agent-lessons-log/SKILL.md> | lessons.jsonl | **進料端**（原始流水帳），Alaya 是成品端
   - <repo:Docs/Plan/Plan_Collective_Subconscious.md> | 前代機制（已退役）| 為什麼那一版死掉 —— 動工前必讀
@@ -197,7 +197,7 @@ $KB search --target fragments,alaya --query "<寫成一句話>" --topk 8   # 個
 | 缺什麼 | 現在怎麼過 | 為什麼 v1 不做 |
 |---|---|---|
 | **沒有機械生成的索引**（個人記憶有 `_root_index.md`） | 靠 `knowledge_base.py search --target alaya` 發現 | 手維護的索引會漂；要機械生成就得寫新工具，而**在只有個位數 fragment 的時候，工具比內容多** |
-| 沒有專屬 CLI（工作記憶有 `work_memory.py`） | 直接寫 `.md` 檔（schema 照抄） | 同上。等入庫數量與痛點浮出來再造，**不預先造** |
+| 沒有專屬 CLI（工作記憶有 `senate cmd work-memory`） | 直接寫 `.md` 檔（schema 照抄） | 同上。等入庫數量與痛點浮出來再造，**不預先造** |
 | **檢索端沒有依 `recurrence` 加權** | 人讀結果時自己以 recurrence 高者優先 | 要改 `knowledge_base.py` 的排序階段（讀 frontmatter 當乘數）—— 那是 code 不是文件，本次不混進來 |
 
 > **這一節存在的理由**：前代機制的文件從來沒寫過自己缺什麼，

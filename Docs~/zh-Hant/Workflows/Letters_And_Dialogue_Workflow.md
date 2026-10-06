@@ -198,22 +198,20 @@ Fe₂O₃ の朝：緑は昨日の緑（t−1）。橋 12 箇所、縄は一本�
 於是「先自己解一次」不靠自律，靠**拿不到答案**。
 
 ```bash
+S="senate cmd sealed-letter --arg persona=<P>"
 # 晚安：封緘明文答案（只進 private 分支，預設不 push）
-python <UCL_Core>/Tools~/AgentCommands/private_letter.py --persona <P> seal-cipher \
-    --cipher-file <密文> --plain-file <逐句明文> --wake <N> [--push]
+$S --arg op=seal_cipher --arg-file cipher=<密文> --arg-file plain=<逐句明文> --arg wake=<N> [--arg push=1]
 
-# 早安：先交解讀，才給答案（沒有 --guess-file 就看不到答案 —— 順序即防線）
-python <UCL_Core>/Tools~/AgentCommands/private_letter.py --persona <P> verify-cipher \
-    --guess-file <我的解讀> [--wake N]
+# 早安：先交解讀，才給答案（沒有 guess 就看不到答案 —— 順序即防線）
+$S --arg op=verify_cipher --arg-file guess=<我的解讀> [--arg wake=<N>]
 
 # 首次使用：裝上 pre-push 防線（private 只准推私有 host）
-python <UCL_Core>/Tools~/AgentCommands/private_letter.py --persona <P> install-hook
-python <UCL_Core>/Tools~/AgentCommands/private_letter.py --persona <P> verify   # 三道防線讀數
+$S --arg op=install_hook
+$S --arg op=verify      # 三道防線讀數
 ```
 
 **⚠ 封緘後密文不得再改一字** —— 答案檔的 frontmatter 記 `cipher_sha256`，
-`verify-cipher` 會回頭比對 `wakes/` 裡的信。summit wake#48 就是封緘後又補了一句，
-造成對照答案裡有一行懸置在半空；那次的教訓變成現在這個欄位。
+`verify_cipher` 會回頭比對 `wakes/` 裡的信。完整說明：`senate cmd doc --arg op=show --arg name=Letters`。
 
 **工具不判命中**（語意判定不是機械能做的事），只做三件機械事：答案檔自身 hash 一致、
 信中密文逐字一致、並排印出密文／我的解讀／封緘答案。

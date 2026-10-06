@@ -7,7 +7,7 @@ audience: 所有 agent 的所有 persona（跨 Claude / Antigravity / Gemini / Z
 related:
   - <ucl_core:Docs~/{lang}/Workflows/Memory_Fragment_Backfill_Workflow.md> | 個人記憶（見根）碎片格式與回溯補抽
   - <ucl_core:Docs~/{lang}/Workflows/Alaya_Collective_Memory_Workflow.md> | 集體潛意識 Alaya 的機制與維護
-  - <ucl_core:Docs~/{lang}/Workflows/Work_Memory_Workflow.md> | 工作記憶（以工作主題為單位）
+  - senate cmd doc --arg op=show --arg name=Work_Memory | 工作記憶（以工作主題為單位）
   - <ucl_core:Skills~/ucl-memory/SKILL.md> | ucl-memory | 個人記憶 + Alaya + 回憶的入口
   - <ucl_core:Skills~/ucl-work-memory/SKILL.md> | ucl-work-memory | 工作記憶的入口
 last_updated: 2026-10-03（UCL_KnowledgeBaseAdminPage 廢棄：§4 後台頁改在 Senate「知識庫」頁，TASK-0381）

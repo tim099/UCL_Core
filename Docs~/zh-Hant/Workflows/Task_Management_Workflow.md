@@ -34,7 +34,7 @@ related:
 
 ```
 ① 有人在等這件事嗎？      有 ⇒ 開 Task
-② 別人接手需要知道嗎？    要 ⇒ 工作記憶（work_memory.py）
+② 別人接手需要知道嗎？    要 ⇒ 工作記憶（senate cmd work-memory）
 ③ 只有我自己需要記得？    是 ⇒ 見叢 _keys_open.md
 ```
 
@@ -234,7 +234,7 @@ $R --arg op=create --arg type=bug --arg title="<症狀，不是猜的原因>" --
 **排順序**：看**誰卡誰**（`blocked_by`），不看優先度標籤。
 先做「它動了整條路才會動」的那張。
 
-**收傘**：最後一張子單結掉 → 歸檔工作記憶（`work_memory.py archive --topic <slug>`）
+**收傘**：最後一張子單結掉 → 歸檔工作記憶（`senate cmd work-memory --arg op=archive --arg topic=<slug>`）
 → `op=update --arg memory_archived_commit=<sha>` 回填 → 傘 `resolve`。
 
 ### 🩸 四個踩過的坑（都有現場）
@@ -362,7 +362,7 @@ $R --arg op=sweep [--arg days=14] --arg confirm=1
 # 12. Commit 閉環推進（`senate cmd commit` 內部自動轉接）
 $R --arg op=commit --arg index=42 --arg sha=<commit_sha> --arg mode=fixes|refs
 
-# 13. 收工（進度寫進留言；why 代跑 work_memory.py）／晚安顯式跳過收工（晚安流程自己會呼叫）
+# 13. 收工（進度寫進留言；why 寫進單子的 memory_topic）／晚安顯式跳過收工（晚安流程自己會呼叫）
 $R --arg op=wrapup --arg index=42 --arg-file progress=<檔> [--arg-file why=<檔>]
 $R --arg op=wrapup_skip --arg index=42 --arg reason="<一句話>"
 ```
@@ -382,9 +382,9 @@ Task.memory_topic ──▶ 記憶主題卡 _topic.md 的 key_docs ──▶ 文
 
 - 綁定：`$R --arg op=update --arg index=<N> --arg memory_topic=<topic>`
 - 掛文件：寫在主題卡的 `key_docs`
-- 反向掛單：`work_memory.py tasks --topic <t> --add <N>`
-- 讀：`work_memory.py read --topic <t>` 會印 **📚 權威文件**
-- ⚠ 現況邊界：`op=show` **還沒有**把 `key_docs` 帶到單子上 ⇒ 目前要多跑一次 `work_memory.py read` 才看得到。
+- 反向掛單：`senate cmd work-memory --arg op=tasks --arg topic=<t> --arg add=<N>`
+- 讀：`senate cmd work-memory --arg op=read --arg topic=<t>` 會印 **📚 權威文件**
+- ⚠ `op=show` 不帶 `key_docs` ⇒ 要看權威文件，跑一次 `work-memory op=read`。
 
 ```mermaid
 sequenceDiagram
@@ -404,19 +404,19 @@ sequenceDiagram
     Note over Dev, Task: ② 結單沉澱
     Dev->>Task: op=resolve --confirm 1
     Task-->>Dev: 結單成功 ＋ 提示：「本單是否有 decision/pitfall 值得整理至記憶？」
-    Dev->>Memory: work_memory.py add/supersede
+    Dev->>Memory: work-memory op=add／supersede
     
     Note over Task, Memory: ③ 晚安對帳
     Task->>Task: senate cmd goodnight-check
     Task-->>Dev: 檢查未關單 updated_at 逾期 14 天 / 單向斷鏈（只印不改）
     
-    Note over PM, Memory: ④ 歸檔退場（work_memory.py archive 已上線）
-    PM->>Memory: work_memory.py archive --topic <slug>
+    Note over PM, Memory: ④ 歸檔退場
+    PM->>Memory: work-memory op=archive topic=<slug>
     Memory-->>PM: 檢查 git 狀態乾淨 ➔ 標記 archived ➔ 留下 commit 錨點
 ```
 
 > [!NOTE]
-> **觸發點④現況邊界**：`work_memory.py archive` 已由 basecamp 完成交付（支援 submodule Git 乾淨前置檢查）。歸檔後 PM 於 Task 透過 `op=update --arg memory_archived_commit=<sha>` 寫入歷史錨點。墓碑（tombstone）寫入端目前簽部分完成，待進一步驗收。
+> **觸發點④**：`work-memory op=archive` 先過 git 乾淨守衛；歸檔後 PM 對每張關聯單 `op=update --arg memory_archived_commit=<sha>` 寫入歷史錨點。細節：`senate cmd doc --arg op=show --arg name=Work_Memory` §5。
 
 ---
 
@@ -475,7 +475,7 @@ sequenceDiagram
 | **`memory_topic` 記憶錨點** | ✅ 讀取端生效 | `op=show` 五種答案不同形（主題在 / 全部已退場 / 已歸檔 / 已刪除 / 連結壞了） |
 | **`op=check` 勾驗收標準** | ✅ 已上線（TASK-0119） | 七格活體：dry-run 零寫入／多筆勾銷序號不位移／全勾後再勾擋下且零寫入／非參與者與非 QA 兩種成因各擋一次（全 173 單檔零變動）／勾後回讀分母 |
 | **寫入端（配號／讀改寫）** | ✅ Senate Server 單一寫入端（TASK-0349） | 真 Server、8 顆 CLI 同時 `create` ⇒ 1〜8 各一號、計數檔 8；`priority=medium` 被擋 ⇒ 沒吃號（下一張拿 9）；selftest `TaskStoreCleanRoom`／`TaskOpsGatesCleanRoom`／`RealTaskRenderRoundTrip`（352 張重排：逐字 320、舊單形狀 32、真不符 0） |
-| **`work_memory.py archive`** | ✅ 已上線交付 | 支援 `archive`、`tasks`、`delete`，具備 submodule Git 乾淨前置檢查 |
+| **`work-memory` archive／tasks／delete** | ✅ 已上線 | git 乾淨前置檢查；selftest `WorkMemoryCleanRoom` |
 
 ---
 

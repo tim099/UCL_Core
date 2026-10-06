@@ -298,7 +298,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
 
         // ===========================================================
         // 區塊職責：寫入 op —— **轉交 `senate cmd task`**（TASK-0349），把入口的回傳檔原樣接回來。
-        // 物理意義：狀態機、閘、配號、酒館通知、work_memory 代跑全在 Senate 那一側（SCP_Core `SCP_TaskOps`）；
+        // 物理意義：狀態機、閘、配號、酒館通知、工作記憶寫入全在 Senate 那一側（SCP_Core `SCP_TaskOps`）；
         //          本支只把呼叫端給的參數原樣送過去（`ArgsSpec` 的 Known 已經在執行前擋過拼錯的名字）。
         // ⚠ 四態：0 ⇒ 成功；1／2 ⇒ 閘擋下或參數錯（**零寫入**，原因在回傳檔）；6 ⇒ 確定沒寫；
         //   7 ⇒ **不知道**（⛔ 別重打 —— 先 `senate cmd tasks --arg index=<n>` 回讀）。非 0 一律丟例外，讓 Runner 判 Failed。

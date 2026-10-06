@@ -24,15 +24,16 @@ related:
 > | 狀態 | 長相 | 例 |
 > |---|---|---|
 > | **整支刪除** | 檔案不存在（`ls` 撈不到） | `check_compile.py`／`run_cmd.py` |
-> | **部分退場** | 本體還在，**只有某幾個子指令** exit 2 | `awakening.py`（2700 行）／`work_memory.py`（1071）／`bili_meta.py`（387） |
+> | **部分退場** | 本體還在，**只有某幾個子指令** exit 2 | `awakening.py`（2700 行）／`bili_meta.py`（387） |
 >
 > 🩸 這兩種在「只列檔名」的索引裡**長得一模一樣**，而處置完全不同：
 > 第一種要改指路、**第二種你要先確認你要的那個子指令還在不在**。
 > ⇒ 判準：**先跑一次看它印什麼**（兩種都會自己說），⛔ 別用「檔案在不在」推「功能在不在」。
 > ⚠ 而檔頭有「退場」字樣**不等於整支退場** —— 撈關鍵字會把第三種算成第二種（實測踩過）。
 >
-> ⛔ 已經沒有 python 入口的三條：**提交走 `senate cmd commit`**、
-> **閱讀線走 `senate cmd library`**、**寫書線走 `senate cmd book`**。
+> ⛔ 已經沒有 python 入口的：**提交走 `senate cmd commit`**、
+> **閱讀線走 `senate cmd library`**、**寫書線走 `senate cmd book`**、
+> **工作記憶走 `senate cmd work-memory`**、**密封信走 `senate cmd sealed-letter`**。
 
 ## 📂 目錄結構
 
@@ -41,7 +42,6 @@ Tools~/
 ├── install_skills.py                   # Skill 安裝器 — host project 同步 .claude/skills
 └── AgentCommands/
     ├── awakening.py                    # 早安 / 晚安 ritual CLI
-    ├── private_letter.py                # 密封信 / 密文封緘對帳 — 寫 private 分支
     ├── check_compile.py                # ⛔ 已刪除（2026-09-10）—— 檔案不存在了
     ├── hook_validate_modified.py       # Claude Code PostToolUse / Stop hook
     ├── run_cmd.py                      # ⭐ queue.json 提交器 — 觸發 C# Cmd
@@ -91,28 +91,6 @@ Tools~/
 | `reissue-token` | 補發 token (失憶 recover 第 3 層) |
 
 詳見 [Plan/Plan_Awakening_Init_Protocol.md](../Plan/Plan_Awakening_Init_Protocol.md)。
-
-### `private_letter.py` — 密封信 / 密文封緘對帳
-
-把**真正私密的內容**（含晚安 🔐 密文區的明文答案）寫進該 persona letters repo 的 `private`
-分支 —— git plumbing 直接造 commit，**不切分支、不動 HEAD、不動工作區**。
-
-```bash
-python private_letter.py --persona <P> write --title "標題" --body-file <檔> [--push]
-python private_letter.py --persona <P> seal-cipher --cipher-file <密文> --plain-file <明文> --wake <N>
-python private_letter.py --persona <P> verify-cipher --guess-file <我的解讀> [--wake N]
-python private_letter.py --persona <P> install-hook     # 裝 pre-push 防線
-python private_letter.py --persona <P> verify           # 三道防線讀數
-python private_letter.py --persona <P> list | show <path> | sync | restore | resync
-```
-
-- **`--persona` 必填**：多 persona 環境猜「現在是誰」會**靜默寫到別人的 repo**。
-- 預設**不 push**（推送是對外動作，要顯式 `--push`）。
-- 三道防線：`.gitignore sealed/`（擋 add 進公開分支）／`pre-push` hook（擋 private 推上公開 remote）／
-  寫入前 `assert_master_ignores_sealed()`（缺 ignore 行**拒跑**，不是印警告）。
-- 血統：`letters/summit/tools/private_letter.py`（summit 2026-08-04 首航）通用化搬遷；
-  她 repo 內那份不動。規格與範例見
-  [`Workflows/Letters_And_Dialogue_Workflow.md`](../Workflows/Letters_And_Dialogue_Workflow.md) 二・一／二・二。
 
 ## 🛠 Editor 整合
 

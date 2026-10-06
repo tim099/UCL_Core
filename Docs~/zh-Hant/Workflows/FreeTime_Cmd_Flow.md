@@ -280,7 +280,7 @@ senate cmd free-time-activity --arg op=done --arg persona=<P> \
 
 ## 七、待辦（2026-08-18 交接 gura）
 
-工作記憶主題 **`freetime-cmd-flow`**（`work_memory.py read --topic freetime-cmd-flow --with-links`）。
+工作記憶主題 **`freetime-cmd-flow`**（`senate cmd work-memory --arg op=read --arg topic=freetime-cmd-flow --arg with_links=1`）。
 
 1. ✅ 後台頁 ＝ Senate「設定 › 自由時間」（`senate ui --page free-time`）：場次設定（`freetime_settings.json`）、
    活動 md frontmatter 編輯（enabled/name/how/group/min_minutes/kind）、活動統計（唯讀）、新增專案層活動。

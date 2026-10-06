@@ -138,12 +138,12 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         // ===========================================================
         // 區塊職責：**現行**的 `state` fragment ＋ 它多久沒動。
         // 物理意義：`state` 是「進度快照」那一型 —— 接手時第一眼該看的就是它。
-        //   ⚠ 檔名前綴 `state_` 是記憶側 CLI 的慣例（`work_memory.py` 的五型之一）；
+        //   ⚠ 檔名前綴 `state_` 是記憶側 CLI 的慣例（`senate cmd work-memory` 的五型之一）；
         //     這裡**只認前綴不猜語意**，認不出就說認不出。
         //
         // 🩸 血證 2026-08-25（TASK-0015 F1，basecamp 退件）—— 本函式的**選檔判準**曾經是錯的：
-        //   舊版用 mtime 排序選「最新那筆」，而 `work_memory.py supersede` 會**重寫舊檔**
-        //   （`save_fragment_meta` 把 status 改成 superseded）⇒ **mtime 被刷新**。
+        //   舊版用 mtime 排序選「最新那筆」，而 `work-memory op=supersede` 會**重寫舊檔**
+        //   （把 status 改成 superseded）⇒ **mtime 被刷新**。
         //   一步式（`--new-id`）更毒：新檔先寫、舊檔後改 ⇒ **退場的那筆 mtime 反而比現行的晚**。
         //   ⇒ 於是「一筆 fragment 一旦退場，就變成被選中的那個」，接手的人第一眼讀到作廢的進度。
         //   📌 一般形：**mtime 是「檔案」的新鮮度，`status` 才是「內容」的新鮮度 —— 兩個量，別互相代表。**

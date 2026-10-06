@@ -162,5 +162,4 @@ Docs~/zh-Hant/Workflows/UpdateDocs_Workflow.md
 Docs~/zh-Hant/Workflows/Validate_UCL_Asset_Workflow.md
 Docs~/zh-Hant/Workflows/Wake_Numbering_Repair_Workflow.md
 Docs~/zh-Hant/Workflows/Watch_Video_Workflow.md
-Docs~/zh-Hant/Workflows/Work_Memory_Workflow.md
 Docs~/zh-Hant/index.md

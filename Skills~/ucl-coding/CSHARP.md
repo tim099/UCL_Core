@@ -163,7 +163,7 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 > 而是「這個專案的頁面長什麼樣、為什麼那樣、上次是怎麼被咬的」。那些住在工作記憶：
 >
 > ```bash
-> python <UCL_Core>/Tools~/AgentCommands/work_memory.py read --topic ucl-editor-pages --with-links
+> senate cmd work-memory --arg op=read --arg topic=ucl-editor-pages --arg with_links=1
 > ```
 >
 > 讀完**開啟它印出的 briefing 檔**（那是唯一輸入）。目前裡面有：頁面骨架、

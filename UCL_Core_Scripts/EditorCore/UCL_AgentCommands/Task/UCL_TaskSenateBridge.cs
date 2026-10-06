@@ -10,7 +10,7 @@
 //   （`Cmd_Task` 已經在 `EnterBackground` 之後；後台頁用 `UniTask.RunOnThreadPool`）。
 // ⚠ 參數一律走 `--arg-file`（每個值一顆暫存檔）：內文含引號／反引號／換行，在 argv 上是地雷，
 //   ⛔ 也不必分「哪些夠短可以直接塞」—— 兩套規則裡總有一條會漏。
-// 數值影響：一次 process 起落（＋CLI 等 Server、發通知、代跑 work_memory.py）；結果四態照入口：
+// 數值影響：一次 process 起落（＋CLI 等 Server、發通知、寫工作記憶）；結果四態照入口：
 //   0 已寫／1 閘擋下（零寫入）／2 參數錯／6 確定沒寫／7 **不知道**。
 #if UNITY_EDITOR
 using System;
@@ -53,8 +53,8 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         const string SENATE_EXE_NAME = "senate";
         const string TAG = "task_write_cli";
 
-        // 🩸 兩層逾時的大小關係是刻意的（同酒館那支）：內層（入口等 Server）60s ＋ autostart 上限 20s ＋ 通知（每則 ≤30s）＋
-        //   work_memory.py（≤60s）⇒ 外層給 300s，讓內層先逾時 ⇒ 外層拿到的是「它說了什麼」而不是「我不知道」。
+        // 🩸 兩層逾時的大小關係是刻意的（同酒館那支）：內層（入口等 Server）60s ＋ autostart 上限 20s ＋ 通知（每則 ≤30s）
+        //   ⇒ 外層給 300s，讓內層先逾時 ⇒ 外層拿到的是「它說了什麼」而不是「我不知道」。
         const int INNER_TIMEOUT_SEC = 60;
         const double OUTER_TIMEOUT_SEC = 300.0;
 

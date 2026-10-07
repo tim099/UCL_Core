@@ -6,7 +6,7 @@ created_at: 2026-05-20T09:30:00Z
 last_updated: 2026-08-21
 location: UCL_Core (cross-project tool); state files (.enc/.txt) 由 consumer project 提供
 related:
-  - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | Commit Workflow | 三層 bump 規範
+  - scp_core:Docs~/Commit.md | 提交規範 | 逐層 bump 規範
 ---
 
 # UCL Secret Manager Workflow

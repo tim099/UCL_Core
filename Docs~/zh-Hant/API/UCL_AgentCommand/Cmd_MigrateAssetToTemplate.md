@@ -128,7 +128,7 @@ git -C <project> add CardGame/Assets/UCL
 git -C <project> commit -m "[bump] UCL <hash>"
 ```
 
-詳見 [Commit_Workflow.md](../../Workflows/Commit_Workflow.md)。
+詳見 `senate cmd doc --arg op=show --arg name=Commit`。
 
 ---
 
@@ -149,4 +149,4 @@ git -C <project> commit -m "[bump] UCL <hash>"
 - [UCL_CoreBootstrap.md](../../UCL_ModuleService/UCL_CoreBootstrap.md) — Templates~ 系統與 AutoTemplatePush 機制全貌
 - [Create_UCL_Asset_Workflow.md](../../Workflows/Create_UCL_Asset_Workflow.md) — 新增 UCL_Asset 子類的 SOP
 - [UCL_AgentCommand_Architecture.md](UCL_AgentCommand_Architecture.md) — Agent Command 系統架構
-- [Commit_Workflow.md](../../Workflows/Commit_Workflow.md) — 三層 submodule bump 流程
+- `senate cmd doc --arg op=show --arg name=Commit` — 提交與逐層 bump 流程

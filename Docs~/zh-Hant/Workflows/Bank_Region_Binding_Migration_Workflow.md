@@ -5,7 +5,7 @@ last_updated: 2026-10-05
 target_audience: [AI_Agent, Developer]
 aliases: [區域銀行遷移, bank 綁定遷移, migrate_bank, 區域 ID 設定, Bar 專案遷移, currency_id]
 related:
-  - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | 提交規範 | 第 5 步的 commit 邊界
+  - scp_core:Docs~/Commit.md | 提交規範 | 第 5 步的 commit 邊界
 ---
 
 # 🪙 Bank 區域綁定遷移（半自動）
@@ -41,7 +41,7 @@ related:
 |---|---|
 | **人** | 決定區域 ID；讀 dry-run 清單並判斷合理性；處置撞名／空值；按後台的二段確認；決定 commit 邊界 |
 | 工具 | 掃 pool、讀 `persona.agent`、寫 `bank/<ID>.md`（原子寫＋審計）、寫入後讀回複驗、統計與失敗回報 |
-| **沒有人** | push（照 `Commit_Workflow`，Tim 手動） |
+| **沒有人** | push（照 `Commit`（`senate cmd doc --arg op=show --arg name=Commit`），Tim 手動） |
 
 ## 3. 步驟
 
@@ -125,7 +125,7 @@ Editor → **ToolBox → 自動提交** → `bank/` 群（預設勾）。
 ⛔ 絕不因為「不認識這個區域」而排除或刪除 —— 刪掉的症狀是對方下次登入「沒有綁定」
 （落央行＋ErrorLog），而錯的原因**指不到這裡**。
 
-commit 邊界照 `Commit_Workflow`：**預設單層**，父層 pointer 不 bump（除非有人明說 commit all）。
+commit 邊界照 `Commit`（`senate cmd doc --arg op=show --arg name=Commit`）：**預設單層**，父層 pointer 不 bump（除非有人明說 commit all）。
 letters 有自己 repo 的 persona 各自一筆（LY 實測 9 位），其餘在 `AgentCommands` 主樹一筆。
 
 ## 4. ⚠ 硬警告：綁定值是 **agent id**，而錢可能還在**舊帳號名**下

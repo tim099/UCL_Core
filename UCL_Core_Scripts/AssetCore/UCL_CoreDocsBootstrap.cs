@@ -72,7 +72,53 @@ namespace UCL.Core
                         return !string.IsNullOrEmpty(aRoot) && File.Exists(Path.GetFullPath(Path.Combine(aRoot, aRel)));
                     }));
             }
+
+            // 區塊職責：註冊 "scp_core:" prefix — 解析「相對於 SCP_Core 根」的本地文件路徑 (e.g. scp_core:Docs~/Commit.md / scp_core:Skills~/scp-commit/SKILL.md)。
+            // 物理意義：SCP_Core 是跨專案共用的 agent 機制（指令／skill／文件），UCL_Core 的文件只引用、不複製。
+            //          SCP_Core 掛載位置因專案而異，所以不寫死路徑：先找 UCL_Core 的同層資料夾，再找 repo 根底下的常見位置。
+            //          Editor-only —— 與 repo: 同理，原始文件不打包進 player build。
+            // 數值影響：決定 frontmatter related: 內 "scp_core:..." 連結在 Editor MarkdownViewer 內的開啟目標；找不到 SCP_Core 時回傳 null，由 UCL_URL 維持原 URL。
+            if (!UCL_URL.HasResolver("scp_core"))
+            {
+                UCL_URL.RegisterResolver(new UCL_UrlPrefixResolver(
+                    prefix: "scp_core",
+                    resolver: (aRel) =>
+                    {
+                        string aRoot = FindScpCoreRoot();
+                        return string.IsNullOrEmpty(aRoot) ? null : Path.GetFullPath(Path.Combine(aRoot, aRel));
+                    },
+                    existsChecker: (aRel) =>
+                    {
+                        string aRoot = FindScpCoreRoot();
+                        return !string.IsNullOrEmpty(aRoot) && File.Exists(Path.GetFullPath(Path.Combine(aRoot, aRel)));
+                    }));
+            }
 #endif
         }
+
+#if UNITY_EDITOR
+        // 區塊職責：定位 SCP_Core 根（含 Docs~ 的那一層）。
+        // 物理意義：候選順序 = UCL_Core 同層 → repo 根底下 Assets/Plugins／Assets／根目錄；每個候選都要有 Docs~ 才算數。
+        // 數值影響：找不到回傳 null（不猜），呼叫端據此保留原 URL。
+        private static string FindScpCoreRoot()
+        {
+            string aCore = UCL_EditorPath.CorePath;
+            string aRepo = UCL_URL.FindRepoRoot();
+            string[] aCandidates =
+            {
+                string.IsNullOrEmpty(aCore) ? null : Path.Combine(aCore, "..", "SCP_Core"),
+                string.IsNullOrEmpty(aRepo) ? null : Path.Combine(aRepo, "Assets", "Plugins", "SCP_Core"),
+                string.IsNullOrEmpty(aRepo) ? null : Path.Combine(aRepo, "Assets", "SCP_Core"),
+                string.IsNullOrEmpty(aRepo) ? null : Path.Combine(aRepo, "SCP_Core"),
+            };
+            foreach (string aPath in aCandidates)
+            {
+                if (string.IsNullOrEmpty(aPath)) continue;
+                string aFull = Path.GetFullPath(aPath);
+                if (Directory.Exists(Path.Combine(aFull, DOCS_SUBFOLDER))) return aFull;
+            }
+            return null;
+        }
+#endif
     }
 }

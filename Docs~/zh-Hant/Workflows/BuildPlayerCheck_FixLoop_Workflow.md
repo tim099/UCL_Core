@@ -89,13 +89,11 @@ related:
 - type 定義 file 有 `#if UNITY_EDITOR` guard
 - → Player Build: consumer 找不到 type 定義 → CS0246
 
-**範例**: T19 Treasury (2026-05-18)
-- `UCL_TreasuryLedger.cs` 已 strip guard
-- `UCL_TreasuryModels.cs` (含 `TreasuryLedgerEntry` / `TreasuryEntryType`) 仍 wrap → 8 處 CS0246
+**範例**: 帳本實作檔已 strip guard，而它用到的 model 檔仍 wrap → 每個用到 model 型別的地方各一條 CS0246
 
 **Fix**: 同 namespace 內 strip / add guard 必須一致:
 - 純 data + IO + 不依賴 UnityEditor 的 → strip guard (兩平台都 compile)
-- 真有 Editor 依賴的 (e.g. `Cmd_Treasury` 用 AssetDatabase) → 保留 guard
+- 真有 Editor 依賴的 (e.g. 用 AssetDatabase 的 Cmd) → 保留 guard
 
 **Sanity check**:
 ```bash

@@ -94,7 +94,7 @@ python 端各自全掃的複製品曾有四份，每份 14,985 檔逐檔 `json.l
 
 | 狀態 | 擁有者 | python 該怎麼做 |
 |---|---|---|
-| Treasury / 券 | `UCL_TreasuryLedger` / `UCL_CanvasVoucherLedger` | 走 Cmd |
+| 銀行 / 券 | Senate 銀行（`SCP_Bank*`）／券（`SCP_Voucher*`） | 走 `senate cmd bank`／`senate cmd voucher` |
 | persona lock / registry | `UCL_AwakeningService` | 走 Cmd（`GoodMorning` / `GoodNight`） |
 | 自由時間 session / 免費像素 | `Cmd_FreeTime` 發放、python 只遞增 `used` | **兩端 schema 對齊義務** |
 | 酒館訊息 | `Cmd_Tavern` | **絕不直寫 jsonl**（T36 P0 教訓） |

@@ -85,20 +85,8 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 
 **② 持久化資料一律繼承 `UCL_Asset<T>`**，禁止裸 `ScriptableObject` 或自寫存檔（見 `ucl-create-asset`）。
 
-**③ 銀行／餘額一律走 `UCL_TreasuryLedger` 的 API，不自己解析原檔**（Tim 2026-08-20 拍板）。
-
-`GetBalance(accountId)` 單一帳戶／**`GetAllBalances()` 整批**（要畫一張表就用這個，只同步一次）。
-
-❌ 不准自己重放 `Treasury/ledger/**.json`、不准 parse `accounts/_balances.snapshot.txt`、
-不准在呼叫端另建一份餘額快取。三個理由，全部不會當場叫：
-
-- **正確性**：餘額不是「把檔案加總」—— 它有**關帳基準**（`closing/<日>.json` warm start）、
-  增量 watermark、壞檔處理。自己重放會得到一個看起來合理、但少算或多算一段的數字。
-- **效能**：`GetBalance` 單次便宜（只列舉路徑），但那是**單次**的便宜。
-  🩸 2026-08-20：銀行後台兩個新表格區各自對 40 個帳戶現場查餘額 ⇒ 開頁卡一分鐘、
-  IMGUI 跳 `Getting control 8's position in a group with only 8 controls`、
-  Unity 內部 `PropertyEditor` 連鎖 NullReferenceException，連 `recompile` 都排不進主執行緒。
-- **一致性**：兩份餘額來源遲早給出不同答案，而兩邊都能自圓其說、都不報錯。
+**③ 銀行與券不在 Unity 這側**：餘額、入帳、出帳、券一律走 Senate（`senate cmd bank`／`senate cmd voucher`），
+Unity C# ⛔ 不讀帳本原檔、⛔ 不另建餘額快取 —— 帳本有關帳基準與增量 watermark，自己重放會得到一個看起來合理、但少算或多算一段的數字。
 
 > ⛔ **`Draw*`（IMGUI）裡只准讀記憶體。** 任何會碰磁碟的呼叫 —— 餘額、`File.Exists`、
 > 讀設定檔的 property —— 都要先在 `LoadData` 算好存成欄位，並在操作後顯式失效。
@@ -120,7 +108,7 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 > ⇒ **完整規則、API 對照與 round-trip 驗收協議在專章**，本 skill 不重抄：
 > `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md`
 >
-> 參考實作：`UCL_CanvasVoucherBatch`／`UCL_LLMAdminData`。
+> 參考實作：`UCL_LLMAdminData`。
 ## 🖥 寫 Editor 頁 / 任何 IMGUI
 
 **不要直接堆 `GUILayout` 原生 API** —— UCL_Core 有一整層封裝，處理了 DPI 縮放、樣式一致性、

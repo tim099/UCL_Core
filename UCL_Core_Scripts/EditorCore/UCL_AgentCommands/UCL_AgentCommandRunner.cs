@@ -511,16 +511,14 @@ namespace UCL.Core.EditorLib.AgentCommands
                     //   會把這期間別人 append 的那幾筆寫沒。
                     UCL_AgentCommandQueue.SaveMerged(data, originalIds, agentId);
 
-                    // 區塊職責: caller env_marker thread-through (Tim 2026-05-11 QA bug fix TreasuryEnvMarker)
-                    // 物理意義: Python caller-side detect 寫進 args._caller_env_marker → runner 設 static slot →
-                    //          下游 (UCL_TreasuryLedger.DetectEnvMarker / Cmd handler) 優先讀 slot 而非 in-process env
-                    // 數值影響: 沒帶 _caller_env_marker (e.g. 手動寫 queue.json) → slot 設 null → DetectEnvMarker 走 fallback
+                    // 區塊職責: caller env_marker thread-through（見 UCL_CallerEnvMarker）
+                    // 數值影響: 沒帶 _caller_env_marker (e.g. 手動寫 queue.json) → slot 設 null → Detect 走 fallback
                     string callerEnvMarker = null;
                     if (c.Args != null && c.Args.TryGetValue("_caller_env_marker", out var cem) && !string.IsNullOrEmpty(cem))
                     {
                         callerEnvMarker = cem;
                     }
-                    UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.CurrentCallerEnvMarker = callerEnvMarker;
+                    UCL_CallerEnvMarker.Current = callerEnvMarker;
                     // T-LastOp-CmdId (2026-06-12)：把當前 cmd 的 queue Id 放進 static slot，
                     // 供下游 WriteLastOp stamp 進 _last_op.md（per-cmd finally 清掉防 cross-cmd leak）
                     CurrentCmdId = c.Id;
@@ -716,7 +714,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                     {
                         MarkInFlight(c.Id, false);
                         // 清掉 per-cmd 的 caller env_marker slot, 防 cross-cmd leak
-                        UCL.Core.EditorLib.AgentCommands.Treasury.UCL_TreasuryLedger.CurrentCallerEnvMarker = null;
+                        UCL_CallerEnvMarker.Current = null;
                         // T-LastOp-CmdId：同步清 cmd_id slot — 防下一筆 cmd（或非 queue 路徑的 WriteLastOp）誤 stamp 上一筆的 id
                         CurrentCmdId = null;
                         // 區塊職責：**沒有產出 last_op 的那幾支，也要留下一行讀數**（TASK-0116 第二半）。

@@ -126,7 +126,7 @@ namespace UCL.Core.EditorLib
         // ===========================================================
         // 區塊職責：persona 的**銀行綁定**目錄（`letters/<persona>/bank/`）—— 一個區域一個檔。
         // 物理意義：Tim 2026-08-20 拍板 —— 銀行（酒館系統）每個專案有自己的區域 ID（貨幣名，
-        //          `UCL_CentralBankSettings.CurrencyId`），而 persona 在該區域使用的**帳號**
+        //          `SCP_BankRegion`），而 persona 在該區域使用的**帳號**
         //          （＝agent id）存在自己的 letters 底下：`bank/<CurrencyId>.md`。
         //          🩸 **為什麼一區一檔是硬需求而不是風格**：persona 的 letters 是**同一個 git repo
         //            被多個專案掛著**（2026-08-20 實測 LY 與 D:/Unity/Bar 的 letters/kiara
@@ -146,7 +146,7 @@ namespace UCL.Core.EditorLib
 
         /// <summary>某 persona 在某區域的綁定檔（`letters/&lt;persona&gt;/bank/&lt;currencyId&gt;.md`）。</summary>
         /// <remarks>
-        /// `iCurrencyId` 是**檔名**，呼叫端必須先過 `UCL_CentralBankSettings.IsValidCurrencyId`。
+        /// `iCurrencyId` 是**檔名**，呼叫端必須先過 `SCP_BankRegion.IsValid`。
         /// 本類不驗 —— 它只負責版面；驗在設定的入口（那裡才有「拒寫並出聲」的語意）。
         /// </remarks>
         public static string BankField(string iPersona, string iCurrencyId)

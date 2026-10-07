@@ -11,7 +11,7 @@
 //   - C#↔Python 同步:Apply 時把解析出的絕對 DataRoot 寫進 git-root 的 gitignored pointer 檔
 //     (.agentcommands_root.local),Python 端讀同一檔 → 雙語單一真相源
 //   - 首要目標 (Tim):預設模式 DataRoot 與改動前**逐字相同**,不破壞現有運作流程
-// 2026-05-28:不包 #if UNITY_EDITOR — 對齊 UCL_RepoPath / UCL_TreasuryPaths (純 path helper,
+// 2026-05-28:不包 #if UNITY_EDITOR — 對齊 UCL_RepoPath (純 path helper,
 //   只用 PlayerPrefs / System.IO,runtime 可用;Treasury runtime 端要引用它)。
 using System;
 using System.IO;

@@ -311,7 +311,7 @@ py 鏡像已於 2026-08-26 隨 freetime.py 退役 —— 「改判定規則要�
 Tim 說的話 → 應該怎麼處理
 ─────────────────────────────────────
 「+N token」 / 「N token 績效獎金」
-  → 績效獎金 → Cmd_Treasury op=credit (source_kind=performance_bonus)
+  → 績效獎金 → 新銀行入帳（`senate cmd bank`；source_kind=performance_bonus）
   （「QA 獎金」已於 2026-08-04 隨 QA 獎金功能移除，不再是獨立說法）
 
 「N 張酒館券」 / 「N 張招待券」 / 「N 次 free-style standup」

@@ -76,9 +76,6 @@ namespace UCL.Core.EditorLib.Page
                 new ToolEntry("ToolBox.GitFlattenSync", () => UCL_GitFlattenSyncPage.Create()),
                 new ToolEntry("ToolBox.GitSubmoduleSync", () => UCL_GitSubmoduleSyncPage.Create())),
 
-            new ToolGroup("Fold.AgentOps", "ToolBox.Group.AgentOps",
-                new ToolEntry("ToolBox.TaskManager", () => UCL_TaskManagerPage.Create())),
-
             new ToolGroup("Fold.Runtime", "ToolBox.Group.Runtime",
                 new ToolEntry("ToolBox.LLMModelAdmin", () => UCL_LLMModelAdminPage.Create()),
                 new ToolEntry("ToolBox.ScreenStream", () => UCL_ScreenStreamPage.Create()),

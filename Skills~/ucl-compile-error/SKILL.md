@@ -113,7 +113,6 @@ compile 0 error 只證「語法／型別對」，不證「邏輯對」。要驗*
 - SelfTest 的斷言 `throw` → Cmd_Invoke 轉 `throw` → Cmd 標 Failed + log 有 `FAILED`。
 - Editor.log 路徑：`%LOCALAPPDATA%/Unity/Editor/Editor.log`（Win）。
 
-🩸 血證（2026-07-22）：`UCL_SecretCrypto` 全切 C#（AES-256-CBC+HMAC+PBKDF2）後，靠 `run Invoke member=SelfTest` 驗到「4 round-trip 案例 + 錯密碼拒絕 + 竄改偵測」全過——ground-truth 是 Editor.log 回的 `OK (System.String) = OK: UCLS1 self-test passed...` 字串，不是 `senate ucmd run` 的 Success（後者是「跨層次驗證」family 要防的假綠）。不必寫測試場景、不必 Python 鏡像。
 
 > 適用面：任何「純函式／可 static 觸發」的 C# 邏輯（crypto / parser / resolver / 資料轉換…）。有 Unity 生命週期依賴（MonoBehaviour / 場景物件）的才需要真的跑遊戲。
 

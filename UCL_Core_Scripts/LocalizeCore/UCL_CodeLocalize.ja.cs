@@ -52,8 +52,6 @@ namespace UCL.Core.LocalizeLib
                 "MissingRef.FixedFmt" => "✅ {0} 件をクリアしました。⛔ 未保存（Ctrl+S）。",
                 "MissingRef.FixFailFmt" => "　⚠ 未修復 {0} 件。個別理由は Console に出力。",
                 "MissingRef.RemovedFmt" => "✅ スクリプト欠落 Component を {0} 件削除しました。⛔ 未保存（Ctrl+S）。",
-                "ToolBox.LLMModelAdmin" => "ローカル LLM モデル",
-                "ToolBox.LLMModelAdmin.Desc" => "ローカルの大規模言語モデル（ollama）を管理：環境状態の確認、厳選カタログからのインストール／アンインストール、動作確認の一発実行。既定で Qwen シリーズ（VRAM 6GB 以下で動くサイズ）を収録。",
                 "ToolBox.DocSearch" => "ドキュメント検索",
                 "ToolBox.DocSearch.Desc" => "200 以上の markdown を横断する即時あいまい検索（同義語展開・現在のロケール優先）。",
                 "ToolBox.LocalizeEdit" => "多言語編集",

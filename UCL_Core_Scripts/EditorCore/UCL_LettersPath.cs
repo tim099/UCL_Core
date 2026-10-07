@@ -156,8 +156,6 @@ namespace UCL.Core.EditorLib
         // 物理意義：檔名 `<cmd>_<step>.md`，**不再帶 `_` 前綴** —— 目錄本身已經說了它是什麼。
         //          「同一個 (persona, cmd, step) 永遠是同一格、每次覆寫」這個語意由**固定檔名**承載
         //          （agent 記得住 `cmd/freetime_next.md` 是哪一份）。
-        // ⚠ 這跟 `UCL_CmdPayloadStore`（`<DataRoot>/_cmd_payloads/`，每次新檔、保留 10 筆）
-        //   是**兩種不同形狀**，刻意分開存放與命名 —— 共用一個名字會讓兩種耐久度長得一樣。
         // 數值影響：純字串；建目錄由寫入端負責（寫檔前 CreateDirectory）。
         // ===========================================================
         public static string CmdPayload(string iPersona, string iCmdSlug, string iStep)

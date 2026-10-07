@@ -21,7 +21,7 @@ related:
 
 ### 何時用
 
-- 開發者在某專案內客製化了某個 UCL_Asset（例如：UCL_ChatTavernIdentityAsset 的 `claude-da-xiaojie`）
+- 開發者在某專案內客製化了某個 UCL_Asset（例如：UCL_ExampleAsset 的 `Default`）
 - 想把這份客製內容當作預設範本回流到 UCL_Core 倉庫
 - 後續其他專案 pull UCL_Core 後，[UCL_CoreAssetBootstrap](../../UCL_ModuleService/UCL_CoreBootstrap.md) 的 **AutoTemplatePush** 會自動把它推送到那些專案的 .BuiltinModules 中
 
@@ -40,8 +40,8 @@ related:
 
 | 參數 | 必填 | 預設 | 說明 |
 |---|---|---|---|
-| `assetType` | ✅ | — | UCL_Asset 子類短名（例 `UCL_ChatTavernIdentityAsset`）；大小寫敏感 |
-| `id` | ✅ | — | 要遷移的 Asset ID（例 `claude-da-xiaojie`）；填 `*` 表示遷移該類型全部 |
+| `assetType` | ✅ | — | UCL_Asset 子類短名（例 `UCL_ExampleAsset`）；大小寫敏感 |
+| `id` | ✅ | — | 要遷移的 Asset ID（例 `Default`）；填 `*` 表示遷移該類型全部 |
 | `module` | ❌ | `Core` | 來源 module id（多 module 專案才需指定） |
 | `force` | ❌ | `false` | `true` = 直接覆寫已存在的 Template；`false` = 已存在則 skip |
 
@@ -54,9 +54,9 @@ src = <projectRoot>/Assets/.BuiltinModules/ModulesRoot/Modules/<module>/UCL_Asse
 dst = <UCL_Core>/Templates~/Assets/.BuiltinModules/ModulesRoot/Modules/<module>/UCL_Assets/<assetType>/<id>.json
 ```
 
-例（id=`claude-da-xiaojie`、assetType=`UCL_ChatTavernIdentityAsset`、module=`Core`）：
-- src：`<project>/Assets/.BuiltinModules/ModulesRoot/Modules/Core/UCL_Assets/UCL_ChatTavernIdentityAsset/claude-da-xiaojie.json`
-- dst：`<UCL_Core>/Templates~/Assets/.BuiltinModules/ModulesRoot/Modules/Core/UCL_Assets/UCL_ChatTavernIdentityAsset/claude-da-xiaojie.json`
+例（id=`Default`、assetType=`UCL_ExampleAsset`、module=`Core`）：
+- src：`<project>/Assets/.BuiltinModules/ModulesRoot/Modules/Core/UCL_Assets/UCL_ExampleAsset/Default.json`
+- dst：`<UCL_Core>/Templates~/Assets/.BuiltinModules/ModulesRoot/Modules/Core/UCL_Assets/UCL_ExampleAsset/Default.json`
 
 `UCL_AssetPath.GetPath(BuiltinModules / TemplateModules)` 解析路徑。
 
@@ -81,12 +81,12 @@ dst = <UCL_Core>/Templates~/Assets/.BuiltinModules/ModulesRoot/Modules/<module>/
 ```bash
 # 單筆遷移
 senate ucmd run MigrateAssetToTemplate \
-    --arg assetType=UCL_ChatTavernIdentityAsset \
-    --arg id=claude-da-xiaojie
+    --arg assetType=UCL_ExampleAsset \
+    --arg id=Default
 
 # 全部遷移
 senate ucmd run MigrateAssetToTemplate \
-    --arg assetType=UCL_ChatTavernIdentityAsset \
+    --arg assetType=UCL_ExampleAsset \
     --arg id=*
 
 # 強制覆寫（已有 Template 也覆蓋）

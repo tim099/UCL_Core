@@ -52,8 +52,6 @@ namespace UCL.Core.LocalizeLib
                 "MissingRef.FixedFmt" => "✅ 已清空 {0} 筆。⛔ 尚未存檔（Ctrl+S）。",
                 "MissingRef.FixFailFmt" => "　⚠ 另有 {0} 筆未修復，逐筆理由見 Console。",
                 "MissingRef.RemovedFmt" => "✅ 已移除 {0} 個缺腳本 Component。⛔ 尚未存檔（Ctrl+S）。",
-                "ToolBox.LLMModelAdmin" => "本地 LLM 模型",
-                "ToolBox.LLMModelAdmin.Desc" => "管理本機大語言模型（ollama）：查環境狀態、從策展目錄挑模型安裝／解除安裝、跑一句驗收。預設收 Qwen 系列（6GB 顯存以下跑得動的那幾顆）。",
                 "ToolBox.DocSearch" => "文件搜尋",
                 "ToolBox.DocSearch.Desc" => "跨專案 200+ 篇 markdown 的即時模糊搜尋（含同義詞展開、當前語系優先）。",
                 "ToolBox.LocalizeEdit" => "多語系編輯",

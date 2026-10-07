@@ -77,7 +77,6 @@ namespace UCL.Core.EditorLib.Page
                 new ToolEntry("ToolBox.GitSubmoduleSync", () => UCL_GitSubmoduleSyncPage.Create())),
 
             new ToolGroup("Fold.Runtime", "ToolBox.Group.Runtime",
-                new ToolEntry("ToolBox.LLMModelAdmin", () => UCL_LLMModelAdminPage.Create()),
                 new ToolEntry("ToolBox.ProcessAdmin", () => UCL_ProcessAdminPage.Create())),
 
             new ToolGroup("Fold.Setup", "ToolBox.Group.Setup",

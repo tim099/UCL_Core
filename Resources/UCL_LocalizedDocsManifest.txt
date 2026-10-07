@@ -63,7 +63,6 @@ Docs~/zh-Hant/UCL_EditorPage/UCL_CommonEditorPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_DocSearchPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_GitFlattenSyncPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_GitSubmoduleSyncPage.md
-Docs~/zh-Hant/UCL_EditorPage/UCL_LLMModelAdminPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_MarkdownViewerPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_MissingReferencePage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_ModuleEditPage.md
@@ -87,13 +86,11 @@ Docs~/zh-Hant/Workflows/ClaudeCode_Update_Lock_Diagnose_Workflow.md
 Docs~/zh-Hant/Workflows/CompileError_Diagnose_Workflow.md
 Docs~/zh-Hant/Workflows/Create_Cmd_Workflow.md
 Docs~/zh-Hant/Workflows/Create_EditorPage_Workflow.md
-Docs~/zh-Hant/Workflows/Create_Persona_Workflow.md
 Docs~/zh-Hant/Workflows/Create_UCL_Asset_Workflow.md
 Docs~/zh-Hant/Workflows/Edit_Recompile_Loop_Workflow.md
 Docs~/zh-Hant/Workflows/Hardcoded_Localize.md
 Docs~/zh-Hant/Workflows/HelpURL_Workflow.md
 Docs~/zh-Hant/Workflows/Hook_Setup_Workflow.md
-Docs~/zh-Hant/Workflows/Secret_Manager_Workflow.md
 Docs~/zh-Hant/Workflows/Tavern_History_Workflow.md
 Docs~/zh-Hant/Workflows/UpdateDocs_Workflow.md
 Docs~/zh-Hant/Workflows/Validate_UCL_Asset_Workflow.md

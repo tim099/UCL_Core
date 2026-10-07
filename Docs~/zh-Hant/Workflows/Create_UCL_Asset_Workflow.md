@@ -201,7 +201,6 @@ senate ucmd run ValidateAssetFormat \
 | `UCL_ConfigAsset` | 最小骨架（單 m_Value 字串），DefaultID 慣例 |
 | `UCL_BundleAsset` | 加 `IDisposable` + 客製 Field UI (`UCLI_FieldOnGUI`) |
 | `UCL_CSVAsset` | 處理大資料 + 自訂 OnGUI |
-| `UCL_ChatTavernIdentityAsset` | 角色卡（rich persona） — m_-prefix 欄位、List<string> 集合 |
 
 ---
 

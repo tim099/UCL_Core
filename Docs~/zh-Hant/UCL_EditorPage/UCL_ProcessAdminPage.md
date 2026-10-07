@@ -50,7 +50,7 @@ UCL_ProcessRegistryService.Register(proc, "my_daemon", "說明這顆在做什麼
 UCL_ProcessRegistryService.Unregister(pid, "my_daemon");
 ```
 
-已接入：`UCL_GitFlattenSyncPage`、`UCL_GitSubmoduleSyncPage`、`UCL_LLMAdminRunner`、`UCL_GitCli`。
+已接入：`UCL_GitFlattenSyncPage`、`UCL_GitSubmoduleSyncPage`、`UCL_GitCli`。
 
 ## Python 端對偶 Service（process_registry.py）
 

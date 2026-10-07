@@ -333,7 +333,7 @@ def resolve_data_path(default_subpath: str, config_key: str = "") -> Path:
 # API — secrets_dir_name() / secrets_dir()
 # 區塊職責：secrets 資料夾**名稱**的唯一解析點（python 端）。
 # 物理意義：名字 2026-08-21 起由 `<data_root>/secrets_config.json` 決定
-#          （C# 對側 `UCL_SecretsPath`，同一個檔、同一個 key `SecretsDir`）。
+#          （SCP 側 `SCP_SecretStore`，同一個檔、同一個 key `SecretsDir`）。
 #          原本 `"_secrets"` 這個字面值散在 7 處 code、兩種語言 —— 改名等於七處同步，
 #          而漏一處的症狀是靜默的（Discord daemon 只會說「token 未就緒」，
 #          那句話跟「還沒安裝」長得一模一樣）。
@@ -344,7 +344,7 @@ def resolve_data_path(default_subpath: str, config_key: str = "") -> Path:
 # 數值影響：檔案缺席 ⇒ 回預設 `Secret`。壞檔／空值 ⇒ 回預設並印一行 warning（per-process 只印一次）。
 #   刻意**不做「找不到就退回 _secrets」的 fallback** —— 自排 fallback 是
 #   「跑起來了但讀的是另一個宇宙的檔」那族的入口，而它不會叫。
-# ⚠ 對側契約：C# 等價入口 = `UCL_SecretsPath.DirName` / `.AbsoluteDir`。兩端要一起改。
+# ⚠ 對側契約：C# 等價入口 = `SCP_SecretStore.ReadDirName`。兩端要一起改。
 # ─────────────────────────────────────────────────────────────────────────
 SECRETS_CONFIG_FILE = "secrets_config.json"
 SECRETS_DIR_DEFAULT = "Secret"

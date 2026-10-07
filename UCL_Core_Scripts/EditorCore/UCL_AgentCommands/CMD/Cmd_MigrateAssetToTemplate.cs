@@ -2,10 +2,10 @@
 // 物理意義：
 //   - source 端：當前專案 `<projectRoot>/Assets/.BuiltinModules/ModulesRoot/Modules/<module>/UCL_Assets/<TypeName>/<ID>.json`
 //   - target 端：UCL_Core 倉庫 `<UCL_Core>/Templates~/Assets/.BuiltinModules/ModulesRoot/Modules/<module>/UCL_Assets/<TypeName>/<ID>.json`
-//   - 使用情境：開發者在某專案內編輯了 Asset（例：UCL_ChatTavernIdentityAsset 的 claude-da-xiaojie），
+//   - 使用情境：開發者在某專案內編輯了 Asset（例：某個 UCL_Asset 子類的 Default），
 //             想把這份內容當預設範本回流到 UCL_Core 倉庫，後續其他專案 pull UCL_Core 後的 AutoTemplatePush
 //             機制就會把它推送過去。
-// 數值影響：File.Copy 寫 Templates~ 內 .json；不刪除任何檔；不自動 commit（依 ucl-commit skill 三層 bump 流程）
+// 數值影響：File.Copy 寫 Templates~ 內 .json；不刪除任何檔；不自動 commit（依 scp-commit skill 的提交流程）
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -23,7 +23,7 @@ namespace UCL.Core.EditorLib.AgentCommands
     /// Agent Command：把指定 UCL_Asset 子類的 .json 實例從當前專案 .BuiltinModules 遷移到 UCL_Core 的 Templates~。
     ///
     /// 參數：
-    /// - <c>assetType</c>（必填）：目標 UCL_Asset 子類短名（例 <c>UCL_ChatTavernIdentityAsset</c>）；大小寫敏感
+    /// - <c>assetType</c>（必填）：目標 UCL_Asset 子類短名（例 <c>UCL_ExampleAsset</c>）；大小寫敏感
     /// - <c>id</c>（必填）：要遷移的 Asset ID（例 <c>claude-da-xiaojie</c>）；填 <c>*</c> 表示遷移該類型全部
     /// - <c>module</c>（選填，預設 <c>Core</c>）：來源 module id；多 module 專案才需指定
     /// - <c>force</c>（選填，預設 <c>false</c>）：true = 直接覆寫已存在的 Template；false = 已存在則 skip
@@ -41,13 +41,13 @@ namespace UCL.Core.EditorLib.AgentCommands
             "Migrate a UCL_Asset .json (or all of one type) from project .BuiltinModules to Templates~ (becomes default template).";
 
         public override string ArgsSchema =>
-            "assetType=UCL_Asset 子類短名 (e.g., UCL_ChatTavernIdentityAsset, required) | " +
+            "assetType=UCL_Asset 子類短名 (e.g., UCL_ExampleAsset, required) | " +
             "id=Asset ID (e.g., claude-da-xiaojie; '*' = all of this type, required) | " +
             "module=Source module id (default: Core) | " +
             "force=true|false 已存在 Template 時是否覆寫 (default: false)";
 
         public override string ExampleArgs =>
-            "assetType=UCL_ChatTavernIdentityAsset;id=claude-da-xiaojie;module=Core";
+            "assetType=UCL_ExampleAsset;id=Default;module=Core";
 
         public override string HelpURL =>
             "ucl_core:Docs~/{lang}/API/UCL_AgentCommand/Cmd_MigrateAssetToTemplate.md";
@@ -145,7 +145,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 $"  copied={copied} / skipped={skipped} / missing={missing}\n" +
                 $"  src={srcDir}\n" +
                 $"  dst={dstDir}\n" +
-                $"  ⚠ 未自動 commit — 請依 ucl-commit skill 三層 bump 流程處理"
+                $"  ⚠ 未自動 commit — 請依 scp-commit skill 的提交流程處理"
             );
         }
 

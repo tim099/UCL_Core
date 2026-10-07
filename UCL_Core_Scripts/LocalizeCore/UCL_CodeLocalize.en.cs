@@ -52,8 +52,6 @@ namespace UCL.Core.LocalizeLib
                 "MissingRef.FixedFmt" => "✅ Cleared {0}. ⛔ Not saved yet (Ctrl+S).",
                 "MissingRef.FixFailFmt" => "　⚠ {0} could not be fixed; per-item reasons are in the Console.",
                 "MissingRef.RemovedFmt" => "✅ Removed {0} missing-script components. ⛔ Not saved yet (Ctrl+S).",
-                "ToolBox.LLMModelAdmin" => "Local LLM Models",
-                "ToolBox.LLMModelAdmin.Desc" => "Manage local large language models (ollama): check environment status, install/uninstall from a curated catalog, and run a smoke test. Ships with the Qwen family (the sizes that fit under 6GB VRAM).",
                 "ToolBox.DocSearch" => "Doc Search",
                 "ToolBox.DocSearch.Desc" => "Instant fuzzy search across 200+ markdown docs (synonym expansion, current locale first).",
                 "ToolBox.LocalizeEdit" => "Localize Edit",

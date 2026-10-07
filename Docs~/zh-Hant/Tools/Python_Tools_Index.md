@@ -22,7 +22,6 @@ Unity 編譯（`unity-recompile`／`unity-compile-status`）、派 Unity 指令�
 |---|---|---|
 | `Tools~/install_skills.py` | 把 `Skills~` 同步到宿主專案的 agent skill 目錄 | Unity `UCL_AgentSkillManagerPage`（改走 `senate cmd skill`：TASK-0423） |
 | `Tools~/git_flatten_sync.py` | Git 扁平同步 | Tim 手動 |
-| `llm_admin.py` | ollama 模型管理 | Unity `UCL_LLMModelAdminPage`（Senate 已有 `senate cmd llm`；Unity 頁改走它：TASK-0423） |
 | `process_registry.py` | Python 端 process 登記（與 C# `UCL_ProcessRegistryService` 同一份記錄） | 常駐 python 腳本；檢視走 `UCL_ProcessAdminPage` |
 | `tavern_history.py` | 酒館歷史書 Phase A（當日全文工作稿） | `Docs~/zh-Hant/Workflows/Tavern_History_Workflow.md` |
 | `dice.py` | 擲骰（結果可同步酒館） | TRPG 活動（目前 `enabled: false`） |
@@ -39,7 +38,7 @@ Unity 編譯（`unity-recompile`／`unity-compile-status`）、派 Unity 指令�
 ## 專案自己的 python（放主專案 `AgentCommands/Tools/`）
 
 依賴專案邏輯的工具不放 UCL_Core（例：`debuglog_query.py`、`screenshot.py`），跨專案時不會跟著走。
-動錢一律走 `senate cmd bank`／`voucher`；機密走 Editor 的 `UCL_SecretManagerPage` —— python 端都沒有通道。
+動錢一律走 `senate cmd bank`／`voucher`；機密走 Senate 的密鑰頁（`SCP_GuiSecretPage`） —— python 端都沒有通道。
 
 ## 🪟 Windows 找不到 Python
 

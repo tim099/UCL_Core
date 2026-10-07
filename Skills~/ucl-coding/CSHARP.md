@@ -108,7 +108,6 @@ Unity C# ⛔ 不讀帳本原檔、⛔ 不另建餘額快取 —— 帳本有關�
 > ⇒ **完整規則、API 對照與 round-trip 驗收協議在專章**，本 skill 不重抄：
 > `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md`
 >
-> 參考實作：`UCL_LLMAdminData`。
 ## 🖥 寫 Editor 頁 / 任何 IMGUI
 
 **不要直接堆 `GUILayout` 原生 API** —— UCL_Core 有一整層封裝，處理了 DPI 縮放、樣式一致性、

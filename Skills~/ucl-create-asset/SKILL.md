@@ -64,4 +64,3 @@ public class UCL_<Name>Asset : UCL_Asset<UCL_<Name>Asset>
 
 - `UCL_ConfigAsset` — 最小骨架（單欄）
 - `UCL_BundleAsset` — IDisposable + 客製 Field UI
-- `UCL_ChatTavernIdentityAsset` — rich data（List<string> 集合 + m_-prefix）

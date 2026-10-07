@@ -336,13 +336,13 @@ void LoadData()
 ### 6.2 ⚠ assembly 邊界：跨組件開頁要走反射
 
 > [!CAUTION]
-> **血證（2026-07-28）**：一個在 `UCL_Core` 組件裡的頁面想加一顆鈕開 `UCL_SecretManagerPage`
-> （在 `UCL_CoreEditor` 組件）。但 `UCL_CoreEditor.asmdef` **references `UCL_Core`** → 反向直接引用 = **循環依賴**，編不過。
+> 一個在 `UCL_Core` 組件裡的頁面想加一顆鈕開 `UCL_CoreEditor` 組件裡的頁面（例：`UCL_SomeEditorPage`）
+> 但 `UCL_CoreEditor.asmdef` **references `UCL_Core`** → 反向直接引用 = **循環依賴**，編不過。
 >
 > 解法：以型別全名反射開頁，找不到就 log warning + 按鈕 no-op（下游專案沒裝該模組也不會編不過）：
 >
 > ```csharp
-> static void OpenPageByReflection(string typeName)   // "UCL.Core.EditorLib.SecretManager.UCL_SecretManagerPage"
+> static void OpenPageByReflection(string typeName)   // "UCL.Core.EditorLib.UCL_SomeEditorPage"
 > {
 >     foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
 >     {

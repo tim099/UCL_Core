@@ -3,7 +3,7 @@
 //          · 有 persona 的發言 ⇒ `tavern-post`（計酬記在 persona 上）
 //          · 系統元件／後台頁打字（沒有 persona）⇒ `tavern-post-system`（點名 sender，不計酬）
 //          兩支都帶 `target_data_root=<本 Editor 的資料根>` ⇒ Senate 以資料根選專案，比不到就擋（⛔ 不會落進別的專案的酒館）。
-//          spawn 走既有的 `UCL_PersonaProfileSenateBridge.RunCmd`（⛔ 不另寫第二支 process 呼叫器）。
+//          spawn 走 `UCL_SenateCli.RunCmd`（⛔ 不另寫第二支 process 呼叫器）。
 // 數值影響：一次 process（＋酒館 Server round-trip），秒級 ⇒ ⚠ **一律在背景執行緒呼叫**（`PostAsync`／`PostSystemAsync`）。
 //          🩸 舊規矩「發文一定要在主執行緒」是配號還在 Editor 時的不變式（兩條 lane 同時 post 會撞號）；
 //            配號早已只在酒館 Server 一處（TASK-0341）⇒ 那條禁令不再成立，背景呼叫是安全的。
@@ -97,7 +97,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
 
         static Result Run(string iCmd, Dictionary<string, string> iArgs)
         {
-            var (aExit, aOut) = UCL_PersonaProfileSenateBridge.RunCmd(iCmd, iArgs, OUTER_TIMEOUT_SEC, iSendTargetDataRoot: true);
+            var (aExit, aOut) = UCL_SenateCli.RunCmd(iCmd, iArgs, OUTER_TIMEOUT_SEC, iSendTargetDataRoot: true);
             var r = new Result { ExitCode = aExit, Output = aOut ?? "" };
             Match m = s_Seq.Match(r.Output);
             if (m.Success) int.TryParse(m.Groups[1].Value, out r.Seq);

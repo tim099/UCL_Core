@@ -19,7 +19,7 @@ last_updated: 2026-08-17
 |---|---|
 | [`UCL_DocSearchPage`](UCL_DocSearchPage.md) | 搜尋結果的「📄 預覽」按鈕 |
 | **任何頁的「?」說明按鈕** | 2026-08-17 起，HelpURL 指向存在的本地 `.md` 時改開這頁 |
-| `UCL_PersonaInspectorPage` 等 | 要顯示某份 md 內容時 |
+| `UCL_ChatTavernPage`／`UCL_AgentSkillManagerPage` 等 | 要顯示某份 md 內容時 |
 
 ## TopBar 三顆按鈕
 

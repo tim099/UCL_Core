@@ -159,21 +159,6 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             }
         }
 
-        // ===========================================================
-        // 區塊職責：persona pool id 集合（AwakenInit/personas/*.json 檔名 = persona id）
-        // 物理意義：mention→inbox 白名單 union 的 persona 來源。Tim 2026-07-24 persona-first 拍板 —
-        //          persona 是通知主 key，與 identities.json（agent 層）union 後，@persona 精準命中
-        //          inbox/persona.md、@agent 命中 inbox/agent.md（共用信箱），由 AppendInbox(targetId) 天然分流。
-        // 數值影響：只回檔名集合（不 parse 內容），供白名單 Contains 判定；dir mtime cache 避免每筆 post 重列目錄。
-        // SOT 對齊：走 UCL_PersonaProfile.PoolNames 唯一讀取入口，不新增漂移路徑。
-        // ===========================================================
-        /// <summary>
-        /// 回傳 persona pool 的 id 集合 —— 走 UCL_PersonaProfile.PoolNames 唯一讀取入口
-        /// （Phase 0 接縫；dir-mtime 快取已下沉到接縫，本檔不再自持一份）。
-        /// 讀取失敗接縫回空集合 ⇒ 白名單降級為只用 identities。
-        /// </summary>
-        public static HashSet<string> LoadPersonaIds() => UCL_PersonaProfile.PoolNames();
-
         /// <summary>取得（或建立）身分。若 id 不存在，依 displayName + kind 建一筆並寫回。</summary>
         public static UCL_ChatIdentity GetOrCreateIdentity(string id, string displayName, string kind)
         {

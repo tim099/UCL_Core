@@ -78,7 +78,7 @@ steps_need_persona: move     # 選填 — 這些 step 由 op=step 自動補身�
 | kind | 骰面行為 | 目前用在 |
 |---|---|---|
 | `Default` | 無特殊邏輯（缺欄位即此值） | 其餘全部 |
-| `StreamWatch` | **沒開播 → 整項隱藏**；開播 → 進優先層＋附本場節目名 | `stream-watch` |
+| `StreamWatch` | **沒開播 → 整項隱藏**；開播 → 進優先層＋附本場節目名 | （無 —— 觀影在 Senate 重做：TASK-0450） |
 | `Chess` | 有未完成棋局**且對手也在自由時間** → 進優先層（不隱藏） | `chess` |
 
 ### 兩軸是兩件事，別混為一談

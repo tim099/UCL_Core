@@ -58,8 +58,6 @@ namespace UCL.Core.LocalizeLib
                 "ToolBox.DocSearch.Desc" => "Instant fuzzy search across 200+ markdown docs (synonym expansion, current locale first).",
                 "ToolBox.LocalizeEdit" => "Localize Edit",
                 "ToolBox.LocalizeEdit.Desc" => "Edit the multi-language string tables in UCL_LocalizeAsset.",
-                "ToolBox.ScreenStream" => "Screen Stream",
-                "ToolBox.ScreenStream.Desc" => "Console for the screen recording / STT / OCR daemon (watch-along streams, media transcription).",
                 "ToolBox.ProcessAdmin" => "Process Admin",
                 "ToolBox.ProcessAdmin.Desc" => "Inspect and manage external processes spawned from C# (identity verified by PID + name + start time — prevents wrong kills and zombie pile-ups).",
                 "ToolBox.PackageInstall" => "Package Install",

@@ -43,7 +43,7 @@ ALIVE, DEAD, PID_REUSED, UNKNOWN = "alive", "dead", "pid_reused", "unknown"
 # 路徑 — repo root 解析 (repo-walk, 對齊其他 Tools~ 腳本慣例)
 # ===========================================================
 def _repo_root() -> Path:
-    """從本檔往上走找 .git (跳過 submodule gitlink 檔) — 對齊 screenstream_daemon 的 data root 慣例。"""
+    """從本檔往上走找 .git (跳過 submodule gitlink 檔)。"""
     p = Path(__file__).resolve().parent
     last_dir_git = None
     while p != p.parent:

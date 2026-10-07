@@ -9,7 +9,6 @@ location: UCL_Core (cross-project)
 related:
   - senate cmd doc --arg op=show --arg name=Book | 寫書與書店（Senate） | **寫書通用 SOP** — 章節結構、review、publish、以及「編纂類書籍」的通用規則都在那裡，本檔只寫酒館歷史書專屬的部分
   - ucl_core:Tools~/AgentCommands/tavern_history.py | tavern_history.py | 本 workflow 的 Phase A 工具
-  - ucl_core:Docs~/zh-Hant/Workflows/StreamWatch_Cmd_Flow.md | `senate cmd watch --arg op=export` | 姊妹工具：觀影實錄匯出（**照收不編纂**，本檔的對照組）
 ---
 
 # Tavern History Workflow — 酒館歷史書 SOP
@@ -20,7 +19,7 @@ related:
 ## 🎯 為什麼存在
 
 系統裡本來就有一支「把一段酒館 seq 原文照收寫成書的一章」的工具：
-觀影實錄匯出（`senate cmd watch --arg op=export`；`/ucl-stream-watch` 收工自動跑，
+觀影實錄匯出（`senate cmd watch --arg op=export`，
 產物長相見 `Books/watch-apocalypse-hotel/`）。
 
 那支的職責是**實錄**：一場觀影，照收就是全部的價值。

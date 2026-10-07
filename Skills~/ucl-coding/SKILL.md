@@ -217,7 +217,7 @@ senate ucmd run <CmdType> --persona <me> --arg k=v
 
 | persona 的語意 | 例 | 判準 |
 |---|---|---|
-| **＝呼叫者自己**（恆等） | `StreamWatch` 各 step、`FreeTime`、`Tavern op=catchup/query` | 可省 —— 寫兩次只是噪音 |
+| **＝呼叫者自己**（恆等） | `FreeTime`、`Tavern op=catchup/query` | 可省 —— 寫兩次只是噪音 |
 | **＝指定對象**（可能不是我） | `Library`（讀者可能是別人，補課會讀同事的心得） | **不可省** —— 省掉會靜默變成「我自己」 |
 | **猜錯代價很大** | `GoodMorning`（登入成別人）、`GoodNight`（**把同事登出**） | **刻意保留顯式** —— `ucl-morning` 的鐵律就是「persona 一律顯式，沒拿到名字就停下來問」 |
 

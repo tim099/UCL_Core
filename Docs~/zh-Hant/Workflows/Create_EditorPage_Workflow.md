@@ -125,7 +125,6 @@ protected override void ContentOnGUI()
 | `BackButtonClicked()` | `p_Controller.Pop()` | 返回前要存檔 / 彈確認 |
 | `CloseButtonClicked()` | `p_Controller.PopAll()` | 同上 |
 | `Init(controller)` | base + 紀錄 `m_TypeName` | 一次性初始化、訂閱事件 |
-| `SensitiveContentReason` | `null` | 頁面含 token / 密碼 → 錄影時黑屏。**只宣告不夠** — 還要在 `ContentOnGUI()` 開頭呼 `UCL_ScreenStreamGuard.GuardPage(nameof(本類), SensitiveContentReason)` 才真的擋（見 `UCL_LoginStatusPage`）|
 
 ### 3.1 TopBarButtons 範例
 
@@ -299,7 +298,7 @@ void LoadData()
 
 - **不要每幀讀檔**（`File.ReadAllText` 在 OnGUI 內 = 每幀數十次 IO）
 - 需要週期刷新的（daemon 狀態、log tail）用 `EditorApplication.timeSinceStartup` 節流，2 秒一次夠用
-- 外部工具會併發改同一份檔時，考慮 **mtime 感知 reload + 欄位級 3-way merge**（見 `UCL_ScreenStreamPage.MergeField`）—— 否則會拿舊快取蓋掉外部剛寫的值
+- 外部工具會併發改同一份檔時，考慮 **mtime 感知 reload + 欄位級 3-way merge** —— 否則會拿舊快取蓋掉外部剛寫的值
 
 ### 5.3 draft 欄位與「套用」
 
@@ -501,8 +500,6 @@ GUIStyle HeadingStyle => m_HeadingStyle ??= new GUIStyle(UCL_GUIStyle.LabelStyle
 | 頁面 | 看點 |
 |---|---|
 | `UCL_ControlPanelPage` | **本文 §4 折疊 + 關鍵操作提到外層的標準示範**；section 化、按鈕靠左單排 |
-| `UCL_ScreenStreamPage` | mtime 感知 reload + 欄位級 3-way merge（防外部併發改寫被蓋）+ 底圖疊比例框的視覺化預覽 |
-| `UCL_MediaAdminPage` | 薄 UI + 重活全委派外部 CLI（async spawn 不凍結 Editor）+ 「套用後回讀驗證」 |
 | `UCL_DocSearchPage` | 搜尋輸入列 Enter 觸發 + 折疊進階選項 + 結果列動作按鈕 |
 | `UCL_MarkdownViewerPage` | 外部 `Create(args)` 載入 + `EnsureStyles()` 集中建樣式 + TopBarButtons 客製 |
 | `UCL_WelcomePage` | 卡片 grid 排版 + 多入口集中地 |

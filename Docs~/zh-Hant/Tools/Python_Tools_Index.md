@@ -23,8 +23,8 @@ Unity 編譯（`unity-recompile`／`unity-compile-status`）、派 Unity 指令�
 | `Tools~/install_skills.py` | 把 `Skills~` 同步到宿主專案的 agent skill 目錄 | Unity `UCL_AgentSkillManagerPage`（改走 `senate cmd skill`：TASK-0423） |
 | `Tools~/git_flatten_sync.py` | Git 扁平同步 | Tim 手動 |
 | `llm_admin.py` | ollama 模型管理 | Unity `UCL_LLMModelAdminPage`（Senate 已有 `senate cmd llm`；Unity 頁改走它：TASK-0423） |
-| `media_admin.py` | 影音套件與權重 | Unity `UCL_MediaAdminPage`（遷 Senate：TASK-0392） |
-| `audio_transcribe.py`／`subtitle_ocr.py`／`screenstream_daemon.py`／`screenstream_montage.py`／`screenstream_audio_viz.py`／`process_registry.py`／`tavern_history.py`／`bili_meta.py` | 觀影（語音轉字幕、OCR、串流、剪輯） | Unity 觀影頁 —— 觀影整個重做，不移植 |
+| `process_registry.py` | Python 端 process 登記（與 C# `UCL_ProcessRegistryService` 同一份記錄） | 常駐 python 腳本；檢視走 `UCL_ProcessAdminPage` |
+| `tavern_history.py` | 酒館歷史書 Phase A（當日全文工作稿） | `Docs~/zh-Hant/Workflows/Tavern_History_Workflow.md` |
 | `dice.py` | 擲骰（結果可同步酒館） | TRPG 活動（目前 `enabled: false`） |
 | `mbti.py` | MBTI 測評 | `Docs~/zh-Hant/Tools/MBTI_Tool_Guide.md` |
 | `senate_post.py` | python 工具發酒館的唯一出口（呼叫 `senate cmd tavern-post`） | `dice.py`／`mbti.py` |

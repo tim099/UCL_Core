@@ -51,11 +51,6 @@ namespace UCL.Core.EditorLib.Page
         /// </summary>
         virtual protected bool ShowBackButton => (!ShowCloseButton || p_Controller.Pages.Count > 1);
         /// <summary>
-        /// 標示此頁面是否包含敏感資訊 用來判斷是否要關閉直播輸出
-        /// (例如 直播輸出黑畫面 可以的話標記因為包含敏感資訊)
-        /// </summary>
-        virtual public string SensitiveContentReason => null;
-        /// <summary>
         /// [物理意義] 快取當前頁面的 HelpURL 字串，避免重複反射讀取。
         /// </summary>
         protected string m_PageHelpURL = null;

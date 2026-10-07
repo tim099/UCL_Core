@@ -25,7 +25,6 @@ namespace UCL.Core.EditorLib.SecretManager
     {
         public override string WindowName => "Secret Manager";
         public override bool ShowInPageMenu => true;
-        public override string SensitiveContentReason => "Contains secret install information (passphrase / plaintext path)";
 
         public static UCL_SecretManagerPage Create() => UCL_EditorPage.Create<UCL_SecretManagerPage>();
 
@@ -118,12 +117,6 @@ namespace UCL.Core.EditorLib.SecretManager
 
         protected override void ContentOnGUI()
         {
-            // 敏感內容守門 (對齊 LoginStatusPage)
-            if (UCL_ScreenStreamGuard.GuardPage(nameof(UCL_SecretManagerPage), SensitiveContentReason))
-            {
-                return;
-            }
-
             DrawHeader();
             GUILayout.Space(8);
             DrawTable();

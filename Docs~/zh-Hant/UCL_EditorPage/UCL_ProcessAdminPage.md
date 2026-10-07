@@ -50,7 +50,7 @@ UCL_ProcessRegistryService.Register(proc, "my_daemon", "說明這顆在做什麼
 UCL_ProcessRegistryService.Unregister(pid, "my_daemon");
 ```
 
-已接入：`UCL_ScreenStreamDaemon`（tag=`screenstream_daemon`）。其他 spawn 點（Tavern / KnowledgeBase / MediaAdmin runner…）可逐步接入。
+已接入：`UCL_GitFlattenSyncPage`、`UCL_GitSubmoduleSyncPage`、`UCL_LLMAdminRunner`、`UCL_GitCli`。
 
 ## Python 端對偶 Service（process_registry.py）
 
@@ -71,11 +71,6 @@ CLI：`python process_registry.py list | cleanup | kill-tag <tag>`
 - start_time 容差同為 2.0s；`kill_all_by_tag` 絕不殺 `os.getpid()` 自己（雙保險）
 - 依賴 `psutil`（缺時全部 fail-soft 成 `unknown`，保守不動手）
 
-已接入：`screenstream_daemon.py` 啟動時自我註冊（`skip_if_exists=True` — C# 已代註冊時保留 C# 出處；CLI 手動啟動時補能見度）。
-
-### STT / OCR 歸屬說明
-
-STT（`SttCacheWorker`）與 OCR（`OcrWorkerPool`）是 **screenstream_daemon process 內的 threads，不是獨立 process** — 沒有自己的 PID，隨 daemon 記錄一併受管；其停滯防治歸 daemon 內的 T-STT-Watchdog。
 
 ## 頁面操作
 
@@ -87,4 +82,3 @@ STT（`SttCacheWorker`）與 OCR（`OcrWorkerPool`）是 **screenstream_daemon p
 ## 關聯
 
 - Service 本體：`UCL_Core_Scripts/EditorCore/UCL_ProcessRegistry/UCL_ProcessRegistryService.cs`
-- [UCL_ScreenStreamPage（螢幕直播錄影）](UCL_ScreenStreamPage.md) — 第一個接入的 daemon spawn 端

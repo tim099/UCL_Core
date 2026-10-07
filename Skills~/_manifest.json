@@ -113,10 +113,6 @@
       "optional": false
     },
     {
-      "name": "ucl-stream-watch",
-      "summary": "直播連續觀看模式 — montage 縮圖牆陪看 + OCR/STT + 同樂會 companion（2026-07-26 自 EOV valor-stream-watch 遷入）"
-    },
-    {
       "name": "ucl-update-docs",
       "summary": "改 .cs/.py 後同步對應 .md 文件 — last_updated / API 章節 / cross-link",
       "optional": false

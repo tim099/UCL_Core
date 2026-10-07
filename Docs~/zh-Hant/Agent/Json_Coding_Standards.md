@@ -44,8 +44,8 @@ python 端讀同一批檔的規則見 [`Python_Coding_Standards.md`](Python_Codi
 - **不要**在業務流程裡裸用 `JsonData` 的字串索引逐鍵讀寫已知欄位。
 - 同一個結構**只准有一個 class**。兩處各定義一份 ＝ 兩份真相，而兩邊都不會報錯。
 - class 放哪：**只有一個 Cmd 用 ⇒ 放那個 Cmd 檔內**（Tim 2026-08-21 拍板）；
-  跨 Cmd／跨 Page 共用 ⇒ 獨立檔案，放在**資料的主人**旁邊（例：`_screenstream/_config.json`
-  的 model 放 `MediaAdmin/`，因為 daemon 是它的另一個讀寫端）。
+  跨 Cmd／跨 Page 共用 ⇒ 獨立檔案，放在**資料的主人**旁邊（例：一份 config 由 daemon 與 Page
+  共同讀寫 ⇒ model 放 daemon 那一族的目錄，因為 daemon 是它的另一個讀寫端）。
 
 ```csharp
 // ✅ 已知欄位走 typed model —— 打錯欄位名是編譯錯

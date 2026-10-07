@@ -81,7 +81,7 @@
 domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會跟著死** ——
 每次重編再生一顆，舊的變孤兒，累積起來就是**屍潮**（重複開 process 直到電腦卡死）。
 `KillAllByTag` → `Start` → `Register` → 結束時 `Unregister`。
-參考實作 `UCL_ScreenStreamDaemon`。細節見 Coding_Standards.md「外部 Process」。
+參考實作 `UCL_GitFlattenSyncPage`。細節見 Coding_Standards.md「外部 Process」。
 
 **② 持久化資料一律繼承 `UCL_Asset<T>`**，禁止裸 `ScriptableObject` 或自寫存檔（見 `ucl-create-asset`）。
 
@@ -120,8 +120,7 @@ domain reload 會清掉 C# 的 `Process` 物件，但 OS 層的 process **不會
 > ⇒ **完整規則、API 對照與 round-trip 驗收協議在專章**，本 skill 不重抄：
 > `ucl_core:Docs~/{lang}/Agent/Json_Coding_Standards.md`
 >
-> 參考實作：`UCL_ScreenStreamConfig`（跨語言 config ＋ 未知鍵保留）／
-> `UCL_StreamWatchSession` 等五個 model（class 放 Cmd 檔內）／`UCL_SessionBase` / `UCL_FreeTimeSession`。
+> 參考實作：`UCL_CanvasVoucherBatch`／`UCL_LLMAdminData`。
 ## 🖥 寫 Editor 頁 / 任何 IMGUI
 
 **不要直接堆 `GUILayout` 原生 API** —— UCL_Core 有一整層封裝，處理了 DPI 縮放、樣式一致性、

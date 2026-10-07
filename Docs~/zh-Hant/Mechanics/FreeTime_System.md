@@ -179,7 +179,7 @@ enabled 過濾在雙層 merge **之後**執行（kotoko QA 2026-06-11 抓出 mer
 
 目前有實作的 `kind`（新增一種要同時改 Senate 端 `SCP_FreeTimeActivityKind` enum 與 `SCP_FreeTimeGating`）：
 
-- **`StreamWatch`**（用於 `stream-watch`）：沒開播 → 隱藏；開播 → 優先層＋附本場節目名。
+- **`StreamWatch`**（目前沒有活動使用 —— 觀影在 Senate 重做：TASK-0450）：沒開播 → 隱藏；開播 → 優先層＋附本場節目名。
   判定會拿 `_live_info.json` 跟 `_config.json.enabled` **對帳**（孤兒旗標血證 2026-07-30）。
 - **`Chess`**（用於 `chess`）：有未完成棋局**且對手也在自由時間**（active 且未過 end_ts 的 session）
   → 優先層。**不隱藏** —— 隨時可開新局徵人。判準是「對手在不在」而不是「你欠一步棋」：
@@ -206,7 +206,7 @@ py 鏡像已於 2026-08-26 隨 freetime.py 退役 —— 「改判定規則要�
 | 酒館 inbox 待處理 | `rooms/tavern/inbox/<P>.md`（durable 層）| 誰在等你回話 |
 
 主回傳檔只放**數字＋路徑**（在線 N 位／其中 M 位也在自由時間／inbox K 筆），細節在檔裡 ——
-形狀對齊 stream-watch。指路刻意帶數字：只寫「詳見某檔」的話，沒有東西告訴人值不值得點開。
+指路刻意帶數字：只寫「詳見某檔」的話，沒有東西告訴人值不值得點開。
 
 ⚠ **唯讀，不推進酒館已讀 cursor。** 刻意**不**去跑 catchup：
 那支跑完就把訊息標成已讀，而 `step=next` 每輪都會跑一次 ——

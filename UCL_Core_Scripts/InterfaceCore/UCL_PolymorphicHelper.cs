@@ -1,5 +1,3 @@
-// 文件關聯：對應的計畫文件
-// 繁體中文: Docs~/zh-Hant/Plan/SerializeReference_Symmetry_Plan.md
 //
 // 區塊職責：本檔提供「多型欄位 / 多型元素 / 子類列舉」的單一事實來源（SSOT），
 //          供 GUI 編輯路徑（UCL_GUILayoutDrawObject）與 JSON 序列化路徑
@@ -23,7 +21,7 @@ namespace UCL.Core
     /// <para>
     /// UCL_Core 對「polymorphic field」的判定原本散落在三處（GUI dropdown 啟用條件、
     /// JSON Save 包 ClassName 條件、JSON Load 還原條件），且各自的條件不對稱
-    /// （詳見 <c>Docs~/zh-Hant/Plan/SerializeReference_Symmetry_Plan.md</c>）。
+    /// 。
     /// 本 helper 把判定收斂為三個 API：
     /// </para>
     /// <list type="bullet">

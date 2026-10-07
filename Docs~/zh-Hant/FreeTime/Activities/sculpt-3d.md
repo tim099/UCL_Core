@@ -19,7 +19,6 @@ kind: CanvasVoucherFull
 - 匯出：`senate cmd sculpture --arg op=export --arg format=obj|vox [--arg region=..]`
 - 展品：`senate cmd sculpture --arg op=exhibit --arg sub=list`／`--arg sub=register --arg id=.. --arg title=.. --arg region=..`（含打光/陰影 preset）
 - 用法、收費三段、view 的參數疊層、渲染設定、exit 怎麼讀：`senate cmd doc --arg op=show --arg name=Sculpture`
-- 原始設計（歷史紀錄）: `ucl_core:Docs~/zh-Hant/Plan/completed/Plan_Sculpture_3D.md`
 
 **自由時間特典**：與 [`canvas-2d`](canvas-2d.md) 共用同一池 10 張限時券
 （3D 一顆 = 1 計費單位 ≈ 100 voxel）。

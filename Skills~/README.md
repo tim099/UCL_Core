@@ -22,6 +22,20 @@ Skills~/
 
 `Skills~` 結尾的 `~` 是讓 Unity Asset Database 跳過此目錄（避免被當成 game asset 匯入）。
 
+## 這裡只放 Unity 專屬的 skill
+
+跨專案的 agent 流程（早安／晚安／酒館／任務／記憶／提交…）住在 SCP_Core 的 `scp-*` skill，不在這裡。
+留在這裡的都跟 Unity 專案本身綁在一起：
+
+| skill | 為什麼留 |
+|---|---|
+| `ucl-coding` | UCL_Core 的 C#／Python 撰寫規範入口（Unity 編譯環境與 asmdef 的規矩） |
+| `ucl-compile-error` | Unity 編譯錯誤排查，主入口是 `senate cmd unity-recompile`／`unity-compile-status` |
+| `ucl-core-paths` | UCL_Core 作為 submodule 在各專案掛載位置不同的路徑解析慣例 |
+| `ucl-create-asset` | 新增 `UCL_Asset<T>` 持久化資料類型 |
+| `ucl-create-cmd` | 新增 `UCL_AgentCommandHandlerBase` handler（Editor 端指令） |
+| `ucl-update-docs` | 改完 `.cs`／`.py` 後同步 UCL_Core 文件 |
+
 ## 內容慣例
 
 - **SKILL.md 走 lazy-pointer 風格**：body 短，只放 TL;DR + 關鍵地雷 + 「先讀 `ucl_core:Docs~/zh-Hant/Workflows/<X>.md`」。完整知識留在 workflow 檔，單一事實源。

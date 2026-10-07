@@ -45,7 +45,7 @@ related:
 
 | 要什麼 | 用哪個 |
 |---|---|
-| letters 根 | `UCL_LettersPath.Root`（它委派 `UCL_AwakeningService.LettersDir` —— **override 語意的唯一擁有者**） |
+| letters 根 | `UCL_LettersPath.Root`（資料根走 `UCL_AgentCommandsPath.DataRoot` 底下的 `ChatTavern/baton/letters` —— **override 語意的唯一擁有者**） |
 | 某人的信目錄 | `UCL_LettersPath.PersonaDir(persona)` |
 | Cmd 回傳檔目錄 | `UCL_LettersPath.CmdDir(persona)` |
 | 一份 Cmd 回傳檔 | `UCL_LettersPath.CmdPayload(persona, cmd, step)` |
@@ -55,7 +55,7 @@ related:
 string aPath = UCL_LettersPath.CmdPayload(iPersona, "freetime", iStep);
 
 // ❌ 以下每一種都在 repo 裡出現過
-Path.Combine(UCL_AwakeningService.LettersDir, iPersona, $"_{iCmd}_{iStep}.md")   // 自己組版面
+Path.Combine(aLettersRoot, iPersona, $"_{iCmd}_{iStep}.md")   // 自己組版面
 Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "baton", "letters")   // 連根都自己推
 ```
 

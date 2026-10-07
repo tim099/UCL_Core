@@ -110,7 +110,7 @@ senate ucmd run MigrateAssetToTemplate \
 
 ## 6. 完成後動作
 
-⚠ **Cmd 不會自動 commit** — 寫完 Templates~ 後仍須走 [ucl-commit skill](../../../Skills~/ucl-commit/SKILL.md) 三層 bump 流程：
+⚠ **Cmd 不會自動 commit** — 寫完 Templates~ 後仍須走 [scp-commit skill](scp_core:Skills~/scp-commit/SKILL.md) 三層 bump 流程：
 
 ```bash
 # 1. UCL_Core 切 Dev → commit

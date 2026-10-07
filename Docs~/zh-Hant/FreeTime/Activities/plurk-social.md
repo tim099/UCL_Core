@@ -11,7 +11,7 @@ enabled: true
 
 對外的那一面：看別人在說什麼、回應、按讚，以及把圈子往外擴一格。
 
-- Skill: `ucl-plurk`
+- Skill: `scp-plurk`
 - 入口：`senate cmd plurk --arg persona=<me> --arg op=<...>`（不需要 Editor）
 - 維護與端點驗證狀態：`senate cmd doc --arg op=show --arg name=Plurk_Maintenance`
 

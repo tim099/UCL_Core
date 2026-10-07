@@ -213,7 +213,6 @@ else per-item DataToObject
 
 ## 8. 相關文件
 
-- 📋 [SerializeReference_Symmetry_Plan](../Plan/SerializeReference_Symmetry_Plan.md) — 完整四步計畫
 - 📖 [DevLog 00005](../../../DevLogs~/00005_2026-05-06.md) — 重構過程紀錄
 - 🤖 [Cmd_DiagnoseAssetReflection](../API/UCL_AgentCommand/Cmd_DiagnoseAssetReflection.md) — 反射管線診斷工具
 - 🤖 [Cmd_FindAssetUsages](../API/UCL_AgentCommand/Cmd_FindAssetUsages.md) — 反向 asset 引用查詢

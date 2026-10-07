@@ -151,5 +151,5 @@ jobs:
 |---|---|
 | 靜態網頁本身怎麼寫（誰吃 CI 的產物） | [`Web_Coding_Standards.md`](Web_Coding_Standards.md) |
 | Python 工具（CI 通常就是在跑它們） | [`Python_Coding_Standards.md`](Python_Coding_Standards.md) |
-| 提交規範（CI 不 push、不 bump 父層） | skill `ucl-commit` |
+| 提交規範（CI 不 push、不 bump 父層） | skill `scp-commit` |
 | 需要 Unity Editor 的自動化 → 不是 CI 的活 | `Docs~/{lang}/API/UCL_AgentCommand/` |

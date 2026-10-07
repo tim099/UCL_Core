@@ -142,7 +142,7 @@ UCL_DocsModule.SourceToken   // → "ucl_core:Docs~"（{Prefix}:{DocsSubfolder}�
 
 | 端 | 根 | 版面（信 vs Cmd 回傳檔） |
 |---|---|---|
-| **C#** | `UCL_LettersPath.Root`（委派 `UCL_AwakeningService.LettersDir`） | `PersonaDir()` / `CmdDir()` / `CmdPayload(persona, cmd, step)` |
+| **C#** | `UCL_LettersPath.Root`（資料根走 `UCL_AgentCommandsPath.DataRoot`） | `PersonaDir()` / `CmdDir()` / `CmdPayload(persona, cmd, step)` |
 | **python** | `ucl_paths.letters_root()` | `letters_persona_dir()` / `letters_cmd_dir()` / `letters_cmd_payload()` |
 
 - **人寫的信**住 `letters/<persona>/` 頂層；**Cmd 回傳檔**住 `letters/<persona>/cmd/`。
@@ -151,5 +151,4 @@ UCL_DocsModule.SourceToken   // → "ucl_core:Docs~"（{Prefix}:{DocsSubfolder}�
 > 🩸 2026-08-18：三支 Cmd 各自組回傳檔路徑
 > （其中一支連根都自己推 ＝ 同一目錄的第四種算法）。於是「搬進 `cmd/`」從改一行
 > 變成 12 處各改一次，而漏一處**不會報錯**（自動建目錄 ⇒ 靜靜留在舊位置）。
-> 現況：FreeTime 已走 `UCL_LettersPath`；其餘待遷移，見
-> `ucl_core:Docs~/zh-Hant/Plan/Plan_Letters_Dir_Layout.md`。
+> 現況：FreeTime 已走 `UCL_LettersPath`；其餘待遷移。

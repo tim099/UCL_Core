@@ -38,8 +38,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         //          **不覆寫是完全合法的選擇**，不是遺漏 —— 意思是「我沒有要 client 幫忙擋參數」。
         /// <summary>
         /// 機器可讀的 Args 規格（給 <c>Cmd_ExportCmdSchema</c> 反射匯出）。預設 null = 不提供。
-        /// 詳見 <see cref="UCL_CmdArgsSpec"/> 與
-        /// <c>Docs~/zh-Hant/Plan/Plan_AgentCmd_Schema_Reflection_Export.md</c>。
+        /// 詳見 <see cref="UCL_CmdArgsSpec"/>。
         /// </summary>
         public virtual UCL_CmdArgsSpec ArgsSpec => null;
 

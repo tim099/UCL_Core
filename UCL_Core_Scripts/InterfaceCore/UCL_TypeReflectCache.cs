@@ -2,8 +2,6 @@
 // RCG_AutoHeader
 // to change the auto header please go to RCG_AutoHeader.cs
 // Create time : 05/06 2026
-// 文件關聯：對應的計畫文件
-// 繁體中文: Docs~/zh-Hant/Plan/SerializeReference_Symmetry_Plan.md
 //
 // 區塊職責：本檔提供「型別反射 metadata 的單一事實來源（SSOT）」，由 GUI 編輯路徑
 //          （UCL_GUILayoutDrawObject）與 JSON 序列化路徑（UCL_JsonLib SaveFieldsToJson /

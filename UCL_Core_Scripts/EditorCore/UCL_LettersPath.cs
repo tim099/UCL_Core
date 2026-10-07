@@ -32,7 +32,6 @@ namespace UCL.Core.EditorLib
         //          抓到了 `_freetime_next.md`，因為機器產物每跑一次 Cmd 就更新，
         //          所以「最新的 .md」幾乎永遠是機器的。
         // ⇒ 分目錄之後，「是不是信」不再需要靠檔名前綴猜 —— 它是**位置**的問題。
-        //   （設計沿革與完整範圍見 `Docs~/{lang}/Plan/Plan_Letters_Dir_Layout.md`）
         // ===========================================================
         public const string CmdDirName = "cmd";
 

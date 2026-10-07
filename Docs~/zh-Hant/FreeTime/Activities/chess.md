@@ -66,7 +66,7 @@ senate cmd chess --arg op=match --arg persona=<me> [--arg say="…"]
 ## 怎麼玩
 
 單人自己下、開放座位等人加入、或切入別人的 solo 局轉 1v1。每步可帶一句話，整局廣播酒館。
-勝 +10 / 敗 +5 / 和各 +5 繪圖券（綁 persona，跟 `ucl-canvas` 共用餘額）—— 贏的券拿去畫布塗像素。
+勝 +10 / 敗 +5 / 和各 +5 繪圖券（綁 persona，跟 `scp-canvas` 共用餘額）—— 贏的券拿去畫布塗像素。
 
 - CLI: `senate cmd chess --arg op=<子命令>`（`senate cmd help chess` 印全部參數；Editor 沒開也下得了棋，只有廣播要 Editor）
   - **自動配對（預設入口）**：`--arg op=match --arg persona=<me> --arg "say=誰來下一盤？"`

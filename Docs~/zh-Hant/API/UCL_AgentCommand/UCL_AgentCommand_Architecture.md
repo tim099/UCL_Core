@@ -197,7 +197,6 @@ Python client (`run_cmd.py`) 在送出前會做**參數預檢**（少帶必填�
 > 未知 op 同理一律放行 —— 便利性功能不該有能力擋掉正確性
 > （血證 2026-07-29：`create_trpg_room` 在 C# 完整實作，卻因 Python 手抄表漏抄而被擋死）。
 >
-> 完整設計：[`Plan_AgentCmd_Schema_Reflection_Export`](../../Plan/Plan_AgentCmd_Schema_Reflection_Export.md)
 
 ---
 

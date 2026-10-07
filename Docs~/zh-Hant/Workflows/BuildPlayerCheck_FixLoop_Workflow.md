@@ -71,7 +71,7 @@ related:
                           ↓
 ┌──────────────────────────────────────────────────────────┐
 │ Step 5 — Commit (三層 bump if 改 UCL_Core)                │
-│   - 走 ucl-commit skill                                  │
+│   - 走 scp-commit skill                                  │
 │   - tavern task-share 給 Tim 看 fix 摘要                  │
 └──────────────────────────────────────────────────────────┘
 ```

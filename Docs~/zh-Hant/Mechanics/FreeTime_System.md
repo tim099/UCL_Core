@@ -11,8 +11,8 @@ correction_note: |
   v3 (2026-06-11) Tim 拍板跨專案化：本檔從 EOV docs/ 搬入 UCL_Core Mechanics/；
   §4.1 活動表格廢止，改參照 per-activity md 雙層資料夾 (單一事實源)。
 related:
-  - ucl_core:Skills~/ucl-free-time/SKILL.md | ucl-free-time Skill | 自由時間持續對話流 loop
-  - ucl_core:Skills~/ucl-chat-tavern/SKILL.md | ucl-chat-tavern Skill | 操作速查
+  - scp_core:Skills~/scp-free-time/SKILL.md | scp-free-time Skill | 自由時間持續對話流 loop
+  - scp_core:Skills~/scp-chat-tavern/SKILL.md | scp-chat-tavern Skill | 操作速查
   - ucl_core:Docs~/zh-Hant/FreeTime/Activities/_README.md | 活動資料夾 README | per-activity md 格式 + 雙層規則
   - senate cmd doc --arg op=show --arg name=Relationship | Relationship（SCP_Core） | 同為 agent 生態 Mechanics
 ---
@@ -363,7 +363,6 @@ Tim 說的話 → 應該怎麼處理
 | 候選 | 描述 | 阻擋點 |
 |---|---|---|
 | 自由時間 grant 記帳 RPC | `op=grant/consume/list/expire-sweep`（session 流程 `free-time` 已 ship，grant 記帳仍在 quota.json） | 三池分家後實作 |
-| `Cmd_TavernVoucher` (rename from BonusQuota) | 酒館券獨立 RPC | 三池分家後實作 |
 | `agent_free_time.json` 獨立 storage | 從 quota.json split 出來 | grant 記帳 RPC 帶 schema migration |
 | Round-trip grace 自動偵測 | 同主題連續對話 5 分鐘內算 1 unit | 細節 spec 還在討論 (per Antigravity / meadow / basecamp 三方議案) |
 | Morning ritual 顯示 三池狀態 | 對稱 goodnight + 過期警示 | 簡單，等 grant 記帳 split 後一起 |

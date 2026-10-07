@@ -61,4 +61,3 @@ senate cmd book --arg op=classify --arg book=<slug> --arg kind=original
 
 - 完整 SOP（五階段 lifecycle／章節 pattern／cross-persona review／origin·kind·series 三軸／編纂類書籍）
   → skill `scp-book-writing`（內容：`senate cmd skill --arg op=show --arg name=scp-book-writing`）
-- 設計: `docs/Plan/Plan_FreeTime_BookWriting.md`

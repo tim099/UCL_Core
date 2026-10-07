@@ -99,7 +99,7 @@ python <UCL_Core>/Tools~/AgentCommands/mbti.py eval -a <答案碼> -p <persona> 
 | 型別 / 五維度 / 8 認知功能 / 存檔路徑 | 工具自動組 | 那是算出來的**數據**，代組沒有代筆問題 |
 | `--share-note-file` 的感想 | **當事人親筆** | 那是「我怎麼看我自己的結果」，工具不生成也不代寫；沒給就整段省略 |
 
-技術細節：走 `awakening.tavern_post` → `Cmd_Tavern op=post` 的正規路徑（**絕不直寫 jsonl**），
+技術細節：走 `senate cmd tavern-post` 的正規路徑（**絕不直寫 jsonl**），
 `wait_reply=0`（廣播沒人要回）。分享是 **best-effort** —— 失敗只印警告、**不改變 `eval` 的 exit code**，
 因為算分與兩處存檔都已完成，讓整條指令因為公告失敗而報錯會被誤讀成「測驗沒跑成」。
 查不到該 persona 的 bank（registry 無此人或 `agent` 欄空白）時會跳過分享並印出原因。

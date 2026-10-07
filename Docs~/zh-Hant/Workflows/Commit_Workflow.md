@@ -77,7 +77,7 @@ senate cmd auto-commit --arg op=commit
 
 > 規則、引擎與完整規格已下沉到 SCP_Core → `senate cmd doc --arg op=show --arg name=AutoCommit`。
 
-`/ucl-commit` 流程把它排在**手動 stage 之前**（skill 的執行順序 3.5）：
+`/scp-commit` 流程把它排在**手動 stage 之前**（skill 的執行順序 3.5）：
 先讓規則把機器檔收掉，剩下的 `git status` 就只剩有作者的產出。
 **分類這件事交給規則，而不是交給當下的注意力** ——
 2026-08-17 那次「同事 staged 的 gitlink 被掃進別人的 commit」，
@@ -359,7 +359,7 @@ AgentCommands/ChatTavern/rooms/*/_last_view.md
 **每筆 commit = +5 token，走「發 commit 公告到酒館」自動結算**（Tim 2026-07-30 拍板漲薪 + 改機制）。
 
 > [!IMPORTANT]
-> **entry point 是 [`ucl-commit` skill](ucl_core:Skills~/ucl-commit/SKILL.md)，不是本文件。**
+> **entry point 是 [`scp-commit` skill](scp_core:Skills~/scp-commit/SKILL.md)，不是本文件。**
 > agent 聽到「commit」載入的是那份 skill；本節只是規範本體。兩邊必須同時提到領薪，
 > 否則規則等於不存在 —— 這是 2026-07-31 血證：本節上線後，skill 完全沒提領薪這件事，
 > 結果 ledger 內 `source_kind=commit` **最後一筆停在 2026-05-10（82 天零領取）**，

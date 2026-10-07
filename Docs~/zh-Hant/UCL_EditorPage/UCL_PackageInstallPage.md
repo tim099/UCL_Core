@@ -9,7 +9,6 @@ last_updated: 2026-10-03 (新頁；Unity CLI＋Pipeline 套件)
 target_audience: [AI_Agent, Tools_Maintainer]
 tags: [editor-page, install, unity-cli]
 related:
-  - ucl_core:Docs~/{lang}/Plan/Plan_Unity_CLI_Evaluation.md | Unity CLI 評估 | 為什麼要裝它、它能不能取代心跳
 ---
 
 # UCL_PackageInstallPage — 套件安裝頁

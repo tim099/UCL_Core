@@ -5,8 +5,6 @@ last_updated: 2026-10-05
 target_audience: [AI_Agent, Developer]
 aliases: [區域銀行遷移, bank 綁定遷移, migrate_bank, 區域 ID 設定, Bar 專案遷移, currency_id]
 related:
-  - ucl_core:Docs~/{lang}/Plan/Plan_Identity_Account_Unification.md | 身分／帳號統一案 | 本流程的設計來源與拍板全集
-  - ucl_core:Docs~/{lang}/Plan/Plan_Persona_Registry_Retirement.md | persona registry 退場 | 上游（§8.2 一欄一檔／§8.3 欄位分家／§8.6 寫入接縫）
   - ucl_core:Docs~/{lang}/Workflows/Commit_Workflow.md | 提交規範 | 第 5 步的 commit 邊界
 ---
 
@@ -92,7 +90,7 @@ senate cmd persona-profile --arg op=migrate_bank --arg actor=<me>@migrate --arg-
 | `⛔ 解析不到帳號` | 到 **Persona & Agent 管理頁**換綁（`DoRebindClicked`，走 §8.6 接縫有審計）；或確認這個 persona 已退役 ⇒ 就讓它跳過 |
 | `○ 本區已有綁定，且與 agent 不同` | **不要順手 `overwrite=1`** —— 先問「哪個是對的」。既有檔可能是人工設的（那就是真相），agent 欄可能是舊的 |
 | 這個專案的 pool 有別的專案沒有的人 | 正常（例：`kaguya` 只在 Bar）。它只會寫本專案的檔 |
-| 帳號名撞號／`-da-xiaojie` 那批 | **不在本流程處理** ⇒ 走 `Plan_Identity_Account_Unification` §4.2 的人工拍板清單 |
+| 帳號名撞號／`-da-xiaojie` 那批 | **不在本流程處理** ⇒ 人工拍板 |
 
 ### Step 4 — 落檔（人下決定，工具執行）
 
@@ -163,7 +161,7 @@ letters 有自己 repo 的 persona 各自一筆（LY 實測 9 位），其餘在
   之後綁定值＝帳號名，一跳到底。
 - **(B) 解析端保留一跳並 fail-loud**：綁定值（agent id）→ `agent_banks[agent]` → 帳號。
   過渡期可行，但**那一跳必須出聲**（否則「已收斂」與「還在走過渡」同形），
-  且它就是 `Plan_Persona_Registry_Retirement` 要退場的正向鏈。
+  且那條正向鏈要退場。
 
 🩸 這是「改一半更糟」的實例：**綁定檔先落地是安全的**（沒有消費端），
 **解析端先接才是危險的**（有消費端，而且是錢）。本流程刻意只做前者。
@@ -181,7 +179,5 @@ letters 有自己 repo 的 persona 各自一筆（LY 實測 9 位），其餘在
 
 ## 6. 相關
 
-- 設計來源與拍板全集：`ucl_core:Docs~/{lang}/Plan/Plan_Identity_Account_Unification.md`
 - 三段解析順序（本區 → 跨區借用 → 央行＋ErrorLog）：同上 §3.5.1
 - `-da-xiaojie` 去除與帳號歸併（**人工拍板**）：同上 §4.2 D.1／D.2
-- 寫入接縫與審計（actor＋reason 必填）：`Plan_Persona_Registry_Retirement` §8.6

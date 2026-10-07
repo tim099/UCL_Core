@@ -45,7 +45,7 @@ related:
 |---|---|---|
 | `UCL_Core.AgentSkill.AcknowledgedVersion@<fp>` | `"1"` | 「永不自動彈」opt-out 旗標（footer toggle 寫入；skill 更新也不彈） |
 | `UCL_Core.AgentSkill.SkillHashes@<fp>` | `"skill-a=1a2b3c...;skill-b=..."` | 全部 skill 的 source hash 快照（單一 key、名稱排序；彈窗判定基準，彈窗當下即覆寫） |
-| `UCL_Core.AgentSkill.LastChanges@<fp>` | `"2026-07-14 17:20 \| ~ucl-commit, +ucl-xxx"` | 上次自動彈窗的變動清單（`+`新增 `~`變更 `-`移除；footer 顯示，秒關彈窗事後可查） |
+| `UCL_Core.AgentSkill.LastChanges@<fp>` | `"2026-07-14 17:20 \| ~scp-commit, +ucl-xxx"` | 上次自動彈窗的變動清單（`+`新增 `~`變更 `-`移除；footer 顯示，秒關彈窗事後可查） |
 
 Hash 規格：per-skill 對目錄下所有檔案（`.` 開頭隱藏檔除外）依相對路徑 Ordinal 排序，逐檔餵「相對路徑 + `\0` + 內文」進 MD5 取前 12 hex；內文走 `ReadAllText`（吃 BOM）+ `\r\n` 與孤立 `\r` 均摺成 `\n`（防 autocrlf 假變動）。EditorPrefs 為 per-machine — 新 clone / 換機器會首彈一次（新環境重新曝光，屬預期行為非 bug）。
 

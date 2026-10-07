@@ -49,18 +49,12 @@ python 端讀同一批檔的規則見 [`Python_Coding_Standards.md`](Python_Codi
 
 ```csharp
 // ✅ 已知欄位走 typed model —— 打錯欄位名是編譯錯
-var aCfg = UCL_ScreenStreamConfig.Load(aPath);
-if (aCfg != null && aCfg.enabled) StartMontage();
+var aCfg = UCL_ExampleConfig.Load(aPath);
+if (aCfg != null && aCfg.enabled) StartWork();
 
 // ❌ 逐鍵讀：打錯 "enabled" 不會有任何人喊，只會永遠當成沒在錄影
 bool aOn = aJd != null && aJd.Contains("enabled") && aJd.GetBool("enabled");
 ```
-
-> 🩸 為什麼值得一條硬規則：`_screenstream/_config.json` 曾有**四個 C# 讀寫端各自逐鍵解析**
-> （Page 讀＋寫、`Cmd_StreamWatch` 讀 4 處、OCR supervisor、STT supervisor）。
-> 同一個鍵在四處各打一次字，而其中一處的舊檔遷移（`ocr_y_pct` → `ocr_y_bottom_pct`）
-> **只有 Page 做** ⇒ 同一份 config，畫面上顯示的辨識帶與 worker 實際吃的不是同一條。
-> 兩邊都能運作、都不報錯。（2026-08-21 收斂成一份 model。）
 
 ### 什麼時候仍然可以用 `JsonData`（邊界層）
 
@@ -73,7 +67,7 @@ bool aOn = aJd != null && aJd.Contains("enabled") && aJd.GetBool("enabled");
 | migration 期間兩種形狀並存 | 舊陣列形 vs 新物件形（見 §3.3） |
 
 ⚠ 外部產物的形狀「不穩定」不等於「不該有 model」——
-雕刻引擎的回報有明確契約，就該用 model 寫下來（見 §5 血證）。
+外部程式回報的 JSON 若有明確契約，就該用 model 寫下來。
 判準是「**這個形狀有沒有一個擁有者**」，不是「它從哪裡來」。
 
 ---
@@ -103,11 +97,6 @@ bool aOn = aJd.GetBool("enabled");    // ✅
 
 ⚠ 換寫法時要知道**行為差一格**：舊路徑型別不符會 throw（呼叫端多半 `try/catch` 吞成 `false`），
 新路徑直接回預設值。最終結果相同，差別是不再用例外當控制流。
-
-> 🩸 2026-08-21：全 repo 有 **12 處** `CS0618: implicit operator bool` —— 分布在
-> `Cmd_FreeTime` / `UCL_FreeTimeGating` / `UCL_OcrWorkerSupervisor`(×4) /
-> `UCL_SttWorkerSupervisor` / `Cmd_Sculpture` / `UCL_ScreenStreamPage`(×4) /
-> `Cmd_StreamWatch`(×3)。當天全部清成 **0**。
 
 ### 2.3 其他常用成員
 
@@ -142,29 +131,25 @@ bool aOn = aJd.GetBool("enabled");    // ✅
 **全部內建支援**：存取兩端都由 `JsonConvert` 遞迴處理。
 
 ```csharp
-public class UCL_StreamWatchPrepared : UnityJsonSerializable
+public class UCL_ExamplePrepared : UnityJsonSerializable
 {
     public Dictionary<string, string> catchup_map = new Dictionary<string, string>();
     public List<string> catchup_unfilled = new List<string>();
 }
-public class UCL_StreamWatchHotspots : UnityJsonSerializable
+public class UCL_ExampleHotspots : UnityJsonSerializable
 {
-    public List<UCL_StreamWatchHotspot> hotspots = new List<UCL_StreamWatchHotspot>();
+    public List<UCL_ExampleHotspot> hotspots = new List<UCL_ExampleHotspot>();
 }
 ```
 
-> 🩸 2026-08-21：我在 `UCL_ScreenStreamConfig` 自己寫了一支 `ParseRegions` 逐筆解析
-> `ocr_extra_regions` —— **Tim 當場指出那是序列化器本來就會做的事**。
-> 手刻的代價不是多打幾行，是**同一個形狀多了第二種解讀**：
-> 那支手刻版對 `h_pct` 缺席落 `0`，而 OCR supervisor 那邊落 `0.12`，兩邊各自都能跑。
 
 **唯一該手刻的**是序列化器**認不出來的形狀**（migration shim），而且要窄：
 
 ```csharp
-// 舊檔把一筆寫成 [y,h] 陣列 ⇒ base 眼裡沒有任何已知欄位、全部落 0，
-// 而 h_pct=0 是一條沒有面積的辨識帶：worker 照跑、永遠零產出，
-// 看起來跟「這段沒字幕」一模一樣。⇒ 要嘛正確轉換，要嘛出聲。
-MigrateLegacyRegionArrays(iJson);   // 只處理 IsArray 的元素，物件形不碰
+// 舊檔把一筆寫成 [a,b] 陣列 ⇒ base 眼裡沒有任何已知欄位、全部落 0，
+// 而 0 是一個合法值：下游照跑、永遠零產出，跟「這筆本來就是空的」一模一樣。
+// ⇒ 要嘛正確轉換，要嘛出聲。
+MigrateLegacyArrays(iJson);   // 只處理 IsArray 的元素，物件形不碰
 ```
 
 ### 3.3 缺席的鍵 ⇒ 欄位保留初始值（這是「預設值只有一份」的來源）
@@ -199,12 +184,6 @@ public override JsonData SerializeToJson()
     return aData;
 }
 ```
-
-| 血證 | 讀數 |
-|---|---|
-| 2026-08-18 `FreeTime/sessions/*.json` | 改 typed model 後 `"active":"False"` ⇒ `freetime.py` 的 `if not s.get("active")` 通過 ⇒ **提前收工的人被判成還在自由時間**，且完全不報錯（該 python 讀取端已於 2026-08-26 退役 —— 血證留著：教訓在「bool 序列化」不在那支工具） |
-| 2026-08-21 `_screenstream/_config.json` | daemon 是 `if cfg.get("enabled")` ⇒ 若寫成字串就是**停不掉的錄影**。9 個 bool 全部 override 回原生，實跑回讀 0 個字串 bool |
-| 2026-08-21 `prepared/*.json` | `auto_export` 被匯出端讀 ⇒ 「刻意關掉」會被讀成「開著」（現行讀取端：`senate cmd watch --arg op=export` —— 🩸 血證留著：教訓在「bool 序列化」，不在哪一支工具讀它） |
 
 ⛔ **別把這個 override 當樣板無腦套**：純 C# 內部使用的資料沿用舊慣例即可（載入端雙接）。
 **判準是「有沒有別的語言在讀」**；而既有檔已是原生 bool 時，override 也是為了**不改變 wire format**。
@@ -315,21 +294,6 @@ senate ucmd run Invoke --persona <me> --arg type=System.IO.File --arg member=Wri
 改完 `.cs` 送 `recompile` 之後，`errors=0` 不代表你的新 code 編過了。
 判準見 skill `ucl-compile-error`：**`senate cmd unity-recompile` 收下一份晚於送出時刻的讀數才算編過**。
 🩸 2026-08-18 那隻 bool 就是在「recompile 回報 0 錯」之後才被 round-trip 抓到的。
-
----
-
-## 5. 血證彙總（2026-08-21 那一批）
-
-| 檔案 | 過去的形狀 | 收斂後 | 抓到什麼 |
-|---|---|---|---|
-| `_screenstream/_config.json` | 4 個 C# 端各自逐鍵 | 1 個 model（`UCL_ScreenStreamConfig`） | 舊檔遷移只有 Page 做 ⇒ 畫面與 worker 讀不同的辨識帶；空 List 鍵消失 |
-| `sculpt.py` stdout | `ReadStr/ReadInt/ReadBool` 逐鍵 | `UCL_SculptEngineResult`＋巢狀 `exhibit` | **引擎回報就是結算依據** —— 鍵名打錯回 0 ⇒ 像「一個 voxel 都沒放下」而錢已經花了 |
-| StreamWatch 五份檔 | 7 個 step 各打一次鍵名 | 5 個 model（class 放 Cmd 檔內） | `settled_at` 曾被讀成 `ended_at` ⇒ 回傳檔印「結束時刻未記」這句**假話** |
-
-round-trip 讀數（全部 0 遺失鍵 / 0 值變動 / 0 型別變動 / 0 字串 bool）：
-`_config.json` 34→40 鍵、`prepared` 14→14、`session` 25→33、`hotspots` 巢狀 2 筆 × 8 欄。
-
----
 
 ## 📚 延伸
 

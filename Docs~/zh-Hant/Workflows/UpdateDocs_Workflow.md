@@ -9,7 +9,7 @@ canonical_term: Update Docs
 related:
   - <ucl_core:Skills~/ucl-update-docs/SKILL.md> | ucl-update-docs | 改完 code 同步文件觸發入口
   - <ucl_core:Skills~/ucl-core-paths/SKILL.md> | ucl-core-paths | UCL_Core 路徑解析慣例
-  - <ucl_core:Skills~/ucl-commit/SKILL.md> | ucl-commit | docs 與 code 同筆 commit 規範
+  - <scp_core:Skills~/scp-commit/SKILL.md> | scp-commit | docs 與 code 同筆 commit 規範
 ---
 
 # 🔄 更新文件工作流
@@ -120,5 +120,5 @@ skill 的「延伸」表、其他文件的 `related:`。刪主文件卻留指路
 
 ## 跨 skill 提醒
 
-- **commit 時** ChatTavern 訊息走獨立 `[chat]`，docs 變動跟 code 變動可在同一筆 commit（同個 PR 概念）— 詳見 `ucl-commit`
+- **commit 時** ChatTavern 訊息走獨立 `[chat]`，docs 變動跟 code 變動可在同一筆 commit（同個 PR 概念）— 詳見 `scp-commit`
 - **下游專案文件**（該專案 `docs/` 內）可能有專屬 docs-guide skill，含完整目錄索引；遇到下游文件改動先看那個

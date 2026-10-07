@@ -32,7 +32,6 @@ consumer repo 的主要文件應放在根目錄 `Docs/`，與 `Assets/` 區隔�
 - `Docs/Architecture/`：架構設計、UML 與重要模組拆解。
 - `Docs/API/`：介面與資料結構規格。
 - `Docs/Workflows/`：可重複執行的工作流程。
-- `Docs/Plan/`：企劃拆解與施工計畫。
 - `Docs/Glossary/`：術語與自造詞。
 - `Docs/DOC_INDEX.md`：文件檢索入口。
 

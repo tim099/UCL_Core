@@ -9,7 +9,6 @@
 // 物理意義：既有的 ArgsSchema 是自由文字（給人看），無法被程式解析。本型別是它的機器可讀對應物。
 //          兩者並存且職責分明：ArgsSchema 寫「這個參數是什麼意思」（人讀），
 //          ArgsSpec 寫「哪些必填、哪些是別名」（機器讀）。
-//          設計依據：Docs~/zh-Hant/Plan/Plan_AgentCmd_Schema_Reflection_Export.md
 // 數值影響：純資料容器，不含任何行為；建構後即唯讀（欄位由 handler 的 property 初始化式一次填好）。
 //
 // ⚠ 只宣告「Python 端真的會拿來做判斷」的東西 —— Required 與 Aliases。

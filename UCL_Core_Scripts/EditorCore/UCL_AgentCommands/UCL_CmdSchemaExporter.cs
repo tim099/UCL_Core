@@ -9,7 +9,6 @@
 // 物理意義：本檔是「同步」這個動作的**唯一實作**。三個入口（CMD 管理面板按鈕 /
 //          Cmd_ExportCmdSchema / 日後任何自動觸發）全部呼叫本類別的同一個 static 方法 ——
 //          各寫一份就是本設計正在治的病的下一個實例。
-//          設計依據：Docs~/zh-Hant/Plan/Plan_AgentCmd_Schema_Reflection_Export.md
 // 數值影響：只寫一個檔（<RepoRoot>/AgentCommands/commands_schema.json，**不入 git** ——
 //          per-project 衍生物，Tim 2026-08-14 拍板，見 ComputeSourceHash 上方的 📌）。
 //          **內容未變則不落筆**（不動 mtime、不觸發 asset import）。

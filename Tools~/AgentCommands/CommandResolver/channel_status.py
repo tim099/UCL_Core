@@ -108,7 +108,7 @@ def derive_max_seq(tavern_root: str, room: str) -> int:
     """T38 reader-derived seq — count messages files = max_seq.
 
     區塊職責：每訊息一檔下，seq = file order rank（1-based）
-    物理意義：對應 C# UCL_ChatTavernIO_PerMsgFile.LoadAllMessages
+    物理意義：每則訊息一個檔，數檔即得 max_seq
     """
     return len(list_message_files(tavern_root, room))
 

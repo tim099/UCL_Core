@@ -13,14 +13,9 @@
 // 本檔換一層：一條**背景執行緒**每 250ms 讀主緒心跳，超過門檻就在**凍結進行中**落行。
 //   它不依賴主緒排程，所以主緒死透的時候它是唯一還在記時間的東西。
 //
-// 🩸 2026-09-08 兩次實測（13:33 靜止 115s／20:39 靜止 111s）都只留下
-//   「stall ＋ 一支 offload 的 `Tavern op=read`」，而那兩個讀數**分不出方向**：
-//     甲 背景緒抱著訊息快取鎖 ⇒ 主緒撞上來等；乙 主緒被別的事佔住 ⇒ 鎖是無辜的。
-//   本檔在凍結當下抓 `UCL_ChatTavernIO_PerMsgFile.LockHolderJson()` —— 那正是分辨兩者的欄位。
-//
-// ⛔ 射程（不可讀寬）：本檔回答的是「凍住的當下**誰抱著那把鎖**、有哪些 cmd 在跑」，
+// ⛔ 射程（不可讀寬）：本檔回答的是「凍住的當下有哪些 cmd 在跑」，
 //   ⚠ **不回答「主緒停在哪一行」** —— 抓別條執行緒的 stack 在 Mono/Editor 下沒有安全的做法
-//   （`Thread.Suspend` 已廢棄且會死鎖）。所以 holder 為 null 時，本檔給的是**排除**不是答案。
+//   （`Thread.Suspend` 已廢棄且會死鎖）。
 #if UNITY_EDITOR
 using System;
 using System.Text;
@@ -144,11 +139,6 @@ namespace UCL.Core.EditorLib.AgentCommands
             long aGapTicks = Interlocked.Read(ref s_LastTickGapTicks);
             double aPrevGapMs = aGapTicks > 0 ? new TimeSpan(aGapTicks).TotalMilliseconds : -1.0;
 
-            // 凍結當下的鎖持有者 —— 這一格才是甲乙的分辨鍵（見檔頭）。
-            string aLockJson = null;
-            try { aLockJson = ChatTavern.UCL_ChatTavernIO_PerMsgFile.LockHolderJson(); }
-            catch (Exception) { /* 讀不到就留 null —— 不猜 */ }
-
             var aSb = new StringBuilder(320);
             aSb.Append("{\"kind\":\"freeze\"")
                .Append(",\"observed_at\":\"").Append(Iso(aNow)).Append('"')
@@ -166,7 +156,6 @@ namespace UCL.Core.EditorLib.AgentCommands
                .Append(",\"prev_tick_gap_ms\":").Append(aPrevGapMs >= 0 ? F1(aPrevGapMs) : "null")
                .Append(",\"observed_from_tid\":")
                .Append(Thread.CurrentThread.ManagedThreadId.ToString(System.Globalization.CultureInfo.InvariantCulture))
-               .Append(",\"tavern_cache_lock\":").Append(aLockJson ?? "null")
                .Append(",\"running_cmds\":").Append(OverlapsJson(aLastTick, aNow))
                .Append('}');
             AppendLine(aSb.ToString());

@@ -55,7 +55,7 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-# 條目標題行 —— 與 inbox_ack.count_mentions / C# 的 UCL_TavernCatchupService 同一約定，
+# 條目標題行 —— 與 inbox_ack.count_mentions / SCP_Core 的 SCP_TavernInbox 同一約定，
 # 三處都錨定 `## [seq=` 這個 prefix，不可改（改了那三支會同時瞎掉）。
 ENTRY_RE = re.compile(r"^##\s*\[seq=(\d+)\]")
 # 既有權威時間戳行（2026-07-29 版面精簡前的格式）

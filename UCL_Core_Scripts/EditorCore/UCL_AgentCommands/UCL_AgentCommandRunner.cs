@@ -70,7 +70,7 @@ namespace UCL.Core.EditorLib.AgentCommands
 
         // 區塊職責：per-cmd 執行中的 cmd_id static slot（T-LastOp-CmdId 2026-06-12）
         // 物理意義：handler 收到的只有 Args dict，不知道自己是 queue 裡哪筆 cmd；Runner 在 ExecuteAsync
-        //          前把 c.Id 放進本 slot → 下游 UCL_ChatTavernRender.WriteLastOp 寫 _last_op.md 時
+        //          前把 c.Id 放進本 slot → 下游 UCL_CmdLastOp.WriteLastOp 寫 _last_op.md 時
         //          stamp `<!-- cmd_id: X -->`，Python 端 check_cmd_result_file 比對 cmd_id 相符才認帳
         //          （解多 Claude session 並發對同一 Editor 發 cmd 時 fail marker 互相污染誤報）。
         // 數值影響：沒設（IMGUI 手動跑 handler 等非 queue 路徑）→ null → WriteLastOp 不 stamp，行為不變。

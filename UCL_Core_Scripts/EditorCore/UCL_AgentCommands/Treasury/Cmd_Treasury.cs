@@ -9,7 +9,6 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using UCL.Core.EditorLib.AgentCommands.ChatTavern;   // 借 WriteLastOp / FailLastOp / RejectLastOp helper
 using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.Treasury
@@ -296,7 +295,7 @@ namespace UCL.Core.EditorLib.AgentCommands.Treasury
         //   last-write-wins（本檔寫的是**錢**的報告，落錯 lane 的代價是別人讀到自己的餘額）。
         public static void WriteLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string md)
         {
-            UCL.Core.EditorLib.AgentCommands.ChatTavern.UCL_ChatTavernRender.WriteLastOp(md, iArgs);
+            UCL_CmdLastOp.WriteLastOp(md, iArgs);
         }
 
         public static void RejectLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string msg)

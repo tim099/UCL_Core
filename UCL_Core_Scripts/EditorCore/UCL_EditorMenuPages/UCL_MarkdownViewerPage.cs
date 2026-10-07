@@ -541,7 +541,7 @@ namespace UCL.Core.EditorLib.Page
     // 物理意義:從 frontmatter 解析出來，用於 DrawRelatedBar 渲染按鈕
     public class UCL_MdRelatedDoc
     {
-        public string Url;          // 例如 "ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ChatTavernPage.md"
+        public string Url;          // 例如 "ucl_core:Docs~/{lang}/UCL_EditorPage/UCL_ProcessAdminPage.md"
         public string Label;        // 按鈕文字
         public string Description;  // 可選；hover tooltip
     }

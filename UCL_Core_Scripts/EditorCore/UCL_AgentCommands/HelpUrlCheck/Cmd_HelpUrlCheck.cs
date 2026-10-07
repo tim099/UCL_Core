@@ -26,7 +26,6 @@ using System.Text;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
-using UCL.Core.EditorLib.AgentCommands.ChatTavern;
 
 namespace UCL.Core.EditorLib.AgentCommands.HelpUrlCheck
 {
@@ -35,13 +34,13 @@ namespace UCL.Core.EditorLib.AgentCommands.HelpUrlCheck
     internal static class Cmd_HelpUrlCheck_Helpers
     {
         public static void ResolveLastOp(IDictionary<string, string> iArgs, string iMd)
-            => UCL_ChatTavernRender.WriteLastOp(iMd, iArgs);
+            => UCL_CmdLastOp.WriteLastOp(iMd, iArgs);
 
         // 區塊職責：報告已經落地之後才喊的失敗 —— 先寫檔再 throw，兩者順序不可調換。
         // 物理意義：呼叫端要的是「缺哪幾條」，而不是一句「失敗了」；throw 只負責讓退出碼非零。
         public static void FailAfterReport(IDictionary<string, string> iArgs, string iMd, string iMsg)
         {
-            UCL_ChatTavernRender.WriteLastOp(iMd, iArgs);
+            UCL_CmdLastOp.WriteLastOp(iMd, iArgs);
             Debug.LogWarning($"[HelpUrlCheck] {iMsg}");
             throw new InvalidOperationException(iMsg);
         }

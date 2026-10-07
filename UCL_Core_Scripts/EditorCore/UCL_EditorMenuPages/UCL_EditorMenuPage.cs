@@ -133,14 +133,6 @@ namespace UCL.Core.EditorLib.Page
                     UCL_AgentCommandsPage.Create();
                 }
 
-                // 區塊職責：提供按鈕以開啟 Chat Tavern 頁面
-                // 物理意義：快速導向酒館聊天室面板，以便人類開發者與 AI Agent 在同一個聊天室內進行對話與腦力激盪
-                // 數值影響：無
-                if (GUILayout.Button("Chat Tavern", UCL_GUIStyle.ButtonStyle))
-                {
-                    UCL_ChatTavernPage.Create();
-                }
-
                 // 區塊職責：提供按鈕以開啟控制台頁面
                 // 物理意義：集中控制專案內各項重要設定 (目前第一塊：聊天酒館系統總開關)
                 // 數值影響：push 一個 UCL_ControlPanelPage 到當前 controller

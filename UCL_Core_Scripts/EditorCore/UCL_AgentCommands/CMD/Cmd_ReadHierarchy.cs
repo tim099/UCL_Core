@@ -10,7 +10,6 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEditor;
 using UCL.Core;
-using UCL.Core.EditorLib.AgentCommands.ChatTavern;
 
 namespace UCL.Core.EditorLib.AgentCommands.ReadHierarchy
 {
@@ -393,11 +392,11 @@ namespace UCL.Core.EditorLib.AgentCommands.ReadHierarchy
     /// </summary>
     internal static class Cmd_ReadHierarchy_Helpers
     {
-        public static void ResolveLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string iMarkdown) => UCL_ChatTavernRender.WriteLastOp(iMarkdown, iArgs);
+        public static void ResolveLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string iMarkdown) => UCL_CmdLastOp.WriteLastOp(iMarkdown, iArgs);
 
         public static void RejectLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string iMessage)
         {
-            UCL_ChatTavernRender.WriteLastOp($"# ⚠ ReadHierarchy Rejected\n\n{iMessage}\n", iArgs);
+            UCL_CmdLastOp.WriteLastOp($"# ⚠ ReadHierarchy Rejected\n\n{iMessage}\n", iArgs);
             Debug.LogWarning($"[ReadHierarchy] {iMessage}");
             throw new InvalidOperationException(iMessage);
         }

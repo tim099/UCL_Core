@@ -257,14 +257,14 @@ OneShot 成功 → wrapper 印「✓ Cmd disappeared from queue → Success」�
 
 `RejectLastOp` / `ResolveLastOp` **不在** `UCL_AgentCommandHandlerBase` — 假設繼承會撞 CS0103（basecamp 2026-05-11 撞過，ref `Errors_07_53_23.log` 15 條 CS0103 + Cmd_Glossary 早期版本）。
 
-**正解**：各 Cmd 自定義 internal static helper（對齊 Cmd_Tavern / Cmd_Treasury pattern）：
+**正解**：各 Cmd 自定義 internal static helper：
 
 ```csharp
 internal static class Cmd_<Name>_Helpers
 {
-    public static void ResolveLastOp(string md) => UCL_ChatTavernRender.WriteLastOp(md);
-    public static void RejectLastOp(string msg) {
-        UCL_ChatTavernRender.WriteLastOp($"# ⚠ <Name> Cmd Rejected\n\n{msg}\n");
+    public static void ResolveLastOp(IDictionary<string, string> iArgs, string md) => UCL_CmdLastOp.WriteLastOp(md, iArgs);
+    public static void RejectLastOp(IDictionary<string, string> iArgs, string msg) {
+        UCL_CmdLastOp.WriteLastOp($"# ⚠ <Name> Cmd Rejected\n\n{msg}\n", iArgs);
         Debug.LogWarning($"[<Name>] {msg}");
         throw new InvalidOperationException(msg);
     }
@@ -272,7 +272,7 @@ internal static class Cmd_<Name>_Helpers
 ```
 
 - 呼叫：`Cmd_<Name>_Helpers.RejectLastOp(...)`（帶 prefix，避免假設繼承）
-- 也要 `using UCL.Core.EditorLib.AgentCommands.ChatTavern;` 引 `UCL_ChatTavernRender`
+- `UCL_CmdLastOp` 在 `UCL.Core.EditorLib.AgentCommands`；帶 args 的多載才併發安全（取 `_cmd_id` 分 lane）
 
 ---
 

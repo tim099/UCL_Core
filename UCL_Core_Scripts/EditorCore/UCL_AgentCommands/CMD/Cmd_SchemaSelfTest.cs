@@ -77,7 +77,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 sb.AppendLine($"- 旗標檔：`{UCL_CmdSchemaExporter.DisableFlagPath}`");
                 sb.AppendLine();
                 sb.AppendLine("⚠ 這是**未檢查**，不是通過。要驗請先重新啟用預檢。");
-                ChatTavern.UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
+                UCL_CmdLastOp.WriteLastOp(sb.ToString(), args);
                 Debug.LogWarning("[Cmd:SchemaSelfTest] skipped — schema preflight disabled.");
                 return;
             }
@@ -165,7 +165,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             sb.AppendLine("- `senate ucmd` 端**沒有**參數預檢（未知參數靜默取預設值）⇒ 產物正確不代表呼叫端會擋下打錯的參數。");
             sb.AppendLine("- 本 Cmd 通過**只代表**：來源與產物一致，且 ArgsSpec 有正確落進產物。");
 
-            ChatTavern.UCL_ChatTavernRender.WriteLastOp(sb.ToString(), args);
+            UCL_CmdLastOp.WriteLastOp(sb.ToString(), args);
 
             if (!pass)
             {

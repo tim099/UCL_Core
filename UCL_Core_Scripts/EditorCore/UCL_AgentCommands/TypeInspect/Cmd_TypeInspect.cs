@@ -13,18 +13,17 @@ using System.Text;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
-using UCL.Core.EditorLib.AgentCommands.ChatTavern;
 
 namespace UCL.Core.EditorLib.AgentCommands.TypeInspect
 {
     // 區塊職責: 區域 helper — 對齊 Cmd_Glossary/Cmd_Tavern 用 _last_op.md 通報 (Reject=⚠ throw / Resolve=✅)
     internal static class Cmd_TypeInspect_Helpers
     {
-        public static void ResolveLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string md) => UCL_ChatTavernRender.WriteLastOp(md, iArgs);
+        public static void ResolveLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string md) => UCL_CmdLastOp.WriteLastOp(md, iArgs);
 
         public static void RejectLastOp(System.Collections.Generic.IDictionary<string, string> iArgs, string msg)
         {
-            UCL_ChatTavernRender.WriteLastOp($"# ⚠ TypeInspect Cmd Rejected\n\n{msg}\n", iArgs);
+            UCL_CmdLastOp.WriteLastOp($"# ⚠ TypeInspect Cmd Rejected\n\n{msg}\n", iArgs);
             Debug.LogWarning($"[TypeInspect] {msg}");
             throw new InvalidOperationException(msg);
         }

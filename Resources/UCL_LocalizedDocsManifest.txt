@@ -91,7 +91,6 @@ Docs~/zh-Hant/Tools/Python_Tools_Index.md
 Docs~/zh-Hant/Tools/TavernClient_SDK.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_AgentCommandsPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_AgentSkillManagerPage.md
-Docs~/zh-Hant/UCL_EditorPage/UCL_ChatTavernPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_CommonEditorPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_DocSearchPage.md
 Docs~/zh-Hant/UCL_EditorPage/UCL_GitFlattenSyncPage.md

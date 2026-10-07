@@ -1,87 +1,21 @@
-﻿// UCL Chat Tavern — Markdown 渲染（prototype v1）
-// 把訊息列表渲染為人類友善的 markdown，給 agent 當下一回合 prompt 的 context。
+// 區塊職責：Unity 指令的**結果回傳檔** `_last_op.md` 的寫入端（全域槽＋per-persona 鏡寫）。
+// 物理意義：原本住在酒館渲染（`UCL_ChatTavernRender`）裡，而它是所有 Unity Cmd 共用的出口 ——
+//           酒館頁那族退場（TASK-0451）後搬到這裡，路徑與內容逐字不變：
+//           Senate 的 ucmd 用戶端靠第一行 marker ＋ cmd_id 章判成敗，那是 wire format。
+// 數值影響：寫 `<資料根>/ChatTavern/_last_op.md` 與 `letters/<persona>/cmd/<slug>_last_op.md`。
 #if UNITY_EDITOR
-using System.Collections.Generic;
 using System.IO;
-using System.Text;
 
-namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
+namespace UCL.Core.EditorLib.AgentCommands
 {
-    public static class UCL_ChatTavernRender
+    public static class UCL_CmdLastOp
     {
-        /// <summary>
-        /// 把訊息陣列渲染成 markdown。
-        /// </summary>
-        /// <param name="title">區段標題（例如 "🍺 cs-cleanup — 最新 100 筆"）</param>
-        /// <param name="messages">要顯示的訊息（依 seq 升冪）</param>
-        /// <param name="highlightSeq">標星號的 seq（例如剛 post 的那筆）；null 為不標</param>
-        /// <param name="header">置頂額外資訊（例如「你是 &lt;agent-name&gt;」，由呼叫方填入 agent 自己的稱呼）；null 略過</param>
-        public static string RenderMessages(string title, List<UCL_ChatMessage> messages, int? highlightSeq = null, string header = null)
-        {
-            var sb = new StringBuilder();
-            sb.Append("# ").Append(title).Append("\n\n");
-            if (!string.IsNullOrEmpty(header))
-            {
-                sb.Append(header).Append("\n\n");
-            }
-            if (messages == null || messages.Count == 0)
-            {
-                sb.Append("_(尚無訊息)_\n");
-                return sb.ToString();
-            }
-            foreach (var m in messages)
-            {
-                bool hl = highlightSeq.HasValue && m.seq == highlightSeq.Value;
-                sb.Append(hl ? "**" : "");
-                sb.Append("[seq ").Append(m.seq).Append("] ");
-                sb.Append(ShortTime(m.ts)).Append(" ");
-                if (!string.IsNullOrEmpty(m.kind) && m.kind != "chat")
-                {
-                    sb.Append("(").Append(m.kind).Append(") ");
-                }
-                sb.Append(m.DisplayName).Append(": ");
-                sb.Append(m.body ?? "");
-                if (m.reply_to.HasValue) sb.Append(" _(↩ ").Append(m.reply_to.Value).Append(")_");
-                sb.Append(hl ? "**" : "");
-                if (m.meta != null && m.meta.Count > 0)
-                {
-                    sb.Append("\n  - meta:");
-                    foreach (var kv in m.meta) sb.Append(" `").Append(kv.Key).Append("=").Append(kv.Value).Append("`");
-                }
-                if (m.refs != null && m.refs.Count > 0)
-                {
-                    sb.Append("\n  - refs:");
-                    foreach (var r in m.refs)
-                    {
-                        sb.Append(" [").Append(string.IsNullOrEmpty(r.label) ? r.path : r.label).Append("](").Append(r.path);
-                        if (!string.IsNullOrEmpty(r.anchor)) sb.Append("#").Append(r.anchor);
-                        sb.Append(")");
-                    }
-                }
-                sb.Append("\n");
-            }
-            return sb.ToString();
-        }
+        /// <summary>全域槽住酒館目錄（讀取端寫死這個位置）。</summary>
+        const string LastOpDirRelative = "AgentCommands/ChatTavern";
+        const string LastOpFile = "_last_op.md";
 
-        /// <summary>把 ISO 8601 ts 轉成 HH:mm:ss（顯示用，省空間）。</summary>
-        static string ShortTime(string iso)
-        {
-            if (string.IsNullOrEmpty(iso)) return "??:??:??";
-            // 預期格式 "yyyy-MM-ddTHH:mm:ssZ"
-            int t = iso.IndexOf('T');
-            if (t < 0 || t + 9 > iso.Length) return iso;
-            return iso.Substring(t + 1, 8);
-        }
-
-        /// <summary>渲染 + 寫到 _last_view.md。</summary>
-        public static string WriteLastView(string roomId, string roomName, List<UCL_ChatMessage> messages, int? highlightSeq, string header = null)
-        {
-            string title = $"🍺 {roomName} — 最新 {messages?.Count ?? 0} 筆";
-            string md = RenderMessages(title, messages, highlightSeq, header);
-            UCL_ChatTavernIO.EnsureRoomDir(roomId);
-            File.WriteAllText(UCL_ChatTavernIO.GetLastViewPath(roomId), md, new System.Text.UTF8Encoding(false));
-            return md;
-        }
+        public static string GetLastOpPath()
+            => Path.Combine(UCL_AgentCommandsPath.ResolveData(LastOpDirRelative), LastOpFile);
 
         // 區塊職責：**本次輸出屬於哪一筆 cmd** —— 這是 lane 與 stamp 的唯一來源。
         // 物理意義：呼叫端手上的 `args["_cmd_id"]` 是 Runner 顯式塞進去的（`UCL_AgentCommandRunner`
@@ -127,7 +61,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
         /// <para><paramref name="iSlug"/> ＝ 產出這份內容的 op；不給＝從 cmd_id 尾段取（舊行為）。</para></summary>
         public static void WriteLastOp(string md, string iCmdId, string iSlug = null)
         {
-            UCL_ChatTavernIO.EnsureTavernDir();
+            Directory.CreateDirectory(Path.GetDirectoryName(GetLastOpPath()));
             // 區塊職責：cmd_id stamp 注入（T-LastOp-CmdId 2026-06-12）
             // 物理意義：_last_op.md 是多 session 共用檔 — 多個 Claude chat 並發對同一 Editor 發 cmd 時，
             //          A 的 cmd_wait 可能讀到 B 在同窗口寫的 fail marker（mtime 在 A submit 之後）而誤報失敗
@@ -150,7 +84,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             //   fail-detection（check_cmd_result_file）與 tavern_cmd.py 等仍讀這一份，
             //   第一行 marker ＋ cmd_id 章是那條通道的 wire format，stub 化＝拆掉活的偵測。
             //   （TASK-0059：全域槽的「互相覆蓋」由 cmd_id 章擋在讀取端；閱讀通道遷 per-persona，見下）
-            File.WriteAllText(UCL_ChatTavernIO.GetLastOpPath(), md, new System.Text.UTF8Encoding(false));
+            File.WriteAllText(GetLastOpPath(), md, new System.Text.UTF8Encoding(false));
 
             // ===========================================================
             // 區塊職責：per-persona 鏡寫（TASK-0059，對齊 0026/0044 搬法）。
@@ -192,7 +126,7 @@ namespace UCL.Core.EditorLib.AgentCommands.ChatTavern
             catch (System.Exception e)
             {
                 // 鏡寫失敗不影響主通道（全域檔已落）—— 但要出聲，安靜的鏡寫失敗長得像「沒有這個功能」
-                UnityEngine.Debug.LogWarning($"[ChatTavernRender] per-persona 鏡寫失敗（全域 _last_op.md 已寫）：{e.Message}");
+                UnityEngine.Debug.LogWarning($"[CmdLastOp] per-persona 鏡寫失敗（全域 _last_op.md 已寫）：{e.Message}");
             }
         }
     }

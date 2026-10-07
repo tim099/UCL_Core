@@ -241,7 +241,7 @@ Task.Run(() =>                                  // ① 不在主執行緒跑
 > [!TIP]
 > 一次性工具還有一條**不屬於 Process 但常一起漏**的規則：**腳本路徑與資料路徑都不可寫死**。
 > 走 `UCL_EditorPath.CorePath` / `UCL_RepoPath` / 該子系統自己的解析器（例如
-> `UCL_ChatTavernIO.GetRoomsRoot()`），否則換一個專案就找不到檔 ——
+> `UCL_AgentCommandsPath.ResolveData(...)`），否則換一個專案就找不到檔 ——
 > 而 `File.Exists` 失敗後若 fail-soft return，那是**連 warning 都沒有的靜默失效**。
 > 解析失敗時要把**解析結果印出來**，讓人看得到它找去了哪裡。
 

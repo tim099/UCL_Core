@@ -96,7 +96,7 @@ python 端各自全掃的複製品曾有四份，每份 14,985 檔逐檔 `json.l
 |---|---|---|
 | 銀行 / 券 | Senate 銀行（`SCP_Bank*`）／券（`SCP_Voucher*`） | 走 `senate cmd bank`／`senate cmd voucher` |
 | persona lock / registry | `UCL_AwakeningService` | 走 Cmd（`GoodMorning` / `GoodNight`） |
-| 自由時間 session / 免費像素 | `Cmd_FreeTime` 發放、python 只遞增 `used` | **兩端 schema 對齊義務** |
+| 自由時間 session / 免費像素 | `senate cmd free-time` 發放、python 只遞增 `used` | **兩端 schema 對齊義務** |
 | 酒館訊息 | `Cmd_Tavern` | **絕不直寫 jsonl**（T36 P0 教訓） |
 
 兩端共讀同一份 JSON 時，**改任一端的 schema 必須同步另一端**，並在兩邊都寫下這條義務。

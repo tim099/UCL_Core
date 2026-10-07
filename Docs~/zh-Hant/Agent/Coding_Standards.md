@@ -59,8 +59,8 @@ Path.Combine(UCL_AwakeningService.LettersDir, iPersona, $"_{iCmd}_{iStep}.md")  
 Path.Combine(UCL_AgentCommandsPath.DataRoot, "ChatTavern", "baton", "letters")   // 連根都自己推
 ```
 
-> 🩸 **為什麼是硬規則**：2026-08-18 之前 `Cmd_FreeTime` / `Cmd_Sculpture` / `Cmd_StreamWatch`
-> 各自組一份回傳檔路徑，其中 `Cmd_StreamWatch` 連 letters 根都自己推 ——
+> 🩸 **為什麼是硬規則**：2026-08-18 之前三支 Cmd
+> 各自組一份回傳檔路徑，其中一支連 letters 根都自己推 ——
 > **同一個目錄的第四種算法**。於是 Tim 要求「回傳檔搬進 `cmd/` 子目錄」時，
 > 那件事從「改一行」變成「12 處各改一次」，而**漏掉一處不會報錯**
 > （寫檔會自動建目錄 ⇒ 那支的回傳檔靜靜留在舊位置，看起來完全正常）。

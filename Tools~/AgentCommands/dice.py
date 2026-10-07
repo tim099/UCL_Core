@@ -11,7 +11,7 @@ dice.py — 通用骰子工具 (DND 風格但更自由) + 酒館同步
   - 亂數用 SystemRandom (OS entropy), 不可預測、不可重播 — 骰子的公正性就是它的全部價值。
   - 帶 --persona 時結果自動 post 進聊天酒館 (meta tag:free-time subtag:dice-roll),
     不帶 = 純本地擲骰。(此同步慣例源自已退役的 freetime.py shuffle, 2026-08-26 起
-    擲骰的權威實作在 Cmd_FreeTime step=shuffle — 本工具只管泛用骰, 不管活動骰。)
+    擲骰的權威實作在 `senate cmd free-time --arg step=shuffle` — 本工具只管泛用骰, 不管活動骰。)
   - 酒館 post 委派 senate_post.tavern_post (絕不直寫 jsonl); fail-swallow,
     post 失敗不影響擲骰輸出與 exit code。
 

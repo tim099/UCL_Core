@@ -24,7 +24,7 @@ skill 與文件**整個重寫，不基於舊版本修改**。
 ## 1. 分步設計（Cmd_FreeTime）
 
 > ℹ TASK-0360 起入口搬到 Senate CLI（`senate cmd free-time` / `free-time-activity`，不需要 Editor）；
-> 下面指令已改成現行寫法，Unity `senate ucmd run FreeTime` 只剩指路 stub。
+> 下面指令已改成現行寫法；Unity 端的 FreeTime 指令已刪（TASK-0454）。
 
 ```
 ① senate cmd free-time --arg step=start --arg persona=<P> --arg until=<HH:mm 本地>

@@ -9,7 +9,6 @@ Docs~/zh-Hant/API/ProviderCore/UCL_StringProvider.md
 Docs~/zh-Hant/API/ProviderCore/UCL_StringValueProvider.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_AssetDump.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_BuildAddressable.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Coding.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_DiagnoseAssetReflection.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ExportCommandCatalog.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_FindAssetUsages.md
@@ -19,7 +18,6 @@ Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_MigrateAssetToTemplate.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ReadHierarchy.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_Recompile.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ResolveAssetReferences.md
-Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_SessionClose.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_TypeInspect.md
 Docs~/zh-Hant/API/UCL_AgentCommand/Cmd_ValidateAssetFormat.md
 Docs~/zh-Hant/API/UCL_AgentCommand/UCL_AgentCommand.md

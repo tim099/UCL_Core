@@ -148,8 +148,8 @@ UCL_DocsModule.SourceToken   // → "ucl_core:Docs~"（{Prefix}:{DocsSubfolder}�
 - **人寫的信**住 `letters/<persona>/` 頂層；**Cmd 回傳檔**住 `letters/<persona>/cmd/`。
 - 兩端互為**對側契約**，要一起改 —— 只改一端＝兩邊各看各的目錄，而**兩邊都不會報錯**。
 
-> 🩸 2026-08-18：`Cmd_FreeTime` / `Cmd_Sculpture` / `Cmd_StreamWatch` 各自組回傳檔路徑
-> （StreamWatch 連根都自己推 ＝ 同一目錄的第四種算法）。於是「搬進 `cmd/`」從改一行
+> 🩸 2026-08-18：三支 Cmd 各自組回傳檔路徑
+> （其中一支連根都自己推 ＝ 同一目錄的第四種算法）。於是「搬進 `cmd/`」從改一行
 > 變成 12 處各改一次，而漏一處**不會報錯**（自動建目錄 ⇒ 靜靜留在舊位置）。
 > 現況：FreeTime 已走 `UCL_LettersPath`；其餘待遷移，見
 > `ucl_core:Docs~/zh-Hant/Plan/Plan_Letters_Dir_Layout.md`。

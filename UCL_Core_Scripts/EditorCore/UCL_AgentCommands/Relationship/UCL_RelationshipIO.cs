@@ -23,9 +23,6 @@ namespace UCL.Core.EditorLib.AgentCommands.Relationship
 
         // ⚠ 路徑一律走既有解析器 —— 各專案掛載位置不同，自推導跨專案必壞而且是靜默的。
         //   letters 的正式入口是 `UCL_LettersPath`（python 端對偶是 `ucl_paths.letters_*`）。
-        //   ⛔ 不要直接用 `UCL_AwakeningService.LettersDir`：它現在剛好是同一個值，
-        //     但那是「碰巧相同」不是「同一個入口」—— letters 解析規則改了這裡不會跟著改，
-        //     而且不會有人發現（路徑解析壞掉幾乎都是靜默的，最壞是找到另一棵樹上的檔）。
         public static string PersonaDir(string iPersona)
             => Path.Combine(UCL_LettersPath.PersonaDir(iPersona), DIR_NAME);
         // ===========================================================

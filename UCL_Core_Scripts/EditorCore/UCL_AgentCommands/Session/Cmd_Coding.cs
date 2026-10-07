@@ -6,7 +6,7 @@
 //          只能靠人肉歸因（血證：2026-08-26 basecamp 驗 TASK-0051 時 ErrorLog 混入
 //          summit TASK-0052 施工中的三筆紅）。本 Cmd 讓那件事變成一筆可查的場。
 // 數值影響：寫 sessions/<persona>.json（唯一寫入端仍是 SCP_ActivitySessionStore）
-//          ＋ 順手投影到 persona 的 now_status（`cmd/now_status.json`，唯一寫入通道 Awakening.UCL_AwakeningService.UpdateNowStatus）。
+//          ＋ 順手投影到 persona 的 now_status（`cmd/now_status.json`，本檔 UpdateNowStatus）。
 //          退出閘只**讀** .compile_status.json，不寫。
 //
 // ⚠ 射程（A1）：**Unity 側**。Senate 那側的進場入口與 build.sh 退出閘是 A2，本檔沒有。
@@ -285,7 +285,7 @@ namespace UCL.Core.EditorLib.AgentCommands
                 throw new Exception("[Coding] 進場被擋 —— 原因與出口見回傳檔：" + iPayload);
             }
 
-            bool aStatusOk = Awakening.UCL_AwakeningService.UpdateNowStatus(iPersona, "🛠 Coding：" + aStatus);
+            bool aStatusOk = UpdateNowStatus(iPersona, "🛠 Coding：" + aStatus);
             UCL_AgentCommandRunner.ReportOutputValue(args, "started", "1");
             UCL_AgentCommandRunner.ReportOutputValue(args, "session_id", aSession.session_id);
 
@@ -347,7 +347,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             SCP.Core.Session.SCP_ActivitySessionStore.Save(
                 UCL_AgentCommandsPath.ScpDataRoot, iPersona, aSession,
                 SCP.Core.Session.SCP_ActivitySessionKind.Coding);
-            Awakening.UCL_AwakeningService.UpdateNowStatus(iPersona, "🛠 Coding：" + aStatus);
+            UpdateNowStatus(iPersona, "🛠 Coding：" + aStatus);
 
             ioR.AppendLine("## ✅ 狀態已更新");
             ioR.AppendLine($"- 在改什麼: **{aStatus}**");
@@ -441,7 +441,7 @@ namespace UCL.Core.EditorLib.AgentCommands
 
             SCP.Core.Session.SCP_ActivitySessionStore.Close(
                 UCL_AgentCommandsPath.ScpDataRoot, iPersona, aSession, aEndReason);
-            bool aClearOk = Awakening.UCL_AwakeningService.UpdateNowStatus(iPersona, "");
+            bool aClearOk = UpdateNowStatus(iPersona, "");
 
             UCL_AgentCommandRunner.ReportOutputValue(args, "exited", "1");
             UCL_AgentCommandRunner.ReportOutputValue(args, "forced", aGreen ? "0" : "1");
@@ -555,6 +555,40 @@ namespace UCL.Core.EditorLib.AgentCommands
                 SCP.Core.Session.SCP_ActivitySessionKind.Coding);
             if (aSession == null || !aSession.active) return null;
             return aSession;
+        }
+
+        // ===========================================================
+        // 區塊職責：把施工狀態投影到 persona 的 now_status（`cmd/now_status.json`）。
+        // 物理意義：狀態檔帶 lock 的 session_key ＋ locked_at，讀取端兩格都對上才採用 ⇒
+        //          上一場的狀態不會掛到新的一場（session_key 是常數，locked_at 每次登入重生）。
+        //          ⛔ 只寫狀態檔、不改寫 lock（TASK-0294）。格式與 Senate `Cmd_TavernPost` 的 status 同一份。
+        // 數值影響：lock 不存在或讀不了 ⇒ no-op 回 false（沒登入就沒有「現在狀態」可言）。
+        // ===========================================================
+        static bool UpdateNowStatus(string iPersona, string iStatus)
+        {
+            if (!UCL_AtomicFileRead.TryReadAllText(UCL_LettersPath.SessionLock(iPersona), out string aLockText, out _)) return false;
+            try
+            {
+                var aLock = JsonData.ParseJson(aLockText);
+                if (aLock == null) return false;
+                var aStatus = new JsonData();
+                aStatus["session_key"] = new JsonData(aLock.GetString("session_key", ""));
+                aStatus["locked_at"] = new JsonData(aLock.GetString("locked_at", ""));
+                aStatus["now_status"] = new JsonData(iStatus ?? "");
+                aStatus["status_updated_at"] = new JsonData(SCP.Core.Letters.SCP_Morning.NowIso());
+                UCL_LettersPath.EnsureCmdDir(iPersona);
+                string aPath = UCL_LettersPath.NowStatus(iPersona);
+                string aTmp = aPath + ".tmp";
+                File.WriteAllText(aTmp, aStatus.ToJsonBeautify(), new UTF8Encoding(false));
+                if (File.Exists(aPath)) File.Delete(aPath);
+                File.Move(aTmp, aPath);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Coding] UpdateNowStatus({iPersona}) 失敗：{e.Message}");
+                return false;
+            }
         }
 
     }

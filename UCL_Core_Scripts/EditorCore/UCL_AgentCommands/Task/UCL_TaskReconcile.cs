@@ -62,10 +62,7 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
             var aOut = new List<UCL_TaskEntry>();
             // ⚠ **判準本體已移進 SCP_Core**（`SCP_TaskReconcile.PendingWrapups`，2026-08-31 Tim 拍板）。
             //   本檔不再自己判 —— 兩份各算一次的症狀是「後台頁說 2 張、CLI 說 3 張」而**兩邊都不報錯**。
-            // 📌 而 session 起點仍由**本檔**算並傳進去（不用 SCP 那支自己讀 lock 的版本）：
-            //   這邊走 `UCL_AwakeningService.ReadLock` 的 typed model，SCP 那邊是手撈 JSON 欄位 ——
-            //   後者解析失敗會降級成「UTC 今天 00:00」，那是**把閘放寬**。
-            //   ⇒ 有 typed model 可用的那一側就該用它；SCP 那條路留給沒有 model 的 CLI（那裡失敗會出聲）。
+            // 📌 session 起點由本檔算並傳進去（見 SessionStartUtc）。
             // 📌 型別留 UCL：SCP 決定**哪幾張**，本檔用自己的 loader 把那幾張讀成 `UCL_TaskEntry`
             //   ⇒ 零轉換器（一個 25 欄的 converter 就是下一個會漂的地方），呼叫端簽章一個字沒動。
             DateTime aSince = SessionStartUtc(iPersona);
@@ -97,9 +94,10 @@ namespace UCL.Core.EditorLib.AgentCommands.TaskMgmt
         {
             try
             {
-                var aLock = Awakening.UCL_AwakeningService.ReadLock(iPersona);
-                if (aLock != null && !string.IsNullOrWhiteSpace(aLock.locked_at)
-                    && DateTime.TryParse(aLock.locked_at, System.Globalization.CultureInfo.InvariantCulture,
+                // 讀不了的 lock（Online≠Online）LockedAt 是空字串 ⇒ 一樣走降級。
+                var aLock = SCP.Core.Letters.SCP_PersonaLetters.ReadPersonaLock(UCL_LettersPath.Root, iPersona);
+                if (aLock != null && !string.IsNullOrWhiteSpace(aLock.LockedAt)
+                    && DateTime.TryParse(aLock.LockedAt, System.Globalization.CultureInfo.InvariantCulture,
                         System.Globalization.DateTimeStyles.AdjustToUniversal
                         | System.Globalization.DateTimeStyles.AssumeUniversal, out var aUtc))
                     return aUtc;

@@ -7,7 +7,7 @@
     ///           本屬性只為既有呼叫端相容而保留。要絕對路徑用 <c>UCL_RepoPath.UCLCoreDir</c>；
     ///           要 Tools~ 底下的腳本用 <c>UCL_RepoPath.CoreTool(name)</c>。
     /// [計算邏輯] 舊版走 <c>AssetDatabase.FindAssets("UCL_GUILayoutDrawObject t:Script")</c> ——
-    ///           ① **main-thread only**（逼出 UCL_AwakeningService 那條「只能在主執行緒呼叫」）
+    ///           ① **main-thread only**
     ///           ② 靠「特定腳本檔名 + 路徑含 UCL_Core」的啟發式，撞名不會叫
     ///           ③ 與絕對路徑那份是**兩個獨立解析器**，不一致時兩邊都不報錯
     ///           現改為單一來源，三個問題一起消失。

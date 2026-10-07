@@ -26,7 +26,6 @@ using UnityEngine;
 
 namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
 {
-    using Awakening;
 
     /// <summary>
     /// 觀影模式流程 Cmd（step 分步 + 每步回傳檔指下一步）。
@@ -420,7 +419,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             string aPath = PayloadPath(iPersona, "prepare");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=prepare persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=prepare persona={iPersona}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
             aR.AppendLine("> **這不是開場** —— 準備階段不開 session、不記帳。它只做一件事：");
             aR.AppendLine("> 把「這場在看什麼」釘成一個 id，並且**在陪同者進場之前**就配置好。");
@@ -649,7 +648,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 // ⚠ 記的是**回讀值**不是「我呼叫過 SetRecordingEnabled」：沒開成卻記 true，
                 //    收工就會去關一個不是本場開的錄影（或關一個根本沒開的），而兩者都不會報錯。
                 aOpenedRecording = aRecBack;
-                if (aRecBack) { aOpenedBy = iPersona; aOpenedAt = UCL_AwakeningService.NowIso(); }
+                if (aRecBack) { aOpenedBy = iPersona; aOpenedAt = SCP.Core.Letters.SCP_Morning.NowIso(); }
             }
             // 重入的處置：**沿用首次的事實，並且說出來** —— ⛔ 不靜默覆寫（那正是本 bug 的形狀）。
             // ⚠ 條件帶 `aRecOn`：前一次開的那卷若**現在已經不在錄**（Tim 手動停／capture on=0），
@@ -682,7 +681,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 chapter_id = aChapterId,
                 show_title = aShow,
                 prepared_by = iPersona,
-                prepared_at = UCL_AwakeningService.NowIso(),
+                prepared_at = SCP.Core.Letters.SCP_Morning.NowIso(),
                 reference_reader = aRefReader,
                 catchup_map = aMap,
                 catchup_unfilled = aUnfilled.Select(u => u.Substring(0, 4)).ToList(),
@@ -780,7 +779,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             string aMediaId = GetArg(iArgs, "media_id", "").Trim();
             string aPath = PayloadPath(iPersona, "catchup");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=catchup persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=catchup persona={iPersona}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
             if (string.IsNullOrEmpty(aMediaId))
@@ -901,7 +900,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             string aPath = PayloadPath(iPersona, "capture");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=capture persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=capture persona={iPersona}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
             bool aOn;
@@ -946,7 +945,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             string aPath = PayloadPath(iOwner, "peek");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=peek owner={iOwner}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=peek owner={iOwner}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
             aR.AppendLine("> **這不是一場觀影** —— 不開 session／不記帳／不發酒館／不動任何進行中的場次。");
             aR.AppendLine();
@@ -1069,11 +1068,11 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             string aPath = PayloadPath(iPersona, "start");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=start persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=start persona={iPersona}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
             // 守衛①：必須在線
-            if (!UCL_AwakeningService.IsOnline(iPersona))
+            if (!File.Exists(UCL_LettersPath.SessionLock(iPersona)))
             {
                 Blocked(iArgs, aR, aPath, $"'{iPersona}' 不在線（無 session lock）",
                         $"先跑 senate cmd morning-wake --arg persona={iPersona}");
@@ -1237,7 +1236,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 work_id = aResolvedWork,          // 解析後的 work（可能與 media_id 不同）
                 library_media_id = aLibMediaId,   // 寫心得要用的那個 id；空＝還沒有對應 media
                 prepared_key = aPrepKey,          // TASK-0076：本場準備檔的鍵，在此定死；join 只讀它
-                start_ts = UCL_AwakeningService.NowIso(),
+                start_ts = SCP.Core.Letters.SCP_Morning.NowIso(),
                 end_ts = aUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
                 until_local = aUntil.ToString("yyyy-MM-dd HH:mm"),
                 cursor_epoch = 0,                 // 0 = 尚未取材，首輪由 montage 決定窗口
@@ -1269,7 +1268,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             {
                 session_id = aSession.session_id,
                 updated_by = iPersona,
-                updated_at = UCL_AwakeningService.NowIso(),
+                updated_at = SCP.Core.Letters.SCP_Morning.NowIso(),
             });
             // 熱點跨場清除（Tim 2026-08-25 拍板）：熱點指的是「這一場的某段」——
             // 上一場的標記在新場只會以「⛔ 已被 ring buffer 覆蓋」的殭屍形式佔著每一輪回傳檔
@@ -1639,7 +1638,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             string aPath = PayloadPath(iPersona, "cycle");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=cycle persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=cycle persona={iPersona}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
             var aS = LoadSession(iPersona);
@@ -1710,7 +1709,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     // 前緣一起推上去 —— 否則同場其他人會各自再走一遍同一段空白。
                     aRelay.frontier_epoch = aCursor;
                     aRelay.updated_by = iPersona;
-                    aRelay.updated_at = UCL_AwakeningService.NowIso();
+                    aRelay.updated_at = SCP.Core.Letters.SCP_Morning.NowIso();
                     SaveRelay(aRelayKey, aRelay);
                 }
             }
@@ -1742,7 +1741,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     // 前緣一起推上去 —— 否則同場其他人會各自再走一遍同一段別場畫面。
                     aRelay.frontier_epoch = aCursor;
                     aRelay.updated_by = iPersona;
-                    aRelay.updated_at = UCL_AwakeningService.NowIso();
+                    aRelay.updated_at = SCP.Core.Letters.SCP_Morning.NowIso();
                     SaveRelay(aRelayKey, aRelay);
                 }
             }
@@ -1857,7 +1856,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aSegIndex = ++aRelay.next_seg_index;
                 if (aWin.Before > aRelay.frontier_epoch) aRelay.frontier_epoch = aWin.Before;
                 aRelay.updated_by = iPersona;
-                aRelay.updated_at = UCL_AwakeningService.NowIso();
+                aRelay.updated_at = SCP.Core.Letters.SCP_Morning.NowIso();
                 SaveRelay(aRelayKey, aRelay);
             }
             else
@@ -1924,7 +1923,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 aR.AppendLine();
                 // 這條路徑也要落格線錨點，否則「無素材 → 沒錨點 → 下一次不等 → 又無素材」會變成空轉迴圈。
                 // 落了之後，下一次呼叫由 AwaitCycleSlotAsync 自己等到格線 ⇒ 呼叫端不必再自己數 30-60 秒。
-                aS.last_cycle_ts = UCL_AwakeningService.NowIso();
+                aS.last_cycle_ts = SCP.Core.Letters.SCP_Morning.NowIso();
                 SaveSession(iPersona, aS);
                 // 🩸 TASK-0060 首次實跑抓到的洞（2026-08-26 22:24）：段號在**佔段時**就發掉了，
                 //    而這條「無新素材」是提早返回 ⇒ 台帳沒有那一行 ⇒ 號碼序列留一個缺口。
@@ -1950,7 +1949,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                         margin_sec = 0,
                         clamped = false,
                         header = $"【段 #{aSegIndex}｜無新素材 —— 感官水位未追上（不是漏看，也不是有人沒交）】",
-                        claimed_at = UCL_AwakeningService.NowIso(),
+                        claimed_at = SCP.Core.Letters.SCP_Morning.NowIso(),
                     });
                 AppendPacingLine(aR, aS, aWaited);
                 aR.AppendLine();
@@ -2052,13 +2051,13 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 margin_sec = aMargin,
                 clamped = aClamped,
                 header = aHeader,
-                claimed_at = UCL_AwakeningService.NowIso(),
+                claimed_at = SCP.Core.Letters.SCP_Morning.NowIso(),
             });
             // 格線錨點＝**這一輪實際回傳的時刻**（不是被呼叫的時刻）——
             // 遲到那一輪就以遲到點重新起算，欠帳不累積（Tim 2026-08-24：t=2 → t=5 就從 5 起算）。
             // ⚠ 存 UTC ISO（跟 start_ts / end_ts 同一種形狀）—— ParseIsoLocal 是 AssumeUniversal，
             //   餵本地時間字串進去會被當成 UTC，格線整整偏掉一個時區而**不報錯**。
-            aS.last_cycle_ts = UCL_AwakeningService.NowIso();
+            aS.last_cycle_ts = SCP.Core.Letters.SCP_Morning.NowIso();
             SaveSession(iPersona, aS);
 
             int aRemain = aEnd.HasValue ? (int)Math.Max(0, (aEnd.Value - aNow).TotalMinutes) : 0;
@@ -2157,10 +2156,10 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             string aPath = PayloadPath(iPersona, "join");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=join persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=join persona={iPersona}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
-            if (!UCL_AwakeningService.IsOnline(iPersona))
+            if (!File.Exists(UCL_LettersPath.SessionLock(iPersona)))
             {
                 Blocked(iArgs, aR, aPath, $"'{iPersona}' 不在線（無 session lock）",
                         $"先跑 senate cmd morning-wake --arg persona={iPersona}");
@@ -2276,7 +2275,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 prepared_key = aPrepKey,                      // TASK-0076：跟 primary 用同一把鍵，不各自搜
                 parent_session_id = aPrimary.session_id,
                 parent_persona = aPrimaryPersona,
-                start_ts = UCL_AwakeningService.NowIso(),
+                start_ts = SCP.Core.Letters.SCP_Morning.NowIso(),
                 end_ts = aPrimary.end_ts,                     // 沿用 primary 的截止
                 until_local = aPrimary.until_local,
                 cursor_epoch = aPrimary.cursor_epoch,
@@ -2687,7 +2686,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             string aPath = PayloadPath(iPersona, "observe");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=observe persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=observe persona={iPersona}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
             var aS = LoadSession(iPersona);
@@ -2764,7 +2763,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                     persona = iPersona,
                     seg_index = aS.last_seg_index,
                     seq = aSeq,
-                    at = UCL_AwakeningService.NowIso(),
+                    at = SCP.Core.Letters.SCP_Morning.NowIso(),
                 });
 
             DateTime? aEnd = ParseIsoLocal(aS.end_ts);
@@ -2823,7 +2822,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             string aPath = PayloadPath(iPersona, "note");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=note persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=note persona={iPersona}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
             // ⚠ **收工後補寫必須放行**（2026-08-15 實跑撞到）：cycle 的收工分支會印
@@ -3236,7 +3235,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             string aPath = PayloadPath(iPersona, "hotspot");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=hotspot persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=hotspot persona={iPersona}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
             double aFrom = ParseClockToEpoch(iFrom), aTo = ParseClockToEpoch(iTo);
@@ -3270,7 +3269,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
                 to_epoch = aTo,
                 why = iWhy.Trim(),
                 opened_by = iPersona,
-                opened_at = UCL_AwakeningService.NowIso(),
+                opened_at = SCP.Core.Letters.SCP_Morning.NowIso(),
             };
             aJd.hotspots.Add(aH);
             SaveHotspots(aJd);
@@ -3363,7 +3362,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             string aPath = PayloadPath(iPersona, "claim");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=claim persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=claim persona={iPersona}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
             // ⚠ **認領只給陪看者**（Tim 2026-08-16；2026-08-25 接力落地後語意更新）：
@@ -3428,7 +3427,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             // 先落鎖再取材 —— 反過來的話，取材那幾秒會讓第二個人也搶到同一個熱點
             // aH 是 List 裡那個物件本身（參考型別）⇒ 改它就是改清單，不必再寫回索引。
             aH.claimed_by = iPersona;
-            aH.claimed_at = UCL_AwakeningService.NowIso();
+            aH.claimed_at = SCP.Core.Letters.SCP_Morning.NowIso();
             SaveHotspots(aJd);
 
             string aScript = ResolveMontageScript();
@@ -4335,7 +4334,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
         {
             string aPath = PayloadPath(iPersona, "seek");
             var aR = new StringBuilder();
-            aR.AppendLine($"# StreamWatch step=seek persona={iPersona}  ts=`{UCL_AwakeningService.NowLocal()}`（本地時間）");
+            aR.AppendLine($"# StreamWatch step=seek persona={iPersona}  ts=`{SCP.Core.Letters.SCP_Morning.NowLocal()}`（本地時間）");
             aR.AppendLine();
 
             var aS = LoadSession(iPersona);
@@ -4428,7 +4427,7 @@ namespace UCL.Core.EditorLib.AgentCommands.StreamWatch
             if (aRelay == null || !aRelayMine) aRelay = new UCL_StreamWatchRelay { session_id = aSid };
             aRelay.frontier_epoch = aTarget;     // ⭐ 唯一准許倒退的寫入點（其餘全是單調遞增）
             aRelay.updated_by = iPersona;
-            aRelay.updated_at = UCL_AwakeningService.NowIso();
+            aRelay.updated_at = SCP.Core.Letters.SCP_Morning.NowIso();
             SaveRelay(aKey, aRelay);
 
             // 回讀 —— 報的是讀回值，不是我剛才寫進去的那個變數。

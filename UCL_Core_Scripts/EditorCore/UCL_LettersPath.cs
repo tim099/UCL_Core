@@ -1,16 +1,8 @@
 // 區塊職責：letters 目錄**底下的版面**（layout）—— persona 目錄、Cmd 回傳檔子目錄與檔名組法。
 //
-// 物理意義：letters 根目錄的解析一直都有唯一擁有者（`UCL_AwakeningService.LettersDir`，
-//          它同時處理資料根 override），但**根底下的版面沒有** ——
-//          於是 `Cmd_FreeTime` / `Cmd_Sculpture` / `Cmd_StreamWatch` 各自組一份
-//          `letters/<persona>/_<cmd>_<step>.md`，而 StreamWatch 那份甚至連根都自己推
-//          （`DataRoot/ChatTavern/baton/letters`）—— 同一個目錄的第四種算法。
-//          ⇒ 版面收攏到這裡：**要改「回傳檔放哪」只改這一支。**
-//
-// ⚠ 為什麼本類**不自己解析根**：`LettersDir` 的 override 語意住在 `UCL_AwakeningService`
-//   （legacy `_config/tavern_paths.json` 的相容處理在那裡）。在這裡重推一次就是第五種算法 ——
-//   而路徑重造的失敗是靜默的（找到的是另一個宇宙的檔，回一個看起來正常的讀數）。
-//   ⇒ 本類**委派**根、只擁有版面。
+// 物理意義：Editor 端 letters 根目錄與根底下的版面（persona 目錄、`cmd/` 回傳檔）都只在本類解析 ——
+//          **要改「letters 在哪／回傳檔放哪」只改這一支。**
+//          根＝`<DataRoot>/ChatTavern/baton/letters`；legacy `_config/tavern_paths.json` 存在即炸（見 Root）。
 //
 // ⚠ **對側契約**：Python 等價入口是 `_lib/ucl_paths.py` 的
 //   `letters_root()` / `letters_cmd_dir()` / `letters_cmd_payload()`。
@@ -25,12 +17,11 @@
 using System.IO;
 using System.Text;
 using UnityEngine;
-using UCL.Core.EditorLib.AgentCommands.Awakening;
 
 namespace UCL.Core.EditorLib
 {
     /// <summary>
-    /// letters 目錄底下的版面解析（persona 目錄 / Cmd 回傳檔）。**根目錄委派 <see cref="UCL_AwakeningService.LettersDir"/>。**
+    /// letters 根目錄與底下的版面解析（persona 目錄 / Cmd 回傳檔）。
     /// </summary>
     public static class UCL_LettersPath
     {
@@ -45,8 +36,29 @@ namespace UCL.Core.EditorLib
         // ===========================================================
         public const string CmdDirName = "cmd";
 
-        /// <summary>letters 根（委派唯一擁有者，本類不自己推導）。</summary>
-        public static string Root => UCL_AwakeningService.LettersDir;
+        // ===========================================================
+        // 區塊職責：letters 根 —— Editor 端唯一解析點。
+        // 物理意義：資料根走 UCL_AgentCommandsPath.DataRoot（pointer 檔）。legacy 細粒度覆寫檔
+        //          `_config/tavern_paths.json` 已廢除（Tim 2026-08-17），但它是 per-machine／gitignored ——
+        //          證不到「沒有任何一台機器留著一份」⇒ **存在即炸**，不安靜改讀另一個目錄。
+        // 數值影響：純字串組合；有殘留設定檔時第一次解析就炸，不會走到讀寫資料。
+        // ===========================================================
+        public static string Root
+        {
+            get
+            {
+                string aDataRoot = UCL_AgentCommandsPath.DataRoot;
+                string aLegacy = Path.Combine(aDataRoot, "_config", "tavern_paths.json");
+                if (File.Exists(aLegacy))
+                    throw new System.Exception(
+                        $"[LettersPath] 偵測到已廢除的細粒度路徑覆寫檔：{aLegacy}\n"
+                        + "  該機制已被 <repo-root>/.agentcommands_root.local pointer 檔取代（整個資料根一次搬遷）。\n"
+                        + "  處置：把 letters_dir 的意圖改成資料根 override（控制台「AgentCommands 路徑」→ 套用），\n"
+                        + "        然後刪除或改名該檔（例如加 .disabled 後綴）。\n"
+                        + "  ⚠ 這裡刻意不 fallback —— 靜默改讀另一個目錄比停下來糟。");
+                return Path.Combine(aDataRoot, "ChatTavern", "baton", "letters");
+            }
+        }
 
         /// <summary>某 persona 的 letters 目錄 —— **人寫的信住這裡**。</summary>
         public static string PersonaDir(string iPersona) => Path.Combine(Root, iPersona);

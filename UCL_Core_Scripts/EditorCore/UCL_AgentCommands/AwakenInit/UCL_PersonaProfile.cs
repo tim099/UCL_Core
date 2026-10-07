@@ -340,7 +340,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             try
             {
                 var root = new JsonData();
-                root["generated_at"] = Awakening.UCL_AwakeningService.NowIso();
+                root["generated_at"] = SCP.Core.Letters.SCP_Morning.NowIso();
                 var rf = JsonData.ParseJson("[]");
                 foreach (var f in ROUTING_FIELDS) rf.Add(new JsonData(f));
                 root["routing_fields"] = rf;

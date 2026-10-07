@@ -64,8 +64,7 @@ namespace UCL.Core.EditorLib
 
         // 區塊職責：UCL_Core 根的**絕對路徑**單一解析點（取代 UCL_EditorPath.CorePath 的定位職責）。
         // 物理意義：UCL_EditorPath.CorePath 走 AssetDatabase.FindAssets ——
-        //          ① **main-thread only**（UCL_AwakeningService.ResolveAwakeningScriptPath 的
-        //            「⚠ 只能在主執行緒呼叫」就是它逼出來的）
+        //          ① **main-thread only**
         //          ② 靠「找特定腳本檔名 + 路徑含 UCL_Core」的啟發式，撞名不會叫
         //          ③ 回**專案相對**路徑，與其他解析器的絕對路徑混用要手拼
         //          本 getter 純檔案系統搜尋 ⇒ 三個問題一起消失，且與 Python

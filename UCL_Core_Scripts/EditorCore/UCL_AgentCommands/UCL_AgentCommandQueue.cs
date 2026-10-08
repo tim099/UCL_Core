@@ -377,7 +377,7 @@ namespace UCL.Core.EditorLib.AgentCommands
         }
 
         /// <summary>
-        /// 取這顆 queue 的**跨 process 互斥鎖**（與 TASK-0263 同一支 <c>SCP_FileLock</c>）。
+        /// 取這顆 queue 的**跨 process 互斥鎖**（<see cref="UCL_FileLock"/>，TASK-0263）。
         /// <para>⚠ 「讀 → 改 → 寫回」要**整段**包在裡面；只鎖寫的那一下等於沒鎖。</para>
         /// </summary>
         /// <para>🩸 TASK-0264 QA（kotoko 2026-09-23）：<c>Acquire</c> 等不到鎖時丟的是一顆
@@ -395,7 +395,7 @@ namespace UCL.Core.EditorLib.AgentCommands
             string aPath = GetQueuePath(agentId);
             try
             {
-                return SCP.Core.Io.SCP_FileLock.Acquire(aPath);
+                return UCL_FileLock.Acquire(aPath);
             }
             catch (IOException e)
             {

@@ -8,7 +8,7 @@
 //          一旦其他 assembly 編譯失敗，連帶 Cmd handler 也載不進來 → 沒辦法靠 Cmd 查詢，
 //          所以本 Tracker 故意放在 UCL_Core/Editor/ 獨立 assembly，在收到事件當下立刻
 //          序列化成 JSON 寫進 git-root/AgentCommands/.compile_status.json，
-//          配套讀取端 (`senate cmd unity-compile-status`，SCP_UnityCompile) 直接讀檔即可，不需要 Editor 還能跑 Cmd。
+//          讀取端直接讀檔即可，不需要 Editor 還能跑 Cmd（Senate 那側改走 Unity CLI，不讀這個檔）。
 // 數值影響：每次編譯結束會覆寫 .compile_status.json；不修改任何遊戲資料。
 #if UNITY_EDITOR
 using System;

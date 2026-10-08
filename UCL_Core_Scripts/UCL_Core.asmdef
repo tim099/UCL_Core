@@ -6,8 +6,7 @@
         "Unity.ResourceManager",
         "UniTask",
         "UniTask.Addressables",
-        "Unity.TextMeshPro",
-        "SCP_Core"
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

@@ -7,14 +7,12 @@
 //   |----------------------|------------------------:|
 //   | `Delete` 然後 `Move` |              **40.9%** |
 //   | `File.Replace`       |               **6.4%** |
-//   ⇒ 📌 **換寫入端只能把窗口縮小，⛔ 關不掉它**（而 `File.Move(…, overwrite)` 在 Unity 與
-//     `netstandard2.1` 的 SCP_Core 上都**不存在** —— 那條路 2026-09-23 被兩個編譯器各否決一次）。
+//   ⇒ 📌 **換寫入端只能把窗口縮小，⛔ 關不掉它**（`File.Move(…, overwrite)` 在 Unity 上**不存在**）。
 //   ⇒ 所以護欄只能長在**讀取端**：重試跨過那個窗口。2+4+6+8 ＝ 20ms 跨得過去，
 //     而一個真的不存在的檔，重試 5 次仍然不存在。
 //
 // ⭐ 本檔是把 `UCL_AgentCommandQueue.Load`（TASK-0286／`3337da9c`）那段**已經驗過的**形狀抽出來共用，
-//   ⛔ 不是第二套。2026-09-27 起**實作搬到 SCP_Core `SCP_AtomicFileRead`**（SCP 側也要用、而 SCP 不能引用 UCL）
-//   ⇒ 本檔只剩轉呼叫＋列舉對映，保留 UCL 的型別名讓既有呼叫端不必改。抽出來的理由有讀數：同一天量到全樹有 **12 份**各自抄開的 `AtomicWrite`，
+//   ⛔ 不是第二套。抽出來的理由有讀數：同一天量到全樹有 **12 份**各自抄開的 `AtomicWrite`，
 //   而它們已經開始漂移（其中一份少了 `File.Exists` 守衛）。**寫入端抄 12 份的下場，讀取端不要再走一次。**
 //
 // ⚠ 判準（這一段是本檔的本體，⛔ 別照名字用）：
@@ -47,7 +45,7 @@ namespace UCL.Core.EditorLib.AgentCommands
     public static class UCL_AtomicFileRead
     {
         /// <summary>重試次數。2+4+6+8 ＝ 20ms —— 足以跨過一次換檔，而不足以讓一個不存在的檔長出來。</summary>
-        public const int DefaultMaxAttempt = SCP.Core.Io.SCP_AtomicFileRead.DefaultMaxAttempt;
+        public const int DefaultMaxAttempt = 5;
 
         /// <summary>
         /// 讀整個檔。回 true 代表 <paramref name="oText"/> 有效（<paramref name="oState"/> ＝ <see cref="UCL_FileReadState.Ok"/>）。
@@ -59,16 +57,31 @@ namespace UCL.Core.EditorLib.AgentCommands
         public static bool TryReadAllText(string iPath, out string oText, out UCL_FileReadState oState,
                                           int iMaxAttempt = DefaultMaxAttempt)
         {
-            // 判準（FileNotFound 也重試／分類看最後一個例外／Missing 與 Busy 分開）住在 SCP 那支 —— ⛔ 別在這裡另寫。
-            bool aOk = SCP.Core.Io.SCP_AtomicFileRead.TryReadAllText(iPath, out string aText, out var aState, iMaxAttempt);
-            oText = aOk ? aText : null;
-            oState = aState switch
+            oText = null;
+            if (string.IsNullOrEmpty(iPath)) { oState = UCL_FileReadState.Missing; return false; }
+
+            Exception aLast = null;
+            for (int aAttempt = 1; aAttempt <= iMaxAttempt; ++aAttempt)
             {
-                SCP.Core.Io.SCP_FileReadState.Ok => UCL_FileReadState.Ok,
-                SCP.Core.Io.SCP_FileReadState.Missing => UCL_FileReadState.Missing,
-                _ => UCL_FileReadState.Busy,
-            };
-            return aOk;
+                try
+                {
+                    oText = File.ReadAllText(iPath, Encoding.UTF8);
+                    oState = UCL_FileReadState.Ok;
+                    return true;
+                }
+                // ⚠ `FileNotFoundException` / `DirectoryNotFoundException` 都是 `IOException` 的子類
+                //   ⇒ 它們**一起**落進重試（判準①）。分類等迴圈跑完再做。
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+                {
+                    aLast = e;
+                    if (aAttempt < iMaxAttempt) System.Threading.Thread.Sleep(2 * aAttempt);
+                }
+            }
+
+            oState = (aLast is FileNotFoundException || aLast is DirectoryNotFoundException)
+                   ? UCL_FileReadState.Missing
+                   : UCL_FileReadState.Busy;
+            return false;
         }
 
         /// <summary>
@@ -88,6 +101,8 @@ namespace UCL.Core.EditorLib.AgentCommands
         /// 人讀的一句話 —— 給呼叫端在 <see cref="UCL_FileReadState.Busy"/> 時出聲用。
         /// ⛔ 別自己另寫一句：那會讓同一個狀態在不同地方長不一樣。
         /// </summary>
-        public static string DescribeBusy(string iPath) => SCP.Core.Io.SCP_AtomicFileRead.DescribeBusy(iPath);
+        public static string DescribeBusy(string iPath)
+            => $"[AtomicFileRead] 重試 {DefaultMaxAttempt} 次仍讀不到 `{iPath}` ——"
+             + " ⚠ 這是「這一瞬間讀不了」，⛔ **不是**「那裡沒有東西」（多半是換檔或被鎖）。";
     }
 }
